@@ -379,6 +379,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::RewriteFuel;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -2536,6 +2537,21 @@ const fn unreadable() -> Stop
     Stop::Refused(ReplayRefusal::Unreadable)
 }
 
+/// The argument position a fixpoint carrying `evidence` gates on: a staged
+/// fixpoint's own position, the first argument otherwise.
+///
+/// # Specification
+/// trivial.
+fn gate_position(evidence: FixpointEvidence) -> StagedPosition
+{
+    match evidence {
+        FixpointEvidence::Staged { position } => position,
+        FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => {
+            StagedPosition::default()
+        },
+    }
+}
+
 /// What reading a transport's family as a cong link's gave.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Linked
@@ -3508,18 +3524,7 @@ where
         else {
             return self.unfold_term(term, constant);
         };
-        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
-        else {
-            return self.unfold_term(term, constant);
-        };
-        let Some(&Value::Thunk(suspended)) = self.arena.value(body)
-        else {
-            return self.unfold_term(term, constant);
-        };
-        let Some(&Computation::Fixpoint {
-            body: open,
-            evidence,
-        }) = self.arena.computation(suspended)
+        let Some((open, evidence)) = self.suspended_fixpoint(constant)
         else {
             return self.unfold_term(term, constant);
         };
@@ -5743,10 +5748,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // the argument's head the neutral's. Short of its staged
                 // argument it stands at no gate.
                 Some(&Computation::Fixpoint { body, evidence }) => {
-                    let staged = match evidence {
-                        FixpointEvidence::Staged { position } => usize::from(position),
-                        FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
-                    };
+                    let staged = usize::from(gate_position(evidence));
                     let mut leading = Vec::with_capacity(staged);
                     let mut applied = focus;
                     while leading.len() < staged {
@@ -6119,10 +6121,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // unfolds in the application at that argument, the leading
                 // ones applied beneath it as they stood.
                 Some(&Computation::Fixpoint { evidence, .. }) => {
-                    let staged = match evidence {
-                        FixpointEvidence::Staged { position } => usize::from(position),
-                        FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
-                    };
+                    let staged = usize::from(gate_position(evidence));
                     let mut applied = focus;
                     for _leading in 0 .. staged {
                         let Some(Frame::Apply(argument)) = frames.pop()
@@ -6944,12 +6943,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // is a definition: unfolding it substitutes nothing and
                         // cannot recur, so it unfolds at that gate (#2833).
                         Some(&Computation::Fixpoint { body, evidence }) => {
-                            let position = match evidence {
-                                FixpointEvidence::Staged { position } => usize::from(position),
-                                FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => {
-                                    0
-                                },
-                            };
+                            let position = usize::from(gate_position(evidence));
                             // The argument at the staged position, read through
                             // the cells: that many applications down the stack,
                             // every frame above it an application too.
@@ -7846,6 +7840,104 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         Ok(value)
     }
 
+    /// The fixpoint the definition `constant`'s body suspends, a recursive
+    /// definition's: its open body and the evidence it carries.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some((b, e))` exactly when `constant` unfolds to a thunk
+    ///   over `fix f. b` carrying `e`; `None` otherwise.
+    /// - provides: the recursive-definition test [`Self::unfold_refolded`],
+    ///   [`Self::shut_recursion`] and [`Self::run_step`] share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursive call stuck at a variable, one a
+    ///   constructor opens and a call of a definition with no fixpoint observe
+    ///   each answer.
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.unfoldings.unfolding(constant), Unfoldable::Body(_)))]
+    fn suspended_fixpoint(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<(ComputationId, FixpointEvidence)>
+    {
+        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+        else {
+            return None;
+        };
+        let Some(&Value::Thunk(suspended)) = self.arena.value(body)
+        else {
+            return None;
+        };
+        let Some(&Computation::Fixpoint {
+            body: open,
+            evidence,
+        }) = self.arena.computation(suspended)
+        else {
+            return None;
+        };
+        Some((open, evidence))
+    }
+
+    /// The argument `call` passes at the gate of a fixpoint carrying
+    /// `evidence`, counted from its first argument.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the argument at [`gate_position`] among those `call`'s spine
+    ///   of applications passes, first argument first; `None` when it passes no
+    ///   more.
+    /// - provides: the gate [`Self::shut_recursion`] and [`Self::run_step`]
+    ///   test.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: two `while let` loops down the application spine, not
+    ///   recursion.
+    /// - measure: the focus's arena position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call stuck at a variable and one a constructor
+    ///   opens, each gated on its first argument, observe the argument read. A
+    ///   staged gate past the first argument is outside this evidence.
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    #[spec(ensures: |ret| ret.is_none_or(|argument| self.arena.value(argument).is_some()))]
+    fn gate(
+        &self,
+        call: ComputationId,
+        evidence: FixpointEvidence,
+    ) -> Option<ValueId>
+    {
+        let mut passed = 0_usize;
+        let mut head = call;
+        while let Some(&Computation::Application(function, _)) = self.arena.computation(head) {
+            passed = passed.saturating_add(1);
+            head = function;
+        }
+        // The spine holds its last argument outermost, so the gate stands
+        // that many applications in from the arguments after it.
+        let mut after =
+            passed.checked_sub(usize::from(gate_position(evidence)).saturating_add(1))?;
+        let mut focus = call;
+        while let Some(&Computation::Application(function, argument)) =
+            self.arena.computation(focus)
+        {
+            let Some(left) = after.checked_sub(1)
+            else {
+                return Some(argument);
+            };
+            after = left;
+            focus = function;
+        }
+        None
+    }
+
     /// The definition `call` recurses into when its head forces a recursive
     /// definition whose gate no constructor opens: `spin(x)` for a variable
     /// `x`.
@@ -7860,8 +7952,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Some(k)` exactly when `call`, under its applications, forces
-    ///   the constant `k`, `k`'s body is a suspended fixpoint, and the argument
-    ///   at the fixpoint's gate is a variable, a constant or a static
+    ///   the constant `k`, `k`'s body is a suspended fixpoint
+    ///   ([`Self::suspended_fixpoint`]), and the argument at the fixpoint's
+    ///   gate ([`Self::gate`]) is a variable, a constant or a static
     ///   application; `None` otherwise.
     /// - provides: the forced reading's read-through test in [`Self::whnf`].
     /// - fails: never.
@@ -7884,11 +7977,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         call: ComputationId,
     ) -> Option<ConstantIndex>
     {
-        let mut arguments = Vec::new();
         let mut head = call;
-        while let Some(&Computation::Application(function, argument)) = self.arena.computation(head)
-        {
-            arguments.push(argument);
+        while let Some(&Computation::Application(function, _)) = self.arena.computation(head) {
             head = function;
         }
         let Some(&Computation::Force(forced)) = self.arena.computation(head)
@@ -7899,27 +7989,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         else {
             return None;
         };
-        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
-        else {
-            return None;
-        };
-        let Some(&Value::Thunk(suspended)) = self.arena.value(body)
-        else {
-            return None;
-        };
-        let Some(&Computation::Fixpoint { evidence, .. }) = self.arena.computation(suspended)
-        else {
-            return None;
-        };
-        let position = match evidence {
-            FixpointEvidence::Staged { position } => usize::from(position),
-            FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
-        };
-        let gate = arguments
-            .len()
-            .checked_sub(position.saturating_add(1))
-            .and_then(|at| arguments.get(at).copied())?;
-        match self.arena.value(gate) {
+        let (_, evidence) = self.suspended_fixpoint(constant)?;
+        match self.arena.value(self.gate(call, evidence)?) {
             Some(&(Value::Variable(_) | Value::Constant(_) | Value::StaticApplication(..))) => {
                 Some(constant)
             },
@@ -7985,31 +8056,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // A recursive definition's run stays held at a gate no constructor
         // opens, `spin(x)` for a variable `x`: the evaluator's run answers
         // nothing there and leaves the operand as it is, and so does this.
-        if let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
-            && let Some(&Value::Thunk(suspended)) = self.arena.value(body)
-            && let Some(&Computation::Fixpoint { evidence, .. }) = self.arena.computation(suspended)
-        {
-            let position = match evidence {
-                FixpointEvidence::Staged { position } => usize::from(position),
-                FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
-            };
-            let mut arguments = Vec::new();
-            let mut head = read;
-            while let Some(&Computation::Application(function, argument)) =
-                self.arena.computation(head)
-            {
-                arguments.push(argument);
-                head = function;
-            }
-            let gate = arguments
-                .len()
-                .checked_sub(position.saturating_add(1))
-                .and_then(|at| arguments.get(at).copied());
-            if !gate.is_some_and(|argument| {
+        if let Some((_, evidence)) = self.suspended_fixpoint(constant)
+            && !self.gate(read, evidence).is_some_and(|argument| {
                 matches!(self.arena.value(argument), Some(&Value::Constructor { .. }))
-            }) {
-                return RunStep::Sticks;
-            }
+            })
+        {
+            return RunStep::Sticks;
         }
         RunStep::Unfolds(constant)
     }
