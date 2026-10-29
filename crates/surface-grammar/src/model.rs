@@ -101,6 +101,7 @@ use crate::check::validate_operator_form;
 use crate::mold::FrozenTable;
 use crate::mold::HoleFollows;
 use crate::mold::LabelFollowsForm;
+use crate::mold::LabelId;
 use crate::mold::MoldDef;
 use crate::mold::MoldHasPredecessor;
 use crate::mold::MoldHasRequiredTail;
@@ -2043,6 +2044,128 @@ impl Pbg
     ) -> LabelFollowsForm
     {
         self.molds.follows_form(label, sort)
+    }
+
+    /// The number of the declared label spelled `spelled`: a token's spelling
+    /// resolved once, so its menus and the labels of molds are read by number
+    /// rather than by spelling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a number exactly when
+    ///   [`tile_label`](Self::tile_label) resolves `spelled`, and the molds
+    ///   read by it carry that spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label's number reads back its own
+    ///   menus, follows the forms it follows, and is each of its molds' label,
+    ///   and an undeclared spelling has none; two labels sharing a number, or a
+    ///   number reading another label's menus, changes an observation.
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_some() == self.molds.tile_label(spelled).is_some() && ret.is_none_or(|id| self.molds.label_candidates(id).first().is_some_and(|&mold| self.molds.mold(mold).is_ok_and(|def| def.label == spelled.0))))]
+    #[inline]
+    #[must_use]
+    pub fn label_id(
+        &self,
+        spelled: LabelText<'_>,
+    ) -> Option<LabelId>
+    {
+        self.molds.label_id(spelled)
+    }
+
+    /// The number of the label mold `mold` carries.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a number exactly when the grammar declares `mold`,
+    ///   and `mold` is among that label's
+    ///   [`label_candidates`](Self::label_candidates).
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_some() == self.molds.mold(mold).is_ok() && ret.is_none_or(|id| self.molds.label_candidates(id).binary_search(&mold).is_ok()))]
+    #[inline]
+    #[must_use]
+    pub fn mold_label(
+        &self,
+        mold: MoldId,
+    ) -> Option<LabelId>
+    {
+        self.molds.mold_label(mold)
+    }
+
+    /// Every mold the label numbered `id` can take, ascending: the label's
+    /// [`candidates`](Self::candidates).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns, ascending, the molds whose label is numbered `id`; a
+    ///   number past the table has none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold_label(mold) == Some(id)))]
+    #[inline]
+    #[must_use]
+    pub fn label_candidates(
+        &self,
+        id: LabelId,
+    ) -> &[MoldId]
+    {
+        self.molds.label_candidates(id)
+    }
+
+    /// The molds the label numbered `id` can take where no form is open: the
+    /// label's [`fresh_candidates`](Self::fresh_candidates).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns, ascending, the molds of
+    ///   [`label_candidates`](Self::label_candidates) that have no same-form
+    ///   predecessor or are form-first.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold_label(mold) == Some(id) && (!bool::from(self.molds.has_predecessor(mold)) || bool::from(self.molds.is_form_first(mold)))))]
+    #[inline]
+    #[must_use]
+    pub fn label_fresh_candidates(
+        &self,
+        id: LabelId,
+    ) -> &[MoldId]
+    {
+        self.molds.label_fresh_candidates(id)
+    }
+
+    /// Whether a token of the label numbered `id` can stand right after a
+    /// whole form of `sort`, as [`follows_form`](Self::follows_form) reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when [`follows_form`](Self::follows_form) is
+    ///   true of the label numbered `id`; false for a number past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`label_id`](Self::label_id).
+    /// - witness: `tests::walk::a_label_reads_its_menus_by_its_number`
+    #[spec(ensures: |ret| !bool::from(ret) || !self.molds.label_candidates(id).is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn label_follows_form(
+        &self,
+        id: LabelId,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        self.molds.label_follows_form(id, sort)
     }
 
     /// Every declared label with how many molds it can take, ascending by

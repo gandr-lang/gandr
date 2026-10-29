@@ -227,14 +227,16 @@
 //! - Reversal: a string form that admits both interiors, which would take both
 //!   labels again.
 //!
-//! ### A token's labels are derived once and held inline
+//! ### A token's labels are derived once, held inline and read by number
 //!
 //! A token's candidate labels feed three steps: settling the holes it cannot
 //! continue, gathering its menu, and, past a tie, refuting the openers it
 //! cannot follow. `candidate_labels` returns them as `TokenLabels`, an array of
-//! at most six held inline, and the molder derives them once per token and
-//! passes them to each step. Deriving them again per step would cost two or
-//! three heap allocations per token.
+//! at most six held inline. The molder resolves them once per token to
+//! `LabelIds`, the declared labels by number, and passes those to each step,
+//! which reads menus and compares the labels of molds by number. Deriving the
+//! labels again per step would cost two or three heap allocations per token,
+//! and resolving them again a hash probe and a string comparison per label.
 //!
 //! - Alternatives: a `smallvec`, which is the same array behind a dependency;
 //!   caching labels per token across windows, which re-reads a token's labels
@@ -259,13 +261,13 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_grammar::CandidateCount;
+use gandr_surface_grammar::LabelId;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Observation;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
-use gandr_surface_grammar::TileLabel;
 use gandr_surface_grammar::aliased;
 use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::SourceFragment;
@@ -533,6 +535,92 @@ impl<'label> IntoIterator for TokenLabels<'label>
     fn into_iter(self) -> Self::IntoIter
     {
         self.labels.into_iter().take(self.count)
+    }
+}
+
+/// A token's declared labels by number, in the order of its labels, each
+/// spelling the grammar does not declare left out: the token's spelling
+/// resolved once, so each step reads the label's menus and compares the
+/// labels of molds by number, with no further probe or string compare.
+///
+/// # Specification
+/// - ensures: reads as the numbers resolved, in label order, at most
+///   [`LABEL_CAPACITY`] of them; counts every label offered, declared or not.
+///
+/// # Adequacy
+/// - hypothesis: L3 — duplicate, declared and absent labels resolve to the
+///   numbers whose menus the gather reads; a dropped, reordered or misresolved
+///   label changes the gathered menu.
+/// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LabelIds
+{
+    /// The numbers, the first `count` of them live.
+    ids: [LabelId; LABEL_CAPACITY],
+    /// How many numbers are live.
+    count: usize,
+    /// How many labels the token offered, declared or not: none only when no
+    /// token follows, or when the token has no label at all.
+    offered: usize,
+}
+
+impl LabelIds
+{
+    /// No labels: no token follows.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn new() -> Self
+    {
+        Self {
+            ids: [LabelId::default(); LABEL_CAPACITY],
+            count: 0,
+            offered: 0,
+        }
+    }
+
+    /// The numbers of the labels among `labels` that `pbg` declares, in
+    /// their order.
+    ///
+    /// # Specification
+    /// - requires: `labels` holds at most [`LABEL_CAPACITY`] labels.
+    /// - ensures: holds the number of each declared label of `labels`, in
+    ///   order, and counts every label of `labels` as offered.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type's.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    #[inline]
+    #[spec(requires: labels.len() <= LABEL_CAPACITY, ensures: |ret| ret.offered == labels.len() && ret.as_slice().iter().copied().eq(labels.iter().filter_map(|label| pbg.label_id(LabelText(label.0)))))]
+    fn resolve(
+        pbg: &Pbg,
+        labels: &[CandidateLabel<'_>],
+    ) -> Self
+    {
+        let mut resolved = Self::new();
+        resolved.offered = labels.len();
+        for label in labels {
+            if let Some(id) = pbg.label_id(LabelText(label.0))
+                && let Some(slot) = resolved.ids.get_mut(resolved.count)
+            {
+                *slot = id;
+                resolved.count = resolved.count.saturating_add(1);
+            }
+        }
+        resolved
+    }
+
+    /// The numbers, in label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn as_slice(&self) -> &[LabelId]
+    {
+        self.ids.get(.. self.count).unwrap_or_default()
     }
 }
 
@@ -1584,27 +1672,6 @@ impl<'pbg> Molder<'pbg>
         self.pbg
     }
 
-    /// Resolve a candidate label spelling to this grammar's static tile label.
-    ///
-    /// # Specification
-    /// - ensures: returns the declared label with exactly this spelling, or
-    ///   none when absent.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — every declared spelling and an absent one expose the
-    ///   optional label; a dropped or misspelt key, or a spurious fallback
-    ///   label, changes the answer.
-    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    #[spec(ensures: |ret| ret == self.pbg.tile_label(LabelText(label.0)))]
-    fn candidate_label(
-        &self,
-        label: CandidateLabel<'_>,
-    ) -> Option<TileLabel>
-    {
-        self.pbg.tile_label(LabelText(label.0))
-    }
-
     /// Return the number of candidate molds considered for a labeled token.
     ///
     /// This is the molder's per-token cost signal (the candidate-loop
@@ -1644,7 +1711,11 @@ impl<'pbg> Molder<'pbg>
         let source = source_slice(src);
         let slice = token.text(&source);
         let labels = candidate_labels(token.lexeme, TokenText::from(AsRef::<str>::as_ref(&slice)));
-        self.gather_menu(&labels, None, CandidateMenu::Declared);
+        self.gather_menu(
+            &LabelIds::resolve(self.pbg, &labels),
+            None,
+            CandidateMenu::Declared,
+        );
         CandidateCount(self.candidates.len())
     }
 
@@ -1691,8 +1762,8 @@ impl<'pbg> Molder<'pbg>
         let source = source_slice(src);
         let slice = token.text(&source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        let labels = candidate_labels(token.lexeme, text);
-        self.settle_shadowing(state, &labels);
+        let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
+        state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
         self.gather(state, token.lexeme, text, &labels);
         self.settle_statement(state, token.lexeme, text, &labels, Ahead::Nothing);
         state.settle_declaration_boundary(&self.candidates);
@@ -1901,8 +1972,8 @@ impl<'pbg> Molder<'pbg>
             }
             else {
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-                let labels = candidate_labels(token.lexeme, text);
-                self.settle_shadowing(state, &labels);
+                let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
+                state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
                 self.gather(state, token.lexeme, text, &labels);
                 let ahead = Ahead::Stream {
                     tokens,
@@ -2015,13 +2086,12 @@ impl<'pbg> Molder<'pbg>
     {
         let slice = token.text(source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        let heads = candidate_labels(token.lexeme, text).iter().any(|&label| {
-            self.candidate_label(label).is_some_and(|label| {
-                self.pbg
-                    .fresh_candidates(label)
-                    .iter()
-                    .any(|&mold| bool::from(declaration_head(self.pbg, mold)))
-            })
+        let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
+        let heads = labels.as_slice().iter().any(|&label| {
+            self.pbg
+                .label_fresh_candidates(label)
+                .iter()
+                .any(|&mold| bool::from(declaration_head(self.pbg, mold)))
         });
         DeclarationStart::from(heads)
     }
@@ -2100,53 +2170,6 @@ impl<'pbg> Molder<'pbg>
         seam
     }
 
-    /// Eagerly settle any completable `?` hole frontier the upcoming token
-    /// cannot continue, before it is gathered / chosen.
-    ///
-    /// A pass-through to
-    /// [`MeldState::settle_shadowing_frontiers`](crate::MeldState::settle_shadowing_frontiers)
-    /// over the token's candidate labels: it keeps a bare hole from shadowing
-    /// an enclosing form in the molder's frontier queries. A hole before a
-    /// `hole_name` word stays open so the name attaches.
-    ///
-    /// # Specification
-    /// - requires: `labels` are the token's [`candidate_labels`], so none is
-    ///   empty.
-    /// - ensures: settles shadowing holes only when the incoming label cannot
-    ///   continue them.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — source-valid tokens include complete and bare holes,
-    ///   ordinary atoms, unknown bytes and layout. Committed structure and
-    ///   exact checkpoint bytes expose premature hole closure, unmolded-path
-    ///   loss and a non-no-op space.
-    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    #[inline]
-    #[spec(requires: labels.iter().all(|label| !label.0.is_empty()))]
-    fn settle_shadowing(
-        &self,
-        state: &mut MeldState<'_>,
-        labels: &TokenLabels<'_>,
-    )
-    {
-        let mut raw_labels = [""; LABEL_CAPACITY];
-        let mut count = 0_usize;
-        for &label in labels {
-            let Some(label) = self.candidate_label(label)
-            else {
-                continue;
-            };
-            if let Some(slot) = raw_labels.get_mut(count) {
-                *slot = label.0;
-                count = count.saturating_add(1);
-            }
-        }
-        state.settle_shadowing_frontiers(CandidateLabels::from(
-            raw_labels.get(.. count).unwrap_or(&[]),
-        ));
-    }
-
     /// Push the molder's choice, or the unmolded path when there is none.
     ///
     /// # Specification
@@ -2190,8 +2213,8 @@ impl<'pbg> Molder<'pbg>
     /// would on the full menu.
     ///
     /// # Specification
-    /// - requires: `labels` are the [`candidate_labels`] of a token of `lexeme`
-    ///   spelled `text`.
+    /// - requires: `labels` are the declared labels, by number, of a token of
+    ///   `lexeme` spelled `text`.
     /// - ensures: gathers the applicable menu in ascending order without
     ///   duplicate molds.
     /// - panics: none.
@@ -2217,7 +2240,7 @@ impl<'pbg> Molder<'pbg>
         state: &MeldState<'_>,
         lexeme: Lexeme,
         text: TokenText<'_>,
-        labels: &TokenLabels<'_>,
+        labels: &LabelIds,
     )
     {
         let open = state.open_form_mold();
@@ -2279,7 +2302,7 @@ impl<'pbg> Molder<'pbg>
         state: &mut MeldState<'_>,
         lexeme: Lexeme,
         text: TokenText<'_>,
-        labels: &TokenLabels<'_>,
+        labels: &LabelIds,
         ahead: Ahead<'_, '_>,
     )
     {
@@ -2442,10 +2465,13 @@ impl<'pbg> Molder<'pbg>
             return;
         }
         let reserved = core::mem::take(&mut self.candidates);
-        let generic = RESERVED_FALLBACK_LABELS.map(CandidateLabel::from);
-        self.gather_labels(&generic, open, CandidateMenu::Fresh);
+        let generic = LabelIds::resolve(
+            self.pbg,
+            &RESERVED_FALLBACK_LABELS.map(CandidateLabel::from),
+        );
+        self.gather_labels(generic.as_slice(), open, CandidateMenu::Fresh);
         if self.candidates.is_empty() {
-            self.gather_labels(&generic, open, CandidateMenu::Declared);
+            self.gather_labels(generic.as_slice(), open, CandidateMenu::Declared);
             self.note_declared_menu(state);
         }
         self.candidates.extend_from_slice(&reserved);
@@ -2590,7 +2616,7 @@ impl<'pbg> Molder<'pbg>
     /// the full declared menu ([`CandidateMenu::Declared`]).
     ///
     /// # Specification
-    /// - requires: `labels` are a token's [`candidate_labels`].
+    /// - requires: `labels` are a token's declared labels, by number.
     /// - ensures: gathers the applicable menu in ascending order without
     ///   duplicate molds.
     /// - panics: none.
@@ -2613,13 +2639,13 @@ impl<'pbg> Molder<'pbg>
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_menu(
         &mut self,
-        labels: &TokenLabels<'_>,
+        labels: &LabelIds,
         open: Option<MoldId>,
         menu: CandidateMenu,
     )
     {
         self.candidates.clear();
-        self.gather_labels(labels, open, menu);
+        self.gather_labels(labels.as_slice(), open, menu);
     }
 
     /// Gather the candidate molds for `labels`, from the fresh-slot menu plus
@@ -2629,7 +2655,7 @@ impl<'pbg> Molder<'pbg>
     /// menu over the reserved one).
     ///
     /// # Specification
-    /// - requires: `labels` are candidate spellings for the current token.
+    /// - requires: `labels` are the numbers of the current token's labels.
     /// - ensures: appends the labels' menu to `self.candidates`, then sorts and
     ///   de-duplicates it (ascending [`MoldId`]; no hash-iteration or
     ///   allocation order reaches the decision).
@@ -2656,19 +2682,15 @@ impl<'pbg> Molder<'pbg>
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_labels(
         &mut self,
-        labels: &[CandidateLabel<'_>],
+        labels: &[LabelId],
         open: Option<MoldId>,
         menu: CandidateMenu,
     )
     {
         for &label in labels {
-            let Some(label) = self.candidate_label(label)
-            else {
-                continue;
-            };
             let candidates = match menu {
-                CandidateMenu::Fresh => self.pbg.fresh_candidates(label),
-                CandidateMenu::Declared => self.pbg.candidates(label),
+                CandidateMenu::Fresh => self.pbg.label_fresh_candidates(label),
+                CandidateMenu::Declared => self.pbg.label_candidates(label),
             };
             for &mold in candidates {
                 self.candidates.push(mold);
@@ -2712,18 +2734,18 @@ impl<'pbg> Molder<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
         )
     )]
-    #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|right| self.pbg.adjacencies().binary_search(&(open, *right)).is_ok() && self.pbg.mold(*right).is_ok_and(|def| labels.iter().any(|label| label.0 == def.label)))))]
+    #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|right| self.pbg.adjacencies().binary_search(&(open, *right)).is_ok() && self.pbg.mold_label(*right).is_some_and(|label| labels.contains(&label)))))]
     fn push_form_successors(
         &mut self,
-        labels: &[CandidateLabel<'_>],
+        labels: &[LabelId],
         open: MoldId,
     )
     {
         let pbg = self.pbg;
         for &(_open, right) in pbg.mold_successors(open) {
             if pbg
-                .mold(right)
-                .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                .mold_label(right)
+                .is_some_and(|label| labels.contains(&label))
             {
                 self.candidates.push(right);
             }
@@ -3644,10 +3666,11 @@ impl<'pbg> Molder<'pbg>
         // An opener the next token continues inside its own form beats the
         // one-tile forms the token could only follow from outside them, and of
         // readings that all end alike before the token the least wins.
-        if let Some(labels) = next_labels(tokens, index, source)
+        if let Some(labels) =
+            next_labels(tokens, index, source).map(|labels| LabelIds::resolve(self.pbg, &labels))
             && let Some(mold) = self
-                .continued_opener(&labels)
-                .or_else(|| self.complete_alike(&labels))
+                .continued_opener(labels.as_slice())
+                .or_else(|| self.complete_alike(labels.as_slice()))
         {
             return Some(mold);
         }
@@ -3673,14 +3696,14 @@ impl<'pbg> Molder<'pbg>
                 .any(|pair| matches!(pair, [left, right] if left == right));
         }
         if classed {
-            let mut window = [TokenLabels::new(); LOOKAHEAD + 1];
+            let mut window = [LabelIds::new(); LOOKAHEAD + 1];
             let mut positions = 0_usize;
             let mut cursor = index;
             while let Some((next, _token)) = next_significant(tokens, cursor)
                 && let Some(labels) = next_labels(tokens, cursor, source)
                 && let Some(slot) = window.get_mut(positions)
             {
-                *slot = labels;
+                *slot = LabelIds::resolve(self.pbg, &labels);
                 positions = positions.saturating_add(1);
                 cursor = next;
             }
@@ -3832,8 +3855,8 @@ impl<'pbg> Molder<'pbg>
                     return WindowEnd::Dominated;
                 }
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-                let labels = candidate_labels(token.lexeme, text);
-                self.settle_shadowing(state, &labels);
+                let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
+                state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
                 self.gather(state, token.lexeme, text, &labels);
                 state.settle_declaration_boundary(&self.candidates);
                 let ahead = Ahead::Stream {
@@ -3895,30 +3918,29 @@ impl<'pbg> Molder<'pbg>
         )
     )]
     #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
-        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))
+        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
             && (!bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted)
     } else {
-        !labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| !self.pbg.fresh_candidates(label).is_empty()))
+        !labels.as_slice().iter().any(|&label| !self.pbg.label_fresh_candidates(label).is_empty())
     })]
     fn follow(
         &self,
         mold: MoldId,
-        labels: &[CandidateLabel<'_>],
+        labels: &LabelIds,
     ) -> Follow
     {
         let pbg = self.pbg;
+        let ids = labels.as_slice();
         let continued = if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
             pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                pbg.mold(right)
-                    .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                pbg.mold_label(right)
+                    .is_some_and(|label| ids.contains(&label))
             }) || (bool::from(pbg.mold_is_form_last(mold))
                 && self.after_form(mold, labels) == Follow::Possible)
         }
         else {
-            labels.iter().any(|&label| {
-                self.candidate_label(label)
-                    .is_some_and(|label| !pbg.fresh_candidates(label).is_empty())
-            })
+            ids.iter()
+                .any(|&label| !pbg.label_fresh_candidates(label).is_empty())
         };
         if continued {
             Follow::Possible
@@ -3934,9 +3956,10 @@ impl<'pbg> Molder<'pbg>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Follow::Possible`] exactly when `labels` is empty or some
-    ///   label in it names a tile with a mold whose left context crosses a hole
-    ///   of `mold`'s sort, or of any sort when `mold`'s sort is [`Sort::Item`].
+    /// - ensures: [`Follow::Possible`] exactly when the token offers no label
+    ///   or some label in it names a tile with a mold whose left context
+    ///   crosses a hole of `mold`'s sort, or of any sort when `mold`'s sort is
+    ///   [`Sort::Item`].
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3947,20 +3970,20 @@ impl<'pbg> Molder<'pbg>
     ///   left hole, and dropping the empty case refutes the closer at the
     ///   stream's end.
     /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
-    #[spec(ensures: |ret| (ret == Follow::Possible) == (labels.is_empty() || self.pbg.mold(mold).is_ok_and(|ended| labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| bool::from(self.pbg.follows_form(label, ended.sort)))))))]
+    #[spec(ensures: |ret| (ret == Follow::Possible) == (labels.offered == 0 || self.pbg.mold(mold).is_ok_and(|ended| labels.as_slice().iter().any(|&label| bool::from(self.pbg.label_follows_form(label, ended.sort))))))]
     fn after_form(
         &self,
         mold: MoldId,
-        labels: &[CandidateLabel<'_>],
+        labels: &LabelIds,
     ) -> Follow
     {
         let pbg = self.pbg;
-        let precedes = labels.is_empty()
+        let precedes = labels.offered == 0
             || pbg.mold(mold).is_ok_and(|ended| {
-                labels.iter().any(|&label| {
-                    self.candidate_label(label)
-                        .is_some_and(|label| bool::from(pbg.follows_form(label, ended.sort)))
-                })
+                labels
+                    .as_slice()
+                    .iter()
+                    .any(|&label| bool::from(pbg.label_follows_form(label, ended.sort)))
             });
         if precedes {
             Follow::Possible
@@ -4009,7 +4032,8 @@ impl<'pbg> Molder<'pbg>
         source: &'src SourceFragment<'src>,
     )
     {
-        let Some(labels) = next_labels(tokens, index, source)
+        let Some(labels) =
+            next_labels(tokens, index, source).map(|labels| LabelIds::resolve(self.pbg, &labels))
         else {
             return;
         };
@@ -4076,7 +4100,7 @@ impl<'pbg> Molder<'pbg>
     )]
     #[spec(ensures: |ret| {
         let pbg = self.pbg;
-        let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
+        let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold_label(right).is_some_and(|label| labels.contains(&label)));
         let whole = |mold: MoldId| bool::from(pbg.mold_is_form_last(mold)) && !bool::from(pbg.mold_has_successor(mold)) && !bool::from(pbg.mold_has_predecessor(mold));
         let mut found = self.openers.iter().copied().filter(|&mold| continued(mold));
         let only = found.next().filter(|_| found.next().is_none());
@@ -4084,15 +4108,15 @@ impl<'pbg> Molder<'pbg>
     })]
     fn continued_opener(
         &self,
-        labels: &[CandidateLabel<'_>],
+        labels: &[LabelId],
     ) -> Option<MoldId>
     {
         let pbg = self.pbg;
         let mut continued = None;
         for &mold in &self.openers {
             if pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                pbg.mold(right)
-                    .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                pbg.mold_label(right)
+                    .is_some_and(|label| labels.contains(&label))
             }) {
                 if continued.replace(mold).is_some() {
                     return None;
@@ -4153,13 +4177,13 @@ impl<'pbg> Molder<'pbg>
     )]
     #[spec(ensures: |ret| {
         let pbg = self.pbg;
-        let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
+        let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold_label(right).is_some_and(|label| labels.contains(&label)));
         let key = |mold: MoldId| pbg.rule_of(mold).ok().map(|rule| (rule.sort(), rule.prec()));
         ret == self.openers.first().copied().filter(|&least| key(least).is_some() && self.openers.iter().all(|&mold| bool::from(pbg.mold_is_form_last(mold)) && !continued(mold) && key(mold) == key(least)))
     })]
     fn complete_alike(
         &self,
-        labels: &[CandidateLabel<'_>],
+        labels: &[LabelId],
     ) -> Option<MoldId>
     {
         let pbg = self.pbg;
@@ -4176,8 +4200,8 @@ impl<'pbg> Molder<'pbg>
                 bool::from(pbg.mold_is_form_last(mold))
                     && key(mold) == Some(shared)
                     && !pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                        pbg.mold(right)
-                            .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                        pbg.mold_label(right)
+                            .is_some_and(|label| labels.contains(&label))
                     })
             })
             .then_some(least)
@@ -4489,16 +4513,6 @@ mod tests
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         assert!(molder.candidates.is_empty());
-        for (declared, _) in pbg.candidate_counts() {
-            assert_eq!(
-                molder.candidate_label(CandidateLabel::from(declared.0)),
-                Some(declared)
-            );
-        }
-        assert_eq!(
-            molder.candidate_label(CandidateLabel::from("absent-label-for-witness")),
-            None
-        );
         let token = *label(SourceFragment::from("xyz")).first().unwrap();
         let expected: alloc::collections::BTreeSet<_> =
             ["xyz", "identifier", "type_variable", "hole_name"]
@@ -4520,15 +4534,17 @@ mod tests
                 .copied()
                 .eq(expected.iter().copied())
         );
-        molder.gather_labels(
-            &[
-                CandidateLabel::from("identifier"),
-                CandidateLabel::from("identifier"),
-                CandidateLabel::from("absent-label-for-witness"),
-            ],
-            None,
-            super::CandidateMenu::Declared,
-        );
+        // Labels resolve once, in order, an undeclared spelling left out.
+        let identifier = pbg
+            .label_id(gandr_surface_grammar::LabelText("identifier"))
+            .ok_or("no identifier label")?;
+        let resolved = super::LabelIds::resolve(&pbg, &[
+            CandidateLabel::from("identifier"),
+            CandidateLabel::from("absent-label-for-witness"),
+            CandidateLabel::from("identifier"),
+        ]);
+        assert_eq!(resolved.as_slice(), [identifier, identifier]);
+        molder.gather_labels(resolved.as_slice(), None, super::CandidateMenu::Declared);
         assert!(
             molder
                 .candidates
@@ -4554,7 +4570,8 @@ mod tests
         let &(open, successor) = pbg.adjacencies().first().unwrap();
         let label = pbg.mold(successor)?.label;
         molder.candidates = vec![open];
-        molder.push_form_successors(&[CandidateLabel::from(label)], open);
+        let successor_label = pbg.mold_label(successor).ok_or("no label")?;
+        molder.push_form_successors(&[successor_label], open);
         let expected: alloc::vec::Vec<_> = core::iter::once(open)
             .chain(pbg.adjacencies().iter().filter_map(|&(left, right)| {
                 (left == open && pbg.mold(right).is_ok_and(|def| def.label == label))
@@ -4563,7 +4580,7 @@ mod tests
             .collect();
         assert_eq!(molder.candidates, expected);
         let before = molder.candidates.clone();
-        molder.push_form_successors(&[CandidateLabel::from("absent-label-for-witness")], open);
+        molder.push_form_successors(&[], open);
         assert_eq!(molder.candidates, before);
         Ok(())
     }
@@ -4937,8 +4954,10 @@ mod tests
     {
         let pbg = built()?;
         let molder = Molder::new(&pbg);
-        let identifier = [CandidateLabel::from("identifier")];
-        let close = [CandidateLabel::from(")")];
+        let resolve = |label| super::LabelIds::resolve(&pbg, &[CandidateLabel::from(label)]);
+        let nothing = super::LabelIds::new();
+        let identifier = resolve("identifier");
+        let close = resolve(")");
         // `def f(x, y)`: the parameter comma is followed by a parameter name.
         let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
         assert_eq!(
@@ -4946,7 +4965,7 @@ mod tests
             Follow::Possible
         );
         assert_eq!(molder.follow(parameter_comma, &close), Follow::Refuted);
-        assert_eq!(molder.follow(parameter_comma, &[]), Follow::Refuted);
+        assert_eq!(molder.follow(parameter_comma, &nothing), Follow::Refuted);
         // `f(x, y)`: an argument fills the hole after the comma, and an
         // argument begins with a form's first tile, which a closer never is.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
@@ -4957,8 +4976,14 @@ mod tests
         // call.
         let call_close = mold_in(&pbg, CALL, TileLabel(")"), RightSide::Closed, &[])?;
         assert!(bool::from(pbg.mold_is_form_last(call_close)));
-        assert_eq!(molder.follow(call_close, &[]), Follow::Possible);
-        let open = [CandidateLabel::from("(")];
+        assert_eq!(molder.follow(call_close, &nothing), Follow::Possible);
+        // A token whose labels the grammar does not declare is a token all
+        // the same: it follows no form, where no token at all may.
+        assert_eq!(
+            molder.follow(call_close, &resolve("absent-label-for-witness")),
+            Follow::Refuted
+        );
+        let open = resolve("(");
         assert_eq!(molder.follow(call_close, &open), Follow::Possible);
         // `?(P). S` (#1229): the unknown type is a whole type, and no type
         // form goes on with `(` after one, while `.` and `)` stand after a
@@ -4971,10 +4996,7 @@ mod tests
             &[],
         )?;
         assert_eq!(molder.follow(unknown, &open), Follow::Refuted);
-        assert_eq!(
-            molder.follow(unknown, &[CandidateLabel::from(".")]),
-            Follow::Possible
-        );
+        assert_eq!(molder.follow(unknown, &resolve(".")), Follow::Possible);
         assert_eq!(molder.follow(unknown, &close), Follow::Possible);
         Ok(())
     }
@@ -5104,9 +5126,13 @@ mod tests
         let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
         // `Some(x)`: the pattern's name, which can also end its form.
         let pattern_name = constructor_pattern(&pbg)?;
-        let parenthesis = [CandidateLabel::from("(")];
-        let comma = [CandidateLabel::from(",")];
-        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 5] = [
+        let label = |spelled| {
+            pbg.label_id(gandr_surface_grammar::LabelText(spelled))
+                .ok_or("undeclared label")
+        };
+        let parenthesis = [label("(")?];
+        let comma = [label(",")?];
+        let cases: [(&[MoldId], &[gandr_surface_grammar::LabelId], Option<MoldId>); 5] = [
             (&[application, bare], &parenthesis, Some(application)),
             (&[application, bare], &comma, None),
             (&[application, declared], &parenthesis, None),
@@ -5197,10 +5223,14 @@ mod tests
             RightSide::Closed,
             &[],
         )?;
-        let arrow = [CandidateLabel::from("=>")];
-        let parenthesis = [CandidateLabel::from("(")];
-        let comma = [CandidateLabel::from(",")];
-        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 6] = [
+        let label = |spelled| {
+            pbg.label_id(gandr_surface_grammar::LabelText(spelled))
+                .ok_or("undeclared label")
+        };
+        let arrow = [label("=>")?];
+        let parenthesis = [label("(")?];
+        let comma = [label(",")?];
+        let cases: [(&[MoldId], &[gandr_surface_grammar::LabelId], Option<MoldId>); 6] = [
             (
                 &[primitive, variable],
                 &comma,
