@@ -68,6 +68,10 @@ use std::sync::PoisonError;
 use std::time::SystemTime;
 
 use anodized::spec;
+use gandr_core_publish::Access;
+use gandr_core_publish::Contents;
+use gandr_core_publish::Placement;
+use gandr_core_publish::publish_as;
 use gandr_surface_syntax::SourceText;
 
 /// The size, in bytes, at and above which the reader maps a file.
@@ -331,16 +335,16 @@ impl Reader
     }
 }
 
-/// Write `text` over the file at `path` through a sibling temporary file
-/// renamed over it, carrying the file's permissions, so a mapping of the
-/// file's present inode keeps every page.
+/// Write `text` over the file at `path` through the one writer, carrying the
+/// file's permissions, so a mapping of the file's present inode keeps every
+/// page.
 ///
 /// # Specification
 /// - ensures: on success the file at `path` holds exactly `text`, with the
 ///   permissions it had, and `path` names a new inode; on failure the file is
-///   as it was and no temporary file is left.
-/// - fails: the I/O error inspecting the file, or creating, writing or renaming
-///   the temporary file, met.
+///   as it was, and the writer has attempted to remove its temporary.
+/// - fails: the I/O error inspecting the file, or the kind of the step the
+///   writer's publication refused.
 /// - panics: none.
 ///
 /// # Errors
@@ -356,17 +360,13 @@ fn replace(
 ) -> io::Result<()>
 {
     let permissions = std::fs::metadata(path)?.permissions();
-    let mut name = std::ffi::OsString::from(".");
-    name.push(path.file_name().unwrap_or_default());
-    name.push(format!(".{}.tmp", std::process::id()));
-    let temporary = path.with_file_name(name);
-    let written = std::fs::write(&temporary, text.as_ref())
-        .and_then(|()| std::fs::set_permissions(&temporary, permissions))
-        .and_then(|()| std::fs::rename(&temporary, path));
-    if written.is_err() {
-        let _gone = std::fs::remove_file(&temporary);
-    }
-    written
+    publish_as(
+        path,
+        Contents(text.as_ref().as_bytes()),
+        Placement::Replace,
+        &Access::Exactly(permissions),
+    )
+    .map_err(|refused| io::Error::from(refused.kind))
 }
 
 #[cfg(test)]

@@ -192,6 +192,7 @@ digraph crates {
   "surface-dispatcher" -> "core-fork";
   "surface-dispatcher" -> "core-incremental";
   "surface-dispatcher" -> "core-nbe";
+  "surface-dispatcher" -> "core-publish";
   "surface-dispatcher" -> "core-sequent";
   "surface-dispatcher" -> "core-term";
   "surface-dispatcher" -> "kernel-core";
@@ -212,6 +213,7 @@ digraph crates {
   "surface-dispatcher" -> "surface-syntax";
   "surface-dispatcher" -> "theory-cell-complexes";
   "surface-driver" -> "core-incremental";
+  "surface-driver" -> "core-publish";
   "surface-driver" -> "kernel-core";
   "surface-driver" -> "runtime-net";
   "surface-driver" -> "storage-store";

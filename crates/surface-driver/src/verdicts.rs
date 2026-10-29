@@ -14,6 +14,12 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use gandr_core_incremental::FileVerdictStore;
+use gandr_core_publish::Access;
+use gandr_core_publish::Contents;
+use gandr_core_publish::Placement;
+use gandr_core_publish::Step;
+use gandr_core_publish::Unpublished;
+use gandr_core_publish::publish_as;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_surface_dispatcher::VerdictCache;
@@ -148,29 +154,15 @@ fn minted(path: &Path) -> io::Result<KernelSigner>
     }
     let mut seed = [0_u8; 32];
     getrandom::fill(&mut seed).map_err(|error| io::Error::other(error.to_string()))?;
-    let process = std::process::id();
-    let nonce = core::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), process);
-    let private = path.with_extension(format!("key.{process}-{nonce:016x}"));
-    // Written whole into a file this call creates under a private name, then
-    // linked into place: a reader never sees a partial key, and a link refuses
-    // to replace one another process published first.
-    let mut options = std::fs::OpenOptions::new();
-    let _writing = options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        let _private = std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    }
-    let published = options
-        .open(&private)
-        .and_then(|mut file| {
-            io::Write::write_all(&mut file, &seed)?;
-            file.sync_all()
-        })
-        .and_then(|()| std::fs::hard_link(&private, path));
-    drop(std::fs::remove_file(&private));
-    match published {
+    // Kept, not replaced: a reader never sees a partial key, and the link
+    // refuses to replace one another process published first.
+    match publish_as(path, Contents(&seed), Placement::Keep, &Access::Owner) {
         Ok(()) => Ok(KernelSigner::from(seed)),
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => stored(path),
-        Err(error) => Err(error),
+        Err(Unpublished {
+            step: Step::Link,
+            kind: io::ErrorKind::AlreadyExists,
+            ..
+        }) => stored(path),
+        Err(refused) => Err(io::Error::from(refused.kind)),
     }
 }

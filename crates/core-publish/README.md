@@ -1,6 +1,6 @@
 # gandr-core-publish
 
-The one writer that publishes a file whole: a private temporary, created exclusively, then renamed onto the file's name.
+The one writer that publishes a file whole: a private temporary, created exclusively, then renamed onto the file's name or linked to it.
 
 <!-- toc -->
 
@@ -15,11 +15,11 @@ The one writer that publishes a file whole: a private temporary, created exclusi
 
 ## Synopsis
 
-**What.** A small crate: `publish` writes a file's contents into a temporary beside the file and renames it onto the file's name. A reader of the directory sees the old bytes or the new ones, never half of either. `Unpublished` names the file, the step the file system refused and what it said.
+**What.** A small crate: `publish_as` writes a file's contents into a temporary beside the file, then renames it onto the file's name or links it there. A rename replaces the file, so a reader of the directory sees the old bytes or the new ones, never half of either. A link keeps a file already at the name. `publish` is the rename at the process's default access. `Unpublished` names the file, the step the file system refused and what it said.
 
-**Why.** The record stores of `core-incremental` and the planes and roots of `storage-store` each published their files this way. A `core` crate depends on no `storage` crate, so the writer lives in a crate of its own. A consumer at any layer from the core upward reaches it.
+**Why.** The record stores of `core-incremental`, the planes and roots of `storage-store`, the dispatcher's rewrite of a mapped source and the driver's kernel key each published their files this way. A `core` crate depends on no `storage` crate, so the writer lives in a crate of its own. A consumer at any layer from the core upward reaches it.
 
-**How.** The temporary's name is the file's, then `.tmp-`, the process and a nonce. The write opens it only by creating it, so a name that another writer or a squatter holds is never written through. A guard owns the temporary from its creation, and on every exit but the rename it attempts to remove the file. [`src/lib.rs`](src/lib.rs) states each step's obligations.
+**How.** The temporary's name is the file's, then `.tmp-`, the process and a nonce. The write opens it only by creating it, so a name that another writer or a squatter holds is never written through. Its access holds from its creation for an owner's file, and from before it takes the name for given permissions. A guard owns the temporary from its creation, and on every exit but the rename it attempts to remove the temporary's own name. [`src/lib.rs`](src/lib.rs) states each step's obligations.
 
 ## References
 
@@ -28,13 +28,15 @@ The one writer that publishes a file whole: a private temporary, created exclusi
 ## Provided features
 
 - `publish(directory, name, contents)`: the file `name` of `directory` holds `contents`, and no temporary of the publication remains.
-- `Unpublished`: the file, the `Step` refused (`Create`, `Write` or `Rename`) and the file system's `io::ErrorKind`. A run of taken temporary names is a `Create` refusal with `AlreadyExists`.
+- `publish_as(file, contents, placement, access)`: `Placement::Replace` renames, and `Placement::Keep` syncs, then links, so a file already at the name stays. `Access` is `Default`, `Owner` or `Exactly(permissions)`.
+- `Unpublished`: the file, the `Step` refused (`Create`, `Write`, `Rename` or `Link`) and the file system's `io::ErrorKind`. A run of taken temporary names is a `Create` refusal with `AlreadyExists`, and a kept file's held name a `Link` refusal with `AlreadyExists`.
 
 ## Expected features
 
 - **An existing directory.** The writer creates no directory. A missing one refuses the creation.
 - **One file name.** `name` spells one file name, with no separator.
-- **Atomicity, not durability.** No sync precedes or follows the rename, so a crash may lose a file just published.
+- **Atomicity, not durability, for a replacement.** No sync precedes or follows the rename, so a crash may lose a file just published. A kept file is synced before its link, since no later publication replaces it.
+- **Links for a kept file.** The file system holds hard links. One that refuses them refuses every `Keep` with `Link`.
 
 ## Examples
 
