@@ -730,6 +730,64 @@ pub enum FixpointEvidence
     },
 }
 
+impl FixpointEvidence
+{
+    /// The argument the fixpoint's recursion descends on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a staged fixpoint's own position, the first argument under
+    ///   structural descent, and none for a partial fixpoint, which claims no
+    ///   descent.
+    /// - provides: the position a typing replays a descent claim at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the three claims, the staged one past the first
+    ///   argument, separate a partial fixpoint read at its first argument and a
+    ///   staged position read as the first.
+    /// - witness: `term::tests::a_fixpoint_descends_where_it_claims_and_gates_where_it_unfolds`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == match self {
+        Self::Partial => None,
+        Self::StructuralDescent => Some(StagedPosition(0)),
+        Self::Staged { position } => Some(position),
+    })]
+    pub fn descent(self) -> Option<StagedPosition>
+    {
+        match self {
+            Self::Partial => None,
+            Self::StructuralDescent => Some(StagedPosition::default()),
+            Self::Staged { position } => Some(position),
+        }
+    }
+
+    /// The argument the fixpoint's unfolding waits on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the descent, or the first argument for a partial fixpoint. An
+    ///   engine that runs a partial fixpoint unfolds it at that gate, and the
+    ///   kernel's replay declines there.
+    /// - provides: the position an engine reads before it unfolds a fixpoint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::descent`], which separates a partial
+    ///   fixpoint gated nowhere.
+    /// - witness: `term::tests::a_fixpoint_descends_where_it_claims_and_gates_where_it_unfolds`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == self.descent().unwrap_or(StagedPosition(0)))]
+    pub fn gate(self) -> StagedPosition
+    {
+        self.descent().unwrap_or_default()
+    }
+}
+
 /// A stage the recursion typing mints.
 ///
 /// It is the class of the values one fixpoint's self-reference may take,
@@ -1114,6 +1172,27 @@ mod tests
     use gandr_kernel_conversion_trace::ConversionSide;
 
     use super::EvidenceWord;
+    use super::FixpointEvidence;
+    use super::StagedPosition;
+
+    #[test]
+    fn a_fixpoint_descends_where_it_claims_and_gates_where_it_unfolds()
+    {
+        let first = StagedPosition::from(0_usize);
+        let third = StagedPosition::from(2_usize);
+        for (evidence, descent, gate) in [
+            (FixpointEvidence::Partial, None, first),
+            (FixpointEvidence::StructuralDescent, Some(first), first),
+            (
+                FixpointEvidence::Staged { position: third },
+                Some(third),
+                third,
+            ),
+        ] {
+            assert_eq!(evidence.descent(), descent, "{evidence:?}");
+            assert_eq!(evidence.gate(), gate, "{evidence:?}");
+        }
+    }
 
     #[test]
     fn evidence_words_reject_unknown_and_oversized_premises()

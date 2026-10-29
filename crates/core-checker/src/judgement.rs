@@ -492,9 +492,7 @@ use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
-use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
-use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::Atom;
@@ -6296,11 +6294,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Computation::Fixpoint { body, evidence } => {
-                let position = match evidence {
-                    FixpointEvidence::Partial => None,
-                    FixpointEvidence::StructuralDescent => Some(StagedPosition::default()),
-                    FixpointEvidence::Staged { position } => Some(position),
-                };
+                let position = evidence.descent();
                 let (own, inside) = match position {
                     None => {
                         crate::divergence::require(self.context, term, body, expected)?;

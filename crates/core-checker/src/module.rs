@@ -1798,16 +1798,14 @@ fn follows(
     else {
         return plain;
     };
-    let recursed = match context.arena().computation(root) {
-        Some(&gandr_core_term::Computation::Fixpoint {
-            evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent,
-            ..
-        }) => gandr_kernel_term::StagedPosition::default(),
-        Some(&gandr_core_term::Computation::Fixpoint {
-            evidence: gandr_kernel_term::FixpointEvidence::Staged { position },
-            ..
-        }) => position,
-        Some(_) | None => return plain,
+    let Some(&gandr_core_term::Computation::Fixpoint { evidence, .. }) =
+        context.arena().computation(root)
+    else {
+        return plain;
+    };
+    let Some(recursed) = evidence.descent()
+    else {
+        return plain;
     };
     // Only a fixpoint whose type returns the type it recurses on is judged
     // again: no other can follow its parameter.
