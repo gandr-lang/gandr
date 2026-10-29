@@ -2833,7 +2833,15 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
+        // The collection lists the explicit parameters alone: an operand the
+        // lowering passes for an omitted entry pairs with none.
         let typed: Vec<(NodeIndex, Placed, bool)> = (applied.start .. applied.end)
+            .filter(|position| {
+                !self.instanced.contains_key(position)
+                    && !self.nominated.contains_key(position)
+                    && !self.components.contains_key(position)
+                    && !self.kept_implicits.contains(position)
+            })
             .zip(parameters)
             .filter_map(|(position, parameter)| match parameter.declared {
                 Maybe::Present(declared) => {
@@ -12264,12 +12272,17 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let uniform = stretch(&self.parameters, recursion.uniform);
+        let first = arguments.start;
         let arguments = stretch(&self.operands, arguments);
         if arguments.len() != stretch(&self.parameters, recursion.parameters).len() {
             return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
         let mut passed_names = Vec::with_capacity(uniform.len());
-        for (parameter, &argument) in uniform.iter().zip(arguments) {
+        for (at, (parameter, &argument)) in uniform.iter().zip(arguments).enumerate() {
+            // An implicit the call omits is the function's own.
+            if self.kept_implicits.contains(&first.saturating_add(at)) {
+                continue;
+            }
             let Some(node) = self.tree.node(argument)
             else {
                 return Err(call.out(FragmentBoundary::NonUniform));
@@ -12885,20 +12898,27 @@ impl<'source> Lowerer<'_, 'source>
         ))
     }
 
-    /// Pass the instances a recursive call headed by the instantiation `head`
-    /// omits: each label of its function's result row, after the arguments
-    /// `written`, as the one instance of its interface in scope.
+    /// Lay out a recursive call headed by the instantiation `head` in its
+    /// function's merged telescope's order, passing each entry it omits: an
+    /// implicit and an instance, as the call's arguments `written` give the
+    /// explicit ones.
     ///
     /// # Specification
     /// - requires: `head` is an instantiation form read under `frame`;
     ///   `written` is the call's arguments, the last the operand store holds.
     /// - ensures: when the head names the recursive function `site` stands in,
     ///   and `written` holds one argument per explicit parameter of its merged
-    ///   telescope, one operand per instance entry is pushed after them, in
-    ///   order, each resolved as a call's omitted instance
-    ///   ([`Self::resolved_instance`]); otherwise nothing changes, and the
-    ///   claim's arity check reads the call ([`Self::uniform_descent`]).
-    /// - fails: [`Self::resolved_instance`]'s refusals; the head's, as
+    ///   telescope, the operands from `written.start` are one per parameter in
+    ///   the telescope's order: each explicit one the next written argument; an
+    ///   implicit before the fixpoint the function's own, kept in
+    ///   [`Lowerer::kept_implicits`] and left out of the application; one past
+    ///   it a hole the call nominates ([`Self::nominate`]), a model implicit
+    ///   one per component ([`Self::pass_model`]); an instance the one of its
+    ///   interface in scope ([`Self::resolved_instance`]). Otherwise nothing
+    ///   changes, and the claim's arity check reads the call
+    ///   ([`Self::uniform_descent`]).
+    /// - fails: [`Self::resolved_instance`]'s, [`Self::nominate`]'s and
+    ///   [`Self::pass_model`]'s refusals; the head's, as
     ///   [`Self::instantiated_recursion`].
     /// - panics: none.
     ///
@@ -12907,13 +12927,16 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a descent under a row that labels a theory's instance
-    ///   passes the function's own instance.
+    ///   passes the function's own instance; a descent under an implicit
+    ///   telescope passes the function's own implicit before its staged
+    ///   parameter.
     /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
+    /// - witness: `lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828`
     #[spec(
         captures: before = self.operands.len(),
         ensures: |ret| ret.is_err() || self.operands.len() >= before,
     )]
-    pub(super) fn omitted_instances(
+    pub(super) fn omitted_entries(
         &mut self,
         site: Site,
         frame: Frame,
@@ -12925,10 +12948,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
-        let Some(named) = self
-            .recursions
-            .get(&binder)
-            .map(|recursion| recursion.named)
+        let Some(recursion) = self.recursions.get(&binder).copied()
         else {
             return Ok(());
         };
@@ -12940,7 +12960,7 @@ impl<'source> Lowerer<'_, 'source>
             .collected
             .slots
             .get(usize::from(owner))
-            .filter(|slot| slot.named.node == named)
+            .filter(|slot| slot.named.node == recursion.named)
             .map(|slot| slot.name)
         else {
             return Ok(());
@@ -12953,16 +12973,55 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .filter(|entry| entry.plicity == crate::module::Plicity::Explicit)
             .count();
-        if written.end.saturating_sub(written.start) != explicit {
+        if written.end.saturating_sub(written.start) != explicit || explicit == entries.len() {
             return Ok(());
         }
-        for entry in entries
-            .into_iter()
-            .filter(|entry| entry.plicity == crate::module::Plicity::Instance)
-        {
-            let index = self.resolved_instance(site, frame, function, entry)?;
-            let _first = self.instanced.insert(self.operands.len(), index);
-            self.operands.push(site.at.node);
+        // The parameters before the fixpoint, which the call leaves out of
+        // its application.
+        let kept = stretch(&self.parameters, recursion.uniform).len();
+        let arguments = self.operands.split_off(written.start);
+        let mut arguments = arguments.into_iter();
+        let mut place = 0_usize;
+        for entry in entries {
+            if let Some((_, slot)) = self.implicit_slot(site, entry)? {
+                let width = slot.components().len();
+                if place < kept {
+                    for _component in 0 .. width {
+                        let _fresh = self.kept_implicits.insert(self.operands.len());
+                        self.operands.push(site.at.node);
+                    }
+                }
+                else {
+                    self.pass_model(site, frame, (function, entry.name), &slot, None)?;
+                }
+                place = place.saturating_add(width);
+                continue;
+            }
+            match entry.plicity {
+                crate::module::Plicity::Explicit => {
+                    if let Some(argument) = arguments.next() {
+                        self.operands.push(argument);
+                    }
+                },
+                crate::module::Plicity::Implicit if place < kept => {
+                    let _fresh = self.kept_implicits.insert(self.operands.len());
+                    self.operands.push(site.at.node);
+                },
+                crate::module::Plicity::Implicit => {
+                    let hole = self.nominate(super::implicit::Nomination::Omitted {
+                        function,
+                        implicit: entry.name,
+                    })?;
+                    let _first = self.nominated.insert(self.operands.len(), hole);
+                    self.operands.push(site.at.node);
+                },
+                crate::module::Plicity::Instance => {
+                    let index = self.resolved_instance(site, frame, function, entry)?;
+                    let _first = self.instanced.insert(self.operands.len(), index);
+                    self.operands.push(site.at.node);
+                },
+            }
+            place = place.saturating_add(1);
         }
 
         Ok(())

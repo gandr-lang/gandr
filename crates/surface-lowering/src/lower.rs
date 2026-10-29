@@ -3529,6 +3529,12 @@ struct Lowerer<'run, 'source>
     /// call's own, which no value lowers at, and the application mints the
     /// component's value there ([`Self::mint_supplied`]).
     components: BTreeMap<usize, (Arc<model::Supplied>, model::ComponentPlace)>,
+    /// Each operand a recursive call passes for an implicit it omits before
+    /// its fixpoint, by its place among the operands: the function's
+    /// own implicit, which the fixpoint binds outside and the call leaves out
+    /// of its application. The operand's node is the call's own, which no
+    /// value lowers at.
+    kept_implicits: BTreeSet<usize>,
     /// Each model implicit flattened into one parameter per component, by the
     /// frame its name resolves to.
     flattened: BTreeMap<ScopeId, model::Flattened>,
@@ -5304,6 +5310,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             abstracted: BTreeMap::new(),
             instanced: BTreeMap::new(),
             components: BTreeMap::new(),
+            kept_implicits: BTreeSet::new(),
             flattened: BTreeMap::new(),
             written_slots: BTreeMap::new(),
             nominations: BTreeMap::new(),
@@ -10011,9 +10018,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // The mode variable a deduced receiver is written at, `self : m T`.
         let mut deduced: Option<SurfaceName<'source>> = None;
         // A recursive tail stages the parameter its body's matches take
-        // apart, read off the syntax ahead before anything binds, a merged
-        // telescope's parameters among it. A parameter whose type is a decode
-        // carries no stage (`Self::decodes`).
+        // apart, read off the syntax ahead before anything binds: the written
+        // list, which the calls' arguments follow, then counted over a merged
+        // telescope's parameters. A parameter whose type is a decode carries
+        // no stage (`Self::decodes`).
         let staged = match (recursive, named) {
             (Maybe::Present(_), Maybe::Present(own)) => {
                 let mut ahead = cursor.clone();
@@ -10053,7 +10061,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Maybe::Present(owner) => self.joint(owner),
                     Maybe::Absent(_) => native::Joint::alone(),
                 };
-                Some(self.staged_by_body(own, &joint, &names, &decoded, &roots)?)
+                let written = self.staged_by_body(own, &joint, &names, &decoded, &roots)?;
+                Some(self.merged_staging(site, written)?)
             },
             _ => None,
         };
@@ -11212,13 +11221,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             )
         });
-        // A descent omits its function's instances, as any call may.
+        // A descent omits its function's implicits and instances, as any call
+        // may.
         if descends {
             let omitted = Stretch {
                 start,
                 end: self.operands.len(),
             };
-            self.omitted_instances(site, frame, head, omitted)?;
+            self.omitted_entries(site, frame, head, omitted)?;
         }
         let written = Stretch {
             start,
@@ -11248,7 +11258,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.parameters_classify(site, frame, head, written)?;
         self.read(head.node, Reading::Head(frame));
         for position in written.start .. written.end {
-            if self.instanced.contains_key(&position) {
+            if self.instanced.contains_key(&position)
+                || self.nominated.contains_key(&position)
+                || self.components.contains_key(&position)
+                || self.kept_implicits.contains(&position)
+            {
                 continue;
             }
             if let Some(&argument) = self.operands.get(position) {

@@ -101,6 +101,11 @@ def counted() -> Nat { length_nat(small) }
 @[ runs("Succ(Succ(Zero))") ]
 def counted_elided : () => Nat = length_nat_elided(small);
 
+/// The length of `small`, through the fold whose element type is implicit:
+/// the call omits `a`, and `small` determines it.
+@[ runs("Succ(Succ(Zero))") ]
+def counted_implicit() -> Nat { length_implicit(small) }
+
 /// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined() -> List(Nat) {
@@ -113,6 +118,12 @@ def joined_elided : () => List(Nat) = append_nat_elided(
   small,
   (Cons(three, (Nil : List(Nat))) : List(Nat))
 );
+
+/// The same append, through the fold whose element type is implicit.
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
+def joined_implicit() -> List(Nat) {
+  append_implicit(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
+}
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]

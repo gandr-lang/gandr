@@ -953,7 +953,8 @@ fn module_signature_field() -> Regex
     ])
 }
 
-/// Build the `def rec` recursive tail: `rec id (params) -> T? { body }`.
+/// Build the `def rec` recursive tail: `rec id @[implicits]? (params) -> T? {
+/// body }`.
 ///
 /// A single `{ … }` with an interior alternative separates the corecursive
 /// copattern-clause body from the ordinary statement body, so the two never
@@ -965,8 +966,9 @@ fn module_signature_field() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a rec keyword, name and parameters followed by an optional result
-///   and one brace-delimited alternative body.
+/// - ensures: a rec keyword, name, optional implicit telescope (as the regular
+///   tail admits) and parameters followed by an optional result and one
+///   brace-delimited alternative body.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -976,12 +978,13 @@ fn module_signature_field() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rec")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 8 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rec")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(7).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn def_rec_tail() -> Regex
 {
     seq([
         t(TileLabel("rec")),
         t(TileLabel("identifier")),
+        opt(implicit_telescope()),
         params(),
         opt(seq([t(TileLabel("->")), h(Sort::Type)])),
         t(TileLabel("{")),
