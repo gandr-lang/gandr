@@ -698,6 +698,25 @@ pub struct Expectations
     pub guard: Maybe<CorpusRefusal, guard::Absent>,
 }
 
+impl Expectations
+{
+    /// What a name carrying no expectation states: unattributed, checks owing
+    /// nothing, unguarded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn unattributed() -> Self
+    {
+        Self {
+            membership: Membership::Unattributed,
+            stated: owing_nothing(),
+            guard: Maybe::Absent(guard::Absent::Admitted),
+        }
+    }
+}
+
 /// Read the expectations among `attributes` under `root`, their payloads out
 /// of `arena` or, for a payload written unquoted, out of `spelled`.
 ///
@@ -794,11 +813,7 @@ where
         .collect();
     let Some(&(schema, entry)) = written.first()
     else {
-        return Ok(Expectations {
-            membership: Membership::Unattributed,
-            stated: owing_nothing(),
-            guard: Maybe::Absent(guard::Absent::Admitted),
-        });
+        return Ok(Expectations::unattributed());
     };
     if let Some(refusal) = written
         .iter()
