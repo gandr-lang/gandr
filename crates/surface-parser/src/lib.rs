@@ -172,6 +172,7 @@ pub use crate::mold::TokenLabels;
 pub use crate::mold::TokenRun;
 pub use crate::mold::TokenText;
 pub use crate::mold::candidate_labels;
+pub use crate::mold::heads_declaration;
 pub use crate::oblig::Delta;
 pub use crate::oblig::DeltaEmptyStatus;
 pub use crate::oblig::OBLIG_CLASS_COUNT;

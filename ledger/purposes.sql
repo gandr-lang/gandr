@@ -2974,6 +2974,7 @@ INSERT INTO purpose VALUES('surface-parser','mold::TokenLabels','struct','A toke
 INSERT INTO purpose VALUES('surface-parser','mold::TokenRun','struct','A half-open run of token-stream positions: the tokens one molding pass pushes, inside a stream whose later tokens it still reads as lookahead.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','mold::TokenText','struct','Exact text of one labeled token.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','mold::candidate_labels','function','Return the grammar tile labels to enumerate for a labeled token.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','mold::heads_declaration','function','Return whether some fresh-slot reading of a token opens an item-position declaration under `pbg`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','oblig::Delta','struct','The lexicographic obligation delta of a candidate melder decision.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','oblig::DeltaEmptyStatus','struct','Whether a delta records no obligation changes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','oblig::OBLIG_CLASS_COUNT','constant','The number of obligation severity classes.',NULL,'fits','sound',NULL);
