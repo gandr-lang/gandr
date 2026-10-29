@@ -1,0 +1,164 @@
+// Reflexivity is a unit of `then` beside a stuck transport and beside an
+// action on reflexivity.
+//
+// A coherence proved by path induction reaches its base case through these
+// units, so the kernel re-derives what the checker accepts.
+//
+// The associator is a transport along a variable path, so it stays stuck.
+// The action of a function on reflexivity reduces to reflexivity. A
+// composite whose operand runs and sticks waits on its path, so a whiskered
+// reflexivity after the associator reduces before the associator unfolds.
+//
+// - see: #3734 — the kernel's replay of these units
+// - see: `then.gandr` — the composite of two paths
+// - see: `transport-dependent.gandr` — based path induction
+
+/// The composite of two paths, whose type states its endpoints.
+def composite(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(
+  A,
+  x,
+  z
+) {
+  p then q
+}
+
+/// A function's action on a path, whose type states its endpoints.
+def ap(B : Type, C : Type, F : B => C, b1 : B, b2 : B, p : Path(B, b1, b2)) -> Path(
+  C,
+  F(b1),
+  F(b2)
+) {
+  cong(F, p)
+}
+
+/// The associator by based path induction on `h`.
+def associator(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  transport(
+    (v : A, k : Path(A, z, v)) => Path(Path(A, x, v), (f then g) then k, f then (g then k)),
+    h,
+    here(z),
+    here(h),
+    here(f then g)
+  )
+}
+
+/// The right whisker of a path of paths by a path.
+def rightWhisker(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  ap(
+    Path(A, x, y),
+    Path(A, x, z),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    f1,
+    f2,
+    a
+  )
+}
+
+/// The associator before reflexivity is the associator.
+def assocThenHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (f then g) then h, f then (g then h)),
+  composite(
+    Path(A, x, w),
+    (f then g) then h,
+    f then (g then h),
+    f then (g then h),
+    associator(A, x, y, z, w, f, g, h),
+    here(f then (g then h))
+  ),
+  associator(A, x, y, z, w, f, g, h)
+) {
+  here(associator(A, x, y, z, w, f, g, h))
+}
+
+/// Reflexivity before the associator is the associator.
+def hereThenAssoc(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (f then g) then h, f then (g then h)),
+  composite(
+    Path(A, x, w),
+    (f then g) then h,
+    (f then g) then h,
+    f then (g then h),
+    here((f then g) then h),
+    associator(A, x, y, z, w, f, g, h)
+  ),
+  associator(A, x, y, z, w, f, g, h)
+) {
+  here(associator(A, x, y, z, w, f, g, h))
+}
+
+/// The associator before a whiskered reflexivity is the associator.
+def assocThenWhiskeredHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (f then g) then h, f then (g then h)),
+  composite(
+    Path(A, x, w),
+    (f then g) then h,
+    f then (g then h),
+    f then (g then h),
+    associator(A, x, y, z, w, f, g, h),
+    rightWhisker(A, x, y, w, f, f, here(f), g then h)
+  ),
+  associator(A, x, y, z, w, f, g, h)
+) {
+  here(associator(A, x, y, z, w, f, g, h))
+}
+
+/// A homotopy's component before the action on reflexivity is the component.
+def componentThenApHere(
+  B : Type,
+  C : Type,
+  F : B => C,
+  G : B => C,
+  H : (b : B) => Path(C, F(b), G(b)),
+  b1 : B
+) -> Path(
+  Path(C, F(b1), G(b1)),
+  composite(C, F(b1), G(b1), G(b1), H(b1), ap(B, C, G, b1, b1, here(b1))),
+  H(b1)
+) {
+  here(H(b1))
+}

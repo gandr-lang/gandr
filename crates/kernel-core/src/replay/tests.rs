@@ -3076,6 +3076,58 @@ fn a_path_transport_unfolds_its_path_where_the_dialogue_names_it()
 }
 
 #[test]
+fn a_held_path_runs_over_its_operand_as_it_was_3734()
+{
+    // `tr(y. Path(Unit, (), y), ⟨force g⟩, ⟨force d⟩)` against `return ⟨force
+    // d⟩`, `g = thunk (return here(()))` and `d = thunk (force o)` definitions
+    // and `o` opaque: `assoc(f, g, h) then ⟨whiskerRight(…)⟩` in miniature.
+    // The append runs `d` through its definition to `o`, where it sticks, so
+    // the operand stays `⟨force d⟩` and the transport stands on its held
+    // path. The dialogue unfolds `g`, the transport along reflexivity
+    // returns the operand as it was, and the two sides are one shared node.
+    // Kept as the run left it, the operand is `⟨force o⟩`, and the shared
+    // comparison the dialogue names finds the sides apart.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let reflexivity = arena.value_here(unit);
+    let returned = arena.computation_return(reflexivity);
+    let path_body = arena.value_thunk(returned);
+    let opaque = arena.value_constant(ConstantIndex::from(2_usize));
+    let forced = arena.computation_force(opaque);
+    let operand_body = arena.value_thunk(forced);
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Body(path_body),
+        Unfoldable::Body(operand_body),
+        Unfoldable::Opaque,
+    ]));
+    let path = arena.value_constant(ConstantIndex::from(0_usize));
+    let path = arena.computation_force(path);
+    let path = arena.value_returned(path);
+    let operand = arena.value_constant(ConstantIndex::from(1_usize));
+    let operand = arena.computation_force(operand);
+    let operand = arena.value_returned(operand);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let motive = arena.value_type_path(unit_type, unit, moving);
+    let moved = arena.computation_path_transport(motive, path, operand);
+    let kept = arena.computation_return(operand);
+    let sides = ReplaySides::Computations(moved, kept);
+    assert_eq!(
+        run(&mut arena, &unfoldings, sides, EngineClaim::Convertible, &[
+            ConversionDecision::Unfold {
+                constant: ReplayNode::Other,
+            },
+            ConversionDecision::ReduceLeft {
+                redex: ReplayNode::Other,
+            },
+            SHARED,
+        ]),
+        KernelVerdict::Convertible,
+        "a run stuck past a definition leaves the operand as it was"
+    );
+}
+
+#[test]
 fn two_stuck_path_transports_compare_by_motive_and_value()
 {
     // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as
@@ -3131,6 +3183,75 @@ fn two_stuck_path_transports_compare_by_motive_and_value()
             at: TracePosition::from(1)
         }),
         "the motives agree, so a refutation there is contradicted"
+    );
+}
+
+#[test]
+fn two_stuck_telescope_transports_compare_by_motive_start_over_and_value()
+{
+    // `transport((y : N, z : N) => Path(N, y, z), p, s, o, v)` along one
+    // variable path `p`, as an associator by based path induction leaves
+    // it: a family reading both entries keeps it stuck. The motives, minted
+    // apart, compare as codes, then the starts, the paths over and the
+    // values, in the order the engine's spines compare them.
+    let mut arena = TermArena::new();
+    let unfoldings = Unfoldings::new(Vec::new());
+    let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let unit = arena.value_unit();
+    let motive = |arena: &mut TermArena| {
+        let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let inner = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let family = arena.value_type_path(nat, outer, inner);
+        let returner = arena.comp_type_returner(family);
+        let second = arena.comp_type_pi(nat, returner);
+        arena.comp_type_pi(nat, second)
+    };
+    let one_motive = motive(&mut arena);
+    let other_motive = motive(&mut arena);
+    let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let over = arena.value_here(unit);
+    let injected = arena.value_injection(Side::Left.into(), unit);
+    let one = arena.computation_telescope_transport(one_motive, path, unit, over, unit);
+    let same = arena.computation_telescope_transport(other_motive, path, unit, over, unit);
+    let apart = arena.computation_telescope_transport(other_motive, path, unit, over, injected);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(one, same),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        KernelVerdict::Convertible,
+        "two telescope transports along one path whose premises agree are one"
+    );
+    let transports = ReplaySides::Computations(one, apart);
+    let negative = |position: u32| ConversionDecision::NegativeSubgoal {
+        position: SubgoalPosition::from(position),
+    };
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            transports,
+            EngineClaim::NotConvertible,
+            &[negative(3)]
+        ),
+        KernelVerdict::NotConvertible,
+        "the values refute at the fourth premise"
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            transports,
+            EngineClaim::NotConvertible,
+            &[negative(1)]
+        ),
+        refused(ReplayRefusal::Contradicted {
+            at: TracePosition::from(1)
+        }),
+        "the starts agree, so a refutation there is contradicted"
     );
 }
 

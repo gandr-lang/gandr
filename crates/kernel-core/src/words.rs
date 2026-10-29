@@ -56,8 +56,8 @@
 //! and to a constant whose body is a constructor of a type of words, so no
 //! other definition unfolds by it — with one exception the evaluator shares:
 //! a returned operand the append rows read, a call held at its definition such
-//! as `spin(Z)`, takes the one δ-step its head admits (the replay's
-//! `run_held_operand`), as the evaluator's append runs a held operand.
+//! as `spin(Z)`, runs through each definition its run meets (the replay's
+//! held run in `reduce`), as the evaluator's append runs a held operand.
 //! Reversal: a recorded trace position under a transport's family, which would
 //! let the engine record the unfolding.
 
@@ -1375,15 +1375,9 @@ where
         let along = arena.computation_path_transport(lifted, onward, bound);
         return Reduction::Reduced(arena.computation_bind(operand, along));
     }
-    // A returned path runs next, as the evaluator reads every returned value:
-    // `tr(P, ⟨c⟩, v) ⇝ w ← c; tr(P↑, w, v↑)`.
-    if let Some(&Value::Returned(along)) = arena.value(path) {
-        let one = BinderDepth::from(1_u32);
-        let lifted = shift_value_type(arena, table, memo, motive, one, one);
-        let onward = shift_value(arena, table, memo, value, BinderDepth::NONE, one);
-        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let transported = arena.computation_path_transport(lifted, bound, onward);
-        return Reduction::Reduced(arena.computation_bind(along, transported));
+    // A returned path runs next, as the evaluator reads every returned value.
+    if let Some(reduct) = run_path(arena, table, memo, term) {
+        return Reduction::Reduced(reduct);
     }
     let (tag, words, rest) = match head(arena, presentations, path) {
         Head::Empty => (FreeCells::nil(), None, path),
@@ -1540,6 +1534,52 @@ where
     Reduction::Reduced(reduct)
 }
 
+/// The transport `term` with its returned path run first: `tr(P, ⟨c⟩, v) ⇝ w
+/// ← c; tr(P↑, w, v↑)`.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reduces without panicking.
+/// - ensures: `Some` of that bind exactly when the path is a returned endpoint
+///   `⟨c⟩`; `None` otherwise.
+/// - provides: [`transport_word`]'s returned-path row, and the replay's reading
+///   of a transport the evaluator leaves on its held path.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite whose second word is a call stands on that
+///   call, so the replay unfolds the call where the checker does; run after a
+///   stuck operand, the composite stands on the operand and the replay refuses
+///   what the checker accepted.
+/// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
+#[spec(ensures: |ret| ret.is_some() == matches!(arena.value(term.path), Some(&Value::Returned(_)))
+    && ret.is_none_or(|reduct| matches!(arena.computation(reduct), Some(&gandr_kernel_term::Computation::Bind(..)))))]
+pub fn run_path<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    term: ElementTransport,
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let ElementTransport {
+        motive,
+        path,
+        value,
+    } = term;
+    let Some(&Value::Returned(along)) = arena.value(path)
+    else {
+        return None;
+    };
+    let one = BinderDepth::from(1_u32);
+    let lifted = shift_value_type(arena, table, memo, motive, one, one);
+    let onward = shift_value(arena, table, memo, value, BinderDepth::NONE, one);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let transported = arena.computation_path_transport(lifted, bound, onward);
+    Some(arena.computation_bind(along, transported))
+}
+
 /// One transport step in a singleton family by the word moved, where the word
 /// moved along reads no further: `then` appends on its first word.
 ///
@@ -1656,8 +1696,8 @@ fn singleton(
 /// - ensures: `Some(c)` exactly when the operand is `⟨c⟩`, no definition names
 ///   the path, the path is no word's letter or empty word, and `motive` is a
 ///   [`singleton`] family; `None` otherwise.
-/// - provides: where the replay takes the δ-step the evaluator's held-operand
-///   run takes, so both engines read `spin(Z) then q` as `q`.
+/// - provides: where the replay runs the held operand as the evaluator's append
+///   runs it, so both engines read `spin(Z) then q` as `q`.
 /// - fails: never.
 /// - panics: none.
 ///
