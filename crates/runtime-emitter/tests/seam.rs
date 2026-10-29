@@ -1,6 +1,7 @@
 //! The host seam on each tier: an operation no handler of the run claims is
 //! offered to a scripted host, whose decisions — resume, decline, abort — the
-//! run's outcome and the order of its offers are checked against.
+//! run's outcome and the order of its offers are checked against. A host may
+//! run a program of its own inside its reply, on the run's thread.
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
@@ -8,6 +9,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 
 use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
 use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Definitions;
@@ -55,6 +57,7 @@ use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::crossing::CrossingRefusal;
+use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
 use gandr_runtime_emitter::evaluate_with_host;
 use gandr_storage_chunker::Kappa;
@@ -1117,5 +1120,112 @@ fn a_host_built_reply_the_run_cannot_hold_declines()
                 "{built:?} on {entry:?}: {ran:?}"
             );
         }
+    }
+}
+
+/// A host that answers each offer with what a program of its own halts with,
+/// run to its end inside the reply, on the run's thread and tier.
+#[derive(Debug)]
+struct Nesting<'program>
+{
+    /// The host's program and its root.
+    program: (&'program CommandArena, CommandId),
+    /// The tier the host runs its program on.
+    tier: Tier,
+}
+
+impl HostHandler for Nesting<'_>
+{
+    type Abort = core::convert::Infallible;
+
+    /// Run the host's program, and resume with the literal it halts with.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        _request: HostRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> HostReply<Self::Abort>
+    {
+        let (arena, root) = self.program;
+        let mut store = Store::new();
+        let outcome = evaluate_on(
+            self.tier,
+            arena,
+            &Definitions::new(),
+            root,
+            budget(),
+            RunInputs::new(&mut store),
+        );
+        let Ok(Outcome::Halted(answer)) = outcome
+        else {
+            return HostReply::Decline;
+        };
+        let Some(HeapValue::Literal(literal)) = store.value(answer).cloned()
+        else {
+            return HostReply::Decline;
+        };
+        HostReply::Resume(
+            values
+                .allocate(HeapValue::Literal(literal))
+                .expect("the reply fits"),
+        )
+    }
+}
+
+/// A host runs a program of its own inside its reply, on the run's thread, and
+/// the run resumes with that program's answer on each tier.
+#[test]
+fn a_host_runs_a_program_of_its_own_inside_its_reply_2954()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let answer = integer(&mut core, Digits("42"));
+    let signature = effect(&mut core, "E".into(), "op".into());
+    let program = core.computation_perform(signature, "op".into(), five);
+    let inner = core.computation_return(answer);
+    let mut arena = CommandArena::new();
+    let root = focus_computation(
+        &core,
+        program,
+        &mut arena,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("the program focuses");
+    let mut nested = CommandArena::new();
+    let nested_root = focus_computation(
+        &core,
+        inner,
+        &mut nested,
+        &mut Provenance::new(),
+        &gandr_core_sequent::Writers::NONE,
+    )
+    .expect("the host's program focuses");
+    for &tier in tiers() {
+        let mut store = Store::new();
+        let mut host = Nesting {
+            program: (&nested, nested_root),
+            tier,
+        };
+        let outcome = evaluate_on_with_host(
+            tier,
+            (&arena, &Definitions::new(), root),
+            (budget(), RunInputs::new(&mut store)),
+            &mut host,
+        )
+        .unwrap_or_else(|declined| panic!("{tier:?} declined: {declined}"));
+        let HostOutcome::Completed(Outcome::Halted(value)) = outcome
+        else {
+            panic!("the run halts on {tier:?}: {outcome:?}");
+        };
+        let read =
+            read_back_value(&arena, &store, value, &mut core).expect("the answer reads back");
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&core, read, answer),
+            "the run resumes with the host program's answer on {tier:?}"
+        );
     }
 }

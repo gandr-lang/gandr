@@ -5,13 +5,18 @@
 //! A run lowers its command every time — the lowered function is the cache
 //! key, compared by value — and either serves the function's emitted code
 //! from the process's cache, emitting it on a miss, or builds the executor's
-//! program. Both run over the calling thread's heap and frame regions, each
-//! allocated at its bound once per thread and committed page by page as runs
+//! program. Both run over a set of the calling thread's heap and frame
+//! regions, each allocated at its bound and committed page by page as runs
 //! touch it; a run that would pass a bound declines exhausted. The
 //! alternative was a small region doubled and the run repeated from its
 //! start, which offers a host handler its requests a second time; the bound
 //! costs address space only. The choice reverses if a workload needs more
 //! than a bound holds, when the bound becomes the caller's to set.
+//!
+//! A run takes its set from the thread's idle sets, and gives it back when it
+//! ends. So a run that a host starts inside another run's reply, on the same
+//! thread, runs over a set of its own. A thread holds as many sets as its runs
+//! ever nested deep, each reserving address space at the bounds.
 //!
 //! A command closed over a store's values runs the same way, its captures
 //! laid out on the run's heap first, as a host's reply is, and the run
@@ -39,11 +44,11 @@
 //!   object.
 //!
 //! It departs from LAM in three places. A location is recycled: a block freed
-//! at its last owner joins its size's free list, and the thread's next run
-//! reuses the regions whole, so no collector evacuates within a run. Nothing
-//! is laid inline, so there is no wrapping constructor and nothing to splice.
-//! And a block is written after its allocation: a match whose scrutinee has
-//! one owner hands its block to the constructor its arm rebuilds.
+//! at its last owner joins its size's free list, and the next run to take the
+//! set reuses its regions whole, so no collector evacuates within a run.
+//! Nothing is laid inline, so there is no wrapping constructor and nothing to
+//! splice. And a block is written after its allocation: a match whose scrutinee
+//! has one owner hands its block to the constructor its arm rebuilds.
 //!
 //! # Witnesses
 //!
@@ -363,8 +368,8 @@ static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> =
 /// The policy, read once per process.
 static POLICY: std::sync::LazyLock<Policy> = std::sync::LazyLock::new(Policy::from_environment);
 
-/// The regions a run uses, per thread, each allocated at its bound and
-/// committed as a run first touches it.
+/// The regions one run uses, each allocated at its bound and committed as a
+/// run first touches it.
 #[derive(Debug)]
 struct Buffers
 {
@@ -380,6 +385,23 @@ struct Buffers
     windows: Vec<Word>,
 }
 
+impl Buffers
+{
+    /// A set of regions, each allocated at its bound.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at_bounds() -> Self
+    {
+        Self {
+            heap: Vec::with_capacity(HEAP_BOUND),
+            frames: Vec::with_capacity(FRAME_BOUND),
+            window: Vec::new(),
+            windows: Vec::with_capacity(WINDOW_BOUND),
+        }
+    }
+}
+
 /// The heap region's bound, in words: past it the run declines.
 const HEAP_BOUND: usize = 1 << 25;
 /// The frame region's bound, in words: past it the run declines.
@@ -388,13 +410,10 @@ const FRAME_BOUND: usize = 1 << 23;
 const WINDOW_BOUND: usize = 1 << 24;
 
 std::thread_local! {
-    /// The calling thread's regions.
-    static BUFFERS: RefCell<Buffers> = RefCell::new(Buffers {
-        heap: Vec::with_capacity(HEAP_BOUND),
-        frames: Vec::with_capacity(FRAME_BOUND),
-        window: Vec::new(),
-        windows: Vec::with_capacity(WINDOW_BOUND),
-    });
+    /// The calling thread's idle region sets. A run takes one and gives it
+    /// back when it ends, so a run nested in another run's host call takes a
+    /// set of its own.
+    static BUFFERS: RefCell<Vec<Buffers>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Check that the constant table of `globals` fits the heap region `heap`,
@@ -1116,9 +1135,42 @@ fn run_emitted(
     )
 }
 
-/// Run `code` once over the calling thread's regions, the store's values
-/// `parts`' inputs are closed over laid out in the entry window's capture
-/// slots, and move how it ended into their store.
+/// Run `code` once over a set of the calling thread's regions, and give the
+/// set back to the thread when the run ends.
+///
+/// A set is taken from the thread's idle sets, or allocated at its bounds when
+/// none is idle. So a run that a host starts inside another run's reply, on
+/// the same thread, runs over a set of its own, and the outer run's regions
+/// stay as it left them.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`on_tier`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host that runs a program of its own inside its reply
+///   resumes the outer run with that program's answer on each tier; one set for
+///   both runs aborts the process at the second borrow.
+/// - witness: `tests::seam::a_host_runs_a_program_of_its_own_inside_its_reply_2954`
+fn run(
+    code: Code<'_>,
+    parts: Parts<'_, '_>,
+    fuel: Fuel,
+) -> Result<Ran, Declined>
+{
+    let mut buffers = BUFFERS
+        .with_borrow_mut(Vec::pop)
+        .unwrap_or_else(Buffers::at_bounds);
+    let ran = run_over(&mut buffers, code, parts, fuel);
+    BUFFERS.with_borrow_mut(|idle| idle.push(buffers));
+    ran
+}
+
+/// Run `code` once over `buffers`, the store's values `parts`' inputs are
+/// closed over laid out in the entry window's capture slots, and move how it
+/// ended into their store.
 ///
 /// # Specification
 /// trivial.
@@ -1135,7 +1187,8 @@ fn run_emitted(
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::count::a_returned_body_gives_its_window_back`
 /// - witness: `tests::closed::a_thunk_runs_from_the_store_as_it_runs_in_place`
-fn run(
+fn run_over(
+    buffers: &mut Buffers,
     code: Code<'_>,
     parts: Parts<'_, '_>,
     fuel: Fuel,
@@ -1143,165 +1196,157 @@ fn run(
 {
     let lowered = parts.lowered;
     let captured = parts.inputs.captured;
-    BUFFERS.with_borrow_mut(|buffers| {
-        buffers.window.clear();
-        buffers
-            .window
-            .resize(lowered.function.slots().0.max(1), Word::ZERO);
-        let halt = match code {
-            #[cfg(gandr_patcher)]
-            Code::Native(_, halt) => halt,
-            Code::Executor(program) => program.halt(),
-        };
-        let table = buffers.heap.as_mut_ptr();
-        let heap_limit = table.wrapping_add(buffers.heap.capacity());
-        // The constant table sits at the heap's base, every word zero: no
-        // constant is unfolded yet.
-        let constants = lowered.globals.len();
-        hold_table(&buffers.heap, &lowered.globals)?;
-        // SAFETY: the heap region's capacity holds the table's words.
-        unsafe {
-            table.write_bytes(0, constants);
-        }
-        let heap = table.wrapping_add(constants);
-        let frames = buffers.frames.as_mut_ptr();
-        let frame_limit = frames.wrapping_add(buffers.frames.capacity());
+    buffers.window.clear();
+    buffers
+        .window
+        .resize(lowered.function.slots().0.max(1), Word::ZERO);
+    let halt = match code {
+        #[cfg(gandr_patcher)]
+        Code::Native(_, halt) => halt,
+        Code::Executor(program) => program.halt(),
+    };
+    let table = buffers.heap.as_mut_ptr();
+    let heap_limit = table.wrapping_add(buffers.heap.capacity());
+    // The constant table sits at the heap's base, every word zero: no
+    // constant is unfolded yet.
+    let constants = lowered.globals.len();
+    hold_table(&buffers.heap, &lowered.globals)?;
+    // SAFETY: the heap region's capacity holds the table's words.
+    unsafe {
+        table.write_bytes(0, constants);
+    }
+    let heap = table.wrapping_add(constants);
+    let frames = buffers.frames.as_mut_ptr();
+    let frame_limit = frames.wrapping_add(buffers.frames.capacity());
+    // SAFETY: the frame region's capacity holds far more than the
+    // sentinel's two words.
+    unsafe {
+        frames.write(halt);
+    }
+    // SAFETY: as above.
+    unsafe {
+        frames.wrapping_add(1).write(Word::ZERO);
+    }
+    // A run that acts on a session stands every task on the joined frame,
+    // laid above the sentinel once the entry window is known.
+    let joined = lowered.joined.map(|label| parts.codes.label(label));
+    let base = frames.wrapping_add(if joined.is_some() { 4 } else { 2 });
+    let mut calls = Calls::new(parts);
+    let mut runtime = Runtime::new(
+        heap,
+        heap_limit,
+        frame_limit,
+        base,
+        fuel,
+        host::enter,
+        Word::from_pointer(&raw mut calls),
+    );
+    runtime.set_globals(table);
+    let windows = buffers.windows.as_mut_ptr();
+    runtime.set_windows(windows, windows.wrapping_add(buffers.windows.capacity()));
+    // A command closed over the store runs over its captures laid out on
+    // its heap, each held by its slot of the entry window.
+    let laid = calls
+        .laid_out(&mut runtime, captured)
+        .map_err(|unlaid| match unlaid {
+            Unlaid::Value(value) => Declined::Capture(value),
+            Unlaid::Run(Refusal::Heap) => Declined::Exhausted(Status::HeapExhausted),
+            Unlaid::Run(Refusal::Frames) => Declined::Exhausted(Status::FramesExhausted),
+            Unlaid::Run(Refusal::Operands) => Declined::Stuck,
+        })?;
+    for (&slot, word) in lowered.captures.iter().zip(laid) {
+        let held = usize::try_from(slot.0)
+            .ok()
+            .and_then(|at| buffers.window.get_mut(at))
+            .ok_or(Declined::Environment)?;
+        *held = word;
+    }
+    let window = buffers.window.as_mut_ptr();
+    if let Some(code) = joined {
         // SAFETY: the frame region's capacity holds far more than the
-        // sentinel's two words.
+        // sentinel's and the joined frame's four words.
         unsafe {
-            frames.write(halt);
+            frames.wrapping_add(2).write(code);
         }
         // SAFETY: as above.
         unsafe {
-            frames.wrapping_add(1).write(Word::ZERO);
+            frames.wrapping_add(3).write(Word::from_pointer(window));
         }
-        // A run that acts on a session stands every task on the joined frame,
-        // laid above the sentinel once the entry window is known.
-        let joined = lowered.joined.map(|label| parts.codes.label(label));
-        let base = frames.wrapping_add(if joined.is_some() { 4 } else { 2 });
-        let mut calls = Calls::new(parts);
-        let mut runtime = Runtime::new(
-            heap,
-            heap_limit,
-            frame_limit,
-            base,
-            fuel,
-            host::enter,
-            Word::from_pointer(&raw mut calls),
-        );
-        runtime.set_globals(table);
-        let windows = buffers.windows.as_mut_ptr();
-        runtime.set_windows(windows, windows.wrapping_add(buffers.windows.capacity()));
-        // A command closed over the store runs over its captures laid out on
-        // its heap, each held by its slot of the entry window.
-        let laid = calls
-            .laid_out(&mut runtime, captured)
-            .map_err(|unlaid| match unlaid {
-                Unlaid::Value(value) => Declined::Capture(value),
-                Unlaid::Run(Refusal::Heap) => Declined::Exhausted(Status::HeapExhausted),
-                Unlaid::Run(Refusal::Frames) => Declined::Exhausted(Status::FramesExhausted),
-                Unlaid::Run(Refusal::Operands) => Declined::Stuck,
-            })?;
-        for (&slot, word) in lowered.captures.iter().zip(laid) {
-            let held = usize::try_from(slot.0)
-                .ok()
-                .and_then(|at| buffers.window.get_mut(at))
-                .ok_or(Declined::Environment)?;
-            *held = word;
-        }
-        let window = buffers.window.as_mut_ptr();
-        if let Some(code) = joined {
-            // SAFETY: the frame region's capacity holds far more than the
-            // sentinel's and the joined frame's four words.
-            unsafe {
-                frames.wrapping_add(2).write(code);
+    }
+    // The run allocates past the captures laid on its heap.
+    let top = runtime.heap_top();
+    let answer = match code {
+        #[cfg(gandr_patcher)]
+        // SAFETY: the entry is a copy the emitter patched in a region the
+        // cache keeps mapped; the regions are this thread's, valid up to
+        // their limits, the sentinel frame below the base mark, and the
+        // window holds the function's slots.
+        Code::Native(entry, _) => unsafe {
+            gandr_runtime_stencils::enter(entry, &raw mut runtime, top, base, window)
+        },
+        // SAFETY: the program was built from this function and lives for
+        // the call; the regions are as above.
+        Code::Executor(program) => unsafe {
+            gandr_runtime_stencils::execute(program.entry(), &raw mut runtime, top, base, window)
+        },
+    };
+    let refused = calls.refused().cloned();
+    // SAFETY: the run exited; its heap and the function's constants are
+    // live until this closure returns, and every exit but the regions'
+    // and the fuel's returns a value of that heap or zero.
+    let mut moved = |word: Word| unsafe { calls.moved(word) };
+    let stuck = match runtime.status() {
+        Ok(Status::Halted) => return Ok(Ran::Ended(Outcome::Halted(moved(answer)?))),
+        Ok(Status::Unmatched) => {
+            let arms = lowered
+                .unmatched
+                .get(usize::from(runtime.observed()))
+                .copied()
+                .ok_or(Declined::Stuck)?;
+            Stuck::Unmatched {
+                value: moved(answer)?,
+                arms,
             }
-            // SAFETY: as above.
-            unsafe {
-                frames.wrapping_add(3).write(Word::from_pointer(window));
-            }
-        }
-        // The run allocates past the captures laid on its heap.
-        let top = runtime.heap_top();
-        let answer = match code {
-            #[cfg(gandr_patcher)]
-            // SAFETY: the entry is a copy the emitter patched in a region the
-            // cache keeps mapped; the regions are this thread's, valid up to
-            // their limits, the sentinel frame below the base mark, and the
-            // window holds the function's slots.
-            Code::Native(entry, _) => unsafe {
-                gandr_runtime_stencils::enter(entry, &raw mut runtime, top, base, window)
+        },
+        Ok(Status::Stuck) => match refused {
+            Some(Refused::PerformNoHandler(at)) => Stuck::PerformNoHandler(at),
+            Some(Refused::ShiftNoReset(at)) => Stuck::ShiftNoReset(at),
+            Some(Refused::ResumedNonStack { at, value }) => Stuck::ResumedNonStack {
+                at,
+                value: moved(value)?,
             },
-            // SAFETY: the program was built from this function and lives for
-            // the call; the regions are as above.
-            Code::Executor(program) => unsafe {
-                gandr_runtime_stencils::execute(
-                    program.entry(),
-                    &raw mut runtime,
-                    top,
-                    base,
-                    window,
-                )
-            },
-        };
-        let refused = calls.refused().cloned();
-        // SAFETY: the run exited; its heap and the function's constants are
-        // live until this closure returns, and every exit but the regions'
-        // and the fuel's returns a value of that heap or zero.
-        let mut moved = |word: Word| unsafe { calls.moved(word) };
-        let stuck = match runtime.status() {
-            Ok(Status::Halted) => return Ok(Ran::Ended(Outcome::Halted(moved(answer)?))),
-            Ok(Status::Unmatched) => {
-                let arms = lowered
-                    .unmatched
-                    .get(usize::from(runtime.observed()))
-                    .copied()
-                    .ok_or(Declined::Stuck)?;
-                Stuck::Unmatched {
+            Some(Refused::Primitive(error)) => Stuck::Primitive(error),
+            Some(Refused::NonScalar(value)) => Stuck::NonScalar(moved(value)?),
+            Some(Refused::Unended(at)) => Stuck::Unended(at),
+            Some(Refused::Outside(at)) => Stuck::Outside(at),
+            Some(Refused::UndefinedConstant(constant)) => Stuck::UndefinedConstant(constant),
+            Some(Refused::CyclicConstant(constant)) => Stuck::CyclicConstant(constant),
+            Some(Refused::Aborted) => return Ok(Ran::Aborted),
+            Some(Refused::Operands) => return Err(Declined::Stuck),
+            Some(Refused::Reply(value)) => return Err(Declined::Reply(value)),
+            Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
+            Some(Refused::Migration(at, why)) => return Err(Declined::Migration(at, why)),
+            Some(Refused::Deadlock(waiting)) => Stuck::Deadlock(waiting),
+            Some(Refused::Cancelled(at)) => Stuck::Cancelled(at),
+            None => {
+                let head = match Observed::try_from(runtime.observed()) {
+                    Ok(Observed::Apply) => DestructorTag::Apply,
+                    Ok(Observed::Force) => DestructorTag::Force,
+                    Ok(Observed::Project(component)) => {
+                        DestructorTag::Project(Component::from(usize::from(component)))
+                    },
+                    Err(_unnamed) => return Err(Declined::Stuck),
+                };
+                Stuck::Unobservable {
                     value: moved(answer)?,
-                    arms,
+                    head,
                 }
             },
-            Ok(Status::Stuck) => match refused {
-                Some(Refused::PerformNoHandler(at)) => Stuck::PerformNoHandler(at),
-                Some(Refused::ShiftNoReset(at)) => Stuck::ShiftNoReset(at),
-                Some(Refused::ResumedNonStack { at, value }) => Stuck::ResumedNonStack {
-                    at,
-                    value: moved(value)?,
-                },
-                Some(Refused::Primitive(error)) => Stuck::Primitive(error),
-                Some(Refused::NonScalar(value)) => Stuck::NonScalar(moved(value)?),
-                Some(Refused::Unended(at)) => Stuck::Unended(at),
-                Some(Refused::Outside(at)) => Stuck::Outside(at),
-                Some(Refused::UndefinedConstant(constant)) => Stuck::UndefinedConstant(constant),
-                Some(Refused::CyclicConstant(constant)) => Stuck::CyclicConstant(constant),
-                Some(Refused::Aborted) => return Ok(Ran::Aborted),
-                Some(Refused::Operands) => return Err(Declined::Stuck),
-                Some(Refused::Reply(value)) => return Err(Declined::Reply(value)),
-                Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
-                Some(Refused::Migration(at, why)) => return Err(Declined::Migration(at, why)),
-                Some(Refused::Deadlock(waiting)) => Stuck::Deadlock(waiting),
-                Some(Refused::Cancelled(at)) => Stuck::Cancelled(at),
-                None => {
-                    let head = match Observed::try_from(runtime.observed()) {
-                        Ok(Observed::Apply) => DestructorTag::Apply,
-                        Ok(Observed::Force) => DestructorTag::Force,
-                        Ok(Observed::Project(component)) => {
-                            DestructorTag::Project(Component::from(usize::from(component)))
-                        },
-                        Err(_unnamed) => return Err(Declined::Stuck),
-                    };
-                    Stuck::Unobservable {
-                        value: moved(answer)?,
-                        head,
-                    }
-                },
-            },
-            Ok(status) => return Err(Declined::Exhausted(status)),
-            Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
-        };
-        Ok(Ran::Ended(Outcome::Stuck(stuck)))
-    })
+        },
+        Ok(status) => return Err(Declined::Exhausted(status)),
+        Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
+    };
+    Ok(Ran::Ended(Outcome::Stuck(stuck)))
 }
 
 #[cfg(test)]
