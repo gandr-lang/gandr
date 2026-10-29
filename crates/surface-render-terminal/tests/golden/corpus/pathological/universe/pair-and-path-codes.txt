@@ -1,25 +1,16 @@
-error[OutOfFragment.WrongSort]: a call expression cannot stand where a value type is expected
-   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:67:38
-   │
-67 │       PathP(a, x, y) => return (Path(elPath[<](a), x, y))
-   │                                      ━━━━━━━━━━━━ a form of another sort than this position takes
-   │
-   ├ note: `elPath` is refused with OutOfFragment.WrongSort, as its expectation states
-   ╰ help: write a value type in this position
-
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:44:55
+   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:41:55
    │
-39 │      def rec elSigRun(u : USigRun) -> Type {
+36 │      def rec elSigRun(u : USigRun) -> Type {
    │      │                ─ checked against `USigRun -> -F Type`; while checking the body of this function; binds u : USigRun
    │ ┌────┘
    │ │
-40 │ │┌     case u {
-41 │ ││       NatR => return Nat,
-42 │ ││       SigR(a, b) => {
-43 │ ││         run t <- elSigRun[<](a);
+37 │ │┌     case u {
+38 │ ││       NatR => return Nat,
+39 │ ││       SigR(a, b) => {
+40 │ ││         run t <- elSigRun[<](a);
    │ ││         ─── checked against `-F Type`; while checking the body under this binding; binds _ : Type
-44 │ ││         return (Sig(t, thunk { fn (x) { elSigRun[<](b(x)) } }))
+41 │ ││         return (Sig(t, thunk { fn (x) { elSigRun[<](b(x)) } }))
    │ ││         ┬───────┬──────┬───────┬────────┬───────────┬─┯────────
    │ ││         │       │      │       │        │           │ │
    │ ││         │       │      │       │        │           │ its type does not convert: expected `elSigRun(a)`, found `?`
@@ -29,28 +20,28 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││         │       │      checked against `? => Type`; while checking the body of this thunk
    │ ││         │       checked against `Type`; while forming the type this quotes
    │ ││         checked against `-F Type`; while judging the value this returns
-45 │ ││       }
-46 │ ││     }
+42 │ ││       }
+43 │ ││     }
    │ │└─────┘ checked against `-F Type`; while checking the body of this function; binds a : USigRun, b : elSigRun(a) => USigRun
-47 │ │    }
+44 │ │    }
    │ └────┘ checked against `USigRun => Type`; while checking the body of this function; binds elSigRun : USigRun => Type
    │
    ├ note: `USigRun` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:44:55
+   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:41:55
    │
-39 │      def rec elSigRun(u : USigRun) -> Type {
+36 │      def rec elSigRun(u : USigRun) -> Type {
    │      │                ─ checked against `USigRun -> -F Type`; while checking the body of this function; binds u : USigRun
    │ ┌────┘
    │ │
-40 │ │┌     case u {
-41 │ ││       NatR => return Nat,
-42 │ ││       SigR(a, b) => {
-43 │ ││         run t <- elSigRun[<](a);
+37 │ │┌     case u {
+38 │ ││       NatR => return Nat,
+39 │ ││       SigR(a, b) => {
+40 │ ││         run t <- elSigRun[<](a);
    │ ││         ─── checked against `-F Type`; while checking the body under this binding; binds _ : Type
-44 │ ││         return (Sig(t, thunk { fn (x) { elSigRun[<](b(x)) } }))
+41 │ ││         return (Sig(t, thunk { fn (x) { elSigRun[<](b(x)) } }))
    │ ││         ┬───────┬──────┬───────┬────────┬───────────┬─┯────────
    │ ││         │       │      │       │        │           │ │
    │ ││         │       │      │       │        │           │ its type does not convert: expected `elSigRun(a)`, found `?`
@@ -60,24 +51,11 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││         │       │      checked against `? => Type`; while checking the body of this thunk
    │ ││         │       checked against `Type`; while forming the type this quotes
    │ ││         checked against `-F Type`; while judging the value this returns
-45 │ ││       }
-46 │ ││     }
+42 │ ││       }
+43 │ ││     }
    │ │└─────┘ checked against `-F Type`; while checking the body of this function; binds a : USigRun, b : elSigRun(a) => USigRun
-47 │ │    }
+44 │ │    }
    │ └────┘ checked against `USigRun => Type`; while checking the body of this function; binds elSigRun : USigRun => Type
    │
    ├ note: `elSigRun` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
-
-error[CrossBlockReference]: the datatype's field 1 of constructor 1 refers to a declaration written after it
-   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:55:3
-   │
-55 │ ┏   data UPath : Type {
-56 │ ┃     /// The naturals.
-57 │ ┃     NatP : UPath;
-58 │ ┃     /// The paths between two values of a coded type's decode.
-59 │ ┃     PathP : (a : UPath, x : elPath(a), y : elPath(a)) --> UPath;
-60 │ ┃   }
-   │ ┗━━━┛ names a later declaration
-   │
-   ╰ note: `UPath` is refused with CrossBlockReference, as its expectation states

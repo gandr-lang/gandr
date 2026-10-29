@@ -12857,13 +12857,45 @@ impl<'source> Lowerer<'_, 'source>
     {
         closed(site, &mut cursor, TileName::LESS_THAN)?;
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
-        let from = site.reading.frame();
         let start = self.operands.len();
         arguments(site, &mut cursor, &mut self.operands)?;
         let written = Stretch {
             start,
             end: self.operands.len(),
         };
+        self.staged_descent(site, name, written)
+    }
+
+    /// Classify a descent `name[<](…)` standing where a type is read, its
+    /// arguments `written` in the operand store: the unquote of the call of the
+    /// recursive function `name`'s fixpoint, as [`Self::staged_unquote`] plans
+    /// the type application and [`Self::typed_call`] the call the expression
+    /// grammar molds inside a quoted type (#3681).
+    ///
+    /// # Specification
+    /// - requires: `site` stands where a type is read; `written` is the
+    ///   arguments the descent is written with, the last the store holds.
+    /// - ensures: as [`Self::staged_unquote`], past its tiles.
+    /// - fails: as [`Self::staged_unquote`], past its tiles.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The descent's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::staged_unquote`], and a descent the
+    ///   expression grammar molds at a quoted path carrier.
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    /// - witness: `lower::tests::a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
+    pub(super) fn staged_descent(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+        written: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let from = site.reading.frame();
         let Maybe::Present(bound) = self.scope.resolve(from, name, &mut self.fuel)?
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));

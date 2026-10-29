@@ -11048,8 +11048,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a head that is one name or one capitalised name, resolving to
     ///   a binder or a declaration, applied to the arguments as
     ///   [`Self::static_application`] plans it: a family's type, the decode of
-    ///   a static application, or the unquote of a function's call. Any other
-    ///   head is refused by its sort.
+    ///   a static application, or the unquote of a function's call. A descent
+    ///   head `f[<]` ([`Self::descent_head`]) applied to the arguments is the
+    ///   unquote of its fixpoint's call, as [`Self::staged_descent`] plans it.
+    ///   Any other head is refused by its sort.
     /// - provides: a quoted type's call read as the same type its binder's type
     ///   writes.
     /// - fails: the wrong-sort refusal for a head that is not a resolving name,
@@ -11062,8 +11064,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a function called at a quoted path type's carrier
-    ///   unquotes its call, as at a binder's type.
+    ///   unquotes its call, as at a binder's type; a decoder's descent there
+    ///   unquotes its fixpoint's call, as in a type.
     /// - witness: `lower::tests::a_call_at_a_quoted_path_carrier_unquotes_as_at_a_binder_3573`
+    /// - witness: `lower::tests::a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -11083,6 +11087,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(self.standing(site).out(FragmentBoundary::WrongSort));
         };
+        // A descent the expression grammar molds, `f[<](…)`, is the type
+        // application `f[<](…)` the type grammar spells (#3681).
+        if let Some(named) = self.descent_head(head)? {
+            let _first = self.typed_heads.insert(site.at.node, head.node);
+            let _head = cursor.operands();
+            let start = self.operands.len();
+            arguments(site, &mut cursor, &mut self.operands)?;
+            let written = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            return self.staged_descent(site, named, written);
+        }
         let named = self.tree.node(head.node).is_some_and(|node| {
             matches!(
                 shape_of(self.pbg, node),
@@ -11111,6 +11128,96 @@ impl<'run, 'source> Lowerer<'run, 'source>
             end: self.operands.len(),
         };
         self.static_application(site, resolved, applied)
+    }
+
+    /// The name a call's head descends on, when the head is a descent `f[<]`.
+    ///
+    /// # Specification
+    /// - ensures: the name `f` when `head` is an instantiation of a bare name
+    ///   whose bracket holds the one tile `<`; nothing for every other head,
+    ///   the productive claim `f[>]` among them.
+    /// - provides: [`Self::typed_call`]'s descent head.
+    /// - fails: a fault reading the head's pieces or shape.
+    /// - panics: none.
+    /// - executable: none — the answer is a spelling read off the tree, which
+    ///   the name it returns does not carry.
+    ///
+    /// # Errors
+    /// The form fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::typed_call`].
+    /// - witness: `lower::tests::a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681`
+    fn descent_head(
+        &mut self,
+        head: Placed,
+    ) -> Result<Option<SurfaceName<'source>>, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(head.node)
+        else {
+            return Ok(None);
+        };
+        if !matches!(shape_of(self.pbg, node)?, Shape::Form {
+            former: Former::Instantiation,
+            ..
+        }) {
+            return Ok(None);
+        }
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let found = self.descended_name(head.node, &mut scratch);
+        self.scratch = scratch;
+        found
+    }
+
+    /// The name an instantiation at `at` descends on, read through `scratch`,
+    /// as [`Self::descent_head`] states it.
+    ///
+    /// # Specification
+    /// - requires: `at` is an instantiation.
+    /// - ensures: as [`Self::descent_head`].
+    /// - fails: as [`Self::descent_head`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::descent_head`].
+    ///
+    /// # Errors
+    /// The form fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::typed_call`].
+    /// - witness: `lower::tests::a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681`
+    fn descended_name(
+        &self,
+        at: NodeIndex,
+        scratch: &mut Pieces,
+    ) -> Result<Option<SurfaceName<'source>>, LoweringRefusal<'source>>
+    {
+        read_pieces(self.pbg, self.tree, at, scratch)?;
+        let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
+        });
+        let (Some(named), Some(claim)) = (operands.next(), operands.next())
+        else {
+            return Ok(None);
+        };
+        let bare = self.tree.node(named.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Name,
+                    ..
+                })
+            )
+        });
+        if !bare {
+            return Ok(None);
+        }
+        read_pieces(self.pbg, self.tree, claim.node, scratch)?;
+        if !matches!(scratch.pieces.as_slice(), &[Piece::Tile { label, .. }] if label == TileName::LESS_THAN)
+        {
+            return Ok(None);
+        }
+        Ok(Some(self.name_at(named)))
     }
 
     /// Lower native prefix and infix syntax using the shared vocabulary.
@@ -25383,6 +25490,43 @@ mod tests
             arena.value(head).cloned(),
             Some(Value::Constant(ConstantIndex::from(0_usize))),
             "the function is `same`"
+        );
+    }
+
+    /// #3681: a decoder's descent at the carrier of a path type it quotes,
+    /// `Path(el[<](a), x, y)`, was refused by its sort: the expression grammar
+    /// molds it as a call whose head is an instantiation, which no name
+    /// resolves. It is the descent the type grammar spells, the decode of its
+    /// fixpoint's call, as an unmarked call there is (#3573).
+    #[test]
+    fn a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681()
+    {
+        let mut arena = CoreArena::new();
+        let text = "data U : Type { NatU : U; PathU : (a : U, x : Integer, y : Integer) --> U; } \
+                    def rec el(u : U) -> -F Type { case u { NatU => return Integer, PathU(a, x, \
+                    y) => return (Path(el[<](a), x, y)) } }";
+        let module = lowered(SourceText::from(text), &mut arena);
+        let lowered = outcomes(&module);
+        assert!(
+            !matches!(lowered[1], DeclarationOutcome::Refused(_)),
+            "the decoder lowers: {:?}",
+            lowered[1]
+        );
+        let at = text.find("el[<](a)").expect("the carrier is written");
+        let carrier = module
+            .origins()
+            .value_types()
+            .iter()
+            .find(|&&(_, origin)| {
+                usize::from(origin.span().start()) == at
+                    && origin.provenance() == Provenance::Inserted(Insertion::Decode)
+            })
+            .map(|&(id, _)| id)
+            .expect("the carrier's decode is located at the descent");
+        assert!(
+            matches!(arena.value_type(carrier), Some(&ValueType::Element { .. })),
+            "the carrier is a decode: {:?}",
+            arena.value_type(carrier)
         );
     }
 
