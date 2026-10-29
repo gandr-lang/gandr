@@ -6,8 +6,8 @@
 # test binary is built here with full debug information at opt-level 0, in its
 # own target directory (`target/debug-trace`): the gate's builds stay as they
 # are. `cargo nextest list` builds the package's test binaries and names the
-# one holding the test, and the directory it runs in. lldb, the one
-# `lldb.bash` names, runs that binary on the one test in batch mode, stopped at
+# one holding the test, and the directory it runs in. lldb, run bounded by
+# `lldb.bash`, runs that binary on the one test in batch mode, stopped at
 # each `--at <file>:<line>`, at each function `--break` names by regular
 # expression, and at a panic. At the stop it prints the backtrace, the frame's
 # locals and the caller's, with the checkout's Rust formatters loaded first
@@ -37,7 +37,8 @@ while (( $# > 0 )); do
   esac
 done
 root=$(git rev-parse --show-toplevel)
-lldb=$("$root/.config/debug/lldb.bash" lldb)
+lldb=$root/.config/debug/lldb.bash
+"$lldb" lldb --version > /dev/null
 unset RUSTFLAGS
 export CARGO_TARGET_DIR=$root/target/debug-trace CARGO_PROFILE_TEST_DEBUG=full CARGO_PROFILE_TEST_OPT_LEVEL=0
 scratch=$(mktemp -d)
@@ -58,6 +59,6 @@ trace=$cwd/tests/debug-traces/${test//::/.}.txt
 mkdir -p "${trace%/*}"
 {
   printf 'test: %s\npackage: %s\ncommand: %s\n\n' "$test" "$package" "$command"
-  (cd "$cwd" && CARGO_MANIFEST_DIR=$cwd timeout 900 "$lldb" --batch "${commands[@]}" -- "$binary" "$test" --exact --nocapture --test-threads=1 2>&1) || true
+  (cd "$cwd" && CARGO_MANIFEST_DIR=$cwd timeout 900 "$lldb" lldb --batch "${commands[@]}" -- "$binary" "$test" --exact --nocapture --test-threads=1 2>&1) || true
 } | sed -e "s|$root/||g" -e "s|$HOME|~|g" | tee "$trace"
 echo "debug: the transcript is ${trace#"$root"/}" >&2

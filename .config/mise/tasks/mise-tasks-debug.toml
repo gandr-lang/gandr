@@ -10,10 +10,11 @@
 # sources that file. A DAP client such as `lldb-dap` sources it by its launch
 # argument `initCommands: ["command source .config/debug/lldbinit"]`, the
 # adapter started in the checkout. An open session sources it by
-# `command source .config/debug/lldbinit`. The debugger is the one
-# `.config/debug/lldb.bash lldb` names, and a DAP client's adapter the one
-# `.config/debug/lldb.bash lldb-dap` names: on macOS LLVM's, since Xcode's
-# misnames enum variants (#3778).
+# `command source .config/debug/lldbinit`. The debugger runs through
+# `.config/debug/lldb.bash lldb`, and a DAP client's adapter command is
+# `.config/debug/lldb.bash lldb-dap`: on macOS LLVM's, since Xcode's
+# misnames enum variants (#3778), and bounded in memory, so a session never
+# takes the host's (#3823).
 ["debug:lldb"]
 description = "Run lldb on a program with the checkout's Rust formatters"
 usage = '''
@@ -25,8 +26,7 @@ run = '''
 set -euo pipefail
 read -ra arguments <<< "${usage_args:-}"
 root=$(git rev-parse --show-toplevel)
-lldb=$("$root/.config/debug/lldb.bash" lldb)
-exec "$lldb" --source "$root/.config/debug/lldbinit" -- "$usage_program" "${arguments[@]}"
+exec "$root/.config/debug/lldb.bash" lldb --source "$root/.config/debug/lldbinit" -- "$usage_program" "${arguments[@]}"
 '''
 
 # Every defect starts in the debugger (#3758): the observation a defect fix
