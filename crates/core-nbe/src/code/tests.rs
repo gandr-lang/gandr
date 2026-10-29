@@ -586,6 +586,78 @@ fn motives_written_apart_are_alike_read_through_their_environments_650()
 }
 
 #[test]
+fn motives_calling_one_variable_family_are_alike_3802()
+{
+    // #3802: `z. Q(z)`, `Q` a variable family, lowered at each of two
+    // transports. Each body decodes the pure call `Q(z)`, and the two calls
+    // are distinct nodes. The machine quotes both motives under one fresh
+    // endpoint and compares the quotes; the search-free step crosses the
+    // motives' binders alike. Both read one family, also over captures of
+    // different depths. A call of another family stays undecided, never
+    // apart, as an unread call did.
+    let mut core = CoreArena::new();
+    let family = |core: &mut CoreArena, head: u32| {
+        let function = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(head));
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = core.computation_force(function);
+        let call = core.computation_application(forced, endpoint);
+        let code = core.value_returned(call);
+        core.value_type_element(code, Level::zero())
+    };
+    let (near, again, far) = (
+        family(&mut core, 1),
+        family(&mut core, 1),
+        family(&mut core, 2),
+    );
+
+    let mut domain = DomainArena::new();
+    let q = variable(&mut domain, BinderLevel::from(0_u32));
+    let r = variable(&mut domain, BinderLevel::from(1_u32));
+    let endpoint = variable(&mut domain, BinderLevel::from(2_u32));
+    let motive = |domain: &mut DomainArena, body, bound: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &value in bound {
+            environment.extend(Zone::Intuitionistic, value);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+
+    let quoted = motive(&mut domain, near, &[q, endpoint]);
+    let quoted_again = motive(&mut domain, again, &[q, endpoint]);
+    let quoted_other = motive(&mut domain, near, &[r, endpoint]);
+    assert_eq!(
+        CodeComparison::Equal,
+        compare_rigidly(&core, &domain, quoted, quoted_again),
+        "two quotes of one call under one endpoint are one code"
+    );
+    assert_eq!(
+        CodeComparison::Undecided,
+        compare_rigidly(&core, &domain, quoted, quoted_other),
+        "a call of another family stays undecided, never apart"
+    );
+
+    let over_q = motive(&mut domain, near, &[q]);
+    let over_q_again = motive(&mut domain, again, &[q]);
+    let over_q_far = motive(&mut domain, far, &[q, r]);
+    let over_r = motive(&mut domain, near, &[r]);
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_q, over_q_again).expect("both motives resolve"),
+        "two lowerings of one call are one family"
+    );
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_q, over_q_far).expect("both motives resolve"),
+        "and so are two captures of different depths"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over_q, over_r).expect("both motives resolve"),
+        "but a call of another family is not"
+    );
+}
+
+#[test]
 fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
 {
     // #577: `⌜U(Π(_ : Unit). F Unit)⌝` is `⌜U(Unit -> F Unit)⌝`, in either
