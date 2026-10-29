@@ -1,0 +1,86 @@
+// `math.cylinder`: cylinders and cones of paths, composed.
+//
+// A square of paths is a 2-cylinder. Its top and bottom are paths, its
+// sides are paths between their ends, and its filler is a path between the
+// two composites around it. Squares compose side by side and stack, and
+// triangles over one apex compose, as higher categories compose cylinders
+// and cones.
+//
+// Each composite is the term Catt's built-in prints at dimension 2, written
+// over `math.path`. The associator regroups a composite, and a whisker
+// carries a filler along a fixed path. A stacking is the side-by-side
+// composite of its transposed squares, read back.
+//
+// - see: #3712 — the composites at dimension 2, written from Catt's terms
+// - see: #3833 — the composites at dimension 3, by the naturality operation
+
+// `assoc`, `whiskerLeft`, `whiskerRight`.
+import "path.gandr";
+
+/// Two squares side by side compose to a square: Catt's `cylcomp(2,1,2)`.
+pub def cylinderComposite2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  x2 : A,
+  y2 : A,
+  f2 : Path(A, x2, y2),
+  xs : Path(A, x, x2),
+  ys : Path(A, y, y2),
+  a : Path(Path(A, x, y2), f then ys, xs then f2),
+  z : A,
+  g : Path(A, y, z),
+  z2 : A,
+  g2 : Path(A, y2, z2),
+  zs : Path(A, z, z2),
+  b : Path(Path(A, y, z2), g then zs, ys then g2)
+) -> Path(Path(A, x, z2), (f then g) then zs, xs then (f2 then g2)) {
+  assoc(A, x, y, z, z2, f, g, zs)
+    then whiskerLeft(A, x, y, z2, f, g then zs, ys then g2, b)
+    then back(assoc(A, x, y, y2, z2, f, ys, g2))
+    then whiskerRight(A, x, y2, z2, f then ys, xs then f2, a, g2)
+    then assoc(A, x, x2, y2, z2, xs, f2, g2)
+}
+
+/// A stack of two squares composes to a square: Catt's `cylstack(2)`, the composite of their transposes read back.
+pub def cylinderStack2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  x2 : A,
+  y2 : A,
+  f2 : Path(A, x2, y2),
+  xs : Path(A, x, x2),
+  ys : Path(A, y, y2),
+  a : Path(Path(A, x, y2), f then ys, xs then f2),
+  x3 : A,
+  y3 : A,
+  f3 : Path(A, x3, y3),
+  xs2 : Path(A, x2, x3),
+  ys2 : Path(A, y2, y3),
+  b : Path(Path(A, x2, y3), f2 then ys2, xs2 then f3)
+) -> Path(Path(A, x, y3), f then (ys then ys2), (xs then xs2) then f3) {
+  back(cylinderComposite2(A, x, x2, xs, y, y2, ys, f, f2, back(a), x3, xs2, y3, ys2, f3, back(b)))
+}
+
+/// Two triangles over one apex compose to a triangle: Catt's `conecomp(2,1,2)`.
+pub def coneComposite2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  c : A,
+  p : Path(A, x, c),
+  q : Path(A, y, c),
+  a : Path(Path(A, x, c), p, f then q),
+  w : A,
+  g : Path(A, y, w),
+  r : Path(A, w, c),
+  b : Path(Path(A, y, c), q, g then r)
+) -> Path(Path(A, x, c), p, (f then g) then r) {
+  a
+    then whiskerLeft(A, x, y, c, f, q, g then r, b)
+    then back(assoc(A, x, y, w, c, f, g, r))
+}
