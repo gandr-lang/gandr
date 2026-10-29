@@ -17,8 +17,9 @@
 #   pull-request run and floods the runners.
 # - A pull-request run lints and reports; the merge group tests. The title,
 #   treefmt and Clippy are required checks, and obligations gates the landing.
-#   The report lanes (mutants, hotpath) always run, file their follow-up
-#   issues and never block a green.
+#   The report lanes never block a green. The hotpath lane always runs and
+#   files its follow-up issues. The mutants lanes are off (`GANDR_MUTANTS`,
+#   #3695) until the dedicated host of #3207 runs them.
 # - The queue is tuned for throughput, pull requests landed per hour, not for
 #   one pull request's latency. Entries batch (at least 3, or a 5-minute
 #   wait); every entry gets its own cumulative group run; the runner pool is
@@ -108,6 +109,15 @@ env:
   # the lanes that run sweeps fetch that parent. A merge group's change runs
   # from its base on main instead (`sweep-base`, #2101), which its lanes fetch.
   GANDR_SWEEP_BASE: HEAD^
+  # The mutants lanes' one switch (#3695): the change report (`mutants`, with
+  # `mutants-comment` after it), the landing filer (`mutants-landed`) and the
+  # daily crate (`mutants-nightly`) run only at `on`. `prepare` reads it into
+  # its `mutants` output, which each lane's condition reads. The owner turned
+  # them off on 2026-10-28: hosted runners are too slow for the campaign to
+  # move, and nobody acts on its reports. The reversal is `on` here, once the
+  # dedicated host of #3207 runs them. The local tasks stay, so a seat may run
+  # `mise run mutants`, `mutants:named` or `mutants:changed` by hand.
+  GANDR_MUTANTS: "off"
 
 jobs:
   # Definitions only: aliases run in each consuming job's context.
@@ -472,6 +482,7 @@ jobs:
       baseline-run-id: ${{ steps.baseline.outputs.run-id }}
       baseline-sha: ${{ steps.baseline.outputs.sha }}
       baseline-created: ${{ steps.baseline.outputs.created }}
+      mutants: ${{ env.GANDR_MUTANTS == 'on' }}
     env:
       CI_SHA: ${{ github.sha }}
       CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
@@ -1486,7 +1497,7 @@ jobs:
   mutants:
     name: report the mutants of the change (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1585,7 +1596,7 @@ jobs:
   mutants-nightly:
     name: mutate the night's crate (linux)
     needs: *rust-needs
-    if: *main-lane
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1868,7 +1879,7 @@ jobs:
   mutants-landed:
     name: file the landings' surviving mutants
     needs: *rust-needs
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    if: ${{ !cancelled() && needs.prepare.outputs.mutants == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
       contents: read
