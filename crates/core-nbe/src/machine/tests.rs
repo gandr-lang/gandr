@@ -4187,6 +4187,89 @@ fn a_held_elimination_compares_with_a_bind_over_its_call_2326()
 }
 
 #[test]
+fn a_held_transport_compares_with_a_bind_over_its_call_3800()
+{
+    // `S to q. tr(y. Path(Unit, (), y), q, ())` against `tr(y. Path(Unit, (),
+    // y), ⟨S⟩, ())` for the stuck call `S`: `p then f(a)` against `p then
+    // idq(f(a))` in miniature, where the append runs the held operand `f(a)`
+    // and writes the bind over its call. The kernel reads the transport along
+    // the held path as `S to w. tr(…, w, ())`, so both sides are binds over
+    // `S`: they compare by the calls, then the continuations under one fresh
+    // variable, at the root, under a binder, and moving the held endpoint of
+    // the forced rigid `R`, which the kernel reads at the transport's held
+    // path as well. A continuation moving a pair refutes at that value.
+    // Before, every pair declined.
+    let build = || {
+        let mut core = CoreArena::new();
+        let stuck = stuck_call(&mut core);
+        let unit_type = core.value_type_unit();
+        let unit = core.value_unit();
+        let pair = core.value_tuple(&[unit, unit]);
+        let endpoint = innermost(&mut core);
+        let motive = core.value_type_path(unit_type, unit, endpoint);
+        let bound_path = innermost(&mut core);
+        let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let held_path = core.value_returned(stuck);
+        let bind_moving = |core: &mut CoreArena, moved| {
+            let continuation = core.computation_path_transport(motive, bound_path, moved);
+            core.computation_bind(stuck, continuation)
+        };
+        let at_unit = bind_moving(&mut core, unit);
+        let held_at_unit = core.computation_path_transport(motive, held_path, unit);
+        let under = bind_moving(&mut core, argument);
+        let under = core.computation_lambda(under);
+        let held_under = core.computation_path_transport(motive, held_path, bound_path);
+        let held_under = core.computation_lambda(held_under);
+        let at_pair = bind_moving(&mut core, pair);
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let forced = core.computation_force(rigid);
+        let held_forced = core.value_returned(forced);
+        let moving_held = bind_moving(&mut core, held_forced);
+        let held_moving_held = core.computation_path_transport(motive, held_path, held_forced);
+        let converting = [
+            Sides::Computations(at_unit, held_at_unit),
+            Sides::Computations(held_at_unit, at_unit),
+            Sides::Computations(under, held_under),
+            Sides::Computations(moving_held, held_moving_held),
+        ];
+        let refuting = Sides::Computations(at_pair, held_at_unit);
+        (core, converting, refuting)
+    };
+    let (core, converting, refuting) = build();
+    let read = World::new(core, &[]);
+    let (core, ..) = build();
+    let held = World::new(core, &[]).holding();
+
+    for world in [&read, &held] {
+        for sides in converting {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(
+                MachineVerdict::Convertible,
+                verdict,
+                "the bind and the transport along the endpoint compare as binds over `S`: \
+                 {decisions:?}"
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                world.replayed(sides, verdict, &decisions),
+                "the kernel decomposes the same binds: {decisions:?}"
+            );
+        }
+        let (verdict, decisions) = world.traced(refuting);
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            verdict,
+            "a continuation moving a pair refutes: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(refuting, verdict, &decisions),
+            "and the kernel refutes at the same value: {decisions:?}"
+        );
+    }
+}
+
+#[test]
 fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
 {
     // `⟨g ⟨S⟩ ⟨unit⟩⟩` against `⟨g ⟨S⟩ ()⟩` for the stuck call `S`, the
