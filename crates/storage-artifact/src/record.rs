@@ -503,8 +503,8 @@ impl ArtifactRecordSet
     /// # Specification
     /// - requires: `layout` is a decode's of `image`.
     /// - ensures: the header is the image up to the header's end, and record
-    ///   `i`, keyed by admission index `i`, holds the bytes from the end before
-    ///   it to its own.
+    ///   `i`, keyed by admission index `i`, holds the bytes of
+    ///   [`SegmentLayout::declaration_segment`] at `i`.
     /// - fails: [`ArtifactError::SegmentBoundary`] for a reported end the image
     ///   does not hold, which a decode's own specification rules out.
     /// - panics: none.
@@ -524,24 +524,22 @@ impl ArtifactRecordSet
     ) -> Result<Self, ArtifactError>
     {
         let bytes = image.as_ref();
-        let mut start = usize::from(layout.header_end());
-        let header = bytes.get(.. start).ok_or(ArtifactError::SegmentBoundary {
-            position: RecordIndex::ZERO,
-        })?;
+        let header = bytes.get(.. usize::from(layout.header_end())).ok_or(
+            ArtifactError::SegmentBoundary {
+                position: RecordIndex::ZERO,
+            },
+        )?;
         let mut records = Vec::with_capacity(layout.declaration_ends().len());
-        for (offset, &end) in layout.declaration_ends().iter().enumerate() {
-            let end = usize::from(end);
-            let segment =
-                bytes
-                    .get(start .. end)
-                    .ok_or_else(|| ArtifactError::SegmentBoundary {
-                        position: RecordIndex::from(offset.saturating_add(1_usize)),
-                    })?;
+        for (offset, span) in layout.declaration_segments().enumerate() {
+            let segment = bytes
+                .get(usize::from(span.start) .. usize::from(span.end))
+                .ok_or_else(|| ArtifactError::SegmentBoundary {
+                    position: RecordIndex::from(offset.saturating_add(1_usize)),
+                })?;
             records.push(ArtifactRecord::new(
                 ConstantIndex::from(offset),
                 SegmentBytes(segment),
             ));
-            start = end;
         }
 
         Ok(Self {

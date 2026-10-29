@@ -195,21 +195,18 @@ pub fn measure<'source>(
     };
     let (artifact, measures) = decode_measured(kernel.as_image())?;
     let layout = artifact.segments();
-    let ends = layout.declaration_ends();
     let rows = report
         .declarations()
         .iter()
         .filter_map(|declaration| {
-            let position = usize::from(positions.position(declaration.constant())?);
-            let measure = measures.get(position)?;
-            let end = usize::from(*ends.get(position)?);
-            let start = match position.checked_sub(1) {
-                Some(before) => usize::from(*ends.get(before)?),
-                None => usize::from(layout.header_end()),
-            };
+            let position = positions.position(declaration.constant())?;
+            let measure = measures.get(usize::from(position))?;
+            let span = layout.declaration_segment(position)?;
             Some(Measure {
                 name: declaration.name(),
-                bytes: ByteCount::from(end.saturating_sub(start)),
+                bytes: ByteCount::from(
+                    usize::from(span.end).saturating_sub(usize::from(span.start)),
+                ),
                 shared: measure.entries(),
                 unshared: measure.expanded_work(),
             })

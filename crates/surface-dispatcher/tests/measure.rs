@@ -31,27 +31,23 @@ fn sizes_by_name(
 ) -> BTreeMap<String, (ByteCount, TableEntryCount, ExpandedWork)>
 {
     let (artifact, measures) = decode_measured(image).expect("the admitted artifact decodes");
-    let layout = artifact.segments();
-    let mut start = usize::from(layout.header_end());
     let mut sizes = BTreeMap::new();
-    for ((declaration, &end), measure) in artifact
+    for ((declaration, span), measure) in artifact
         .declarations()
         .iter()
-        .zip(layout.declaration_ends())
+        .zip(artifact.segments().declaration_segments())
         .zip(&measures)
     {
-        let end = usize::from(end);
         if let Some(last) = declaration.declaration().name().segments().last() {
             let _replaced = sizes.insert(
                 last.as_ref().to_owned(),
                 (
-                    ByteCount::from(end.saturating_sub(start)),
+                    ByteCount::from(usize::from(span.end).saturating_sub(usize::from(span.start))),
                     measure.entries(),
                     measure.expanded_work(),
                 ),
             );
         }
-        start = end;
     }
     sizes
 }
