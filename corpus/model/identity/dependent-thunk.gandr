@@ -1,0 +1,20 @@
+/// A suspended function at a dependent value function type, whose result
+/// type reads its parameter.
+///
+/// A family of paths, a homotopy among them, is a value of such a type.
+///
+/// The function's parameter is the binder the result type reads, whichever
+/// name the function gives it.
+///
+/// - see: #3735 — the parameter bound twice, once apart from the type's binder
+/// - see: `transport-dependent-element.gandr` — a path that reads its own path
+
+/// Each path's reflexivity, as a family.
+def reflFamily(A : Type, x : A, y : A) -> (q : Path(A, x, y)) => Path(Path(A, x, y), q, q) {
+  thunk { fn (q : Path(A, x, y)) { here(q) } }
+}
+
+/// The same family, its parameter named apart from the type's binder.
+def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(A, x, y)) => Path(Path(A, x, y), q, q) {
+  thunk { fn (r : Path(A, x, y)) { here(r) } }
+}
