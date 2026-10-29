@@ -1,0 +1,76 @@
+[
+  {
+    "name": "#3758: a body working no defect owes no observation",
+    "input": {
+      "defect": false,
+      "body": "Closes #9",
+      "transcripts": []
+    },
+    "output": ""
+  },
+  {
+    "name": "#3758: a defect with no transcript owes the observation and names both commands",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": []
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript of a debug task stopped at a breakpoint in the test the body names discharges it, naming the stop",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: mise run debug:refusal EndpointMismatch gandr-core-checker judgement::tests::reflexivity_checks_by_endpoint_conversion\n\n(lldb) run\n* thread #2, name = 'judgement::test', stop reason = breakpoint 3.1\n    frame #0: 0x0000555556364cb6 gandr_core_checker`<gandr_core_checker::judgement::Machine>::reaches::{closure#0} at judgement.rs:10390:32\n(lldb) bt 24\n* thread #2, name = 'judgement::test', stop reason = breakpoint 3.1\n  * frame #0: 0x0000555556364cb6 gandr_core_checker`<gandr_core_checker::judgement::Machine>::reaches::{closure#0} at judgement.rs:10390:32\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt` stops `judgement::tests::reflexivity_checks_by_endpoint_conversion` at `judgement.rs:10390:32`.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript of a test the body does not name witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `judgement::tests::another_test`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: mise run debug:test gandr-core-checker judgement::tests::reflexivity_checks_by_endpoint_conversion\n\n* thread #2, stop reason = breakpoint 1.1\n    frame #0: 0x0000555556364cb6 gandr_core_checker`reaches at judgement.rs:10390:32\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript where lldb never stopped, the test passing through, witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "The regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: mise run debug:test gandr-core-checker judgement::tests::reflexivity_checks_by_endpoint_conversion\n\n(lldb) run\nProcess 7 exited with status = 0 (0x00000000)\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3758: a transcript written by hand, no debug task its command, witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "The regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
+      "transcripts": [
+        {
+          "path": "crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt",
+          "text": "test: judgement::tests::reflexivity_checks_by_endpoint_conversion\npackage: gandr-core-checker\ncommand: lldb by hand\n\n* thread #2, stop reason = breakpoint 1.1\n    frame #0: 0x0000555556364cb6 gandr_core_checker`reaches at judgement.rs:10390:32\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+  }
+]
