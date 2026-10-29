@@ -1211,6 +1211,86 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
     );
 }
 
+/// #3786: a transport through a family a parameter names, `P : A => Type`,
+/// was refused in a body and in a type when the motive named `P`, and in a
+/// body when the motive called it, `\a. P(a)`. The named motive moves through
+/// `a. ⟨force P a⟩`, and the called one reads `P` past every parameter no
+/// type names.
+#[test]
+fn a_transport_moves_through_a_family_a_parameter_names_3786()
+{
+    let telescope = "(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x))";
+    let source = format!(
+        "def movedNamed{telescope} -> P(y) {{\n  transport(P, p, v)\n}}\n\
+         def movedLambda{telescope} -> P(y) {{\n  transport(\\a. P(a), p, v)\n}}\n\
+         def statedNamed{telescope} -> Path(P(y), transport(P, p, v), transport(P, p, v)) {{\n  \
+         here(transport(P, p, v))\n}}\n\
+         def movedLate(A : Type, x : A, y : A, p : Path(A, x, y), P : A => Type, v : P(x)) -> \
+         P(y) {{\n  transport(\\a. P(a), p, v)\n}}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["movedNamed", "movedLambda", "statedNamed", "movedLate"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    let Some(&Computation::PathTransport { motive, .. }) =
+        arena.computation(tail_of(&module, &arena, "movedNamed".into()))
+    else {
+        panic!("`movedNamed` is a transport");
+    };
+    let called = match arena.value_type(motive) {
+        Some(&ValueType::Element { code, .. }) => match arena.value(code) {
+            Some(&Value::Returned(called)) => called,
+            other => panic!("the family is the code a call returns: {other:?}"),
+        },
+        other => panic!("the family decodes a code: {other:?}"),
+    };
+    let Some(&Computation::Application(forced, point)) = arena.computation(called)
+    else {
+        panic!("the family calls `P` at its binder");
+    };
+    assert_eq!(
+        arena.value(point),
+        Some(&variable(DeBruijnIndex::from(0_u32))),
+        "`P` is called at the family's binder"
+    );
+    let Some(&Computation::Force(head)) = arena.computation(forced)
+    else {
+        panic!("the family forces `P`");
+    };
+    assert_eq!(
+        arena.value(head),
+        Some(&variable(DeBruijnIndex::from(5_u32))),
+        "`P` stands past the binder and the four parameters after it"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+    let typed = lowered(
+        SourceText::from(
+            "def typed(A : Type, B : Type, x : A, y : A, p : Path(A, x, y), v : B) -> B {\n  \
+             transport(B, p, v)\n}\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            outcome_of(&typed, "typed".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            })
+        ),
+        "a parameter holding no family is no motive: {:?}",
+        outcome_of(&typed, "typed".into())
+    );
+}
+
 /// The transport `cong` unfolds to reads its map only lifted under the
 /// motive's binder; a parameter map's lift is the written map's copy, so it
 /// answers at the map's bytes (#443).

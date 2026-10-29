@@ -914,6 +914,48 @@ fn path_identity(
     }
 }
 
+/// The code a transport's or a ride's motive decodes under its binder: a
+/// static lambda's body, or the code a parameter holding a family returns
+/// when called at the binder, `y. ⟨force P y⟩` (#3786).
+///
+/// # Specification
+/// - requires: `motive` is a motive [`Lowerer::stated_motive`] admitted.
+/// - ensures: a static lambda's body as it stands; for any other value, the
+///   value raised past the binder, forced, applied to the binder and returned;
+///   nothing for an id the arena does not hold.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::mint_transport`].
+/// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
+#[spec(ensures: |ret| match (ret, arena.value(motive)) {
+    | (Maybe::Present(body), Some(&Value::StaticLambda(held))) => body == held,
+    | (Maybe::Present(body), Some(_)) => matches!(arena.value(body), Some(&Value::Returned(_))),
+    | (Maybe::Absent(_), held) => held.is_none(),
+    | (Maybe::Present(_), None) => false,
+})]
+fn motive_body(
+    arena: &mut CoreArena,
+    motive: ValueId,
+) -> Maybe<ValueId, lowered::Absent>
+{
+    match arena.value(motive) {
+        Some(&Value::StaticLambda(body)) => Maybe::Present(body),
+        Some(_) => {
+            let raised = gandr_core_term::shift_value(arena, motive, Binders::ONE).settle(arena);
+            let forced = arena.computation_force(raised);
+            let point = arena.value_variable(
+                gandr_core_term::Zone::Intuitionistic,
+                gandr_kernel_term::DeBruijnIndex::from(0_u32),
+            );
+            let called = arena.computation_application(forced, point);
+            Maybe::Present(arena.value_returned(called))
+        },
+        None => Maybe::Absent(lowered::Absent::OtherSort),
+    }
+}
+
 /// A node of the spine [`as_endpoint`] rewrites.
 ///
 /// # Specification
@@ -1879,7 +1921,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(path),
                 Some(value),
             ) => {
-                self.stated_motive(site, motive)?;
+                self.stated_motive(site, frame, motive)?;
                 // A static motive ranges over its path's points, so an
                 // operation over its binder reads the path's carrier (#3773).
                 if matches!(operation, Operation::Transport)
@@ -1991,32 +2033,37 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Require a transport's or a ride's motive to be written as a static
-    /// abstraction.
+    /// abstraction, or as the name of a parameter holding a family.
     ///
     /// # Specification
     /// - requires: `motive` is the first operand of the transport or the ride
-    ///   at `site`.
+    ///   at `site`, which stands under `frame`.
     /// - ensures: `Ok` exactly when the operand is a static abstraction, `\X.
-    ///   T`, whose body is the family the operation moves its value in.
+    ///   T`, whose body is the family the operation moves its value in, or a
+    ///   bare name resolving to a binder whose written type is a thunk or the
+    ///   alias, `P : A => Type`, whose calls are that family (#3786).
     /// - fails: the unannotated refusal at `site` for any other operand; the
-    ///   refusals the tree's molds yield.
+    ///   refusals the tree's molds yield and the name's own refusal from its
+    ///   resolution.
     /// - panics: none.
     ///
     /// # Errors
     /// The motive's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an abstraction motive lowers and a named one is
-    ///   refused.
+    /// - hypothesis: L3 — an abstraction motive lowers, a parameter holding a
+    ///   family lowers, and a declaration's name is refused.
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
+    /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     #[spec(ensures: |ret| ret.is_err() || matches!(
         self.tree.node(motive).map(|node| shape_of(self.pbg, node)),
-        Some(Ok(Shape::Form { former: Former::StaticAbstraction, .. }))
+        Some(Ok(Shape::Form { former: Former::StaticAbstraction | Former::Name | Former::Constructor, .. }))
     ))]
     fn stated_motive(
-        &self,
+        &mut self,
         site: Site,
+        frame: Frame,
         motive: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
@@ -2030,6 +2077,32 @@ impl<'source> Lowerer<'_, 'source>
                 former: Former::StaticAbstraction,
                 ..
             } => Ok(()),
+            // A capitalised name is read as a constructor, so a family's
+            // parameter is spelled either way; a constructor resolves to no
+            // binder and is refused.
+            Shape::Form {
+                former: Former::Name | Former::Constructor,
+                ..
+            } => {
+                let named = Placed::of(motive, node);
+                let name = self.name_at(named);
+                let Maybe::Present(super::Resolved::Binder(bound)) =
+                    self.resolve_name(Site { at: named, ..site }, frame, name)?
+                else {
+                    return Err(unannotated);
+                };
+                let Maybe::Present(written) = bound.declared
+                else {
+                    return Err(unannotated);
+                };
+                match self.tree.node(written).map(|node| shape_of(self.pbg, node)) {
+                    Some(Ok(Shape::Form {
+                        former: Former::ThunkType | Former::ValueFunctionType,
+                        ..
+                    })) => Ok(()),
+                    Some(Ok(_) | Err(_)) | None => Err(unannotated),
+                }
+            },
             Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => Err(unannotated),
         }
     }
@@ -4554,28 +4627,30 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Mint `transport(\X. T, p, v)`: the element transport in the family the
-    /// abstraction's body denotes under its binder.
+    /// Mint `transport(\X. T, p, v)` or `transport(P, p, v)`: the element
+    /// transport in the family the motive denotes under its binder.
     ///
     /// # Specification
     /// - requires: the three operands are already minted or absent.
     /// - ensures: the transport of the value along the path in the decode of
     ///   the motive's body at level zero, which the checker reads at the level
     ///   of the universe the path lives in — the quoted type itself when the
-    ///   body quotes one, so `\X. List(X)` is `y. List(El y)`. The transport
-    ///   carries the written origin, every other node minted for it the
-    ///   inserted identity origin, and the motive's written origin is recorded
-    ///   against the transport, so a face answers each written motive at its
-    ///   family's universe even where two motives denote one family. Nothing
-    ///   when an operand did not lower or the motive minted as no static
-    ///   abstraction.
+    ///   body quotes one, so `\X. List(X)` is `y. List(El y)`. A parameter
+    ///   holding a family is the family of the code its call at the binder
+    ///   returns, `y. El ⟨force P y⟩` (#3786). The transport carries the
+    ///   written origin, every other node minted for it the inserted identity
+    ///   origin, and the motive's written origin is recorded against the
+    ///   transport, so a face answers each written motive at its family's
+    ///   universe even where two motives denote one family. Nothing when an
+    ///   operand did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a list motive over a universe path, read back out of
-    ///   the arena.
+    /// - hypothesis: L3 — a list motive over a universe path, and a parameter
+    ///   holding a family, read back out of the arena.
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
@@ -4602,11 +4677,11 @@ impl<'source> Lowerer<'_, 'source>
             | (_, Maybe::Absent(reason), _)
             | (_, _, Maybe::Absent(reason)) => return Maybe::Absent(reason),
         };
-        let Some(&Value::StaticLambda(body)) = sink.arena.value(motive)
+        let mark = sink.arena.watermark();
+        let Maybe::Present(body) = motive_body(sink.arena, motive)
         else {
             return Maybe::Absent(lowered::Absent::OtherSort);
         };
-        let mark = sink.arena.watermark();
         let family = sink.arena.value_type_element(body, Level::zero());
         let inserted = origin.inserted(Insertion::Identity);
         let root = sink.arena.computation_path_transport(family, path, value);
@@ -4618,19 +4693,19 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(root))
     }
 
-    /// Mint `ride(\X. T, f, v)`: the ride of the value along the flow in the
-    /// family the abstraction's body denotes under its binder.
+    /// Mint `ride(\X. T, f, v)` or `ride(P, f, v)`: the ride of the value
+    /// along the flow in the family the motive denotes under its binder.
     ///
     /// # Specification
     /// - requires: the three operands are already minted or absent.
     /// - ensures: the ride of the value along the flow in the decode of the
     ///   motive's body at level zero, which the checker reads at the level of
     ///   the universe the flow lives in — the quoted type itself when the body
-    ///   quotes one, so `\X. Run(X)` is `y. Run(y)`. The ride carries the
-    ///   written origin and the family the inserted identity origin, and the
-    ///   motive's written origin is recorded against the ride, as a transport's
-    ///   is. Nothing when an operand did not lower or the motive minted as no
-    ///   static abstraction.
+    ///   quotes one, so `\X. Run(X)` is `y. Run(y)`, and a parameter holding a
+    ///   family as a transport reads it. The ride carries the written origin
+    ///   and the family the inserted identity origin, and the motive's written
+    ///   origin is recorded against the ride, as a transport's is. Nothing when
+    ///   an operand did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4665,11 +4740,11 @@ impl<'source> Lowerer<'_, 'source>
             | (_, Maybe::Absent(reason), _)
             | (_, _, Maybe::Absent(reason)) => return Maybe::Absent(reason),
         };
-        let Some(&Value::StaticLambda(body)) = sink.arena.value(motive)
+        let mark = sink.arena.watermark();
+        let Maybe::Present(body) = motive_body(sink.arena, motive)
         else {
             return Maybe::Absent(lowered::Absent::OtherSort);
         };
-        let mark = sink.arena.watermark();
         let family = sink.arena.value_type_element(body, Level::zero());
         let root = sink.arena.computation_ride(family, flow, value);
         let inserted = origin.inserted(Insertion::Identity);

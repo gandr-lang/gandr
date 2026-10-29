@@ -3222,6 +3222,10 @@ struct Lowerer<'run, 'source>
     /// out of into the body's context, and never make the signature's arrows
     /// dependent (#547).
     in_quote: BTreeSet<NodeIndex>,
+    /// The body of each static abstraction, the type its operator denotes: a
+    /// dynamic call written there unquotes the code it returns, and the body
+    /// quotes that type (#3786).
+    static_bodies: BTreeSet<NodeIndex>,
     /// The terms standing at an endpoint: a path type's endpoints,
     /// reflexivity's point and every node under one, where a computation
     /// standing as a value is the value it returns.
@@ -5192,6 +5196,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             synthesised: Vec::new(),
             in_type: BTreeSet::new(),
             in_quote: BTreeSet::new(),
+            static_bodies: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
             over_points: BTreeMap::new(),
             binders_over_points: BTreeMap::new(),
@@ -13432,11 +13437,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   application is the unquote of the code the call returns, in the
     ///   universe the position reads, and where a value is read, an application
     ///   of it to at least one argument is the call, a computation the position
-    ///   nests. Every argument is read as a value under the site's frame, and a
-    ///   binder so named is recorded by [`Self::name_in_type`]: quoted in a
-    ///   body quote, mentioned elsewhere. Each argument of a decode or an
-    ///   unquote counts in the type's telescope, as a family's arguments do, so
-    ///   a lambda among them reads each variable from outside it at its index.
+    ///   nests. In a static abstraction's body, the type its operator denotes,
+    ///   that call is the unquote a type reads, and the body quotes it; its
+    ///   telescope is read once that quote is chosen (#3786). Every argument is
+    ///   read as a value under the site's frame, and a binder so named is
+    ///   recorded by [`Self::name_in_type`]: quoted in a body quote, mentioned
+    ///   elsewhere. Each argument of a decode or an unquote counts in the
+    ///   type's telescope, as a family's arguments do, so a lambda among them
+    ///   reads each variable from outside it at its index.
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
@@ -13462,7 +13470,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   read, and a binder holding a thunk called where a type is read and in
     ///   a type-position call's argument, each asserted as the exact core node
     ///   read back out of the arena; a lambda in a type-valued call's argument,
-    ///   in a signature's type, reading outer variables at their indices.
+    ///   in a signature's type, reading outer variables at their indices; a
+    ///   binder holding a family called in a body's static abstraction, past a
+    ///   parameter no type names.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
@@ -13470,6 +13480,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
     /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
+    /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -13483,7 +13494,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && matches!(site.reading, Reading::Value(_))
                     },
                     | Some(&Plan::Decode(_, planned, _) | &Plan::Unquote(_, planned, _)) => {
-                        planned == applied && !matches!(site.reading, Reading::Value(_))
+                        planned == applied
+                            && (!matches!(site.reading, Reading::Value(_))
+                                || self.static_bodies.contains(&site.at.node))
                     },
                     | Some(&(Plan::Data(_, planned) | Plan::Codata(_, planned))) => planned == applied,
                     | _ => false,
@@ -13509,21 +13522,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.codata_type(site, constant, arity, applied);
         }
         let from = site.reading.frame();
-        let telescope = self.telescope_at(site.at.node);
-        let (code, declared) = match resolved {
-            Resolved::Binder(bound) => (
-                Code::Bound {
-                    from,
-                    binder: bound.binder,
-                    telescope,
-                },
-                bound.declared,
-            ),
-            Resolved::Declaration { constant, declared } => (Code::Constant(constant), declared),
+        let declared = match resolved {
+            Resolved::Binder(bound) => bound.declared,
+            Resolved::Declaration { declared, .. } => declared,
         };
         let called = applied.start < applied.end;
-        let dynamic = match code {
-            Code::Constant(constant) => matches!(
+        let dynamic = match resolved {
+            Resolved::Declaration { constant, .. } => matches!(
                 self.collected
                     .slots
                     .get(usize::from(constant))
@@ -13537,7 +13542,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             // bridge or the alias, or when it is written with no type: a
             // pattern's field or a `run`'s result. A static lambda's operand
             // is an operator, and its application is static.
-            Code::Bound { .. } => {
+            Resolved::Binder(_) => {
                 called
                     && match declared {
                         Maybe::Present(written) => self.tree.node(written).is_some_and(|node| {
@@ -13556,34 +13561,50 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
             },
         };
-        let (plan, produced) = if let Reading::Value(_) = site.reading {
-            if dynamic && called {
-                (Plan::Called(code, applied), Produced::Computation)
-            }
-            else {
-                (Plan::StaticApplication(code, applied), Produced::Value)
-            }
-        }
-        else {
+        // A static abstraction's body is the type its operator denotes, so a
+        // dynamic call written there is the type of the code it returns, and
+        // the body quotes it (#3786).
+        let decoded = !matches!(site.reading, Reading::Value(_))
+            || (dynamic && called && self.static_bodies.contains(&site.at.node));
+        let universe = if decoded {
             let count = OperandCount::from(applied.end.saturating_sub(applied.start));
             if dynamic && !called {
                 return Err(site.out(FragmentBoundary::Arity(count)));
             }
-            let universe =
-                self.written_universe(declared, count, site.reading.positional_universe())?;
-            let produced = match universe.sort {
-                GroundSort::Value => Produced::ValueType,
-                GroundSort::Computation => Produced::CompType,
-            };
-            let plan = if dynamic {
-                Plan::Unquote(code, applied, universe)
-            }
-            else {
-                Plan::Decode(code, applied, universe)
-            };
-            (plan, produced)
+            Some(self.written_universe(declared, count, site.reading.positional_universe())?)
+        }
+        else {
+            None
+        };
+        let produced = match universe {
+            Some(Universe {
+                sort: GroundSort::Value,
+                ..
+            }) => Produced::ValueType,
+            Some(Universe {
+                sort: GroundSort::Computation,
+                ..
+            }) => Produced::CompType,
+            None if dynamic && called => Produced::Computation,
+            None => Produced::Value,
         };
         let frame = self.require(site, produced)?;
+        // The telescope is read once the bridge is chosen: a quote the bridge
+        // inserts counts the code in its own.
+        let code = match resolved {
+            Resolved::Binder(bound) => Code::Bound {
+                from,
+                binder: bound.binder,
+                telescope: self.telescope_at(site.at.node),
+            },
+            Resolved::Declaration { constant, .. } => Code::Constant(constant),
+        };
+        let plan = match universe {
+            Some(universe) if dynamic => Plan::Unquote(code, applied, universe),
+            Some(universe) => Plan::Decode(code, applied, universe),
+            None if dynamic && called => Plan::Called(code, applied),
+            None => Plan::StaticApplication(code, applied),
+        };
         if let Code::Bound { binder, .. } = code {
             let _telescope = self.name_in_type(site.at.node, binder);
         }
@@ -14249,8 +14270,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a frame extending its own, untyped — the checker reads the type from
     ///   the operator's signature — reads its body as a value under that frame,
     ///   so a type written there is quoted, and is planned as the static lambda
-    ///   over it. A transport's motive [`Self::over_points`] records keeps its
-    ///   binder untyped, and records it with the carrier of its path (#3773).
+    ///   over it. The body is filed in [`Self::static_bodies`], so a dynamic
+    ///   call written there is the type of the code it returns (#3786). A
+    ///   transport's motive [`Self::over_points`] records keeps its binder
+    ///   untyped, and records it with the carrier of its path (#3773).
     /// - provides: the introduction of a type operator.
     /// - fails: yields the wrong-sort refusal where no value is read, a
     ///   misplaced-tile fault for a binder out of shape, the binder policy's
@@ -14264,9 +14287,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — one abstraction, two nested whose body names both
     ///   binders, and an abstraction where a value type is read, each asserted
     ///   as the exact core node read back out of the arena or the exact
-    ///   refusal; a lowercase binder name.
+    ///   refusal; a lowercase binder name; a body calling a binder that holds a
+    ///   family.
     /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
     /// - witness: `lower::tests::a_static_abstraction_binds_a_lowercase_name`
+    /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -14307,6 +14332,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&carrier) = self.over_points.get(&site.at.node) {
             let _first = self.binders_over_points.insert(extended, carrier);
         }
+        let _body = self.static_bodies.insert(body.node);
         self.read(body.node, Reading::Value(Frame::Inner(extended)));
 
         self.plan(site, Plan::StaticLambda(body.node));
