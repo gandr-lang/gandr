@@ -248,16 +248,18 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the parameter list's `(`;
-    ///   `function` is the function tail's site.
+    ///   `function` is the function tail's site; `own` is the tail's own name,
+    ///   read before its parameters bind.
     /// - ensures: for a function with a merged telescope, each entry is bound
     ///   in a frame extending the one before it, its type, when written, read
     ///   as a value type under that frame and recorded on its parameter, a
     ///   model implicit flattened into one parameter per component
     ///   ([`Self::flatten_implicit`]), an instance bound as its interface's
     ///   capability at a region binder of its own
-    ///   ([`Self::instance_parameter`]); the cursor then stands at the list's
-    ///   `)`, and the frame the last entry bound is returned. Otherwise nothing
-    ///   changes and `frame` is returned.
+    ///   ([`Self::instance_parameter`]), and a recursive tail's own name bound
+    ///   before the entry after the kept ones ([`Self::bind_kept`]); the cursor
+    ///   then stands at the list's `)`, and the frame the last entry bound is
+    ///   returned. Otherwise nothing changes and `frame` is returned.
     /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
     ///   an instance's ([`Self::instance_parameter`]); a fault at the parameter
     ///   list when it ends before its `)`.
@@ -274,6 +276,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
     #[spec(
         captures: before = self.parameters.len(),
         ensures: |ret| ret.is_err() || self.parameters.len() >= before,
@@ -284,6 +287,7 @@ impl<'source> Lowerer<'_, 'source>
         function: Site,
         cursor: &mut Cursor<'_>,
         frame: Frame,
+        own: &mut super::OwnName,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
         let Maybe::Present(entries) = self.merged_at(site.at.node)
@@ -294,6 +298,7 @@ impl<'source> Lowerer<'_, 'source>
         let owner = self.collected.owner_of(site.at.node);
         let mut frame = frame;
         for (written, entry) in entries.into_iter().enumerate() {
+            frame = self.bind_kept(site, own, frame);
             if entry.plicity == Plicity::Instance {
                 frame = self.instance_parameter(site, entry, frame)?;
                 continue;
