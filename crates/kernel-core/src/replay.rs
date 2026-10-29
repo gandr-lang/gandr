@@ -2116,6 +2116,35 @@ struct Suspended
     frames: Vec<Frame>,
 }
 
+/// A held operand [`Replay::whnf`] runs in place of the reading that met it,
+/// as the evaluator's append runs one before it reads the operand's word.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct HeldRun
+{
+    /// The transport whose operand runs.
+    transport: crate::element_identity::ElementTransport,
+    /// The operand's computation, as the append holds it.
+    operand: ComputationId,
+    /// The frames outside the transport, innermost last.
+    frames: Vec<Frame>,
+    /// The binds the waiting reading was trying.
+    attempts: Vec<Attempt>,
+    /// How the waiting reading reduces.
+    reduction: Reduction,
+}
+
+/// What a held operand's run does at the weak head it stopped at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunStep
+{
+    /// It returned this value, which is no held endpoint.
+    Returns(ValueId),
+    /// This definition heads it, and the run unfolds it.
+    Unfolds(ConstantIndex),
+    /// It returned a held endpoint, or stuck at a head the run does not unfold.
+    Sticks,
+}
+
 impl Goal
 {
     /// A fresh goal over `premise`, with nothing frozen.
@@ -2216,6 +2245,9 @@ enum Elimination
     /// A path transport along a neutral path head; the arena node retains
     /// its motive and its value.
     PathTransport(ComputationId),
+    /// A telescope transport along a neutral path head; the arena node
+    /// retains its motive, its second entry's start and path, and its value.
+    TelescopeTransport(ComputationId),
     /// The head forced.
     Force,
     /// An application to this argument.
@@ -3429,8 +3461,8 @@ where
     ///   fixpoint, the fixpoint refolded — its body opened at the constant and
     ///   weakened past the binder it does not read, its evidence kept — under
     ///   those frames; otherwise [`Self::unfold_term`]'s reduct.
-    /// - provides: the δ-step of [`Self::normalize_returned`] and
-    ///   [`Self::run_held_operand`].
+    /// - provides: the δ-step of [`Self::normalize_returned`] and of a held
+    ///   operand's run in [`Self::reduce`].
     /// - fails: as [`Self::unfold_term`].
     /// - panics: none.
     ///
@@ -5340,8 +5372,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: `term` is in weak head form.
     /// - ensures: a value's former, thunk, or head under its static
     ///   applications, innermost first; a computation's lambda, lazy pairing,
-    ///   returner, or head under its spine, innermost first. A transport's path
-    ///   and a ride's flow stand at the head of their elimination.
+    ///   returner, or head under its spine, innermost first. A transport's
+    ///   path, a telescope transport's path and a ride's flow stand at the head
+    ///   of their elimination.
     /// - provides: what the rule table dispatches on.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id, a head no rule
     ///   reads, or a returned endpoint, which [`Self::settle`] reads first.
@@ -5402,6 +5435,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     } else { spine.as_slice() == [Elimination::Transport(value)] },
                     Computation::Ride { .. } => spine.as_slice() == [Elimination::Ride(computation)],
                     Computation::PathTransport { .. } => spine.as_slice() == [Elimination::PathTransport(computation)],
+                    Computation::TelescopeTransport { .. } => spine.as_slice() == [Elimination::TelescopeTransport(computation)],
                     Computation::Case { .. } => spine.as_slice() == [Elimination::Case(computation)],
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
                     Computation::SigmaSplit { .. } => spine.as_slice() == [Elimination::SigmaSplit(computation)],
@@ -5410,7 +5444,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::Project(side, _) => spine.last() == Some(&Elimination::Project(side)),
                     Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
                     Computation::ListCase { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListCase(on_nil, on_cons)],
-                    Computation::Lambda(_) | Computation::Return(_) | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
+                    Computation::Lambda(_) | Computation::Return(_) | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Fixpoint { .. } => false,
                 },
                 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
                 _ => false,
@@ -5544,6 +5578,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     spine.push(Elimination::PathTransport(focus));
                     break self.value_head(path, frozen, side)?;
                 },
+                // A telescope transport stuck at the table stands on its
+                // path, as the engine's spine holds it on the path's neutral.
+                Some(&Computation::TelescopeTransport { path, .. }) => {
+                    spine.push(Elimination::TelescopeTransport(focus));
+                    break self.value_head(path, frozen, side)?;
+                },
                 Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
@@ -5610,14 +5650,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let head = self.value_head(scrutinee, frozen, side)?;
                     break head;
                 },
-                // A telescope transport, a telescope ride or a related
-                // application that did not reduce has no trace alphabet of its
-                // own: the replay reads it as unreadable.
+                // A telescope ride or a related application that did not
+                // reduce has no trace alphabet of its own: the replay reads it
+                // as unreadable.
                 Some(
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
-                    | Computation::TelescopeTransport { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }),
                 )
@@ -5786,9 +5825,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: `term`'s head is `constant`, defined.
     /// - ensures: a value its δ- or δβ-reduct, as [`Self::unfold_value`] gives
     ///   it; a computation its spine over the body, a ride's body standing as
-    ///   its flow, a path transport's path its δ-reduct and a stuck fixpoint's
-    ///   staged argument its body, past its leading arguments; of `term`'s
-    ///   polarity either way.
+    ///   its flow, a path transport's or a telescope transport's path its
+    ///   δ-reduct and a stuck fixpoint's staged argument its body, past its
+    ///   leading arguments; of `term`'s polarity either way.
     /// - provides: the term half of [`Self::unfold`], shared with
     ///   [`Self::normalize_returned`].
     /// - fails: as [`Self::unfold`].
@@ -5903,6 +5942,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let path = self.unfold_value(path, unfolding)?;
                     break self.arena.computation_path_transport(motive, path, value);
                 },
+                Some(&Computation::TelescopeTransport {
+                    motive,
+                    path,
+                    start,
+                    over,
+                    value,
+                }) => {
+                    let path = self.unfold_value(path, unfolding)?;
+                    break self
+                        .arena
+                        .computation_telescope_transport(motive, path, start, over, value);
+                },
                 Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -5947,7 +5998,6 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     &(Computation::Lambda(_)
                     | Computation::With(..)
                     | Computation::Return(_)
-                    | Computation::TelescopeTransport { .. }
                     | Computation::TelescopeRide { .. }
                     | Computation::RelatedApplication { .. }),
                 )
@@ -6163,14 +6213,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   and after each reading; the `loop` choosing the next bind, which pops
     ///   one attempt per failed turn, passes one bind frame per bind passed
     ///   over, and ends at a push or at the last pop; the `'endpoints` loop,
-    ///   which resumes a plain reading once its met endpoint is read, and an
-    ///   endpoint reading suspends none; the `for` loops over a data case's
-    ///   fields and equations; and the `while let` loop rebuilding the head
-    ///   path.
+    ///   which resumes a plain reading once its met endpoint is read, and a
+    ///   reading once its held operand's run ends, re-entering a run after each
+    ///   δ-step it takes, and an endpoint reading suspends none; the `for`
+    ///   loops over a data case's fields and equations; and the `while let`
+    ///   loop rebuilding the head path.
     /// - measure: the budget left, which every inner iteration charges and
-    ///   every `'reading` iteration enters; then the attempts held, finite
-    ///   because each was pushed by a charged iteration; then the frames left;
-    ///   then the one suspended reading.
+    ///   every `'reading` iteration enters; then the attempts and the runs
+    ///   held, finite because each was pushed by a charged iteration; then the
+    ///   frames left; then the one suspended reading.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over generated terms reaching every instantiation
@@ -6180,6 +6231,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   every step.
     /// - witness: `replay::tests::the_environment_reduction_agrees_with_the_substituting_one`
     /// - witness: `replay::tests::a_chain_of_beta_steps_walks_its_reduct_once`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     fn reduce(
         &mut self,
         term: Term,
@@ -6209,6 +6261,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // suspends, so one is held at most.
         let mut reduction = reduction;
         let mut suspended: Option<Suspended> = None;
+        // The held operands running in place of the readings that met them,
+        // innermost last: an append runs its held operand before it reads the
+        // operand's word, and the reading waits on what the run comes to.
+        let mut runs: Vec<HeldRun> = Vec::new();
         // The arguments a data case's branch applies to, refilled at each case.
         let mut arguments: Vec<ValueId> = Vec::new();
         'endpoints: loop {
@@ -6490,7 +6546,27 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => {
-                                    match self.transport_along_word(term)? {
+                                    // The append runs a held operand before it
+                                    // reads the operand's word: the run reads
+                                    // as an endpoint in place of this reading,
+                                    // which waits on what it comes to.
+                                    if let Some(operand) =
+                                        crate::words::held_operand(self.arena, self.evaluator, term)
+                                    {
+                                        let outer = self.unload_frames(&mut cells, &mut frames);
+                                        runs.push(HeldRun {
+                                            transport: term,
+                                            operand,
+                                            frames: outer,
+                                            attempts: core::mem::take(&mut attempts),
+                                            reduction,
+                                        });
+                                        reduction = Reduction::Endpoint;
+                                        focus = Closure::closed(operand);
+                                        progress = Progress::Unchanged;
+                                        continue;
+                                    }
+                                    match self.transport_along_word(term) {
                                         crate::path_universe::Reduction::Reduced(reduct) => {
                                             focus = Closure::closed(reduct);
                                             progress = Progress::Reduced;
@@ -7010,6 +7086,70 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         },
                     }
                 }
+            }
+            // A held operand's run is read. A definition heading it unfolds and
+            // the run goes on, as the evaluator's run unfolds what it meets and
+            // records no decision for it. A value it returns moves along the
+            // path. A run that sticks leaves the operand as it was, and the
+            // transport runs its returned path first, or its operand; the
+            // conversion unfolds what the operand holds later, by a recorded
+            // step.
+            if let Some(run) = runs.pop() {
+                let read = if progress == Progress::Unchanged {
+                    run.operand
+                }
+                else {
+                    self.rebuild(&mut cells, focus, &mut frames)
+                };
+                let reduct = match self.run_step(read) {
+                    RunStep::Unfolds(constant) => {
+                        let Term::Computation(unfolded) =
+                            self.unfold_refolded(Term::Computation(read), constant)?
+                        else {
+                            return Err(unreadable());
+                        };
+                        focus = Closure::closed(unfolded);
+                        frames.clear();
+                        progress = Progress::Reduced;
+                        runs.push(run);
+                        continue 'endpoints;
+                    },
+                    RunStep::Returns(value) => self.arena.computation_path_transport(
+                        run.transport.motive,
+                        run.transport.path,
+                        value,
+                    ),
+                    RunStep::Sticks => {
+                        if let Some(reduct) = crate::words::run_path(
+                            self.arena,
+                            &mut self.table,
+                            &mut self.memo,
+                            run.transport,
+                        ) {
+                            reduct
+                        }
+                        else {
+                            let crate::path_universe::Reduction::Reduced(reduct) =
+                                crate::words::transport_word(
+                                    self.arena,
+                                    &mut self.table,
+                                    &mut self.memo,
+                                    self.evaluator,
+                                    run.transport,
+                                )
+                            else {
+                                return Err(unreadable());
+                            };
+                            reduct
+                        }
+                    },
+                };
+                focus = Closure::closed(reduct);
+                frames = run.frames.into_iter().map(Closure::closed).collect();
+                attempts = run.attempts;
+                reduction = run.reduction;
+                progress = Progress::Reduced;
+                continue 'endpoints;
             }
             // The endpoint's computation is read: the suspended plain reading binds
             // what it came to and goes on. A reading stopped at a call a definition
@@ -7644,53 +7784,60 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         }
     }
 
-    /// `term` with its held operand, where the append rows read one, taken the
-    /// one δ-step its defined head admits.
+    /// The step the evaluator's run of a held operand takes at the weak head
+    /// `read` it stopped at.
     ///
     /// The evaluator's append runs a held operand — a call such as `spin(Z)`,
     /// held as an endpoint — before it reads the operand's word, unfolding
     /// what the run meets, and records no decision for it: the dialogue under
-    /// a stuck transport names no unfolding. The replay takes the same step
-    /// here, by [`Self::unfold_term`], and the weak head loop runs the reduct
-    /// as the returned operand it stands for.
+    /// a stuck transport names no unfolding. A run that sticks at a head no
+    /// definition unfolds, or returns a held endpoint again, leaves the
+    /// operand as it was, and the transport stands on its held path: `H(b)
+    /// then ⟨ap(G, here(b))⟩` on `ap`, and `assoc(f, g, h) then
+    /// ⟨whiskerRight(…)⟩` on `whiskerRight`, which the dialogue unfolds next.
+    /// [`Self::reduce`] runs the operand by its search-free steps and takes the
+    /// step this names at each weak head the run reaches.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `term` with its operand `⟨c⟩` replaced by `⟨c'⟩`, `c'` the
-    ///   δ-reduct of `c`, exactly when [`crate::words::held_operand`] reads `c`
-    ///   and `c` is stuck at a defined head; `term` itself otherwise.
+    /// - ensures: `Returns(v)` when `read` is `return v` and `v` is no returned
+    ///   endpoint; `Unfolds(k)` when the definition `k` heads `read`, and a
+    ///   constructor opens its gate if `k` is a recursive definition; `Sticks`
+    ///   otherwise.
     /// - provides: the replay's reading of the evaluator's held-operand run.
-    /// - fails: as [`Self::unfold_term`].
+    /// - fails: never.
     /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `spin(Z) then spin(a)` replays as `spin(a)`; left
     ///   held, the call sticks the bind that runs it and the replay refuses
-    ///   what the checker accepted.
+    ///   what the checker accepted. A call whose run sticks past a definition
+    ///   stays as it was under a held path; run into its body, the operand
+    ///   leaves nothing for the unfolding the checker records.
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     #[spec(ensures: |ret| match ret {
-        Ok(read) => self.arena.value(read.value).is_some(),
-        Err(_) => true,
+        RunStep::Returns(read) => self.arena.value(read).is_some(),
+        RunStep::Unfolds(_) | RunStep::Sticks => true,
     })]
-    fn run_held_operand(
-        &mut self,
-        term: crate::element_identity::ElementTransport,
-    ) -> Result<crate::element_identity::ElementTransport, Stop>
+    fn run_step(
+        &self,
+        read: ComputationId,
+    ) -> RunStep
     {
-        let Some(held) = crate::words::held_operand(self.arena, self.evaluator, term)
-        else {
-            return Ok(term);
-        };
+        if let Some(&Computation::Return(returned)) = self.arena.computation(read) {
+            if matches!(self.arena.value(returned), Some(&Value::Returned(_))) {
+                return RunStep::Sticks;
+            }
+            return RunStep::Returns(returned);
+        }
         let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) = self.shape(
-            Term::Computation(held),
+            Term::Computation(read),
             &Frozen::default(),
             ConversionSide::Left,
         )
         else {
-            return Ok(term);
+            return RunStep::Sticks;
         };
         // A recursive definition's run stays held at a gate no constructor
         // opens, `spin(x)` for a variable `x`: the evaluator's run answers
@@ -7704,7 +7851,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
             };
             let mut arguments = Vec::new();
-            let mut head = held;
+            let mut head = read;
             while let Some(&Computation::Application(function, argument)) =
                 self.arena.computation(head)
             {
@@ -7718,23 +7865,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             if !gate.is_some_and(|argument| {
                 matches!(self.arena.value(argument), Some(&Value::Constructor { .. }))
             }) {
-                return Ok(term);
+                return RunStep::Sticks;
             }
         }
-        let Term::Computation(unfolded) =
-            self.unfold_refolded(Term::Computation(held), constant)?
-        else {
-            return Err(unreadable());
-        };
-        Ok(crate::element_identity::ElementTransport {
-            value: self.arena.value_returned(unfolded),
-            ..term
-        })
+        RunStep::Unfolds(constant)
     }
 
     /// One transport step along a word where
-    /// [`crate::element_identity::transport_beta`] sticks: the held operand
-    /// run, then a held path read by the append rows, then
+    /// [`crate::element_identity::transport_beta`] sticks and the append holds
+    /// no operand to run: a held path read by the append rows, then
     /// [`crate::words::transport_word`].
     ///
     /// The evaluator holds an endpoint's call at the first definition it is
@@ -7744,20 +7883,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// so it takes [`crate::words::appended`]'s rows before
     /// [`crate::words::transport_word`] would run it first; any other
     /// returned path runs first, as the evaluator runs every value it does
-    /// not hold.
+    /// not hold. A held operand runs before either, in [`Self::reduce`].
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`crate::words::appended`]'s reduct when, after
-    ///   [`Self::run_held_operand`], the path is `⟨c⟩` with `c` stuck at a
-    ///   defined head and the append rows read the operand;
+    /// - ensures: [`crate::words::appended`]'s reduct when the path is `⟨c⟩`
+    ///   with `c` stuck at a defined head and the append rows read the operand;
     ///   [`crate::words::transport_word`]'s answer otherwise.
     /// - provides: the replay's reading of transport along a word.
-    /// - fails: as [`Self::run_held_operand`].
+    /// - fails: never.
     /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `spin(S(x)) then spin(a)` replays as `loop ∷ (spin(x)
@@ -7765,15 +7900,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   sticks the bind and the replay refuses what the checker accepted.
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     #[spec(ensures: |ret| match ret {
-        Ok(crate::path_universe::Reduction::Reduced(reduct)) => self.arena.computation(reduct).is_some(),
-        Ok(crate::path_universe::Reduction::Stuck) | Err(_) => true,
+        crate::path_universe::Reduction::Reduced(reduct) => self.arena.computation(reduct).is_some(),
+        crate::path_universe::Reduction::Stuck => true,
     })]
     fn transport_along_word(
         &mut self,
         term: crate::element_identity::ElementTransport,
-    ) -> Result<crate::path_universe::Reduction, Stop>
+    ) -> crate::path_universe::Reduction
     {
-        let term = self.run_held_operand(term)?;
         if let Some(&Value::Returned(along)) = self.arena.value(term.path)
             && let Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _)) = self.shape(
                 Term::Computation(along),
@@ -7783,15 +7917,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             && let crate::path_universe::Reduction::Reduced(reduct) =
                 crate::words::appended(self.arena, self.evaluator, term)
         {
-            return Ok(crate::path_universe::Reduction::Reduced(reduct));
+            return crate::path_universe::Reduction::Reduced(reduct);
         }
-        Ok(crate::words::transport_word(
+        crate::words::transport_word(
             self.arena,
             &mut self.table,
             &mut self.memo,
             self.evaluator,
             term,
-        ))
+        )
     }
 
     /// `computation` under `frame`.
@@ -8186,10 +8320,11 @@ fn unread_call(shape: &Shape) -> Option<ComputationId>
 ///   arguments, a bind's continuations, a sum case's two branches and a
 ///   dependent split's bodies, in spine order. A native data case first
 ///   compares its quoted motive, then its ordinary branch functions; a ride or
-///   a path transport compares its quoted motive, then its value; a stuck
-///   fixpoint compares its fixpoint, then its leading arguments in order; a
-///   force, a matching record projection or a projection of one lazy-product
-///   side contributes none.
+///   a path transport compares its quoted motive, then its value; a telescope
+///   transport compares its quoted motive, then its start, its path over and
+///   its value; a stuck fixpoint compares its fixpoint, then its leading
+///   arguments in order; a force, a matching record projection or a projection
+///   of one lazy-product side contributes none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -8212,6 +8347,7 @@ fn unread_call(shape: &Shape) -> Option<ComputationId>
 /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
 /// - witness: `replay::tests::a_ride_unfolds_its_flow_where_the_dialogue_names_it`
 /// - witness: `replay::tests::two_stuck_path_transports_compare_by_motive_and_value`
+/// - witness: `replay::tests::two_stuck_telescope_transports_compare_by_motive_start_over_and_value`
 /// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
 /// - witness: `replay::tests::a_stuck_fixpoint_compares_its_leading_arguments_626`
 #[spec(ensures: |ret| {
@@ -8250,6 +8386,12 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
                 } else { false },
                 (Elimination::PathTransport(a), Elimination::PathTransport(b)) => if let (Some(&Computation::PathTransport { motive: a_motive, value: a_value, .. }), Some(&Computation::PathTransport { motive: b_motive, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
                     pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::Quote(a_motive)) && arena.value(right) == Some(&Value::Quote(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_value, b_value))
+                } else { false },
+                (Elimination::TelescopeTransport(a), Elimination::TelescopeTransport(b)) => if let (Some(&Computation::TelescopeTransport { motive: a_motive, start: a_start, over: a_over, value: a_value, .. }), Some(&Computation::TelescopeTransport { motive: b_motive, start: b_start, over: b_over, value: b_value, .. })) = (arena.computation(a), arena.computation(b)) {
+                    pending.next().is_some_and(|premise| matches!((premise.left, premise.right), (Term::Value(left), Term::Value(right)) if arena.value(left) == Some(&Value::QuoteComputation(a_motive)) && arena.value(right) == Some(&Value::QuoteComputation(b_motive))))
+                        && pending.next() == Some(&Premise::values(a_start, b_start))
+                        && pending.next() == Some(&Premise::values(a_over, b_over))
                         && pending.next() == Some(&Premise::values(a_value, b_value))
                 } else { false },
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
@@ -8444,6 +8586,38 @@ fn spines(
                     Premise::values(a_value, b_value),
                 ]);
             },
+            // Two telescope transports along one neutral path compare their
+            // motives as codes, as the engine's spines compare them, then
+            // their starts, their paths over and their values.
+            (Elimination::TelescopeTransport(a), Elimination::TelescopeTransport(b)) => {
+                let (
+                    Some(&Computation::TelescopeTransport {
+                        motive: a_motive,
+                        start: a_start,
+                        over: a_over,
+                        value: a_value,
+                        ..
+                    }),
+                    Some(&Computation::TelescopeTransport {
+                        motive: b_motive,
+                        start: b_start,
+                        over: b_over,
+                        value: b_value,
+                        ..
+                    }),
+                ) = (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let a_quote = arena.value_quote_computation(a_motive);
+                let b_quote = arena.value_quote_computation(b_motive);
+                premises.extend([
+                    Premise::values(a_quote, b_quote),
+                    Premise::values(a_start, b_start),
+                    Premise::values(a_over, b_over),
+                    Premise::values(a_value, b_value),
+                ]);
+            },
             (Elimination::Bind(a), Elimination::Bind(b)) => {
                 premises.push(Premise::computations(a, b));
             },
@@ -8497,6 +8671,7 @@ fn spines(
                 | Elimination::ProductTransport(_)
                 | Elimination::Ride(_)
                 | Elimination::PathTransport(_)
+                | Elimination::TelescopeTransport(_)
                 | Elimination::Force
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
