@@ -333,7 +333,8 @@ env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --no-run"
 
 # The test twin under enforcement; the suite's runtime sentinels refuse a
-# target-only or stale macro build.
+# target-only or stale macro build. A loaded host lengthens the run and never
+# fails it: the profile kills only a hang past 5 minutes (#3912).
 ["check:tests-enforcing"]
 description = "Unit and integration tests over every target, specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"

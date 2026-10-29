@@ -2,11 +2,12 @@
 
 # Every test finishes within 30 s, plain and with specifications enforced. A
 # test over the budget is split, sampled or made cheaper; no profile a gate
-# runs raises the budget for one. Locally (`default`) the budget kills the
-# test. In CI (`ci` and `ci-enforcing`, on each pull request and merge-queue
-# entry) a test past the budget is marked slow and runs on, so it never
-# dequeues a pull request: `mise run ci:slow-file` files it for triage
-# (#3752). Only a test past 5 minutes, a hang, is killed and fails the run.
+# runs raises the budget for one. Locally (`default`) and in CI (`ci` and
+# `ci-enforcing`, on each pull request and merge-queue entry) a test past the
+# budget is marked slow and runs on, so a loaded host lengthens a gate and
+# never fails it (#3912), and a slow test never dequeues a pull request:
+# `mise run ci:slow-file` files it for triage (#3752). Only a test past
+# 5 minutes, a hang, is killed and fails the run.
 # `status-level = "pass"` keeps every test's elapsed time on the local run, and
 # the CI profile's JUnit report carries per-test durations, so timing outliers
 # stay visible without a separate instrumentation pass.
@@ -14,7 +15,7 @@
 status-level = "pass"
 final-status-level = "slow"
 failure-output = "immediate"
-slow-timeout = { period = "30s", terminate-after = 1 }
+slow-timeout = { period = "30s", terminate-after = 10 }
 
 # Measured priorities (`mise run ci:timing`, crates/workflow-test-timing): the
 # export gate's shards, 22.7–24.1 s each over queue runs 40316553727 to
@@ -84,7 +85,7 @@ inherits = "ci-enforcing"
 slow-timeout = { period = "60s", terminate-after = 10 }
 
 # A witnessed mutation run (`mise run mutants:witnessed`). A witness the
-# default profile ends at thirty seconds fails, and a failed witness reads its
+# default profile ends at five minutes fails, and a failed witness reads its
 # mutant caught, so on a loaded machine a slow witness would catch what it
 # misses. Nothing is ended here: cargo-mutants' own `--timeout` bounds each
 # mutant and reads an overrun as a timeout. The sweeps run their samples.
