@@ -2556,6 +2556,48 @@
     "output": "[{\"number\":51,\"act\":\"restack\",\"told\":false},{\"number\":52,\"act\":\"restack\",\"told\":false}]"
   },
   {
+    "name": "#3745: a pull request the queue removed for failed checks is told, never rebased, though its own checks are green; the member above it waits",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 3737,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 3740,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "failed_checks",
+          "marks": []
+        },
+        {
+          "number": 3739,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 3740,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "removal": "",
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":3737,\"act\":\"dequeued\"}]"
+  },
+  {
     "name": "a rebase GitHub refused at this head is tried again and told no more",
     "program": "landing.jq",
     "input": {

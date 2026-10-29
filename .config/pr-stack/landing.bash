@@ -40,7 +40,7 @@ read_prs() {
               __typename
               ... on CheckRun { name status conclusion startedAt }
               ... on StatusContext { context state startedAt: createdAt } } } } } } }
-            timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename } }
+            timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } }
             comments(last: 100) { nodes { body } }
           }
         }
@@ -57,6 +57,7 @@ read_prs() {
             merge: .mergeStateStatus,
             reading: $reading,
             removed: (.timelineItems.nodes[0].__typename == "RemovedFromMergeQueueEvent"),
+            removal: (.timelineItems.nodes[0].reason // "" | ascii_downcase),
             marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"]}' <<< "$pr"
       done | jq -cs .
 }

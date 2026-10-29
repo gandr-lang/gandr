@@ -3703,6 +3703,21 @@ red_entry() {
     if [[ -n "$job" ]]; then printf '%s' "$job"; return; fi
   done
 }
+# The first failed job of this pull request's own queue entry run started
+# since this watch began, if any (#3745). The queue removes an entry whose
+# merge-group run failed, and the entry is gone by the time the removal is
+# read, so `red_entry` has no head to ask: the run is found by the queue's
+# own branch for this pull request.
+red_queue_run() {
+  local run_id job
+  for run_id in $(gh api "repos/$repo/actions/runs?event=merge_group&per_page=30" \
+    --jq --arg prefix "gh-readonly-queue/$trunk/pr-$number-" --arg since "$started" \
+    '.workflow_runs[] | select((.head_branch | startswith($prefix)) and .conclusion == "failure" and .created_at >= $since) | .id'); do
+    job=$(gh run view "$run_id" -R "$repo" --json jobs --jq '[.jobs[] | select(.conclusion == "failure") | .name] | first // empty')
+    if [[ -n "$job" ]]; then printf '%s' "$job"; return; fi
+  done
+}
+started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 while (( SECONDS < deadline )); do
   # A failed read is no event; the next poll reads again.
@@ -3747,6 +3762,14 @@ while (( SECONDS < deadline )); do
     if heal; then sleep 60; continue; fi
     echo "pr-dequeued #$number unmergeable $(above_word)"
     exit 1
+  fi
+  # An entry the queue removed for failed checks is red, whatever the pull
+  # request's own checks say: the enforcing lane runs only in the merge
+  # group, so a failure there shows nowhere else (#3745). It is never
+  # healed: a restack would queue the same failure again, and again.
+  if [[ "$in_queue" == false && "$removed" == failed_checks ]]; then
+    job=$(red_queue_run) || job=
+    if [[ -n "$job" ]]; then echo "pr-red #$number $job"; exit 1; fi
   fi
   # Out of the queue after it was in it; a removal because it merged settles
   # to MERGED on a later poll.

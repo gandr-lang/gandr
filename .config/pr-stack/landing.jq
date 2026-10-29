@@ -43,8 +43,14 @@
 #          marks}`: `oid` its head, `stack` its server stack's number or
 #          null, `merge` its merge state status, `reading` `required.jq`'s
 #          `{failed, pending}` of its head, `removed` whether the last of its
-#          queue entries and pushes is a removal from the queue, `marks` the
-#          `<event>:<head>` marks its comments carry.
+#          queue entries and pushes is a removal from the queue, `removal`
+#          that removal's reason in lower case (`failed_checks`, `manual`,
+#          …) or "", `marks` the `<event>:<head>` marks its comments carry.
+#
+#   A removal for `failed_checks` is the entry's own run failing: the
+#   enforcing lane runs only in the merge group, so the pull request's own
+#   checks read green while the entry is red (#3745). It is never restacked,
+#   which would queue the same failure again; its seat is told `pr-dequeued`.
 #
 # Output: the actions, by pull request number, each `{number, act}` with `act`
 # one of `land`, `restack` (with `told`), `green`, `dirty`, `red` (with
@@ -69,7 +75,7 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
     | if .state == "dirty" then (if marked("pr-dirty") then empty else {number, act: "dirty"} end)
       elif .state == "red" then (if marked("pr-red") then empty else {number, act: "red", failed: .reading.failed} end)
       elif .state == "dequeued" then
-        if $token and restacks < 3
+        if $token and restacks < 3 and .removal != "failed_checks"
           and all($members[]; ((.reading.failed // []) == []) and (.queued | not))
         then {number, act: "restack", told: marked("pr-dequeued")}
         elif marked("pr-dequeued") then empty
