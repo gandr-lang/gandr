@@ -15,7 +15,7 @@
       "body": "Closes #9\n\nThe regression is `judgement::tests::reflexivity_checks_by_endpoint_conversion`.",
       "transcripts": []
     },
-    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
   },
   {
     "name": "#3758: a transcript of a debug task stopped at a breakpoint in the test the body names discharges it, naming the stop",
@@ -43,7 +43,7 @@
         }
       ]
     },
-    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
   },
   {
     "name": "#3758: a transcript where lldb never stopped, the test passing through, witnesses nothing",
@@ -57,7 +57,7 @@
         }
       ]
     },
-    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
   },
   {
     "name": "#3758: a transcript written by hand, no debug task its command, witnesses nothing",
@@ -71,6 +71,49 @@
         }
       ]
     },
-    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript.\n<!-- gandr-observed:end -->"
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3784: a change touching no Rust is witnessed by the case it adds whose name cites the issue the body closes",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe splice reads the block from the environment.",
+      "transcripts": [],
+      "paths": [".config/claims/observed.awk", ".config/claims/splice.json"],
+      "cases": [
+        {
+          "path": ".config/claims/splice.json",
+          "name": "#9: a block of several lines replaces the stale one"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `.config/claims/splice.json` records `#9: a block of several lines replaces the stale one`, the change touching no Rust.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3784: a case citing the issue witnesses nothing when the change touches Rust",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [],
+      "paths": [".config/claims/splice.json", "crates/core-checker/src/judgement.rs"],
+      "cases": [
+        {
+          "path": ".config/claims/splice.json",
+          "name": "#9: a block of several lines replaces the stale one"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#3784: a case citing another issue than the one the body closes witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9",
+      "transcripts": [],
+      "paths": [".config/claims/splice.json"],
+      "cases": [{ "path": ".config/claims/splice.json", "name": "#10: another case" }]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
   }
 ]

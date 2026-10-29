@@ -435,8 +435,10 @@ printf '%s\n' "$base"
 # `### Observed` block after the section (`.config/claims/observed.jq`). The
 # box is ticked when the change adds a transcript under a crate's
 # `tests/debug-traces/` that a `debug:` task wrote, stopped at a breakpoint,
-# in a test the body names. No hand ticks it. `--require-acknowledged` exits 2
-# while it is open.
+# in a test the body names. A change whose diff touches no Rust has no test
+# for lldb to stop in, so there the box is ticked when the change adds a
+# `.config` case whose name cites an issue the body closes (#3784). No hand
+# ticks it. `--require-acknowledged` exits 2 while it is open.
 #
 # A performance fix owes one more line: whether a lint could have refused the
 # pattern it fixes (#1370). The body names the issues it works
@@ -526,16 +528,23 @@ if [[ -n $text ]]; then
   done
   transcripts=$(git diff --name-only --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-traces/*.txt' \
     | while IFS= read -r path; do jq -Rs --arg path "$path" '{path: $path, text: .}' "$path"; done | jq -s .)
+  # A change touching no Rust is witnessed by a `.config` case it adds
+  # (#3784): every name a JSON file under `.config` holds at HEAD and did not
+  # hold at the base.
+  paths=$(git diff --name-only "$base" HEAD | jq -R . | jq -s .)
+  cases=$(git diff --name-only --diff-filter=AM "$base" HEAD -- ':(glob).config/**/*.json' \
+    | while IFS= read -r path; do
+        before=$(git show "$base:$path" 2> /dev/null | jq -c '[.. | objects | .name? | strings]' 2> /dev/null || true)
+        [[ -n $before ]] || before='[]'
+        jq -c --arg path "$path" --argjson before "$before" \
+          '[.. | objects | .name? | strings] - $before | map({path: $path, name: .})' "$path"
+      done | jq -s 'add // []')
   block=$(jq -n -r --argjson defect "$defect" --rawfile body "$text" --argjson transcripts "$transcripts" \
-    '{defect: $defect, body: $body, transcripts: $transcripts}' | jq -r -f .config/claims/observed.jq)
+    --argjson paths "$paths" --argjson cases "$cases" \
+    '{defect: $defect, body: $body, transcripts: $transcripts, paths: $paths, cases: $cases}' \
+    | jq -r -f .config/claims/observed.jq)
   if [[ -n ${usage_body:-} ]]; then
-    awk -v block="$block" '
-      /^<!-- gandr-observed:start -->$/ { skip = 1 }
-      !skip { print }
-      /^<!-- gandr-observed:end -->$/ { skip = 0; next }
-      /^<!-- quenchant-obligations:end -->$/ && !skip && block != "" { print block; placed = 1 }
-      END { if (!placed && block != "") print block }
-    ' "$usage_body" > "$usage_body.observed"
+    block="$block" awk -f .config/claims/observed.awk "$usage_body" > "$usage_body.observed"
     mv -- "$usage_body.observed" "$usage_body"
   fi
   if [[ $block == *'- [ ] observed'* ]]; then
@@ -1652,7 +1661,9 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # (`slow.jq`, #3752); each in
 # `.config/claims/observed.json` a body, whether it works a defect and the
 # transcripts the change adds, and the `### Observed` block
-# `evidence:obligations` writes for them (`observed.jq`, #3758). The
+# `evidence:obligations` writes for them (`observed.jq`, #3758); each in
+# `.config/claims/splice.json` a body, a block of several lines, and the body
+# the splice writes with it (`observed.awk`, #3784). The
 # term map itself, `.config/references/terms.toml`, is read whole: every row
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
@@ -1692,6 +1703,20 @@ cases observed observed.jq observed.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
+# `evidence:obligations` splices the `### Observed` block into a body
+# (`observed.awk`): for each case in `.config/claims/splice.json` a body and a
+# block of several lines, and the body the splice writes, under every awk
+# (#3784).
+while IFS= read -r case; do
+  jq -j .body <<< "$case" > "$scratch/observed.md"
+  wanted=$(jq -j .output <<< "$case")
+  got=$(block=$(jq -j .block <<< "$case") awk -f .config/claims/observed.awk "$scratch/observed.md" 2>&1) || failed=1
+  if [[ $got != "${wanted%$'\n'}" ]]; then
+    printf 'splice case FAILED: %s\n  got:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/splice.json)
+(( failed == 0 )) || exit 1
 printf '## Ledger\n\nNone.\n' > "$scratch/body.md"
 line=$(printf 'a padded row of the argument-limit case, %.0s' {1..11})
 while IFS= read -r case; do
