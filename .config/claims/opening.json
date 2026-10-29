@@ -40,6 +40,22 @@
     "output": "the body names no `Advances` or `Closes` line for #23410, the issue `triage-23410-probe` names: add `Advances #23410` for a slice, or `Closes #23410` if it finishes the issue, then run `pr:open` again"
   },
   {
+    "name": "#3836: a numbered seat's branch names its issue after the seat's number",
+    "input": {
+      "branch": "triage-2-3809-summary-depth",
+      "body": "Closes #3809\n\n## Refactoring\n\nno\n"
+    },
+    "output": ""
+  },
+  {
+    "name": "#3836: a numbered seat's branch refuses a body that does not work its issue",
+    "input": {
+      "branch": "triage-2-3809-summary-depth",
+      "body": "Advances #2\n\n## Refactoring\n\nno\n"
+    },
+    "output": "the body names no `Advances` or `Closes` line for #3809, the issue `triage-2-3809-summary-depth` names: add `Advances #3809` for a slice, or `Closes #3809` if it finishes the issue, then run `pr:open` again"
+  },
+  {
     "name": "a branch with no issue opens a body working some issue",
     "input": {
       "branch": "perf-index-sweep",

@@ -2096,8 +2096,8 @@ echo "$url"
 # the stall configuration (`.config/stall/stall.bash`); the seat that claims
 # the issue writes its sections (#3134). A pull request that closes no issue,
 # as one advancing an epic's unit does, takes the area and epic of the issue
-# its branch names (`<lane>-<n>-…`), and failing that the lane's own
-# `area:<lane>` label. An
+# its branch names (`<lane>-<n>-…`, or `<lane>-<seat>-<n>-…` from a numbered
+# seat, #3836), and failing that the lane's own `area:<lane>` label. An
 # issue carrying the pull request's `from:` line is the filing, so a second
 # run files nothing. `pr:watch` runs it when its pull request merges;
 # `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
@@ -2131,8 +2131,8 @@ state=$(jq -r .state <<< "$pr")
 area=$(jq -c '[.closingIssuesReferences.nodes[].labels.nodes[].name | select(startswith("area:")) | ltrimstr("area:")] | first' <<< "$pr")
 epic=$(jq -r '[.closingIssuesReferences.nodes[].parent.number | values] | first // empty' <<< "$pr")
 head=$(jq -r .headRefName <<< "$pr")
-if [[ $area == null && $head =~ ^[a-z]+-([1-9][0-9]*)- ]]; then
-  unit=$(gh api "repos/$repo/issues/${BASH_REMATCH[1]}" --jq '{area: ([.labels[].name | select(startswith("area:")) | ltrimstr("area:")] | first),
+if [[ $area == null && $head =~ ^[a-z]+(-[0-9]+)?-([1-9][0-9]*)-[a-z] ]]; then
+  unit=$(gh api "repos/$repo/issues/${BASH_REMATCH[2]}" --jq '{area: ([.labels[].name | select(startswith("area:")) | ltrimstr("area:")] | first),
     epic: ((.parent_issue_url // "" | capture("/issues/(?<n>[0-9]+)$").n) // "")}')
   area=$(jq -c .area <<< "$unit")
   [[ -n $epic ]] || epic=$(jq -r .epic <<< "$unit")

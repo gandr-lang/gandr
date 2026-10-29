@@ -3,7 +3,8 @@
 #
 # Input:
 #   branch    the branch being opened, `<lane>-<n>-<slug>` when it works an
-#             issue
+#             issue, or `<lane>-<seat>-<n>-<slug>` from a numbered seat; the
+#             slug opens with a letter
 #   body      the body file's text
 #   issues    the issues the body works: [{number, body, labels: [name]}]
 #   mentions  per key the body supersedes, the tree's lines naming it:
@@ -109,7 +110,7 @@ def answered: test("^(answered|trivial|not applicable):\\s*\\S") or test("^defer
 # The refusal when the body does not work the branch's issue, or works none.
 def claim:
   (.body | targets(working)) as $worked
-  | (.branch | capture("^[a-z]+-(?<n>[0-9]+)(-|$)").n // null | if . == null then null else tonumber end) as $n
+  | (.branch | capture("^[a-z]+(-[0-9]+)?-(?<n>[0-9]+)(-[a-z]|$)").n // null | if . == null then null else tonumber end) as $n
   | if $n != null then
       if ($worked | index($n)) then empty
       else "the body names no `Advances` or `Closes` line for #\($n), the issue `\(.branch)` names: add `Advances #\($n)` for a slice, or `Closes #\($n)` if it finishes the issue, then run `pr:open` again"
