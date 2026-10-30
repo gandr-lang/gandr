@@ -1534,6 +1534,27 @@ fi
 echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as recorded; the nightly's reporting work is one job"
 '''
 
+# The coverage measure in parts (#4020): `.config/coverage/jobs.jq` refuses a
+# job that runs `ci:coverage` whole, a matrix entry naming no part, and a set
+# of parts that is not every nextest slice once and the plain witness once.
+# Each case in `.config/coverage/cases.json` gives its refusals; then
+# `.github/workflows/coverage.yml`'s own jobs, anchors expanded, give none.
+["check:coverage"]
+description = "The coverage measure runs one part a job, its parts every slice of the enforcing suite once and the plain witness once"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash coverage .config/coverage/cases.json --program .config/coverage/jobs.jq --mode c
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/coverage.yml | jq -r -f .config/coverage/jobs.jq | jq -r '.[] | ".github/workflows/coverage.yml: \(.)"')
+if [[ -n "$refusals" ]]; then
+  printf '%s\n' "$refusals" >&2
+  exit 1
+fi
+echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as recorded; the measure runs in parts that make up the whole"
+'''
+
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,
 # #2640), which `pr:open` and the pre-push tier run before a pull request
 # exists. Each case in `.config/commits/cases.json` commits its commits on a
