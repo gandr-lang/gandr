@@ -1,8 +1,8 @@
 /// `filler-generator`: a cell over a chain of paths lifts along the cells it takes as paths of paths.
 ///
-/// Implemented: `fill[n, k](chain(m), t, (d₁, …, dₘ))` takes `t`, a function of the chain's cells into a path between two composites of them. Each `dᵢ` that is a path of paths is a cell of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction on each cell of `X` proves it, and the kernel replays the proof.
+/// Implemented: `fill[n, k](chain(m), t, (d₁, …, dₘ))` checks its generator `t` as a function of the chain's cells into a path between two of their composites. Each `dᵢ` that is a path of paths is a cell of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction on each cell of `X` proves it, and the kernel replays the proof.
 ///
-/// Not implemented: `natassoc` at the associator and its agreement with `assoc_nat` (#4075, after #4073 and #4087), the `Flow` and bridge instances (#4093, #642), and the printer's form for the fill (#4075).
+/// Not implemented: the generator at the associator and its agreement with `assoc_nat` (#4075), the `Flow` and bridge instances (#4093, #642), and the printer's form for the fill (#4075).
 ///
 /// Over a `here` cell the filler reduces to `here`, which `walkAtHere` states and proves by reflexivity.
 ///

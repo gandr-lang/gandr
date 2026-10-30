@@ -491,8 +491,8 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             String::from("start each cell at the point where the cell before it ends")
         },
         CheckRefusal::NoFiller { .. } => String::from(
-            "write the generator's sides as composites of its cells, give at least one cell as a \
-             path of paths, and ask for the square the generator makes",
+            "ask for the square the generator makes, with its sides composites of the cells and \
+             at least one cell a path of paths",
         ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
