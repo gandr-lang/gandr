@@ -64,6 +64,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
@@ -477,7 +478,9 @@ pub enum Motives
 /// - ensures: [`Motives::Alike`] with every binding pair when both closures
 ///   hold one body, a one-binder transport's value type or a telescope
 ///   transport's computation type, over environments of one depth per zone;
-///   [`Motives::Unlike`] otherwise.
+///   [`Motives::Unlike`] otherwise. Two bodies are one when they are one node,
+///   or two quoted types of one written syntax: two definitions over one fill
+///   write one motive at two nodes (#4180).
 /// - provides: the congruence two stuck transports' motives settle by in the
 ///   structural walk, which never opens a binder.
 /// - fails: [`DomainFault::Dangling`] for a closure the arena does not hold.
@@ -488,17 +491,19 @@ pub enum Motives
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two evaluations of one transport give alike motives whose
-///   bindings pair up, and transports at two different motives give unlike
-///   ones; comparing ids instead of bodies, or dropping the bindings, changes
-///   the answer.
+///   bindings pair up, two telescope motives written apart in one syntax are
+///   alike, and transports at two different motives give unlike ones; comparing
+///   ids instead of bodies, or dropping the bindings, changes the answer.
 /// - witness: `identity::tests::stuck_transports_compare_by_motive_and_operand`
+/// - witness: `identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
 #[spec(ensures: |ret| match (domain.value_closure(left), domain.value_closure(right)) {
-    | (Some(one), Some(other)) => ret.as_ref().is_ok_and(|motives| matches!(motives, Motives::Alike(_)) == (one.body() == other.body()
+    | (Some(one), Some(other)) => ret.as_ref().is_ok_and(|motives| matches!(motives, Motives::Alike(_)) == (one_body(core, one.body(), other.body()) == CertificateEquality::Equal
         && [Zone::Intuitionistic, Zone::Linear].iter().all(|&zone| one.environment().depth(zone) == other.environment().depth(zone)))),
     | _ => ret == Err(DomainFault::Dangling),
 })]
 #[inline]
 pub fn motives(
+    core: &CoreArena,
     domain: &DomainArena,
     left: ValueClosureId,
     right: ValueClosureId,
@@ -512,7 +517,7 @@ pub fn motives(
     let shaped = zones
         .iter()
         .all(|&zone| one.environment().depth(zone) == other.environment().depth(zone));
-    if one.body() != other.body() || !shaped {
+    if one_body(core, one.body(), other.body()) != CertificateEquality::Equal || !shaped {
         return Ok(Motives::Unlike);
     }
     let mut bindings = Vec::new();
@@ -526,6 +531,46 @@ pub fn motives(
         );
     }
     Ok(Motives::Alike(bindings))
+}
+
+/// Whether two motive bodies are one: one node, or two quoted types of one
+/// written syntax.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] for equal bodies; the syntax
+///   comparison's answer for two value types or two computation types;
+///   [`CertificateEquality::Different`] for any other pair.
+/// - executable: none — the answer is the syntax comparison's, which a
+///   predicate would run again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one telescope motive written at two nodes is one body,
+///   and a motive at another endpoint is not; comparing the nodes alone changes
+///   the first answer.
+/// - witness: `identity::tests::telescope_motives_written_apart_in_one_syntax_are_alike_4180`
+fn one_body(
+    core: &CoreArena,
+    one: crate::ValueBody,
+    other: crate::ValueBody,
+) -> CertificateEquality
+{
+    if one == other {
+        return CertificateEquality::Equal;
+    }
+    match (one, other) {
+        (crate::ValueBody::ValueType(one), crate::ValueBody::ValueType(other)) => {
+            gandr_core_term::equal_type_syntax(core, one, other)
+        },
+        (crate::ValueBody::CompType(one), crate::ValueBody::CompType(other)) => {
+            gandr_core_term::equal_comp_type_syntax(core, one, other)
+        },
+        (
+            crate::ValueBody::Source(_)
+            | crate::ValueBody::ValueType(_)
+            | crate::ValueBody::CompType(_),
+            _,
+        ) => CertificateEquality::Different,
+    }
 }
 
 /// How a one-binder transport's or ride's family reads at its operand.

@@ -2321,6 +2321,59 @@ fn stuck_transports_under_one_motive_over_captures_it_does_not_read_settle_alike
 }
 
 #[test]
+fn telescope_motives_written_apart_in_one_syntax_are_alike_4180()
+{
+    let mut core = CoreArena::new();
+    let six = literal(&mut core, Word::Six);
+    let seven = literal(&mut core, Word::Seven);
+    let path = stuck(&mut core, ConstantIndex::from(0_usize));
+    let over = stuck(&mut core, ConstantIndex::from(1_usize));
+    // Two definitions over one fill each write the telescope motive at a
+    // call of their own: one syntax at two nodes.
+    let call = |core: &mut CoreArena, operand| {
+        let carrier = text_type(core);
+        let returned = core.computation_return(operand);
+        let endpoint = core.value_returned(returned);
+        let inner = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let body = core.value_type_path(carrier, inner, endpoint);
+        let result = core.comp_type_returner(body);
+        let entry = core.comp_type_pi(carrier, result);
+        core.comp_type_pi(carrier, entry)
+    };
+    let (written, again, elsewhere) = (
+        call(&mut core, six),
+        call(&mut core, six),
+        call(&mut core, seven),
+    );
+    assert_ne!(
+        written, again,
+        "the two calls write the motive at two nodes"
+    );
+    let mut transport =
+        |motive| core.computation_telescope_transport(motive, path, six, over, seven);
+    let (written, again, elsewhere) = (transport(written), transport(again), transport(elsewhere));
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let mut run = |term| {
+        eval_computation(&core, &mut domain, definitions, ample(), term)
+            .expect("closed transports evaluate")
+    };
+    let (one, other, apart) = (run(written), run(again), run(elsewhere));
+    assert_eq!(
+        crate::conv::convert_computations(&core, &domain, one, other),
+        Ok(crate::conv::Settlement::StructurallyEqual),
+        "one motive written at two nodes is one family"
+    );
+    assert_ne!(
+        crate::conv::convert_computations(&core, &domain, one, apart),
+        Ok(crate::conv::Settlement::StructurallyEqual),
+        "a motive at another endpoint is another family"
+    );
+}
+
+#[test]
 fn then_associates_at_reflexivity()
 {
     let mut core = CoreArena::new();
