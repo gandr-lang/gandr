@@ -2957,3 +2957,62 @@ fn a_stuck_call_passed_to_a_parameter_converts_with_the_call_written_in_its_type
     }
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// #4073: a composite whose first path is typed at a stated lambda starts at
+/// the lambda applied, which the code walk compared head to head with the
+/// reduct passed through a parameter. The composite written in the body
+/// converts, and so does the one passed with its start as the reduct or as the
+/// application written again. So does a lambda whose body composes, its reduct
+/// a composite written apart.
+#[test]
+fn a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def act(A : Type, F : A => A, x : A, y : A, p : Path(A, x, y)) -> Path(A, F(x), \
+             F(y)) {\n  cong(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
+             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), p then q, p then q) {\n  \
+             here(p then q)\n}\n\ndef composedAtLambda(A : Type, F : A => A, x : A, y : A, z : \
+             A, r : Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fn \
+             (q : A) { F(q) } : A => A), x, y, r) then s, act(A, (fn (q : A) { F(q) } : A => \
+             A), x, y, r) then s) {\n  here(act(A, (fn (q : A) { F(q) } : A => A), x, y, r) \
+             then s)\n}\n\ndef passedAtLambda(A : Type, F : A => A, x : A, y : A, z : A, r : \
+             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fn (q : A) \
+             { F(q) } : A => A), x, y, r) then s, act(A, (fn (q : A) { F(q) } : A => A), x, y, \
+             r) then s) {\n  thenHere(A, F(x), F(y), z, act(A, (fn (q : A) { F(q) } : A => A), \
+             x, y, r), s)\n}\n\ndef passedRedex(A : Type, F : A => A, x : A, y : A, z : A, r : \
+             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fn (q : A) \
+             { F(q) } : A => A), x, y, r) then s, act(A, (fn (q : A) { F(q) } : A => A), x, y, \
+             r) then s) {\n  thenHere(A, (fn (q : A) { F(q) } : A => A)(x), F(y), z, act(A, (fn \
+             (q : A) { F(q) } : A => A), x, y, r), s)\n}\n\ndef across(A : Type, B : Type, F : \
+             A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {\n  cong(F, \
+             p)\n}\n\ndef passedComposite(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp \
+             : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z), k : Path(A, \
+             x, z), s : Path(Path(A, x, z), fp then g, k)) -> Path(Path(Path(A, x, z), fm then \
+             g, k), across(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : \
+             Path(A, x, y) => Path(A, x, z)), fm, fp, fa) then s, across(Path(A, x, y), Path(A, \
+             x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), fm, \
+             fp, fa) then s) {\n  thenHere(Path(A, x, z), fm then g, fp then g, k, \
+             across(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, \
+             x, y) => Path(A, x, z)), fm, fp, fa), s)\n}\n",
+        ),
+        &mut arena,
+    );
+    for name in [
+        "composedAtLambda",
+        "passedAtLambda",
+        "passedRedex",
+        "passedComposite",
+    ] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}

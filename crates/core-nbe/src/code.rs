@@ -531,6 +531,9 @@ struct Walk<'run>
     /// The pairs set aside for the machine, in walk order, when the walk sets
     /// aside rather than separates; `None` when it separates.
     aside: Option<Vec<SetAside>>,
+    /// Each binder a step into a stated lambda's body binds, beside the
+    /// argument the call applies the lambda to, at the call's place.
+    bound: alloc::collections::BTreeMap<Binder, Node>,
 }
 
 impl<'run> Walk<'run>
@@ -552,6 +555,7 @@ impl<'run> Walk<'run>
             links: Vec::new(),
             next: Binder::default(),
             aside: None,
+            bound: alloc::collections::BTreeMap::new(),
         }
     }
 
@@ -987,6 +991,168 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. } => Ok(Atom::Other(stood)),
         }
+    }
+
+    /// What an atom reads as once each call of a stated lambda it stands as
+    /// steps into the lambda's body, and each binder a step bound reads as its
+    /// argument.
+    ///
+    /// The lowering instantiates a declared type at a stated lambda by
+    /// substitution, so `F(x)` at `F := λq. M` stands in the type as the call
+    /// `(λq. M)(x)`, and the type written with the reduct holds `M[x / q]`. The
+    /// walk reads the call as its reduct without minting syntax: it reads `M`
+    /// one binder further in, the binder bound to `x` at the call's place. A
+    /// stated binder type lowers as a bind of the binder returned, `y ← (return
+    /// q : F A); N`, which the reduct reads as `N` with `y` bound to `q`. The
+    /// checker elaborates a stated lambda as a nested lambda, which stands for
+    /// its thunk as evaluation reads it. Only a lambda the call writes at its
+    /// head steps, never one a bound binder reads, so the steps are a
+    /// development of the written calls and end.
+    /// Alternatives: reducing the redex where the lowering instantiates the
+    /// type, which leaves a redex the source writes apart; and a machine
+    /// premise for the pair, which reads the same reduct one round later.
+    ///
+    /// # Specification
+    /// - requires: the atom's nodes belong to the held arenas.
+    /// - ensures: an atom other than a call or a local as it stands. A local a
+    ///   step bound reads as its argument's reading ([`Walk::atom`]), read
+    ///   again, and any other local as it stands. A call applying a forced
+    ///   thunk of a lambda or a forced nested lambda, under any ascriptions,
+    ///   reads as the lambda's body one binder further in
+    ///   ([`Walk::crossed_alone`]), that binder bound to the call's argument at
+    ///   the call's place, read again; inside that body, a computation that
+    ///   returns a value reads as that value ([`Walk::atom`]), and one that
+    ///   binds a returned value, under any ascriptions, as its continuation one
+    ///   binder further in, that binder bound to the value. Any other call as
+    ///   it stands.
+    /// - fails: as [`Walk::atom`], and [`ConversionFault::MachineInvariant`]
+    ///   when a call names no computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Termination
+    /// - reason: a lambda step or a bind step contracts a redex the term
+    ///   writes, never one a step made, so the steps are a development, and a
+    ///   development is finite. Between two of them a return moves to a strict
+    ///   subterm, and a bound local reads an argument whose binders are all
+    ///   older than it.
+    /// - measure: the written redexes not yet contracted, then the size of the
+    ///   term read, then the number of the local read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stated lambda applied to a variable reads as the
+    ///   call its body makes at that variable, and so does the nested lambda
+    ///   the checker elaborates, past the bind its stated binder type lowers
+    ///   to; a stated identity applied to a variable reads as the variable, and
+    ///   a call of a variable function reads as written. Comparing the call by
+    ///   its head changes the first answer.
+    /// - witness: `code::tests::motives_applying_a_stated_lambda_agree_with_its_reduct_4073`
+    #[spec(ensures: |ret| matches!(atom, Atom::Called(..) | Atom::Local(_)) || ret == Ok(atom))]
+    fn reduced(
+        &mut self,
+        atom: Atom,
+    ) -> Result<Atom, ConversionFault>
+    {
+        let mut read = atom;
+        let mut entered = false;
+        loop {
+            if let Atom::Local(binder) = read {
+                let Some(&argument) = self.bound.get(&binder)
+                else {
+                    break;
+                };
+                read = self.atom(argument)?;
+                continue;
+            }
+            let Atom::Called(call, place) = read
+            else {
+                break;
+            };
+            match *self
+                .core
+                .computation(call)
+                .ok_or(ConversionFault::MachineInvariant)?
+            {
+                Computation::Application(function, argument) => {
+                    let Some(&Computation::Force(mut head)) = self.core.computation(function)
+                    else {
+                        break;
+                    };
+                    while let Some(&Value::Ascribe { value, .. }) = self.core.value(head) {
+                        head = value;
+                    }
+                    let Some(&(Value::Thunk(suspended) | Value::Nested(suspended))) =
+                        self.core.value(head)
+                    else {
+                        break;
+                    };
+                    let Some(&Computation::Lambda(body)) = self.core.computation(suspended)
+                    else {
+                        break;
+                    };
+                    let binder = self.next;
+                    let inside = self.crossed_alone(place);
+                    self.bound.insert(binder, Node::Code(argument, place));
+                    read = Atom::Called(body, inside);
+                    entered = true;
+                },
+                Computation::Return(value) if entered => {
+                    read = self.atom(Node::Code(value, place))?;
+                },
+                Computation::Bind(ran, rest) if entered => {
+                    let mut ran = ran;
+                    while let Some(&Computation::Ascribe { body, .. }) = self.core.computation(ran)
+                    {
+                        ran = body;
+                    }
+                    let Some(&Computation::Return(value)) = self.core.computation(ran)
+                    else {
+                        break;
+                    };
+                    let binder = self.next;
+                    let inside = self.crossed_alone(place);
+                    self.bound.insert(binder, Node::Code(value, place));
+                    read = Atom::Called(rest, inside);
+                },
+                Computation::Primitive { .. }
+                | Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Lambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::Ascribe { .. }
+                | Computation::Force(_)
+                | Computation::Case { .. }
+                | Computation::Split { .. }
+                | Computation::DataCase { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
+                | Computation::Perform { .. }
+                | Computation::Handle { .. }
+                | Computation::Exercise { .. }
+                | Computation::Scope { .. }
+                | Computation::Resume(..)
+                | Computation::Abandon(_)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Project(..)
+                | Computation::Session(_)
+                | Computation::Memory(_)
+                | Computation::World(_)
+                | Computation::Decompose(_) => break,
+            }
+        }
+        Ok(read)
     }
 
     /// What a held neutral reads as, cut to its head and the first `length`
@@ -2382,12 +2548,15 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - requires: roots belong to the held arenas.
     /// - ensures: equal live roots compare reflexively; every queued child must
     ///   also agree. Two written pure calls agree when their functions and
-    ///   their arguments do, each read through its own side's closure. Two held
-    ///   values over one neutral agree. A walk that sets aside records any
-    ///   other two held values, and a call one side writes outside every binder
-    ///   its type opens against an endpoint a call returned on the other, and
-    ///   goes on; otherwise two held thunks agree when their source bodies are
-    ///   equal as syntax and their environments' entries agree pair by pair.
+    ///   their arguments do, each read through its own side's closure, a call
+    ///   of a stated lambda read first as its reduct ([`Walk::reduced`]). Two
+    ///   written transports along element paths agree when their paths and
+    ///   values do, and their motives under one fresh binder. Two held values
+    ///   over one neutral agree. A walk that sets aside records any other two
+    ///   held values, and a call one side writes outside every binder its type
+    ///   opens against an endpoint a call returned on the other, and goes on;
+    ///   otherwise two held thunks agree when their source bodies are equal as
+    ///   syntax and their environments' entries agree pair by pair.
     /// - fails: a dangling child or malformed source.
     /// - panics: none.
     ///
@@ -2398,11 +2567,14 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     ///   their nodes changes the first answer. Two thunks of one lambda written
     ///   apart agree over one environment, and not over another environment or
     ///   another body; comparing thunks by their nodes changes the first
-    ///   answer.
+    ///   answer. A stated lambda applied in one motive agrees with the call its
+    ///   body makes in the other, and not with another call. A stated lambda
+    ///   whose body composes agrees with the composite written apart.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
     /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
     /// - witness: `code::tests::motives_calling_one_variable_family_are_alike_3802`
     /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
+    /// - witness: `code::tests::motives_applying_a_stated_lambda_agree_with_its_reduct_4073`
     #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
     fn equal_atoms(
         &mut self,
@@ -2414,6 +2586,10 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         let mut atoms = Vec::from([(left_atom, right_atom)]);
         loop {
             while let Some((one, other)) = atoms.pop() {
+                if one == other {
+                    continue;
+                }
+                let (one, other) = (self.reduced(one)?, self.reduced(other)?);
                 match (one, other) {
                     (Atom::FirstOrder(first), Atom::FirstOrder(second)) => {
                         if self.first_order_pair(first, second, &mut pending)? == Alike::Different {
@@ -2497,6 +2673,31 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             let one = self.atom(Node::Code(value, here))?;
                             let other = self.atom(Node::Code(other_value, there))?;
                             atoms.push((one, other));
+                        }
+                        else if let (
+                            &Computation::PathTransport {
+                                motive,
+                                path,
+                                value,
+                            },
+                            &Computation::PathTransport {
+                                motive: other_motive,
+                                path: other_path,
+                                value: other_value,
+                            },
+                        ) = (call, other_call)
+                        {
+                            let one = self.atom(Node::Code(path, here))?;
+                            let other = self.atom(Node::Code(other_path, there))?;
+                            atoms.push((one, other));
+                            let one = self.atom(Node::Code(value, here))?;
+                            let other = self.atom(Node::Code(other_value, there))?;
+                            atoms.push((one, other));
+                            let (inside, other_inside) = self.crossed(here, there);
+                            pending.push((
+                                Node::ValueType(motive, inside),
+                                Node::ValueType(other_motive, other_inside),
+                            ));
                         }
                         else if (first, here) != (second, there) {
                             return Ok(Alike::Different);
