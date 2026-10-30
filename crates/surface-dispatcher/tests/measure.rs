@@ -152,7 +152,12 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 "cylinderFill3".to_owned(),
                 "cylinderCompositeCells2".to_owned(),
                 "cylinderStackCells2".to_owned(),
-                "coneCompositeCells2".to_owned()
+                "coneCompositeCells2".to_owned(),
+                "interchangeRight".to_owned(),
+                "interchangeLeft".to_owned(),
+                "cylinderSuspended3".to_owned(),
+                "coneOpposite2".to_owned(),
+                "coneSuspended3".to_owned()
             ]
             .as_slice()
         ),

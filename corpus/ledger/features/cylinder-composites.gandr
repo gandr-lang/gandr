@@ -1,8 +1,8 @@
-/// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them, and `fill` composes cylinders at dimensions 2 and 3.
+/// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them, and `fill` and suspension compose cylinders and cones at dimension 3.
 ///
-/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each stands in two readings, and the kernel replays each. The Path reading is the term Catt's built-in prints. The cells reading is its whiskers as level-two composites joined by `then`, with no associator written. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed.
+/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each stands in two readings, and the kernel replays each. The Path reading is the term Catt's built-in prints. The cells reading is its whiskers as level-two composites joined by `then`, with no associator written. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed. Along dimension 2, `cylinderSuspended3` and `coneSuspended3` state the types Catt prints for `cylcomp(3,2,3)` and `conecomp(3,2,3)`. Each is a composite at `n = 2` at a path type, beside the interchangers `j⁻` and `j⁺`.
 ///
-/// Not implemented: #3833 owes the composite at `n = 3` with its verticals free, the stacks and cones at dimension 3, and the comparison with Catt's output. #4186 owes the composite at `n = 3` at reflexivities, which the kernel does not replay.
+/// Not implemented: #4197 owes the other composites along dimension 1 at dimension 3, with their verticals free. #4186 owes the composite at `n = 3` at reflexivities, which the kernel does not replay.
 ///
 /// Each composite computes at reflexivities, so each declaration states a composite of reflexivities and proves it by reflexivity.
 ///
@@ -10,8 +10,9 @@
 /// - see: #3712 — the composites at dimension 2, written from Catt's terms
 /// - see: #3931 — the composite at `n + 1` as `fill` at the composite at `n`
 /// - see: #3963 — the composites at dimension 2 in the cells reading
+/// - see: #4198 — the composites along dimension 2 by suspension
 
-// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`, `cylinderFill2`, `cylinderCompositeCells2`, `cylinderStackCells2`, `coneCompositeCells2`.
+// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`, `cylinderFill2`, `cylinderCompositeCells2`, `cylinderStackCells2`, `coneCompositeCells2`, `cylinderSuspended3`, `coneSuspended3`.
 import "../../../library/math/src/cylinder.gandr";
 
 /// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
@@ -186,4 +187,62 @@ def coneCompositeCellsAtHere(A : Type, x : A) -> Path(
   here(here(x))
 ) {
   here(here(here(x)))
+}
+
+/// Two 3-cylinders of reflexivities along a shared square compose to the reflexivity of the reflexivity of the reflexivity.
+def cylinderSuspendedAtHere(A : Type, x : A) -> Path(
+  Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
+  cylinderSuspended3(
+    A,
+    x,
+    x,
+    here(x),
+    here(x),
+    here(here(x)),
+    x,
+    x,
+    here(x),
+    here(x),
+    here(here(x)),
+    here(x),
+    here(x),
+    here(here(x)),
+    here(here(x)),
+    here(here(here(x))),
+    here(x),
+    here(here(x)),
+    here(x),
+    here(here(x)),
+    here(here(x)),
+    here(here(here(x)))
+  ),
+  here(here(here(x)))
+) {
+  here(here(here(here(x))))
+}
+
+/// Two 3-cones of reflexivities along a shared triangle compose to the reflexivity of the reflexivity of the reflexivity.
+def coneSuspendedAtHere(A : Type, x : A) -> Path(
+  Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
+  coneSuspended3(
+    A,
+    x,
+    x,
+    here(x),
+    here(x),
+    here(here(x)),
+    x,
+    here(x),
+    here(x),
+    here(here(x)),
+    here(here(x)),
+    here(here(here(x))),
+    here(x),
+    here(here(x)),
+    here(here(x)),
+    here(here(here(x)))
+  ),
+  here(here(here(x)))
+) {
+  here(here(here(here(x))))
 }
