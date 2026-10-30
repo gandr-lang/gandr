@@ -1752,7 +1752,9 @@ fn read_free(
 ///   literal decoded at a run-bound call, forty side by side in one comparison,
 ///   while a run calling a name stays a decode. A dependent pair ignoring its
 ///   binder reads as the product, in either order; one naming it stays
-///   different.
+///   different. A path between a function suspended reads as one between the
+///   function's thunk, in either order, and a call's thunk stays apart from the
+///   call kept.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
@@ -1763,6 +1765,7 @@ fn read_free(
 /// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
 /// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
 /// - witness: `syntax::tests::a_dependent_pair_ignoring_its_binder_reads_as_the_product_771`
+/// - witness: `syntax::tests::a_suspended_function_reads_as_its_thunk_3947`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -2923,10 +2926,11 @@ pub fn move_pair(
 ///   a call of a function literal read as the value its body returns
 ///   ([`called_reduct`]), a call kept unelaborated read as the value it
 ///   returns, as the lowering keeps it where a type after it reads it, a
-///   dependent arrow read as the plain arrow where its codomain reads as the
-///   arrow's codomain weakened past its binder, and a dependent pair as the
-///   product of two where its second factor reads as the product's second
-///   component weakened past its binder (#771), and two dialogues whose
+///   function kept unelaborated read as its thunk, as the checker suspends it
+///   (#3947), a dependent arrow read as the plain arrow where its codomain
+///   reads as the arrow's codomain weakened past its binder, and a dependent
+///   pair as the product of two where its second factor reads as the product's
+///   second component weakened past its binder (#771), and two dialogues whose
 ///   endpoints made the same moves, however the logs interleave them; under
 ///   [`Reading::Syntax`] no reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
@@ -3889,6 +3893,20 @@ where
                 (&Value::Returned(left), &Value::Nested(right))
                 | (&Value::Nested(left), &Value::Returned(right))
                     if matches!(reading, Reading::Printed(_)) =>
+                {
+                    pending.queue(C(left, right), beside);
+                    CertificateEquality::Equal
+                },
+                // A function written as a call's argument is kept nested,
+                // and the checker suspends it, as a function returns
+                // nothing; printed, it is the bare `fn` a thunk of the
+                // function prints as, and read back, that thunk.
+                (&Value::Thunk(left), &Value::Nested(right))
+                | (&Value::Nested(left), &Value::Thunk(right))
+                    if matches!(reading, Reading::Printed(_))
+                        && [left, right].iter().any(|&body| {
+                            matches!(arena.computation(body), Some(&Computation::Lambda(_)))
+                        }) =>
                 {
                     pending.queue(C(left, right), beside);
                     CertificateEquality::Equal
@@ -5133,6 +5151,58 @@ mod tests
             equal_type_reading(&arena, &signatures, returned, elsewhere),
             CertificateEquality::Different,
             "a call does not read as another call kept"
+        );
+    }
+
+    /// #3947: a function written as a call's argument is kept as a nested
+    /// computation the checker suspends, and the surface prints it as the
+    /// bare `fn` a thunk of the function prints as.
+    #[test]
+    fn a_suspended_function_reads_as_its_thunk_3947()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // `fn (w) { f(w) }` with `f` the binder around the type.
+        let function = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = arena.computation_force(function);
+        let call = arena.computation_application(forced, bound);
+        let lambda = arena.computation_lambda(call);
+        let thunk = arena.value_thunk(lambda);
+        let suspended = arena.value_nested(lambda);
+        let nested_call = arena.value_nested(call);
+        let thunked_call = arena.value_thunk(call);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, end);
+        let (thunk, suspended, nested_call, thunked_call) = (
+            at(&mut arena, thunk),
+            at(&mut arena, suspended),
+            at(&mut arena, nested_call),
+            at(&mut arena, thunked_call),
+        );
+        for (left, right, what) in [
+            (
+                thunk,
+                suspended,
+                "a thunk of a function against the function suspended",
+            ),
+            (suspended, thunk, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, thunked_call, nested_call),
+            CertificateEquality::Different,
+            "a thunk of a call does not read as the call kept"
         );
     }
 
