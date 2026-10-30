@@ -4225,9 +4225,11 @@ exit 2
 # none for two readings in a row. A lane whose seat holds no open pull
 # request and no claimed issue for `idle` minutes is paged once to its seat
 # and the coordinator, its line naming the claim to run (`seat-idle`,
-# #3822). The thresholds, the page script, the check and each target's
-# arguments (the triage seat's, the coordinator's, and each lane's seat's
-# under `seats`, a lane without one paging the triage seat) are
+# #3822). A claim is the lane's its marker names, and a markerless one is the
+# lane's whose areas it carries (#4174). The thresholds, the page script,
+# the check and each target's arguments (the triage seat's, the
+# coordinator's, and each lane's seat's under `seats`, a lane without one
+# paging the triage seat) are
 # configuration, never the tree's (`.config/stall/stall.bash`).
 ["stall:check"]
 description = "Read the open pull requests once for stalls; exit 1 on a finding"

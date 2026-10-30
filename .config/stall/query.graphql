@@ -40,7 +40,7 @@ query($owner: String!, $name: String!) {
       nodes { body }
     }
     claimed: issues(states: OPEN, labels: ["status:claimed"], first: 100) {
-      nodes { number labels(first: 30) { nodes { name } } }
+      nodes { number body labels(first: 30) { nodes { name } } }
     }
   }
 }
