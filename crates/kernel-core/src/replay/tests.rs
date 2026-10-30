@@ -3550,6 +3550,111 @@ fn a_held_path_runs_over_its_operand_as_it_was_3734()
 }
 
 #[test]
+fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
+{
+    // `tr(y. Path(Unit, (), y), ⟨force g⟩, ⟨force w⟩)`, `g = thunk (return
+    // here(()))` and `w = thunk (return ⟨tr(y. Path(Unit, (), y), here(()),
+    // here(()))⟩)` definitions: the level-two whisker at reflexivities, then
+    // a composite, in miniature. The append runs `w` to the endpoint it
+    // returns and on through the endpoint's transport to `here(())`, the
+    // empty word, so the transport returns its path. Left unread, the
+    // endpoint keeps the operand held, and the transport stands on its path.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let reflexivity = arena.value_here(unit);
+    let returned = arena.computation_return(reflexivity);
+    let path_body = arena.value_thunk(returned);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let motive = arena.value_type_path(unit_type, unit, moving);
+    let whisker = arena.computation_path_transport(motive, reflexivity, reflexivity);
+    let whisker = arena.value_returned(whisker);
+    let whisker = arena.computation_return(whisker);
+    let operand_body = arena.value_thunk(whisker);
+    let path = arena.value_constant(ConstantIndex::from(0_usize));
+    let path = arena.computation_force(path);
+    let path = arena.value_returned(path);
+    let held = arena.computation_return(path);
+    let held = arena.value_returned(held);
+    let held = arena.computation_return(held);
+    let held_body = arena.value_thunk(held);
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Body(path_body),
+        Unfoldable::Body(operand_body),
+        Unfoldable::Body(held_body),
+    ]));
+    let operand = arena.value_constant(ConstantIndex::from(1_usize));
+    let operand = arena.computation_force(operand);
+    let operand = arena.value_returned(operand);
+    let moved = arena.computation_path_transport(motive, path, operand);
+    let composite = arena.computation_return(path);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, composite),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "a run reads on into the endpoint it returns"
+    );
+    // `w' = thunk (return ⟨return ⟨force g⟩⟩)`: the endpoint's run holds
+    // `g`, as the evaluator holds an endpoint's call, so the operand stays
+    // `⟨force w'⟩` and the dialogue unfolds `g` under the held path.
+    // Unfolded in the run, `g` leaves the operand reflexivity, which the
+    // shared comparison finds apart from `⟨force w'⟩`.
+    let operand = arena.value_constant(ConstantIndex::from(2_usize));
+    let operand = arena.computation_force(operand);
+    let operand = arena.value_returned(operand);
+    let moved = arena.computation_path_transport(motive, path, operand);
+    let kept = arena.computation_return(operand);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, kept),
+            EngineClaim::Convertible,
+            &[
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Other,
+                },
+                ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Other,
+                },
+                SHARED,
+            ]
+        ),
+        KernelVerdict::Convertible,
+        "a run holds the call an endpoint it returns holds"
+    );
+    // `⟨y ← force w; return y⟩`: a bind, no call, whose run reaches the same
+    // endpoint through its continuation. The run reads on only into the
+    // endpoint a call returns, so this one leaves the operand as it was, and
+    // the transport stands on its path, apart from `return ⟨force g⟩`.
+    let call = arena.value_constant(ConstantIndex::from(1_usize));
+    let call = arena.computation_force(call);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let bound = arena.computation_return(bound);
+    let operand = arena.computation_bind(call, bound);
+    let operand = arena.value_returned(operand);
+    let moved = arena.computation_path_transport(motive, path, operand);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, composite),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::default(),
+        }),
+        "a bind's run leaves the endpoint it returns unread"
+    );
+}
+
+#[test]
 fn two_stuck_path_transports_compare_by_motive_and_value()
 {
     // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as
