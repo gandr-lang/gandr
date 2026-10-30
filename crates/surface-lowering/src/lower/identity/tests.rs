@@ -2822,3 +2822,61 @@ fn a_call_s_lambda_argument_reads_its_parameter_s_domain_3921()
     }
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// #4005: two `ap` calls whose arguments reduce to one term were refused when
+/// the source wrote them apart. Beneath an outer action, a call of
+/// `whiskerRight` and the `ap` it unfolds to are one path argument, and so are
+/// the outer action on the inner one and the nested `ap` written out. Each
+/// outer action's motive holds the inner path as the endpoint a transport
+/// along `fa` returns, once per writing.
+#[test]
+fn two_ap_calls_whose_arguments_reduce_alike_convert_4005()
+{
+    let telescope = "(A : Type, x : A, y : A, z : A, w : A, fm : Path(A, x, y), fp : Path(A, x, y), \
+                     fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z), h : Path(A, z, w))";
+    let pre = "(fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z))";
+    let post = "(fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))";
+    let square = "Path(Path(A, x, w), (fm then g) then h, (fp then g) then h)";
+    let inner_ap = format!("ap(Path(A, x, y), Path(A, x, z), {pre}, fm, fp, fa)");
+    let inner_whisker = "whiskerRight(A, x, y, z, fm, fp, fa, g)";
+    let outer_ap = |inner: &str| {
+        format!("ap(Path(A, x, z), Path(A, x, w), {post}, fm then g, fp then g, {inner})")
+    };
+    let outer_whisker =
+        |inner: &str| format!("whiskerRight(A, x, z, w, fm then g, fp then g, {inner}, h)");
+    let at_lambdas =
+        format!("(Path(A, x, y), Path(A, x, z), Path(A, x, w), {pre}, {post}, fm, fp, fa)");
+    let source = format!(
+        "def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, \
+         F(x), F(y)) {{\n  cong(F, p)\n}}\n\
+         def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
+         a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, \
+         f2 then g) {{\n  ap(Path(A, x, y), Path(A, x, z), {pre}, f1, f2, a)\n}}\n\
+         def apAp(A : Type, B : Type, C : Type, F : A => B, G : B => C, x : A, y : A, p : \
+         Path(A, x, y)) -> Path(C, G(F(x)), G(F(y))) {{\n  ap(B, C, G, F(x), F(y), ap(A, B, F, \
+         x, y, p))\n}}\n\
+         def underAp{telescope} -> Path({square}, {under_ap_left}, {under_ap_right}) {{\n  \
+         here({under_ap_right})\n}}\n\
+         def underWhisker{telescope} -> Path({square}, {under_whisker_left}, \
+         {under_whisker_right}) {{\n  here({under_whisker_right})\n}}\n\
+         def nestedAtLambdas{telescope} -> Path({square}, {under_ap_left}, apAp{at_lambdas}) \
+         {{\n  here({under_ap_left})\n}}\n",
+        under_ap_left = outer_ap(&inner_ap),
+        under_ap_right = outer_ap(inner_whisker),
+        under_whisker_left = outer_whisker(&inner_ap),
+        under_whisker_right = outer_whisker(inner_whisker),
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["underAp", "underWhisker", "nestedAtLambdas"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}

@@ -5,7 +5,8 @@
 //!
 //! A quote suspends a type over an environment, and a type has no weak head,
 //! so the conversion machine has no rule that decomposes two codes into
-//! subgoals. It compares them whole instead, in two passes:
+//! subgoals of their own shape. It compares them whole instead, in two passes,
+//! and a third where those two leave the pair undecided:
 //!
 //! - **α-equality.** The two types are walked in lockstep. A variable bound by
 //!   a dependent arrow or a static lambda inside the type is matched by the
@@ -27,13 +28,22 @@
 //!   a body, a neutral stuck on an elimination, or a value no code can be. A
 //!   static lambda counts as unfolding too: η could still equate it with a
 //!   stuck operator, and the walk does not expand it to find out. Anything else
-//!   is [`CodeComparison::Undecided`], and the machine declines rather than
-//!   answer, which is the honest answer at a rung where nothing reduces inside
-//!   a type.
+//!   is [`CodeComparison::Undecided`].
+//! - **Setting aside.** Where the first two passes leave a pair undecided,
+//!   [`compare_codes_over`] walks the two types again and sets aside each pair
+//!   of held values the walk cannot match as nodes: two endpoints a call
+//!   returned apart, or two thunks whose bodies differ as written. Two held
+//!   values over one neutral still agree. Two types α-equal over the pairs set
+//!   aside are [`CodeReading::Over`] those pairs, which the machine decides as
+//!   value premises. Anything else stays undecided, and the machine declines
+//!   rather than answer, which is the honest answer at a rung where nothing
+//!   reduces inside a type.
 //!
 //! The rigidity criterion is the one the kernel's replay applies to a shared
 //! comparison, so an answer of [`CodeComparison::Apart`] is one the kernel
-//! separates in its own terms.
+//! separates in its own terms. A pair read over its held values is emitted as
+//! one shared comparison too: the kernel reads the held values through on its
+//! own terms, and never replays the premises.
 //!
 //! # Codes
 //!
@@ -55,11 +65,14 @@
 //! elimination, or a value no code reads as. The search-free steps read every
 //! constant as one that could unfold, and defer; the machine reads the
 //! definitions, closes an equal or a rigidly apart pair as one
-//! `ComparedShared`, and declines anything else with
+//! `ComparedShared`, and walks an undecided pair a third time, setting aside
+//! the held values the walk cannot match. It decides those as value premises
+//! and closes the pair as one `ComparedShared` once each converts. A premise
+//! that does not convert, or a pair still undecided, declines with
 //! `DeclineReason::UndecidedCodes`. The kernel's replay closes a shared
-//! comparison as equal when the sides are α-equal and separates it only when
-//! both are rigid, so an answer here is one the kernel re-derives on its own
-//! terms.
+//! comparison as equal when the sides are α-equal once it reads their held
+//! values through, and separates it only when both are rigid, so an answer
+//! here is one the kernel re-derives on its own terms.
 //!
 //! The lockstep walk gives paired binders one identity and retains each side’s
 //! outer chain separately. Its binder counter uses the arena’s index width: a
@@ -199,6 +212,18 @@ pub enum CodeComparison
     Apart,
     /// They are not α-equal, and something in one could still unfold.
     Undecided,
+}
+
+/// What comparing two codes found once the held values the walk cannot read
+/// are set aside for the machine.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CodeReading
+{
+    /// The comparison's answer, nothing set aside.
+    Compared(CodeComparison),
+    /// The two types are α-equal once each pair of held values converts, the
+    /// pairs in walk order.
+    Over(Vec<(DomainValueId, DomainValueId)>),
 }
 
 /// How a comparison reads a constant a quoted type names.
@@ -463,6 +488,9 @@ struct Walk<'run>
     links: Vec<Link>,
     /// The next binder number.
     next: Binder,
+    /// The pairs of held values set aside for the machine, in walk order, when
+    /// the walk sets aside rather than separates; `None` when it separates.
+    aside: Option<Vec<(DomainValueId, DomainValueId)>>,
 }
 
 impl<'run> Walk<'run>
@@ -483,6 +511,7 @@ impl<'run> Walk<'run>
             constants,
             links: Vec::new(),
             next: Binder::default(),
+            aside: None,
         }
     }
 
@@ -651,7 +680,8 @@ impl<'run> Walk<'run>
     ///   its rigidity, a quote, a lift or a static lambda at its place, a
     ///   static application — written, or the last of a held neutral's static
     ///   spine — as its operator and argument, a written pure call as its
-    ///   computation at its place, and everything else as itself.
+    ///   computation at its place, a held neutral read whole to an opaque head
+    ///   as the held value, and everything else as itself.
     /// - provides: the one resolution both passes read codes through.
     /// - fails: [`ConversionFault::Domain`] when a closure or a held value does
     ///   not resolve, and [`ConversionFault::MachineInvariant`] when a variable
@@ -709,7 +739,10 @@ Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::P
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-                |held| ret == self.stuck(neutral, SpinePrefix(held.spine().len()))),
+                |held| {
+                    let whole = SpinePrefix(held.spine().len());
+                    ret == self.stuck(neutral, whole).map(|read| if read == Atom::Other(Node::Stuck(neutral, whole)) { Atom::Other(node) } else { read })
+                }),
 DomainValue::Code { code, .. } => self.domain.value_closure(code).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
                 |closure| match closure.body() {
@@ -827,7 +860,16 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
             | DomainValue::Injection { .. } => Ok(Atom::FirstOrder(stood)),
             DomainValue::Neutral { neutral, .. } => {
                 let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
-                self.stuck(neutral, SpinePrefix(stuck.spine().len()))
+                let whole = SpinePrefix(stuck.spine().len());
+                let read = self.stuck(neutral, whole)?;
+                // An opaque head read whole stands as the held value itself, so
+                // a walk that sets aside can hand the value to the machine.
+                Ok(if read == Atom::Other(Node::Stuck(neutral, whole)) {
+                    Atom::Other(stood)
+                }
+                else {
+                    read
+                })
             },
             DomainValue::Code { code, .. } => {
                 let closure = self.domain.value_closure(code).ok_or(dangling)?;
@@ -1074,13 +1116,13 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                 (Atom::Quote(..), Atom::Quote(..)) | (Atom::QuoteComputation(..), Atom::QuoteComputation(..))
                 | (Atom::Lift(..), Atom::Lift(..)) | (Atom::Applied(..), Atom::Applied(..))
                 | (Atom::Called(..), Atom::Called(..))
-                | (Atom::Operator(..),Atom::Operator(..)) | (Atom::FirstOrder(_),Atom::FirstOrder(_)) =>
+                | (Atom::Operator(..),Atom::Operator(..)) | (Atom::FirstOrder(_),Atom::FirstOrder(_))
+                | (Atom::Other(_), Atom::Other(_)) =>
                     matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant))
                         && (left != right || ret.is_err() || ret == Ok(Alike::Same)),
                 (Atom::Local(a), Atom::Local(b)) => ret == Ok(Alike::between(&a, &b)),
                 (Atom::Variable(zone, a), Atom::Variable(other_zone, b)) => ret == Ok(Alike::between(&(zone, a), &(other_zone, b))),
                 (Atom::Constant(a, _), Atom::Constant(b, _)) => ret == Ok(Alike::between(&a, &b)),
-                (Atom::Other(a), Atom::Other(b)) => ret == Ok(Alike::between(&a, &b)),
                 _ => ret == Ok(Alike::Different),
             },
         }
@@ -2301,8 +2343,10 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - ensures: equal live roots compare reflexively; every queued child must
     ///   also agree. Two written pure calls agree when their functions and
     ///   their arguments do, each read through its own side's closure. Two held
-    ///   thunks agree when their source bodies are equal as syntax and their
-    ///   environments' entries agree pair by pair.
+    ///   values over one neutral agree. A walk that sets aside records any
+    ///   other two held values and goes on; otherwise two held thunks agree
+    ///   when their source bodies are equal as syntax and their environments'
+    ///   entries agree pair by pair.
     /// - fails: a dangling child or malformed source.
     /// - panics: none.
     ///
@@ -2422,9 +2466,14 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         if (zone, first) == (other_zone, second) => {},
                     (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {},
                     (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
+                        if self.one_neutral(first, second) == Alike::Same => {},
+                    (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
                         if first != second =>
                     {
-                        if self.held_thunks(first, second, &mut atoms)? == Alike::Different {
+                        if let Some(aside) = self.aside.as_mut() {
+                            aside.push((first, second));
+                        }
+                        else if self.held_thunks(first, second, &mut atoms)? == Alike::Different {
                             return Ok(Alike::Different);
                         }
                     },
@@ -2452,6 +2501,31 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
             if self.formers(one, other, &mut pending, &mut atoms)? == Alike::Different {
                 return Ok(Alike::Different);
             }
+        }
+    }
+
+    /// Whether two held values are one neutral held twice:
+    /// [`Alike::Same`] when they are, [`Alike::Different`] otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn one_neutral(
+        &self,
+        first: DomainValueId,
+        second: DomainValueId,
+    ) -> Alike
+    {
+        if matches!(
+            (self.domain.value(first), self.domain.value(second)),
+            (
+                Some(&DomainValue::Neutral { neutral: one, .. }),
+                Some(&DomainValue::Neutral { neutral: other, .. }),
+            ) if one == other
+        ) {
+            Alike::Same
+        }
+        else {
+            Alike::Different
         }
     }
 
@@ -2876,6 +2950,62 @@ pub fn compare_codes(
         (Rigidity::Rigid, Rigidity::Rigid) => Ok(CodeComparison::Apart),
         (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(CodeComparison::Undecided),
     }
+}
+
+/// Compare two codes or two type operators as [`compare_codes`] does, and
+/// where that is undecided, walk them again setting aside each pair of held
+/// values the walk cannot read.
+///
+/// # Specification
+/// - requires: as [`compare_codes`].
+/// - ensures: [`CodeReading::Compared`] with the answer of [`compare_codes`]
+///   when it is equal or apart, or when the second walk separates the two or
+///   sets nothing aside; [`CodeReading::Over`] with the pairs it set aside, in
+///   walk order, when the second walk finds the two α-equal over at least one
+///   pair.
+/// - provides: the machine's reading of two codes, whose set-aside pairs it
+///   decides as value premises: an endpoint a call returned twice, or a thunk
+///   whose body differs as written, is a value the machine reads through, never
+///   a node the walk matches.
+/// - fails: as [`compare_codes`].
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two codes over two endpoints a transport returned apart,
+///   or over two thunks whose bodies differ as written, are α-equal over that
+///   pair, and a code over another former is not; reading held values by
+///   identity instead leaves the first undecided.
+/// - witness: `code::tests::codes_over_held_values_the_walk_cannot_match_set_them_aside_4005`
+#[spec(ensures: |ret| match compare_codes(core, domain, constants, left, right) {
+    Ok(CodeComparison::Undecided) => matches!(ret, Ok(CodeReading::Compared(CodeComparison::Undecided)))
+        || matches!(ret, Ok(CodeReading::Over(ref pairs)) if !pairs.is_empty()),
+    Ok(settled) => ret == Ok(CodeReading::Compared(settled)),
+    Err(fault) => ret == Err(fault),
+})]
+pub fn compare_codes_over(
+    core: &CoreArena,
+    domain: &DomainArena,
+    constants: ConstantReading<'_>,
+    left: ValueClosureId,
+    right: ValueClosureId,
+) -> Result<CodeReading, ConversionFault>
+{
+    let compared = compare_codes(core, domain, constants, left, right)?;
+    if compared != CodeComparison::Undecided {
+        return Ok(CodeReading::Compared(compared));
+    }
+    let mut walk = Walk::new(core, domain, constants);
+    walk.aside = Some(Vec::new());
+    if walk.equal(left, right)? == Alike::Same
+        && let Some(pairs) = walk.aside.take()
+        && !pairs.is_empty()
+    {
+        return Ok(CodeReading::Over(pairs));
+    }
+    Ok(CodeReading::Compared(CodeComparison::Undecided))
 }
 
 /// Whether two one-binder transport motives are α-equal read through their

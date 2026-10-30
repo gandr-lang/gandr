@@ -23,8 +23,9 @@
 //!   fresh through a check memo keyed by [`GoalSupport`], [`ResharingMemo`] on
 //!   the engine path, and reports the [`SupportEdges`] its entries rest on. Two
 //!   codes are compared whole: α-equal or rigidly apart is answered as a shared
-//!   comparison, and anything that could still unfold inside a type is declined
-//!   with [`DeclineReason::UndecidedCodes`].
+//!   comparison, and so is a pair α-equal over held values the machine reads
+//!   through as premises. Anything else that could still unfold inside a type
+//!   is declined with [`DeclineReason::UndecidedCodes`].
 //! - [`Overlay`] holds sharing syntax over the core language in four flat
 //!   families, minted only over children it holds and checked by
 //!   [`Overlay::validate`] over a heap worklist; [`erase_value`] and its

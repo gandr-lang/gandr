@@ -538,7 +538,9 @@ pub enum DeclineReason
     /// Two codes or two static lambdas are not α-equal and one of them holds
     /// something that could still unfold, or a static lambda meets a stuck
     /// operator that η could relate it to: telling them apart needs reduction
-    /// or expansion inside a type, which this rung does not perform.
+    /// or expansion inside a type, which this rung does not perform. Two codes
+    /// α-equal over held values decline so too when a pair of those values
+    /// does not convert.
     UndecidedCodes,
     /// A side stands on a typed hole or a mark: a fill may still make the two
     /// agree or differ, so no verdict is the machine's to give.
@@ -1001,6 +1003,11 @@ enum Collapse
     /// The decomposition followed a recorded decision that names it, so its
     /// children's derivations are emitted as they are.
     Never,
+    /// The pair is a leaf to the replay, which reads it whole: an agreeing
+    /// decomposition is emitted as one shared comparison whatever the
+    /// search-free steps settle, and a refuted premise declines, since the
+    /// replay has no premise to refute it at.
+    Shared,
 }
 
 /// A goal: two sides and what it does next.
@@ -2590,6 +2597,9 @@ where
             Plan::Decompose(subgoals) => {
                 self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
             },
+            Plan::SharedOver(subgoals) => {
+                self.decompose(id, goal, pair, subgoals, Collapse::Shared)
+            },
             Plan::Reassociated {
                 reassociations,
                 subgoals,
@@ -3082,7 +3092,7 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         if subgoals.is_empty() {
-            if collapse == Collapse::Allowed {
+            if collapse != Collapse::Never {
                 self.derivations
                     .decide(id, ConversionDecision::ComparedShared {
                         left: TraceNode::of(pair.0),
@@ -4407,8 +4417,10 @@ where
     ///   can still agree; an either declines once every child answered, none
     ///   agreed and one declined. Decomposition and either take the first
     ///   decline's reason in child order; biased choice takes its authoritative
-    ///   child's reason. Otherwise the goal waits. The children an answer rests
-    ///   on are recorded as its derivation's continuation, and the others lose
+    ///   child's reason. Otherwise the goal waits. A decomposition whose pair
+    ///   the replay reads whole takes a refuted premise as a decline of
+    ///   undecided codes, and never refutes. The children an answer rests on
+    ///   are recorded as its derivation's continuation, and the others lose
     ///   this goal's need. The support an answer is read from is its winning
     ///   children for an acceptance, the refuted premise for a refuted
     ///   decomposition, and every alternative for a refuted choice.
@@ -4437,7 +4449,7 @@ where
             Combine::All { ref children, .. } => (true, false, children.len(), children.first().copied(), children.last().copied()),
             Combine::Biased(ref children) => (false, true, children.len(), children.first().copied(), children.last().copied()),
             Combine::Either(ref children) => (false, false, children.len(), children.first().copied(), children.last().copied()),
-        }],
+        }, shared = matches!(combine, Combine::All { collapse: Collapse::Shared, .. })],
         ensures: |ret| {
             let (all, biased, count, first, last) = boundary;
             let outcome = self.processes.get(id.0).map(|process| process.outcome);
@@ -4459,10 +4471,11 @@ where
                     && (ret.is_err() || !matches!(outcome, Some(Outcome::Declined(_)))
                         || if biased { outcome == last }
                         else { !matches!(first, Some(Outcome::Declined(_))) || outcome == first })
-                    && (ret.is_err() || !matches!((all, first),
-                        (true, Some(Outcome::Settled(Settled::NotConvertible)))
-                        | (false, Some(Outcome::Settled(Settled::Convertible))))
+                    && (ret.is_err() || !matches!((all, shared, first),
+                        (true, false, Some(Outcome::Settled(Settled::NotConvertible)))
+                        | (false, _, Some(Outcome::Settled(Settled::Convertible))))
                         || (ret == Ok(Turn::Done) && outcome == first))
+                    && (ret.is_err() || !shared || outcome != Some(Outcome::Settled(Settled::NotConvertible)))
             }
         }
     )]
@@ -4484,6 +4497,11 @@ where
                 for (position, &child) in children.iter().enumerate() {
                     let answered = self.outcome(child)?;
                     match answered {
+                        Outcome::Settled(Settled::NotConvertible)
+                            if collapse == Collapse::Shared =>
+                        {
+                            declined.get_or_insert(DeclineReason::UndecidedCodes);
+                        },
                         Outcome::Settled(Settled::NotConvertible) => {
                             let position = u32::try_from(position)
                                 .map_err(|_overflow| ConversionFault::MachineInvariant)?;
@@ -4519,6 +4537,7 @@ where
                 match collapse {
                     Collapse::Allowed => self.derivations.agree_on(id, pair, children)?,
                     Collapse::Never => self.derivations.rest_on(id, children)?,
+                    Collapse::Shared => self.derivations.share_on(id, pair)?,
                 }
                 Ok(Turn::Done)
             },

@@ -1,0 +1,204 @@
+/// Actions whose arguments reduce alike.
+///
+/// An action on a path that is itself an action is one path, wherever the
+/// source writes the inner action. `whiskerAlong` unfolds to the action of
+/// composing with `g`. So a call of it and the action written out are one
+/// argument, beneath another action or another whisker. The nested action
+/// written in one definition is the same path as the outer action on the
+/// inner one.
+///
+/// Each outer action unfolds to a transport whose motive reads the inner
+/// path. That path is the endpoint a transport along `fa` returns, held once
+/// per writing. The engine sets the two endpoints aside and reads each
+/// through to its transport. It emits the motives as one shared comparison,
+/// which the kernel replays on its own terms.
+///
+/// - see: #3976 — the code walk pairs a lambda's captures laid out apart
+/// - see: #4005 — the checker refused two such endpoints inside a code
+
+/// The action of `F` on `p`.
+def actAlong(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(
+  B,
+  F(x),
+  F(y)
+) {
+  cong(F, p)
+}
+
+/// The action on `a` of composing with `g`.
+def whiskerAlong(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  actAlong(
+    Path(A, x, y),
+    Path(A, x, z),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    f1,
+    f2,
+    a
+  )
+}
+
+/// The action of `G` on the action of `F` on `p`.
+def actAct(
+  A : Type,
+  B : Type,
+  C : Type,
+  F : A => B,
+  G : B => C,
+  x : A,
+  y : A,
+  p : Path(A, x, y)
+) -> Path(C, G(F(x)), G(F(y))) {
+  actAlong(B, C, G, F(x), F(y), actAlong(A, B, F, x, y, p))
+}
+
+/// An outer action on the inner action written out, against the same outer
+/// action on a call of `whiskerAlong`.
+def underAnAction(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, (fp then g) then h),
+  actAlong(
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm then g,
+    fp then g,
+    actAlong(
+      Path(A, x, y),
+      Path(A, x, z),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      fm,
+      fp,
+      fa
+    )
+  ),
+  actAlong(
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm then g,
+    fp then g,
+    whiskerAlong(A, x, y, z, fm, fp, fa, g)
+  )
+) {
+  here(actAlong(
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm then g,
+    fp then g,
+    whiskerAlong(A, x, y, z, fm, fp, fa, g)
+  ))
+}
+
+/// An outer whisker on the inner action written out, against the same outer
+/// whisker on a call of `whiskerAlong`.
+def underAWhisker(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, (fp then g) then h),
+  whiskerAlong(
+    A,
+    x,
+    z,
+    w,
+    fm then g,
+    fp then g,
+    actAlong(
+      Path(A, x, y),
+      Path(A, x, z),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      fm,
+      fp,
+      fa
+    ),
+    h
+  ),
+  whiskerAlong(A, x, z, w, fm then g, fp then g, whiskerAlong(A, x, y, z, fm, fp, fa, g), h)
+) {
+  here(whiskerAlong(A, x, z, w, fm then g, fp then g, whiskerAlong(A, x, y, z, fm, fp, fa, g), h))
+}
+
+/// The nested action written out, against `actAct` at the two lambdas.
+def nestedAtLambdas(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, (fp then g) then h),
+  actAlong(
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm then g,
+    fp then g,
+    actAlong(
+      Path(A, x, y),
+      Path(A, x, z),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      fm,
+      fp,
+      fa
+    )
+  ),
+  actAct(
+    Path(A, x, y),
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm,
+    fp,
+    fa
+  )
+) {
+  here(actAlong(
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm then g,
+    fp then g,
+    actAlong(
+      Path(A, x, y),
+      Path(A, x, z),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      fm,
+      fp,
+      fa
+    )
+  ))
+}

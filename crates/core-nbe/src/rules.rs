@@ -38,8 +38,9 @@ use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
 use crate::closure::CompBody;
 use crate::code::CodeComparison;
+use crate::code::CodeReading;
 use crate::code::ConstantReading;
-use crate::code::compare_codes;
+use crate::code::compare_codes_over;
 use crate::conv::ConversionFault;
 use crate::conv::Early;
 use crate::conv::early_comps;
@@ -429,6 +430,10 @@ pub enum Plan
 {
     /// Steps 1 or 2 of the pipeline answered on the two nodes as they stand.
     Shared(Settled),
+    /// Two codes the walk reads α-equal over these premises, each a pair of
+    /// held values: once every premise converts, the pair closes as one shared
+    /// comparison, which the kernel's replay reads whole.
+    SharedOver(Vec<Subgoal>),
     /// A rule with no premise answered.
     Leaf(Settled),
     /// A forced decomposition into subgoals, in the order positions count.
@@ -1980,7 +1985,7 @@ fn whole(
         Plan::Reassociated { reassociations, ref subgoals } => reassociations.checked_add(1) == Some(levels.len())
             && reassociations != 0
             && subgoals.iter().filter(|subgoal| matches!(**subgoal, Subgoal::Continued(..))).count() == 1,
-        Plan::Shared(_) | Plan::Leaf(_) | Plan::Step(_) | Plan::Choose(_) | Plan::Decline(_) => false,
+        Plan::Shared(_) | Plan::SharedOver(_) | Plan::Leaf(_) | Plan::Step(_) | Plan::Choose(_) | Plan::Decline(_) => false,
     }))))]
 fn held_eliminations(
     core: &CoreArena,
@@ -2778,8 +2783,9 @@ fn plan_values(
             },
         ) => return plan_rigid(core, domain, left_neutral, right_neutral),
         // Two codes compare whole: α-equal closes them as shared, rigid and
-        // α-distinct separates them as shared, and anything that could still
-        // unfold inside a type is declined rather than answered.
+        // α-distinct separates them as shared, α-equal over held values the
+        // walk cannot read closes them once each pair converts, and anything
+        // else that could still unfold inside a type is declined.
         (
             DomainValue::Code {
                 code: left_code, ..
@@ -2787,19 +2793,13 @@ fn plan_values(
             DomainValue::Code {
                 code: right_code, ..
             },
-        ) => {
-            match compare_codes(
-                core,
-                domain,
-                ConstantReading::Read(definitions),
-                left_code,
-                right_code,
-            )? {
-                CodeComparison::Equal => Plan::Shared(Settled::Convertible),
-                CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
-                CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
-            }
-        },
+        ) => codes_plan(compare_codes_over(
+            core,
+            domain,
+            ConstantReading::Read(definitions),
+            left_code,
+            right_code,
+        )?),
         // Two static lambdas compare whole by the same α-walk, and a static
         // lambda against a stuck operator is declined: η could relate them,
         // and this rung does not expand an operator.
@@ -2812,19 +2812,13 @@ fn plan_values(
                 lambda: right_lambda,
                 ..
             },
-        ) => {
-            match compare_codes(
-                core,
-                domain,
-                ConstantReading::Read(definitions),
-                left_lambda,
-                right_lambda,
-            )? {
-                CodeComparison::Equal => Plan::Shared(Settled::Convertible),
-                CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
-                CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
-            }
-        },
+        ) => codes_plan(compare_codes_over(
+            core,
+            domain,
+            ConstantReading::Read(definitions),
+            left_lambda,
+            right_lambda,
+        )?),
         (DomainValue::StaticLambda { .. }, DomainValue::Neutral { .. })
         | (DomainValue::Neutral { .. }, DomainValue::StaticLambda { .. }) => {
             Plan::Decline(DeclineReason::UndecidedCodes)
@@ -2870,6 +2864,27 @@ fn plan_values(
         ) => Plan::Leaf(Settled::NotConvertible),
     };
     Ok(planned)
+}
+
+/// The plan two codes or two operators take on the walk's reading of them.
+///
+/// # Specification
+/// trivial.
+fn codes_plan(reading: CodeReading) -> Plan
+{
+    match reading {
+        CodeReading::Compared(CodeComparison::Equal) => Plan::Shared(Settled::Convertible),
+        CodeReading::Compared(CodeComparison::Apart) => Plan::Shared(Settled::NotConvertible),
+        CodeReading::Compared(CodeComparison::Undecided) => {
+            Plan::Decline(DeclineReason::UndecidedCodes)
+        },
+        CodeReading::Over(pairs) => Plan::SharedOver(
+            pairs
+                .into_iter()
+                .map(|(left, right)| Subgoal::Values(left, right))
+                .collect(),
+        ),
+    }
 }
 
 /// The η decomposition of a tuple or a record against a rigid neutral: each
