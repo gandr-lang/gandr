@@ -25,6 +25,8 @@ use gandr_theory_circuit_algebras::WireCount;
 use gandr_theory_circuit_algebras::Wiring;
 use gandr_theory_circuit_algebras::WiringObstruction;
 
+use crate::map::Membership;
+
 wrapper! {
     /// A shape's size: its vertices plus its wires, the measure the suites
     /// bound and order their cases by.
@@ -998,55 +1000,144 @@ impl Shape
     ])]
     pub fn key(&self) -> ShapeKey
     {
-        let vertices = usize::from(self.vertices);
-        let relabel = |order: &[usize]| -> Box<[Ends]> {
-            let rename = |end: End| match end {
-                End::Open => End::Open,
-                End::Vertex(vertex) => End::Vertex(Edge::from(
-                    order.get(usize::from(vertex)).copied().unwrap_or(0),
-                )),
-            };
-            let mut ends: Vec<Ends> = self
-                .ends
-                .iter()
-                .map(|ends| Ends::new(rename(ends.producer), rename(ends.consumer)))
-                .collect();
-            ends.sort_unstable();
-            ends.into_boxed_slice()
-        };
-        let mut order: Vec<usize> = (0 .. vertices).collect();
-        let mut best = relabel(&order);
-        let mut counters: Vec<usize> = vec![0; vertices];
-        let mut level: usize = 1;
-        while level < vertices {
-            let counter = counters.get(level).copied().unwrap_or(level);
-            if counter < level {
-                if level.is_multiple_of(2) {
-                    order.swap(0, level);
-                }
-                else {
-                    order.swap(counter, level);
-                }
-                let candidate = relabel(&order);
-                if candidate < best {
-                    best = candidate;
-                }
-                if let Some(slot) = counters.get_mut(level) {
-                    *slot = counter.saturating_add(1);
-                }
-                level = 1;
-            }
-            else {
-                if let Some(slot) = counters.get_mut(level) {
-                    *slot = 0;
-                }
-                level = level.saturating_add(1);
+        let mut orders = VertexOrders::new(self.vertices);
+        let mut best = self.relabelled(orders.order());
+        while orders.advance() == Membership::Inside {
+            let candidate = self.relabelled(orders.order());
+            if candidate < best {
+                best = candidate;
             }
         }
         ShapeKey {
             vertices: self.vertices,
             ends: best,
         }
+    }
+
+    /// The shape's wire ends with each vertex `v` renamed to the label at
+    /// position `v` of `order`, sorted.
+    ///
+    /// # Specification
+    /// - requires: `order` holds one label per vertex; a vertex past it takes
+    ///   the label 0.
+    /// - ensures: one pair of ends per wire, sorted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Shape::key`], which reads it at every order: a
+    ///   misplaced end splits a class or merges two.
+    /// - witness: `tests::shapes::the_enumeration_counts_match_an_independent_count`
+    /// - witness: `tests::shapes::a_relabelled_shape_keys_alike`
+    #[spec(ensures: |ref ends| ends.len() == self.ends.len() && ends.is_sorted())]
+    pub(crate) fn relabelled(
+        &self,
+        order: &[Edge],
+    ) -> Box<[Ends]>
+    {
+        let rename = |end: End| match end {
+            End::Open => End::Open,
+            End::Vertex(vertex) => End::Vertex(
+                order
+                    .get(usize::from(vertex))
+                    .copied()
+                    .unwrap_or_else(|| Edge::from(0_usize)),
+            ),
+        };
+        let mut ends: Vec<Ends> = self
+            .ends
+            .iter()
+            .map(|ends| Ends::new(rename(ends.producer), rename(ends.consumer)))
+            .collect();
+        ends.sort_unstable();
+        ends.into_boxed_slice()
+    }
+}
+
+/// Every order of a shape's vertices, each one swap from the last, by Heap's
+/// algorithm: the walk a shape's key and a wreath object's key share.
+///
+/// # Specification
+/// - ensures: from the identity order, [`VertexOrders::advance`] reaches every
+///   other order of the vertices once.
+/// - executable: none — a type-level block has no body and no call boundary to
+///   check.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the class counts the enumeration reaches by keys are
+///   pinned against an independent count, and the wreath's lookup finds a
+///   relabelled object at its class; a skipped order splits a class.
+/// - witness: `tests::shapes::the_enumeration_counts_match_an_independent_count`
+/// - witness: `tests::shapes::a_relabelled_shape_keys_alike`
+pub struct VertexOrders
+{
+    /// The current order: vertex `v` takes the label at position `v`.
+    order: Vec<Edge>,
+    /// Heap's counter at each position.
+    counters: Vec<usize>,
+    /// The position the walk examines next.
+    level: usize,
+}
+
+impl VertexOrders
+{
+    /// The walk over `vertices` vertices, at the identity order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn new(vertices: EdgeCount) -> Self
+    {
+        let count = usize::from(vertices);
+        Self {
+            order: (0 .. count).map(Edge::from).collect(),
+            counters: vec![0; count],
+            level: 1,
+        }
+    }
+
+    /// The current order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn order(&self) -> &[Edge]
+    {
+        &self.order
+    }
+
+    /// Moves to the next order, one swap away; outside once every order is
+    /// taken.
+    ///
+    /// # Specification
+    /// - ensures: outside exactly when the walk stands past its last position,
+    ///   every order taken.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the type.
+    /// - witness: `tests::shapes::the_enumeration_counts_match_an_independent_count`
+    /// - witness: `tests::shapes::a_relabelled_shape_keys_alike`
+    #[spec(ensures: |answer| (answer == Membership::Outside) == (self.level >= self.order.len()))]
+    pub(crate) fn advance(&mut self) -> Membership
+    {
+        while let Some(&counter) = self.counters.get(self.level) {
+            if counter < self.level {
+                if self.level.is_multiple_of(2) {
+                    self.order.swap(0, self.level);
+                }
+                else {
+                    self.order.swap(counter, self.level);
+                }
+                if let Some(slot) = self.counters.get_mut(self.level) {
+                    *slot = counter.saturating_add(1);
+                }
+                self.level = 1;
+                return Membership::Inside;
+            }
+            if let Some(slot) = self.counters.get_mut(self.level) {
+                *slot = 0;
+            }
+            self.level = self.level.saturating_add(1);
+        }
+        Membership::Outside
     }
 }
 

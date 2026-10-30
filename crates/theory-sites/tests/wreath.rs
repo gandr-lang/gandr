@@ -96,7 +96,8 @@ fn position(
 
 /// The probe's counts: 19 objects with 537 maps at total size three, and 65
 /// with 6707 at four. The two orders of the columns over a pair of points are
-/// one object, carried onto each other by the swap of the points.
+/// one object, carried onto each other by the swap of the points, and the
+/// lookup finds both orders at that one class.
 #[test]
 fn the_wreath_holds_one_object_per_class()
 {
@@ -116,6 +117,16 @@ fn the_wreath_holds_one_object_per_class()
         over_the_pair, 2,
         "(∅, ∅), and one class for (•, ∅) and (∅, •)"
     );
+    let point = shape!(1);
+    let orders = [vec![point.clone(), Shape::default()], vec![
+        Shape::default(),
+        point,
+    ]]
+    .map(|columns| {
+        small.find(&WreathShape::new(pair.clone(), columns).expect("one column per vertex"))
+    });
+    assert!(matches!(orders[0], Maybe::Present(_)));
+    assert_eq!(orders[0], orders[1], "both orders key to one class");
 }
 
 /// A point carrying a point, sent onto a pair of points carrying the empty

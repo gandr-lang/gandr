@@ -24,12 +24,14 @@ CREATE TABLE reference(
   PRIMARY KEY(key, crate, module),
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
+INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-core','replay','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','d38ffeaccc6639cb2a02ad7a18fd25b0d03a892d','2026-10-29','663ac54adb8b393f7ff7154d3c59eac7fcf7c44c');
 INSERT INTO reference VALUES('Pruiksma-2022-back_futures','runtime-emitter','cut','background','fc0387766eac4f5ffc7dc1a2622e7670e587c7b7','2026-10-29','40551b1269e78f7ae38d6f550f8e1e04de8adf84');
@@ -117,7 +119,6 @@ INSERT INTO reference VALUES('arXiv:2603.24468','theory-nominal-automata','','ba
 INSERT INTO reference VALUES('arXiv:2607.09383','core-checker','capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-checker','elaboration','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-unify','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:math/0512575','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45749-6_17','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','eliminator','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','solution','background',NULL,NULL,NULL);
@@ -158,7 +159,6 @@ INSERT INTO reference VALUES('doi:10.1016/0898-1221(81)90008-0','theory-graphs',
 INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/b978-0-08-012975-4.50028-x','theory-coherent-resolutions','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1016/j.aim.2006.12.006','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.aim.2018.03.016','theory-decomposition-spaces','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.jpdc.2026.105238','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.peva.2014.07.016','storage-chunker','','background',NULL,NULL,NULL);

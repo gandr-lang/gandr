@@ -59,6 +59,8 @@ mod shapes;
 #[cfg(test)]
 mod stratum;
 #[cfg(test)]
+mod theta;
+#[cfg(test)]
 mod units;
 #[cfg(test)]
 mod wreath;

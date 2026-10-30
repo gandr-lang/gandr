@@ -28,6 +28,14 @@
 //! is the reading to take if a presheaf on the site must tell two orders of one
 //! generator's inputs apart, which the carrier's normal form does not.
 //!
+//! The record of why the objects are stick-free is four tests on raw wirings,
+//! read as graphs before admission so that a bare wire can stand as an object:
+//! `negatives::sticks_as_objects_admit_no_degree`,
+//! `negatives::connected_objects_lose_the_point_deletion`,
+//! `negatives::vertex_end_fusions_are_not_closed` and
+//! `negatives::contraction_lowering_loses_the_factorization`. Each asserts the
+//! one fact that rules its alternative out.
+//!
 //! # Maps
 //!
 //! A [`SiteMap`] `f : G → K` is a pair `(S, φ)`: `S` sends each vertex `v` of
@@ -132,7 +140,9 @@
 //! classes at a bound; the catalogue is level one. A [`Wreath`] over the
 //! wiring catalogue and a level is the next level: an outer shape whose
 //! vertices each carry an object of the level below, so a pasting diagram of
-//! dimension `n` is a shape of the `n`-th level.
+//! dimension `n` is a shape of the `n`-th level. Restricted to the chains at
+//! every level, the wreath holds Θₙ's objects under the site's maps, and
+//! [`Level::find`] names an object it does not hold.
 //!
 //! [`segal`]: crate::segal()
 //!
@@ -179,6 +189,10 @@
 //!   Mathematica_ 18 (2013), pages 71–110. `doi:10.4171/dm/392`; preprint
 //!   `arXiv:0907.4553` — a weak unit as a cancellable pseudo-idempotent, the
 //!   property the unit check runs on scalars.
+//! - `Henry-2018-nonunital_polygraphs_form_presheaf_category` — background: the
+//!   dropped stick's parallel one level up: polygraphs whose generators have no
+//!   identity as source or target form a presheaf category (Corollary 2.4.9),
+//!   as the site has a degree because no stick is an object.
 //!
 //! [`Wiring`]: gandr_theory_circuit_algebras::Wiring
 
@@ -346,5 +360,7 @@ pub use units::merge;
 pub use units::scalars;
 pub use units::unit_property;
 pub use wreath::Wreath;
+pub use wreath::WreathKey;
 pub use wreath::WreathMap;
 pub use wreath::WreathShape;
+pub use wreath::WreathShapeObstruction;
