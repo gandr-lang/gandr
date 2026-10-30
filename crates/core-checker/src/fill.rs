@@ -31,6 +31,14 @@
 //! writes `whiskerLeft` and `whiskerRight`. A composite both of whose halves
 //! lift is the right whisker then the left.
 //!
+//! At a level-two shape `chain(m, (a₁, …, aₘ))`, `d` lists its cells, one
+//! 2-cell or none per column, or its pasting context with its points fixed:
+//! per column its first 1-cell, then each later 1-cell and the 2-cell that
+//! ends there. Each column is then a chain one level up, its 1-cells the
+//! vertices and `Path(A, xᵢ₋₁, xᵢ)` their carrier. The generator is of
+//! dimension two at the 2-cells. Its sides `u` and `v` compose the columns'
+//! first 1-cells and their last, each lifting as a chain's side lifts.
+//!
 //! The filler is the family's own induction, with base `here(t[X⁻])` once
 //! every path is `here`, by `then`'s unit laws. Each vertex path of `X`
 //! inducts first, in vertex order, its motive a function of every cell of
@@ -67,8 +75,9 @@
 //! - Thibaut Benjamin, Ioannis Markakis, Wilfred Offord, Chiara Sarti and Jamie
 //!   Vicary. "Naturality for Higher-Dimensional Path Types." (2025).
 //!   `arXiv:2501.11620` — `t ↑ X` and its square, the conditions on `X`;
-//!   Examples 1.1 to 1.3, the composite's naturality in a cell and in its whole
-//!   context, and the associator's.
+//!   Examples 1.1 to 1.4, the composite's naturality in a cell and in its whole
+//!   context, the associator's, and the horizontal composite's at two
+//!   cylinders.
 
 use alloc::vec::Vec;
 
@@ -83,11 +92,14 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::compose::Heights;
 use gandr_core_term::compose::Pasting;
+use gandr_core_term::compose::Seam;
 use gandr_core_term::identity;
 use gandr_core_term::identity::Whisker;
 use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_theory_sites::Boundary;
 
 use crate::compose::Endpoint;
 use crate::context::CheckingContext;
@@ -180,15 +192,22 @@ enum Listing
     /// the first vertex, then each later vertex and the cell ending there. A
     /// chain of `m` cells lists it in its `2m + 1` entries.
     Pasting,
+    /// A level-two shape's pasting context column by column, its points
+    /// fixed: each column's 1-cells and 2-cells in Catt's order, `f₀, f₁, a₁,
+    /// …, fₕ, aₕ`. A column's 1-cells are the vertices of the chain its
+    /// 2-cells make, so the shape of heights `(h₁, …, hₘ)` lists it in its `Σ
+    /// (2hᵢ + 1)` entries.
+    Columns(Heights),
 }
 
-/// What an entry of the fill is, by its index in the chain from zero.
+/// What an entry of the fill is: a vertex, or a cell, by its index in the
+/// listing's vertices or cells from zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Entry
 {
     /// The vertex at this index.
     Vertex(usize),
-    /// The cell at this index, from the vertex at it to the next.
+    /// The cell at this index.
     Cell(usize),
 }
 
@@ -198,29 +217,51 @@ impl Listing
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each entry a cell when the cells are listed; in the pasting
-    ///   context, `0` the first vertex, an odd position the vertex after it,
-    ///   and an even one past zero the cell ending at the vertex before it.
+    /// - ensures: each entry a cell when the cells are listed; in a chain's
+    ///   pasting context, `0` the first vertex, an odd position the vertex
+    ///   after it, and an even one past zero the cell ending at the vertex
+    ///   before it; in a level-two shape's, the same within each column, the
+    ///   indices running on across the columns.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the cells listed, and the pasting context of one
-    ///   cell, read their vertices and their cells in place.
+    /// - hypothesis: L3 — the cells listed, the pasting context of one cell and
+    ///   that of two columns of one 2-cell each read their vertices and their
+    ///   cells in place.
     /// - witness: `fill::tests::a_cell_of_dimension_one_fills_its_square_by_induction`
     /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
-    #[spec(ensures: |ret| self == Self::Pasting || ret == Entry::Cell(position.0))]
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
+    #[spec(ensures: |ret| self != Self::Cells || ret == Entry::Cell(position.0))]
     fn entry(
         self,
         position: Position,
     ) -> Entry
     {
+        let within = |local: usize, vertices: usize, cells: usize| {
+            if local.is_multiple_of(2) && local > 0 {
+                Entry::Cell(cells.saturating_add(local.div_ceil(2)).saturating_sub(1))
+            }
+            else {
+                Entry::Vertex(vertices.saturating_add(local.div_ceil(2)))
+            }
+        };
         match self {
             Self::Cells => Entry::Cell(position.0),
-            Self::Pasting if position.0.is_multiple_of(2) && position.0 > 0 => {
-                Entry::Cell(position.0.div_ceil(2).saturating_sub(1))
+            Self::Pasting => within(position.0, 0, 0),
+            Self::Columns(heights) => {
+                let (mut base, mut vertices, mut cells) = (0_usize, 0_usize, 0_usize);
+                for height in heights.columns().map(usize::from) {
+                    let span = height.saturating_mul(2).saturating_add(1);
+                    if position.0 < base.saturating_add(span) {
+                        return within(position.0.saturating_sub(base), vertices, cells);
+                    }
+                    base = base.saturating_add(span);
+                    vertices = vertices.saturating_add(height).saturating_add(1);
+                    cells = cells.saturating_add(height);
+                }
+                Entry::Vertex(vertices)
             },
-            Self::Pasting => Entry::Vertex(position.0.div_ceil(2)),
         }
     }
 
@@ -229,24 +270,115 @@ impl Listing
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: nothing when the cells are listed; in the pasting context,
-    ///   `0` for the first vertex and `2i - 1` for the `i`-th after it.
+    /// - ensures: nothing when the cells are listed; in a chain's pasting
+    ///   context, `0` for the first vertex and `2i - 1` for the `i`-th after
+    ///   it; in a level-two shape's, the same within the vertex's column.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::entry`].
     /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
     #[spec(ensures: |ret| ret.is_none_or(|place| self.entry(place) == Entry::Vertex(vertex.0)))]
     fn vertex(
         self,
         vertex: Vertex,
     ) -> Option<Position>
     {
+        let within = |local: usize| local.saturating_mul(2).saturating_sub(1);
         match self {
             Self::Cells => None,
-            Self::Pasting => Some(Position(vertex.0.saturating_mul(2).saturating_sub(1))),
+            Self::Pasting => Some(Position(within(vertex.0))),
+            Self::Columns(heights) => {
+                let (mut base, mut vertices) = (0_usize, 0_usize);
+                for height in heights.columns().map(usize::from) {
+                    if vertex.0 <= vertices.saturating_add(height) {
+                        return Some(Position(
+                            base.saturating_add(within(vertex.0.saturating_sub(vertices))),
+                        ));
+                    }
+                    base = base.saturating_add(height.saturating_mul(2).saturating_add(1));
+                    vertices = vertices.saturating_add(height).saturating_add(1);
+                }
+                None
+            },
         }
+    }
+
+    /// The two vertices the entry at `position` runs between, when it is a
+    /// cell.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the vertex at the cell's index and the next, for a chain; in
+    ///   a level-two shape, the cell's column's 1-cells at its place and the
+    ///   next; nothing for a vertex.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::entry`].
+    /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
+    #[spec(ensures: |ret| ret.is_some() == matches!(self.entry(position), Entry::Cell(_)) && ret.is_none_or(|(start, end)| end.0 == start.0.saturating_add(1)))]
+    fn ends(
+        self,
+        position: Position,
+    ) -> Option<(Vertex, Vertex)>
+    {
+        let Entry::Cell(cell) = self.entry(position)
+        else {
+            return None;
+        };
+        let mut start = cell;
+        if let Self::Columns(heights) = self {
+            let (mut vertices, mut cells) = (0_usize, 0_usize);
+            for height in heights.columns().map(usize::from) {
+                if cell < cells.saturating_add(height) {
+                    start = vertices.saturating_add(cell.saturating_sub(cells));
+                    break;
+                }
+                vertices = vertices.saturating_add(height).saturating_add(1);
+                cells = cells.saturating_add(height);
+            }
+        }
+        Some((Vertex(start), Vertex(start.saturating_add(1))))
+    }
+
+    /// A level-two shape's columns' first 1-cells and their last, where the
+    /// entries list them; nothing for a chain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one first and one last per column, in column order, a column
+    ///   of no 2-cell's lone 1-cell both; both empty for a chain.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::entry`].
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
+    #[spec(ensures: |ret| ret.0.len() == ret.1.len())]
+    fn column_ends(self) -> (Vec<Position>, Vec<Position>)
+    {
+        let Self::Columns(heights) = self
+        else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut base = 0_usize;
+        heights
+            .columns()
+            .map(usize::from)
+            .map(|height| {
+                let ends = (
+                    Position(base),
+                    Position(base.saturating_add(height.saturating_mul(2).saturating_sub(1))),
+                );
+                base = base.saturating_add(height.saturating_mul(2).saturating_add(1));
+                ends
+            })
+            .unzip()
     }
 }
 
@@ -318,6 +450,19 @@ enum Generated<'tree>
     },
     /// A cell of dimension one: a path between the chain's two ends.
     Ends,
+    /// A cell over a level-two shape at its 2-cells' dimension: its sides are
+    /// composites of the columns' first 1-cells and of their last.
+    Columns
+    {
+        /// The tree of `t`'s left side, a leaf per column.
+        u: &'tree [Spanned],
+        /// The tree of `t`'s right side, a leaf per column.
+        v: &'tree [Spanned],
+        /// Where the entries list each column's first 1-cell.
+        tops: &'tree [Position],
+        /// Where the entries list each column's last 1-cell.
+        bottoms: &'tree [Position],
+    },
 }
 
 /// One node of a side read at an assignment: its two ends and its lift.
@@ -336,10 +481,16 @@ struct Read
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Chain
 {
-    /// The carrier the cells' paths inhabit.
+    /// The carrier the outer vertices inhabit: the chain's, or a level-two
+    /// shape's points'.
     carrier: ValueTypeId,
-    /// The `m + 1` vertices, in order, each of `X` at its left end.
+    /// The outer vertices, in order, each of `X` at its left end: the chain's
+    /// `m + 1`, or a level-two shape's `m + 1` points.
     vertices: Vec<ValueId>,
+    /// The vertices the listing numbers, in order, each with the type it
+    /// inhabits and each of `X` at its left end: the chain's own, or a
+    /// level-two shape's 1-cells.
+    listed: Vec<(ValueTypeId, ValueId)>,
 }
 
 /// A generator's type read as a curried function of the fill's entries into
@@ -365,12 +516,13 @@ struct Curried
 /// - ensures: the square `t ↑ X` fills over the stratum the node names, and the
 ///   induction realising it, both under the judgement's binders.
 /// - fails: as the module states; [`CheckRefusal::ShapeMismatch`] for a
-///   generator that is no curried function of the entries into a path type, or
-///   an entry neither of its domain's type nor a path one layer deeper;
-///   [`CheckRefusal::ComposeNotAShape`] for a level-two shape whose columns are
-///   not the cells of `X`, a column of one 2-cell each and an empty column each
-///   other cell; a machine invariant for a node that is no fill or types of
-///   another count.
+///   generator that is no curried function of the entries into a path type, an
+///   entry neither of its domain's type nor a path one layer deeper, or a
+///   level-two shape's 1-cell whose type is no path type;
+///   [`CheckRefusal::ComposeNotAShape`] for a level-two shape's cells whose
+///   columns are not the cells of `X`, a column of one 2-cell each and an empty
+///   column each other cell; a machine invariant for a node that is no fill or
+///   types of another count.
 /// - panics: none.
 ///
 /// # Errors
@@ -385,13 +537,16 @@ struct Curried
 ///   cell, a vertex of `X` beside a cell outside it and a cell's square whose
 ///   side is no whisker of its vertex's path are each refused by name. The
 ///   whisker names `X` by its columns, and a column at a plain cell or of two
-///   2-cells is refused by name.
+///   2-cells is refused by name. Over a level-two shape's pasting context, a
+///   column's 1-cells and 2-cell fill their cylinder along the column's own
+///   carrier.
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 /// - witness: `fill::tests::a_cell_of_dimension_one_fills_its_square_by_induction`
 /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
 /// - witness: `fill::tests::a_fill_refuses_each_defect_by_name`
 /// - witness: `fill::tests::a_set_that_is_no_pasting_context_is_refused`
 /// - witness: `fill::tests::a_level_two_fill_names_x_by_its_columns`
+/// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::FillUncertified { at: site, .. } | CheckRefusal::NoFiller { at: site, .. } | CheckRefusal::GeneratorFamilyUnsupported { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
@@ -431,6 +586,16 @@ pub fn realise(
         {
             Listing::Pasting
         },
+        Pasting::Columns { heights }
+            if written.len() != heights.columns().count()
+                && written.len()
+                    == heights
+                        .columns()
+                        .map(|height| usize::from(height).saturating_mul(2).saturating_add(1))
+                        .sum::<usize>() =>
+        {
+            Listing::Columns(heights)
+        },
         Pasting::Chain { .. } | Pasting::Columns { .. } => Listing::Cells,
     };
     let Curried {
@@ -440,13 +605,18 @@ pub fn realise(
     } = telescope(context, at, generator_type, Cells(written.len()))?;
     let mut read = Vec::with_capacity(written.len());
     let mut ends = Vec::with_capacity(written.len());
+    let mut inhabited = Vec::new();
     let mut carrier = None;
     let mut cell_layers = None;
     for (index, ((&entry, &found), &wanted)) in
         written.iter().zip(entry_types).zip(&domains).enumerate()
     {
         match listing.entry(Position(index)) {
-            Entry::Vertex(_) => read.push(classify_vertex(context, at, entry, found, wanted)?),
+            Entry::Vertex(_) => {
+                let (held, vertex_type) = classify_vertex(context, at, entry, found, wanted)?;
+                read.push(held);
+                inhabited.push(vertex_type);
+            },
             Entry::Cell(_) => {
                 let (held, (path_carrier, left, right)) =
                     classify(context, at, entry, found, wanted)?;
@@ -461,15 +631,17 @@ pub fn realise(
         .zip(cell_layers)
         .ok_or(CheckRefusal::MachineInvariant)?;
     let refusal = (at, sides, composite.stratum);
-    let diagram: Vec<_> = match listing {
-        Listing::Cells => ends
-            .iter()
-            .map(|&(left, right)| {
-                crate::compose::cell(Endpoint::Known(left), Endpoint::Known(right))
-            })
-            .collect(),
+    let (carrier, diagram): (ValueTypeId, Vec<_>) = match listing {
+        Listing::Cells => (
+            carrier,
+            ends.iter()
+                .map(|&(left, right)| {
+                    crate::compose::cell(Endpoint::Known(left), Endpoint::Known(right))
+                })
+                .collect(),
+        ),
         Listing::Pasting => {
-            bordered(context, refusal, &mut read)?;
+            bordered(context, listing, refusal, &mut read)?;
             let corners: Vec<ValueId> = (0 ..= ends.len())
                 .filter_map(|vertex| listing.vertex(Vertex(vertex)))
                 .filter_map(|place| read.get(place.0))
@@ -477,7 +649,7 @@ pub fn realise(
                     Cell::Plain(value) | Cell::Lifted { lo: value, .. } => value,
                 })
                 .collect();
-            corners
+            let diagram = corners
                 .windows(2)
                 .map(|pair| match *pair {
                     [left, right] => {
@@ -485,12 +657,18 @@ pub fn realise(
                     },
                     _ => crate::compose::cell(Endpoint::Unknown, Endpoint::Unknown),
                 })
-                .collect()
+                .collect();
+            (carrier, diagram)
+        },
+        Listing::Columns(_) => {
+            bordered(context, listing, refusal, &mut read)?;
+            column_sides(context, at, (listing, &inhabited))?
         },
     };
-    // A level-two shape names the cells of `X`: a column of one 2-cell each,
-    // and an empty column each other cell.
-    if let gandr_core_term::compose::Pasting::Columns { heights } = composite.pasting
+    // The cells listed at a level-two shape name the cells of `X`: a column
+    // of one 2-cell each, and an empty column each other cell.
+    if let Pasting::Columns { heights } = composite.pasting
+        && listing == Listing::Cells
         && (heights.columns().count() != read.len()
             || !heights.columns().zip(&read).all(|(height, cell)| {
                 matches!(
@@ -504,12 +682,8 @@ pub fn realise(
             pasting: composite.pasting,
         });
     }
-    let (Endpoint::Known(start), _) = crate::compose::fill(
-        context,
-        (at, gandr_core_term::compose::Seam::Outer),
-        &shape,
-        &diagram,
-    )?
+    let (Endpoint::Known(start), _) =
+        crate::compose::fill(context, (at, Seam::Outer), &shape, &diagram)?
     else {
         return Err(CheckRefusal::MachineInvariant);
     };
@@ -522,15 +696,57 @@ pub fn realise(
         };
         vertices.push(end);
     }
-    let chain = Chain { carrier, vertices };
+    let listed = match listing {
+        Listing::Columns(_) => inhabited
+            .iter()
+            .enumerate()
+            .map(|(vertex, &vertex_type)| {
+                let place = listing
+                    .vertex(Vertex(vertex))
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                match read.get(place.0) {
+                    Some(&(Cell::Plain(value) | Cell::Lifted { lo: value, .. })) => {
+                        Ok((vertex_type, value))
+                    },
+                    None => Err(CheckRefusal::MachineInvariant),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Listing::Cells | Listing::Pasting => {
+            vertices.iter().map(|&vertex| (carrier, vertex)).collect()
+        },
+    };
+    let chain = Chain {
+        carrier,
+        vertices,
+        listed,
+    };
+    let (tops, bottoms) = listing.column_ends();
+    let count = Cells(read.len());
     let trees = if result == cell_layers {
-        None
+        match listing {
+            Listing::Columns(_) => {
+                let arena = context.arena();
+                let (Some(u), Some(v)) = (
+                    composite_of(arena, sides.0, Leaves::Ends { count, ends: &tops }),
+                    composite_of(arena, sides.1, Leaves::Ends {
+                        count,
+                        ends: &bottoms,
+                    }),
+                )
+                else {
+                    return Err(refused(context.arena_mut(), refusal, &read));
+                };
+                Some((u, v))
+            },
+            Listing::Cells | Listing::Pasting => None,
+        }
     }
     else if result == Layers(cell_layers.0.saturating_add(1)) && listing == Listing::Cells {
         let arena = context.arena();
         let (Some(u), Some(v)) = (
-            composite_of(arena, sides.0, Cells(read.len())),
-            composite_of(arena, sides.1, Cells(read.len())),
+            composite_of(arena, sides.0, Leaves::Entries(count)),
+            composite_of(arena, sides.1, Leaves::Entries(count)),
         )
         else {
             return Err(refused(context.arena_mut(), refusal, &read));
@@ -540,9 +756,17 @@ pub fn realise(
     else {
         return Err(refused(context.arena_mut(), refusal, &read));
     };
-    let generated = match trees {
-        Some((ref u, ref v)) => Generated::Composites { u, v },
-        None => Generated::Ends,
+    let generated = match (trees.as_ref(), listing) {
+        (Some(&(ref u, ref v)), Listing::Columns(_)) => Generated::Columns {
+            u,
+            v,
+            tops: &tops,
+            bottoms: &bottoms,
+        },
+        (Some(&(ref u, ref v)), Listing::Cells | Listing::Pasting) => {
+            Generated::Composites { u, v }
+        },
+        (None, _) => Generated::Ends,
     };
     let mut roles = Vec::with_capacity(read.len());
     let mut vertices_of_x = Vec::new();
@@ -573,6 +797,67 @@ pub fn realise(
     let square = builder.square(arena, Binders::NONE, &read);
     let realised = builder.realised(arena, (&read, &roles), (&vertices_of_x, &cells_of_x))?;
     Ok(Realisation { square, realised })
+}
+
+/// The points' carrier of a level-two shape listed as its pasting context,
+/// and one boundary per column: its 1-cells' carrier read as the path between
+/// its two points.
+///
+/// # Specification
+/// - requires: `listing` lists a level-two shape; `inhabited` gives the type
+///   each vertex it numbers inhabits, in order.
+/// - ensures: the carrier `A` of the first column's `Path(A, x₀, x₁)`, and per
+///   column the boundary from `xᵢ₋₁` to `xᵢ`, its first 1-cell's carrier
+///   `Path(A, xᵢ₋₁, xᵢ)`.
+/// - fails: [`CheckRefusal::ShapeMismatch`] for a 1-cell's carrier that is no
+///   path type; a conversion's own refusal; a machine invariant for a listing
+///   that is no level-two shape's, or a column it numbers no vertex of.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`realise`].
+/// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
+#[spec(ensures: |ret| ret.as_ref().is_err() || matches!(listing, Listing::Columns(_)))]
+fn column_sides(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    (listing, inhabited): (Listing, &[ValueTypeId]),
+) -> Result<(ValueTypeId, Vec<Boundary<Endpoint>>), CheckRefusal>
+{
+    let Listing::Columns(heights) = listing
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let mut outer = None;
+    let mut sides = Vec::new();
+    let mut first = 0_usize;
+    for height in heights.columns().map(usize::from) {
+        let &vertex_type = inhabited.get(first).ok_or(CheckRefusal::MachineInvariant)?;
+        let head = context.whnf_value_type(vertex_type)?;
+        let ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        } = value_type_view(context.arena(), head)?
+        else {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(at),
+                wanted: ExpectedShape::Path,
+                found: TypeNode::Value(head),
+            });
+        };
+        outer.get_or_insert(carrier);
+        sides.push(crate::compose::cell(
+            Endpoint::Known(left),
+            Endpoint::Known(right),
+        ));
+        first = first.saturating_add(height).saturating_add(1);
+    }
+    let outer = outer.ok_or(CheckRefusal::MachineInvariant)?;
+    Ok((outer, sides))
 }
 
 /// Read `generator`, a value type, as a curried function of `count` entries:
@@ -806,8 +1091,9 @@ fn classify(
 ///
 /// # Specification
 /// - requires: `vertex` and `found` stand under the judgement's binders.
-/// - ensures: the vertex as read: itself at its domain's depth, or a path
-///   between two vertices one deeper.
+/// - ensures: the vertex as read, itself at its domain's depth or a path
+///   between two vertices one deeper, and the type the vertex it is or lifts
+///   inhabits.
 /// - fails: as [`lifted_path`] for a lifted vertex;
 ///   [`CheckRefusal::ShapeMismatch`] for a vertex at any other depth; a
 ///   conversion's own refusal.
@@ -819,6 +1105,7 @@ fn classify(
 /// # Adequacy
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
+/// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::GeneratorFamilyUnsupported { cell: named, .. }) if named != vertex))]
 fn classify_vertex(
     context: &mut CheckingContext<'_>,
@@ -826,11 +1113,11 @@ fn classify_vertex(
     vertex: ValueId,
     found: ValueTypeId,
     wanted: Layers,
-) -> Result<Cell, CheckRefusal>
+) -> Result<(Cell, ValueTypeId), CheckRefusal>
 {
     let depth = layers(context, found)?;
     if depth == wanted {
-        return Ok(Cell::Plain(vertex));
+        return Ok((Cell::Plain(vertex), found));
     }
     let head = context.whnf_value_type(found)?;
     if depth != Layers(wanted.0.saturating_add(1)) {
@@ -840,12 +1127,15 @@ fn classify_vertex(
             found: TypeNode::Value(head),
         });
     }
-    let (_, lo, hi) = lifted_path(context, at, vertex, head)?;
-    Ok(Cell::Lifted {
-        lo,
-        hi,
-        path: vertex,
-    })
+    let (inner, lo, hi) = lifted_path(context, at, vertex, head)?;
+    Ok((
+        Cell::Lifted {
+            lo,
+            hi,
+            path: vertex,
+        },
+        inner,
+    ))
 }
 
 /// The path type `head` is, the weak head of a lifted entry's type: its
@@ -907,8 +1197,9 @@ fn lifted_path(
 /// ends whiskered by the vertices' paths, and it stands as those ends.
 ///
 /// # Specification
-/// - requires: `read` lists a pasting context in the judgement's context;
-///   `sides` are the generator's, scoped under one binder per entry.
+/// - requires: `read` lists the pasting context `listing` names, in the
+///   judgement's context; `sides` are the generator's, scoped under one binder
+///   per entry.
 /// - ensures: each cell of `X` whose right vertex is in `X` at its left side's
 ///   first half, and whose left vertex is in `X` at its right side's second
 ///   half; every other entry as it stood.
@@ -924,24 +1215,26 @@ fn lifted_path(
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
 /// - witness: `fill::tests::a_set_that_is_no_pasting_context_is_refused`
+/// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::NoFiller { at: site, .. }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
 fn bordered(
     context: &mut CheckingContext<'_>,
+    listing: Listing,
     (at, sides, stratum): (ValueId, (ValueId, ValueId), Stratum),
     read: &mut [Cell],
 ) -> Result<(), CheckRefusal>
 {
     for index in 0 .. read.len() {
-        let Entry::Cell(cell) = Listing::Pasting.entry(Position(index))
+        let Some((first, second)) = listing.ends(Position(index))
         else {
             continue;
         };
-        let (start, end) = Listing::Pasting
-            .vertex(Vertex(cell))
-            .zip(Listing::Pasting.vertex(Vertex(cell.saturating_add(1))))
+        let (start, end) = listing
+            .vertex(first)
+            .zip(listing.vertex(second))
             .and_then(|(start, end)| read.get(start.0).copied().zip(read.get(end.0).copied()))
             .ok_or(CheckRefusal::MachineInvariant)?;
         let Some(&Cell::Lifted { lo, hi, path }) = read.get(index)
@@ -1055,30 +1348,76 @@ fn halves(
     <[ValueId; 2]>::try_from(&**cells).ok().map(Into::into)
 }
 
-/// The composite tree of `side`, scoped under the `count` cells' binders: its
-/// nodes, each child after its parent, with the span each composes.
+/// Which entries a side's leaves are: every entry, or a level-two shape's
+/// columns' ends.
+#[derive(Clone, Copy, Debug)]
+enum Leaves<'ends>
+{
+    /// Each of this many entries, a leaf apiece.
+    Entries(Cells),
+    /// Of this many entries, the ones listed, a leaf apiece in order.
+    Ends
+    {
+        /// How many entries the side is scoped under.
+        count: Cells,
+        /// The entries that are leaves.
+        ends: &'ends [Position],
+    },
+}
+
+impl Leaves<'_>
+{
+    /// How many entries the side is scoped under.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn entries(self) -> Cells
+    {
+        match self {
+            Self::Entries(count) | Self::Ends { count, .. } => count,
+        }
+    }
+
+    /// How many leaves the side's root spans.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn leaves(self) -> Cells
+    {
+        match self {
+            Self::Entries(count) => count,
+            Self::Ends { ends, .. } => Cells(ends.len()),
+        }
+    }
+}
+
+/// The composite tree of `side`, scoped under one binder per entry: its
+/// nodes, each child after its parent, with the span of leaves each
+/// composes.
 ///
 /// # Specification
-/// - requires: `side` is scoped under `count` binders, the first cell
-///   outermost.
-/// - ensures: the tree whose leaves are the cells `side` reads and whose
-///   composites are its transports, its `compose` nodes and the composite a
-///   `then` returns, a composite of more than two cells nested to the left,
-///   when every composite joins two consecutive spans and the root spans every
-///   cell; nothing otherwise.
+/// - requires: `side` is scoped under `leaves`' entries' binders, the first
+///   entry outermost.
+/// - ensures: the tree whose leaves are the entries `side` reads, each the leaf
+///   `leaves` makes it, and whose composites are its transports, its `compose`
+///   nodes and the composite a `then` returns, a composite of more than two
+///   leaves nested to the left, when every composite joins two consecutive
+///   spans and the root spans every leaf; nothing otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `c₁ then c₂` reads as the composite of the two cells, and
-///   a side that mentions no cell reads as none.
+/// - hypothesis: L3 — `c₁ then c₂` reads as the composite of the two cells, a
+///   side that mentions no cell reads as none, and `f then g` over two columns
+///   reads as the composite of their first 1-cells.
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 /// - witness: `fill::tests::a_fill_refuses_each_defect_by_name`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|tree| tree.first().is_some_and(|root| root.first == 0 && root.last.saturating_add(1) == count.0)))]
+/// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|tree| tree.first().is_some_and(|root| root.first == 0 && root.last.saturating_add(1) == leaves.leaves().0)))]
 fn composite_of(
     arena: &CoreArena,
     side: ValueId,
-    count: Cells,
+    leaves: Leaves<'_>,
 ) -> Option<Vec<Spanned>>
 {
     let mut values: Vec<Option<ValueId>> = Vec::from([Some(side)]);
@@ -1093,10 +1432,16 @@ fn composite_of(
             } = *node
             {
                 let bound = usize::try_from(u32::from(bound)).ok()?;
+                let count = leaves.entries();
                 if bound >= count.0 {
                     return None;
                 }
-                Side::Leaf(count.0.saturating_sub(1).saturating_sub(bound))
+                let entry = count.0.saturating_sub(1).saturating_sub(bound);
+                let leaf = match leaves {
+                    Leaves::Entries(_) => Some(entry),
+                    Leaves::Ends { ends, .. } => ends.iter().position(|end| end.0 == entry),
+                };
+                Side::Leaf(leaf?)
             }
             else if let Value::Returned(composite) = *node {
                 // `c₁ then c₂` returns the binary composite (#4057), read as
@@ -1160,7 +1505,7 @@ fn composite_of(
         }
         index = index.saturating_add(1);
     }
-    spanned(&sides, count)
+    spanned(&sides, leaves.leaves())
 }
 
 /// The spans of `sides`, each child after its parent, read children first.
@@ -1450,7 +1795,9 @@ impl Builder<'_>
     /// - ensures: `Path(Path(P, u⁻, v⁺), t⁻ then (v ↑ X), (u ↑ X) then t⁺)`: of
     ///   dimension two, `P` the path between the chain's ends and `u`, `v` the
     ///   generator's sides; of dimension one, `P` the carrier and `u`, `v` the
-    ///   chain's two ends.
+    ///   chain's two ends; over a level-two shape, `P` the path between its
+    ///   first point and its last, and `u`, `v` the generator's sides, each a
+    ///   composite of one 1-cell per column, lifting as each column's lifts.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1458,6 +1805,7 @@ impl Builder<'_>
     /// - hypothesis: L3 — as [`realise`].
     /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
     /// - witness: `fill::tests::a_cell_of_dimension_one_fills_its_square_by_induction`
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
     #[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Path { .. })))]
     fn square(
         &self,
@@ -1482,30 +1830,47 @@ impl Builder<'_>
             .unzip();
         let t_lo = self.applied(arena, shift, &lo);
         let t_hi = self.applied(arena, shift, &hi);
+        let (start, end) = (
+            vertices
+                .first()
+                .copied()
+                .unwrap_or_else(|| arena.value_unit()),
+            vertices
+                .last()
+                .copied()
+                .unwrap_or_else(|| arena.value_unit()),
+        );
         let (composites, u, v) = match self.generated {
-            Generated::Composites { u, v } => {
-                let (start, end) = (
-                    vertices
-                        .first()
-                        .copied()
-                        .unwrap_or_else(|| arena.value_unit()),
-                    vertices
-                        .last()
-                        .copied()
-                        .unwrap_or_else(|| arena.value_unit()),
-                );
-                (
-                    arena.value_type_path(carrier, start, end),
-                    lifted(arena, carrier, &vertices, u, cells),
-                    lifted(arena, carrier, &vertices, v, cells),
-                )
-            },
+            Generated::Composites { u, v } => (
+                arena.value_type_path(carrier, start, end),
+                lifted(arena, carrier, &vertices, u, cells),
+                lifted(arena, carrier, &vertices, v, cells),
+            ),
             Generated::Ends => {
                 let last = vertices.len().saturating_sub(1);
                 (
                     carrier,
                     self.end(arena, &vertices, cells, Vertex(0)),
                     self.end(arena, &vertices, cells, Vertex(last)),
+                )
+            },
+            Generated::Columns {
+                u,
+                v,
+                tops,
+                bottoms,
+            } => {
+                let unit = arena.value_unit();
+                let at = |ends: &[Position]| -> Vec<Cell> {
+                    ends.iter()
+                        .map(|end| cells.get(end.0).copied().unwrap_or(Cell::Plain(unit)))
+                        .collect()
+                };
+                let (tops, bottoms) = (at(tops), at(bottoms));
+                (
+                    arena.value_type_path(carrier, start, end),
+                    lifted(arena, carrier, &vertices, u, &tops),
+                    lifted(arena, carrier, &vertices, v, &bottoms),
                 )
             },
         };
@@ -1689,6 +2054,7 @@ impl Builder<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`realise`].
     /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
     #[spec(ensures: |ret| ret.as_ref().is_err_and(|refusal| *refusal == CheckRefusal::MachineInvariant) || ret.as_ref().is_ok_and(|realised| matches!(arena.computation(*realised), Some(&Computation::TelescopeTransport { .. }))))]
     fn vertex_induction(
         &self,
@@ -1698,7 +2064,8 @@ impl Builder<'_>
         base: ValueId,
     ) -> Result<ComputationId, CheckRefusal>
     {
-        let Some(&Cell::Lifted { lo, path, .. }) = cells.get(position.0)
+        let (Entry::Vertex(moving_vertex), Some(&Cell::Lifted { lo, path, .. })) =
+            (self.listing.entry(position), cells.get(position.0))
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
@@ -1727,23 +2094,20 @@ impl Builder<'_>
         let square = self.square(arena, level.beyond(two).beyond(span), &bound);
         let mut codomain = arena.comp_type_returner(square);
         for (rank, &cell) in lifted.iter().enumerate().rev() {
-            let (Entry::Cell(index), Some(&Cell::Lifted { lo: low, .. })) =
-                (self.listing.entry(cell), cells.get(cell.0))
+            let (Some((first, second)), Some(&Cell::Lifted { lo: low, .. })) =
+                (self.listing.ends(cell), cells.get(cell.0))
             else {
                 return Err(CheckRefusal::MachineInvariant);
             };
             let (start, end) = self
                 .listing
-                .vertex(Vertex(index))
-                .zip(self.listing.vertex(Vertex(index.saturating_add(1))))
+                .vertex(first)
+                .zip(self.listing.vertex(second))
                 .ok_or(CheckRefusal::MachineInvariant)?;
+            let vertex_type = self.inhabited(first)?;
             let ends_at = Binders::from(u32::try_from(rank.saturating_mul(2)).unwrap_or(u32::MAX));
             let square_at = ends_at.deeper();
-            let carrier = lift_type(
-                arena,
-                self.chain.carrier,
-                level.beyond(two).beyond(square_at),
-            );
+            let carrier = lift_type(arena, vertex_type, level.beyond(two).beyond(square_at));
             let left = reach(reached(arena, cells, (start, position), square_at)?);
             let right = reach(reached(arena, cells, (end, position), square_at)?);
             let low = lift_value(arena, low, two.beyond(square_at));
@@ -1757,7 +2121,7 @@ impl Builder<'_>
             let target = arena.value_returned(target);
             let filled = arena.value_type_path(outer, source, target);
             codomain = arena.comp_type_pi(filled, codomain);
-            let carrier = lift_type(arena, self.chain.carrier, level.beyond(two).beyond(ends_at));
+            let carrier = lift_type(arena, vertex_type, level.beyond(two).beyond(ends_at));
             let left = reach(reached(arena, cells, (start, position), ends_at)?);
             let right = reach(reached(arena, cells, (end, position), ends_at)?);
             let ends = arena.value_type_path(carrier, left.hi, right.hi);
@@ -1765,7 +2129,8 @@ impl Builder<'_>
         }
         let thunked = arena.value_type_thunk(codomain);
         let returned = arena.comp_type_returner(thunked);
-        let domain = lift_type(arena, self.chain.carrier, level);
+        let vertex_type = self.inhabited(Vertex(moving_vertex))?;
+        let domain = lift_type(arena, vertex_type, level);
         let lifted_domain = lift_type(arena, domain, Binders::ONE);
         let lifted_lo = lift_value(arena, lo, Binders::ONE);
         let moving = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -1868,7 +2233,7 @@ impl Builder<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Path(A, xᵢ, xᵢ₊₁)` for the cell's two vertices, each of `X`
-    ///   at its left end.
+    ///   at its left end, `A` the type they inhabit.
     /// - fails: a machine invariant for a position that is no cell of the
     ///   chain.
     /// - panics: none.
@@ -1880,6 +2245,7 @@ impl Builder<'_>
     /// - hypothesis: L3 — as [`realise`].
     /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
     /// - witness: `fill::tests::vertex_paths_fill_their_square_by_induction`
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
     #[spec(ensures: |ret| ret.is_err() || matches!(arena.value_type(*ret.as_ref().unwrap_or(&self.chain.carrier)), Some(&ValueType::Path { .. })))]
     fn cell_type(
         &self,
@@ -1888,20 +2254,49 @@ impl Builder<'_>
         position: Position,
     ) -> Result<ValueTypeId, CheckRefusal>
     {
-        let Entry::Cell(index) = self.listing.entry(position)
+        let Some((first, second)) = self.listing.ends(position)
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let (&left, &right) = self
+        let (&(carrier, left), &(_, right)) = self
             .chain
-            .vertices
-            .get(index)
-            .zip(self.chain.vertices.get(index.saturating_add(1)))
+            .listed
+            .get(first.0)
+            .zip(self.chain.listed.get(second.0))
             .ok_or(CheckRefusal::MachineInvariant)?;
-        let carrier = lift_type(arena, self.chain.carrier, shift);
+        let carrier = lift_type(arena, carrier, shift);
         let left = lift_value(arena, left, shift);
         let right = lift_value(arena, right, shift);
         Ok(arena.value_type_path(carrier, left, right))
+    }
+
+    /// The type the vertex at `vertex` of the listing inhabits, in the fill's
+    /// own context.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the chain's carrier for a chain's vertex, its column's
+    ///   `Path(A, xᵢ₋₁, xᵢ)` for a level-two shape's 1-cell.
+    /// - fails: a machine invariant for a vertex past the listing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`realise`].
+    /// - witness: `fill::tests::two_columns_fill_their_cylinders_by_induction`
+    #[spec(ensures: |ret| ret.is_ok() == (vertex.0 < self.chain.listed.len()))]
+    fn inhabited(
+        &self,
+        vertex: Vertex,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        self.chain
+            .listed
+            .get(vertex.0)
+            .map(|&(carrier, _)| carrier)
+            .ok_or(CheckRefusal::MachineInvariant)
     }
 }
 

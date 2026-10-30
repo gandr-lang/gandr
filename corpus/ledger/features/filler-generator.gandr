@@ -1,8 +1,8 @@
 /// `filler-generator`: a cell over a chain of paths lifts along the cells it takes as paths of paths.
 ///
-/// Implemented: `fill[n, k](chain(m), t, d)` checks its generator `t` as a function of the chain's cells, or of its whole pasting context, into a path type. Each entry of `d` that is a path one layer deeper is an entry of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction proves it, each vertex path of `X` first and then each cell of `X`, and the kernel replays the proof. The printer and the formatter write the form back as it is written, and `natassoc` fills the associator over the 3-chain. Examples 1.1 to 1.3 of the paper are rows below, each at the type Catt answers, Example 1.3 at the associator over all three cells. At level two, `fill[n, k](chain(m, (a₁, …, aₘ)), t, cells)` names `X` by its columns: a column of one 2-cell for each cell of `X`, and an empty column for each other cell. Level two certifies the shape at the stratum.
+/// Implemented: `fill[n, k](chain(m), t, d)` checks its generator `t` as a function of the chain's cells, or of its whole pasting context, into a path type. Each entry of `d` that is a path one layer deeper is an entry of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction proves it, each vertex path of `X` first and then each cell of `X`, and the kernel replays the proof. The printer and the formatter write the form back as it is written, and `natassoc` fills the associator over the 3-chain. Examples 1.1 to 1.3 of the paper are rows below, each at the type Catt answers, Example 1.3 at the associator over all three cells. At level two, `fill[n, k](chain(m, (a₁, …, aₘ)), t, cells)` names `X` by its columns: a column of one 2-cell for each cell of `X`, and an empty column for each other cell. Level two certifies the shape at the stratum. Over the pasting context of a level-two shape, its points fixed, `t` takes each column's 1-cells and 2-cells in order. Each column is a chain one level up, and the sides of `t` compose the columns' first 1-cells and their last. Example 1.4 is a row below, at constant verticals.
 ///
-/// Not implemented: #4120 owes the agreement of `natassoc` with `assoc_nat` at a general cell. #3833 owes the level-two fill and Example 1.4, and #4093 and #642 owe the `Flow` and bridge instances.
+/// Not implemented: #4120 owes the agreement of `natassoc` with `assoc_nat` at a general cell. #3833 owes the composites at dimension 3 at Catt's types, their verticals free, and #4093 and #642 owe the `Flow` and bridge instances.
 ///
 /// Over a `here` cell the filler reduces to `here`, which `walkAtHere` states and proves by reflexivity.
 ///
@@ -274,4 +274,49 @@ def naturalInContext(
   ga : Path(Path(A, ym, zp), gm then za, ya then gp)
 ) -> Path(Path(A, xm, zp), (fm then gm) then za, xa then (fp then gp)) {
   fill[5, 7](chain(2), composedOver(A), (xa, ya, fa, za, ga))
+}
+
+/// The horizontal composite of two 2-cells as a curried function: the generator over the pasting context of `[2](1, 1)`, its points fixed.
+def horizontalOver(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (p : Path(A, x, y)) => (a : Path(
+  Path(A, x, y),
+  f,
+  p
+)) => (g : Path(A, y, z)) => (q : Path(A, y, z)) => (b : Path(Path(A, y, z), g, q)) => Path(
+  Path(A, x, z),
+  f then g,
+  p then q
+) {
+  thunk { fn (f) { thunk { fn (p) { thunk { fn (a) { thunk { fn (g) { thunk { fn (q) { thunk { fn (b) { horizontal(A, x, y, z, f, p, a, g, q, b) } } } } } } } } } } } }
+}
+
+/// Example 1.4: the horizontal composite is natural in `{f, a, p, g, b, q}`, two 3-cylinders side by side at constant verticals. Each 2-cell of `X` is a square over its 1-cells' paths, and each side of the square composes the columns' first 1-cells or their last.
+def cylinderComposite3(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  bm : Path(Path(A, y, z), gm, qm),
+  bp : Path(Path(A, y, z), gp, qp),
+  bb : Path(Path(Path(A, y, z), gm, qp), bm then qa, ga then bp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  horizontal(A, x, y, z, fm, pm, am, gm, qm, bm) then horizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
+  horizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then horizontal(A, x, y, z, fp, pp, ap, gp, qp, bp)
+) {
+  fill[5, 11](chain(2, (1, 1)), horizontalOver(A, x, y, z), (fa, pa, aa, ga, qa, bb))
 }
