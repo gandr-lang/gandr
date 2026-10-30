@@ -1367,10 +1367,12 @@ FROM reference;"); keys read $resolved"
 # lower's head, not the stale trunk (#3148, `measured_from`), and so does a
 # lower that restacked after `pr:open` recorded the upper on it (#4064).
 # `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
-# repository, once per case in `.config/pr-stack/behind.json`: a queued lower
-# that lacks the trunk change the upper builds on is waited out, one not
-# queued is refused naming the change, and a conflict with the lower's own
-# change is refused at once (#3654, `stack_on_top`). A branch stacked once,
+# repository, once per case in `.config/pr-stack/behind.json`: a lower that
+# lacks the trunk change the upper builds on is waited out while it is bound
+# for the trunk, queued or behind with its checks pending or passed, and
+# refused naming the change while it is held, conflicting or failed
+# (#4124, `bound.jq`); a conflict with the lower's own change is refused at
+# once (#3654, `stack_on_top`). A branch stacked once,
 # over a lower restacked since, replays its own commit alone (#3877,
 # `stack_base`).
 ["check:pr-stack"]

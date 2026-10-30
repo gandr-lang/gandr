@@ -3032,9 +3032,12 @@ fi
 #
 # A top can lack a change of the trunk that the new pull request builds on
 # (#3654): it forked before the change merged. The rebase onto it then
-# conflicts, though the own commits apply to the trunk. A queued top carries
-# the change once it merges, so the task waits for it and reads the top again
-# (`stack_on_top`). A top not queued is refused, naming the changes it lacks.
+# conflicts, though the own commits apply to the trunk. A top bound for the
+# trunk carries the change once it merges, so the task waits for it and reads
+# the top again (`stack_on_top`): one queued, and one behind the trunk with its
+# checks pending or passed, which its watch queues (#4124, `bound.jq`). A top
+# held as a draft, conflicting with the trunk or failed is refused, naming the
+# changes it lacks.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
