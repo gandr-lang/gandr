@@ -3859,6 +3859,16 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 deadline=$((SECONDS + timeout))
+# One wait a number on a host (#4268): a second `pr:await` on the same issue
+# or pull request is refused while the first runs.
+await_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch/$number.await
+mkdir -p "$(dirname "$await_lock")"
+if [[ -f $await_lock ]] && kill -0 "$(< "$await_lock")" 2> /dev/null; then
+  echo "pr:await: #$number is already awaited on this host by pid $(< "$await_lock"); one wait a number" >&2
+  exit 2
+fi
+echo $$ > "$await_lock"
+trap 'rm -f "$await_lock"' EXIT
 # One poll's reading, as `awaited` reads it: an issue's state and labels, or
 # a pull request's state, merge state, the age of its head commit and
 # whether it still lacks a trunk change the branch builds on.
@@ -3869,8 +3879,11 @@ reading() {
     jq -c '{kind: "issue", state: (.state | ascii_upcase), labels: [.labels[].name]}' <<< "$issue"
     return
   fi
-  pull=$(gh pr view "$number" -R "$repo" --json state,mergeStateStatus,headRefName,commits \
-    --jq '{kind: "pull", state, merge: .mergeStateStatus, head: .headRefName, age: (now - (.commits[-1].committedDate | fromdateiso8601) | floor)}')
+  # REST, not GraphQL: the poll runs for every armed wait, and the GraphQL
+  # budget is the one the seats' gates and watches share (#4268).
+  pull=$(gh api "repos/$repo/pulls/$number" \
+    --jq '{kind: "pull", state: (if .merged then "MERGED" else (.state | ascii_upcase) end), merge: (.mergeable_state | ascii_upcase), head: .head.ref, sha: .head.sha}')
+  pull=$(jq -c --argjson age "$(gh api "repos/$repo/commits/$(jq -r .sha <<< "$pull")" --jq '(now - (.commit.committer.date | fromdateiso8601) | floor)')" '. + {age: $age} | del(.sha)' <<< "$pull")
   if [[ $(jq -r .state <<< "$pull") == OPEN ]]; then
     head=$(jq -r .head <<< "$pull")
     git fetch --quiet origin "$head" "$trunk"
@@ -3880,14 +3893,19 @@ reading() {
 }
 while :; do
   if read=$(reading 2> /dev/null); then
+    failed=0
     event=$(jq -c -L "$pr_stack_dir" 'include "await"; awaited' <<< "$read")
     if [[ $event != null ]]; then
       printf '%s #%s\n' "$(jq -r .event <<< "$event")" "$number"
       exit "$(jq -r .exit <<< "$event")"
     fi
+  else
+    # A failed read, a rate limit among them, backs off: five minutes, never
+    # the next poll (#4268).
+    failed=$(( ${failed:-0} + 1 ))
   fi
   (( SECONDS < deadline )) || { echo "await-timeout #$number"; exit 2; }
-  sleep "${pr_stack_poll:-30}"
+  if (( ${failed:-0} > 0 )); then sleep 300; else sleep "${pr_stack_poll:-30}"; fi
 done
 {% endraw %}'''
 
@@ -4046,7 +4064,18 @@ next_claim() {
 # the tree its merge steps run in (#3798); the mark goes with the watch.
 watch_mark=$(git rev-parse --path-format=absolute --git-dir)/gandr-watch-$$
 : > "$watch_mark"
-trap 'drop_scratch; rm -f "$watch_mark"' EXIT
+# One watch a pull request on a host (#4268): a second `pr:watch` on the same
+# number, a seat's beside the coordinator's or a loop's beside the first, is
+# refused while the first runs, so no pull request is polled twice from here.
+watch_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch/$number.watch
+mkdir -p "$(dirname "$watch_lock")"
+if [[ -f $watch_lock ]] && kill -0 "$(< "$watch_lock")" 2> /dev/null; then
+  echo "pr:watch: #$number is already watched on this host by pid $(< "$watch_lock"); one watch a pull request" >&2
+  rm -f "$watch_mark"
+  exit 2
+fi
+echo $$ > "$watch_lock"
+trap 'drop_scratch; rm -f "$watch_mark" "$watch_lock"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
@@ -4135,8 +4164,10 @@ red_queue_run() {
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 while (( SECONDS < deadline )); do
-  # A failed read is no event; the next poll reads again.
-  if ! reading=$(snapshot) || [[ -z "$reading" ]]; then sleep 60; continue; fi
+  # A failed read is no event. It backs off five minutes before the next
+  # poll: a rate limit read again in a minute is read again as a limit, and
+  # every watch on the host reading it at once is what trips it (#4268).
+  if ! reading=$(snapshot) || [[ -z "$reading" ]]; then sleep 300; continue; fi
   IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed held head draft <<< "$reading"
   if [[ "$in_queue" == true ]]; then seen_queued=true; fi
   # A `landing` label still on a queued or merged pull request was left by a
