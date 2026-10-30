@@ -4201,9 +4201,17 @@ exit 2
 # its comment naming what cleared it (`.config/stall/reports.jq`).
 #
 # `stall:check` reads once, prints each finding's line and exits 1 on any;
-# it pages nothing and leaves the detector's memory as it found it.
+# it pages nothing and leaves the detector's memory as it found it. Its
+# first finding is the detector's own absence (#4167): a last reading
+# `stall:watch` recorded on this host more than two intervals ago, or none,
+# is the line `STALL detector-down` (`.config/stall/live.jq`).
 # `stall:watch` reads every `interval` seconds and pages each finding once
 # while it lasts, to its lane's seat and to the coordinator at once (#2972).
+# Each reading records its time in the detector's memory as `read`.
+# `stall:watch --install` runs it as a service that starts it again 20
+# seconds after any exit, a `systemd --user` unit on Linux and a `launchd`
+# agent on macOS (`.config/stall/service.jq`, #4167), and `--remove` stops
+# and deletes that service. One runs per fleet, on the triage lane's host.
 # A finding standing `escalate` minutes after its first page stalls its pull
 # request: a comment opening `<!-- stall -->` names the finding and the seat,
 # the `status:stalled` label goes on, and the coordinator is paged again
@@ -4233,20 +4241,27 @@ source .config/stall/stall.bash
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)") || { echo "stall:check: the reading failed" >&2; exit 2; }
+live=$(stall_liveness)
+if [[ -n "$live" ]]; then echo "$live"; fi
 jq -r '.findings[].line' <<< "$reading"
-[[ $(jq '.findings | length' <<< "$reading") == 0 ]]
+[[ -z "$live" && $(jq '.findings | length' <<< "$reading") == 0 ]]
 {% endraw %}
 '''
 
 ["stall:watch"]
-description = "Read the open pull requests for stalls every interval, paging each finding once"
+description = "Read the open pull requests for stalls every interval, paging each finding once; --install runs it as a service"
 quiet = true
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
+usage = '''
+flag "--install" help="install and start the service that keeps stall:watch running from this checkout"
+flag "--remove" help="stop and delete that service"
+'''
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 source .config/stall/stall.bash
+if [[ ${usage_remove:-false} == true ]]; then stall_service remove; exit; fi
 page=$(stall_configuration | jq -c '.page // empty')
 if [[ -z "$page" ]] || ! jq -e '([.command, .triage, .coordinator] | all(type == "array" and length > 0 and all(type == "string")))
     and ((.seats // {}) | type == "object" and all(.[]; type == "array" and length > 0 and all(type == "string")))
@@ -4254,6 +4269,8 @@ if [[ -z "$page" ]] || ! jq -e '([.command, .triage, .coordinator] | all(type ==
   echo "stall:watch pages through $stall_config's \`page\`: {\"command\": [<page script>, ...], \"triage\": [<the script's arguments before the line>, ...], \"coordinator\": [...], \"seats\": {\"<lane>\": [...], ...}, \"check\": [<the liveness command, given a seat's arguments>, ...]}" >&2
   exit 2
 fi
+# The service starts only on a configuration the loop reads.
+if [[ ${usage_install:-false} == true ]]; then stall_service install; exit; fi
 mapfile -t command < <(jq -r '.command[]' <<< "$page")
 mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
 mapfile -t check < <(jq -r '(.check // [])[]' <<< "$page")
@@ -4376,8 +4393,8 @@ while :; do
   done
   gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
   reports
-  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" \
-    '{seen, paged: $paged, stalled: $stalled, gone: $gone}' <<< "$reading" > "$stall_state.tmp"
+  jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson read "$(date +%s)" \
+    '{seen, paged: $paged, stalled: $stalled, gone: $gone, read: $read}' <<< "$reading" > "$stall_state.tmp"
   mv "$stall_state.tmp" "$stall_state"
   sleep "$interval"
 done
