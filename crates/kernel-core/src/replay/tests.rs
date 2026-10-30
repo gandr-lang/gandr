@@ -391,10 +391,20 @@ fn an_unread_pair_of_returned_calls_walks_their_computations_3920()
             memo: gandr_kernel_check_memo::NullMemo,
             owed: Vec::new(),
         };
+        let mut parted = Vec::new();
         run.endpoints_alike(
             Vec::from([crate::conv::SetAside::Values(left, right)]),
             super::Reduction::Endpoint,
+            &mut parted,
         )
+        .map(|walked| {
+            if parted.is_empty() {
+                walked
+            }
+            else {
+                crate::conv::Convertibility::Distinct
+            }
+        })
     };
 
     assert_eq!(
@@ -407,6 +417,90 @@ fn an_unread_pair_of_returned_calls_walks_their_computations_3920()
         Ok(crate::conv::Convertibility::Distinct),
         "and a fold of a lambda calling another rigid stays apart"
     );
+}
+
+/// Two codes over returned binds over one transport stuck on `g`,
+/// `⌜Path(Unit, x, ⟨tr(m, g, q) to t. N⟩)⌝`, the engine finds shared (#4011).
+/// One continuation calls `r ↦ tr(m, h, r)` at `t` through its ascription's
+/// fold, and the other is that body at `t`. The walk parts the two
+/// continuations by syntax, and the kernel's forced rules run the fold and the
+/// call and close the pair. A folded lambda transporting along `g` stays apart.
+#[test]
+fn a_compared_pair_reads_two_binds_by_the_forced_rules_4011()
+{
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let unit_type = arena.value_type_unit();
+    // `t. Path(Unit, x, t)`, `x` at `x` within the motive's own binder.
+    let motive = |arena: &mut TermArena, x: u32| {
+        let (x, point) = (variable(arena, x), variable(arena, 0));
+        arena.value_type_path(unit_type, x, point)
+    };
+    // Free `x`, `g`, `h` and `q` at 3, 2, 1 and 0.
+    let (g, q) = (variable(&mut arena, 2), variable(&mut arena, 0));
+    let over_x = motive(&mut arena, 4);
+    let stuck = arena.computation_path_transport(over_x, g, q);
+    // Each side is a code over its endpoint, as a motive's code holds it.
+    let bound = |arena: &mut TermArena, continuation| {
+        let bind = arena.computation_bind(stuck, continuation);
+        let endpoint = arena.value_returned(bind);
+        let x = variable(arena, 3);
+        let path = arena.value_type_path(unit_type, x, endpoint);
+        arena.value_quote(path)
+    };
+    // Under the bind, `t` at 0 and `h` at 2.
+    let (h_under, t) = (variable(&mut arena, 2), variable(&mut arena, 0));
+    let over_x_under = motive(&mut arena, 5);
+    let body = arena.computation_path_transport(over_x_under, h_under, t);
+    let stated = bound(&mut arena, body);
+    // Under the bind and the lambda, `r` at 0, `h` at 3 and `g` at 4.
+    let folded_call = |arena: &mut TermArena, path: u32| {
+        let (along, r) = (variable(arena, path), variable(arena, 0));
+        let over_x_inside = motive(arena, 6);
+        let transport = arena.computation_path_transport(over_x_inside, along, r);
+        let lambda = arena.computation_lambda(transport);
+        let function = arena.value_thunk(lambda);
+        let element = arena.value_type_unit();
+        let nil = arena.value_list_nil();
+        let on_nil = arena.computation_return(function);
+        let folded = variable(arena, 0);
+        let on_cons = arena.computation_return(folded);
+        let fold = arena.computation_list_fold(element, element, nil, on_nil, on_cons);
+        let ascribed = arena.value_returned(fold);
+        let forced = arena.computation_force(ascribed);
+        let t = variable(arena, 0);
+        let call = arena.computation_application(forced, t);
+        bound(arena, call)
+    };
+    let through_fold = folded_call(&mut arena, 3);
+    let along_g = folded_call(&mut arena, 4);
+    let mark = arena.watermark();
+
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Values(through_fold, stated),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "the call through the fold runs to the body the other bind continues with"
+    );
+    assert_ne!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Values(along_g, stated),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "and a folded lambda transporting along `g` is no shared pair"
+    );
+    assert_eq!(arena.watermark(), mark);
 }
 
 #[test]

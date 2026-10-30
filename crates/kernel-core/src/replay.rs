@@ -2364,15 +2364,47 @@ impl Structure
 }
 
 /// What a compared pair closes to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Compared
 {
     /// The sides are α-equal.
     Equal,
     /// The sides are rigid and α-distinct.
     Separated,
+    /// Alike but for the pairs of computations the walk parts, which convert
+    /// only by the forced rules ([`Replay::forced_converts`]).
+    Deferred(Vec<(ComputationId, ComputationId)>),
     /// Neither: the comparison decides nothing.
     Open,
+}
+
+/// How a shared comparison reads two computations its walk parts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Apart
+{
+    /// They part the pair: the comparison decides nothing, and the trace
+    /// reads the goal on.
+    Part,
+    /// They hand the goal back to [`Replay::drive`], which converts them by
+    /// the forced rules alone ([`Replay::forced_converts`]).
+    Defer,
+}
+
+/// What one turn of [`Replay::settle`] leaves its driver.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Settled
+{
+    /// The goal closed, or pushed the premises its derivation owes.
+    Turned,
+    /// The goal's shared comparison is alike but for `parted`: the goal as
+    /// read, its decision still next.
+    Deferred
+    {
+        /// The goal, read up to its shared comparison.
+        goal: Goal,
+        /// The pairs of computations the comparison's walk parts.
+        parted: Vec<(ComputationId, ComputationId)>,
+    },
 }
 
 /// Whether a term can reduce anywhere inside it.
@@ -2598,6 +2630,12 @@ where
 {
     /// Replay the derivation of `root`, then require the trace spent.
     ///
+    /// A shared comparison whose walk parts two computations hands its goal
+    /// back here. The pairs convert by the forced rules alone, in a reading of
+    /// their own ([`Self::forced_converts`]). Where they do, the goal closes at
+    /// the recorded comparison. Where they do not, it settles on by parting,
+    /// as the trace reads it.
+    ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Ok` exactly when every goal closed at its owed verdict and
@@ -2612,17 +2650,24 @@ where
     ///
     /// # Termination
     /// - reason: the `while let Some(goal) = goals.pop()` loop over an explicit
-    ///   stack of goals, not recursion.
+    ///   stack of goals, and the inner `while let` over one goal's turns, not
+    ///   recursion. A goal handed back settles again only by parting, which
+    ///   hands nothing back.
     /// - measure: the budget left: every goal's settling charges at least one
     ///   step, and the loop stops at the first charge past the budget.
     ///
     /// # Adequacy
     /// - hypothesis: L3: accepted finite traces, leftover decisions,
     ///   contradictory claims, and a diverging term separate the driver
-    ///   outcomes; the bound is the charged steps, not elapsed time.
+    ///   outcomes; the bound is the charged steps, not elapsed time. A shared
+    ///   comparison whose walk parts two binds closes where the forced rules
+    ///   convert them, and settles on by the trace where they do not (#4011);
+    ///   closing it on the walk alone changes the first, and refusing it where
+    ///   they do not the second.
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
     /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
     #[spec(ensures: |ret| match ret {
         Ok(()) => self.trace.size_hint() == (0, Some(0)),
         Err(Stop::Refused(ReplayRefusal::Leftover { at })) => at.0 == self.position && self.trace.size_hint().0 > 0,
@@ -2636,25 +2681,138 @@ where
     {
         let mut goals = Vec::from([root]);
         while let Some(goal) = goals.pop() {
-            self.settle(goal, &mut goals)?;
+            let mut turn = Some((goal, Apart::Defer));
+            while let Some((goal, apart)) = turn.take() {
+                match self.settle(goal, &mut goals, apart)? {
+                    Settled::Turned => {},
+                    Settled::Deferred { goal, parted } => {
+                        if self.forced_converts(parted)? == Convertibility::Convertible {
+                            self.take();
+                            self.close(goal.expect, Expect::Convertible)?;
+                        }
+                        else {
+                            turn = Some((goal, Apart::Part));
+                        }
+                    },
+                }
+            }
         }
-        match self.peek() {
-            Next::End => Ok(()),
-            Next::Decision(_) => Err(Stop::Refused(ReplayRefusal::Leftover { at: self.at() })),
+        if let Next::Decision(_) = self.peek() {
+            return Err(Stop::Refused(ReplayRefusal::Leftover { at: self.at() }));
         }
+        Ok(())
+    }
+
+    /// Whether the forced rules alone derive each pair convertible, each step
+    /// charged to this replay's budget.
+    ///
+    /// The reading runs as [`convert`] runs it, in a replay of its own: it
+    /// reads no decision, unfolds no constant, and drops the nodes it mints
+    /// once it answers. It counts on from the steps this replay has taken and
+    /// leaves its count there, so a reading past the budget stops this replay
+    /// too.
+    ///
+    /// # Specification
+    /// - requires: every pair's computations live in the arena.
+    /// - ensures: [`Convertibility::Convertible`] exactly when the forced rules
+    ///   derive every pair convertible within the budget left;
+    ///   [`Convertibility::Distinct`] when they stop short of that otherwise.
+    ///   The arena holds what it held on entry, and `self.spent` counts every
+    ///   step taken.
+    /// - provides: the reading [`Self::drive`] closes a handed-back shared
+    ///   comparison on.
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `while let Some(goal) = goals.pop()` loop over an explicit
+    ///   stack of goals, not recursion. The forced reading reads no decision,
+    ///   so its turns never reach [`Self::compared`].
+    /// - measure: the budget left: every goal's settling charges at least one
+    ///   step, and the loop stops at the first charge past the budget.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two returned binds over one stuck transport, one
+    ///   continuation a lambda's call through its ascription's fold and the
+    ///   other that lambda's body, convert, and not where the body transports
+    ///   along another path; reading the pair by syntax alone changes the
+    ///   first, and answering every parted pair alike the second.
+    /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
+    #[spec(
+        captures: before = (self.arena.watermark(), self.spent),
+        ensures: |ret| self.arena.watermark() == before.0
+            && self.spent >= before.1
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn forced_converts(
+        &mut self,
+        parted: Vec<(ComputationId, ComputationId)>,
+    ) -> Result<Convertibility, Stop>
+    {
+        let watermark = self.arena.watermark();
+        let rules = Unfoldings::default().presenting(self.unfoldings.presentations().clone());
+        let mut run = Replay {
+            arena: &mut *self.arena,
+            unfoldings: &rules,
+            evaluator: self.evaluator,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: self.spent,
+            budget: self.budget,
+            table: ContentTable::new(),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let mut goals: Vec<Goal> = parted
+            .into_iter()
+            .map(|(left, right)| {
+                Goal::premise(
+                    Premise {
+                        left: Term::Computation(left),
+                        right: Term::Computation(right),
+                    },
+                    Expect::Convertible,
+                )
+            })
+            .collect();
+        let mut outcome = Ok(Convertibility::Convertible);
+        while let Some(goal) = goals.pop() {
+            match run.settle(goal, &mut goals, Apart::Part) {
+                Ok(Settled::Turned) => {},
+                // Parting hands no goal back: one that came back would be a
+                // pair this reading did not derive.
+                Ok(Settled::Deferred { .. }) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
+                    outcome = Ok(Convertibility::Distinct);
+                    break;
+                },
+                Err(Stop::Budget) => {
+                    outcome = Err(Stop::Budget);
+                    break;
+                },
+            }
+        }
+        self.spent = run.spent;
+        self.arena.truncate_to(watermark);
+        outcome
     }
 
     /// Replay one goal until it closes or decomposes into `goals`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `Ok` when the goal closed at its owed verdict or pushed the
-    ///   premises its derivation owes. A value goal with a returned endpoint on
-    ///   either side is first read as the goal between computations
-    ///   ([`Self::open_returned`]), and each side's weak head form is read
-    ///   through the presentations and as a cong chain ([`Self::fuse`]), forced
-    ///   steps no decision records. In the forced loop one node on both sides
-    ///   closes convertible there.
+    /// - ensures: `Ok(Settled::Turned)` when the goal closed at its owed
+    ///   verdict or pushed the premises its derivation owes, and
+    ///   `Ok(Settled::Deferred)` when, under [`Apart::Defer`], its shared
+    ///   comparison is alike but for computations the walk parts. A value goal
+    ///   with a returned endpoint on either side is first read as the goal
+    ///   between computations ([`Self::open_returned`]), and each side's weak
+    ///   head form is read through the presentations and as a cong chain
+    ///   ([`Self::fuse`]), forced steps no decision records. In the forced loop
+    ///   one node on both sides closes convertible there.
     /// - provides: one goal's turn through the rule table.
     /// - fails: [`Stop::Budget`] or the first refusal.
     /// - panics: none.
@@ -2693,7 +2851,8 @@ where
         &mut self,
         mut goal: Goal,
         goals: &mut Vec<Goal>,
-    ) -> Result<(), Stop>
+        apart: Apart,
+    ) -> Result<Settled, Stop>
     {
         let mut postponed = Postponed::Nothing;
         loop {
@@ -2729,7 +2888,9 @@ where
             // closes it as an engine's shared comparison would, rather than
             // descend into a term its shapes may not read.
             if self.reading != Reading::Recorded && goal.left == goal.right {
-                return self.close(goal.expect, Expect::Convertible);
+                return self
+                    .close(goal.expect, Expect::Convertible)
+                    .map(|()| Settled::Turned);
             }
             let left_shape = self.shape(goal.left, &goal.frozen, ConversionSide::Left)?;
             let right_shape = self.shape(goal.right, &goal.frozen, ConversionSide::Right)?;
@@ -2764,22 +2925,28 @@ where
                 {
                     return Err(self.refuse(next));
                 }
-                return self.structural(&goal, &left_shape, &right_shape, goals);
+                return self
+                    .structural(&goal, &left_shape, &right_shape, goals)
+                    .map(|()| Settled::Turned);
             }
             if matches!(
                 next,
                 Next::Decision(ConversionDecision::ComparedShared { .. })
             ) {
-                let compared = self.compared(&goal)?;
-                match compared {
+                match self.compared(&goal, apart)? {
                     Compared::Equal => {
                         self.take();
-                        return self.close(goal.expect, Expect::Convertible);
+                        return self
+                            .close(goal.expect, Expect::Convertible)
+                            .map(|()| Settled::Turned);
                     },
                     Compared::Separated => {
                         self.take();
-                        return self.close(goal.expect, Expect::NotConvertible);
+                        return self
+                            .close(goal.expect, Expect::NotConvertible)
+                            .map(|()| Settled::Turned);
                     },
+                    Compared::Deferred(parted) => return Ok(Settled::Deferred { goal, parted }),
                     Compared::Open => {},
                 }
             }
@@ -2814,14 +2981,20 @@ where
                         goals,
                     )?;
                     if flow == Flow::Settled {
-                        return Ok(());
+                        return Ok(Settled::Turned);
                     }
                 },
                 Rule::Force => self.force(&mut goal)?,
                 Rule::Eta(side) => self.eta(&mut goal, side)?,
-                Rule::ProductEta(side) => return self.product_eta(&goal, side, goals),
+                Rule::ProductEta(side) => {
+                    return self
+                        .product_eta(&goal, side, goals)
+                        .map(|()| Settled::Turned);
+                },
                 Rule::Structural => {
-                    return self.structural(&goal, &left_shape, &right_shape, goals);
+                    return self
+                        .structural(&goal, &left_shape, &right_shape, goals)
+                        .map(|()| Settled::Turned);
                 },
             }
         }
@@ -4327,8 +4500,10 @@ where
     ///   consumed and the side becomes the continuation instantiated at the
     ///   computation's returned endpoint; `None` and nothing changed when
     ///   `next` is no `Hold`. Under [`Reading::Forced`] and
-    ///   [`Reading::Unfolding`], the left side's held computation is read
-    ///   before the right's, reading nothing.
+    ///   [`Reading::Unfolding`], a side holds one only when its continuation
+    ///   passes the value it binds on to another variable's call
+    ///   ([`passed_to`]), and the left side's held computation is read before
+    ///   the right's, reading nothing.
     /// - provides: the replay of the hold, `M to x. N ≡ N[⟨M⟩/x]` when `M` is a
     ///   call of a variable or a transport stuck on a path (#4011) and `N`
     ///   reads `x`: the instantiation the endpoint reading of [`Self::whnf`]
@@ -4404,7 +4579,11 @@ where
             (Reading::Forced | Reading::Unfolding, _) => {
                 let Some((side, (call, body))) = [ConversionSide::Left, ConversionSide::Right]
                     .into_iter()
-                    .find_map(|side| held(side).map(|found| (side, found)))
+                    .find_map(|side| {
+                        held(side)
+                            .filter(|&(_, body)| passed_to(arena, body).is_some())
+                            .map(|found| (side, found))
+                    })
                 else {
                     return Ok(None);
                 };
@@ -5070,8 +5249,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   [`equal_weakened`], or converge under [`pending_endpoints`] with every
     ///   pair it sets aside alike once read by [`Self::endpoints_alike`] — a
     ///   reading that stops leaves the pair open, as [`read_endpoints`] leaves
-    ///   it apart; [`Compared::Separated`] when both are rigid and neither
-    ///   holds, [`Compared::Open`] otherwise.
+    ///   it apart; under [`Apart::Defer`], [`Compared::Deferred`] when they are
+    ///   alike so but for computations that reading parts;
+    ///   [`Compared::Separated`] when both are rigid and neither holds,
+    ///   [`Compared::Open`] otherwise.
     /// - provides: the replay of a closing on two shared nodes.
     /// - fails: [`ReplayRefusal::Unreadable`] on sides of two polarities.
     /// - panics: none.
@@ -5102,6 +5283,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     fn compared(
         &mut self,
         goal: &Goal,
+        apart: Apart,
     ) -> Result<Compared, Stop>
     {
         let pair = match (goal.left, goal.right) {
@@ -5120,7 +5302,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // returned, so two sides alike but for an endpoint it read through,
         // `⟨(λe. return ua(e)) e⟩` against `ua(e)` beneath one held call, are
         // the shared pair it found once each endpoint set aside is read (#695).
+        // Two computations that reading parts, a bind whose continuation
+        // calls a lambda through its ascription's fold against the bind that
+        // lambda's body is, may still convert by the redexes the walk does not
+        // run: the driver reads them by the forced rules (#4011).
         let mut pending = Vec::new();
+        let mut parted = Vec::new();
         if pending_endpoints(
             self.arena,
             self.unfoldings.presentations(),
@@ -5128,9 +5315,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             &mut pending,
         ) == Convertibility::Convertible
             && !pending.is_empty()
-            && self.endpoints_alike(pending, goal.reduction) == Ok(Convertibility::Convertible)
+            && self.endpoints_alike(pending, goal.reduction, &mut parted)
+                == Ok(Convertibility::Convertible)
         {
-            return Ok(Compared::Equal);
+            if parted.is_empty() {
+                return Ok(Compared::Equal);
+            }
+            match apart {
+                Apart::Defer => return Ok(Compared::Deferred(parted)),
+                Apart::Part => {},
+            }
         }
         match (self.rigidity(goal.left), self.rigidity(goal.right)) {
             (Rigidity::Rigid, Rigidity::Rigid) => Ok(Compared::Separated),
@@ -5152,13 +5346,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// one. A pair that read to something is walked again, its own set-aside
     /// pairs read in turn. A pair neither side of which reads to anything
     /// compares by [`equal_weakened`]; two thunks, or two returned values, it
-    /// leaves apart walk their computations the same way.
+    /// leaves apart walk their computations the same way. Two computations
+    /// that walk parts count alike here on condition: the pair joins `parted`,
+    /// for the caller to convert by the forced rules alone
+    /// ([`Self::forced_converts`]), which run the redexes the walk does not.
     ///
     /// # Specification
     /// - requires: every pair's values live in the arena.
     /// - ensures: [`Convertibility::Convertible`] exactly when every pair is
-    ///   alike so; [`Convertibility::Distinct`] at the first that is not, and
-    ///   at any set-aside decode or codomain, which this reading does not read.
+    ///   alike so, a thunk or returned pair the walk parts counted alike and
+    ///   pushed to `parted`; [`Convertibility::Distinct`] at the first that is
+    ///   not, and at any set-aside decode or codomain, which this reading does
+    ///   not read.
     /// - provides: the endpoint reading [`Self::compared`] closes on.
     /// - fails: [`Stop::Budget`] past the budget; as [`Self::whnf`] otherwise.
     /// - panics: none.
@@ -5173,7 +5372,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   charge, its rewriting charges every node it compares or copies, and a
     ///   pair returns to the worklist only after one of its sides read to
     ///   something — a normal form reads to itself — and a thunk or returned
-    ///   pair's walk adds only pairs inside its two computations.
+    ///   pair's walk adds only pairs inside its two computations, or none when
+    ///   it parts them.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call over an endpoint returning the other side's
@@ -5187,19 +5387,25 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   first. A call through a lambda and the same call through its
     ///   ascription's fold, neither returning, are alike, and through a lambda
     ///   calling another rigid are not (#3920); comparing an unread returned
-    ///   pair by α-equality changes the first.
+    ///   pair by α-equality changes the first. Two codes over binds, one
+    ///   continuation a lambda's call through its ascription's fold and the
+    ///   other that lambda's body, are alike but for their parted pair (#4011);
+    ///   answering them distinct changes the first.
     /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
     /// - witness: `replay::tests::a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969`
     /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
     /// - witness: `replay::tests::an_unread_pair_of_returned_calls_walks_their_computations_3920`
+    /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
     #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
         && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget))]
     fn endpoints_alike(
         &mut self,
         mut pending: Vec<SetAside>,
         reduction: Reduction,
+        parted: &mut Vec<(ComputationId, ComputationId)>,
     ) -> Result<Convertibility, Stop>
     {
+        let mut inside = Vec::new();
         while let Some(set_aside) = pending.pop() {
             let SetAside::Values(left, right) = set_aside
             else {
@@ -5257,15 +5463,29 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     // contract, and two returned calls that return nothing
                     // alike, a lambda against its ascription's fold (#3920):
                     // walk the two computations, their own set-aside pairs
-                    // read in turn.
+                    // read in turn. Two the walk parts, a bind whose
+                    // continuation calls a lambda through its ascription's
+                    // fold against the bind that lambda's body is, close on
+                    // condition: the caller reads them by the forced rules
+                    // (#4011).
                     (Some(&Value::Thunk(one)), Some(&Value::Thunk(other)))
                     | (Some(&Value::Returned(one)), Some(&Value::Returned(other))) => {
-                        pending_endpoints(
+                        inside.clear();
+                        match pending_endpoints(
                             self.arena,
                             self.unfoldings.presentations(),
                             ConversionGoal::Computation(one, other),
-                            &mut pending,
-                        )
+                            &mut inside,
+                        ) {
+                            Convertibility::Convertible => {
+                                pending.append(&mut inside);
+                                Convertibility::Convertible
+                            },
+                            Convertibility::Distinct => {
+                                parted.push((one, other));
+                                Convertibility::Convertible
+                            },
+                        }
                     },
                     _ => Convertibility::Distinct,
                 }
@@ -8545,6 +8765,54 @@ fn held_bind(shape: &Shape) -> Option<ComputationId>
         ] => Some(continuation),
         _ => None,
     }
+}
+
+/// The variable whose call `body` passes the value it binds on to: under its
+/// applications, a force of a variable other than its binder.
+///
+/// The forced reading holds a bind only over such a continuation. Held, a
+/// continuation that eliminates its binder at its head meets the returned
+/// endpoint as its operand, and [`Replay::whnf`] runs that operand first, back
+/// into the bind it was: `tr(P, w, ⟨c⟩)` reads as `c to y. tr(P↑, w↑, y)`. A
+/// recorded `Hold` consumes its decision, so it cannot cycle so.
+///
+/// # Specification
+/// - requires: nothing; a body the arena does not hold passes nothing on.
+/// - ensures: `Some(function)` exactly when `body`, under its applications, is
+///   a force of `function`, a variable whose index is not 0; `None` otherwise.
+/// - provides: the forced reading's condition on the hold.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer walks the arena's applications, which a
+///   predicate could only walk again; the witnesses hold it to stated terms.
+///
+/// # Termination
+/// - reason: the `while let` walks the body's applications to their head, not
+///   recursion.
+/// - measure: the applications left above the head.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the forced reading holds a call passed on to another
+///   variable's call, and reads a transport held over its endpoint as the bind
+///   `whnf` makes of it, where holding it cycles until the budget.
+/// - witness: `replay::tests::a_held_call_replays_as_its_continuation_at_its_endpoint`
+/// - witness: `replay::tests::a_held_transport_replays_as_its_continuation_at_its_endpoint_4011`
+fn passed_to(
+    arena: &TermArena,
+    body: ComputationId,
+) -> Option<ValueId>
+{
+    let mut head = body;
+    while let Some(&Computation::Application(function, _)) = arena.computation(head) {
+        head = function;
+    }
+    let &Computation::Force(function) = arena.computation(head)?
+    else {
+        return None;
+    };
+    let binder = DeBruijnIndex::from(0_u32);
+    matches!(arena.value(function), Some(&Value::Variable(index)) if index != binder)
+        .then_some(function)
 }
 
 /// The premises two spines decompose into, innermost elimination first.
