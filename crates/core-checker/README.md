@@ -18,7 +18,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review.
 
-**How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states the decisions that shape it, and each module the boundary it owns.
+**How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states its shape, and each module the boundary it owns.
 
 **Cells.** A rule `a <=> b` is a cell its theory decides by conversion, and a `Path` is a cell a program carries. A model witnesses each rule as a `Path` in its carrier: `here` where the carrier converts, a written path otherwise. The presented type is the initial model, where every witness is `here`. Three sites read this: a model's law component (`gandr-surface-lowering`'s `model`), a fold's respect obligation ([`respect`](src/respect.rs)) and a handler's lawfulness ([`handler`](src/handler.rs)). The corpus source `model/modules/model-rule-witnesses.gandr` pairs both witnesses of one law.
 
@@ -58,9 +58,9 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 ## Expected features
 
-- **One arena per context.** Every id a declaration carries resolves in the `CoreArena` the `CheckingContext` was built over; an id that does not is refused as a dangling node, never read.
-- **One arena per report.** `bridge::readmit` takes, mutably, the arena the report was judged over: it reads every id there, refusing one that does not resolve as a dangling node, and mints there the reduct of each static step it takes.
-- **One writer per arena.** `CheckingContext::new` holds the arena mutably for the context's life, and the judgement mints into it; a caller reads it through `CheckingContext::arena` while the context lives.
+- **One arena per context.** Every id a declaration carries resolves in the `CoreArena` the `CheckingContext` was built over; an id that does not is refused as a dangling node.
+- **One arena per report.** `bridge::readmit` takes, mutably, the arena the report was judged over: it refuses an id that does not resolve there as a dangling node, and mints there the reduct of each static step it takes.
+- **One writer per arena.** `CheckingContext::new` holds the arena mutably for the context's life, and the judgement mints into it; a caller reads it through `CheckingContext::arena`.
 - **Ascending admission positions.** Declarations are offered in admission order; a position not above every one admitted before it is refused.
 - **`alloc`.** The crate is `no_std` with `alloc`.
 
@@ -75,7 +75,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Topic | Module |
 | ----- | ------ |
 | Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
-| Function extensionality, universe equivalence, the product of universe paths, `ua_n`, composites | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs), [`compose`](src/compose.rs) |
+| Function extensionality, universe equivalence, the product of universe paths, `ua_n`, composites and fillers | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs), [`compose`](src/compose.rs), [`fill`](src/fill.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | Temporary access | [`access`](src/access.rs), [`judgement::access`](src/judgement/access.rs) |
@@ -97,7 +97,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Staged programs and their forks | [`staging`](src/staging.rs), [`stage`](src/stage.rs) |
 | Guarded staging families, drafts and their controller | [`template`](src/template.rs), [`template::memo`](src/template/memo.rs), [`template::draft`](src/template/draft.rs) |
 | Measurement dependencies and the admission observer | [`examples/staging_templates.rs`](examples/staging_templates.rs) |
-| References | [`src/lib.rs`](src/lib.rs) |
 
 ## References
 
@@ -110,6 +109,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: a family is one descent datum.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: one skeleton replays every certificate.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a certified stratum persists in the store.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
 
 ## License
 

@@ -187,6 +187,10 @@ pub enum FrameRole
     UaTranslators,
     /// A composite waits on the types its cells synthesise.
     ComposeCells,
+    /// A fill waits on the types its generator and cells synthesise.
+    FillCells,
+    /// A fill checked against a square waits on the square it synthesises.
+    FillAsked,
     /// A univalence waits on the type its record synthesises.
     UnivalenceRecord,
     /// A univalence's record and codes are being checked against the
@@ -424,6 +428,8 @@ impl fmt::Display for FrameRole
             Self::EquivBackward => "EquivBackward",
             Self::UaTranslators => "UaTranslators",
             Self::ComposeCells => "ComposeCells",
+            Self::FillCells => "FillCells",
+            Self::FillAsked => "FillAsked",
             Self::UnivalenceRecord => "UnivalenceRecord",
             Self::UnivalenceChecked => "UnivalenceChecked",
             Self::ReturnedEndpoint => "ReturnedEndpoint",

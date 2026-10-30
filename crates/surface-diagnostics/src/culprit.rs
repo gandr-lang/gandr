@@ -390,9 +390,15 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             UaDefect::NotNatural { .. } => "translators that break the corolla's symmetry",
             UaDefect::Stuck { .. } => "a translator that returns no element",
         },
-        CheckRefusal::ComposeUncertified { .. } => "a stratum the chains do not certify",
+        CheckRefusal::ComposeUncertified { .. } | CheckRefusal::FillUncertified { .. } => {
+            "a stratum the chains do not certify"
+        },
         CheckRefusal::ComposeNotAShape { .. } => "a chain past its stratum",
         CheckRefusal::ComposeDoesNotFill { .. } => "cells that do not fill the chain",
+        CheckRefusal::NoFiller { .. } => "a square the generator does not fill",
+        CheckRefusal::GeneratorFamilyUnsupported { .. } => {
+            "a fill along a family with no filler yet"
+        },
         CheckRefusal::UnenclosedRun { .. } => "a run with no computation to run before",
         CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
         CheckRefusal::ModelUnanswered { .. } => "a model implicit no module answers",

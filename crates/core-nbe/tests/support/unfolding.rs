@@ -127,7 +127,7 @@ pub struct Unfolded(pub u64);
                     Value::Reify(ref frames) => 1_u64.checked_add(u64::try_from(frames.iter().filter(|frame| !matches!(frame, gandr_core_term::control::StackFrame::Project(_))).count()).expect("walkable frame arity")).expect("walkable frame arity"),
                     Value::Web(_) | Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 1,
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
-                    Value::Compose { ref cells, .. } => 2_u64.saturating_add(u64::try_from(cells.len()).unwrap_or(u64::MAX)),
+                    Value::Compose { ref cells, .. } | Value::Fill { ref cells, .. } => 2_u64.saturating_add(u64::try_from(cells.len()).unwrap_or(u64::MAX)),
                     Value::Recorded(ref moves) => 1_u64.saturating_add(u64::try_from(moves.iter().filter(|movement| matches!(movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_))).count()).unwrap_or(u64::MAX)),
                     Value::Dialogue(ref turns) => 1_u64.saturating_add(u64::try_from(turns.iter().filter(|turn| matches!(turn.movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_))).count()).unwrap_or(u64::MAX)),
                     Value::Univalence(..) |
@@ -258,11 +258,16 @@ pub fn unfolded(
                 },
                 Value::Compose {
                     ref cells,
-                    realised,
+                    realised: computed,
+                    ..
+                }
+                | Value::Fill {
+                    ref cells,
+                    generator: computed,
                     ..
                 } => {
                     pending.extend(cells.iter().map(|&cell| CoreNode::Value(cell)));
-                    pending.push(CoreNode::Computation(realised));
+                    pending.push(CoreNode::Computation(computed));
                 },
                 Value::Recorded(ref moves) => {
                     pending.extend(moves.iter().filter_map(|movement| match *movement {

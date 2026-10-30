@@ -93,6 +93,9 @@ const UA: &str = "ua";
 /// The name the head of an unbiased composite instantiates.
 const COMPOSE: &str = "compose";
 
+/// The name the head of a filler generator instantiates.
+const FILL: &str = "fill";
+
 /// The former a stratum head instantiates.
 ///
 /// # Specification
@@ -104,23 +107,25 @@ pub(super) enum Stratified
     Ua,
     /// `compose[n, k]`: unbiased composition at the stratum.
     Compose,
+    /// `fill[n, k]`: the filler generator at the stratum.
+    Fill,
 }
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// The former and the stratum a call's head writes, when it is `ua[n, k]`
-    /// or `compose[n, k]`.
+    /// The former and the stratum a call's head writes, when it is `ua[n, k]`,
+    /// `compose[n, k]` or `fill[n, k]`.
     ///
     /// # Specification
     /// - requires: `head` is the head operand of the call at `site`.
-    /// - ensures: present for an instantiation whose head is the name `ua` or
-    ///   `compose`, free at the call, with two number literals between its
-    ///   brackets: `n` the degree and `k` the bound; absent for any other head,
-    ///   so a descent claim `f[<]`, a binder named `ua` and a recursive
-    ///   function named `compose` read as before.
-    /// - fails: an instantiation of either free name with other than two
-    ///   residents, a resident that is no decimal number, and the name
-    ///   resolution's own refusals but the unmarked self-reference.
+    /// - ensures: present for an instantiation whose head is the name `ua`,
+    ///   `compose` or `fill`, free at the call, with two number literals
+    ///   between its brackets: `n` the degree and `k` the bound; absent for any
+    ///   other head, so a descent claim `f[<]`, a binder named `ua` and a
+    ///   recursive function named `compose` read as before.
+    /// - fails: an instantiation of a free name with other than two residents,
+    ///   a resident that is no decimal number, and the name resolution's own
+    ///   refusals but the unmarked self-reference.
     /// - panics: none.
     ///
     /// # Errors
@@ -132,11 +137,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a statement at degree one and bound four lowers to
     ///   that stratum; a resident that is a type and a single resident are
     ///   refused by their own boundaries; a later member named `ua` is a
-    ///   forward reference at the name; a composite reads its own stratum.
+    ///   forward reference at the name; a composite and a fill read their own
+    ///   strata.
     /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
     /// - witness: `lower::ua::tests::a_later_member_named_ua_is_a_forward_reference`
     /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
+    /// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.tree.node(head.node).is_some())]
     pub(super) fn stratum_head(
         &mut self,
@@ -190,6 +197,7 @@ impl<'source> Lowerer<'_, 'source>
         let former = match name.as_ref() {
             UA if is_name => Stratified::Ua,
             COMPOSE if is_name => Stratified::Compose,
+            FILL if is_name => Stratified::Fill,
             _ => return unspelled,
         };
         // The name inside the instantiation is owned by no declaration until
@@ -224,8 +232,9 @@ impl<'source> Lowerer<'_, 'source>
         })))
     }
 
-    /// The count a resident of `ua[n, k]` or `compose[n, k]` writes, a degree
-    /// or a catalogue bound, or the cell count of the chain `chain(m)` names.
+    /// The count a resident of `ua[n, k]`, `compose[n, k]` or `fill[n, k]`
+    /// writes, a degree or a catalogue bound, or the cell count of the chain
+    /// `chain(m)` names.
     ///
     /// A resident is read in the instantiation sort, which holds a type where
     /// a literal is written; a resident whose whole text is decimal digits is

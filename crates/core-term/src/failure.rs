@@ -207,6 +207,10 @@ impl TrackingIssue
     /// A composite's shape that is no chain: the shapes above dimension one
     /// the iterated site supplies.
     pub const ITERATED_SITE: Self = Self(3987);
+    /// A filler generator whose cells of `X` are directed, `Flow` cells.
+    pub const DIRECTED_FILLER: Self = Self(4093);
+    /// A filler generator whose cells of `X` are bridges.
+    pub const BRIDGE_FILLER: Self = Self(642);
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);

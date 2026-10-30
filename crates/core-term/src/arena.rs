@@ -368,6 +368,7 @@ impl CoreArena
                 | Value::Equiv(..)
                 | Value::Ua { .. }
                 | Value::Compose { .. }
+                | Value::Fill { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
@@ -2699,6 +2700,26 @@ impl CoreArena
             composite,
             cells,
             realised,
+        })
+    }
+
+    /// Mint the filler generator at a stratum, `fill[n, k](Γ, t, d)`, over
+    /// the computation `generator` returning `t` and `cells` in vertex order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_fill(
+        &mut self,
+        composite: crate::compose::Composite,
+        generator: ComputationId,
+        cells: alloc::boxed::Box<[ValueId]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Fill {
+            composite,
+            generator,
+            cells,
         })
     }
 

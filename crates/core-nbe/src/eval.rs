@@ -4540,12 +4540,14 @@ fn step_value(
         // A closed native path, a closed funext, a closed equivalence, a
         // univalence statement and a session statement are inert
         // certificates: nothing reduces them, and transport reads their
-        // syntax.
+        // syntax. A fill is inert too: only the checker meets one, before
+        // elaboration stands it as its induction.
         Value::PathRefl(_)
         | Value::PathEquiv { .. }
         | Value::Funext(..)
         | Value::Equiv(..)
         | Value::Ua { .. }
+        | Value::Fill { .. }
         | Value::SessionRelated { .. } => {
             machine
                 .values

@@ -2019,6 +2019,18 @@ where
             write_index(writer, realised)?;
             write_indices(writer, cells)?;
         },
+        ContentNode::Fill {
+            composite,
+            generator,
+            ref cells,
+        } => {
+            writer.tag(Tag(0x8B));
+            writer.count(Count(usize::from(composite.stratum.degree)))?;
+            writer.count(Count(usize::from(composite.stratum.bound)))?;
+            write_pasting(writer, composite.pasting)?;
+            write_index(writer, generator)?;
+            write_indices(writer, cells)?;
+        },
         ContentNode::Transport(path, value) => {
             writer.tag(Tag(0x44));
             write_index(writer, path)?;
@@ -4064,6 +4076,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                     | ContentNode::TelescopeTransport { .. } => tag == 0x4B,
                     | ContentNode::Ua { .. } => tag == 0x4C,
                     | ContentNode::Compose { .. } => tag == 0x8A,
+                    | ContentNode::Fill { .. } => tag == 0x8B,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -4777,6 +4790,20 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             ContentNode::Compose {
                 composite: gandr_core_term::compose::Composite { stratum, pasting },
                 realised: read_index(reader)?,
+                cells: read_indices(reader)?,
+            }
+        },
+        0x8B => {
+            let stratum = gandr_core_term::ua::Stratum {
+                degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+                bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+            };
+            ContentNode::Fill {
+                composite: gandr_core_term::compose::Composite {
+                    stratum,
+                    pasting: read_pasting(reader)?,
+                },
+                generator: read_index(reader)?,
                 cells: read_indices(reader)?,
             }
         },
@@ -7118,6 +7145,33 @@ where
             write_site(writer, at)?;
             write_unfilled(writer, defect)?;
         },
+        Refusal::FillUncertified { at, stratum } => {
+            writer.tag(Tag(102));
+            write_site(writer, at)?;
+            write_stratum_defect(writer, stratum)?;
+        },
+        Refusal::NoFiller {
+            at,
+            left,
+            right,
+            stratum,
+        } => {
+            writer.tag(Tag(103));
+            write_site(writer, at)?;
+            write_site(writer, left)?;
+            write_site(writer, right)?;
+            writer.count(Count(usize::from(stratum.degree)))?;
+            writer.count(Count(usize::from(stratum.bound)))?;
+        },
+        Refusal::GeneratorFamilyUnsupported { at, cell, family } => {
+            writer.tag(Tag(104));
+            write_site(writer, at)?;
+            write_site(writer, cell)?;
+            writer.tag(Tag(match family {
+                gandr_core_checker::fill::UnsupportedFamily::Flow => 0,
+                gandr_core_checker::fill::UnsupportedFamily::Bridge => 1,
+            }));
+        },
         Refusal::UnenclosedRun { at } => {
             writer.tag(Tag(55));
             write_site(writer, at)?;
@@ -7908,6 +7962,28 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             defect: read_unfilled(reader)?,
         },
+        102 => Refusal::FillUncertified {
+            at: read_site(reader)?,
+            stratum: read_stratum_defect(reader)?,
+        },
+        103 => Refusal::NoFiller {
+            at: read_site(reader)?,
+            left: read_site(reader)?,
+            right: read_site(reader)?,
+            stratum: gandr_core_term::ua::Stratum {
+                degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+                bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+            },
+        },
+        104 => Refusal::GeneratorFamilyUnsupported {
+            at: read_site(reader)?,
+            cell: read_site(reader)?,
+            family: match reader.tag()?.0 {
+                0 => gandr_core_checker::fill::UnsupportedFamily::Flow,
+                1 => gandr_core_checker::fill::UnsupportedFamily::Bridge,
+                _ => return Err(CodecError::Corrupt),
+            },
+        },
         55 => Refusal::UnenclosedRun {
             at: read_site(reader)?,
         },
@@ -8309,7 +8385,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Compose { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
@@ -8695,6 +8771,9 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::ComposeUncertified { .. }
             | Refusal::ComposeNotAShape { .. }
             | Refusal::ComposeDoesNotFill { .. }
+            | Refusal::FillUncertified { .. }
+            | Refusal::NoFiller { .. }
+            | Refusal::GeneratorFamilyUnsupported { .. }
             | Refusal::NotSynthesisable { .. }
             | Refusal::UnknownConstant { .. }
             | Refusal::OutOfFragment { .. }

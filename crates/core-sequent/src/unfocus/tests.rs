@@ -273,6 +273,7 @@ fn closing_substitution_distinguishes_binders_and_zones()
             | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Compose { .. }
+            | Value::Fill { .. }
             | Value::SessionRelated { .. }
             | Value::Stay(_)
             | Value::Then(..)

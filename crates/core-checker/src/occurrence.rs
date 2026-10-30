@@ -1244,13 +1244,20 @@ where
                                 .map(|&component| (AnyNode::Value(component), reach)),
                         );
                     },
-                    Some(&Value::Compose {
-                        ref cells,
-                        realised,
-                        ..
-                    }) => {
+                    Some(
+                        &Value::Compose {
+                            ref cells,
+                            realised: computed,
+                            ..
+                        }
+                        | &Value::Fill {
+                            ref cells,
+                            generator: computed,
+                            ..
+                        },
+                    ) => {
                         pending.extend(cells.iter().map(|&cell| (AnyNode::Value(cell), reach)));
-                        pending.push((AnyNode::Computation(realised), reach));
+                        pending.push((AnyNode::Computation(computed), reach));
                     },
                     Some(&Value::Recorded(ref moves)) => {
                         pending.extend(moves.iter().filter_map(

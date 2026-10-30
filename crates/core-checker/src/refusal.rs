@@ -978,6 +978,38 @@ pub enum CheckRefusal
         /// The first defect of the diagram.
         defect: gandr_theory_sites::Unfilled,
     },
+    /// A fill at a stratum the chain sub-site does not certify.
+    FillUncertified
+    {
+        /// The `fill`.
+        at: ValueId,
+        /// Why the stratum is not certified.
+        stratum: crate::ua::StratumDefect,
+    },
+    /// A fill no square of its generator answers: sides that are no
+    /// composites of the cells, no cell of `X`, or another square asked for.
+    NoFiller
+    {
+        /// The `fill`.
+        at: ValueId,
+        /// The left side the generator is asked to relate.
+        left: ValueId,
+        /// The right side.
+        right: ValueId,
+        /// The stratum the fill names.
+        stratum: gandr_core_term::ua::Stratum,
+    },
+    /// A fill whose cells of `X` are of a family with no generator instance
+    /// yet.
+    GeneratorFamilyUnsupported
+    {
+        /// The `fill`.
+        at: ValueId,
+        /// The first cell of the family.
+        cell: ValueId,
+        /// The family.
+        family: crate::fill::UnsupportedFamily,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -1528,7 +1560,7 @@ impl CheckRefusal
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
         | Self::OutOfFragment { former, .. } => ret == former.judged(),
-        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::ComposeUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::ComposeUncertified { .. } | Self::FillUncertified { .. } | Self::GeneratorFamilyUnsupported { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -1536,7 +1568,7 @@ impl CheckRefusal
         | Self::SealSiteRepeated(_)
         | Self::MachineInvariant | Self::TacticRefused { fault: TacticFault::Forged, .. } => matches!(ret, FailureClass::EngineFault),
         | Self::Undecided { .. } | Self::LoopUndecided { .. }
-        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. } | Self::ComposeNotAShape { .. } | Self::ComposeDoesNotFill { .. }
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. } | Self::ComposeNotAShape { .. } | Self::ComposeDoesNotFill { .. } | Self::NoFiller { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -1572,6 +1604,7 @@ impl CheckRefusal
             | Self::UaInequivalent { .. }
             | Self::ComposeNotAShape { .. }
             | Self::ComposeDoesNotFill { .. }
+            | Self::NoFiller { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -1656,8 +1689,13 @@ impl CheckRefusal
             Self::UncertifiedStratum { .. } => {
                 FailureClass::Unimplemented(TrackingIssue::LIST_TAIL)
             },
-            Self::UaUncertified { .. } | Self::ComposeUncertified { .. } => {
+            Self::UaUncertified { .. }
+            | Self::ComposeUncertified { .. }
+            | Self::FillUncertified { .. } => {
                 FailureClass::Unimplemented(TrackingIssue::UNIVALENCE)
+            },
+            Self::GeneratorFamilyUnsupported { family, .. } => {
+                FailureClass::Unimplemented(family.tracking())
             },
             Self::RideUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::RIDE),
             Self::ForwardUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FORWARD),
@@ -1893,7 +1931,10 @@ impl CheckRefusal
             | Self::Boundary { .. }
             | Self::ComposeUncertified { .. }
             | Self::ComposeNotAShape { .. }
-            | Self::ComposeDoesNotFill { .. } => (UNNAMED, UNNAMED),
+            | Self::ComposeDoesNotFill { .. }
+            | Self::FillUncertified { .. }
+            | Self::NoFiller { .. }
+            | Self::GeneratorFamilyUnsupported { .. } => (UNNAMED, UNNAMED),
         };
         Compared { expected, found }
     }

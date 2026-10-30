@@ -1,0 +1,71 @@
+/// `filler-generator`: a cell over a chain of paths lifts along the cells it takes as paths of paths.
+///
+/// Implemented: `fill[n, k](chain(m), t, (d₁, …, dₘ))` checks its generator `t` as a function of the chain's cells into a path between two of their composites. Each `dᵢ` that is a path of paths is a cell of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction on each cell of `X` proves it, and the kernel replays the proof.
+///
+/// Not implemented: the generator at the associator and its agreement with `assoc_nat` (#4075), the `Flow` and bridge instances (#4093, #642), and the printer's form for the fill (#4075).
+///
+/// Over a `here` cell the filler reduces to `here`, which `walkAtHere` states and proves by reflexivity.
+///
+/// - see: corpus/ledger/diagnostics/NoFiller.gandr
+/// - see: corpus/ledger/features/naturality.gandr
+
+/// One cell, its own reflexivity: the generator over the 1-chain.
+def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
+  thunk { fn (f) { here(f) } }
+}
+
+/// The 1-chain's cell lifts along `fa`, and its sides compose the generator's reflexivities with `fa`.
+def oneCell(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp)) -> Path(
+  Path(Path(A, x, y), fm, fp),
+  here(fm) then fa,
+  fa then here(fp)
+) {
+  fill[1, 3](chain(1), selfLoop(A, x, y), (fa))
+}
+
+/// Two cells' composite, answered by its declared type.
+def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {
+  f then g
+}
+
+/// Two cells, the reflexivity of their composite: the generator over the 2-chain.
+def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {
+  thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }
+}
+
+/// The right whisker of `fa` by `g`: the transport along `fa` the generator lifts the first cell by.
+def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  transport(\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))
+}
+
+/// The left whisker of `ga` by `f`: the transport along `ga` the generator lifts the second cell by.
+def leftWhisker(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(Path(A, x, z), f then gm, f then gp) {
+  transport(\a. Path(Path(A, x, z), f then gm, f then a), ga, here(f then gm))
+}
+
+/// The 2-chain's first cell lifts along `fa`, and each side whiskers `fa` by `g`.
+def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g),
+  rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)
+) {
+  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
+}
+
+/// The 2-chain's second cell lifts along `ga`, and each side whiskers `ga` by `f`.
+def secondLifted(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(
+  Path(Path(A, x, z), f then gm, f then gp),
+  here(f then gm) then leftWhisker(A, x, y, z, f, gm, gp, ga),
+  leftWhisker(A, x, y, z, f, gm, gp, ga) then here(f then gp)
+) {
+  fill[5, 7](chain(2), selfComposite(A, x, y, z), (f, ga))
+}
+
+/// The first cell's fill along `here(fm)` reduces to the reflexivity of the generator's value.
+def walkAtHere(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), g : Path(A, y, z)) -> Path(
+  Path(Path(Path(A, x, z), fm then g, fm then g), here(fm then g), here(fm then g)),
+  firstLifted(A, x, y, z, fm, fm, here(fm), g),
+  here(here(fm then g))
+) {
+  here(here(here(fm then g)))
+}

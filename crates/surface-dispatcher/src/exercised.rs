@@ -825,6 +825,14 @@ fn formers(
                         ..
                     }),
                 ) => worklist.push(Node::Computation(suspended)),
+                Some(&Value::Fill {
+                    generator,
+                    ref cells,
+                    ..
+                }) => {
+                    worklist.push(Node::Computation(generator));
+                    worklist.extend(cells.iter().copied().map(Node::Value));
+                },
                 Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)

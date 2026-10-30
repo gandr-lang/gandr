@@ -276,6 +276,7 @@ fn children(
             | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Compose { .. }
+            | Value::Fill { .. }
             | Value::SessionRelated { .. }
             | Value::Stay(_)
             | Value::Then(..)
@@ -565,6 +566,7 @@ fn rebuild(
                 | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Compose { .. }
+                | Value::Fill { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)

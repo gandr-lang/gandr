@@ -116,6 +116,17 @@
 //! fold the checker builds, leaves evaluation a node it cannot run. Reversal:
 //! a core composition former of its own in both checkers and the kernel.
 //!
+//! # A fill holds its generator and its cells
+//!
+//! `fill[n, k](chain(m), t, (d₁, …, dₘ))` is the filler generator `t ↑ X` at
+//! the stratum `n` over `k`, its head and shape read as `compose[n, k]`'s are.
+//! `t` is read as a computation, a curried function of the chain's cells,
+//! and each `dᵢ` as a value: a cell, or a path between two cells, one of `X`.
+//! The node holds the three as written (`gandr_core_term::Value::Fill`). The
+//! checker reads `X` and its family off the cells' types, derives the square
+//! and the induction filling it, and the elaboration stands the node as that
+//! induction (the checker's `fill` module).
+//!
 //! # A dependent `transport` reads its motive as a thunked telescope
 //!
 //! Five operands, `transport(+U ((y : A) -> (z : B) -> -F C), p, z₀, q, v)`,
@@ -2424,6 +2435,64 @@ impl<'source> Lowerer<'_, 'source>
             composite: Composite { stratum, pasting },
             cells,
         })
+    }
+
+    /// Classify `fill[n, k](chain(m), t, d)` at `site`, its stratum read off
+    /// the head, the cursor at its arguments.
+    ///
+    /// # Specification
+    /// - requires: [`Self::stratum_head`] read `stratum` off the call's head.
+    /// - ensures: plans the fill at `stratum` over the chain of `m` cells, `t`
+    ///   read as a computation and each cell of `d` as a value, as
+    ///   [`Self::diagram`] reads them.
+    /// - fails: other than three arguments; a shape that is no `chain(m)` with
+    ///   `m` written in digits; the diagram's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::OutOfFragment`] with the arity boundary at the call,
+    /// and the unadmitted boundary at a shape that is no chain or a count out
+    /// of digits.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a generator and two cells lower to the fill holding
+    ///   them in written order, and a call of two arguments is refused by its
+    ///   count.
+    /// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Fill { .. })))]
+    pub(super) fn fill_call(
+        &mut self,
+        site: Site,
+        stratum: Stratum,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Value)?;
+        let start = self.operands.len();
+        let read = arguments(site, &mut cursor, &mut self.operands);
+        let count = self.operands.len().saturating_sub(start);
+        let written = [0_usize, 1_usize, 2_usize]
+            .map(|offset| self.operands.get(start.saturating_add(offset)).copied());
+        self.operands.truncate(start);
+        read?;
+        let (3_usize, [Some(shape), Some(generator), Some(diagram)]) = (count, written)
+        else {
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
+        };
+        let pasting = self.pasting(site, shape)?;
+        let cells = self.diagram(site, diagram)?;
+        self.read(generator, Reading::Computation(frame));
+        for position in cells.start .. cells.end {
+            if let Some(&cell) = self.operands.get(position) {
+                self.read(cell, Reading::Value(frame));
+            }
+        }
+        self.plan(site, Plan::Fill {
+            composite: Composite { stratum, pasting },
+            generator,
+            cells,
+        });
+        Ok(())
     }
 
     /// The pasting shape `chain(m)` written at `shape`, an argument of the
@@ -5445,6 +5514,56 @@ impl<'source> Lowerer<'_, 'source>
             let id = sink.arena.computation_decompose(dialogue);
             sink.computation(id, origin)
         })
+    }
+
+    /// Mint `fill[n, k](chain(m), t, d)`: the node holding the generator's
+    /// computation and the cells' values.
+    ///
+    /// # Specification
+    /// - requires: the generator and the cells are already minted or absent.
+    /// - ensures: the fill of the minted generator and cells in written order,
+    ///   carrying the written origin. Nothing when an operand did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill read back out of the arena over its generator
+    ///   and its two cells.
+    /// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Value(id)) => sink.origins.value(id) == Maybe::Present(origin)
+                && matches!(sink.arena.value(id), Some(&gandr_core_term::Value::Fill { .. })),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_fill(
+        &self,
+        (composite, generator, cells): (Composite, NodeIndex, Stretch),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let generator = match self.computation_at(generator) {
+            Maybe::Present(generator) => generator,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let written = self
+            .operands
+            .get(cells.start .. cells.end)
+            .unwrap_or_default();
+        let mut minted = Vec::with_capacity(written.len());
+        for &cell in written {
+            match self.value_at(cell) {
+                Maybe::Present(value) => minted.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink
+            .arena
+            .value_fill(composite, generator, minted.into_boxed_slice());
+        Maybe::Present(sink.value(id, origin))
     }
 
     /// Mint the dependent transport `transported`.

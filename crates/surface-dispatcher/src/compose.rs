@@ -3754,7 +3754,7 @@ fn inferred_runs(
                     .filter_map(|(&at, &decided)| match decided {
                         Nesting::Ran(purity) => Some((at, purity)),
                         Nesting::Returned => Some((at, gandr_core_term::effect::Purity::Pure)),
-                        Nesting::Suspended => None,
+                        Nesting::Suspended | Nesting::Filled(_) => None,
                     })
             }),
     )

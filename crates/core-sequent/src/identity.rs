@@ -1245,6 +1245,7 @@ fn rebuilt(
         | Value::Equiv(..)
         | Value::Ua { .. }
         | Value::Compose { .. }
+        | Value::Fill { .. }
         | Value::SessionRelated { .. }
         | Value::Stay(_)
         | Value::Then(..)
@@ -1343,6 +1344,7 @@ pub fn each_field<Each>(
         | Value::Equiv(..)
         | Value::Ua { .. }
         | Value::Compose { .. }
+        | Value::Fill { .. }
         | Value::SessionRelated { .. }
         | Value::Stay(_)
         | Value::Then(..)

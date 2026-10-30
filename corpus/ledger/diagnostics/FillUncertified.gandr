@@ -1,0 +1,39 @@
+/// `FillUncertified`: a fill at a degree no chain of the catalogue reaches.
+
+/// Two cells' composite, answered by its declared type.
+@[ checks ]
+def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {
+  f then g
+}
+
+/// Two cells, the reflexivity of their composite: the generator over the 2-chain.
+@[ checks ]
+def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {
+  thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }
+}
+
+/// The right whisker, the transport the generator lifts the first cell by.
+@[ checks ]
+def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  transport(\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))
+}
+
+/// The fill at a degree the chains certify.
+@[ checks ]
+def certified(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  here(fm then g) then whiskered(A, x, y, z, fm, fp, fa, g),
+  whiskered(A, x, y, z, fm, fp, fa, g) then here(fp then g)
+) {
+  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
+}
+
+/// The same fill at degree zero, which no chain reaches.
+@[ refuses("FillUncertified") ]
+def uncertified(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  here(fm then g) then whiskered(A, x, y, z, fm, fp, fa, g),
+  whiskered(A, x, y, z, fm, fp, fa, g) then here(fp then g)
+) {
+  fill[0, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
+}

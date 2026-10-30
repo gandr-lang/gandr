@@ -3107,6 +3107,32 @@ fn every_refusal() -> Vec<Refusal>
         ]
         .map(|defect| Refusal::ComposeDoesNotFill { at, defect }),
     );
+    refusals.push(Refusal::FillUncertified {
+        at,
+        stratum: StratumDefect::Degree {
+            degree: gandr_theory_sites::Degree::from(0_usize),
+        },
+    });
+    refusals.push(Refusal::NoFiller {
+        at,
+        left: at,
+        right: at,
+        stratum: gandr_core_term::ua::Stratum {
+            degree: gandr_theory_sites::Degree::from(5_usize),
+            bound: gandr_theory_sites::ShapeSize::from(7_usize),
+        },
+    });
+    refusals.extend(
+        [
+            gandr_core_checker::fill::UnsupportedFamily::Flow,
+            gandr_core_checker::fill::UnsupportedFamily::Bridge,
+        ]
+        .map(|family| Refusal::GeneratorFamilyUnsupported {
+            at,
+            cell: at,
+            family,
+        }),
+    );
     refusals
 }
 

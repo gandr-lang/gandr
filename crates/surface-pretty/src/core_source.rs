@@ -1177,8 +1177,8 @@ impl<'arena> CoreSource<'arena>
     /// - requires: nothing.
     /// - ensures: each value former read as its [`Former`], a composite as the
     ///   returned fold it realises, and a returned composite so too;
-    ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
-    ///   constructor whose classifier names no data family.
+    ///   [`Former::Unreadable`] for an id the arena does not hold, for a
+    ///   constructor whose classifier names no data family, and for a fill.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1245,6 +1245,7 @@ impl<'arena> CoreSource<'arena>
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Splice(tactic))) => hole.tactic() == Some(tactic),
         (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
+            | (Some(&Value::Fill { .. }), Former::Unreadable(Unreadable::Fill))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
         | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(self.unreturned(body)),
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
@@ -1391,6 +1392,15 @@ impl<'arena> CoreSource<'arena>
             // the printer writes the form (#3957).
             Value::Returned(body) => Former::Returned(CoreNode::Computation(self.unreturned(body))),
             Value::Compose { realised, .. } => Former::Returned(CoreNode::Computation(realised)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a fill, whose form the printer writes from #4075 on: its node \
+                              holds no term the form stands for"
+                )
+            )]
+            Value::Fill { .. } => Former::Unreadable(Unreadable::Fill),
             Value::Ascribe { value, ty } => Former::Annotated {
                 value: CoreNode::Value(value),
                 ty: CoreNode::ValueType(ty),
@@ -2529,6 +2539,7 @@ impl Source for CoreSource<'_>
                 | Value::Ua { .. }
                 | Value::Returned(_)
                 | Value::Compose { .. }
+                | Value::Fill { .. }
                 | Value::Nested(_)
                 | Value::Run(_)
                 | Value::Variable { .. }
@@ -2725,6 +2736,7 @@ impl Source for CoreSource<'_>
                 | Value::Ua { .. }
                 | Value::Returned(_)
                 | Value::Compose { .. }
+                | Value::Fill { .. }
                 | Value::Nested(_)
                 | Value::Run(_)
                 | Value::Variable { .. }

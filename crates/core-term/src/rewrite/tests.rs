@@ -627,7 +627,7 @@ fn value_spelling(
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_) | &Value::Ascribe { .. }
-| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Univalence(..) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Compose { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. } | &Value::PathProduct(..) |
+| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Univalence(..) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Compose { .. } | &Value::Fill { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. } | &Value::PathProduct(..) |
 &Value::SessionRelated { .. } | &Value::Stay(_) | &Value::Then(..) | &Value::FlowProduct(..) | &Value::Forward(_) | &Value::FunctionFlow(..) | &Value::Recorded(_) | &Value::Dialogue(_) | &Value::Web(_) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Row(_)) | None => Token::Other,
             },
@@ -2437,6 +2437,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                     | Value::Equiv(..)
                     | Value::Ua { .. }
                     | Value::Compose { .. }
+                    | Value::Fill { .. }
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Then(..)
