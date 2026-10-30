@@ -9,7 +9,10 @@ error[DataKindNotUniverse]: a datatype's kind must be a universe
 error[NotADataType]: this is not a datatype
    ╭▸ corpus/ledger/diagnostics/NotADataType.gandr:8:1
    │
- 8 │ ┏ def held(x : Odd) -> -F Integer {
+ 8 │   def held(x : Odd) -> -F Integer {
+   │   ╿        ─ formed; while forming the parts of this type
+   │ ┏━┙
+   │ ┃
  9 │ ┃   return 1
 10 │ ┃ }
    │ ┗━┛ not an admitted datatype

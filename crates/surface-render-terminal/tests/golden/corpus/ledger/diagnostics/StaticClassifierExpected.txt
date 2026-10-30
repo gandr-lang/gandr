@@ -2,6 +2,9 @@ error[StaticClassifierExpected]: a type operator's parameter must range over a u
   ╭▸ corpus/ledger/diagnostics/StaticClassifierExpected.gandr:2:32
   │
 2 │ module Indexed : #{ type Hom : Integer -> Integer } {
-  │                                ━━━━━━━ a type that classifies no codes: found `Integer`
+  │                                ┯━━━━━━───────────
+  │                                │
+  │                                a type that classifies no codes: found `Integer`
+  │                                formed; while forming the classifiers of this type operator
   │
   ╰ note: `Hom` is refused with StaticClassifierExpected, as its expectation states

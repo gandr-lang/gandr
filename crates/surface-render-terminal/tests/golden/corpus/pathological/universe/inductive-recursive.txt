@@ -160,9 +160,11 @@ error[CompoundEndpoint]: a path endpoint must compute a value without effects
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:92:49
    │
 92 │ def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two {
-   │                            ┬─────────────       ━━━━ an endpoint that returns no pure value: found `Two -> -F Type`
-   │                            │
-   │                            the type it synthesises
+   │             ┬              ┬─────────────   ┬   ━━━━ an endpoint that returns no pure value: found `Two -> -F Type`
+   │             │              │                │
+   │             │              │                formed; while forming the parts of this type
+   │             │              the type it synthesises
+   │             formed; while forming this type under its binder; binds g : (Two, Two) => Type
    │
    ╰ note: `curried` is refused with CompoundEndpoint, as its expectation states
 

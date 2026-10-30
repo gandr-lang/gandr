@@ -1598,6 +1598,53 @@ data Fin : Nat -> Type {
     }
 }
 
+/// A refusal inside a declared type spells the type under the signature's
+/// binders by the names the source writes, a dependent arrow's binder among
+/// them: a value's signature and a constructor's field, never `?` or `_`
+/// (#4043).
+#[test]
+fn a_signature_s_refusal_spells_its_binders_by_name_4043()
+{
+    const BOUNDS: &str = r#"data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+data Fin : Nat -> Type {
+  FZ : (n : Nat) --> Fin(Succ(n));
+}
+"#;
+    for (declaration, hypotheses) in [
+        (
+            "def atZero(k : Nat, f : (x : Fin(k)) => Fin(x)) -> Nat { Zero }\n",
+            &["k : Nat", "x : Fin(k)"][..],
+        ),
+        (
+            "data Inner(n : Nat) : Type { C : (k : Nat, f : (x : Fin(k)) => Fin(x)) --> Inner(n); }\n",
+            &["n : Nat", "k : Nat", "x : Fin(k)"][..],
+        ),
+    ] {
+        let source = format!("{BOUNDS}{declaration}");
+        let diagnostic = only(
+            Path::new("signature.gandr"),
+            SourceText::from(source.as_str()),
+        );
+        assert_eq!(
+            diagnostic.detail.compared.found,
+            Maybe::Present(String::from("Fin(k)")),
+            "the mismatch names the binder it stands under: {declaration}"
+        );
+        assert_eq!(
+            diagnostic
+                .hypotheses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            hypotheses,
+            "the hypotheses are the signature's binders, each named: {declaration}"
+        );
+    }
+}
+
 /// A trace spells a type kept at a region by the name of the scope or hold
 /// that opened it, never `?`: a capability scope's region by its capability,
 /// a hold's by its held slot, counted outermost first (#1494).

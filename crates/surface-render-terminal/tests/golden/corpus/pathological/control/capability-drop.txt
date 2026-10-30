@@ -2,6 +2,8 @@ error[CapabilityConsumable]: a consumable capability is not supported
   ╭▸ corpus/pathological/control/capability-drop.gandr:2:17
   │
 2 │ def discard(c : Cap[1] { write }) -> Unit {
-  │                 ━━━━━━━━━━━━━━━━ a consumable capability: found `Cap[1] {write}`
+  │             ┬   ━━━━━━━━━━━━━━━━ a consumable capability: found `Cap[1] {write}`
+  │             │
+  │             formed; while forming the parts of this type
   │
   ╰ note: `discard` is refused with CapabilityConsumable, as its expectation states
