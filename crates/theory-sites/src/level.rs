@@ -392,10 +392,7 @@ impl Level for Catalogue
     #[inline]
     fn families(&self) -> &[Family]
     {
-        match self.family() {
-            Family::Wirings => &[Family::Wirings],
-            Family::Chains => &[Family::Chains],
-        }
+        core::slice::from_ref(self.family())
     }
 
     /// Whether the first of `families` holds `object`; outside when there is

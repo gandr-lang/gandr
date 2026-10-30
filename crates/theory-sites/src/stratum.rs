@@ -17,8 +17,11 @@
 //! corolla with its automorphisms and each shape of degree two to `n` with its
 //! [`Cocone`]. A catalogue a condition fails on is refused as
 //! [`Uncertified::Condition`] with the failing shape and the degree of the
-//! condition that fails. Degree zero, and a degree above every shape of the
-//! catalogue, are refused as [`Uncertified::Degree`].
+//! condition that fails. Degree zero, and a degree past the catalogue's
+//! [reach](Catalogue::reach), are refused as [`Uncertified::Degree`]. The
+//! stratum names the degrees above the catalogue's top shape, through its own,
+//! as vacuous: a [`Vacuity`], which [`Vacuity::replay`] checks by the
+//! catalogue.
 //!
 //! # Species and their terms
 //!
@@ -95,11 +98,13 @@
 //!   so the only species at it has no generator and its one equivalence is
 //!   empty. The alternative certifies it with every corolla past it. Reversal:
 //!   a consumer that names the stratum of the empty shape.
-//! - **A degree past the catalogue is refused.** The wiring catalogue at size
-//!   `b` holds a shape of every degree to `b`, the `b` points, and none above.
-//!   The chain catalogue holds its chains' odd degrees to `b - 2`. A stratum
-//!   named by a degree above every shape would claim a Segal condition at no
-//!   shape the bound enumerates. Reversal: none at a finite bound.
+//! - **A degree past the catalogue's reach is refused.** The wiring catalogue
+//!   at size `b` holds a shape of every degree to `b`, the `b` points, and none
+//!   above. The chain catalogue holds its chains' odd degrees to `b - 2`, and
+//!   reaches its top chain. A profile catalogue reaches the wirings' degree at
+//!   its bound, and the degrees above its top shape are vacuous. A stratum
+//!   named by a degree past the reach would claim a Segal condition at no shape
+//!   the bound enumerates. Reversal: none at a finite bound.
 //!
 //! [`segal`]: crate::segal()
 
@@ -714,22 +719,22 @@ impl Bijection
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Uncertified
 {
-    /// The degree asked for is zero, below the corollas, or above every shape
-    /// of the catalogue.
+    /// The degree asked for is zero, below the corollas, or past the
+    /// catalogue's reach.
     Degree
     {
         /// The degree asked for.
         degree: Degree,
     },
     /// A condition the stratum rests on fails over the catalogue: the corolla
-    /// condition, at degree one, or the Segal condition at a shape of degree
-    /// two or more.
+    /// condition, at degree one, the Segal condition at a shape of degree two
+    /// or more, or a vacuous degree's emptiness at a shape of that degree.
     Condition
     {
         /// The first shape it fails at.
         witness: Shape,
         /// The degree whose condition fails: one for the corolla condition,
-        /// the witness's own for the Segal condition.
+        /// the witness's own for the Segal condition and for a vacuous degree.
         degree: Degree,
     },
 }
@@ -848,6 +853,120 @@ fn included(map: &SiteMap) -> Membership
     }
 }
 
+/// The degrees a certificate names as vacuous: those above its catalogue's
+/// top shape degree, through its own degree.
+///
+/// The catalogue holds no shape there, so a species over it has no element
+/// there, and the Segal condition holds there with no case.
+///
+/// # Specification
+/// - provides: the claim [`Vacuity::replay`] checks by a catalogue.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the magma's stratum at size seven and degree seven names
+///   six and seven, its replay is admitted, and a forged claim from degree four
+///   is refused at the degree-five shape.
+/// - witness: `tests::profiles::the_magma_stratum_names_its_vacuous_degrees`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Vacuity
+{
+    /// The highest degree of a shape the catalogue holds.
+    top: Degree,
+    /// The certificate's degree.
+    degree: Degree,
+}
+
+impl Vacuity
+{
+    /// The claim that every degree above `top`, through `degree`, is vacuous.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        top: Degree,
+        degree: Degree,
+    ) -> Self
+    {
+        Self { top, degree }
+    }
+
+    /// The highest degree of a shape the catalogue holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn top(self) -> Degree
+    {
+        self.top
+    }
+
+    /// The certificate's degree, the last degree the claim names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn degree(self) -> Degree
+    {
+        self.degree
+    }
+
+    /// Whether the claim holds of `catalogue`: its degree is within the
+    /// catalogue's reach, and the catalogue holds no shape of a degree above
+    /// the top through it. The catalogue is the full sub-site on its family at
+    /// its bound, so no wiring there of a vacuous degree lies in the family.
+    ///
+    /// # Specification
+    /// - ensures: admitted exactly when the degree is within the reach and
+    ///   every shape's degree is at most the top or past the degree.
+    /// - fails: [`Uncertified::Degree`] with the claim's degree when it is past
+    ///   the reach; [`Uncertified::Condition`] with the first shape of a
+    ///   vacuous degree, at its degree.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Uncertified`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type, with a claim past the magma's reach
+    ///   refused by its degree.
+    /// - witness: `tests::profiles::the_magma_stratum_names_its_vacuous_degrees`
+    #[inline]
+    #[spec(ensures: |ref ret| match *ret {
+        | Ok(()) => self.degree <= catalogue.reach() && catalogue.shapes().iter().all(|shape| Degree::of(shape) <= self.top || Degree::of(shape) > self.degree),
+        | Err(Uncertified::Degree { degree }) => degree == self.degree && catalogue.reach() < degree,
+        | Err(Uncertified::Condition { ref witness, degree }) => degree == Degree::of(witness) && self.top < degree && degree <= self.degree,
+    })]
+    pub fn replay(
+        self,
+        catalogue: &Catalogue,
+    ) -> Result<(), Uncertified>
+    {
+        if catalogue.reach() < self.degree {
+            return Err(Uncertified::Degree {
+                degree: self.degree,
+            });
+        }
+        let inside = |shape: &&Shape| {
+            let of = Degree::of(shape);
+            self.top < of && of <= self.degree
+        };
+        catalogue
+            .shapes()
+            .iter()
+            .find(inside)
+            .map_or(Ok(()), |shape| {
+                Err(Uncertified::Condition {
+                    witness: shape.clone(),
+                    degree: Degree::of(shape),
+                })
+            })
+    }
+}
+
 /// The stratum of a degree over a catalogue whose site passes the corolla
 /// condition and, above degree one, the Segal condition to that degree.
 #[derive(Clone, Debug)]
@@ -857,6 +976,8 @@ pub struct SegalStratum<'catalogue>
     catalogue: &'catalogue Catalogue,
     /// The degree.
     degree: Degree,
+    /// The degrees it names as vacuous.
+    vacuity: Vacuity,
     /// Its corollas, in catalogue order.
     corollas: Vec<Corolla>,
     /// Its shapes of degree two to its degree, each with its cocone, in
@@ -870,15 +991,16 @@ impl<'catalogue> SegalStratum<'catalogue>
     ///
     /// # Specification
     /// - ensures: on success, every shape of degree one in the catalogue, in
-    ///   catalogue order, with its automorphisms, and every shape of degree two
-    ///   to `degree`, in catalogue order, with its [`Cocone`].
+    ///   catalogue order, with its automorphisms, every shape of degree two to
+    ///   `degree`, in catalogue order, with its [`Cocone`], and the degrees
+    ///   above the catalogue's top shape through `degree` named as vacuous.
     /// - fails: [`Uncertified::Degree`] for degree zero;
     ///   [`Uncertified::Condition`] with the first failing shape and degree one
     ///   when the [`corolla`] condition fails over the catalogue's site;
-    ///   [`Uncertified::Degree`] for a degree above every shape of the
-    ///   catalogue; [`Uncertified::Condition`] with the first failing shape and
-    ///   its degree when the [`segal`] condition over [`Cocones::Admitted`]
-    ///   fails to `degree`.
+    ///   [`Uncertified::Degree`] for a degree past the catalogue's
+    ///   [reach](Catalogue::reach); [`Uncertified::Condition`] with the first
+    ///   failing shape and its degree when the [`segal`] condition over
+    ///   [`Cocones::Admitted`] fails to `degree`.
     /// - panics: none.
     /// - intension: the Segal condition reads, for each shape of degree two to
     ///   `degree`, every hom set out of it and out of its corollas into the
@@ -897,19 +1019,22 @@ impl<'catalogue> SegalStratum<'catalogue>
     ///   catalogue at size zero, which lacks the point, by the empty shape at
     ///   degree one. The chain catalogue at size seven is certified at degree
     ///   four with the 2-chain's cocone, and at degree five with the 3-chain's.
+    ///   The magma's sub-site at size seven is certified at degree seven with
+    ///   six and seven vacuous, and refused at eight by its degree.
     /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
     /// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
     /// - witness: `tests::chains::the_chain_stratum_is_certified_through_the_three_chain`
+    /// - witness: `tests::profiles::the_magma_stratum_names_its_vacuous_degrees`
     ///
     /// [`segal`]: crate::segal()
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
-        | Ok(ref stratum) => stratum.degree == degree && stratum.corollas.iter().all(|corolla| {
+        | Ok(ref stratum) => stratum.degree == degree && stratum.vacuity == Vacuity::new(Degree::top(catalogue.shapes()), degree) && stratum.corollas.iter().all(|corolla| {
             matches!(catalogue.shape(corolla.index), Maybe::Present(shape) if Degree::of(shape) == Degree::from(1_usize))
         }) && stratum.cocones.iter().all(|cocone| {
             matches!(catalogue.shape(cocone.shape()), Maybe::Present(shape) if Degree::of(shape) > Degree::from(1_usize) && Degree::of(shape) <= degree)
         }),
-        | Err(Uncertified::Degree { degree: refused }) => refused == degree && (degree == Degree::default() || catalogue.shapes().iter().all(|shape| Degree::of(shape) < degree)),
+        | Err(Uncertified::Degree { degree: refused }) => refused == degree && (degree == Degree::default() || catalogue.reach() < degree),
         | Err(Uncertified::Condition { ref witness, degree: failing }) => failing <= degree
             && (failing == Degree::from(1_usize) || Degree::of(witness) == failing),
     })]
@@ -928,11 +1053,7 @@ impl<'catalogue> SegalStratum<'catalogue>
                 degree: one,
             });
         }
-        if catalogue
-            .shapes()
-            .iter()
-            .all(|shape| Degree::of(shape) < degree)
-        {
+        if catalogue.reach() < degree {
             return Err(Uncertified::Degree { degree });
         }
         let (outcome, cocones) = walk(catalogue, degree, Cocones::Admitted);
@@ -964,6 +1085,7 @@ impl<'catalogue> SegalStratum<'catalogue>
         Ok(Self {
             catalogue,
             degree,
+            vacuity: Vacuity::new(Degree::top(catalogue.shapes()), degree),
             corollas,
             cocones,
         })
@@ -978,6 +1100,18 @@ impl<'catalogue> SegalStratum<'catalogue>
     pub const fn degree(&self) -> Degree
     {
         self.degree
+    }
+
+    /// The degrees it names as vacuous: those above its catalogue's top shape,
+    /// through its own degree.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn vacuity(&self) -> Vacuity
+    {
+        self.vacuity
     }
 
     /// The shapes of degree two to the stratum's degree, each with its

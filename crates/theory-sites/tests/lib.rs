@@ -51,6 +51,8 @@ mod maps;
 #[cfg(test)]
 mod point_count;
 #[cfg(test)]
+mod profiles;
+#[cfg(test)]
 mod reedy;
 #[cfg(test)]
 mod reports;

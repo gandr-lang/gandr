@@ -353,6 +353,7 @@ pub use stratum::SegalStratum;
 pub use stratum::Species;
 pub use stratum::Table;
 pub use stratum::Uncertified;
+pub use stratum::Vacuity;
 pub use stratum::restrict;
 pub use stratum::stratum_corolla;
 pub use units::GeneratorBound;

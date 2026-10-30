@@ -418,8 +418,8 @@ impl<Inner: Level> Wreath<Inner>
             .enumerate()
             .map(|(index, object)| (<Self as Level>::key(object), ShapeIndex::from(index)))
             .collect();
-        let families = core::iter::once(outer.family())
-            .chain(inner.families().iter().copied())
+        let families = core::iter::once(outer.family().clone())
+            .chain(inner.families().iter().cloned())
             .collect();
         Self {
             objects,

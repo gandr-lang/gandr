@@ -5,8 +5,17 @@
 //! between two of them: the full sub-site on the family's shapes. The
 //! [`Family::Wirings`] are every stick-free wiring the carrier admits. The
 //! [`Family::Chains`] are the chains of one vertex or more, the pasting schemes
-//! of composable 1-cells, with the empty shape and the point.
-//! [`SegalStratum::certify`] reads a catalogue of either family alike.
+//! of composable 1-cells, with the empty shape and the point. The
+//! [`Family::Profiles`] are the shapes whose every vertex has one of a set of
+//! profiles, with the empty shape and the point: the shapes a species
+//! inhabiting those corollas can fill. [`SegalStratum::certify`] reads a
+//! catalogue of any family alike.
+//!
+//! A catalogue carries its reach, the highest degree a stratum over it may
+//! name. The wirings and the chains reach their top shape's degree. The
+//! profiles reach the top degree of any wiring at the bound: above their own
+//! top shape every wiring holds a vertex of another profile, where a species
+//! inhabiting the profiles has no element.
 //!
 //! Shapes are enumerated up to the bound through `Wiring::assemble`, so the
 //! carrier decides which shapes exist, and the constructors refuse a stick by
@@ -34,23 +43,28 @@
 //! and runs every check in under half a minute in release; size six holds 223.
 //! At size seven the wirings hold 631 classes and take about seven seconds to
 //! build and certify at degree four; the chains hold 5 and take under a
-//! millisecond. `W ≀ W` at total size five builds in about twenty
-//! milliseconds, and its conditions run in under a minute. The chain
-//! restriction at total size thirteen holds 114 objects and builds in under a
-//! tenth of a second; at seventeen it holds 530 and takes about ten seconds.
+//! millisecond. The magma's profiles `(2, 1)` and `(0, 1)` hold 11 and take
+//! about twenty milliseconds to build and certify at degree seven. `W ≀ W` at
+//! total size five builds in about twenty milliseconds, and its conditions run
+//! in under a minute. The chain restriction at total size thirteen holds 114
+//! objects and builds in under a tenth of a second; at seventeen it holds 530
+//! and takes about ten seconds.
 //!
 //! [`SegalStratum::certify`]: crate::SegalStratum::certify
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_circuit_algebras::WireCount;
 use quenchant_shape::shape::Maybe;
 
+use crate::degree::Degree;
 use crate::map::Membership;
 use crate::map::SiteMap;
 use crate::map::VertexSet;
@@ -63,6 +77,8 @@ use crate::shape::ShapeObstruction;
 use crate::shape::ShapeSize;
 use crate::shape::WireKind;
 use crate::shape::shapes_up_to;
+use crate::stratum::PortCount;
+use crate::stratum::Profile;
 
 wrapper! {
     /// A shape's position in a catalogue.
@@ -105,12 +121,15 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the 3-chain, the empty shape and the point lie in the
-///   chains, and `C(2,1)`, the closed chain and two chains side by side do not.
+///   chains, and `C(2,1)`, the closed chain and two chains side by side do not;
+///   a magma's shapes lie in its two profiles, and a shape holding a vertex of
+///   another profile does not.
 /// - witness: `tests::chains::the_chains_hold_the_chain_and_refuse_the_rest`
 /// - witness: `tests::theta::a_cycle_at_the_outer_level_is_refused_by_name`
+/// - witness: `tests::profiles::the_profiles_hold_the_shapes_their_corollas_fill`
 ///
 /// [`Level::find`]: crate::Level::find
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Family
 {
     /// Every stick-free wiring the carrier admits.
@@ -120,6 +139,11 @@ pub enum Family
     /// The empty shape is the external product's unit, and the point is the
     /// arity-zero corolla the [`corolla`](crate::corolla()) condition reads.
     Chains,
+    /// The shapes whose every vertex has one of these profiles, the empty
+    /// shape and the point. A species inhabiting only these corollas has no
+    /// element at a shape outside them. The point is kept as the chains keep
+    /// it, for the [`corolla`](crate::corolla()) condition.
+    Profiles(BTreeSet<Profile>),
 }
 
 impl Family
@@ -130,33 +154,41 @@ impl Family
     /// - ensures: every shape lies in the wirings. A shape lies in the chains
     ///   when it has no wire and at most one vertex, or when it has one wire
     ///   more than vertices, one input leg, one output leg, and each vertex
-    ///   consumes one wire and produces one.
+    ///   consumes one wire and produces one. A shape lies in the profiles when
+    ///   it has no wire and at most one vertex, or when each of its vertices
+    ///   has one of them.
     /// - panics: none.
-    /// - intension: one pass over the wires. An admitted shape has no directed
-    ///   cycle, so those legs leave no vertex off the one path from the open
-    ///   input to the open output.
+    /// - intension: one pass over the wires for the chains. An admitted shape
+    ///   has no directed cycle, so those legs leave no vertex off the one path
+    ///   from the open input to the open output. One pass over the wires per
+    ///   vertex for the profiles.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as the type.
     /// - witness: `tests::chains::the_chains_hold_the_chain_and_refuse_the_rest`
+    /// - witness: `tests::profiles::the_profiles_hold_the_shapes_their_corollas_fill`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref membership| match self {
+    #[spec(ensures: |ref membership| match *self {
         Self::Wirings => *membership == Membership::Inside,
         Self::Chains => *membership == Membership::Outside
             || (shape.ends().is_empty() && usize::from(shape.vertex_count()) <= 1)
             || shape.ends().len() == usize::from(shape.vertex_count()).saturating_add(1),
+        Self::Profiles(ref profiles) => (*membership == Membership::Inside)
+            == ((shape.ends().is_empty() && usize::from(shape.vertex_count()) <= 1)
+                || (0 .. usize::from(shape.vertex_count())).all(|vertex| profiles.contains(&profile_at(shape, Edge::from(vertex))))),
     })]
     pub fn holds(
-        self,
+        &self,
         shape: &Shape,
     ) -> Membership
     {
-        match self {
+        let vertices = shape.vertex_count();
+        let alone = shape.ends().is_empty() && usize::from(vertices) <= 1;
+        match *self {
             Self::Wirings => Membership::Inside,
             Self::Chains => {
-                let vertices = shape.vertex_count();
-                if shape.ends().is_empty() && usize::from(vertices) <= 1 {
+                if alone {
                     return Membership::Inside;
                 }
                 let at = |end: End| match end {
@@ -185,7 +217,53 @@ impl Family
                     Membership::Outside
                 }
             },
+            Self::Profiles(ref profiles) => {
+                if alone
+                    || (0 .. usize::from(vertices))
+                        .all(|vertex| profiles.contains(&profile_at(shape, Edge::from(vertex))))
+                {
+                    Membership::Inside
+                }
+                else {
+                    Membership::Outside
+                }
+            },
         }
+    }
+}
+
+/// The profile of `vertex` in `shape`: the wires it consumes and the wires it
+/// produces, counted.
+///
+/// # Specification
+/// - ensures: the counts of the wires whose consumer is `vertex` and of those
+///   whose producer is, as [`Legs::of`](crate::stratum::Legs::of) lists them.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the magma's two corollas read as the binary and the
+///   nullary profile, and a vertex of a third profile keeps its shape out.
+/// - witness: `tests::profiles::the_profiles_hold_the_shapes_their_corollas_fill`
+#[spec(ensures: |profile| profile == crate::stratum::Legs::of(shape, vertex).profile())]
+fn profile_at(
+    shape: &Shape,
+    vertex: Edge,
+) -> Profile
+{
+    let at = End::Vertex(vertex);
+    let (inputs, outputs) =
+        shape
+            .ends()
+            .iter()
+            .fold((0_usize, 0_usize), |(inputs, outputs), ends| {
+                (
+                    inputs.saturating_add(usize::from(ends.consumer() == at)),
+                    outputs.saturating_add(usize::from(ends.producer() == at)),
+                )
+            });
+    Profile {
+        inputs: PortCount::from(inputs),
+        outputs: PortCount::from(outputs),
     }
 }
 
@@ -206,7 +284,8 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - ensures: the shapes are the family's classes of [`shapes_up_to`] of the
-///   bound, in its order, and the hom set of a pair is [`homs`] of the pair.
+///   bound, in its order, and the hom set of a pair is [`homs`] of the pair. No
+///   shape's degree exceeds the reach.
 /// - provides: the finite site the suites quantify over.
 /// - panics: none.
 /// - executable: none — a type carries no runtime predicate; the constructors'
@@ -223,6 +302,8 @@ pub struct Catalogue
 {
     /// The family the shapes lie in.
     family: Family,
+    /// The highest degree a stratum over the catalogue may name.
+    reach: Degree,
     /// The shapes, one per class, ordered by size and key.
     shapes: Box<[Shape]>,
     /// Each class's index.
@@ -290,7 +371,8 @@ impl Catalogue
         budget: ShapeBudget,
     ) -> Result<Self, ShapeObstruction>
     {
-        Ok(Self::of(Family::Wirings, shapes_up_to(bound, budget)?))
+        let shapes = shapes_up_to(bound, budget)?;
+        Ok(Self::of(Family::Wirings, Degree::top(&shapes), shapes))
     }
 
     /// The catalogue of the chains at `bound`: the empty shape, the point and
@@ -333,26 +415,73 @@ impl Catalogue
             length = length.saturating_add(1);
         }
         shapes.retain(|shape| shape.size() <= bound);
-        Ok(Self::of(Family::Chains, shapes))
+        let reach = Degree::top(&shapes);
+        Ok(Self::of(Family::Chains, reach, shapes))
+    }
+
+    /// The catalogue of the shapes at `bound` whose every vertex has one of
+    /// `profiles`, with the empty shape and the point: the full sub-site on
+    /// them, reaching the degree of every wiring at `bound`.
+    ///
+    /// # Specification
+    /// - ensures: as the type states, every shape in [`Family::Profiles`] of
+    ///   `profiles` and one class index per shape; the shapes are the wiring
+    ///   catalogue's classes at `bound` the family holds, in its order, and the
+    ///   reach is the top degree among all those classes.
+    /// - fails: as [`shapes_up_to`] under [`ShapeBudget::EVERY`].
+    /// - panics: none.
+    /// - intension: the wirings at `bound` are enumerated and filtered, and the
+    ///   hom sets are built among the shapes kept alone, which is where the
+    ///   cost lies.
+    ///
+    /// # Errors
+    /// Any [`ShapeObstruction`] [`shapes_up_to`] returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — at size 5 the magma's shapes are the wiring
+    ///   catalogue's classes the family holds, with the same hom sets; at size
+    ///   7 its eleven shapes top out at degree five and it reaches seven.
+    /// - witness: `tests::profiles::the_profile_catalogue_is_the_full_sub_site_on_its_shapes`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |catalogue| {
+        catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+            && catalogue.classes.len() == catalogue.shapes.len()
+            && catalogue.shapes.iter().all(|shape| shape.size() <= bound && catalogue.family.holds(shape) == Membership::Inside)
+    }))]
+    pub fn profiles(
+        bound: ShapeSize,
+        profiles: BTreeSet<Profile>,
+    ) -> Result<Self, ShapeObstruction>
+    {
+        let family = Family::Profiles(profiles);
+        let mut shapes = shapes_up_to(bound, ShapeBudget::EVERY)?;
+        let reach = Degree::top(&shapes);
+        shapes.retain(|shape| family.holds(shape) == Membership::Inside);
+        Ok(Self::of(family, reach, shapes))
     }
 
     /// The catalogue of `family` over `shapes`, one per class, ordered by size
-    /// and key.
+    /// and key, reaching `reach`.
     ///
     /// # Specification
     /// - requires: `shapes` lie in `family`, one per class, ordered by size and
-    ///   key.
+    ///   key, and none has a degree past `reach`.
     /// - ensures: one class index per shape and one hom set per ordered pair.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — as the type, through both public builders.
+    /// - hypothesis: L2 — as the type, through the three public builders.
     /// - witness: `tests::maps::the_catalogue_serves_pinned_hom_sets`
     /// - witness: `tests::chains::the_chain_catalogue_is_the_full_sub_site_on_the_chains`
-    #[spec(ensures: |ref catalogue| catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
-        && catalogue.classes.len() == catalogue.shapes.len())]
+    /// - witness: `tests::profiles::the_profile_catalogue_is_the_full_sub_site_on_its_shapes`
+    #[spec(
+        requires: shapes.iter().all(|shape| Degree::of(shape) <= reach),
+        ensures: |ref catalogue| catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+            && catalogue.classes.len() == catalogue.shapes.len()
+    )]
     fn of(
         family: Family,
+        reach: Degree,
         shapes: Vec<Shape>,
     ) -> Self
     {
@@ -370,6 +499,7 @@ impl Catalogue
         }
         Self {
             family,
+            reach,
             shapes: shapes.into_boxed_slice(),
             classes,
             homs: sets.into_boxed_slice(),
@@ -382,9 +512,22 @@ impl Catalogue
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn family(&self) -> Family
+    pub const fn family(&self) -> &Family
     {
-        self.family
+        &self.family
+    }
+
+    /// The highest degree a stratum over the catalogue may name: its top
+    /// shape's degree, or for the profiles the top degree of any wiring at
+    /// the bound.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reach(&self) -> Degree
+    {
+        self.reach
     }
 
     /// The shapes, ordered by size and key.
