@@ -171,7 +171,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::equal_computation_syntax;
+use gandr_core_term::equal_computation_syntax_up_to_free;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -2455,17 +2455,20 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         }
     }
 
-    /// Compare two held thunks by their closures, queueing their
-    /// environments' entries pair by pair.
+    /// Compare two held thunks by their closures, queueing the environment
+    /// entries their bodies read free, pair by pair.
     ///
     /// # Specification
     /// - requires: both values belong to the held domain arena.
-    /// - ensures: [`Alike::Same`] with one atom pair queued per binding when
+    /// - ensures: [`Alike::Same`] with one atom pair queued per free pair when
     ///   both values are thunks whose closures hold source bodies equal as
-    ///   syntax over environments of one depth in each zone, and
-    ///   [`Alike::Different`] with nothing queued otherwise.
+    ///   syntax up to what each reads free
+    ///   ([`equal_computation_syntax_up_to_free`]), each side of each pair an
+    ///   entry of its own closure's environment; [`Alike::Different`] with
+    ///   nothing queued otherwise.
     /// - provides: the reading of a function value a written call reaches
-    ///   through its closure, such as a lambda written twice.
+    ///   through its closure, such as a lambda written twice, over one
+    ///   environment or over captures laid out apart.
     /// - fails: [`DomainFault::Dangling`] when a thunk names no closure.
     /// - panics: none.
     ///
@@ -2473,15 +2476,17 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// As above, and as [`Walk::atom`].
     ///
     /// # Termination
-    /// - reason: each loop walks one zone of a finite environment once, and a
-    ///   closure captures its environment before its thunk is minted, so every
-    ///   queued entry is older than the thunk that holds it.
-    /// - measure: the bindings left in the zone.
+    /// - reason: the loop reads each free pair once, and a closure captures its
+    ///   environment before its thunk is minted, so every queued entry is older
+    ///   than the thunk that holds it.
+    /// - measure: the free pairs left.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — thunks of one lambda written apart agree over one
-    ///   environment, and differ over another environment or another body.
+    ///   environment and over captures laid out apart, and differ over another
+    ///   environment or another body.
     /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
+    /// - witness: `code::tests::thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976`
     #[spec(
         captures: [entry_atoms = atoms.len()],
         ensures: |ret| match ret {
@@ -2512,23 +2517,23 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         else {
             return Ok(Alike::Different);
         };
-        let zones = [Zone::Intuitionistic, Zone::Linear];
-        if zones
-            .iter()
-            .any(|&zone| one.environment().depth(zone) != other.environment().depth(zone))
-            || equal_computation_syntax(self.core, left, right) != CertificateEquality::Equal
+        let mut free = Vec::new();
+        if equal_computation_syntax_up_to_free(self.core, left, right, &mut free)
+            != CertificateEquality::Equal
         {
             return Ok(Alike::Different);
         }
-        for zone in zones {
-            let pairs = one
-                .environment()
-                .bindings(zone)
-                .iter()
-                .zip(other.environment().bindings(zone));
-            for (&near, &far) in pairs {
-                atoms.push((self.atom(Node::Held(near))?, self.atom(Node::Held(far))?));
-            }
+        let queued = atoms.len();
+        for pair in free {
+            let (Some(near), Some(far)) = (
+                one.environment().lookup(pair.zone, pair.left),
+                other.environment().lookup(pair.zone, pair.right),
+            )
+            else {
+                atoms.truncate(queued);
+                return Ok(Alike::Different);
+            };
+            atoms.push((self.atom(Node::Held(near))?, self.atom(Node::Held(far))?));
         }
         Ok(Alike::Same)
     }

@@ -744,6 +744,87 @@ fn motives_calling_thunks_written_apart_are_alike_3920()
 }
 
 #[test]
+fn thunks_of_one_lambda_over_captures_laid_out_apart_are_alike_3976()
+{
+    // #3976, the layouts #3952's review found: `λq. return g`, written once
+    // where `g` is the last binder and again in a scope that binds more, or
+    // binds `g` elsewhere. Each body reads `g` at the index its own closure
+    // holds it at, so the two bodies differ as syntax, and the environments
+    // differ in depth. The walk reads each body's free variables through its
+    // own environment. A body whose free variable reaches another capture
+    // stays undecided.
+    let mut core = CoreArena::new();
+    let family = |core: &mut CoreArena| {
+        let function = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = core.computation_force(function);
+        let call = core.computation_application(forced, endpoint);
+        let code = core.value_returned(call);
+        core.value_type_element(code, Level::zero())
+    };
+    let lambda = |core: &mut CoreArena, index: u32| {
+        let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        let returned = core.computation_return(read);
+        core.computation_lambda(returned)
+    };
+    let (near, again) = (family(&mut core), family(&mut core));
+    let (innermost, one_out) = (lambda(&mut core, 1), lambda(&mut core, 2));
+
+    let mut domain = DomainArena::new();
+    let g = variable(&mut domain, BinderLevel::from(0_u32));
+    let h = variable(&mut domain, BinderLevel::from(1_u32));
+    let endpoint = variable(&mut domain, BinderLevel::from(2_u32));
+    // A thunk of `body` over `captures`, the last of them innermost.
+    let thunk = |domain: &mut DomainArena, body, captures: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &capture in captures {
+            environment.extend(Zone::Intuitionistic, capture);
+        }
+        let closure = domain.comp_closure_node(body, environment);
+        domain.value_thunk(closure, TermFace::Reduced)
+    };
+    let motive = |domain: &mut DomainArena, body, function| {
+        let mut environment = Environment::new();
+        environment.extend(Zone::Intuitionistic, function);
+        environment.extend(Zone::Intuitionistic, endpoint);
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    let defined = thunk(&mut domain, innermost, &[g]);
+    let bound_before = thunk(&mut domain, innermost, &[h, g]);
+    let bound_after = thunk(&mut domain, one_out, &[g, h]);
+    let swapped = thunk(&mut domain, innermost, &[h, g]);
+    let another = thunk(&mut domain, innermost, &[g, h]);
+    let quoted = motive(&mut domain, near, defined);
+    for (thunk, why) in [
+        (bound_before, "a binder bound before `g` reads it alike"),
+        (
+            bound_after,
+            "a binder bound after `g` reads it one further out, alike",
+        ),
+    ] {
+        let other = motive(&mut domain, again, thunk);
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, quoted, other),
+            "{why}"
+        );
+    }
+    let laid_after = motive(&mut domain, near, bound_after);
+    let laid_swapped = motive(&mut domain, again, swapped);
+    assert_eq!(
+        CodeComparison::Equal,
+        compare_rigidly(&core, &domain, laid_after, laid_swapped),
+        "two environments of one depth holding `g` at other places read it alike"
+    );
+    let other = motive(&mut domain, again, another);
+    assert_eq!(
+        CodeComparison::Undecided,
+        compare_rigidly(&core, &domain, quoted, other),
+        "a body reaching `h` where the other reaches `g` stays undecided"
+    );
+}
+
+#[test]
 fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
 {
     // #577: `⌜U(Π(_ : Unit). F Unit)⌝` is `⌜U(Unit -> F Unit)⌝`, in either

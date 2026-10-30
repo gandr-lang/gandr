@@ -6,11 +6,14 @@
 ///
 /// The action unfolds to a transport whose motive calls the lambda. The two
 /// motives hold two thunks of the lambda, each closing its own copy of the
-/// body over one capture. They compare by those bodies, read as written, and
-/// by the captures pair by pair, and the kernel agrees.
+/// body over its own captures. They compare by those bodies up to the
+/// variables each reads free, and by the captures those variables name. The
+/// two scopes may lay the captures out apart: one may bind more variables than
+/// the other, or bind `g` at another place.
 ///
 /// - see: #3807 — the code walk pairs two written calls by function and argument
 /// - see: #3920 — the checker declined two motives calling a lambda written twice
+/// - see: #3976 — the checker declined two such motives over captures laid out apart
 
 /// The action of `F` on `p`.
 def act(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
@@ -59,6 +62,62 @@ def writtenTwice(
   Path(Path(A, x, z), fm then g, fp then g),
   apThen(A, x, y, z, fm, fp, fa, g),
   apThenAgain(A, x, y, z, fm, fp, fa, g)
+) {
+  here(apThen(A, x, y, z, fm, fp, fa, g))
+}
+
+/// The action written in a scope that binds one more variable after `g`.
+def bindsOneMore(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  _w : A
+) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa),
+  apThen(A, x, y, z, fm, fp, fa, g)
+) {
+  here(apThen(A, x, y, z, fm, fp, fa, g))
+}
+
+/// The action written in a scope that binds one more variable before `fm`.
+def bindsOneBetween(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  _w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa),
+  apThen(A, x, y, z, fm, fp, fa, g)
+) {
+  here(apThen(A, x, y, z, fm, fp, fa, g))
+}
+
+/// The action written in a scope that binds `g` before `fm`.
+def bindsGFirst(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  g : Path(A, y, z),
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp)
+) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa),
+  apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   here(apThen(A, x, y, z, fm, fp, fa, g))
 }

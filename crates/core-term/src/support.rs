@@ -173,11 +173,11 @@ pub mod unselected
 }
 
 /// Why an index stands at no outer position.
-mod bound
+pub(crate) mod bound
 {
     /// The single reason an index has no image past a crossing.
     #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-    pub(super) enum Absent
+    pub enum Absent
     {
         /// The index names one of the binders crossed.
         Local,
@@ -1009,7 +1009,7 @@ impl Crossing
     Maybe::Present(outer) => u64::from(u32::from(outer)).checked_add(u64::try_from(usize::from(crossed)).unwrap_or(u64::MAX)) == Some(u64::from(u32::from(index))),
     Maybe::Absent(bound::Absent::Local) => u64::from(u32::from(index)) < u64::try_from(usize::from(crossed)).unwrap_or(u64::MAX),
 })]
-fn outer(
+pub(crate) fn outer(
     index: DeBruijnIndex,
     crossed: BinderDepth,
 ) -> Maybe<DeBruijnIndex, bound::Absent>
