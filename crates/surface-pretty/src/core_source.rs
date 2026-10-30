@@ -1190,9 +1190,9 @@ impl<'arena> CoreSource<'arena>
     /// - requires: nothing.
     /// - ensures: each value former read as its [`Former`], the binary
     ///   composite, returned or not, as the fold `p then q` writes, any other
-    ///   composite as [`Former::Compose`]; [`Former::Unreadable`] for an id the
-    ///   arena does not hold, for a constructor whose classifier names no data
-    ///   family, and for a fill.
+    ///   composite as [`Former::Compose`] and a fill as [`Former::Fill`];
+    ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
+    ///   constructor whose classifier names no data family.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1239,6 +1239,8 @@ impl<'arena> CoreSource<'arena>
             actual == CoreNode::Computation(realised),
         | (Some(&Value::Compose { composite, ref cells, .. }), Former::Compose { composite: actual, cells: arity }) if composite != Composite::binary() =>
             composite == actual && usize::from(arity) == cells.len(),
+        | (Some(&Value::Fill { composite, ref cells, .. }), Former::Fill { composite: actual, cells: arity }) =>
+            composite == actual && usize::from(arity) == cells.len(),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
@@ -1263,7 +1265,6 @@ impl<'arena> CoreSource<'arena>
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Splice(tactic))) => hole.tactic() == Some(tactic),
         (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
-            | (Some(&Value::Fill { .. }), Former::Unreadable(Unreadable::Fill))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
 
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
@@ -1423,15 +1424,14 @@ impl<'arena> CoreSource<'arena>
                 composite,
                 cells: Arity::from(cells.len()),
             },
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a fill, whose form the printer writes from #4075 on: its node \
-                              holds no term the form stands for"
-                )
-            )]
-            Value::Fill { .. } => Former::Unreadable(Unreadable::Fill),
+            Value::Fill {
+                composite,
+                ref cells,
+                ..
+            } => Former::Fill {
+                composite,
+                cells: Arity::from(cells.len()),
+            },
             Value::Ascribe { value, ty } => Former::Annotated {
                 value: CoreNode::Value(value),
                 ty: CoreNode::ValueType(ty),
@@ -2415,12 +2415,13 @@ impl Source for CoreSource<'_>
     ///   among a held product's, sum's or record type's components and a
     ///   session type's payloads; the value at `index` among a held tuple's,
     ///   record's or constructor's fields, the fields a record update writes
-    ///   and a family's arguments, a codata family's included; the value at
-    ///   `index` among a primitive's arguments and the computation among a
-    ///   case's or a data case's branches, a handler's operation clauses and an
-    ///   offer's arms; a record's fields, an update's and an offer's arms in
-    ///   label order; none for an index past them, another former, another
-    ///   family or a missing handle.
+    ///   and a family's arguments, a codata family's included; a fill's
+    ///   generator at 0 and its cells after it; the value at `index` among a
+    ///   primitive's arguments and the computation among a case's or a data
+    ///   case's branches, a handler's operation clauses and an offer's arms; a
+    ///   record's fields, an update's and an offer's arms in label order; none
+    ///   for an index past them, another former, another family or a missing
+    ///   handle.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -2448,6 +2449,8 @@ impl Source for CoreSource<'_>
         },
         | CoreNode::Value(id) => ret == match self.arena.value(id) {
             | Some(&(Value::Tuple(ref components) | Value::Compose { cells: ref components, .. })) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
+            | Some(&Value::Fill { generator, ref cells, .. }) => usize::from(index).checked_sub(1_usize)
+                .map_or(Some(CoreNode::Computation(generator)), |cell| cells.get(cell).map(|&cell| CoreNode::Value(cell))),
             | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
             | Some(&Value::RecordUpdate { overlay, .. }) => match self.arena.value(overlay) {
                 | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
@@ -2528,6 +2531,15 @@ impl Source for CoreSource<'_>
                 } => components
                     .get(at)
                     .map(|&component| CoreNode::Value(component)),
+                Value::Fill {
+                    generator,
+                    ref cells,
+                    ..
+                } => at
+                    .checked_sub(1_usize)
+                    .map_or(Some(CoreNode::Computation(generator)), |cell| {
+                        cells.get(cell).map(|&cell| CoreNode::Value(cell))
+                    }),
                 Value::Record(ref fields) => {
                     fields.values().nth(at).map(|&field| CoreNode::Value(field))
                 },
@@ -2573,7 +2585,6 @@ impl Source for CoreSource<'_>
                 | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
-                | Value::Fill { .. }
                 | Value::Nested(_)
                 | Value::Run(_)
                 | Value::Variable { .. }

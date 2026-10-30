@@ -134,10 +134,10 @@ impl Source for ContentSource<'_>
     ///   indices; a family by its key, a constructor by the name the
     ///   constructor table gives its family's tag, the binary composite,
     ///   returned or not, as the fold `p then q` writes, any other composite as
-    ///   [`Former::Compose`]; the honest set's members — a hole, a mark, the
-    ///   unknown type, a lift, a fill — as unreadable, an unresolved node and
-    ///   an index past the table as dangling, and a name the table cannot spell
-    ///   as unnamed.
+    ///   [`Former::Compose`] and a fill as [`Former::Fill`]; the honest set's
+    ///   members — a hole, a mark, the unknown type, a lift — as unreadable, an
+    ///   unresolved node and an index past the table as dangling, and a name
+    ///   the table cannot spell as unnamed.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -161,9 +161,8 @@ impl Source for ContentSource<'_>
             ContentNode::ValueMark { .. } | ContentNode::ComputationMark { .. } => reason == Unreadable::Mark,
             ContentNode::UnknownType | ContentNode::UnknownComputationType => reason == Unreadable::UnknownType,
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
-            ContentNode::Fill { .. } => reason == Unreadable::Fill,
             ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
-            ContentNode::Compose { .. } | ContentNode::BufferType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::RowValue(_) | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::BridgeType { .. } |
+            ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::BufferType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::RowValue(_) | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::BridgeType { .. } |
             ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } => false,
         },
         (Some(&(ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference))), Former::Constant(name) | Former::Abstract(name)) => key(reference) == Some(name),
@@ -635,15 +634,14 @@ impl Source for ContentSource<'_>
                 composite,
                 cells: Arity::from(cells.len()),
             },
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a fill, whose form the printer writes from #4075 on: its node \
-                              holds no term the form stands for"
-                )
-            )]
-            ContentNode::Fill { .. } => Former::Unreadable(Unreadable::Fill),
+            ContentNode::Fill {
+                composite,
+                ref cells,
+                ..
+            } => Former::Fill {
+                composite,
+                cells: Arity::from(cells.len()),
+            },
             ContentNode::Variable { zone, index } => Former::Variable { zone, index },
             ContentNode::Constant(ref reference) => {
                 key(reference).map_or(unnamed, Former::Constant)
@@ -833,8 +831,9 @@ impl Source for ContentSource<'_>
     ///   payloads in slot order, a family's arguments, a constructor's fields,
     ///   a primitive's arguments, a case's or a data case's branches, a
     ///   handler's clauses, an offer's arms, a composite's cells in vertex
-    ///   order or a recorded run's payloads in move order; none past them, for
-    ///   another node, or past the table.
+    ///   order, a fill's generator at 0 and its cells after it, or a recorded
+    ///   run's payloads in move order; none past them, for another node, or
+    ///   past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -881,6 +880,13 @@ impl Source for ContentSource<'_>
                 branches: ref parts,
                 ..
             } => parts.get(at).copied(),
+            ContentNode::Fill {
+                generator,
+                ref cells,
+                ..
+            } => at
+                .checked_sub(1_usize)
+                .map_or(Some(generator), |cell| cells.get(cell).copied()),
             ContentNode::Primitive(_, ref arguments) => arguments.get(at).copied(),
             ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
                 fields.values().nth(at).copied()
@@ -948,7 +954,6 @@ impl Source for ContentSource<'_>
             | ContentNode::BridgeType { .. }
             | ContentNode::Here(_)
             | ContentNode::Returned(_)
-            | ContentNode::Fill { .. }
             | ContentNode::Nested(_)
             | ContentNode::Run(_)
             | ContentNode::ElementTransport { .. }

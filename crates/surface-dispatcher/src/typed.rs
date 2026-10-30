@@ -8904,6 +8904,41 @@ mod tests
         }
     }
 
+    /// #4075: a fill in a type prints as it is written, its generator after
+    /// the chain and its one cell bare. Each type spelling the fill reads back
+    /// to its certificate and reprints as itself.
+    #[test]
+    fn a_fill_prints_as_it_is_written_4075()
+    {
+        let source = SourceText::from(
+            "def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), \
+             f, f) {\n  thunk { fn (f) { here(f) } }\n}\n\ndef filled(\n  A : Type,\n  x : A,\n  y \
+             : A,\n  fm : Path(A, x, y),\n  fp : Path(A, x, y),\n  fa : Path(Path(A, x, y), fm, \
+             fp)\n) -> Path(Path(Path(Path(A, x, y), fm, fp), here(fm) then fa, fa then \
+             here(fp)), fill[1, 3](chain(1), selfLoop(A, x, y), fa), fill[1, 3](chain(1), \
+             selfLoop(A, x, y), fa)) {\n  here(fill[1, 3](chain(1), selfLoop(A, x, y), fa))\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<super::ReadBack> =
+            table(source).read_back(&grammar, PageWidth::from(400_u32), Form::Sugared.into());
+        let spelling: Vec<&super::ReadBack> = reads
+            .iter()
+            .filter(|back| {
+                back.spelled
+                    .contains("fill[1, 3](chain(1), selfLoop(A, x, y), fa)")
+            })
+            .collect();
+        assert!(
+            !spelling.is_empty(),
+            "the fill prints as written: {reads:?}"
+        );
+        assert!(
+            spelling.iter().all(|back| back.trip == RoundTrip::Equal
+                && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
+            "each type spelling the fill reads back and reprints as itself: {spelling:?}"
+        );
+    }
+
     /// #3801: a `cong` over an annotated thunk prints a type whose lambda
     /// states its parameter's written type, `fn (b : Path(A, x, y)) { … }`
     /// (#3943). Read back under a parameter the type does not name, each

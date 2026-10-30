@@ -126,6 +126,8 @@ corpus/ledger/features/equivalence-record.gandr Tense 1386d44c34d1f9bd
 corpus/ledger/features/equivalence-record.gandr Tense 95a70f9d4050a08d
 corpus/ledger/features/equivalence-record.gandr Tense d0db6388df1f4977
 corpus/ledger/features/extension-types.gandr Tense e03bd6f256c320fb
+corpus/ledger/features/filler-generator.gandr Passive 691b2e89706732ca
+corpus/ledger/features/filler-generator.gandr Tense f536654a2df7af55
 corpus/ledger/features/floating-point.gandr Tense 900133f38ee07c29
 corpus/ledger/features/footprint-separation.gandr Tense 9303c85920e72daf
 corpus/ledger/features/function-extensionality.gandr Tense 3e90aeccd34a677f

@@ -828,6 +828,33 @@ fn a_composite_s_cells_are_not_a_tuple_3957()
     );
 }
 
+/// A parenthesised list after a fill's generator is its cells, not a tuple:
+/// the explicit form keeps it and withdraws nothing (#4075).
+#[test]
+fn a_fill_s_cells_are_not_a_tuple_4075()
+{
+    let grammar = grammar();
+    let source = "def lifted(a : Type, x : a, y : a, z : a, fa : Path(a, x, y), g : Path(a, y, \
+                  z)) -> Path(a, x, z) {\n  fill[5, 7](chain(2), selfComposite(a, x, y, z), (fa, \
+                  g))\n}\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(
+        formatted.withdrawn(),
+        &[],
+        "no declaration keeps its spelling"
+    );
+    let text = formatted.into_text();
+    assert!(
+        text.contains("fill[5, 7](chain(2), selfComposite(a, x, y, z), (fa, g))"),
+        "the cells stay a list: {text}"
+    );
+}
+
 /// A composite of two flows is no path composite: it has no transport to
 /// write, so the explicit form keeps its `then`.
 #[test]

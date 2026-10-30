@@ -3506,11 +3506,12 @@ where
 ///   agree in each payload the enumeration does not hand on: a constructor's
 ///   tag and field count, a record's labels, a reified stack's frame kinds and
 ///   projections, a tuple's width, univalence's stratum and sides, a
-///   composite's stratum, pasting and cell count, an injection's summand, a
-///   primitive, a lift's target, a mark, a session relation, a row's shape, a
-///   web, and a variable, constant, literal or hole whole. A path equivalence's
-///   evidence is no payload. [`CertificateEquality::Different`] otherwise, and
-///   for two recorded logs or two dialogues, which [`pair_step`] pairs itself.
+///   composite's or a fill's stratum, pasting and cell count, an injection's
+///   summand, a primitive, a lift's target, a mark, a session relation, a row's
+///   shape, a web, and a variable, constant, literal or hole whole. A path
+///   equivalence's evidence is no payload. [`CertificateEquality::Different`]
+///   otherwise, and for two recorded logs or two dialogues, which [`pair_step`]
+///   pairs itself.
 /// - panics: none.
 /// - executable: none — this is the structural comparison's former rule.
 ///
@@ -3570,6 +3571,18 @@ fn value_formers(
                 ..
             },
             &Value::Compose {
+                composite: right,
+                cells: ref right_cells,
+                ..
+            },
+        )
+        | (
+            &Value::Fill {
+                composite: left,
+                cells: ref left_cells,
+                ..
+            },
+            &Value::Fill {
                 composite: right,
                 cells: ref right_cells,
                 ..
@@ -5946,6 +5959,25 @@ mod tests
             same,
             alloc::vec![other_degree, other_count, wider],
             "a composite",
+        ));
+        let [twin, same, other_degree, other_count] = [(3_usize, 2_usize), (3, 2), (2, 2), (3, 1)]
+            .map(|(degree, cells)| {
+                arena.value_fill(
+                    composite(degree, cells),
+                    returned,
+                    alloc::vec![unit; cells].into_boxed_slice(),
+                )
+            });
+        let wider = arena.value_fill(
+            composite(3, 2),
+            returned,
+            alloc::vec![unit; 3].into_boxed_slice(),
+        );
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_degree, other_count, wider],
+            "a fill",
         ));
         let [twin, same, other] =
             [0_usize, 0, 1].map(|summand| arena.value_injection(Summand::from(summand), unit));

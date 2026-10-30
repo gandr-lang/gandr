@@ -3966,6 +3966,56 @@ fn a_composite_spells_its_stratum_chain_and_cells_3957()
     }
 }
 
+/// A filler generator spells its stratum, its chain, its generator and its
+/// cells as the surface writes them, `fill[n, k](chain(m), t, (d, …))`, one
+/// cell bare, and the content source reads the node as the core does (#4075).
+#[test]
+fn a_fill_spells_its_stratum_chain_generator_and_cells_4075()
+{
+    let mut core = CoreArena::new();
+    let [p, q, r, x, step] =
+        [0_usize, 1, 2, 3, 4].map(|index| core.value_constant(ConstantIndex::from(index)));
+    let composite = |cells: usize| Composite {
+        stratum: Stratum {
+            degree: Degree::from(5_usize),
+            bound: ShapeSize::from(7_usize),
+        },
+        pasting: Pasting::Chain {
+            cells: CellCount::from(cells),
+        },
+    };
+    let generator = |core: &mut CoreArena| {
+        let forced = core.computation_force(step);
+        core.computation_application(forced, x)
+    };
+    let over_three = generator(&mut core);
+    let three = core.value_fill(composite(3), over_three, Box::from([p, q, r]));
+    let over_one = generator(&mut core);
+    let one = core.value_fill(composite(1), over_one, Box::from([p]));
+    let names = [
+        Name::from("p"),
+        Name::from("q"),
+        Name::from("r"),
+        Name::from("x"),
+        Name::from("t"),
+    ];
+    for (node, name, flat) in [
+        (three, "fill_chain", "fill[5, 7](chain(3), t(x), (p, q, r))"),
+        (one, "fill_cell", "fill[5, 7](chain(1), t(x), p)"),
+    ] {
+        agrees(&core, &names, CoreNode::Value(node));
+        pin(
+            &CoreSource::new(&core, &names),
+            Root::Value(CoreNode::Value(node)),
+            Pinned {
+                name,
+                flat,
+                fidelity: Fidelity::Faithful,
+            },
+        );
+    }
+}
+
 /// Native introductions retain endpoint and map order but cannot claim
 /// surface round-trip fidelity, because the parser has no syntax for them;
 /// a product over them is as approximate as its components.

@@ -1,8 +1,10 @@
 /// `naturality`: a term's naturality along a path in one of its arguments, the action of the term on that path.
 ///
-/// Implemented: `math.path` holds `natural`, the operation at one variable, a homotopy's naturality along a path. `assoc_nat` states the associator's naturality in its first argument, at the square that Example 1.3 of the paper states. Its term is `natural` at the associator, and the kernel replays it.
+/// Implemented: `math.path` holds `natural`, the operation at one variable, a homotopy's naturality along a path. `assoc_nat` states the associator's naturality in its first argument, at the square that Example 1.3 of the paper states. Its term is `natural` at the associator, and the kernel replays it. `natassoc` writes the same naturality as the filler generator over the 3-chain, `fill[5, 7](chain(3), t, (fa, g, h))`.
 ///
 /// The square is the type Catt answers for `assoc [a] g h`. Its source is the associator at `fm`, then `fa` whiskered by `g then h`. Its target is `fa` whiskered by `g` and then by `h`, then the associator at `fp`. `natural` acts on `fa` by the composite function instead, so `apComp` carries its target side to the two whiskers.
+///
+/// The filler generator whiskers by a transport along `fa`, `liftRight`, while `math.path` writes `whiskerRight` as `ap`. The two whiskers do not convert, so `natassoc` states the square with `liftRight`. At `fa = here(fm)` both squares reduce to the associator, and `natassocAtHere` relates the two terms there by `here`. Their agreement at a general `fa` is #4120.
 ///
 /// - see: library/math/src/path.gandr
 /// - see: #3711 — the paper, arXiv:2501.11620, and its Example 1.3
@@ -66,4 +68,56 @@ def assoc_nat(
     ),
     assoc(A, x, y, z, w, fp, g, h)
   )
+}
+
+/// The associator, curried over the 3-chain's cells: the generator `natassoc` fills.
+def assocGenerator(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => (h : Path(A, z, w)) => Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  thunk { fn (f) { thunk { fn (g) { thunk { fn (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
+}
+
+/// The right whisker the filler generator lifts a cell by: the transport along `a`.
+def liftRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  transport(\q. Path(Path(A, x, z), f1 then g, q then g), a, here(f1 then g))
+}
+
+/// The associator's naturality in its first argument as the filler generator writes it.
+def natassoc(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, fp then (g then h)),
+  assoc(A, x, y, z, w, fm, g, h) then liftRight(A, x, y, w, fm, fp, fa, g then h),
+  liftRight(A, x, z, w, fm then g, fp then g, liftRight(A, x, y, z, fm, fp, fa, g), h) then assoc(A, x, y, z, w, fp, g, h)
+) {
+  fill[5, 7](chain(3), assocGenerator(A, x, y, z, w), (fa, g, h))
+}
+
+/// At `here(fm)` the filler generator's square and `assoc_nat` convert.
+def natassocAtHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(
+    Path(Path(A, x, w), (fm then g) then h, fm then (g then h)),
+    assoc(A, x, y, z, w, fm, g, h) then liftRight(A, x, y, w, fm, fm, here(fm), g then h),
+    liftRight(A, x, z, w, fm then g, fm then g, liftRight(A, x, y, z, fm, fm, here(fm), g), h) then assoc(A, x, y, z, w, fm, g, h)
+  ),
+  natassoc(A, x, y, z, w, fm, fm, here(fm), g, h),
+  assoc_nat(A, x, y, z, w, fm, fm, here(fm), g, h)
+) {
+  here(assoc_nat(A, x, y, z, w, fm, fm, here(fm), g, h))
 }
