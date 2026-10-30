@@ -1,0 +1,18 @@
+[
+  {
+    "name": "#4191: a command run on a host with no /usr/bin/time reports its wall time and a peak resident set holding what it allocated",
+    "script": "block = bytearray(64 << 20)\nblock[::4096] = b'x' * len(block[::4096])",
+    "status": 0,
+    "peak_mib": 64
+  },
+  {
+    "name": "a command's failing status is the timer's, and its report is written",
+    "script": "raise SystemExit(3)",
+    "status": 3
+  },
+  {
+    "name": "a command that does not exist exits 127, as a shell's would",
+    "command": ["no-such-command-4191"],
+    "status": 127
+  }
+]

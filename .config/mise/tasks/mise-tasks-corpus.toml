@@ -31,8 +31,10 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 '''
 
 # The page-28 stress, as far as the library writes it: `library/math` checked
-# whole, every verdict rechecked and each declaration measured, under the
-# platform's `time`. The cylinder composites' rows stand beside the artifact
+# whole, every verdict rechecked and each declaration measured, timed by
+# `.config/bench/timed.py` (#4191), which reads the wall time and the peak
+# resident set alike on Linux and macOS, where `/usr/bin/time` may be absent
+# or differ. The cylinder composites' rows stand beside the artifact
 # sizes Catt reports for the same constructions at dimensions 2 and 3
 # (Benjamin, Markakis, Offord, Sarti and Vicary, "Naturality for
 # Higher-Dimensional Path Types", arXiv:2501.11620, Example 1.4 and § 6).
@@ -49,23 +51,20 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 # commits nothing to the user's store.
 ["bench:stress"]
 description = "Check library/math measured and timed, its cylinder composites beside Catt's artifact sizes"
+tools.python = "3.14.9"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-case "$(uname -s)" in
-  Darwin) timing=-l ;;
-  *) timing=-v ;;
-esac
 status=0
 XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data" \
-  /usr/bin/time "$timing" target/release/gandr check --recheck --measure library/math \
-  > "$scratch/check" 2> "$scratch/time" || status=$?
+  python .config/bench/timed.py "$scratch/time" target/release/gandr check --recheck --measure library/math \
+  > "$scratch/check" 2> "$scratch/errors" || status=$?
 if [ "$status" -ne 0 ]; then
   printf 'bench:stress: the check exits %s\n' "$status" >&2
-  awk '!/^measure: /' "$scratch/check" "$scratch/time" >&2
+  awk '!/^measure: /' "$scratch/check" "$scratch/errors" >&2
   exit "$status"
 fi
 awk '
@@ -100,10 +99,8 @@ END {
   if (missing != "") { printf "bench:stress: no row for%s\n", missing > "/dev/stderr"; exit 1 }
 }' "$scratch/check"
 awk '
-/ real / { wall = $1 " s" }
-/maximum resident set size/ { peak = $1 }
-/Elapsed \(wall clock\) time/ { wall = $NF }
-/Maximum resident set size \(kbytes\)/ { peak = $NF * 1024 }
+/^wall / { wall = $2 " s" }
+/^peak / { peak = $2 }
 END { printf "\nwall %s, peak resident set %s bytes\n", wall, peak }
 ' "$scratch/time"
 uptime | awk -F 'load averages?: ' '{ printf "load %s\n", $2 }'
