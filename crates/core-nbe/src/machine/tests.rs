@@ -4668,7 +4668,9 @@ fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_40
     // t. tr(m, h, t)`, the composite's body against `a ↦ G(F(a))`'s at `q
     // then g` and `r then h` (#4011). The bound transport is stuck on `g` and
     // returns, so the bind is its continuation at its endpoint, on either
-    // side and under either endpoint reading.
+    // side and under either endpoint reading. Against the transport, both
+    // sides read as binds over the stuck transport (#4025). Against `h`
+    // called at the endpoint, the bind holds by a recorded decision.
     let mut core = CoreArena::new();
     let variable = |core: &mut CoreArena, index: u32| {
         core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
@@ -4691,12 +4693,17 @@ fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_40
     let over_x_under = motive(&mut core, 5);
     let along_h = core.computation_path_transport(over_x_under, h_under, t);
     let bound = core.computation_bind(stuck, along_h);
+    let called = call(&mut core, h, &[endpoint]);
+    let calling = call(&mut core, h_under, &[t]);
+    let bound_call = core.computation_bind(stuck, calling);
     let world = World::new(core, &[]);
 
     for endpoints in [Endpoints::Run, Endpoints::Hold] {
-        for (sides, side) in [
-            ((written, bound), ConversionSide::Right),
-            ((bound, written), ConversionSide::Left),
+        for (sides, hold) in [
+            ((written, bound), None),
+            ((bound, written), None),
+            ((called, bound_call), Some(ConversionSide::Right)),
+            ((bound_call, called), Some(ConversionSide::Left)),
         ] {
             let definitions =
                 Definitions::new(&world.chain, &world.environment, world.environment.root())
@@ -4753,15 +4760,17 @@ fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_40
                 "a transport stuck on a path is its continuation at its endpoint \
                  ({endpoints:?}): {decisions:?}"
             );
-            assert_eq!(
-                Some(ConversionDecision::Hold { side }),
-                decisions
-                    .iter()
-                    .copied()
-                    .find(|decision| matches!(decision, ConversionDecision::Hold { .. })),
-                "the hold is a recorded decision on the side that bound the transport: \
-                 {decisions:?}"
-            );
+            if let Some(side) = hold {
+                assert_eq!(
+                    Some(ConversionDecision::Hold { side }),
+                    decisions
+                        .iter()
+                        .copied()
+                        .find(|decision| matches!(decision, ConversionDecision::Hold { .. })),
+                    "the hold is a recorded decision on the side that bound the transport: \
+                     {decisions:?}"
+                );
+            }
             let mut kernel = Kernel::default();
             let sides = ReplaySides::Computations(
                 kernel.computation(&world.core, left),
@@ -4779,7 +4788,117 @@ fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_40
             assert_eq!(
                 KernelVerdict::Convertible,
                 replayed,
-                "the kernel replays the hold by name ({endpoints:?}): {decisions:?}"
+                "the kernel replays the machine's derivation ({endpoints:?}): {decisions:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025()
+{
+    // Under rigid `x`, `g`, `h` and `q` at levels 0 to 3, `m` the motive
+    // `t. Path(Unit, x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
+    // t. tr(m, g, t)`, #4011's pair with the continuation's path `h` swapped
+    // for `g` (#4025). The two transports run along different paths, so the
+    // pair is refuted, and the kernel replays the refutation.
+    let mut core = CoreArena::new();
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let unit_type = core.value_type_unit();
+    let motive = |core: &mut CoreArena, x: u32| {
+        let (x, point) = (variable(core, x), variable(core, 0));
+        core.value_type_path(unit_type, x, point)
+    };
+    let (g, h, q) = (
+        variable(&mut core, 2),
+        variable(&mut core, 1),
+        variable(&mut core, 0),
+    );
+    let over_x = motive(&mut core, 4);
+    let stuck = core.computation_path_transport(over_x, g, q);
+    let endpoint = core.value_returned(stuck);
+    let written = core.computation_path_transport(over_x, h, endpoint);
+    let (g_under, t) = (variable(&mut core, 3), variable(&mut core, 0));
+    let over_x_under = motive(&mut core, 5);
+    let along_g = core.computation_path_transport(over_x_under, g_under, t);
+    let bound = core.computation_bind(stuck, along_g);
+    let world = World::new(core, &[]);
+
+    for endpoints in [Endpoints::Run, Endpoints::Hold] {
+        for sides in [(written, bound), (bound, written)] {
+            let definitions =
+                Definitions::new(&world.chain, &world.environment, world.environment.root())
+                    .reading_endpoints(endpoints);
+            let mut domain = DomainArena::new();
+            let mut environment = crate::closure::Environment::new();
+            for level in 0_u32 .. 4 {
+                let neutral = domain
+                    .neutral_node(
+                        crate::domain::NeutralHead::Variable {
+                            zone: Zone::Intuitionistic,
+                            level: BinderLevel::from(level),
+                        },
+                        Vec::new(),
+                        crate::domain::Unfolding::Rigid,
+                    )
+                    .expect("a variable is a neutral");
+                let variable = domain
+                    .value_neutral(neutral, crate::domain::TermFace::Reduced)
+                    .expect("a neutral is a value");
+                environment.extend(Zone::Intuitionistic, variable);
+            }
+            let fuel = Fuel::from(4_096_u32);
+            let (left, right) = sides;
+            let evaluate = |domain: &mut DomainArena, term| {
+                crate::eval::eval_comp_within(
+                    &world.core,
+                    domain,
+                    definitions,
+                    fuel,
+                    term,
+                    environment.clone(),
+                )
+                .map(|(evaluated, _remaining)| evaluated)
+                .expect("each side evaluates")
+            };
+            let one = evaluate(&mut domain, left);
+            let other = evaluate(&mut domain, right);
+            let problem = Problem::computations(one, other).under(BinderLevel::from(4_u32));
+            let mut log = TraceLog::new();
+            let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+                &world.core,
+                &mut domain,
+                definitions,
+                MachineSettings::default(),
+                problem,
+                &mut log,
+            )
+            .expect("the machine answers");
+            let decisions: Vec<ConversionDecision<TraceNode>> = log.decisions().copied().collect();
+            assert_eq!(
+                MachineVerdict::NotConvertible,
+                report.verdict(),
+                "two transports along different paths are apart ({endpoints:?}): {decisions:?}"
+            );
+            let mut kernel = Kernel::default();
+            let sides = ReplaySides::Computations(
+                kernel.computation(&world.core, left),
+                kernel.computation(&world.core, right),
+            );
+            let replayed = replay(
+                &mut kernel.arena,
+                &Unfoldings::new(Vec::new()),
+                sides,
+                EngineClaim::NotConvertible,
+                decisions.iter().map(|&decision| kernel_decision(decision)),
+                ReplayBudget::DEFAULT,
+            );
+            assert_eq!(
+                KernelVerdict::NotConvertible,
+                replayed,
+                "the kernel replays the refutation ({endpoints:?}): {decisions:?}"
             );
         }
     }

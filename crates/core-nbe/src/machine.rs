@@ -277,6 +277,7 @@ use crate::eval::Evaluation;
 use crate::eval::Fuel;
 use crate::eval::Progress;
 use crate::eval::extend_spine;
+use crate::eval::stuck_transport;
 use crate::policy::GranularityPolicy;
 use crate::policy::GranularityStance;
 use crate::policy::SchedulingPolicy;
@@ -3489,7 +3490,9 @@ where
     /// - ensures: a stuck computation whose spine is the first part of `held`'s
     ///   by [`absorbed_eliminations`], headed by `variable` when `held`'s
     ///   endpoint's computation is headed by no returned endpoint, else by the
-    ///   returned endpoint of the same reading of that computation.
+    ///   returned endpoint of the same reading of that computation. A transport
+    ///   along or moving `variable` sticks where [`stuck_transport`] places it,
+    ///   as evaluation of the continuation at `variable` places it.
     /// - provides: one side of [`Subgoal::Continued`] and the held side of
     ///   [`Subgoal::Bound`].
     /// - fails: [`ConversionFault::Domain`] for a dangling node,
@@ -3512,14 +3515,23 @@ where
     ///   variable, as the kernel compares the binds' continuations, and refute
     ///   at the argument apart; a forced, applied endpoint compares with a bind
     ///   whose continuation forces and applies its variable; two cases over
-    ///   cases of one held call compare their levels over the bound variable.
+    ///   cases of one held call compare their levels over the bound variable; a
+    ///   transport moving a held endpoint along a stuck path compares with a
+    ///   bind whose continuation moves its variable along that path, and
+    ///   refutes against one moving it along another; a transport along a held
+    ///   path moving a held endpoint compares with a bind whose continuation
+    ///   moves that endpoint along its variable.
+    /// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
     /// - witness: `machine::tests::two_held_eliminations_of_one_call_compare_by_their_parts_879`
     /// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
     /// - witness: `machine::tests::two_cases_over_cases_of_one_held_call_compare_level_by_level_3086`
+    /// - witness: `machine::tests::a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_4011`
+    /// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|continued|
         matches!(self.domain.computation(*continued), Some(&DomainComp::Neutral { neutral, .. })
             if self.domain.neutral(neutral).is_some_and(|node| Some(node.spine().len())
-                == self.domain.neutral(held).map(|node| absorbed_eliminations(node.spine()).0.len())))))]
+                == self.domain.neutral(held).map(|node| absorbed_eliminations(node.spine()).0.len())
+                || matches!(node.spine().last(), Some(&(Elimination::PathTransport { .. } | Elimination::OperandTransport { .. })))))))]
     fn continued(
         &mut self,
         held: NeutralId,
@@ -3567,12 +3579,63 @@ where
                     .spine()
                     .get(position)
                     .ok_or(ConversionFault::MachineInvariant)?;
+                let mut placed = None;
+                if built.is_none() && position == 0 {
+                    placed = self.transport_at(elimination, variable)?;
+                }
+                if let Some(placed) = placed {
+                    grown = placed;
+                    continue;
+                }
                 grown = extend_spine(self.domain, grown, elimination)
                     .map_err(ConversionFault::Evaluation)?;
             }
             built = Some(self.domain.comp_neutral(grown, CompTermFace::Reduced));
         }
         built.ok_or(ConversionFault::MachineInvariant)
+    }
+
+    /// A transport elimination re-read over a fresh variable, placed as
+    /// evaluation places it.
+    ///
+    /// # Specification
+    /// - requires: `variable` is fresh, so it is no held endpoint.
+    /// - ensures: for a transport along a held path, the transport of its
+    ///   operand along `variable`; for a transport moving a held operand, the
+    ///   transport of `variable` along its path; each as [`stuck_transport`]
+    ///   places it. `None` for any other elimination.
+    /// - provides: the head of [`Self::continued`]'s innermost level, which a
+    ///   syntactic extension of `variable`'s spine would misplace.
+    /// - fails: [`ConversionFault::Evaluation`] as [`stuck_transport`] fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::continued`].
+    /// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
+    /// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
+    #[spec(ensures: |ret| ret.is_err() || matches!(elimination,
+        Elimination::PathTransport { .. } | Elimination::OperandTransport { .. }) == matches!(ret, Ok(Some(_))))]
+    fn transport_at(
+        &mut self,
+        elimination: Elimination,
+        variable: DomainValueId,
+    ) -> Result<Option<NeutralId>, ConversionFault>
+    {
+        let (motive, sides) = if let Elimination::PathTransport { motive, value } = elimination {
+            (motive, (variable, value))
+        }
+        else if let Elimination::OperandTransport { motive, path } = elimination {
+            (motive, (path, variable))
+        }
+        else {
+            return Ok(None);
+        };
+        stuck_transport(self.domain, motive, sides)
+            .map(Some)
+            .map_err(ConversionFault::Evaluation)
     }
 
     /// The constant a neutral is headed by.

@@ -6538,39 +6538,82 @@ fn step_path_transport(
     if words::appended(core, domain, machine, motive, (path, value))? == words::Moved::Stepped {
         return Ok(());
     }
-    // The kernel runs a returned operand before it reads the path, so a held
-    // operand holds the transport on its own spine and a conversion meets its
-    // call first. Otherwise a stuck path holds the transport on its spine, and
-    // a canonical path waits on a stuck operand, which holds it on its own.
-    let operand = match held_endpoint(domain, value).map_err(EvalFault::Domain)? {
-        Some(_) => domain.value(value).copied(),
-        None => None,
-    };
-    let grown = if let Some(DomainValue::Neutral { neutral, .. }) = operand {
-        extend_spine(domain, neutral, Elimination::OperandTransport {
-            motive,
-            path,
-        })?
-    }
-    else if let DomainValue::Neutral { neutral, .. } = carried {
-        extend_spine(domain, neutral, Elimination::PathTransport {
-            motive,
-            value,
-        })?
-    }
-    else if let Some(DomainValue::Neutral { neutral, .. }) = domain.value(value).copied() {
-        extend_spine(domain, neutral, Elimination::OperandTransport {
-            motive,
-            path,
-        })?
-    }
-    else {
-        return Err(EvalFault::TransportedNonPath);
-    };
+    let grown = stuck_transport(domain, motive, (path, value))?;
     machine
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
     Ok(())
+}
+
+/// The neutral a transport no rule moves sticks as.
+///
+/// The kernel runs a returned operand before it reads the path, so a held
+/// operand holds the transport on its own spine and a conversion meets its
+/// call first. Otherwise a stuck path holds the transport on its spine, and a
+/// canonical path waits on a stuck operand, which holds it on its own.
+///
+/// # Specification
+/// - requires: no transport rule moves `value` along `path` in `motive`.
+/// - ensures: `value`'s spine grown by [`Elimination::OperandTransport`] when
+///   [`held_endpoint`] reads `value`; else `path`'s spine grown by
+///   [`Elimination::PathTransport`] when `path` is a neutral; else `value`'s
+///   grown by [`Elimination::OperandTransport`] when `value` is a neutral.
+/// - provides: the one placement of a stuck transport, which evaluation and the
+///   conversion's reading of a continuation at a fresh variable share.
+/// - fails: [`EvalFault::TransportedNonPath`] when neither side is a neutral;
+///   as [`held_endpoint`] and [`extend_spine`] otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stuck path over a held operand, a stuck path over a
+///   stuck operand, and a canonical path over a stuck operand each reach their
+///   own placement; holding the transport over a held operand on the path
+///   compares the transports before the call the kernel unfolds first, which
+///   the kernel's replay refuses.
+/// - witness: `machine::tests::a_transport_of_a_call_s_result_unfolds_the_call_first_3806`
+/// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
+/// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|grown| domain.neutral(*grown)
+    .is_some_and(|node| matches!(node.spine().last(),
+        Some(&Elimination::OperandTransport { motive: held, path: along }) if held == motive && along == path)
+        || matches!(node.spine().last(),
+        Some(&Elimination::PathTransport { motive: held, value: moved }) if held == motive && moved == value))))]
+pub fn stuck_transport(
+    domain: &mut DomainArena,
+    motive: crate::arena::ValueClosureId,
+    (path, value): (DomainValueId, DomainValueId),
+) -> Result<NeutralId, EvalFault>
+{
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    let operand = *domain.value(value).ok_or(dangling)?;
+    let carried = *domain.value(path).ok_or(dangling)?;
+    let held = held_endpoint(domain, value)
+        .map_err(EvalFault::Domain)?
+        .is_some();
+    if let DomainValue::Neutral { neutral, .. } = operand
+        && held
+    {
+        return extend_spine(domain, neutral, Elimination::OperandTransport {
+            motive,
+            path,
+        });
+    }
+    if let DomainValue::Neutral { neutral, .. } = carried {
+        return extend_spine(domain, neutral, Elimination::PathTransport {
+            motive,
+            value,
+        });
+    }
+    if let DomainValue::Neutral { neutral, .. } = operand {
+        return extend_spine(domain, neutral, Elimination::OperandTransport {
+            motive,
+            path,
+        });
+    }
+    Err(EvalFault::TransportedNonPath)
 }
 
 /// Transport the operand at the decode of the motive's own binder along a
@@ -8953,7 +8996,7 @@ pub fn run_held(
 ///   `computation`; `None` for any other value.
 /// - provides: the one reading of a held endpoint, which [`run_held`], a held
 ///   operand's run ([`words::appended`]), a transport held on its operand
-///   ([`step_path_transport`]) and the conversion's
+///   ([`stuck_transport`]) and the conversion's
 ///   [`crate::rules::Step::Returned`] and [`crate::rules::Step::Unreturn`]
 ///   share.
 /// - fails: [`DomainFault::Dangling`] for a value or neutral the arena does not

@@ -1383,11 +1383,13 @@ pub(super) fn appended(
 /// - requires: `read` is what the run of `operand`'s held computation returned;
 ///   `path` and `operand` are the transport's in `motive`.
 /// - ensures: the transport of `read` along `path` in `motive` queued when
-///   `read` is no held endpoint; otherwise the transport stuck as the evaluator
-///   leaves one no rule moves, over `operand`, on the computation stack.
-/// - fails: [`EvalFault::TransportedNonPath`] for a stuck run along a path that
-///   is no neutral; as [`super::held_endpoint`] and the spine's growth
-///   otherwise.
+///   `read` is no held endpoint. Otherwise the run stuck, and the transport
+///   sticks as the kernel reads a stuck run: on the spine of a `path` that is a
+///   held endpoint, which the kernel runs first, and else over `operand` as
+///   [`super::stuck_transport`] places it. The stuck transport is left on the
+///   computation stack.
+/// - fails: as [`super::held_endpoint`], [`super::stuck_transport`] and the
+///   spine's growth.
 /// - panics: none.
 ///
 /// # Errors
@@ -1395,8 +1397,15 @@ pub(super) fn appended(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `spin(Z) then q` reads as `q` once `spin(Z)` returns the
-///   empty word; read as its call, the transport sticks.
+///   empty word; read as its call, the transport sticks on the call's held
+///   path; along a path that is no held endpoint it sticks on the call, so two
+///   transports along different paths over one stuck call refute at the
+///   continuations the kernel binds the call into. Holding the transport on
+///   such a path compares the paths before the call, which the kernel cannot
+///   replay.
 /// - witness: `eval::words::tests::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+/// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
+/// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
 #[spec(
     captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
     ensures: |ret| ret.is_err() || machine.tasks.len() > tasks || machine.comps.len() > comps,
@@ -1416,14 +1425,21 @@ pub(super) fn ran(
         machine.values.extend([path, read]);
         return Ok(());
     }
-    let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(path)
+    // The kernel reads a stuck run by its returned path first, then by its
+    // operand.
+    let path_held = super::held_endpoint(domain, path)
+        .map_err(EvalFault::Domain)?
+        .is_some();
+    let grown = if path_held && let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(path)
+    {
+        super::extend_spine(domain, neutral, crate::domain::Elimination::PathTransport {
+            motive,
+            value: operand,
+        })?
+    }
     else {
-        return Err(EvalFault::TransportedNonPath);
+        super::stuck_transport(domain, motive, (path, operand))?
     };
-    let grown = super::extend_spine(domain, neutral, crate::domain::Elimination::PathTransport {
-        motive,
-        value: operand,
-    })?;
     machine
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
