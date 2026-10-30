@@ -395,13 +395,15 @@
 //! A definition an operation lowered to carries the rules the operation was
 //! written as (kernel-term's `OperationRules`, the additive declaration kind
 //! `0x0E`), and admission decides them itself (`ruled`): each left side is the
-//! definition's own call over linear constructor patterns; every constructor
-//! names an admitted data declaration and every call the definition itself or
-//! a ruled definition admitted before it; the lexicographic path order, its
-//! precedence the admission order, puts each left side above its right; and
-//! every critical pair — two rules overlapping at the root, or a presented
-//! type's rule overlapping a pattern below it — normalizes to one term under
-//! the rules of every operation reached and every presented type built. A
+//! definition's own call over linear patterns of constructors, variables and
+//! calls; every constructor names an admitted data declaration and every call
+//! the definition itself or a ruled definition admitted before it; the
+//! lexicographic path order, its precedence the admission order, puts each
+//! left side above its right; and every critical pair — two rules overlapping
+//! at the root, a presented type's rule overlapping a pattern below it, or an
+//! operation's rule overlapping a call below it — normalizes to one term under
+//! the rules of every operation reached and every presented type built. A rule
+//! whose left side holds a call is a law: no leaf of the body is its arm. A
 //! system that fails is refused `OperationRulesRefused`, naming the rule and
 //! its fault. The witnesses are
 //! `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`

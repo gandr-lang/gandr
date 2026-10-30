@@ -113,12 +113,17 @@
 //!
 //! A `theory` block's laws call for the same reading when the sequent one
 //! cannot shape them. A law `turn(unturn(x)) ==> x` applies an operation where
-//! an argument stands; a family's operation rule of that shape is declined,
-//! because the operation's body is compiled from its rules and no producer
-//! pattern matches a call. A presentation's laws compile to nothing — a model
+//! an argument stands. A presentation's laws compile to nothing — a model
 //! satisfies them — so [`elaborate_theory_desc`] reads such a law over terms
-//! ([`DescReading::Shape`]), where it rewrites a call wherever the call stands,
-//! and [`elaborate_data_desc`] declines it ([`DescReading::Generative`]). Over
+//! ([`DescReading::Shape`]), where it rewrites a call wherever the call stands.
+//! A `data` family's rule of that shape, `add(add(m, n), k) ==> add(m, add(n,
+//! k))`, is a law of the family the same way, and [`elaborate_data_desc`] reads
+//! it over terms too ([`DescReading::Generative`]): no producer pattern
+//! matches a call, so the operation compiles from its other rules, and the
+//! kernel decides the law converges with them. A `data` block's description
+//! carries no sort index, its constructors fixing the indices, so its laws are
+//! read as written; a description over an indexed sort declines them under
+//! this reading. Over
 //! unindexed sorts a critical pair of well-sorted laws is well sorted: two
 //! subterms unify only under one operation, whose argument sorts are fixed.
 //! Over an indexed sort that fails for the terms as written: in
@@ -947,23 +952,24 @@ quenchant_shape::reason_enum! {
 /// - executable: none — a reading is a tag the elaboration branches on.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the same law nesting an operation on its left is declined
-///   under the generative reading, read over terms under the shape reading, and
-///   under the shape reading over an indexed sort read with its indices, or
-///   declined when another law of the block has no sorting.
+/// - hypothesis: L3 — the same law nesting an operation on its left is read
+///   over terms under either reading over unindexed sorts, declined by an
+///   indexed family, and under the shape reading over an indexed sort read with
+///   its indices, or declined when another law of the block has no sorting.
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DescReading
 {
     /// A family's own rules: an operation face compiles to the operation's
-    /// body, so a face the sequent reading cannot shape is declined.
+    /// body. A face nesting an operation where the sequent reading cannot
+    /// shape it, `add(add(m, n), k)`, is read over terms when the family is
+    /// unindexed `data`, and declined otherwise.
     Generative,
     /// A presentation's laws: a face the sequent reading cannot shape — an
     /// operation applied where an argument stands, `turn(unturn(x))`, or a call
     /// with no argument to cut against, `f(x) ==> zero()` — is read over terms,
     /// over an indexed sort with the indices its sorting fixes; where a law of
-    /// the block has no sorting, it is declined as under the generative
-    /// reading.
+    /// the block has no sorting, it is declined.
     Shape,
 }
 
@@ -1015,11 +1021,13 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   neither: it fires where the kernel's second-order reading or a row says,
 ///   which neither store knows.
 /// - ensures: a face calls for terms when it passed the operation gate and is
-///   constructor-headed, or, under [`DescReading::Shape`] with every sort
+///   constructor-headed; or, under [`DescReading::Shape`] with every sort
 ///   unindexed or the block indexed — every face sorted by [`Indexing::face`]
 ///   and none instantiating a variable or firing under a row — when its sequent
 ///   elaboration fails with [`ElaborateError::UnsupportedShape`] or
-///   [`ElaborateError::EmptyOperation`]; otherwise that failure declines the
+///   [`ElaborateError::EmptyOperation`]; or, for a `data` declaration with
+///   every sort unindexed, when it fails with
+///   [`ElaborateError::UnsupportedShape`]; otherwise that failure declines the
 ///   face.
 /// - ensures: `presented` is present exactly when a face calls for terms, and
 ///   then holds every face that passed the operation gate and, if it does not
@@ -1177,9 +1185,13 @@ fn elaborate_desc<G>(
             None => indexing = Maybe::Absent(indexed_reading::Absent::Unsupported),
         }
     }
-    let laws_over_terms = reading == DescReading::Shape
-        && (desc.sorts.iter().all(|sort| sort.indices.is_empty())
-            || matches!(indexing, Maybe::Present(_)));
+    let unindexed = desc.sorts.iter().all(|sort| sort.indices.is_empty());
+    let laws_over_terms =
+        reading == DescReading::Shape && (unindexed || matches!(indexing, Maybe::Present(_)));
+    // A data family's rule nesting an operation is a law of the family: its
+    // operations compile from their other rules, and the term reading holds it
+    // beside them. Over an indexed family it stays declined.
+    let nested_over_terms = laws_over_terms || (unindexed && desc.polarity == DeclPolarity::Data);
     let mut read: Vec<(AdmittedFaceIndex, Cow<'_, RuleFace>)> =
         Vec::with_capacity(desc.rules.len());
     let mut presents = false;
@@ -1201,6 +1213,7 @@ fn elaborate_desc<G>(
                 {
                     Ok(true)
                 },
+                Err(ElaborateError::UnsupportedShape) if nested_over_terms => Ok(true),
                 Err(error) => Err(error),
             }
         };
@@ -3932,9 +3945,9 @@ mod tests
             elaborate_data_desc(&nat_with([add_op()], [add_zero_face()])).presented,
             "a family of operation rules has no term reading"
         );
-        // A law applying an operation where an argument stands: declined by a
-        // family, read over terms by a presentation, beside a law the sequent
-        // reading shapes and a law no reading admits.
+        // A law applying an operation where an argument stands: read over
+        // terms by an unindexed family as by a presentation, beside a law the
+        // sequent reading shapes and a law no reading admits.
         let input = || [SortRef::new("x", "Nat")];
         let call = |name: &str, inner: FreeTerm| FreeTerm::op(name, [inner]);
         let laws = nat_with([add_op(), op("turn", input()), op("unturn", input())], [
@@ -3945,27 +3958,28 @@ mod tests
         ]);
         let family = elaborate_data_desc(&laws);
         assert_eq!(
-            vec![
-                (
-                    DeclinedFaceIndex::from(0_usize),
-                    ElaborateError::UnsupportedShape
-                ),
-                (
-                    DeclinedFaceIndex::from(2_usize),
-                    ElaborateError::UnsupportedShape
-                ),
-                (
-                    DeclinedFaceIndex::from(3_usize),
-                    ElaborateError::LhsNotOperation
-                ),
-            ],
+            vec![(
+                DeclinedFaceIndex::from(3_usize),
+                ElaborateError::LhsNotOperation
+            )],
             family.declined_faces,
-            "a family declines the nested laws"
+            "a family declines only the law no reading admits"
         );
+        let Maybe::Present(ref read) = family.presented
+        else {
+            panic!("the family reads its nested laws over terms");
+        };
         assert_eq!(
-            Maybe::Absent(presented_reading::Absent::NoTermFace),
-            family.presented,
-            "and has no term reading"
+            vec![
+                AdmittedFaceIndex::from(0_usize),
+                AdmittedFaceIndex::from(1_usize),
+                AdmittedFaceIndex::from(2_usize),
+            ],
+            read.faces
+                .iter()
+                .map(|&(index, _)| index)
+                .collect::<Vec<_>>(),
+            "every family face that passed is read over terms, in rule order"
         );
         let presentation = elaborate_theory_desc(&laws);
         assert_eq!(
@@ -3997,15 +4011,34 @@ mod tests
                 .collect::<Vec<_>>(),
             "every law that passed is read over terms, in rule order"
         );
-        // Over an indexed sort a law with no sorting, `add(Zero(), n)` naming
-        // a constructor or `x ==> x` applying no operation, leaves the block
-        // no indexed reading, so the nested laws stay declined as a family
-        // declines them.
+        // Over an indexed sort a family declines the nested laws. A law with no
+        // sorting, `add(Zero(), n)` naming a constructor or `x ==> x` applying
+        // no operation, leaves a presentation no indexed reading, so its
+        // nested laws stay declined as the family declines them.
         let mut indexed = laws;
         indexed.sorts = [SortDesc::family("Nat", DeclPolarity::Data, [
             SortIndex::new("n", "Nat"),
         ])]
         .into();
+        let family = elaborate_data_desc(&indexed);
+        assert_eq!(
+            vec![
+                (
+                    DeclinedFaceIndex::from(0_usize),
+                    ElaborateError::UnsupportedShape
+                ),
+                (
+                    DeclinedFaceIndex::from(2_usize),
+                    ElaborateError::UnsupportedShape
+                ),
+                (
+                    DeclinedFaceIndex::from(3_usize),
+                    ElaborateError::LhsNotOperation
+                ),
+            ],
+            family.declined_faces,
+            "an indexed family declines the nested laws"
+        );
         let presentation = elaborate_theory_desc(&indexed);
         assert_eq!(
             family.declined_faces, presentation.declined_faces,

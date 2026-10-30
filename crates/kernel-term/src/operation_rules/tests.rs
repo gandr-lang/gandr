@@ -387,17 +387,21 @@ fn a_malformed_rule_is_refused_by_its_fault()
     let mut scope = free!(0, 1);
     scope.operations.push((ConstantIndex::from(1_usize), add()));
     let results = OperationNode::Results(FieldCount::from(0_usize));
-    let cases: [(OperationRule, OperationRuleFault); 8] = [
+    let cases: [(OperationRule, OperationRuleFault); 9] = [
         (
             rule(&[op!(1_usize, 1_usize), var!(0_u32)], &[var!(0_u32)]),
             OperationRuleFault::Head,
         ),
         (
+            rule(&[op!(2_usize, 1_usize), results], &[ctor!(ZERO)]),
+            OperationRuleFault::NotAPattern,
+        ),
+        (
             rule(
-                &[op!(2_usize, 1_usize), op!(2_usize, 1_usize), var!(0_u32)],
+                &[op!(2_usize, 1_usize), op!(3_usize, 1_usize), var!(0_u32)],
                 &[var!(0_u32)],
             ),
-            OperationRuleFault::NotAPattern,
+            OperationRuleFault::UnknownOperation,
         ),
         (
             rule(&[op!(2_usize, 1_usize), var!(0_u32)], &[
@@ -446,4 +450,119 @@ fn a_malformed_rule_is_refused_by_its_fault()
             "each malformation is named at its rule"
         );
     }
+}
+
+/// `add`'s rules at position 1 with `law` after them.
+///
+/// # Specification
+/// trivial.
+fn add_with(law: OperationRule) -> Vec<OperationRule>
+{
+    let mut rules = add().rules().to_vec();
+    rules.push(law);
+    rules
+}
+
+/// `add(add(m, n), k)`, the left side of every law over add's own call.
+///
+/// # Specification
+/// trivial.
+fn nested() -> [OperationNode; 5]
+{
+    [
+        op!(1_usize, 2_usize),
+        op!(1_usize, 2_usize),
+        var!(0_u32),
+        var!(1_u32),
+        var!(2_u32),
+    ]
+}
+
+#[test]
+fn a_law_over_its_own_call_converges_1510()
+{
+    let scope = free!(0, 1);
+    // `add(add(m, n), k) ==> add(m, add(n, k))` overlaps add's two rules at
+    // its inner call and itself there; each pair joins through the law.
+    let associative = rule(&nested(), &[
+        op!(1_usize, 2_usize),
+        var!(0_u32),
+        op!(1_usize, 2_usize),
+        var!(1_u32),
+        var!(2_u32),
+    ]);
+    assert_eq!(
+        decide!(add_with(associative), 1_usize, &scope),
+        Ok(()),
+        "associativity converges with add's rules"
+    );
+}
+
+#[test]
+fn a_law_parting_at_its_call_is_refused_1510()
+{
+    let scope = free!(0, 1);
+    // `add(add(Zero, n), k)` is `k` by the law and `add(n, k)` by add's first
+    // rule at the inner call.
+    let parting = rule(&nested(), &[var!(2_u32)]);
+    assert_eq!(
+        decide!(add_with(parting), 1_usize, &scope),
+        Err(OperationRuleRefusal {
+            rule: RuleIndex::from(2_usize),
+            fault: OperationRuleFault::Diverges(Overlapped::Operation(RuleIndex::from(0_usize))),
+        }),
+        "the law parts from add's first rule at its call"
+    );
+}
+
+#[test]
+fn a_law_over_an_earlier_call_is_decided_against_its_rules_1510()
+{
+    let mut scope = free!(0, 1);
+    scope.operations.push((ConstantIndex::from(1_usize), add()));
+    // `double` at position 2, with a law over add's call.
+    let double = |law: &[OperationNode]| {
+        vec![
+            rule(&[op!(2_usize, 1_usize), ctor!(ZERO)], &[ctor!(ZERO)]),
+            rule(&[op!(2_usize, 1_usize), ctor!(SUCC), var!(0_u32)], &[
+                ctor!(SUCC),
+                ctor!(SUCC),
+                op!(2_usize, 1_usize),
+                var!(0_u32),
+            ]),
+            rule(
+                &[
+                    op!(2_usize, 1_usize),
+                    op!(1_usize, 2_usize),
+                    var!(0_u32),
+                    var!(1_u32),
+                ],
+                law,
+            ),
+        ]
+    };
+    let distributes = [
+        op!(1_usize, 2_usize),
+        op!(2_usize, 1_usize),
+        var!(0_u32),
+        op!(2_usize, 1_usize),
+        var!(1_u32),
+    ];
+    assert_eq!(
+        decide!(double(&distributes), 2_usize, &scope),
+        Ok(()),
+        "`double(add(m, n)) ==> add(double(m), double(n))` joins with add's rules"
+    );
+    let forgets = [op!(2_usize, 1_usize), var!(0_u32)];
+    assert_eq!(
+        decide!(double(&forgets), 2_usize, &scope),
+        Err(OperationRuleRefusal {
+            rule: RuleIndex::from(2_usize),
+            fault: OperationRuleFault::Diverges(Overlapped::Called {
+                constant: ConstantIndex::from(1_usize),
+                rule: RuleIndex::from(0_usize),
+            }),
+        }),
+        "`double(add(Zero, n))` is `Zero` by the law and `double(n)` by add's rule"
+    );
 }

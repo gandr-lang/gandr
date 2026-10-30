@@ -13,19 +13,23 @@
 //! side is: an operation, the admitted definition at its position applied to
 //! the next subterms its arity counts; a constructor of an admitted data
 //! declaration; the results of a many-output operation; or a pattern variable.
-//! A left side is the operation's own call over constructor patterns, linear,
-//! its variables numbered by first occurrence; a right side reuses them any
-//! number of times.
+//! A left side is the operation's own call over linear patterns, its
+//! variables numbered by first occurrence; a right side reuses them any number
+//! of times. A pattern is constructors, variables and calls. A rule whose left
+//! side holds a call, `add(add(m, n), k) ==> add(m, add(n, k))`, is a law of
+//! the operation: it is never an arm of the first-match function, whose inputs
+//! are constructor terms, and convergence makes it hold of that function.
 //!
 //! The decision has three parts. Termination is the lexicographic path order
 //! of [`gandr_theory_path_orders::lpo`] over each rule, its derivation
 //! replayed, with an operation above every operation admitted before it and
 //! above every constructor and results tuple; an operation calls only itself
 //! and operations admitted before it, so the precedence is the admission
-//! order. The critical pairs are every two rules whose left sides
-//! unify at the root, and every rule of a presented type that unifies with a
-//! constructor pattern below the root; the kernel enumerates them by
-//! unification of linear patterns. Both reducts of each pair normalize under
+//! order. The critical pairs are every two rules whose left sides unify at the
+//! root, every rule of a presented type that unifies with a constructor
+//! pattern below the root, and every rule of an operation that unifies with a
+//! call of it below the root; the kernel enumerates them by unification of
+//! linear patterns. Both reducts of each pair normalize under
 //! the operation's rules, the rules of every operation they reach and the
 //! rules of every presented type their constructors belong to, and their
 //! normal forms must be one term. Fuel bounds the work, and a pair the fuel
@@ -199,8 +203,8 @@ pub enum OperationRuleFault
     /// The left side is not the operation's own call at the arity its first
     /// rule states.
     Head,
-    /// The left side's arguments hold an operation or a results tuple: a
-    /// pattern is constructors and variables.
+    /// The left side's arguments hold a results tuple: a pattern is
+    /// constructors, variables and calls.
     NotAPattern,
     /// A results tuple stands below a right side's root.
     Results,
@@ -231,7 +235,8 @@ pub enum OperationRuleFault
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Overlapped
 {
-    /// An earlier rule of the same operation, overlapping at the root.
+    /// A rule of the same operation: an earlier one overlapping at the root,
+    /// or any one overlapping a call of the operation below the root.
     Operation(RuleIndex),
     /// A rule of the presented type at `family`, overlapping a pattern below
     /// the root.
@@ -240,6 +245,15 @@ pub enum Overlapped
         /// The presented type's position.
         family: ConstantIndex,
         /// The rule's position in its presentation.
+        rule: RuleIndex,
+    },
+    /// A rule of the ruled definition at `constant`, admitted before,
+    /// overlapping a call of it below the root.
+    Called
+    {
+        /// The called definition's position.
+        constant: ConstantIndex,
+        /// The rule's position among its rules.
         rule: RuleIndex,
     },
 }
@@ -353,14 +367,16 @@ impl OperationRules
     /// - requires: nothing — the rules may be arbitrary producer bytes, and
     ///   `scope` answers for the declarations admitted below `own`.
     /// - ensures: `Ok(())` exactly when every rule's left side is `own`'s call
-    ///   at the first rule's arity over linear constructor patterns, every side
-    ///   is one term whose constructors `scope` knows and whose operations are
-    ///   `own` at that arity or a ruled definition below `own` at its arity, a
-    ///   results tuple stands only at a right side's root, every right-side
-    ///   variable is bound on the left, the path order puts each left side
-    ///   above its right, and both reducts of every critical pair normalize to
-    ///   one term within `fuel`. Otherwise the first refused rule, in written
-    ///   order, and its fault; a pair is reported at its later rule.
+    ///   at the first rule's arity over linear patterns of constructors,
+    ///   variables and calls, every side is one term whose constructors `scope`
+    ///   knows and whose operations are `own` at that arity or a ruled
+    ///   definition below `own` at its arity, a results tuple stands only at a
+    ///   right side's root, every right-side variable is bound on the left, the
+    ///   path order puts each left side above its right, and both reducts of
+    ///   every critical pair normalize to one term within `fuel`. Otherwise the
+    ///   first refused rule, in written order, and its fault; a pair is
+    ///   reported at its later rule, or at the rule holding the call it
+    ///   overlaps.
     /// - provides: the kernel's own decision that an operation's rules read as
     ///   equations mean what its first-match function computes.
     /// - fails: as `- ensures:`.
@@ -376,13 +392,18 @@ impl OperationRules
     ///   pair rewriting apart is refused at the later rule naming the earlier,
     ///   a growing rule is unoriented, an orthogonal recursive operation over
     ///   an earlier one converges, a pattern overlapping a presented type's
-    ///   rule is decided against it, and each malformation is named.
+    ///   rule is decided against it, a law over a call of its own operation or
+    ///   an earlier one converges, a law parting from a rule at its call is
+    ///   refused naming that rule, and each malformation is named.
     /// - witness: `operation_rules::tests::two_overlapping_rules_that_join_converge`
     /// - witness: `operation_rules::tests::two_overlapping_rules_that_part_are_refused_at_the_later`
     /// - witness: `operation_rules::tests::a_growing_rule_is_unoriented`
     /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
     /// - witness: `operation_rules::tests::a_pattern_below_a_presented_rule_is_decided_against_it`
     /// - witness: `operation_rules::tests::a_malformed_rule_is_refused_by_its_fault`
+    /// - witness: `operation_rules::tests::a_law_over_its_own_call_converges_1510`
+    /// - witness: `operation_rules::tests::a_law_parting_at_its_call_is_refused_1510`
+    /// - witness: `operation_rules::tests::a_law_over_an_earlier_call_is_decided_against_its_rules_1510`
     #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.0.len()))]
     #[inline]
     pub fn converge<S>(
@@ -456,6 +477,42 @@ impl OperationRules
                             )
                         })?;
                     }
+                }
+            }
+            for (at, &node) in rule.left.iter().enumerate().skip(1) {
+                let OperationNode::Operation { constant, .. } = node
+                else {
+                    continue;
+                };
+                let called = if constant == own {
+                    Some(self)
+                }
+                else {
+                    scope.rules(constant)
+                };
+                for (index, other) in called
+                    .into_iter()
+                    .flat_map(|called| called.0.iter())
+                    .enumerate()
+                {
+                    if reader
+                        .interior_pair(rule, other, Position(at), &mut scratch)
+                        .is_none()
+                    {
+                        continue;
+                    }
+                    let overlapped = if constant == own {
+                        Overlapped::Operation(RuleIndex::from(index))
+                    }
+                    else {
+                        Overlapped::Called {
+                            constant,
+                            rule: RuleIndex::from(index),
+                        }
+                    };
+                    reader.join(&system, fuel, &mut scratch).map_err(|joined| {
+                        refusal(RuleIndex::from(later), joined.fault(overlapped))
+                    })?;
                 }
             }
         }
@@ -670,6 +727,36 @@ where
         Some(next)
     }
 
+    /// Check that `constant` at `stated` arguments names the ruled definition
+    /// at its arity, or a ruled definition admitted before it at its own.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`OperationRuleFault::UnknownOperation`] otherwise.
+    fn known(
+        &self,
+        constant: ConstantIndex,
+        stated: FieldCount,
+    ) -> Result<(), OperationRuleFault>
+    {
+        let (own, arity) = self.own;
+        let known = if constant == own {
+            stated == arity
+        }
+        else {
+            constant < own
+                && self.scope.rules(constant).and_then(OperationRules::arity) == Some(stated)
+        };
+        if known {
+            Ok(())
+        }
+        else {
+            Err(OperationRuleFault::UnknownOperation)
+        }
+    }
+
     /// The first fault of `rule`, or none.
     ///
     /// # Specification
@@ -713,9 +800,11 @@ where
                     }
                     bound = bound.saturating_add(1);
                 },
-                OperationNode::Operation { .. } | OperationNode::Results(_) => {
-                    return Err(OperationRuleFault::NotAPattern);
-                },
+                OperationNode::Operation {
+                    constant,
+                    arity: stated,
+                } => self.known(constant, stated)?,
+                OperationNode::Results(_) => return Err(OperationRuleFault::NotAPattern),
             }
         }
         if self.extent(&rule.left, Position(0)) != Some(Position(rule.left.len())) {
@@ -726,19 +815,7 @@ where
                 OperationNode::Operation {
                     constant,
                     arity: stated,
-                } => {
-                    let known = if constant == own {
-                        stated == arity
-                    }
-                    else {
-                        constant < own
-                            && self.scope.rules(constant).and_then(OperationRules::arity)
-                                == Some(stated)
-                    };
-                    if !known {
-                        return Err(OperationRuleFault::UnknownOperation);
-                    }
-                },
+                } => self.known(constant, stated)?,
                 OperationNode::Constructor { family, tag } => {
                     if self.scope.fields(family, tag).is_none() {
                         return Err(OperationRuleFault::UnknownConstructor);
@@ -970,42 +1047,42 @@ where
         Some(())
     }
 
-    /// Write the two reducts of `presented`'s left side overlapping `rule`'s
-    /// left side at the pattern node `at` to `scratch`, or report that they do
-    /// not unify there.
+    /// Write the two reducts of `other`'s left side overlapping `rule`'s left
+    /// side at the pattern node `at` to `scratch`, or report that they do not
+    /// unify there.
     ///
     /// # Specification
-    /// - requires: `rule` validated; `presented` a presented rule over
-    ///   operation nodes.
-    /// - ensures: `Some(())` exactly when the presented left side unifies with
-    ///   the subterm at `at`; `scratch.left` then holds `rule`'s right side
-    ///   under the unifier, and `scratch.right` its left side with that subterm
-    ///   rewritten by `presented`, the presented rule's variables numbered
-    ///   after `rule`'s.
+    /// - requires: `rule` validated; `other` a presented rule over operation
+    ///   nodes, or an operation's rule.
+    /// - ensures: `Some(())` exactly when `other`'s left side unifies with the
+    ///   subterm at `at`; `scratch.left` then holds `rule`'s right side under
+    ///   the unifier, and `scratch.right` its left side with that subterm
+    ///   rewritten by `other`, `other`'s variables numbered after `rule`'s.
     /// - panics: none.
     /// - executable: none — as [`Self::root_pair`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::a_pattern_below_a_presented_rule_is_decided_against_it`
+    /// - witness: `operation_rules::tests::a_law_parting_at_its_call_is_refused_1510`
     fn interior_pair(
         &self,
         rule: &OperationRule,
-        presented: &OperationRule,
+        other: &OperationRule,
         at: Position,
         scratch: &mut Scratch,
     ) -> Option<()>
     {
         let offset = variables(&rule.left);
         let end = self.extent(&rule.left, at)?;
-        self.unify((&rule.left, at), (&presented.left, Position(0)), scratch)?;
+        self.unify((&rule.left, at), (&other.left, Position(0)), scratch)?;
         scratch.left.clear();
         scratch.right.clear();
         let unmoved = Ordinal(0);
         instantiate(
             &rule.right,
             (&scratch.first, unmoved),
-            &presented.left,
+            &other.left,
             offset,
             &mut scratch.left,
         );
@@ -1014,12 +1091,12 @@ where
         instantiate(
             before,
             (&scratch.first, unmoved),
-            &presented.left,
+            &other.left,
             offset,
             &mut scratch.right,
         );
         instantiate(
-            &presented.right,
+            &other.right,
             (&scratch.second, offset),
             &rule.left,
             unmoved,
@@ -1028,7 +1105,7 @@ where
         instantiate(
             after,
             (&scratch.first, unmoved),
-            &presented.left,
+            &other.left,
             offset,
             &mut scratch.right,
         );

@@ -5,7 +5,7 @@ error[UndescribedMember.NestedOperation]: this member rewrites a term with an op
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `LawfulSpecificationMonad` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #1510 <https://github.com/gandr-lang/gandr/issues/1510>
+   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
 
 error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
    ╭▸ corpus/pathological/specification/specification-monad.gandr:29:3
@@ -14,4 +14,4 @@ error[UndescribedMember.NestedOperation]: this member rewrites a term with an op
    │   ━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `IncludedSpecificationMonad` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #1510 <https://github.com/gandr-lang/gandr/issues/1510>
+   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>

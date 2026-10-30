@@ -1,6 +1,6 @@
 /// `specification-monads`: Specification monads.
 /// Implemented: state's weakest-precondition observation as a handler of state into the predicate transformers, checked as a model of state's laws, and as a fold of the program's tree, so the normaliser computes a precondition, the increment pairs with its evidence at one postcondition and at every postcondition, and the stopped program with its evidence below the return specification at every postcondition.
-/// Not implemented: the order named as a definition, `refines(v, w)`; a precondition through a scope, which waits on #2754; the monad's laws beside its order, on #1510; #2759 owes it.
+/// Not implemented: the order named as a definition, `refines(v, w)`; a precondition through a scope, which waits on #2754; the monad's laws beside its order, on #4128; #2759 owes it.
 // A program over state is specified by the predicate transformer its
 // observation computes, `((A, S) => Type, S) => Type`: from a postcondition
 // on the answer and the final state, and an initial state, to the
