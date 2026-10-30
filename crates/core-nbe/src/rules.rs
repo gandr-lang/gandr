@@ -3047,41 +3047,38 @@ pub fn unread_call(
     }
 }
 
-/// The continuation a call on one side passes its value on to, when the
-/// computation is a bind of such a call.
+/// The continuation a computation on one side that returns passes its value
+/// on to, when the computation is a bind of it.
 ///
 /// # Specification
 /// - requires: nothing — dangling ids are admissible input and refused.
 /// - ensures: `Some(continuation)` exactly when `comp` is a neutral headed by
-///   an intuitionistic variable whose calls [`Definitions::calls`] answers
-///   [`Calls::Return`] for, whose spine forces, applies and projects it and
-///   then, last, binds it into `continuation`, and whose continuation is a
-///   source body reading the value it binds, under applications a force of
-///   another variable. `None` otherwise.
+///   an intuitionistic variable whose spine, last, binds into `continuation`,
+///   whose continuation is a source body reading the value it binds, and whose
+///   spine before the bind returns: it forces, applies and projects a variable
+///   whose calls [`Definitions::calls`] answers [`Calls::Return`] for, or it is
+///   one transport along the variable as a path (#4011). `None` otherwise.
 /// - provides: the planning half of [`Step::Hold`], and the continuation the
-///   machine runs at the call's returned endpoint when it takes the step.
+///   machine runs at the computation's returned endpoint when it takes the
+///   step.
 /// - fails: [`ConversionFault::Domain`] for a neutral or a closure that does
 ///   not resolve, [`ConversionFault::MachineInvariant`] for a source body the
 ///   core arena does not hold.
 /// - panics: none.
 /// - executable: none — the answer reads the domain's neutral and the core
 ///   arena's body of its continuation, which a predicate could only read again;
-///   the witness holds it to stated terms.
+///   the witnesses hold it to stated terms.
 ///
 /// # Errors
 /// - [`ConversionFault`] — as above.
 ///
-/// # Termination
-/// - reason: the `while let` walks the continuation's applications to their
-///   head, not recursion.
-/// - measure: the applications left above the head.
-///
 /// # Adequacy
-/// - hypothesis: L3 — a call of a returning variable whose continuation passes
-///   its value to another variable's call is held, and the same call at no
+/// - hypothesis: L3 — a call of a returning variable, or a transport stuck on a
+///   path, whose continuation reads its value is held, and the same call at no
 ///   returning level is not; a continuation passing it to a different function
 ///   holds and then refutes.
 /// - witness: `machine::tests::a_returning_call_holds_where_its_continuation_passes_it_on_3824`
+/// - witness: `machine::tests::a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_4011`
 pub fn passed_call(
     core: &CoreArena,
     domain: &DomainArena,
@@ -3102,20 +3099,21 @@ pub fn passed_call(
     else {
         return Ok(None);
     };
-    if definitions.calls(level) == Calls::Unknown {
-        return Ok(None);
-    }
     let Some((&Elimination::Bind(continuation), prefix)) = held.spine().split_last()
     else {
         return Ok(None);
     };
-    let calls = prefix.iter().all(|elimination| {
-        matches!(
-            *elimination,
-            Elimination::Force | Elimination::Apply(_) | Elimination::Projection(_)
-        )
-    });
-    if !calls {
+    // A transport stuck on a path returns the value it moves, whatever the
+    // path; a call returns where its variable's calls are known to.
+    let returns = matches!(*prefix, [Elimination::PathTransport { .. }])
+        || (definitions.calls(level) == Calls::Return
+            && prefix.iter().all(|elimination| {
+                matches!(
+                    *elimination,
+                    Elimination::Force | Elimination::Apply(_) | Elimination::Projection(_)
+                )
+            }));
+    if !returns {
         return Ok(None);
     }
     let CompBody::Source(source) = domain.comp_closure(continuation).ok_or(dangling)?.body()
@@ -3123,22 +3121,6 @@ pub fn passed_call(
         return Ok(None);
     };
     let bound = DeBruijnIndex::from(0_u32);
-    let mut head = source;
-    while let Some(&gandr_core_term::Computation::Application(function, _)) = core.computation(head)
-    {
-        head = function;
-    }
-    let Some(&gandr_core_term::Computation::Force(function)) = core.computation(head)
-    else {
-        return Ok(None);
-    };
-    let passed_to_another = matches!(
-        core.value(function),
-        Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index != bound
-    );
-    if !passed_to_another {
-        return Ok(None);
-    }
     let support = core
         .computation_support(source)
         .ok_or(ConversionFault::MachineInvariant)?;
