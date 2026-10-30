@@ -3131,3 +3131,69 @@ fn a_shared_value_reads_back_once_at_each_binder_depth()
         "under two binders, the same domain value reads as index 1"
     );
 }
+
+#[test]
+fn a_spent_call_left_unrun_is_reported_held()
+{
+    use gandr_core_term::CertificateEquality;
+    use gandr_core_term::equal_certificate_syntax;
+
+    // `id := thunk (λx. return x)`, read alone and as `thunk (λy. force id · y)`.
+    let mut core = CoreArena::new();
+    let id = ConstantIndex::from(0_usize);
+    let bound = core.value_variable(Zone::Intuitionistic, innermost());
+    let returned = core.computation_return(bound);
+    let identity = core.computation_lambda(returned);
+    let body = core.value_thunk(identity);
+    let reference = core.value_constant(id);
+    let forced = core.computation_force(reference);
+    let argument = core.value_variable(Zone::Intuitionistic, innermost());
+    let applied = core.computation_application(forced, argument);
+    let wrapper = core.computation_lambda(applied);
+    let call = core.value_thunk(wrapper);
+
+    let mut chain = DefinitionChain::new();
+    let defined = chain.define(id, GlobalIndex::from(0_u32), Transparency::Manifest, &[]);
+    assert!(defined.is_ok());
+    let environment = DefinitionalEnvironment::new();
+    let chain = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(body))
+        .unwrap_or_else(|never| match never {});
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let read = |core: &mut CoreArena, mode, term| {
+        let mut domain = DomainArena::new();
+        let evaluated =
+            eval_value(core, &mut domain, definitions, ample(), term).expect("the term evaluates");
+        super::readback_value_spending(core, &mut domain, definitions, mode, ample(), evaluated)
+            .expect("the term reads back")
+    };
+
+    let (_, alone) = read(&mut core, ReadbackMode::Unfolding, reference);
+    assert_eq!(
+        alone,
+        super::SpentCalls::Ran,
+        "a spent body with no spine runs no call"
+    );
+    let (_, kept) = read(&mut core, ReadbackMode::ZeroUnfold, call);
+    assert_eq!(
+        kept,
+        super::SpentCalls::Ran,
+        "the mode that spends nothing holds nothing"
+    );
+    let (once, spent) = read(&mut core, ReadbackMode::Unfolding, call);
+    assert_eq!(
+        spent,
+        super::SpentCalls::Held,
+        "a forced and applied body is held"
+    );
+    let (twice, again) = read(&mut core, ReadbackMode::Unfolding, once);
+    assert_ne!(
+        equal_certificate_syntax(&core, twice, once),
+        CertificateEquality::Equal,
+        "a second evaluation reduces the held call"
+    );
+    assert_eq!(
+        again,
+        super::SpentCalls::Ran,
+        "and the reduct holds no call"
+    );
+}
