@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::string::ToString as _;
+use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -610,4 +611,227 @@ fn a_level_two_fill_names_x_by_its_columns()
             "{name} is refused by name"
         );
     }
+}
+
+/// The variable at `position` of a context `depth` binders deep.
+///
+/// # Specification
+/// trivial.
+fn at(
+    arena: &mut CoreArena,
+    depth: DeBruijnIndex,
+    position: DeBruijnIndex,
+) -> ValueId
+{
+    let index = u32::from(depth)
+        .saturating_sub(u32::from(position))
+        .saturating_sub(1);
+    variable(arena, DeBruijnIndex::from(index))
+}
+
+/// `f then g` over `Path(ℤ, start, _)`, returned.
+///
+/// # Specification
+/// trivial.
+fn composed(
+    arena: &mut CoreArena,
+    (carrier, start): (ValueTypeId, ValueId),
+    (first, second): (ValueId, ValueId),
+) -> ValueId
+{
+    let composite = identity::then(arena, carrier, start, first, second);
+    arena.value_returned(composite)
+}
+
+/// `(f : Path(ℤ, x, y)) => (p : Path(ℤ, x, y)) => (a : Path(Path(ℤ, x, y), f,
+/// p)) => (g : Path(ℤ, y, z)) => (q : Path(ℤ, y, z)) => (b : Path(Path(ℤ, y,
+/// z), g, q)) => Path(Path(ℤ, x, z), f then g, p then q)`, thunked, under
+/// `x`, `y` and `z`: the type of a horizontal composite of two 2-cells.
+///
+/// # Specification
+/// trivial.
+fn horizontal(
+    arena: &mut CoreArena,
+    integers: Integers,
+) -> ValueTypeId
+{
+    let place = |arena: &mut CoreArena, depth: u32, position: u32| {
+        at(
+            arena,
+            DeBruijnIndex::from(depth),
+            DeBruijnIndex::from(position),
+        )
+    };
+    let mut domains = Vec::new();
+    for (depth, (start, end)) in [(3_u32, (0_u32, 1_u32)), (4, (0, 1))] {
+        let (start, end) = (place(arena, depth, start), place(arena, depth, end));
+        domains.push(arena.value_type_path(integers.carrier, start, end));
+    }
+    let (left, right, top, bottom) = (
+        place(arena, 5, 0),
+        place(arena, 5, 1),
+        place(arena, 5, 3),
+        place(arena, 5, 4),
+    );
+    let column = arena.value_type_path(integers.carrier, left, right);
+    domains.push(arena.value_type_path(column, top, bottom));
+    for depth in [6_u32, 7] {
+        let (start, end) = (place(arena, depth, 1), place(arena, depth, 2));
+        domains.push(arena.value_type_path(integers.carrier, start, end));
+    }
+    let (left, right, top, bottom) = (
+        place(arena, 8, 1),
+        place(arena, 8, 2),
+        place(arena, 8, 6),
+        place(arena, 8, 7),
+    );
+    let column = arena.value_type_path(integers.carrier, left, right);
+    domains.push(arena.value_type_path(column, top, bottom));
+    let (first, last) = (place(arena, 9, 0), place(arena, 9, 2));
+    let (top, bottom, next_top, next_bottom) = (
+        place(arena, 9, 3),
+        place(arena, 9, 4),
+        place(arena, 9, 6),
+        place(arena, 9, 7),
+    );
+    let lo = composed(arena, (integers.carrier, first), (top, next_top));
+    let hi = composed(arena, (integers.carrier, first), (bottom, next_bottom));
+    let composites = arena.value_type_path(integers.carrier, first, last);
+    let result = arena.value_type_path(composites, lo, hi);
+    let mut codomain = arena.comp_type_returner(result);
+    for (rank, &domain) in domains.iter().enumerate().rev() {
+        if rank.saturating_add(1) < domains.len() {
+            let thunked = arena.value_type_thunk(codomain);
+            codomain = arena.comp_type_returner(thunked);
+        }
+        codomain = arena.comp_type_pi(domain, codomain);
+    }
+    arena.value_type_thunk(codomain)
+}
+
+/// Example 1.4 of the naturality paper over `ℤ`: the first column of `[2](1,
+/// 1)` lifts, its 1-cells along their own carrier `Path(ℤ, x, y)`, and the
+/// second stays.
+#[test]
+fn two_columns_fill_their_cylinders_by_induction()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    let place = |arena: &mut CoreArena, depth: u32, position: u32| {
+        at(
+            arena,
+            DeBruijnIndex::from(depth),
+            DeBruijnIndex::from(position),
+        )
+    };
+    // `x, y, z : ℤ`, `h` the generator, then the first column's cylinder:
+    // `f`, `p` and `a` lifted, `aa` the square `a` fills.
+    let mut context_types = Vec::from([integers.carrier; 3]);
+    context_types.push(horizontal(&mut arena, integers));
+    for (depth, ends) in [(4_u32, None), (5, None), (6, Some((4, 5)))]
+        .into_iter()
+        .chain([(7, None), (8, None), (9, Some((7, 8)))])
+        .chain([(10, Some((4, 7))), (11, Some((5, 8)))])
+    {
+        let (left, right) = (place(&mut arena, depth, 0), place(&mut arena, depth, 1));
+        let column = arena.value_type_path(integers.carrier, left, right);
+        context_types.push(match ends {
+            None => column,
+            Some((lo, hi)) => {
+                let (lo, hi) = (place(&mut arena, depth, lo), place(&mut arena, depth, hi));
+                arena.value_type_path(column, lo, hi)
+            },
+        });
+    }
+    let (left, right) = (place(&mut arena, 12, 0), place(&mut arena, 12, 1));
+    let column = arena.value_type_path(integers.carrier, left, right);
+    let [fm, fa, pa, pp, am, ap] =
+        [4, 6, 9, 8, 10, 11].map(|position| place(&mut arena, 12, position));
+    let outer = arena.value_type_path(column, fm, pp);
+    let source = composed(&mut arena, (column, fm), (am, pa));
+    let target = composed(&mut arena, (column, fm), (fa, ap));
+    context_types.push(arena.value_type_path(outer, source, target));
+    // The second column, `g`, `q` and `b`, fixed.
+    for depth in [13_u32, 14] {
+        let (left, right) = (place(&mut arena, depth, 1), place(&mut arena, depth, 2));
+        context_types.push(arena.value_type_path(integers.carrier, left, right));
+    }
+    let [left, right, top, bottom] = [1, 2, 13, 14].map(|position| place(&mut arena, 15, position));
+    let column = arena.value_type_path(integers.carrier, left, right);
+    context_types.push(arena.value_type_path(column, top, bottom));
+    let [
+        first,
+        last,
+        function,
+        fm,
+        fp,
+        fa,
+        pm,
+        pp,
+        pa,
+        am,
+        ap,
+        aa,
+        g0,
+        q0,
+        b0,
+    ] = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        .map(|position| place(&mut arena, 16, position));
+    let generator = arena.computation_return(function);
+    let [one] = [1_usize].map(CellCount::from);
+    let fill = arena.value_fill(
+        columns(Head(5, 11), [one, one]),
+        generator,
+        Box::from([fa, pa, aa, g0, q0, b0]),
+    );
+    let outside = arena.value_fill(
+        columns(Head(5, 11), [one, one]),
+        generator,
+        Box::from([fa, pm, am, g0, q0, b0]),
+    );
+    // `t⁻ then (v ↑ X)` to `(u ↑ X) then t⁺`, `u ↑ X` and `v ↑ X` the right
+    // whiskers of `f→` and `p→` by the second column's fixed 1-cells.
+    let applied = |arena: &mut CoreArena, entries: [ValueId; 6]| {
+        entries.into_iter().fold(function, |partial, entry| {
+            let forced = arena.computation_force(partial);
+            let applied = arena.computation_application(forced, entry);
+            arena.value_returned(applied)
+        })
+    };
+    let t_lo = applied(&mut arena, [fm, pm, am, g0, q0, b0]);
+    let t_hi = applied(&mut arena, [fp, pp, ap, g0, q0, b0]);
+    let ends = (integers.carrier, first, last);
+    let u_up = identity::whisker(&mut arena, ends, (fm, g0), identity::Whisker::Right, fa);
+    let v_up = identity::whisker(&mut arena, ends, (pm, q0), identity::Whisker::Right, pa);
+    let composites = arena.value_type_path(integers.carrier, first, last);
+    let u_lo = composed(&mut arena, (integers.carrier, first), (fm, g0));
+    let v_hi = composed(&mut arena, (integers.carrier, first), (pp, q0));
+    let sides = arena.value_type_path(composites, u_lo, v_hi);
+    let source = composed(&mut arena, (composites, u_lo), (t_lo, v_up));
+    let target = composed(&mut arena, (composites, u_lo), (u_up, t_hi));
+    let expected = arena.value_type_path(sides, source, target);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for ty in context_types {
+        context.binders().open(Zone::Intuitionistic, ty);
+    }
+    let square = synthesise_value(&mut context, fill)
+        .expect("the inductions on f→, p→ and a→ check against their cylinder")
+        .produced()
+        .id();
+    assert_eq!(
+        equivalent(&mut context, square, expected),
+        Ok(Agreement::Convertible),
+        "the square runs from `t⁻ then (v ↑ X)` to `(u ↑ X) then t⁺`"
+    );
+    assert!(
+        matches!(context.nesting().get(&fill), Some(&Nesting::Filled(_))),
+        "the fill is decided as its induction"
+    );
+    assert!(
+        matches!(
+            synthesise_value(&mut context, outside),
+            Err(CheckRefusal::NoFiller { at, .. }) if at == outside
+        ),
+        "a 1-cell of X beside a 2-cell outside it is refused"
+    );
 }
