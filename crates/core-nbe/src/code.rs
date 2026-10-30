@@ -2559,7 +2559,6 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - requires: roots belong to the held arenas.
     /// - ensures: equal live roots compare reflexively; every queued child must
     ///   also agree. Two written pure calls agree when their functions and
-// refused_by: container_member · collision: `///   their arguments do, each read through its own side's clos…` +6 more
     ///   their arguments do, each read through its own side's closure, a call
     ///   of a stated lambda read first as its reduct ([`Walk::reduced`]). Two
     ///   written transports along element paths agree when their paths and
@@ -2702,7 +2701,6 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             },
                         ) = (call, other_call)
                         {
-// refused_by: container_member · collision: `///   their arguments do, each read through its own side's clos…` +6 more
                             let one = self.atom(Node::Code(path, here))?;
                             let other = self.atom(Node::Code(other_path, there))?;
                             atoms.push((one, other));
