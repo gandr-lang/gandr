@@ -125,14 +125,16 @@
 //!
 //! # A fill holds its generator and its cells
 //!
-//! `fill[n, k](chain(m), t, (d₁, …, dₘ))` is the filler generator `t ↑ X` at
-//! the stratum `n` over `k`, its head and shape read as `compose[n, k]`'s are.
-//! `t` is read as a computation, a curried function of the chain's cells,
-//! and each `dᵢ` as a value: a cell, or a path between two cells, one of `X`.
-//! The node holds the three as written (`gandr_core_term::Value::Fill`). The
-//! checker reads `X` and its family off the cells' types, derives the square
-//! and the induction filling it, and the elaboration stands the node as that
-//! induction (the checker's `fill` module).
+//! `fill[n, k](chain(m), t, d)` is the filler generator `t ↑ X` at the stratum
+//! `n` over `k`, its head and shape read as `compose[n, k]`'s are. `t` is read
+//! as a computation, a curried function of the entries `d` lists, and each
+//! entry as a value. `d` lists the chain's cells, `(d₁, …, dₘ)`, or its whole
+//! pasting context in Catt's order, `(x₀, x₁, d₁, …, xₘ, dₘ)`; an entry is
+//! itself, or a path between two, one of `X`. The node holds the three as
+//! written (`gandr_core_term::Value::Fill`). The checker reads `X` and its
+//! family off the entries' types, derives the square and the induction
+//! filling it, and the elaboration stands the node as that induction (the
+//! checker's `fill` module).
 //!
 //! # A dependent `transport` reads its motive as a thunked telescope
 //!

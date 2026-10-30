@@ -426,20 +426,22 @@ pub enum Value
         realised: ComputationId,
     },
     /// The filler generator at a stated stratum, `fill[n, k](Γ, t, d)`: the
-    /// square `t ↑ X` for `t` a curried function of Γ's cells and `d` the
-    /// cells in vertex order, each cell of `X` written as a path between two.
-    /// The checker certifies the stratum, reads `t`'s sides as composites of
-    /// the cells and builds the square's based path induction; the
-    /// elaboration stands the node as that induction, so evaluation and the
-    /// kernel never meet it.
+    /// square `t ↑ X` for `t` a curried function of the entries `d` lists.
+    /// `d` lists Γ's cells in vertex order, or Γ's whole pasting context in
+    /// Catt's order, each entry of `X` written as a path between two. The
+    /// checker certifies the stratum, reads `t`'s path against the entries
+    /// and builds the square's based path induction; the elaboration stands
+    /// the node as that induction, so evaluation and the kernel never meet
+    /// it.
     Fill
     {
         /// The stratum and the shape the cells fill.
         composite: crate::compose::Composite,
-        /// `t`: the computation returning the curried function of the cells.
+        /// `t`: the computation returning the curried function of the entries.
         generator: ComputationId,
-        /// The cells, in vertex order: a cell, or a path between two cells
-        /// for a cell of `X`.
+        /// The entries: the cells in vertex order, or the vertices and the
+        /// cells in Catt's order, each an entry or a path between two for an
+        /// entry of `X`.
         cells: alloc::boxed::Box<[ValueId]>,
     },
     /// A session identity statement between two session codes: `bisim(a, b)`,
