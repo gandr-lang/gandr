@@ -21441,6 +21441,47 @@ fn arguments<'source>(
     )
 }
 
+/// Read the argument list of a call that takes exactly `N` arguments.
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `(`.
+/// - ensures: the `N` arguments in written order; `written` holds what it held
+///   before, whatever the answer.
+/// - fails: the list's own refusal first; then, for a list of any other count,
+///   the arity boundary at `site`.
+/// - panics: none.
+///
+/// # Errors
+/// The list's refusal, or [`LoweringRefusal::OutOfFragment`] with the arity
+/// boundary at the call.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a generic's one argument, a composite's two, a fill's
+///   three and a statement's four lower in written order; a composite of one
+///   argument, a fill of two and a statement one short are each refused by
+///   their count.
+/// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
+/// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
+/// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
+/// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
+#[spec(captures: before = written.len(), ensures: |_| written.len() == before)]
+fn exactly<'source, const N: usize>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Vec<NodeIndex>,
+) -> Result<[NodeIndex; N], LoweringRefusal<'source>>
+{
+    let start = written.len();
+    let read = arguments(site, cursor, written);
+    let count = written.len().saturating_sub(start);
+    let exact = written
+        .get(start ..)
+        .and_then(|appended| <[NodeIndex; N]>::try_from(appended).ok());
+    written.truncate(start);
+    read?;
+    exact.ok_or_else(|| site.out(FragmentBoundary::Arity(OperandCount::from(count))))
+}
+
 /// Read a comma-separated operand list between the tiles `open` and `close`
 /// into `written`.
 ///

@@ -68,8 +68,8 @@ use super::Plan;
 use super::Produced;
 use super::Reading;
 use super::Site;
-use super::arguments;
 use super::closed;
+use super::exactly;
 use super::exhausted;
 use super::identity::spelled;
 use crate::error::FragmentBoundary;
@@ -307,18 +307,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Value)?;
-        let start = self.operands.len();
-        let read = arguments(site, &mut cursor, &mut self.operands);
-        let count = self.operands.len().saturating_sub(start);
-        let written = [0_usize, 1_usize, 2_usize, 3_usize]
-            .map(|offset| self.operands.get(start.saturating_add(offset)).copied());
-        self.operands.truncate(start);
-        read?;
-        let (4_usize, [Some(source), Some(target), Some(forward), Some(backward)]) =
-            (count, written)
-        else {
-            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
-        };
+        let [source, target, forward, backward] = exactly(site, &mut cursor, &mut self.operands)?;
         let sides = Sides {
             source: self.description(site, source)?,
             target: self.description(site, target)?,

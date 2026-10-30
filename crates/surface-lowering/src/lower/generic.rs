@@ -85,12 +85,11 @@ use super::Resolved;
 use super::Segment;
 use super::Sink;
 use super::Site;
-use super::arguments;
 use super::atom_type;
+use super::exactly;
 use super::identity::spelled;
 use crate::description::DescriptionFault;
 use crate::description::NativeFamily;
-use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
 use crate::form::Placed;
@@ -103,7 +102,6 @@ use crate::module::Operand;
 use crate::module::Role;
 use crate::module::SlotIndex;
 use crate::origin::Origin;
-use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::resolve::type_atom;
 
@@ -406,16 +404,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let misplaced = LoweringRefusal::GenericMisplaced { span: site.at.span };
         let frame = self.require(site, Produced::Value)?;
-        let start = self.operands.len();
-        let read = arguments(site, &mut cursor, &mut self.operands);
-        let count = self.operands.len().saturating_sub(start);
-        let first = self.operands.get(start).copied();
-        self.operands.truncate(start);
-        read?;
-        let (1_usize, Some(argument)) = (count, first)
-        else {
-            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
-        };
+        let [argument] = exactly(site, &mut cursor, &mut self.operands)?;
         let Maybe::Present(owner) = self.collected.owner_of(site.at.node)
         else {
             return Err(misplaced);

@@ -315,6 +315,7 @@ use super::arguments;
 use super::arity::Dependent;
 use super::arity::Place;
 use super::closed;
+use super::exactly;
 use super::exhausted;
 use super::exits::record_copies;
 use super::lowered;
@@ -2423,23 +2424,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        let start = self.operands.len();
-        let read = arguments(site, &mut cursor, &mut self.operands);
-        let count = self.operands.len().saturating_sub(start);
-        let written = [0_usize, 1_usize]
-            .map(|offset| self.operands.get(start.saturating_add(offset)).copied());
-        self.operands.truncate(start);
-        read?;
-        let (2_usize, [Some(shape), Some(diagram)]) = (count, written)
-        else {
-            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
-        };
-        let pasting = self.pasting(site, shape)?;
-        let cells = self.diagram(site, diagram)?;
-        self.derive(site, frame, Derivation::Compose {
-            composite: Composite { stratum, pasting },
-            cells,
-        })
+        let [shape, diagram] = exactly(site, &mut cursor, &mut self.operands)?;
+        let (composite, cells) = self.written_composite(site, stratum, shape, diagram)?;
+        self.derive(site, frame, Derivation::Compose { composite, cells })
     }
 
     /// Classify `fill[n, k](chain(m), t, d)` at `site`, its stratum read off
@@ -2473,19 +2460,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Value)?;
-        let start = self.operands.len();
-        let read = arguments(site, &mut cursor, &mut self.operands);
-        let count = self.operands.len().saturating_sub(start);
-        let written = [0_usize, 1_usize, 2_usize]
-            .map(|offset| self.operands.get(start.saturating_add(offset)).copied());
-        self.operands.truncate(start);
-        read?;
-        let (3_usize, [Some(shape), Some(generator), Some(diagram)]) = (count, written)
-        else {
-            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
-        };
-        let pasting = self.pasting(site, shape)?;
-        let cells = self.diagram(site, diagram)?;
+        let [shape, generator, diagram] = exactly(site, &mut cursor, &mut self.operands)?;
+        let (composite, cells) = self.written_composite(site, stratum, shape, diagram)?;
         self.read(generator, Reading::Computation(frame));
         for position in cells.start .. cells.end {
             if let Some(&cell) = self.operands.get(position) {
@@ -2493,21 +2469,57 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         self.plan(site, Plan::Fill {
-            composite: Composite { stratum, pasting },
+            composite,
             generator,
             cells,
         });
         Ok(())
     }
 
+    /// The composite a call at `site` writes at `stratum`: its chain at
+    /// `shape` and its cells at `diagram`.
+    ///
+    /// # Specification
+    /// - requires: `shape` and `diagram` are the chain and the cells of the
+    ///   composite or the fill at `site`.
+    /// - ensures: the composite at `stratum` over the chain [`Self::pasting`]
+    ///   reads, and the stretch of the cells [`Self::diagram`] reads.
+    /// - fails: the chain's refusal, and then the diagram's.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal of [`Self::pasting`] or of [`Self::diagram`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite and a fill read their chain and their
+    ///   cells in written order, and a shape that is no chain is refused by its
+    ///   boundary.
+    /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
+    /// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
+    /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |written| written.0.stratum == stratum))]
+    fn written_composite(
+        &mut self,
+        site: Site,
+        stratum: Stratum,
+        shape: NodeIndex,
+        diagram: NodeIndex,
+    ) -> Result<(Composite, Stretch), LoweringRefusal<'source>>
+    {
+        let pasting = self.pasting(site, shape)?;
+        let cells = self.diagram(site, diagram)?;
+        Ok((Composite { stratum, pasting }, cells))
+    }
+
     /// The pasting shape `chain(m)` written at `shape`, an argument of the
-    /// composite at `site`.
+    /// composite or the fill at `site`.
     ///
     /// The head `chain` is read by its spelling, never resolved, as a move's
     /// head is: it names a shape of the site, which no binder stands for.
     ///
     /// # Specification
-    /// - requires: `shape` is the first argument of the composite at `site`.
+    /// - requires: `shape` is the first argument of the composite or the fill
+    ///   at `site`.
     /// - ensures: the chain of the `m` cells `chain(m)` writes.
     /// - fails: a shape of any other spelling; `m` written otherwise than in
     ///   digits; the call's own refusal.
@@ -2564,7 +2576,8 @@ impl<'source> Lowerer<'_, 'source>
     /// store in written order.
     ///
     /// # Specification
-    /// - requires: `diagram` is the second argument of the composite at `site`.
+    /// - requires: `diagram` holds the cells of the composite or the fill at
+    ///   `site`, its second argument or its third.
     /// - ensures: a tuple's members, each a cell, or the one cell any other
     ///   operand is, a parenthesised one included; the stretch of the store
     ///   that holds them, one cell or more.
