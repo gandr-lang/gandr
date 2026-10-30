@@ -962,7 +962,8 @@ pub enum CheckRefusal
         stratum: crate::ua::StratumDefect,
     },
     /// A composite whose pasting is no shape of its certified stratum: no
-    /// chain, or one past the bound or the degree.
+    /// chain, one past the bound or the degree, or a level-two shape no
+    /// object of the wreath or past the degree.
     ComposeNotAShape
     {
         /// The `compose`.
@@ -975,7 +976,9 @@ pub enum CheckRefusal
     {
         /// The `compose`.
         at: ValueId,
-        /// The first defect of the diagram.
+        /// The chain the defect sits in: the outer one, or a column's.
+        seam: gandr_core_term::compose::Seam,
+        /// The first defect of that chain's diagram.
         defect: gandr_theory_sites::Unfilled,
     },
     /// A fill at a stratum the chain sub-site does not certify.

@@ -3234,6 +3234,66 @@ fn a_composite_the_syntax_cannot_read_is_refused()
 }
 
 #[test]
+fn a_level_two_pasting_reads_its_columns()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  compose[4, 9](chain(2, (1, 0)), (fa, g))\n}\n",
+            "def stacked(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Path(Path(A, x, y), g, h)) -> Path(Path(A, x, y), f, h) {\n  compose[4, 9](chain(1, (2)), (a, b))\n}\n",
+            "def miscounted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  compose[4, 9](chain(2, (1, 0, 0)), (fa, g))\n}\n",
+        )),
+        &mut arena,
+    );
+    let pasting = |name: &str| {
+        let tail = arena.computation(tail_of(&module, &arena, name.into()));
+        let Some(&Computation::Return(returned)) = tail
+        else {
+            panic!("`{name}` returns its composite: {tail:?}");
+        };
+        match arena.value(returned) {
+            Some(&Value::Compose { composite, .. }) => composite.pasting,
+            other => panic!("`{name}` returns a composite: {other:?}"),
+        }
+    };
+    let columns = |heights: &[usize]| {
+        let heights: Vec<CellCount> = heights.iter().copied().map(CellCount::from).collect();
+        Pasting::Columns {
+            heights: gandr_core_term::compose::Heights::new(&heights).expect("the columns pack"),
+        }
+    };
+    assert_eq!(
+        pasting("whiskered"),
+        columns(&[1, 0]),
+        "the whisker reads its two columns"
+    );
+    assert_eq!(
+        pasting("stacked"),
+        columns(&[2]),
+        "one column's height reads through its parentheses"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "miscounted".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::ComposePasting),
+                ..
+            })
+        ),
+        "three heights for two columns are refused"
+    );
+    let mut kept = CoreArena::new();
+    let checked = lowered(
+        SourceText::from(concat!(
+            "def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  compose[4, 9](chain(2, (1, 0)), (fa, g))\n}\n",
+            "def stacked(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Path(Path(A, x, y), g, h)) -> Path(Path(A, x, y), f, h) {\n  compose[4, 9](chain(1, (2)), (a, b))\n}\n",
+        )),
+        &mut kept,
+    );
+    assert_accepted(&judged(&checked, &mut kept));
+}
+
+#[test]
 fn a_fill_lowers_to_its_generator_and_cells()
 {
     let mut arena = CoreArena::new();

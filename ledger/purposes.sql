@@ -671,9 +671,14 @@ INSERT INTO purpose VALUES('core-term','classifier::Classifier','struct','The un
 INSERT INTO purpose VALUES('core-term','classifier::Sort','enum','The sort a universe node is indexed by: a ground sort, or a parameter of the declaration that has no ground reading yet.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','classifier::SortParameter','struct','The position of a sort binder in its declaration''s prenex sort telescope.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::CellCount','struct','How many cells a pasting shape holds: its vertex count.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Column','struct','The position of a column in a level-two shape, from zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Composite','struct','The stratum a composite is made at and the pasting shape it composes.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','compose::Pasting','enum','The pasting shape a composite names: the chain of its cell count.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Ends','struct','A path type as the level-two realisation reads it: its carrier and its two endpoints.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Heights','struct','The column heights of a level-two pasting, packed into one word.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Pasting','enum','The pasting shape a composite names: the chain of its cell count, or a level-two shape of the chain''s wreath over itself.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Seam','enum','Where a composite''s cells fail to meet: the outer chain, or the chain inside one column.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::compose','function','Builds the composite of a chain of cells beside its realisation, the left-nested then fold over the carrier from the start.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::compose_columns','function','Builds a level-two composite beside its realisation: each column folded vertically by then, the columns horizontally by whiskers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','context::BinderDepth','struct','The number of binders one zone of a context holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','context::Context','struct','The one unified two-zone typing context Gamma; Sigma: flat, de Bruijn, id-addressed and name-free, with the linear zone''s one-shot discipline enforced by the lookup that reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','context::ContextError','enum','Why a context operation was refused, naming the zone or the slot it is about.',NULL,'fits','sound',NULL);
@@ -775,6 +780,7 @@ INSERT INTO purpose VALUES('core-term','hole::matched_thunk','function','Matches
 INSERT INTO purpose VALUES('core-term','hole::matched_with','function','Matches a with type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::value_type_knowledge','function','Reads a value type''s knowledge, the unknown former and the decode of a hole or a mark as one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::Relation','enum','A relation between two types the surface writes infix: an isomorphism, an equivalence, or a flow.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','identity::Whisker','enum','Which half of a composite a whisker moves.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::answer_at','function','The answer a relation''s record gives at a point, read through its maps and round trips.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::back','function','The transport back along a path, the inverse of a path in a family of paths.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::back_flow','function','The symmetry ride of back along a flow, its motive reading the moving endpoint contravariantly.',NULL,'fits','sound',NULL);
@@ -786,6 +792,7 @@ INSERT INTO purpose VALUES('core-term','identity::map_type','function','The type
 INSERT INTO purpose VALUES('core-term','identity::quasi_inverse','function','The record type A isomorph B abbreviates: a map, a map back, and the two round trips.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::then','function','The transport then along two paths, their composition in a family of paths.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::univalence_forward','function','The forward translator of a univalence statement, read at its source description.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','identity::whisker','function','The whisker of a path between halves of a composite: the transport composing with the half that stays.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','import::ImportFault','struct','An annotation graph that contains an unresolved child.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','import::TypeImporter','struct','A graph-preserving import of type annotations into a different core arena, relocating every child handle.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','memory::AccessMode','enum','The mode an access lends its held slot in, with the one child a mode carries: the unwind of an exclusive access.',NULL,'fits','sound',NULL);

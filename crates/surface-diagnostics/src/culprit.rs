@@ -393,8 +393,22 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::ComposeUncertified { .. } | CheckRefusal::FillUncertified { .. } => {
             "a stratum the chains do not certify"
         },
-        CheckRefusal::ComposeNotAShape { .. } => "a chain past its stratum",
-        CheckRefusal::ComposeDoesNotFill { .. } => "cells that do not fill the chain",
+        CheckRefusal::ComposeNotAShape {
+            pasting: gandr_core_term::compose::Pasting::Chain { .. },
+            ..
+        } => "a chain past its stratum",
+        CheckRefusal::ComposeNotAShape {
+            pasting: gandr_core_term::compose::Pasting::Columns { .. },
+            ..
+        } => "a level-two shape past its stratum",
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Outer,
+            ..
+        } => "cells that do not fill the chain",
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            ..
+        } => "2-cells that do not fill their column",
         CheckRefusal::NoFiller { .. } => "a square the generator does not fill",
         CheckRefusal::GeneratorFamilyUnsupported { .. } => {
             "a fill along a family with no filler yet"

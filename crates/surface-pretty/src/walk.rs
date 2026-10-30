@@ -2772,12 +2772,13 @@ enum Join
     /// head spelling its stratum and its descriptions, `ua[n, k](a, b,`.
     Ua(Doc),
     /// Unbiased composition at a stratum over its cells, after the head
-    /// spelling its stratum and its shape, `compose[n, k](chain(m),`: one cell
-    /// bare, more as a tuple.
+    /// spelling its stratum and its shape, `compose[n, k](chain(m),` or
+    /// `compose[n, k](chain(m, (a₁, …, aₘ)),`: one cell bare, more as a tuple.
     Compose(Doc, Arity),
     /// A filler generator at a stratum over its generator and its cells,
-    /// after the head spelling its stratum and its shape,
-    /// `fill[n, k](chain(m),`: the generator, then the cells as a composite's.
+    /// after the head spelling its stratum and its shape, `fill[n,
+    /// k](chain(m),` or its level-two shape: the generator, then the cells as
+    /// a composite's.
     Fill(Doc, Arity),
     /// A session type over its payloads, spelled by the template the visit
     /// pushed, binding as the template's head does.
@@ -5192,6 +5193,29 @@ fn universe(
         (GroundSort::Value, _) => format!("Type[+, {constant}]"),
         (GroundSort::Computation, _) => format!("Type[-, {constant}]"),
     }))
+}
+
+/// The pasting a composite names, as the source writes it: `chain(m)`, or
+/// `chain(m, (a₁, …, aₘ))` for a level-two shape.
+///
+/// # Specification
+/// trivial.
+fn spelled(pasting: Pasting) -> Spelled
+{
+    match pasting {
+        Pasting::Chain { cells } => Spelled(alloc::format!("chain({})", usize::from(cells))),
+        Pasting::Columns { heights } => {
+            let columns: Vec<String> = heights
+                .columns()
+                .map(|height| alloc::format!("{}", usize::from(height)))
+                .collect();
+            Spelled(alloc::format!(
+                "chain({}, ({}))",
+                columns.len(),
+                columns.join(", ")
+            ))
+        },
+    }
 }
 
 /// The inside of a string literal holding `text`.
@@ -8506,24 +8530,18 @@ impl Walk<'_, '_>
                 format_args!("{}, {}", from.as_ref(), to.as_ref()),
                 Join::Ua,
             )?),
-            Former::Compose { composite, cells } => {
-                let Pasting::Chain { cells: count } = composite.pasting;
-                Some(self.at_stratum(
-                    Glyphs("compose"),
-                    composite.stratum,
-                    format_args!("chain({})", usize::from(count)),
-                    |head| Join::Compose(head, Arity(usize::from(cells))),
-                )?)
-            },
-            Former::Fill { composite, cells } => {
-                let Pasting::Chain { cells: count } = composite.pasting;
-                Some(self.at_stratum(
-                    Glyphs("fill"),
-                    composite.stratum,
-                    format_args!("chain({})", usize::from(count)),
-                    |head| Join::Fill(head, Arity(usize::from(cells))),
-                )?)
-            },
+            Former::Compose { composite, cells } => Some(self.at_stratum(
+                Glyphs("compose"),
+                composite.stratum,
+                format_args!("{}", spelled(composite.pasting).0),
+                |head| Join::Compose(head, Arity(usize::from(cells))),
+            )?),
+            Former::Fill { composite, cells } => Some(self.at_stratum(
+                Glyphs("fill"),
+                composite.stratum,
+                format_args!("{}", spelled(composite.pasting).0),
+                |head| Join::Fill(head, Arity(usize::from(cells))),
+            )?),
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(

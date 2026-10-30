@@ -4016,6 +4016,71 @@ fn a_fill_spells_its_stratum_chain_generator_and_cells_4075()
     }
 }
 
+/// A level-two composite and fill spell their shape as the surface writes it,
+/// `chain(m, (a₁, …, aₘ))`, one column's height in its parentheses, and the
+/// content source reads each node as the core does (#3989).
+#[test]
+fn a_level_two_pasting_spells_its_columns_3989()
+{
+    let mut core = CoreArena::new();
+    let [a, g, x, step] =
+        [0_usize, 1, 2, 3].map(|index| core.value_constant(ConstantIndex::from(index)));
+    let columns = |heights: &[usize]| {
+        let heights: Vec<CellCount> = heights.iter().copied().map(CellCount::from).collect();
+        Composite {
+            stratum: Stratum {
+                degree: Degree::from(4_usize),
+                bound: ShapeSize::from(9_usize),
+            },
+            pasting: Pasting::Columns {
+                heights: gandr_core_term::compose::Heights::new(&heights)
+                    .expect("the columns pack"),
+            },
+        }
+    };
+    let realised = core.computation_return(a);
+    let whisker = core.value_compose(columns(&[1, 0]), Box::from([a, g]), realised);
+    let realised = core.computation_return(a);
+    let stacked = core.value_compose(columns(&[2]), Box::from([a, g]), realised);
+    let forced = core.computation_force(step);
+    let generator = core.computation_application(forced, x);
+    let filled = core.value_fill(columns(&[1, 0]), generator, Box::from([a, g]));
+    let names = [
+        Name::from("a"),
+        Name::from("g"),
+        Name::from("x"),
+        Name::from("t"),
+    ];
+    for (node, name, flat) in [
+        (
+            whisker,
+            "compose_columns",
+            "compose[4, 9](chain(2, (1, 0)), (a, g))",
+        ),
+        (
+            stacked,
+            "compose_column",
+            "compose[4, 9](chain(1, (2)), (a, g))",
+        ),
+        (
+            filled,
+            "fill_columns",
+            "fill[4, 9](chain(2, (1, 0)), t(x), (a, g))",
+        ),
+    ] {
+        agrees(&core, &names, CoreNode::Value(node));
+        pin(
+            &CoreSource::new(&core, &names),
+            Root::Value(CoreNode::Value(node)),
+            Pinned {
+                name,
+                flat,
+                fidelity: Fidelity::Faithful,
+            },
+        );
+    }
+}
+
 /// Native introductions retain endpoint and map order but cannot claim
 /// surface round-trip fidelity, because the parser has no syntax for them;
 /// a product over them is as approximate as its components.

@@ -19,3 +19,13 @@ def pastBound(
 ) -> Path(A, x, v) {
   compose[5, 7](chain(4), (p, q, r, s))
 }
+
+@[ checks ]
+def whiskerWithinDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  compose[4, 9](chain(2, (1, 0)), (fa, g))
+}
+
+@[ refuses("ComposeNotAShape") ]
+def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  compose[3, 9](chain(2, (1, 0)), (fa, g))
+}

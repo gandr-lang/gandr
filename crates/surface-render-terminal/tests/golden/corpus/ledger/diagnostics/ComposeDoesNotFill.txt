@@ -17,3 +17,26 @@ error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along 
    │
    ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
    ╰ help: start each cell at the point where the cell before it ends
+
+error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end to end
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:19:3
+   │
+18 │   def columnApart(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), k : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Pa…
+   │   │               ┬         ┬      ┬      ┬                  ┬                  ┬                  ┬                  ┬                              ─ checked against `Path(Path(A, x, y), h, k) -> -F Path(Path(A, x, y), f, k)`; while checking the body of this function; binds b : Path(Path(A, x, y), h, k)
+   │   │               │         │      │      │                  │                  │                  │                  │
+   │   │               │         │      │      │                  │                  │                  │                  checked against `Path(Path(A, x, y), f, g) -> Path(Path(A, x, y), h, k) -> -F Path(Path(A, x, y), f, k)`; while checking the body of this function; binds a : Path(Path(A, x, y), f, g)
+   │   │               │         │      │      │                  │                  │                  checked; while checking the body of this function; binds k : Path(A, x, y)
+   │   │               │         │      │      │                  │                  checked; while checking the body of this function; binds h : Path(A, x, y)
+   │   │               │         │      │      │                  checked; while checking the body of this function; binds g : Path(A, x, y)
+   │   │               │         │      │      checked; while checking the body of this function; binds f : Path(A, x, y)
+   │   │               │         │      checked; while checking the body of this function; binds y : A
+   │   │               │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘               checked; while checking the body of this function; binds A : Type
+   │ │
+19 │ │   compose[4, 9](chain(1, (2)), (a, b))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2-cells that do not fill their column
+20 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ├ note: `columnApart` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: start each 2-cell of a column at the 1-cell where the 2-cell before it ends

@@ -2010,12 +2010,7 @@ where
             writer.tag(Tag(0x8A));
             writer.count(Count(usize::from(composite.stratum.degree)))?;
             writer.count(Count(usize::from(composite.stratum.bound)))?;
-            match composite.pasting {
-                gandr_core_term::compose::Pasting::Chain { cells: count } => {
-                    writer.tag(Tag(0));
-                    writer.count(Count(usize::from(count)))?;
-                },
-            }
+            write_pasting(writer, composite.pasting)?;
             write_index(writer, realised)?;
             write_indices(writer, cells)?;
         },
@@ -3053,16 +3048,17 @@ fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaD
 }
 
 /// Write the pasting a composite names: a tag naming its shape, then its cell
-/// count.
+/// count, or its column count and each column's height.
 ///
 /// # Specification
-/// - ensures: the chain's tag, then its cell count.
+/// - ensures: the chain's tag, then its cell count; or the level-two tag, then
+///   its column count and each column's height in order.
 /// - fails: an unrepresentable count.
 /// - executable: none — a generic sink exposes no byte observer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composite and its refusal survive persistence with
-///   their pasting.
+///   their pasting, a chain's and a level-two shape's.
 /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
 fn write_pasting<Out>(
     writer: &mut Writer<'_, Out>,
@@ -3076,19 +3072,28 @@ where
             writer.tag(Tag(0));
             writer.count(Count(usize::from(cells)))
         },
+        gandr_core_term::compose::Pasting::Columns { heights } => {
+            writer.tag(Tag(1));
+            writer.count(Count(heights.columns().count()))?;
+            for height in heights.columns() {
+                writer.count(Count(usize::from(height)))?;
+            }
+            Ok(())
+        },
     }
 }
 
 /// Read a pasting [`write_pasting`] wrote.
 ///
 /// # Specification
-/// - ensures: the pasting the tag names, with its cell count.
-/// - fails: an unknown tag or a truncated frame.
+/// - ensures: the pasting the tag names, with its cell count or its columns'
+///   heights.
+/// - fails: an unknown tag, a truncated frame, or heights past one word.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composite and its refusal survive persistence with
-///   their pasting.
+///   their pasting, a chain's and a level-two shape's.
 /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_pasting(reader: &mut Reader<'_>) -> Result<gandr_core_term::compose::Pasting, CodecError>
@@ -3097,6 +3102,19 @@ fn read_pasting(reader: &mut Reader<'_>) -> Result<gandr_core_term::compose::Pas
         0 => Ok(gandr_core_term::compose::Pasting::Chain {
             cells: gandr_core_term::compose::CellCount::from(reader.count()?.0),
         }),
+        1 => {
+            let columns = reader.count()?.0;
+            let mut heights = Vec::new();
+            for _column in 0 .. columns {
+                heights.push(gandr_core_term::compose::CellCount::from(reader.count()?.0));
+                if heights.len() > 63 {
+                    return Err(CodecError::Corrupt);
+                }
+            }
+            let heights =
+                gandr_core_term::compose::Heights::new(&heights).ok_or(CodecError::Corrupt)?;
+            Ok(gandr_core_term::compose::Pasting::Columns { heights })
+        },
         _ => Err(CodecError::Corrupt),
     }
 }
@@ -4781,12 +4799,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 degree: gandr_theory_sites::Degree::from(reader.count()?.0),
                 bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
             };
-            let pasting = match reader.tag()?.0 {
-                0 => gandr_core_term::compose::Pasting::Chain {
-                    cells: gandr_core_term::compose::CellCount::from(reader.count()?.0),
-                },
-                _ => return Err(CodecError::Corrupt),
-            };
+            let pasting = read_pasting(reader)?;
             ContentNode::Compose {
                 composite: gandr_core_term::compose::Composite { stratum, pasting },
                 realised: read_index(reader)?,
@@ -7140,9 +7153,15 @@ where
             write_site(writer, at)?;
             write_pasting(writer, pasting)?;
         },
-        Refusal::ComposeDoesNotFill { at, defect } => {
+        Refusal::ComposeDoesNotFill { at, seam, defect } => {
             writer.tag(Tag(101));
             write_site(writer, at)?;
+            writer.count(Count(match seam {
+                gandr_core_term::compose::Seam::Outer => 0,
+                gandr_core_term::compose::Seam::Column(before) => {
+                    usize::from(before).saturating_add(1)
+                },
+            }))?;
             write_unfilled(writer, defect)?;
         },
         Refusal::FillUncertified { at, stratum } => {
@@ -7960,6 +7979,13 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         101 => Refusal::ComposeDoesNotFill {
             at: read_site(reader)?,
+            seam: match reader.count()?.0.checked_sub(1) {
+                None => gandr_core_term::compose::Seam::Outer,
+                Some(before) => gandr_core_term::compose::Seam::Column(
+                    gandr_core_term::compose::Column::try_from(before)
+                        .map_err(|_wide| CodecError::Corrupt)?,
+                ),
+            },
             defect: read_unfilled(reader)?,
         },
         102 => Refusal::FillUncertified {

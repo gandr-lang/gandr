@@ -116,6 +116,13 @@
 //! fold the checker builds, leaves evaluation a node it cannot run. Reversal:
 //! a core composition former of its own in both checkers and the kernel.
 //!
+//! `chain(m, (a₁, …, aₘ))` writes a level-two shape, column `i` of `aᵢ`
+//! 2-cells, one height bare in its parentheses. Its cells are read each at its
+//! own path type, as a synthesised operation's paths are, answered or not, so
+//! the types they are read at are minted first. Its node holds the cells
+//! beside the fold of each column by `then` and of the columns by whiskers
+//! (`gandr_core_term::compose::compose_columns`).
+//!
 //! # A fill holds its generator and its cells
 //!
 //! `fill[n, k](chain(m), t, (d₁, …, dₘ))` is the filler generator `t ↑ X` at
@@ -280,7 +287,10 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::compose::CellCount;
 use gandr_core_term::compose::Composite;
+use gandr_core_term::compose::Ends;
+use gandr_core_term::compose::Heights;
 use gandr_core_term::compose::Pasting;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::identity::bi_invertible;
@@ -2399,9 +2409,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   position's answer, or off its first cell's start and its last cell's
     ///   end. A tuple's members are the cells in written order, and any other
     ///   operand is the one cell.
-    /// - fails: other than two arguments; a shape that is no `chain(m)` with
-    ///   `m` written in digits; the diagram's own refusal; the derivation's
-    ///   refusal.
+    /// - fails: other than two arguments; a shape that is no `chain(m)` or
+    ///   `chain(m, (a₁, …, aₘ))` with its numbers in digits; the diagram's own
+    ///   refusal; the derivation's refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2437,8 +2447,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: plans the fill at `stratum` over the chain of `m` cells, `t`
     ///   read as a computation and each cell of `d` as a value, as
     ///   [`Self::diagram`] reads them.
-    /// - fails: other than three arguments; a shape that is no `chain(m)` with
-    ///   `m` written in digits; the diagram's own refusal.
+    /// - fails: other than three arguments; a shape that is no `chain(m)` or
+    ///   `chain(m, (a₁, …, aₘ))` with its numbers in digits; the diagram's own
+    ///   refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2482,9 +2493,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `shape` and `diagram` are the chain and the cells of the
     ///   composite or the fill at `site`.
-    /// - ensures: the composite at `stratum` over the chain [`Self::pasting`]
+    /// - ensures: the composite at `stratum` over the shape [`Self::pasting`]
     ///   reads, and the stretch of the cells [`Self::diagram`] reads.
-    /// - fails: the chain's refusal, and then the diagram's.
+    /// - fails: the shape's refusal, and then the diagram's.
     /// - panics: none.
     ///
     /// # Errors
@@ -2511,8 +2522,8 @@ impl<'source> Lowerer<'_, 'source>
         Ok((Composite { stratum, pasting }, cells))
     }
 
-    /// The pasting shape `chain(m)` written at `shape`, an argument of the
-    /// composite or the fill at `site`.
+    /// The pasting shape `chain(m)` or `chain(m, (a₁, …, aₘ))` written at
+    /// `shape`, an argument of the composite or the fill at `site`.
     ///
     /// The head `chain` is read by its spelling, never resolved, as a move's
     /// head is: it names a shape of the site, which no binder stands for.
@@ -2520,22 +2531,31 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `shape` is the first argument of the composite or the fill
     ///   at `site`.
-    /// - ensures: the chain of the `m` cells `chain(m)` writes.
-    /// - fails: a shape of any other spelling; `m` written otherwise than in
-    ///   digits; the call's own refusal.
+    /// - ensures: the chain of the `m` cells `chain(m)` writes; the level-two
+    ///   shape of `m` columns `chain(m, (a₁, …, aₘ))` writes, column `i` of
+    ///   `aᵢ` 2-cells. The operands the lowering holds are those it held.
+    /// - fails: a shape of any other spelling; a count or a height written
+    ///   otherwise than in digits; heights other in number than `m`; the call's
+    ///   own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::OutOfFragment`] at the shape, with the unadmitted
-    /// boundary for a shape that is no chain and for a count out of digits, and
-    /// the arity boundary for a chain of other than one argument.
+    /// boundary for a shape that is no chain, for a count or a height out of
+    /// digits and for heights that are not `m`, and the arity boundary for a
+    /// chain of other than one argument or two.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `chain(3)` reads three cells, and a bare name and a
-    ///   count written as a name are refused.
+    /// - hypothesis: L3 — `chain(3)` reads three cells and `chain(2, (1, 0))`
+    ///   the whisker's two columns; a bare name, a count written as a name and
+    ///   three heights for two columns are refused.
     /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
     /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || self.tree.node(shape).is_some())]
+    /// - witness: `lower::identity::tests::a_level_two_pasting_reads_its_columns`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| self.operands.len() == start && (ret.is_err() || self.tree.node(shape).is_some()),
+    )]
     fn pasting(
         &mut self,
         site: Site,
@@ -2559,17 +2579,78 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unadmitted);
         };
-        let (head, argument) = self.unary_call(at, written)?;
+        let start = self.operands.len();
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, written.node, &mut scratch).and_then(|()| {
+            let mut cursor = Cursor::new(&scratch.pieces, written.span);
+            let head = at.one(cursor.operands())?;
+            arguments(at, &mut cursor, &mut self.operands)?;
+            Ok(head)
+        });
+        self.scratch = scratch;
+        let written_arguments: Vec<NodeIndex> = self.operands.drain(start ..).collect();
+        let head = read?;
         if self.name_at(head).as_ref() != CHAIN {
             return Err(unadmitted);
         }
-        let Some(counted) = self.tree.node(argument)
-        else {
-            return Err(unadmitted);
+        let resident = |lowering: &Self, argument: NodeIndex| {
+            let Some(counted) = lowering.tree.node(argument)
+            else {
+                return Err(unadmitted);
+            };
+            lowering.resident::<CellCount>(at, Placed::of(argument, counted))
         };
-        Ok(Pasting::Chain {
-            cells: self.resident(at, Placed::of(argument, counted))?,
-        })
+        match *written_arguments.as_slice() {
+            [count] => Ok(Pasting::Chain {
+                cells: resident(self, count)?,
+            }),
+            [count, columns] => {
+                let count = resident(self, count)?;
+                let stretch = self.diagram(at, columns)?;
+                let members: Vec<NodeIndex> = self.operands.drain(stretch.start ..).collect();
+                let mut heights = Vec::with_capacity(members.len());
+                for mut member in members {
+                    // One column's height stands in its tuple's parentheses.
+                    while let Some(held) = self.tree.node(member)
+                        && matches!(
+                            shape_of(self.pbg, held),
+                            Ok(Shape::Form {
+                                former: Former::Parenthesized,
+                                ..
+                            })
+                        )
+                    {
+                        self.fuel.spend()?;
+                        let mut scratch = core::mem::take(&mut self.scratch);
+                        let read = read_pieces(self.pbg, self.tree, member, &mut scratch);
+                        let mut inner = scratch.pieces.iter().filter_map(|piece| match *piece {
+                            Piece::Operand(operand) => Some(operand.node),
+                            Piece::Tile { .. } => None,
+                        });
+                        let only = match (inner.next(), inner.next()) {
+                            (Some(only), None) => Some(only),
+                            (..) => None,
+                        };
+                        self.scratch = scratch;
+                        read?;
+                        let Some(only) = only
+                        else {
+                            return Err(unadmitted);
+                        };
+                        member = only;
+                    }
+                    heights.push(resident(self, member)?);
+                }
+                if heights.len() != usize::from(count) {
+                    return Err(unadmitted);
+                }
+                let heights = Heights::new(&heights).ok_or(unadmitted)?;
+                Ok(Pasting::Columns { heights })
+            },
+            _ => Err(at.out(FragmentBoundary::Arity(OperandCount::from(
+                written_arguments.len(),
+            )))),
+        }
     }
 
     /// The cells of the diagram written at `diagram`, pushed to the operand
@@ -2813,8 +2894,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   synthesised from its operands, `cong` reading its codomain as
     ///   [`Self::mapped`] reads it — off its function's written result, or off
     ///   the body of a lambda over its path's points — and recorded for
-    ///   [`Self::refuse_unsynthesised`]. An operation read where a value is
-    ///   read is the value its transport returns.
+    ///   [`Self::refuse_unsynthesised`]; a level-two composite is recorded
+    ///   answered or not. An operation read where a value is read is the value
+    ///   its transport returns.
     /// - fails: the unannotated refusal for a composite or `cong` under a flow
     ///   answer, and for a synthesised `cong` whose first operand
     ///   [`Self::mapped`] refuses; the allowance refusal from that walk.
@@ -2870,7 +2952,16 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
         }
-        if let Stance::Synthesised(..) = stance {
+        // A level-two composite reads each cell at its own path type, so the
+        // types its cells are read at are minted first, answered or not.
+        let level_two = matches!(derivation, Derivation::Compose {
+            composite: Composite {
+                pasting: Pasting::Columns { .. },
+                ..
+            },
+            ..
+        });
+        if level_two || matches!(stance, Stance::Synthesised(..)) {
             self.synthesised.push(site);
         }
         // The operation is the path its transport returns: pure, so where a
@@ -3276,9 +3367,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   read under, whose binders all stand where the operation does, or a
     ///   lambda's whose body, with no statement before it, is an operation this
     ///   walk admitted with its own type read. An admitted operation reads its
-    ///   own type when every path it reads does, `then`'s second included. The
-    ///   record keeps every site, the innermost first, for the mint sweep to
-    ///   read `cong`'s codomain.
+    ///   own type when every path it reads does, `then`'s second included, and
+    ///   every cell of a level-two composite. The record keeps every site, the
+    ///   innermost first, an answered level-two composite's among them, for the
+    ///   mint sweep to read `cong`'s codomain and each level-two cell's type.
     /// - provides: the classification-time guarantee that a synthesised
     ///   operation mints its motive.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
@@ -3401,10 +3493,30 @@ impl<'source> Lowerer<'_, 'source>
                     .offer(at, site.out(FragmentBoundary::Unannotated));
                 continue;
             }
-            let whole = match rest {
+            let mut whole = match rest {
                 Some(second) => self.reads_path(second, &read)?,
                 None => transported,
             };
+            // A level-two composite reads every cell at its own path type.
+            if let Derivation::Compose {
+                composite:
+                    Composite {
+                        pasting: Pasting::Columns { .. },
+                        ..
+                    },
+                cells,
+            } = derivation
+            {
+                for position in cells.start .. cells.end {
+                    let Some(&cell) = self.operands.get(position)
+                    else {
+                        break;
+                    };
+                    if let Maybe::Absent(reason) = self.reads_path(cell, &read)? {
+                        whole = Maybe::Absent(reason);
+                    }
+                }
+            }
             if let Maybe::Present(_) = whole {
                 let _first = read.insert(at);
             }
@@ -3429,36 +3541,62 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The types the synthesised operations read off other declarations and
-    /// binders — each `cong`'s codomain, and the written type of each
-    /// parameter and the written result of each call a path operand is — for
-    /// the mint sweep to mint before any operation over them.
+    /// The types the synthesised operations and the level-two composites read
+    /// off other declarations and binders — each `cong`'s codomain, and the
+    /// written type of each parameter and the written result of each call a
+    /// path operand is — for the mint sweep to mint before any operation over
+    /// them.
     ///
     /// # Specification
     /// - ensures: for every recorded site still planned as a synthesised
     ///   operation, its codomain when it is a `cong` and the node each of its
-    ///   [`Typings`] reads its path's type at, each once, in source order: a
-    ///   type a synthesised operation inside another such type reads — an
-    ///   earlier declaration's result, or a parameter written before it — is
-    ///   minted before the type that holds it.
+    ///   [`Typings`] reads its path's type at; for every level-two composite,
+    ///   answered or synthesised, the node [`Self::operand_typed`] reads each
+    ///   of its cells' types at. Each once, in source order: a type a
+    ///   synthesised operation inside another such type reads — an earlier
+    ///   declaration's result, or a parameter written before it — is minted
+    ///   before the type that holds it.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `cong` in a type finds its function's result
-    ///   minted, and an operation over a parameter or a call its type.
+    ///   minted, an operation over a parameter or a call its type, and an
+    ///   answered whisker its 2-cell's and its 1-cell's.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
-    #[spec(ensures: |ret| ret.len() <= self.synthesised.len().saturating_mul(3)
-        && ret.is_sorted_by_key(|&node| (self.tree.node(node).map(|held| held.span().start()), node)))]
+    /// - witness: `lower::identity::tests::a_level_two_pasting_reads_its_columns`
+    #[spec(ensures: |ret| ret.is_sorted_by_key(|&node| (self.tree.node(node).map(|held| held.span().start()), node)))]
     pub(super) fn synthesised_types(&self) -> Vec<NodeIndex>
     {
         let mut types = Vec::new();
         for site in self.synthesised.iter().skip(self.current.synthesised) {
             let Some(&Plan::Derived(Derived {
-                stance: Stance::Synthesised(synthesis, typings),
-                ..
+                derivation, stance, ..
             })) = self.plans.get(site.at.node)
+            else {
+                continue;
+            };
+            if let Derivation::Compose {
+                composite:
+                    Composite {
+                        pasting: Pasting::Columns { .. },
+                        ..
+                    },
+                cells,
+            } = derivation
+            {
+                for &cell in self
+                    .operands
+                    .get(cells.start .. cells.end)
+                    .unwrap_or_default()
+                {
+                    if let Maybe::Present(typed) = self.operand_typed(cell) {
+                        types.push(typed.node());
+                    }
+                }
+            }
+            let Stance::Synthesised(synthesis, typings) = stance
             else {
                 continue;
             };
@@ -4295,6 +4433,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(reason);
             },
         };
+        let mut level_two = None;
         let root = match (answered, derived.derivation, right) {
             (Answered::Path, Derivation::Back { .. }, Maybe::Present(right)) => {
                 // Reflexivity at a looped point is its empty word, as a
@@ -4308,6 +4447,34 @@ impl<'source> Lowerer<'_, 'source>
             },
             (Answered::Flow, Derivation::Back { .. }, Maybe::Present(right)) => {
                 gandr_core_term::identity::back_flow(sink.arena, carrier, right, first)
+            },
+            // A level-two composite folds its columns by whiskers, each cell
+            // read at its own path type.
+            (
+                Answered::Path,
+                Derivation::Compose {
+                    composite:
+                        composite @ Composite {
+                            pasting: Pasting::Columns { .. },
+                            ..
+                        },
+                    cells,
+                },
+                _,
+            ) => match self.columns_composite(composite, (cells, &composed), derived.frame, sink) {
+                Maybe::Present((root, ends)) => {
+                    level_two = Some(ends);
+                    root
+                },
+                Maybe::Absent(reason) => {
+                    record_since(
+                        sink,
+                        mark,
+                        inserted,
+                        Maybe::Absent(rooted::Absent::Unminted),
+                    );
+                    return Maybe::Absent(reason);
+                },
             },
             // The composite returns the node the checker reads, its cells and
             // the fold they realise.
@@ -4365,17 +4532,85 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         record_since(sink, mark, inserted, Maybe::Present((root, origin)));
-        if answered == Answered::Path
-            && let Maybe::Present(right) = right
-        {
-            let _first = sink.identities.insert(root, Identity {
-                carrier,
-                left,
-                right,
-            });
+        if answered == Answered::Path {
+            let identity = match (level_two, right) {
+                (Some(ends), _) => Some(Identity {
+                    carrier: ends.carrier,
+                    left: ends.left,
+                    right: ends.right,
+                }),
+                (None, Maybe::Present(right)) => Some(Identity {
+                    carrier,
+                    left,
+                    right,
+                }),
+                (None, Maybe::Absent(_)) => None,
+            };
+            if let Some(identity) = identity {
+                let _first = sink.identities.insert(root, identity);
+            }
         }
 
         Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// The level-two composite `composite` of the operands `cells`, minted
+    /// as `values`, standing under `frame`: each cell read at its own path
+    /// type, and the columns folded by whiskers.
+    ///
+    /// # Specification
+    /// - requires: the cells and the types [`Self::operand_typed`] reads them
+    ///   at are already minted or absent.
+    /// - ensures: the returned composite
+    ///   [`gandr_core_term::compose::compose_columns`] realises, each cell
+    ///   beside the path type [`Self::identity_of`] reads, and the path type
+    ///   the composite stands at.
+    /// - fails: the unminted absence for a cell whose path type is not read,
+    ///   and for cells that do not realise the pasting.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the whisker over a 2-cell parameter and a 1-cell
+    ///   parameter lowers to the composite the checker admits.
+    /// - witness: `lower::identity::tests::a_level_two_pasting_reads_its_columns`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((root, _)) => sink.arena.computation(root).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn columns_composite(
+        &self,
+        composite: Composite,
+        (cells, values): (Stretch, &[ValueId]),
+        frame: Frame,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<(ComputationId, Ends), lowered::Absent>
+    {
+        let written = self
+            .operands
+            .get(cells.start .. cells.end)
+            .unwrap_or_default();
+        let mut read = Vec::with_capacity(values.len());
+        for (&cell, &value) in written.iter().zip(values) {
+            let typed = match self.operand_typed(cell) {
+                Maybe::Present(typed) => Some(typed),
+                Maybe::Absent(_) => None,
+            };
+            let Maybe::Present(identity) = self.identity_of(cell, typed, frame, sink)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            read.push((value, Ends {
+                carrier: identity.carrier,
+                left: identity.left,
+                right: identity.right,
+            }));
+        }
+        let Some((node, ends)) =
+            gandr_core_term::compose::compose_columns(sink.arena, composite, &read)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        Maybe::Present((sink.arena.computation_return(node), ends))
     }
 
     /// The body of the lambda `cong` maps by, `function` its node and `map`

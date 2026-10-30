@@ -5,7 +5,11 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::compose::CellCount;
 use gandr_core_term::compose::Composite;
+use gandr_core_term::compose::Ends;
+use gandr_core_term::compose::Heights;
 use gandr_core_term::compose::Pasting;
+use gandr_core_term::compose::Seam;
+use gandr_core_term::compose::compose_columns;
 use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::BaseType;
 use gandr_theory_sites::Boundary;
@@ -13,10 +17,12 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Unfilled;
 
+use super::CellReading;
 use super::Endpoint;
 use super::admit;
 use super::cell;
 use super::fill;
+use super::fill_columns;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
@@ -143,7 +149,7 @@ fn filled(
     let shape = admit(&mut Strata::default(), at, chain(Head(5, 7), vertices))
         .expect("the chain is a shape at 5 over 7");
     let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-    (fill(&context, at, &shape, &drawn), drawn)
+    (fill(&context, (at, Seam::Outer), &shape, &drawn), drawn)
 }
 
 /// The endpoint at `leg`.
@@ -343,4 +349,164 @@ fn a_composite_refuses_each_defect_by_name()
         ),
         "a cell that is no path is refused by shape"
     );
+}
+
+/// The column heights `chain(m, (a₁, …, aₘ))` writes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Written(&'static [usize]);
+
+/// `compose[degree, bound](chain(m, (a₁, …, aₘ)), …)`.
+///
+/// # Specification
+/// trivial.
+fn columns(
+    Head(degree, bound): Head,
+    Written(heights): Written,
+) -> Composite
+{
+    let heights: Vec<CellCount> = heights.iter().copied().map(CellCount::from).collect();
+    Composite {
+        stratum: Stratum {
+            degree: Degree::from(degree),
+            bound: ShapeSize::from(bound),
+        },
+        pasting: Pasting::Columns {
+            heights: Heights::new(&heights).expect("the columns pack"),
+        },
+    }
+}
+
+#[test]
+fn a_level_two_shape_is_read_at_level_two()
+{
+    let mut arena = CoreArena::new();
+    let at = integer(&mut arena, Point(0));
+    let mut strata = Strata::default();
+    let whisker = columns(Head(4, 9), Written(&[1, 0]));
+    let outer = admit(&mut strata, at, whisker).expect("the whisker is a shape at 4 over 9");
+    assert_eq!(
+        usize::from(outer.vertex_count()),
+        2,
+        "the whisker reads its outer chain of two columns"
+    );
+    for (composite, name) in [
+        (columns(Head(3, 9), Written(&[1, 0])), "past its degree"),
+        (columns(Head(4, 7), Written(&[1, 0])), "past its bound"),
+    ] {
+        assert!(
+            matches!(
+                admit(&mut strata, at, composite),
+                Err(CheckRefusal::ComposeNotAShape { pasting, .. }) if pasting == composite.pasting
+            ),
+            "the whisker {name} is refused by name"
+        );
+    }
+
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let [zero, one, two, three] = [0, 1, 2, 3].map(|value| integer(&mut arena, Point(value)));
+    let [first, second] = [(zero, one), (one, two)]
+        .map(|(left, right)| arena.value_type_path(integer_type, left, right));
+    let [low, high, onward, beyond] = [5, 6, 7, 8].map(|value| integer(&mut arena, Point(value)));
+    let known = |carrier, left, right| CellReading::Known {
+        carrier,
+        left,
+        right,
+    };
+    let misplaced = arena.value_type_path(integer_type, three, two);
+    let horizontal = admit(&mut strata, at, columns(Head(5, 11), Written(&[1, 1])))
+        .expect("the horizontal composite is a shape at 5 over 11");
+    let vertical = admit(&mut strata, at, columns(Head(4, 9), Written(&[2])))
+        .expect("the vertical composite is a shape at 4 over 9");
+    let horizontal_heights = columns(Head(5, 11), Written(&[1, 1]));
+    let vertical_heights = columns(Head(4, 9), Written(&[2]));
+    let (Pasting::Columns { heights: across }, Pasting::Columns { heights: down }) =
+        (horizontal_heights.pasting, vertical_heights.pasting)
+    else {
+        panic!("both are level-two pastings");
+    };
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        fill_columns(&context, at, (across, &horizontal), &[
+            known(first, low, high),
+            known(second, onward, beyond)
+        ]),
+        Ok(()),
+        "two 2-cells side by side fill the horizontal composite"
+    );
+    assert!(
+        matches!(
+            fill_columns(&context, at, (across, &horizontal), &[
+                known(first, low, high),
+                known(misplaced, onward, beyond)
+            ]),
+            Err(CheckRefusal::ComposeDoesNotFill {
+                seam: Seam::Outer,
+                defect: Unfilled::Wire { .. },
+                ..
+            })
+        ),
+        "a second column starting where the first does not end is refused at the outer seam"
+    );
+    assert!(
+        matches!(
+            fill_columns(&context, at, (down, &vertical), &[
+                known(first, low, high),
+                known(first, onward, beyond)
+            ]),
+            Err(CheckRefusal::ComposeDoesNotFill { seam: Seam::Column(before), defect: Unfilled::Wire { .. }, .. })
+                if usize::from(before) == 0
+        ),
+        "a column's 2-cells that do not meet are refused at the column's seam"
+    );
+}
+
+#[test]
+fn a_level_two_composite_has_the_path_between_its_folds()
+{
+    for (head, heights) in [
+        (Head(4, 9), Written(&[1, 0])),
+        (Head(5, 11), Written(&[1, 1])),
+    ] {
+        let mut arena = CoreArena::new();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let one = integer(&mut arena, Point(1));
+        let point = arena.value_here(one);
+        let loop_type = arena.value_type_path(integer_type, one, one);
+        let surface = arena.value_here(point);
+        let cells: Vec<(ValueId, Ends)> = heights
+            .0
+            .iter()
+            .map(|&height| {
+                if height == 0 {
+                    (point, Ends {
+                        carrier: integer_type,
+                        left: one,
+                        right: one,
+                    })
+                }
+                else {
+                    (surface, Ends {
+                        carrier: loop_type,
+                        left: point,
+                        right: point,
+                    })
+                }
+            })
+            .collect();
+        let (composite, ends) = compose_columns(&mut arena, columns(head, heights), &cells)
+            .expect("the cells realise their shape");
+        let declared = arena.value_type_path(ends.carrier, ends.left, ends.right);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let declared = form_value_type(&mut context, declared)
+            .expect("the path between the folds forms")
+            .id();
+        let synthesised = synthesise_value(&mut context, composite)
+            .expect("the reflexive 2-cells compose at level two");
+        assert_eq!(
+            equivalent(&mut context, synthesised.produced().id(), declared),
+            Ok(Agreement::Convertible),
+            "{heights:?} has the path between its sources' fold and its targets'"
+        );
+    }
 }

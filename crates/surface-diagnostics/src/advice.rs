@@ -483,13 +483,30 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "give the abstract type an `identity` attribute that names its relation, or relate \
              points of a type that is not sealed",
         ),
-        CheckRefusal::ComposeNotAShape { .. } => String::from(
+        CheckRefusal::ComposeNotAShape {
+            pasting: gandr_core_term::compose::Pasting::Chain { .. },
+            ..
+        } => String::from(
             "write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m \
              cells",
         ),
-        CheckRefusal::ComposeDoesNotFill { .. } => {
-            String::from("start each cell at the point where the cell before it ends")
-        },
+        CheckRefusal::ComposeNotAShape {
+            pasting: gandr_core_term::compose::Pasting::Columns { .. },
+            ..
+        } => String::from(
+            "write a stratum whose bound holds the level-two shape and whose degree reaches its \
+             degree",
+        ),
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Outer,
+            ..
+        } => String::from("start each cell at the point where the cell before it ends"),
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            ..
+        } => String::from(
+            "start each 2-cell of a column at the 1-cell where the 2-cell before it ends",
+        ),
         CheckRefusal::NoFiller { .. } => String::from(
             "ask for the square the generator makes, with its sides composites of the cells and \
              at least one cell a path of paths",
