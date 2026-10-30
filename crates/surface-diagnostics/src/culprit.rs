@@ -304,6 +304,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
         LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
         LoweringRefusal::UnderivedRule { .. } => "a rule its theory does not derive",
+        LoweringRefusal::DerivedComponent { .. } => "a component its theory's derivation fills",
         LoweringRefusal::GenericMisplaced { .. } => "a generic program read off its place",
         LoweringRefusal::UnknownTactic { .. } => "a splice of no tactic",
         LoweringRefusal::GenericUncovered { .. } => "a type with no derived equality",
@@ -823,6 +824,7 @@ mod tests
             LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
             LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
             LoweringRefusal::UnderivedRule { .. } => "a rule its theory does not derive",
+            LoweringRefusal::DerivedComponent { .. } => "a component its theory's derivation fills",
             LoweringRefusal::GenericMisplaced { .. } => "a generic program read off its place",
             LoweringRefusal::UnknownTactic { .. } => "a splice of no tactic",
             LoweringRefusal::GenericUncovered { .. } => "a type with no derived equality",
@@ -1180,6 +1182,12 @@ mod tests
                 rule: name,
                 theory: name,
                 fault: gandr_surface_lowering::derive::DeriveFault::Apart,
+            },
+            LoweringRefusal::DerivedComponent {
+                span: at,
+                member: name,
+                theory: name,
+                derivation: at,
             },
             LoweringRefusal::BudgetExceeded {
                 budget: LoweringBudget::from(1_usize),

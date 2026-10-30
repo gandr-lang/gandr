@@ -154,6 +154,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnlabelledRequirement { name, .. } => {
             format!("write a label before it, `l : {name} with …`, and perform through `l`")
         },
+        LoweringRefusal::DerivedComponent { member, theory, .. } => format!(
+            "delete `{member}`: the model reads it as `{theory}.{member}`, which the derivation fills"
+        ),
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::UnresolvedTypeHead { .. }
@@ -623,7 +626,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 34] = [
+    const WORDED: [&str; 35] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -658,6 +661,7 @@ mod tests
         "ComposeDoesNotFill",
         "NoFiller",
         "NoFiller.Omitted",
+        "DerivedComponent",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

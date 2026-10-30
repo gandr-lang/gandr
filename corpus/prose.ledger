@@ -546,6 +546,7 @@ corpus/model/identity/cong-over-a-lambda.gandr IngMain 8b5e4876054a9430
 corpus/model/identity/cong-over-a-suspended-function.gandr IngMain 749f0c4a54db4bdc
 corpus/model/identity/cong-thunk.gandr Tense 500a82cec4766ad9
 corpus/model/identity/cong-thunk.gandr Tense eb48fa6cb4a260a2
+corpus/model/identity/derived-associator.gandr Tense 9df6939706644fac
 corpus/model/identity/equiv-data.gandr Tense 03b69565a60187a3
 corpus/model/identity/equiv-data.gandr Tense 2c985434ebb3a4c9
 corpus/model/identity/equivalence-call.gandr Tense f52b2dda59b7c02d
@@ -934,6 +935,7 @@ corpus/pathological/identity/certificate-transport.gandr Tense 6ed1d231fbd93e7e
 corpus/pathological/identity/circle-elim.gandr Passive dd9850c195d79075
 corpus/pathological/identity/circle-elim.gandr Tense 15917529ef637b2a
 corpus/pathological/identity/circle-section.gandr Passive 615139c1662cd0cd
+corpus/pathological/identity/derived-associator.gandr Tense 17076196945cbbf2
 corpus/pathological/identity/derived-rule.gandr Tense 709082e9dd6bd25b
 corpus/pathological/identity/equiv-data.gandr Passive 47e1d6c3482915bd
 corpus/pathological/identity/equiv-data.gandr Passive 6e267ebe20e441c6
@@ -1175,6 +1177,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CrossBlock
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DataFieldLevel.txt Procedure 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DataKindNotUniverse.txt Procedure 3e8ce436153ed57e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DependentBind.txt Procedure d517aa4e32eec111
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DerivedComponent.txt Procedure 4e7265ef20d36612
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DescentOnSeveralParameters.txt Procedure 82cfda2e0c36480c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DialogueInverted.txt Procedure 37ac15076bb61227
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DialogueUnmatched.txt Procedure 95cf34107ba31997
@@ -1440,6 +1443,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 28cb0d8126ba0f21
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 5acc3f19f3b29f8d
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/compound-endpoint-over-a-function.txt Procedure 404994b85ddfbce5
+crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-associator.txt Procedure 73c9fbfb11722aa3
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-rule.txt Procedure 9440b16f14f33f0e
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/directed-cell.txt Procedure 43a0f119f677be87
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/equiv-data.txt Procedure 70dec779b51ea456

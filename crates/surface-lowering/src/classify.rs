@@ -285,6 +285,7 @@ impl LoweringRefusal<'_>
             | Self::RulesUncompleted { .. }
             | Self::RulesNeverComplete { .. }
             | Self::UnderivedRule { .. }
+            | Self::DerivedComponent { .. }
             | Self::AcrossHandler { .. }
             | Self::GenericMisplaced { .. }
             | Self::UnknownTactic { .. }
@@ -359,6 +360,7 @@ impl LoweringRefusal<'_>
             | Self::RulesOverlapCondition { .. }
             | Self::RulesUncompleted { .. }
             | Self::RulesNeverComplete { .. }
+            | Self::DerivedComponent { .. }
             | Self::AcrossHandler { .. }
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
@@ -794,7 +796,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 78_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 79_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1115,6 +1117,12 @@ mod tests
                 fault: MatchFault::Sort,
                 refused: empty,
             },
+            LoweringRefusal::DerivedComponent {
+                span: empty,
+                member: SurfaceName::from("assoc4"),
+                theory: SurfaceName::from("Monoid"),
+                derivation: empty,
+            },
         ]
     }
 
@@ -1198,6 +1206,7 @@ mod tests
             FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
