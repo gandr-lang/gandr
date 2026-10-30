@@ -165,10 +165,10 @@
 //! and the law is the same, so it needs no argument of its own. The
 //! run is deterministic, so no decision names it and the vocabulary is
 //! unchanged. It fires only in a goal [`Replay::open_returned`] opened, and in
-//! [`Replay::normalize_returned`]: a computation goal of its own may be
-//! effectful, and there the two bind laws stay as the dialogue names them. A
-//! call a definition heads is not read through; the dialogue unfolds it first,
-//! as it does at reflexivity.
+//! [`Replay::normalize_returned`] read at [`Reduction::Endpoint`]: a
+//! computation goal of its own may be effectful, and there the two bind laws
+//! stay as the dialogue names them. A call a definition heads is not read
+//! through; the dialogue unfolds it first, as it does at reflexivity.
 //!
 //! A bind whose continuation eliminates its own variable at its head is passed
 //! over, as part of the call: it is the bind `E[c] ⇝ c to x. E[x]` builds, and
@@ -1689,8 +1689,10 @@ pub(crate) fn read_endpoints(
     while let Some(set_aside) = worklist.pop() {
         let goal = match set_aside {
             SetAside::Values(left, right) => {
-                let (Ok(left_normal), Ok(right_normal)) =
-                    (run.normalize_returned(left), run.normalize_returned(right))
+                let (Ok(left_normal), Ok(right_normal)) = (
+                    run.normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold),
+                    run.normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold),
+                )
                 else {
                     reading = EndpointReading::Apart;
                     break;
@@ -1759,7 +1761,8 @@ pub(crate) fn read_endpoints(
                 }
             },
             SetAside::Decoded { code, other } => {
-                let Ok(normal) = run.normalize_returned(code)
+                let Ok(normal) =
+                    run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
                 else {
                     reading = EndpointReading::Apart;
                     break;
@@ -1857,7 +1860,7 @@ pub(crate) fn read_decode(
         memo: NullMemo,
         owed: Vec::new(),
     };
-    if let Ok(normal) = run.normalize_returned(code)
+    if let Ok(normal) = run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
         && let Some(&Value::Quote(quoted)) = run.arena.value(normal)
     {
         return Some(quoted);
@@ -2079,6 +2082,18 @@ enum Reduction
     /// call stuck at a variable or an opaque head also reads as what its
     /// continuation returns with the call as its value ([`Replay::whnf`]).
     Endpoint,
+}
+
+/// What [`Replay::normalize_returned`] does at a computation stuck at a
+/// defined head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DefinedHead
+{
+    /// Takes the δ-step the head admits, as the kernel's own evaluator does.
+    Unfold,
+    /// Stops there: a compared pair's reading unfolds no definition, as no
+    /// decision names one.
+    Hold,
 }
 
 /// When [`Replay::reduce`] reads its environment back into its state.
@@ -3367,7 +3382,7 @@ where
         image: ValueId,
     ) -> Result<Composite, Stop>
     {
-        let read = match self.normalize_returned(image) {
+        let read = match self.normalize_returned(image, Reduction::Endpoint, DefinedHead::Unfold) {
             Ok(read) => read,
             Err(Stop::Budget) => return Err(Stop::Budget),
             Err(Stop::Refused(_) | Stop::PartialFixpoint) => return Ok(Composite::Other),
@@ -3535,7 +3550,8 @@ where
                         walk.extend(fields.iter().rev().map(|&field| Walk::Visit(field)));
                     },
                     Some(&Value::Returned(_)) => {
-                        let read = self.normalize_returned(id)?;
+                        let read =
+                            self.normalize_returned(id, Reduction::Endpoint, DefinedHead::Unfold)?;
                         if matches!(self.arena.value(read), Some(&Value::Returned(_))) {
                             built.push(id);
                         }
@@ -5336,10 +5352,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// in it is read by the reduction the goal takes, and each constructor of a
     /// presented type by the type's rules.
     ///
-    /// A side reads to the value its computation returns, through every
-    /// `return` it reaches by `reduction`; a computation that reaches none
-    /// reads to the returned endpoint over what it reduced to, as
-    /// [`Self::normalize_returned`] keeps it, so a bind read through to a
+    /// A side reads as [`Self::normalize_returned`] holding at a defined head
+    /// reads it, by `reduction`: to the value its computation returns, through
+    /// every `return` it reaches, or to the returned endpoint over what a
+    /// computation that reaches none reduced to, so a bind read through to a
     /// binder's call compares by that call. The side then reads to its normal
     /// form under the presentations ([`Self::present`]), as a goal's root
     /// reads before its shape; no definition unfolds, as no decision names
@@ -5366,8 +5382,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// As `fails`.
     ///
     /// # Termination
-    /// - reason: the `while let` over the worklist and the inner `while let`
-    ///   over one side's chain of returned values, not recursion.
+    /// - reason: the `while let` over the worklist, not recursion; a side's
+    ///   chain of returned values reads in [`Self::normalize_returned`]'s loop.
     /// - measure: the budget left: a side reads one step of its chain per
     ///   charge, its rewriting charges every node it compares or copies, and a
     ///   pair returns to the worklist only after one of its sides read to
@@ -5413,26 +5429,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             };
             let mut read = [left, right];
             for side in &mut read {
-                while let Some(&Value::Returned(computation)) = self.arena.value(*side) {
-                    self.charge()?;
-                    let Term::Computation(reduced) =
-                        self.whnf(Term::Computation(computation), reduction)?
-                    else {
-                        return Err(unreadable());
-                    };
-                    if let Some(&Computation::Return(returned)) = self.arena.computation(reduced) {
-                        *side = returned;
-                        continue;
-                    }
-                    // A computation that reaches no `return` reads as the
-                    // endpoint over what it reduced to, as the forced reading
-                    // keeps it: a bind read through to a binder's call compares
-                    // by that call, as the engine read it (#3969).
-                    if reduced != computation {
-                        *side = self.arena.value_returned(reduced);
-                    }
-                    break;
-                }
+                // A computation that reaches no `return` reads as the
+                // endpoint over what it reduced to, as the forced reading
+                // keeps it: a bind read through to a binder's call compares by
+                // that call, as the engine read it (#3969).
+                *side = self.normalize_returned(*side, reduction, DefinedHead::Hold)?;
                 // A constructor of a presented type is set aside for its
                 // normal form: read it by the type's rules.
                 let Term::Value(normal) = self.present(Term::Value(*side))?
@@ -7991,19 +7992,26 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// The normal form of `value` as an endpoint: a returned endpoint is what
     /// its computation returns, normalized again, and any other value itself.
     ///
-    /// The computation reduces by [`Self::whnf`]'s search-free steps; at a
-    /// stuck head naming a definition it takes the δ-step [`Self::unfold_term`]
-    /// fires, the one step the head admits. This is the kernel's own
-    /// evaluator, not a conversion: the normal form goes on to
-    /// [`convert_values`]. A computation that reaches no `return` stays a
-    /// returned endpoint, over what it reduced to.
+    /// The computation reduces by [`Self::whnf`]'s search-free steps under
+    /// `reduction`. At a stuck head naming a definition,
+    /// [`DefinedHead::Unfold`] takes the δ-step [`Self::unfold_term`]
+    /// fires, the one step the head admits, and [`DefinedHead::Hold`]
+    /// stops. Unfolding, this is the kernel's own evaluator, not a
+    /// conversion: the normal form goes on to [`convert_values`]. Holding,
+    /// it is the reading a compared pair's set-aside endpoints take
+    /// ([`Self::endpoints_alike`]), which no decision lets unfold a
+    /// definition. A computation that reaches no `return` stays a returned
+    /// endpoint, over what it reduced to, so both readings keep one
+    /// stuck reduct.
     ///
     /// # Specification
     /// - requires: `value` lives in the arena.
     /// - ensures: the first value that is no returned endpoint along the chain
-    ///   of returned values, or a returned endpoint whose computation is stuck
-    ///   at no defined head; `value` itself when nothing reduced.
-    /// - provides: the normal form [`read_endpoints`] converts.
+    ///   of returned values, or a returned endpoint whose computation is stuck,
+    ///   at no defined head under [`DefinedHead::Unfold`]; `value` itself when
+    ///   nothing reduced.
+    /// - provides: the normal form [`read_endpoints`] converts, and the side
+    ///   [`Self::endpoints_alike`] compares.
     /// - fails: [`Stop::Budget`] past the budget; [`Stop::PartialFixpoint`] at
     ///   a partial fixpoint's gate; [`ReplayRefusal::Unreadable`] on a dangling
     ///   node or a definition that does not unfold.
@@ -8022,9 +8030,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - hypothesis: L3 — an endpoint returning through a definition reads as
     ///   its value, a stuck endpoint reads as itself, and a definition the
     ///   reading may not unfold leaves the endpoint apart from its value.
+    ///   Holding, an endpoint whose bind reads through to a binder's call reads
+    ///   as that call.
     /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
     /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
     /// - witness: `replay::tests::a_stuck_endpoint_reads_as_what_it_reduced_to`
+    /// - witness: `replay::tests::a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969`
     #[spec(ensures: |ret| match ret {
         Ok(read) => self.arena.value(read).is_some(),
         Err(Stop::Budget) => self.spent >= self.budget,
@@ -8033,6 +8044,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     fn normalize_returned(
         &mut self,
         value: ValueId,
+        reduction: Reduction,
+        defined: DefinedHead,
     ) -> Result<ValueId, Stop>
     {
         let mut value = value;
@@ -8040,7 +8053,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             let mut term = Term::Computation(computation);
             loop {
                 self.charge()?;
-                term = self.whnf(term, Reduction::Endpoint)?;
+                term = self.whnf(term, reduction)?;
                 let Term::Computation(reduced) = term
                 else {
                     return Err(unreadable());
@@ -8049,8 +8062,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     value = returned;
                     break;
                 }
-                if let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) =
-                    self.shape(term, &Frozen::default(), ConversionSide::Left)
+                if defined == DefinedHead::Unfold
+                    && let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) =
+                        self.shape(term, &Frozen::default(), ConversionSide::Left)
                 {
                     term = self.unfold_refolded(term, constant)?;
                     continue;
