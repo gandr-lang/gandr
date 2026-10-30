@@ -227,7 +227,7 @@ def liftLeft(
 }
 
 /// The horizontal composite of `fa` and `ga`, the lift of a composite of two cells that `fill` writes.
-def liftHorizontal(
+pub def liftHorizontal(
   A : Type,
   x : A,
   y : A,
