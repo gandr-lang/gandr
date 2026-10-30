@@ -439,7 +439,7 @@ enum Kind
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::Row { .. } | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
-        | Former::Ua { .. } | Former::Compose { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
+        | Former::Ua { .. } | Former::Compose { .. } | Former::Fill { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
         | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_) | Former::Decompose(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
@@ -525,6 +525,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::FunctionFlow(..)
         | Former::Ua { .. }
         | Former::Compose { .. }
+        | Former::Fill { .. }
         | Former::Nested(_)
         | Former::Run(_)
         | Former::Constructor { .. }
@@ -1289,6 +1290,20 @@ where
         | Former::StaticApplication(first, second)
         | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
         Former::Compose { cells, .. } => components(cells, Admits::Value, Binds::NONE, None),
+        // The generator is a computation the call takes first; the cells
+        // follow it, values as a composite's are.
+        Former::Fill { cells, .. } => {
+            let mut slots = components(
+                crate::former::Arity::from(usize::from(cells).saturating_add(1_usize)),
+                Admits::Value,
+                Binds::NONE,
+                None,
+            );
+            if let Some(generator) = slots.first_mut() {
+                generator.admits = Admits::Computation(Tail::Continues);
+            }
+            slots
+        },
         Former::Path {
             carrier,
             left,
@@ -2759,6 +2774,10 @@ enum Join
     /// spelling its stratum and its shape, `compose[n, k](chain(m),`: one cell
     /// bare, more as a tuple.
     Compose(Doc, Arity),
+    /// A filler generator at a stratum over its generator and its cells,
+    /// after the head spelling its stratum and its shape,
+    /// `fill[n, k](chain(m),`: the generator, then the cells as a composite's.
+    Fill(Doc, Arity),
     /// A session type over its payloads, spelled by the template the visit
     /// pushed, binding as the template's head does.
     Session
@@ -6847,6 +6866,7 @@ impl Walk<'_, '_>
                 | Former::Run(_)
                 | Former::Ua { .. }
                 | Former::Compose { .. }
+                | Former::Fill { .. }
                 | Former::Path { .. }
                 | Former::Bridge { .. }
                 | Former::Data { .. }
@@ -7583,6 +7603,54 @@ impl Walk<'_, '_>
         let line = Doc::HARD_LINE;
         let choice = self.builder.choice(line, none)?;
         self.builder.concat(head, choice)
+    }
+
+    /// `head`, then the cells of a composite or a fill and the call's closer:
+    /// one cell bare, more as a tuple.
+    ///
+    /// # Specification
+    /// - requires: `cells` are the cell pieces, in vertex order.
+    /// - ensures: the call closed after its cells, the head and the cells apart
+    ///   by a space or a break, and the closer after a break where the cells
+    ///   break.
+    /// - fails: the builder's refusal, a cell too loose for an argument among
+    ///   them.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of three cells and one of one cell, after a
+    ///   composite's head and a fill's.
+    /// - witness: `tests::goldens::a_composite_spells_its_stratum_chain_and_cells_3957`
+    /// - witness: `tests::goldens::a_fill_spells_its_stratum_chain_generator_and_cells_4075`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn composite_cells(
+        &mut self,
+        head: Doc,
+        mut cells: Vec<Piece>,
+    ) -> Result<Doc, PresentationError>
+    {
+        let diagram = if cells.len() == 1_usize
+            && let Some(cell) = cells.pop()
+        {
+            self.bare_up_to(cell, Binding::ARGUMENT)?
+        }
+        else {
+            self.listed(&cells)?
+        };
+        let head = self.space_or_break(head)?;
+        let inner = self.builder.concat(head, diagram)?;
+        let inner = self.none_or_break(inner)?;
+        let close = self.leaf(Glyphs(")"))?;
+        self.builder.concat(inner, close)
     }
 
     /// `head`, `body` and a closing brace, as one group: on one line, a space
@@ -8419,6 +8487,29 @@ impl Walk<'_, '_>
                             writes(
                                 Production("call_expression"),
                                 Join::Compose(head, Arity(usize::from(cells))),
+                            ),
+                        ),
+                    ),
+                ))
+            },
+            Former::Fill { composite, cells } => {
+                let Pasting::Chain { cells: count } = composite.pasting;
+                let head = alloc::format!(
+                    "fill[{}, {}](chain({}),",
+                    usize::from(composite.stratum.degree),
+                    usize::from(composite.stratum.bound),
+                    usize::from(count),
+                );
+                let head = self.leaf(Glyphs(&head))?;
+                Some(writes(
+                    Production("instantiation_expression"),
+                    writes(
+                        Production("instantiation.type"),
+                        writes(
+                            Production("number.type"),
+                            writes(
+                                Production("call_expression"),
+                                Join::Fill(head, Arity(usize::from(cells))),
                             ),
                         ),
                     ),
@@ -11296,6 +11387,7 @@ impl Walk<'_, '_>
             | Former::Run(_)
             | Former::Ua { .. }
             | Former::Compose { .. }
+            | Former::Fill { .. }
             | Former::Unreadable(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(Unspelled::Misplaced);
@@ -11469,6 +11561,7 @@ impl Walk<'_, '_>
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
+            Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Update(Arity(count)) => {
@@ -11493,7 +11586,7 @@ impl Walk<'_, '_>
                     Join::RecordProduct => Infix::Product.binding(),
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Compose(..) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -11984,20 +12077,18 @@ impl Walk<'_, '_>
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
             Join::Compose(head, cells) => {
-                let mut taken = self.take(cells)?;
-                let diagram = if taken.len() == 1_usize
-                    && let Some(cell) = taken.pop()
-                {
-                    self.bare_up_to(cell, Binding::ARGUMENT)?
-                }
-                else {
-                    self.listed(&taken)?
-                };
+                let taken = self.take(cells)?;
+                (self.composite_cells(head, taken)?, Binding::Atom)
+            },
+            Join::Fill(head, Arity(cells)) => {
+                let mut taken = self.take(Arity(cells.saturating_add(1_usize)))?.into_iter();
+                let generator = taken.next().ok_or(PresentationError::Unbalanced)?;
+                let generator = self.bare_up_to(generator, Binding::ARGUMENT)?;
+                let comma = self.leaf(Glyphs(","))?;
+                let generator = self.builder.concat(generator, comma)?;
                 let head = self.space_or_break(head)?;
-                let inner = self.builder.concat(head, diagram)?;
-                let inner = self.none_or_break(inner)?;
-                let close = self.leaf(Glyphs(")"))?;
-                (self.builder.concat(inner, close)?, Binding::Atom)
+                let head = self.builder.concat(head, generator)?;
+                (self.composite_cells(head, taken.collect())?, Binding::Atom)
             },
             Join::Form {
                 pieces: Arity(count),

@@ -719,6 +719,16 @@ pub enum Former<'source, Node>
         /// How many cells the source answers.
         cells: Arity,
     },
+    /// A filler generator at a stratum, `fill[n, k](chain(m), t, (d, …))`:
+    /// [`Source::component`] answers the generator `t`, a computation, at 0,
+    /// then the cells in vertex order; one cell is written bare.
+    Fill
+    {
+        /// The degree and the catalogue bound, and the shape the cells fill.
+        composite: gandr_core_term::compose::Composite,
+        /// How many cells the source answers after the generator.
+        cells: Arity,
+    },
     /// Element identity `Path(A, x, y)`: the carrier and the two endpoints.
     Path
     {
@@ -1188,10 +1198,9 @@ pub enum Former<'source, Node>
 /// every member the printer writes `?`.
 ///
 /// The set is closed and each member names its reason. A core former the
-/// surface writes is never here but the fill, until the printer writes its
-/// form (#4075): [`crate::CoreSource`] matches every core former without a
-/// wildcard, so a former added to the core fails to compile until it is read
-/// as a [`Former`] or named here.
+/// surface writes is never here: [`crate::CoreSource`] matches every core
+/// former without a wildcard, so a former added to the core fails to compile
+/// until it is read as a [`Former`] or named here.
 ///
 /// # Specification
 /// trivial.
@@ -1239,10 +1248,6 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
-    /// A filler generator, `fill[n, k](chain(m), t, (d₁, …, dₘ))`, whose form
-    /// the printer does not write yet (#4075). Its node holds no term the
-    /// form stands for: the checker derives the induction it elaborates to.
-    Fill,
 }
 
 /// A former the printer writes in a notation of its own, which does not read

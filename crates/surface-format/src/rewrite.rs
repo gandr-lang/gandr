@@ -938,8 +938,9 @@ enum Context
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
     Outputs,
-    /// After an unbiased composite's shape, `compose[n, k](Γ, (c₁, …, cₘ))`:
-    /// a parenthesised list there is the composite's cells, never a tuple.
+    /// After the shape of an unbiased composite, `compose[n, k](Γ, (c₁, …,
+    /// cₘ))`, or after a fill's generator, `fill[n, k](Γ, t, (d₁, …, dₘ))`: a
+    /// parenthesised list there is the cells, never a tuple.
     Cells,
     /// An operation's judgment in a theory, after its `:`: a parenthesised
     /// list there opens the judgment's own port group, so only the
@@ -1220,9 +1221,10 @@ impl<'source> Respelling<'_, 'source>
 
     /// Where the operand `at` of the call at `parent` stands, after a comma:
     /// [`Context::Cells`] for the cells of an unbiased composite, its third
-    /// operand after the head `compose[n, k]` and the shape, and
-    /// [`Context::Value`] otherwise. It reads the source as written, since a
-    /// parent is respelled only after its children.
+    /// operand after the head `compose[n, k]` and the shape, and for those of
+    /// a fill, its fourth after the head `fill[n, k]`, the shape and the
+    /// generator; [`Context::Value`] otherwise. It reads the source as
+    /// written, since a parent is respelled only after its children.
     ///
     /// # Specification
     /// trivial.
@@ -1249,7 +1251,7 @@ impl<'source> Respelling<'_, 'source>
                     })
             })
             .collect();
-        let &[head, _, cells] = operands.as_slice()
+        let Some(&head) = operands.first()
         else {
             return Context::Value;
         };
@@ -1269,10 +1271,23 @@ impl<'source> Respelling<'_, 'source>
             .take_while(|leaf| leaf.span.end() <= span.end())
             .filter(|leaf| leaf.material == Material::Token)
             .map(|leaf| <&str>::from(leaf.text));
-        if cells == at
-            && written.next() == Some(COMPOSE.0)
-            && written.next() == Some(OPEN_BRACKET.0)
-        {
+        let (Some(name), Some(open)) = (written.next(), written.next())
+        else {
+            return Context::Value;
+        };
+        let cells = if open != OPEN_BRACKET.0 {
+            None
+        }
+        else if name == COMPOSE.0 {
+            operands.get(2_usize)
+        }
+        else if name == FILL.0 {
+            operands.get(3_usize)
+        }
+        else {
+            None
+        };
+        if cells == Some(&at) && cells == operands.last() {
             Context::Cells
         }
         else {
@@ -3350,6 +3365,9 @@ const OPEN_BRACKET: Spelling = Spelling("[");
 
 /// `compose`, the head of an unbiased composite.
 const COMPOSE: Spelling = Spelling("compose");
+
+/// `fill`, the head of a filler generator.
+const FILL: Spelling = Spelling("fill");
 
 /// `+`.
 const PLUS: Spelling = Spelling("+");
