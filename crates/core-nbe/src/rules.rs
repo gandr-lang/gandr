@@ -1950,16 +1950,16 @@ fn whole(
 ///   neutrals headed by returned endpoints, each but the last over the next's
 ///   computation, by [`held_levels`]; at each level each spine's first
 ///   elimination is one that inspects its operand (a fixpoint's gate, a case, a
-///   split, a fold, a projection, a force) or a transport along it, and of one
-///   kind on both sides; the innermost endpoints' computations are neutrals
-///   over one head that is no returned endpoint; the calls' spines and each
-///   level's eliminations past the first agree by [`eliminations_subgoals`];
-///   and, over more than one level, no level binds past its eliminations. One
-///   level gives [`Plan::Decompose`] over the calls' subgoals, then
-///   [`Subgoal::Continued`], then the eliminations from each side's first bind
-///   on. More give [`Plan::Reassociated`] owing one step fewer than the levels,
-///   over the calls' subgoals, then [`Subgoal::Continued`] of the outermost
-///   levels.
+///   split, a fold, a projection, a force) or a transport along or moving it,
+///   and of one kind on both sides; the innermost endpoints' computations are
+///   neutrals over one head that is no returned endpoint; the calls' spines and
+///   each level's eliminations past the first agree by
+///   [`eliminations_subgoals`]; and, over more than one level, no level binds
+///   past its eliminations. One level gives [`Plan::Decompose`] over the calls'
+///   subgoals, then [`Subgoal::Continued`], then the eliminations from each
+///   side's first bind on. More give [`Plan::Reassociated`] owing one step
+///   fewer than the levels, over the calls' subgoals, then
+///   [`Subgoal::Continued`] of the outermost levels.
 /// - provides: the premises of two held eliminations of one call, at any depth
 ///   of endpoints.
 /// - fails: [`ConversionFault::Domain`] when a node does not resolve.
@@ -2214,9 +2214,10 @@ struct HeldElimination
 /// # Adequacy
 /// - hypothesis: L3 — as [`held_against_bind`]: a bind written over a call
 ///   compares with one elimination of that call's endpoint, a force or a
-///   transport along it.
+///   transport along or moving it.
 /// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
 /// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
+/// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
 #[spec(ensures: |ret| ret.as_ref().ok().and_then(Option::as_ref).is_none_or(|held|
     domain.neutral(held.elimination).is_some_and(|node| matches!(node.head(), NeutralHead::Returned(_)))
         && domain.neutral(held.call).is_some_and(|node| !matches!(node.head(), NeutralHead::Returned(_)))))]
@@ -2238,13 +2239,15 @@ fn held_elimination(
 /// neutral, then `E₂`'s, at `c`.
 ///
 /// A transport along a held path is such a level: the kernel reads `tr(P,
-/// ⟨c⟩, v)` as `c to w. tr(P↑, w, v↑)`, whatever value it moves.
+/// ⟨c⟩, v)` as `c to w. tr(P↑, w, v↑)`, whatever value it moves. So is a
+/// transport moving a held operand: the kernel reads `tr(P, q, ⟨c⟩)` as `c to
+/// y. tr(P↑, q↑, y)`, whatever path it moves along.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `Some((levels, call))` exactly when `computation` is a neutral
 ///   headed by a returned endpoint whose first elimination inspects its operand
-///   or transports along it, read inward through each such endpoint's
+///   or transports along or moving it, read inward through each such endpoint's
 ///   computation to a neutral headed by no returned endpoint: `levels` the
 ///   neutrals read, never empty, `call` the last. `None` when a level's first
 ///   elimination does neither or a computation read is no neutral.
@@ -2266,10 +2269,12 @@ fn held_elimination(
 ///   returned endpoint is no elimination the kernel binds over, and an endpoint
 ///   whose computation cases on another is read through to the call; as
 ///   [`held_against_bind`]: a transport along a held call is a level, whatever
-///   value it moves.
+///   value it moves, and so is a transport moving one, whatever path it moves
+///   along.
 /// - witness: `machine::tests::two_held_eliminations_of_one_call_compare_by_their_parts_879`
 /// - witness: `machine::tests::two_cases_over_cases_of_one_held_call_compare_level_by_level_3086`
 /// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
+/// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
 #[spec(ensures: |ret| ret.as_ref().ok().and_then(Option::as_ref).is_none_or(|&(ref levels, call)|
     !levels.is_empty()
         && levels.iter().all(|&level| domain.neutral(level).is_some_and(|node| matches!(node.head(), NeutralHead::Returned(_))))
@@ -2306,6 +2311,7 @@ fn held_levels(
                     | Elimination::ListCase { .. }
                     | Elimination::Projection(_)
                     | Elimination::PathTransport { .. }
+                    | Elimination::OperandTransport { .. }
                     | Elimination::Force
             )
         ) {
