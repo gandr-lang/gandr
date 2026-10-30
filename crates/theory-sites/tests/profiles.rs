@@ -6,6 +6,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
 use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Corolla;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
@@ -15,7 +16,9 @@ use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeIndex;
+use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Uncertified;
 use gandr_theory_sites::Vacuity;
@@ -112,7 +115,8 @@ fn the_profiles_hold_the_shapes_their_corollas_fill()
 fn the_profile_catalogue_is_the_full_sub_site_on_its_shapes()
 {
     let bound = ShapeSize::from(5);
-    let sub = Catalogue::profiles(bound, magma()).expect("the catalogue builds");
+    let sub =
+        Catalogue::profiles(bound, magma(), ShapeBudget::EVERY).expect("the catalogue builds");
     let wirings = Catalogue::build(bound).expect("the catalogue builds");
     let held: Vec<(ShapeIndex, &Shape)> = wirings
         .entries()
@@ -133,9 +137,33 @@ fn the_profile_catalogue_is_the_full_sub_site_on_its_shapes()
         }
     }
     assert_eq!(sub.reach(), wirings.reach(), "the wirings' reach");
-    let seven = Catalogue::profiles(ShapeSize::from(7), magma()).expect("the catalogue builds");
+    let seven = Catalogue::profiles(ShapeSize::from(7), magma(), ShapeBudget::EVERY)
+        .expect("the catalogue builds");
     assert_eq!(seven.shapes().len(), 11, "the magma's shapes at size seven");
     assert_eq!(seven.reach(), Degree::from(7), "the seven points' degree");
+}
+
+/// The budget counts every wiring at the bound, not the shapes the magma
+/// keeps: the 31 wirings at size four build the magma's catalogue under a
+/// budget of 31, and a budget of 30 is refused naming 31 counted, though the
+/// magma keeps fewer shapes than either.
+#[test]
+fn the_profile_budget_counts_every_wiring_at_the_bound_4035()
+{
+    let bound = ShapeSize::from(4);
+    let built = Catalogue::profiles(bound, magma(), ShapeBudget::from(31))
+        .expect("the 31 wirings fit a budget of 31");
+    assert!(
+        built.shapes().len() < 30,
+        "the magma keeps fewer shapes than the wirings"
+    );
+    assert!(
+        matches!(
+            Catalogue::profiles(bound, magma(), ShapeBudget::from(30)),
+            Err(ShapeObstruction::PastTheBudget { counted }) if counted == ClassCount::from(31)
+        ),
+        "a budget of 30 stops at the 31st wiring"
+    );
 }
 
 /// At size seven the magma's stratum of degree seven is certified over its
@@ -146,8 +174,10 @@ fn the_profile_catalogue_is_the_full_sub_site_on_its_shapes()
 #[test]
 fn the_magma_stratum_names_its_vacuous_degrees()
 {
-    let catalogue =
-        Arc::new(Catalogue::profiles(ShapeSize::from(7), magma()).expect("the catalogue builds"));
+    let catalogue = Arc::new(
+        Catalogue::profiles(ShapeSize::from(7), magma(), ShapeBudget::EVERY)
+            .expect("the catalogue builds"),
+    );
     let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(7))
         .expect("degree seven is certified");
     assert_eq!(

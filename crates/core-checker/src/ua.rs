@@ -83,21 +83,21 @@
 //! # The written statement
 //!
 //! `ua[n, k](a, b, f, g)` states univalence at the stratum of degree `n` over
-//! the catalogue of shapes up to size `k`: the statement fixes its alphabet
-//! and its quantifier range, so a check never ranges past what it names. `a`
-//! and `b` are two signature descriptions, one generator per operation at the
-//! corolla of its arity; `f` and `g` are records keyed by generator labels,
-//! each field the translator at the corolla its label names, `f` from the
-//! codes of `a` to those of `b` and `g` back. The lowering resolves the
-//! descriptions by name and the node carries them, so the checker reads no
-//! name.
+//! the shapes up to size `k` whose every vertex is a corolla `a` or `b`
+//! inhabits: the statement fixes its alphabet and its quantifier range, so a
+//! check never ranges past what it names. `a` and `b` are two signature
+//! descriptions, one generator per operation at the corolla of its arity; `f`
+//! and `g` are records keyed by generator labels, each field the translator at
+//! the corolla its label names, `f` from the codes of `a` to those of `b` and
+//! `g` back. The lowering resolves the descriptions by name and the node
+//! carries them, so the checker reads no name.
 //!
 //! Checking runs in two steps. The premises check every translator against
 //! the arrow between its corolla's two [`code`]s, so a translator at the wrong
 //! code is a type mismatch before any table is read. The decision then
 //! certifies the stratum — the bound at most the largest a catalogue builds
-//! at, its catalogue within the stratum budget of classes, the degree
-//! one or more, the catalogue's site meeting the corolla condition and, from
+//! at, the wirings at the bound within the stratum budget of classes, the
+//! degree one or more, the sub-site meeting the corolla condition and, from
 //! degree two, the Segal condition — sends each label to its generator's
 //! corolla, requires one translator per corolla on each side and runs
 //! [`derive()`]. A refusal names its defect: a [`StratumDefect`] for the
@@ -189,6 +189,17 @@
 //!   silently with an edit. A degree the catalogue does not certify is refused
 //!   by name, not unparsed. Reversal: a site whose catalogue the descriptions
 //!   determine alone.
+//! - **The sub-site on the species' corollas.** A statement certifies over the
+//!   shapes whose every vertex is a corolla one of its species inhabits, with
+//!   the empty shape and the point. Neither species has an element at another
+//!   shape, so the telescope reads nothing there, and the derived path is the
+//!   one the whole catalogue gives. The sub-site reaches the degree of every
+//!   wiring at the bound, and its stratum names the degrees above its top shape
+//!   vacuous. The magma at bound 7 certifies 11 classes where the wirings hold
+//!   631. The alternatives were the whole catalogue, which pays for shapes no
+//!   species fills, and a degree clamped to the sub-site's top shape, which
+//!   hides a degree the statement names. Reversal: a species with an element at
+//!   a shape off its corollas.
 //! - **Labels key the translators.** A field names the generator whose corolla
 //!   it translates; generators sharing a corolla share its translator, written
 //!   once under any one of their labels, and a second is refused as
@@ -201,18 +212,18 @@
 //!   certifies or recalls for its own life ([`StratumStore`]). A run that keeps
 //!   strata hands its contexts a store, and a later context, in this process or
 //!   another, replays the stored image instead of certifying. At bound 7 and
-//!   degree 7 the replay takes 0.18 ms and the certification 2.56 s on the
-//!   release profile. The hom sets grow with the square of the classes, so a
-//!   catalogue whose enumeration passes the stratum budget is refused before
-//!   any hom set is built, at a cost the budget bounds whatever the bound. The
-//!   alternatives were statics holding every catalogue and stratum for the
-//!   process, which leave a second process certifying again, and a fixed
-//!   allowance of bounds, which refuses a stratum that certifies in under a
-//!   second. Reversal: a stratum whose replay costs what its certification
-//!   costs. The context holds them per [`Site`]: `ua[n, k]` reads the wirings,
-//!   and `compose[n, k]` the chains ([`crate::compose`]). The store keeps
-//!   wiring strata alone, keyed by bound and degree, since a chain catalogue
-//!   holds one shape per length and certifies at once.
+//!   degree 7 the whole catalogue's stratum replays in 0.18 ms and certifies in
+//!   2.56 s on the release profile. The hom sets grow with the square of the
+//!   classes, so a bound whose wirings pass the stratum budget is refused
+//!   before any hom set is built, at a cost the budget bounds whatever the
+//!   bound. The alternatives were statics holding every catalogue and stratum
+//!   for the process, which leave a second process certifying again, and a
+//!   fixed allowance of bounds, which refuses a stratum that certifies in under
+//!   a second. Reversal: a stratum whose replay costs what its certification
+//!   costs. The context holds them per catalogue [`Family`]: `ua[n, k]` reads
+//!   the sub-site on its species' profiles, and `compose[n, k]` the chains
+//!   ([`crate::compose`]). The store keeps no chain stratum, since a chain
+//!   catalogue holds one shape per length and certifies at once.
 //!
 //! # References
 //!
@@ -251,6 +262,7 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::Element;
 use gandr_theory_sites::ElementIndex;
 use gandr_theory_sites::Equivalence;
+use gandr_theory_sites::Family;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeBudget;
@@ -714,13 +726,15 @@ pub fn derive(
     })
 }
 
-/// The classes a statement's catalogue may count before its stratum is
-/// refused.
+/// The wiring classes a statement's catalogue may enumerate before its
+/// stratum is refused.
 ///
-/// economy: the hom sets grow with the square of the classes. Bound 7 holds
-/// 631 classes, built in six seconds and certified at degree 7 in three more
-/// on the release profile; bound 8 holds 1856, so it passes the budget, and
-/// the enumeration stops at its 1001st class in a few milliseconds.
+/// economy: the sub-site's catalogue reads every wiring at the bound for its
+/// shapes and its reach, so the budget bounds that enumeration whatever the
+/// bound. Bound 7 holds 631 classes, and the magma's sub-site 11 of them,
+/// certified at degree 7 in milliseconds where the 631 take nine seconds; bound
+/// 8 holds 1856, so it passes the budget, and the enumeration stops at its
+/// 1001st class in a few milliseconds.
 ///
 /// # Specification
 /// trivial.
@@ -729,28 +743,18 @@ fn stratum_budget() -> ShapeBudget
     ShapeBudget::from(1000_usize)
 }
 
-/// The catalogue family a stratum is certified over.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Site
-{
-    /// Every wiring up to the bound, as `ua[n, k]` reads it.
-    Wirings,
-    /// The chains up to the bound, as `compose[n, k]` reads them.
-    Chains,
-}
 /// Why the stratum a `ua` statement names is not certified.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StratumDefect
 {
-    /// The degree asked for is zero, or above every shape of the catalogue.
+    /// The degree asked for is zero, or above every wiring at the bound.
     Degree
     {
         /// The degree asked for.
         degree: Degree,
     },
-    /// The catalogue's site fails a condition the stratum rests on: the
-    /// corolla condition, or the Segal condition at a shape of degree two or
-    /// more.
+    /// The sub-site fails a condition the stratum rests on: the corolla
+    /// condition, or the Segal condition at a shape of degree two or more.
     Condition
     {
         /// The degree whose condition fails: one for the corolla condition,
@@ -764,8 +768,8 @@ pub enum StratumDefect
         /// The bound asked for.
         bound: ShapeSize,
     },
-    /// The catalogue at the bound holds more classes than the stratum budget,
-    /// and its enumeration stopped at the first class past it.
+    /// The wirings at the bound are more classes than the stratum budget, and
+    /// their enumeration stopped at the first class past it.
     Budget
     {
         /// The bound asked for.
@@ -1065,27 +1069,30 @@ pub(crate) fn premises(
     Ok(premises)
 }
 
-/// `ua[n, k](a, b, f, g)` decided: the stratum certified, each record read as
-/// the translators of the corollas its labels name, and [`derive()`] run over
-/// them.
+/// `ua[n, k](a, b, f, g)` decided: the stratum certified over the sub-site on
+/// the corollas `a` and `b` inhabit, each record read as the translators of
+/// the corollas its labels name, and [`derive()`] run over them.
 ///
 /// # Specification
 /// - requires: the statement's [`premises`] checked.
-/// - ensures: the path [`derive()`] gives at the catalogue of the bound, the
-///   stratum of the degree certified there, the two descriptions' species and
-///   one pair of translators per corolla a label names.
+/// - ensures: the path [`derive()`] gives at the sub-site of the catalogue of
+///   the bound on the profiles of the two descriptions' generators, the stratum
+///   of the degree certified there, the two descriptions' species and one pair
+///   of translators per corolla a label names.
 /// - fails: a stratum that is not certified; translators that are no
 ///   equivalence of the species there; code univalence's own refusal.
 /// - panics: none.
 /// - intension: the stratum comes from the context's strata under the stratum
 ///   budget, held for the context's life and shared by every statement it
 ///   decides after; a context handed a store replays the store's image first.
+///   Neither species has an element at a shape off the sub-site, so the path is
+///   the one the whole catalogue gives.
 ///
 /// # Errors
 /// [`CheckRefusal::UaUncertified`] for a bound past the largest a catalogue
-/// builds at, a catalogue past the stratum budget, a degree zero or above
-/// every shape of the catalogue and a site failing the corolla or the Segal
-/// condition;
+/// builds at, more wirings at the bound than the stratum budget, a degree zero
+/// or above every wiring at the bound and a sub-site failing the corolla or
+/// the Segal condition;
 /// [`CheckRefusal::UaInequivalent`] for a record naming no generator, a
 /// generator past the bound, a corolla given twice or on one side only,
 /// tables that are not mutually inverse or not natural, a stuck translator
@@ -1094,10 +1101,12 @@ pub(crate) fn premises(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the swap of a binary generator beside a constant derives
-///   the path the kernel admits; each defect of the stratum and of the
+///   the path the kernel admits, over the sub-site on the magma's corollas the
+///   path the whole catalogue gives; each defect of the stratum and of the
 ///   translators is refused under its own name.
 /// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
 /// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+/// - witness: `ua::tests::a_statement_derives_over_its_sub_site_the_path_the_wirings_give_4035`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::UaUncertified { at: site, .. } | CheckRefusal::UaInequivalent { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
@@ -1114,10 +1123,17 @@ pub(crate) fn decide(
     } = statement(context.arena(), at)?;
     let uncertified = |stratum| CheckRefusal::UaUncertified { at, stratum };
     let inequivalent = |defect| CheckRefusal::UaInequivalent { at, defect };
+    let species = (sides.source.species(), sides.target.species());
+    let profiles = species
+        .0
+        .profiles()
+        .chain(species.1.profiles())
+        .map(|(profile, _count)| profile)
+        .collect();
     let certified = context
         .strata_mut()
         .certified(
-            Site::Wirings,
+            &Family::Profiles(profiles),
             StratumAt {
                 bound: stratum.bound,
                 degree: stratum.degree,
@@ -1154,7 +1170,6 @@ pub(crate) fn decide(
         };
         translators.insert(corolla, Translators { forward, backward });
     }
-    let species = (sides.source.species(), sides.target.species());
     derive(context, &certified, (&species.0, &species.1), &translators).map_err(|refused| {
         match refused {
             UaRefusal::Species(ref defect) => inequivalent(UaDefect::of(defect)),

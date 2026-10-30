@@ -385,40 +385,52 @@ impl Catalogue
 
     /// The catalogue of the shapes at `bound` whose every vertex has one of
     /// `profiles`, with the empty shape and the point: the full sub-site on
-    /// them, reaching the degree of every wiring at `bound`.
+    /// them, reaching the degree of every wiring at `bound`, if the wirings at
+    /// `bound` are no more classes than `budget`.
     ///
     /// # Specification
     /// - ensures: as the type states, every shape in [`Family::Profiles`] of
     ///   `profiles` and one class index per shape; the shapes are the wiring
     ///   catalogue's classes at `bound` the family holds, in its order, and the
     ///   reach is the top degree among all those classes.
-    /// - fails: as [`shapes_up_to`] under [`ShapeBudget::EVERY`].
+    /// - fails: as [`shapes_up_to`] under `budget`, before any hom set is
+    ///   built.
     /// - panics: none.
-    /// - intension: the wirings at `bound` are enumerated and filtered, and the
-    ///   hom sets are built among the shapes kept alone, which is where the
-    ///   cost lies.
+    /// - intension: the wirings at `bound` are enumerated under `budget` and
+    ///   filtered, and the hom sets are built among the shapes kept alone,
+    ///   which is where the cost lies. The budget counts the wirings, so a
+    ///   refused bound costs what the budget allows, as [`Catalogue::within`].
     ///
     /// # Errors
-    /// Any [`ShapeObstruction`] [`shapes_up_to`] returns.
+    /// Any [`ShapeObstruction`] [`shapes_up_to`] returns, and
+    /// [`ShapeObstruction::PastTheBudget`] above all.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — at size 5 the magma's shapes are the wiring
     ///   catalogue's classes the family holds, with the same hom sets; at size
-    ///   7 its eleven shapes top out at degree five and it reaches seven.
+    ///   7 its eleven shapes top out at degree five and it reaches seven. L3
+    ///   for the budget: the 31 wirings at size four build the magma's
+    ///   catalogue under a budget of 31 and are refused under 30, naming 31
+    ///   counted.
     /// - witness: `tests::profiles::the_profile_catalogue_is_the_full_sub_site_on_its_shapes`
+    /// - witness: `tests::profiles::the_profile_budget_counts_every_wiring_at_the_bound_4035`
     #[inline]
-    #[spec(ensures: |ref result| result.as_ref().map_or(true, |catalogue| {
-        catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref catalogue) => catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
             && catalogue.classes.len() == catalogue.shapes.len()
-            && catalogue.shapes.iter().all(|shape| shape.size() <= bound && catalogue.family.holds(shape) == Membership::Inside)
-    }))]
+            && catalogue.shapes.len() <= usize::from(budget)
+            && catalogue.shapes.iter().all(|shape| shape.size() <= bound && catalogue.family.holds(shape) == Membership::Inside),
+        Err(ShapeObstruction::PastTheBudget { counted }) => usize::from(counted) == usize::from(budget).saturating_add(1),
+        Err(_) => true,
+    })]
     pub fn profiles(
         bound: ShapeSize,
         profiles: BTreeSet<Profile>,
+        budget: ShapeBudget,
     ) -> Result<Self, ShapeObstruction>
     {
         let family = Family::Profiles(profiles);
-        let mut shapes = shapes_up_to(bound, ShapeBudget::EVERY)?;
+        let mut shapes = shapes_up_to(bound, budget)?;
         let reach = Degree::top(&shapes);
         shapes.retain(|shape| family.holds(shape) == Membership::Inside);
         Ok(Self::of(family, reach, shapes))

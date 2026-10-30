@@ -1,10 +1,11 @@
 // Univalence at the certified strata of a signature: `ua[n, k]` derives a
-// path between two models' degree telescopes up to degree `n` over shapes of
-// at most `k` vertices, each stage over its matching object (Shulman,
+// path between two models' degree telescopes up to degree `n` over the
+// shapes of size at most `k` whose every vertex is a corolla the two
+// signatures inhabit, each stage over its matching object (Shulman,
 // _Univalence for Inverse Diagrams and Homotopy Canonicity_,
 // doi:10.1017/S0960129514000565). From degree two the Segal condition
 // certifies the stages above the corollas; a degree, a bound or a table the
-// stratum does not certify is refused by name, and so is a catalogue of more
+// stratum does not certify is refused by name, and so is a bound holding more
 // shape classes than the stratum budget.
 
 // The magma, the swap, the identity on the booleans and the unit's identity.
@@ -24,14 +25,21 @@ def lifts : Path(
   (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
 ) = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));
 
-/// The magma to itself by the swap at bound six and degree six, a catalogue
-/// of 223 shape classes.
+/// The magma to itself by the swap at bound six and degree six.
 def six = ua[
   6,
   6
 ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
-/// A degree no shape of the catalogue reaches is not certified.
+/// The magma to itself by the swap at bound seven and degree seven, over
+/// eleven of the bound's 631 shape classes. Degrees six and seven lie above
+/// all eleven, so the stratum certifies them vacuously.
+def seven = ua[
+  7,
+  7
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
+
+/// The stratum refuses a degree past every wiring at the bound.
 @[ refuses("UncertifiedDegree") ]
 def above = ua[
   5,
