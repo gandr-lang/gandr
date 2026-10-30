@@ -852,8 +852,10 @@ pub enum RefusalName
     /// Univalence over a catalogue whose site fails the corolla or the Segal
     /// condition.
     UncertifiedCondition,
-    /// Univalence over a catalogue past the one the checker enumerates.
+    /// Univalence over a bound past the largest a catalogue builds at.
     UncertifiedAllowance,
+    /// Univalence over a catalogue of more classes than the stratum budget.
+    UncertifiedBudget,
     /// A translator record naming a generator its description does not
     /// declare.
     UnknownGenerator,
@@ -1260,7 +1262,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 227_usize] = [
+    pub const VOCABULARY: [Self; 228_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1304,6 +1306,7 @@ impl RefusalName
         Self::UncertifiedDegree,
         Self::UncertifiedCondition,
         Self::UncertifiedAllowance,
+        Self::UncertifiedBudget,
         Self::UnknownGenerator,
         Self::PastTheBound,
         Self::CorollaCardinality,
@@ -1686,6 +1689,7 @@ impl RefusalName
         | (Self::UncertifiedDegree, b"UncertifiedDegree")
         | (Self::UncertifiedCondition, b"UncertifiedCondition")
         | (Self::UncertifiedAllowance, b"UncertifiedAllowance")
+        | (Self::UncertifiedBudget, b"UncertifiedBudget")
         | (Self::UnknownGenerator, b"UnknownGenerator")
         | (Self::PastTheBound, b"PastTheBound")
         | (Self::CorollaCardinality, b"CorollaCardinality")
@@ -1835,6 +1839,7 @@ impl RefusalName
             Self::UncertifiedDegree => "UncertifiedDegree",
             Self::UncertifiedCondition => "UncertifiedCondition",
             Self::UncertifiedAllowance => "UncertifiedAllowance",
+            Self::UncertifiedBudget => "UncertifiedBudget",
             Self::UnknownGenerator => "UnknownGenerator",
             Self::PastTheBound => "PastTheBound",
             Self::CorollaCardinality => "CorollaCardinality",
@@ -2930,6 +2935,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UaUncertified { stratum: StratumDefect::Degree { .. }, .. }, RefusalName::UncertifiedDegree)
         | (CheckRefusal::UaUncertified { stratum: StratumDefect::Condition { .. }, .. }, RefusalName::UncertifiedCondition)
         | (CheckRefusal::UaUncertified { stratum: StratumDefect::Allowance { .. }, .. }, RefusalName::UncertifiedAllowance)
+        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Budget { .. }, .. }, RefusalName::UncertifiedBudget)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::UnknownGenerator { .. }, .. }, RefusalName::UnknownGenerator)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::PastTheBound { .. }, .. }, RefusalName::PastTheBound)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::Cardinality { .. }, .. }, RefusalName::CorollaCardinality)
@@ -3067,6 +3073,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             StratumDefect::Degree { .. } => RefusalName::UncertifiedDegree,
             StratumDefect::Condition { .. } => RefusalName::UncertifiedCondition,
             StratumDefect::Allowance { .. } => RefusalName::UncertifiedAllowance,
+            StratumDefect::Budget { .. } => RefusalName::UncertifiedBudget,
         },
         CheckRefusal::UaInequivalent { defect, .. } => match defect {
             UaDefect::UnknownGenerator { .. } => RefusalName::UnknownGenerator,

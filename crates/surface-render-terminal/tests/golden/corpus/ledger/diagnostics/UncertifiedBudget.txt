@@ -1,0 +1,12 @@
+error[UncertifiedBudget]: `ua` enumerates catalogues within its budget of shape classes
+   ╭▸ corpus/ledger/diagnostics/UncertifiedBudget.gandr:28:15
+   │
+28 │   def crowded = ua[
+   │ ┏━━━━━━━━━━━━━━━┛
+29 │ ┃   1,
+30 │ ┃   8
+31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a catalogue past the stratum budget
+   │
+   ├ note: `crowded` is refused with UncertifiedBudget, as its expectation states
+   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

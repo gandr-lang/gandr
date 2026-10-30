@@ -1,0 +1,31 @@
+/// `UncertifiedBudget`: univalence over a catalogue of more shape classes than the stratum budget.
+theory Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def exchange(b : Bool) -> -F Bool {
+  case b {
+    true => +{.1 = unit},
+    false => +{.0 = unit}
+  }
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  e
+}
+
+@[ checks ]
+def raised = ua[
+  2,
+  4
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UncertifiedBudget") ]
+def crowded = ua[
+  1,
+  8
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;

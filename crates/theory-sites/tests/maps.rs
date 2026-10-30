@@ -12,6 +12,7 @@ use gandr_theory_sites::MapForm;
 use gandr_theory_sites::Membership;
 use gandr_theory_sites::Part;
 use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Site;
@@ -177,7 +178,8 @@ fn hom_counts_match_hand_counts()
 #[test]
 fn the_enumerator_agrees_with_brute_force()
 {
-    let shapes = shapes_up_to(ShapeSize::from(4)).expect("the enumeration runs");
+    let shapes =
+        shapes_up_to(ShapeSize::from(4), ShapeBudget::EVERY).expect("the enumeration runs");
     let mut pairs = 0_usize;
     for source in &shapes {
         for target in &shapes {

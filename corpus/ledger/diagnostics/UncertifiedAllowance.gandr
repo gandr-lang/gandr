@@ -1,4 +1,4 @@
-/// `UncertifiedAllowance`: univalence over a catalogue past the one the checker enumerates.
+/// `UncertifiedAllowance`: univalence over a bound past the largest a catalogue builds at.
 theory Magma {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
@@ -27,5 +27,5 @@ def raised = ua[
 @[ refuses("UncertifiedAllowance") ]
 def wide = ua[
   1,
-  6
+  65
 ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;

@@ -2845,7 +2845,8 @@ fn read_description(reader: &mut Reader<'_>)
 /// Write why a univalence statement's stratum is not certified.
 ///
 /// # Specification
-/// - ensures: a tag naming the defect, then the degree or the bound it carries.
+/// - ensures: a tag naming the defect, then the degree or the bound it carries,
+///   and for a budget the classes counted after the bound.
 /// - fails: an unrepresentable count.
 /// - executable: none — a generic sink exposes no byte observer.
 ///
@@ -2872,6 +2873,11 @@ where
         gandr_core_checker::ua::StratumDefect::Allowance { bound } => {
             writer.tag(Tag(2));
             writer.count(Count(usize::from(bound)))
+        },
+        gandr_core_checker::ua::StratumDefect::Budget { bound, counted } => {
+            writer.tag(Tag(3));
+            writer.count(Count(usize::from(bound)))?;
+            writer.count(Count(usize::from(counted)))
         },
     }
 }
@@ -2903,6 +2909,14 @@ fn read_stratum_defect(
         2 => Ok(gandr_core_checker::ua::StratumDefect::Allowance {
             bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
         }),
+        3 => {
+            let bound = reader.count()?;
+            let counted = reader.count()?;
+            Ok(gandr_core_checker::ua::StratumDefect::Budget {
+                bound: gandr_theory_sites::ShapeSize::from(bound.0),
+                counted: gandr_theory_sites::ClassCount::from(counted.0),
+            })
+        },
         _ => Err(CodecError::Corrupt),
     }
 }

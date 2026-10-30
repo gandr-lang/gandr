@@ -3049,6 +3049,10 @@ fn every_refusal() -> Vec<Refusal>
             StratumDefect::Allowance {
                 bound: gandr_theory_sites::ShapeSize::from(3_usize),
             },
+            StratumDefect::Budget {
+                bound: gandr_theory_sites::ShapeSize::from(8_usize),
+                counted: gandr_theory_sites::ClassCount::from(1001_usize),
+            },
         ]
         .map(|stratum| Refusal::UaUncertified { at, stratum }),
     );

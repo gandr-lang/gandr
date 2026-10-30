@@ -1327,8 +1327,14 @@ impl fmt::Display for Checked
                 ),
                 | StratumDefect::Allowance { bound } => write!(
                     f,
-                    "univalence enumerates catalogues of size up to 5, not {}",
+                    "univalence enumerates catalogues of size up to 64, the most vertices a shape holds, not {}",
                     usize::from(bound)
+                ),
+                | StratumDefect::Budget { bound, counted } => write!(
+                    f,
+                    "the catalogue of size up to {} counts {} shape classes before it stops, past the budget univalence enumerates within",
+                    usize::from(bound),
+                    usize::from(counted)
                 ),
             },
             | CheckRefusal::UaInequivalent { defect, .. } => match defect {
@@ -2905,7 +2911,14 @@ mod tests
             CheckRefusal::UaUncertified {
                 at: value,
                 stratum: StratumDefect::Allowance {
-                    bound: ShapeSize::from(6_usize),
+                    bound: ShapeSize::from(65_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Budget {
+                    bound: ShapeSize::from(8_usize),
+                    counted: gandr_theory_sites::ClassCount::from(1001_usize),
                 },
             },
             CheckRefusal::UaInequivalent {
@@ -3937,14 +3950,22 @@ mod tests
             title(CheckRefusal::UaUncertified {
                 at: value,
                 stratum: StratumDefect::Allowance {
-                    bound: ShapeSize::from(6_usize),
+                    bound: ShapeSize::from(65_usize),
+                },
+            }),
+            title(CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Budget {
+                    bound: ShapeSize::from(8_usize),
+                    counted: gandr_theory_sites::ClassCount::from(1001_usize),
                 },
             }),
         ];
-        assert_ne!(
-            strata[0], strata[1],
-            "a degree and a bound are distinct subjects"
-        );
+        for (index, title) in strata.iter().enumerate() {
+            for earlier in &strata[.. index] {
+                assert_ne!(earlier, title, "each stratum defect names its own subject");
+            }
+        }
         assert_eq!(
             ordinals(&strata[0]),
             [1_usize, 3_usize],
@@ -3952,8 +3973,13 @@ mod tests
         );
         assert_eq!(
             ordinals(&strata[1]),
-            [5_usize, 6_usize],
-            "the bound, then the asked bound"
+            [64_usize, 65_usize],
+            "the largest bound, then the asked bound"
+        );
+        assert_eq!(
+            ordinals(&strata[2]),
+            [8_usize, 1001_usize],
+            "the asked bound, then the classes counted"
         );
         let inequivalent = [
             title(CheckRefusal::UaInequivalent {

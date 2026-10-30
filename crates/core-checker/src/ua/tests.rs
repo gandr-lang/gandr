@@ -21,6 +21,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_theory_levitation::Name;
 use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::ElementIndex;
@@ -1063,6 +1064,45 @@ fn a_written_statement_derives_the_path_at_its_stratum()
     );
 }
 
+/// Bound six, past the five a fixed allowance once held, at degree six: its
+/// 223 classes are within the stratum budget, so the statement derives its
+/// path and the kernel admits it.
+#[test]
+fn a_statement_past_bound_five_derives_its_path()
+{
+    let mut arena = CoreArena::new();
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let keep = table(&mut arena, Images(&[0]));
+    let fields = [(Spelled("mul"), swap), (Spelled("one"), keep)];
+    let statement = written(&mut arena, Head(6, 6), &fields, &fields);
+    let unsigned = Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Absent(crate::declaration::signature::Absent::Unsigned),
+        Maybe::Present(statement),
+        OriginToken::from(0_usize),
+    );
+    let (report, readmission) = judged(&mut arena, &[unsigned]);
+    assert!(
+        matches!(
+            report.judged().first().map(Judged::verdict),
+            Some(Verdict::Synthesised { .. })
+        ),
+        "the statement at bound six synthesises its type: {report:?}"
+    );
+    assert!(
+        report.natives().contains_key(&statement),
+        "the checker records the derived path"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "the kernel admits it: {:?}",
+        readmission.readmitted()
+    );
+}
+
 #[test]
 fn a_statement_stands_in_a_product_as_its_derived_path()
 {
@@ -1138,8 +1178,12 @@ fn a_written_statement_refuses_each_defect_by_name()
             "a catalogue whose site fails the corolla condition",
         ),
         (
-            written(&mut arena, Head(1, 6), &fields, &fields),
-            "a catalogue past the allowance",
+            written(&mut arena, Head(1, 65), &fields, &fields),
+            "a bound past the largest a catalogue builds at",
+        ),
+        (
+            written(&mut arena, Head(1, 8), &fields, &fields),
+            "a catalogue past the stratum budget",
         ),
         (
             written(&mut arena, Head(1, 3), &fields, &fields),
@@ -1184,7 +1228,13 @@ fn a_written_statement_refuses_each_defect_by_name()
             matches!(refusal, CheckRefusal::UaUncertified {
                 stratum: StratumDefect::Allowance { bound },
                 ..
-            } if bound == ShapeSize::from(6))
+            } if bound == ShapeSize::from(65))
+        },
+        |refusal: CheckRefusal| {
+            matches!(refusal, CheckRefusal::UaUncertified {
+                stratum: StratumDefect::Budget { bound, counted },
+                ..
+            } if bound == ShapeSize::from(8) && counted == ClassCount::from(1001))
         },
         |refusal: CheckRefusal| {
             matches!(refusal, CheckRefusal::UaInequivalent {

@@ -40,8 +40,34 @@ wrapper! {
     pub struct PointCount(usize);
 }
 
+wrapper! {
+    /// How many shape classes an enumeration may count before it stops.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ShapeBudget(usize);
+}
+
+wrapper! {
+    /// How many shape classes an enumeration counted.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ClassCount(usize);
+}
+
 /// The most vertices a shape holds: a vertex set is one machine word.
 const MAX_VERTICES: usize = 64;
+
+impl ShapeSize
+{
+    /// The largest bound a catalogue builds at. The shape of one point more
+    /// has more vertices than a vertex set holds.
+    pub const LARGEST: Self = Self(MAX_VERTICES);
+}
+
+impl ShapeBudget
+{
+    /// A budget no enumeration exhausts. An address space holds fewer classes
+    /// than it allows, so an enumeration under it stops only at its bound.
+    pub const EVERY: Self = Self(usize::MAX);
+}
 
 /// Where one end of a wire attaches.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -158,11 +184,12 @@ pub enum VertexKind
     Ported,
 }
 
-/// Why a shape could not be formed.
+/// Why a shape, or an enumeration of shapes, could not be formed.
 ///
 /// # Specification
-/// - provides: the refusal names the vertex count, the wire or the carrier
-///   refusal that decided it, so a caller can point at the offending part.
+/// - provides: the refusal names the vertex count, the wire, the carrier
+///   refusal or the classes counted that decided it, so a caller can point at
+///   the offending part.
 /// - executable: none — a refusal on its own lacks the ends or the wiring it
 ///   was decided against; the constructors' predicates check each variant
 ///   against their inputs.
@@ -173,6 +200,7 @@ pub enum VertexKind
 ///   absent vertex is observed in both orders.
 /// - witness: `tests::shapes::the_constructor_refuses_by_variant`
 /// - witness: `tests::shapes::a_stick_is_refused_by_name`
+/// - witness: `tests::shapes::the_enumeration_stops_at_the_first_class_past_its_budget`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShapeObstruction
 {
@@ -206,6 +234,13 @@ pub enum ShapeObstruction
     },
     /// The carrier refused the wiring the shape presents.
     Carrier(WiringObstruction),
+    /// An enumeration counted more classes than its budget allows, and
+    /// stopped at the first class past it.
+    PastTheBudget
+    {
+        /// The classes counted when it stopped: one past the budget.
+        counted: ClassCount,
+    },
 }
 
 impl fmt::Display for ShapeObstruction
@@ -228,6 +263,11 @@ impl fmt::Display for ShapeObstruction
             },
             Self::UnknownWire { .. } => f.write_str("a generator names an undeclared wire"),
             Self::Carrier(ref refusal) => write!(f, "the carrier refused the shape: {refusal}"),
+            Self::PastTheBudget { counted } => write!(
+                f,
+                "the enumeration counted {} classes, past its budget",
+                usize::from(counted)
+            ),
         }
     }
 }
@@ -463,7 +503,7 @@ impl Shape
             && given.get(usize::from(wire)).is_some_and(|named| named.producer == End::Vertex(vertex) || named.consumer == End::Vertex(vertex)),
         Err(ShapeObstruction::Stick { wire }) => given.get(usize::from(wire)).is_some_and(|named| named.kind() == WireKind::Stick),
         Err(ShapeObstruction::Carrier(refusal)) => matches!(refusal, WiringObstruction::DirectedCycle { .. }),
-        Err(ShapeObstruction::UnknownWire { .. }) => false,
+        Err(ShapeObstruction::UnknownWire { .. } | ShapeObstruction::PastTheBudget { .. }) => false,
     })]
     pub fn from_ends(
         vertices: EdgeCount,
@@ -1192,20 +1232,24 @@ impl fmt::Display for EndLabel
 }
 
 /// Every shape of size at most `bound`, one per isomorphism class, ordered by
-/// size and then by key.
+/// size and then by key, counting no more classes than `budget`.
 ///
 /// # Specification
 /// - ensures: each class of stick-free shapes the carrier admits with at most
 ///   `bound` vertices plus wires appears exactly once, in strictly increasing
 ///   order of size and then key.
-/// - fails: a bound past 64 vertices.
+/// - fails: a bound past 64 vertices; more classes than `budget` allows.
 /// - panics: none.
 /// - intension: every multiset of non-stick wire ends over `v` vertices is
 ///   presented to the carrier, which refuses the cyclic ones; the survivors are
-///   deduplicated on [`Shape::key`].
+///   deduplicated on [`Shape::key`]. The enumeration stops at the first class
+///   past the budget, so a refused bound costs what the budget allows and not
+///   what the bound holds.
 ///
 /// # Errors
 /// - [`ShapeObstruction::TooManyVertices`]: the bound reaches 65 vertices.
+/// - [`ShapeObstruction::PastTheBudget`]: the bound holds more classes than
+///   `budget`, and `counted` is one past it.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the class counts for bounds zero to six (1, 2, 5, 12, 31,
@@ -1213,16 +1257,23 @@ impl fmt::Display for EndLabel
 ///   shapes, sticks included (1, 3, 8, 20, 51, 132, 355): a shape is a
 ///   stick-free shape beside its sticks, so the stick-free classes of size at
 ///   most `n` are as many as all classes of size exactly `n`. A lost, doubled
-///   or stick-bearing class changes a count.
+///   or stick-bearing class changes a count. L3 for the budget: the 31 classes
+///   at bound four under a budget of 31 and of 30, the boundary where it stops.
 /// - witness: `tests::shapes::the_enumeration_counts_match_an_independent_count`
+/// - witness: `tests::shapes::the_enumeration_stops_at_the_first_class_past_its_budget`
 #[inline]
 #[spec(ensures: |ref result| match *result {
     Ok(ref shapes) => shapes.iter().all(|shape| shape.size() <= bound && shape.count_of(WireKind::Stick) == WireCount::from(0_usize))
-        && shapes.iter().zip(shapes.iter().skip(1)).all(|pair| (pair.0.size(), pair.0.key()) < (pair.1.size(), pair.1.key())),
+        && shapes.iter().zip(shapes.iter().skip(1)).all(|pair| (pair.0.size(), pair.0.key()) < (pair.1.size(), pair.1.key()))
+        && shapes.len() <= budget.0,
     Err(ShapeObstruction::TooManyVertices { vertices }) => usize::from(vertices) > MAX_VERTICES && usize::from(vertices) <= usize::from(bound),
+    Err(ShapeObstruction::PastTheBudget { counted }) => counted.0 == budget.0.saturating_add(1),
     Err(_) => false,
 })]
-pub fn shapes_up_to(bound: ShapeSize) -> Result<Vec<Shape>, ShapeObstruction>
+pub fn shapes_up_to(
+    bound: ShapeSize,
+    budget: ShapeBudget,
+) -> Result<Vec<Shape>, ShapeObstruction>
 {
     let mut classes: BTreeMap<ShapeKey, Shape> = BTreeMap::new();
     let mut cursor: Vec<usize> = Vec::new();
@@ -1240,6 +1291,11 @@ pub fn shapes_up_to(bound: ShapeSize) -> Result<Vec<Shape>, ShapeObstruction>
                 match Shape::from_ends(EdgeCount::from(vertices), ends) {
                     Ok(shape) => {
                         classes.entry(shape.key()).or_insert(shape);
+                        if classes.len() > budget.0 {
+                            return Err(ShapeObstruction::PastTheBudget {
+                                counted: ClassCount(classes.len()),
+                            });
+                        }
                     },
                     Err(ShapeObstruction::Carrier(WiringObstruction::DirectedCycle { .. })) => {},
                     Err(refusal) => return Err(refusal),

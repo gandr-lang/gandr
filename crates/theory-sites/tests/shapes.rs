@@ -12,10 +12,13 @@ use gandr_theory_circuit_algebras::Wire;
 use gandr_theory_circuit_algebras::WireCount;
 use gandr_theory_circuit_algebras::Wiring;
 use gandr_theory_circuit_algebras::WiringObstruction;
+use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::End;
 use gandr_theory_sites::Ends;
 use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::VertexKind;
@@ -74,7 +77,8 @@ fn the_enumeration_counts_match_an_independent_count()
 {
     let expected: [usize; 7] = [1, 2, 5, 12, 31, 81, 223];
     for (bound, count) in expected.into_iter().enumerate() {
-        let shapes = shapes_up_to(ShapeSize::from(bound)).expect("the enumeration runs");
+        let shapes =
+            shapes_up_to(ShapeSize::from(bound), ShapeBudget::EVERY).expect("the enumeration runs");
         assert_eq!(shapes.len(), count, "classes of size at most {bound}");
         assert!(
             shapes.is_sorted_by_key(Shape::size),
@@ -87,6 +91,40 @@ fn the_enumeration_counts_match_an_independent_count()
             "no class holds a stick"
         );
     }
+}
+
+/// The enumeration stops at the first class past its budget: bound four holds
+/// 31 classes, so a budget of 31 admits them and one of 30 stops at the 31st,
+/// before any hom set is built.
+#[test]
+fn the_enumeration_stops_at_the_first_class_past_its_budget()
+{
+    let bound = ShapeSize::from(4_usize);
+    let within = Catalogue::within(bound, ShapeBudget::from(31_usize)).expect("31 classes fit");
+    assert_eq!(
+        within.shapes().len(),
+        31,
+        "the budget at the count admits every class"
+    );
+    let past = ShapeObstruction::PastTheBudget {
+        counted: ClassCount::from(31_usize),
+    };
+    assert_eq!(
+        shapes_up_to(bound, ShapeBudget::from(30_usize)),
+        Err(past),
+        "one class under the count stops at the 31st"
+    );
+    assert!(
+        matches!(Catalogue::within(bound, ShapeBudget::from(30_usize)), Err(refused) if refused == past),
+        "the catalogue refuses as its enumeration does"
+    );
+    assert_eq!(
+        shapes_up_to(ShapeSize::from(64_usize), ShapeBudget::from(1000_usize)),
+        Err(ShapeObstruction::PastTheBudget {
+            counted: ClassCount::from(1001_usize),
+        }),
+        "the largest bound stops at the budget, long before its classes run out"
+    );
 }
 
 /// Each refusal of the constructors other than the stick is observed by its

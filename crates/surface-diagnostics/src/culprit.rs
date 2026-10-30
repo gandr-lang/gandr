@@ -378,7 +378,8 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::UaUncertified { stratum, .. } => match stratum {
             StratumDefect::Degree { .. } => "a degree no shape of the catalogue reaches",
             StratumDefect::Condition { .. } => "a catalogue failing the corolla or Segal condition",
-            StratumDefect::Allowance { .. } => "a catalogue past the checker's allowance",
+            StratumDefect::Allowance { .. } => "a bound past the largest the site holds",
+            StratumDefect::Budget { .. } => "a catalogue past the stratum budget",
         },
         CheckRefusal::UaInequivalent { defect, .. } => match defect {
             UaDefect::UnknownGenerator { .. } => "no generator of the description",
