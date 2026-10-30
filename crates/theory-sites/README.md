@@ -6,6 +6,7 @@ A circuit algebra has two units. The identity wire, a bare wire from an input po
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -21,6 +22,10 @@ A circuit algebra has two units. The identity wire, a bare wire from an input po
 
 **How.** Shapes are enumerated up to a size bound through `Wiring::assemble`, so the carrier decides which shapes exist, and the constructors refuse a stick by naming its wire. Maps between two shapes are enumerated by assigning target vertices to source vertices and wires to wires, and each candidate passes one validator that states the class. Each condition runs over every shape, map, composable pair or span at the bound, in increasing size, and reports its case count and the first failing case as the smallest counter-example.
 
+## References
+
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the programme's design for the iterated site (§ The design), one site under the wreath product. No level holds a stick, and an outer vertex may carry the empty shape, which the wreath builds.
+
 ## Provided features
 
 - `Shape`, `End`, `Ends`, `WireKind`, `VertexKind`, `ShapeKey`, `ShapeObstruction`, `shapes_up_to`: stick-free shapes through the carrier, the stick refused by name, their statistics, isomorphism classes, and the enumeration of every class up to a size. Witnesses: `tests::shapes::the_enumeration_counts_match_an_independent_count`, `tests::shapes::the_constructor_refuses_by_variant`, `tests::shapes::a_stick_is_refused_by_name`, `tests::shapes::a_wiring_reads_back_as_its_shape`, `tests::shapes::wire_kinds_follow_the_open_ends`, `tests::shapes::points_are_the_vertices_no_wire_touches`, `tests::shapes::a_relabelled_shape_keys_alike`.
@@ -28,7 +33,8 @@ A circuit algebra has two units. The identity wire, a bare wire from an input po
 - `Catalogue`, `Family`: every class of a family and every hom set at a bound, the wirings or the chains with the empty shape and the point, each the full sub-site on its shapes; a class outside the family is named as such. Witnesses: `tests::maps::the_catalogue_serves_pinned_hom_sets`, `tests::chains::the_chains_hold_the_chain_and_refuse_the_rest`, `tests::chains::the_chain_catalogue_is_the_full_sub_site_on_the_chains`.
 - `Shape::chain`, `Boundary`, `Unfilled`, `fills`: the chain of `n` composable vertices, and the check that a diagram's cells have their vertices' profiles and meet along the inner wires, answering the diagram's boundary and naming the first defect. Witnesses: `tests::chains::a_chain_runs_from_its_open_input_to_its_open_output`, `tests::chains::a_composable_diagram_fills_its_chain`, `tests::chains::a_diagram_that_does_not_fill_its_chain_is_named`.
 - `Degree`: vertices plus inner wires. Witness: `tests::shapes::the_degree_counts_vertices_and_inner_wires`.
-- `Site`, `identities`, `closure`, `intersection`, `invertibility`, `degree_order`, `direct_core`, `latching`, `factorization`, `rigidity`, `dual_rigidity`, `split_lowering`, `pushouts`, `Outcome`: the generalized Reedy conditions, each answering with its case count and its smallest counter-example. Witnesses: `tests::reedy::the_class_is_a_category_with_two_classes`, `tests::reedy::the_degree_orders_both_classes`, `tests::reedy::the_point_free_core_is_direct`, `tests::reedy::the_latching_category_is_finite`, `tests::reedy::every_map_factors_through_a_point_deletion`, `tests::reedy::both_rigidity_axioms_hold`, `tests::reedy::a_closed_substitution_has_no_pushout_with_a_deletion`, `tests::point_count::the_codegeneracy_is_split`.
+- `Site`, `identities`, `closure`, `intersection`, `invertibility`, `degree_order`, `direct_core`, `latching`, `factorization`, `rigidity`, `dual_rigidity`, `split_lowering`, `pushouts`, `Outcome`: the generalized Reedy conditions, each answering with its case count and its smallest counter-example; all but the direct core and latching run at any level. Witnesses: `tests::reedy::the_class_is_a_category_with_two_classes`, `tests::reedy::the_degree_orders_both_classes`, `tests::reedy::the_point_free_core_is_direct`, `tests::reedy::the_latching_category_is_finite`, `tests::reedy::every_map_factors_through_a_point_deletion`, `tests::reedy::both_rigidity_axioms_hold`, `tests::reedy::a_closed_substitution_has_no_pushout_with_a_deletion`, `tests::point_count::the_codegeneracy_is_split`.
+- `Level`, `Wreath`, `WreathShape`, `WreathMap`: what the conditions read of a site, the catalogue as level one, and the wreath over a level as the next. Witnesses: `tests::wreath::the_wreath_holds_one_object_per_class`, `tests::wreath::a_column_raises_when_one_inner_map_keeps_it`, `tests::wreath::the_wreath_is_a_generalized_reedy_category`, `tests::wreath::a_column_pushes_out_only_by_deleting_its_vertex`.
 - `core_decomposition`, `grounded_stratum`, `deletion_classes`, `codegeneracies`, `corolla`: the point-count grade. Witnesses: `tests::point_count::every_shape_is_its_core_beside_its_points`, `tests::point_count::grounded_shapes_are_the_zero_stratum`, `tests::point_count::deletions_are_addressed_by_kernels`, `tests::point_count::the_codegeneracy_is_split`, `tests::units::the_point_reaches_each_point_once`.
 - `merge`, `scalars`, `labelled_by_arity`, `unit_property`: the external product and the finite check that the empty diagram is its one weak unit. Witnesses: `tests::units::the_external_product_sets_wirings_side_by_side`, `tests::units::scalars_are_counted_and_labelled`, `tests::units::the_empty_diagram_is_the_only_unit`.
 - `segal`, `Cocones`, `Cocone`, `Inclusion`, `Graft`, `Leg`, `SegalFailure`, `SegalDefect`: the Segal condition at degree `n`, each shape of degree two to `n` the colimit of its corollas along its grafting pushouts, over the families of maps whose images are disjoint, and refused at the first shape, test shape and family over the blanket families. Witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`.
@@ -39,7 +45,7 @@ The record of why the objects are stick-free is four tests on raw wirings, read 
 ## Expected features
 
 - **Bounded verdicts.** A verdict holds at the bound it was run at; [`catalogue`](src/catalogue.rs) states what that covers.
-- **Small bounds.** The catalogue computes every hom set between every pair of classes, and the closure check every composable pair over every triple, so the cost grows with the square and the cube of the class count. Size five holds 81 classes and runs every check in under half a minute in release; size six holds 223. At size seven the wirings hold 631 classes and take about seven seconds to build and certify at degree four; the chains hold 5 and take under a millisecond.
+- **Small bounds.** The catalogue computes every hom set between every pair of classes, and the closure check every composable pair over every triple, so the cost grows with the square and the cube of the class count. Size five holds 81 classes and runs every check in under half a minute in release; size six holds 223. At size seven the wirings hold 631 classes and take about seven seconds to build and certify at degree four; the chains hold 5 and take under a millisecond. `W ≀ W` at total size five builds in about twenty milliseconds, and its conditions run in under a minute.
 - **Shapes of at most 64 vertices.** A vertex set is one machine word; the constructors refuse a larger shape.
 
 ## Examples
@@ -95,6 +101,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The degree | [`degree`](src/degree.rs) |
 | What a bound proves | [`catalogue`](src/catalogue.rs) |
 | What the checks find at the bound | [`conditions`](src/conditions.rs) |
+| A level, and the wreath over one | [`level`](src/level.rs), [`wreath`](src/wreath.rs) |
 | The Segal condition, its cocones and the families it counts | [`segal`](src/segal.rs) |
 | The strata, their alphabet and range, `ua` and `ua-desc` | [`stratum`](src/stratum.rs) |
 

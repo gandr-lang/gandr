@@ -1,5 +1,5 @@
 //! The generalized Reedy conditions, and the site's other finite
-//! properties, run over a catalogue.
+//! properties, run over a level.
 //!
 //! Each condition walks its cases least total size first and stops at the
 //! first failure, which is then the smallest counter-example at the bound.
@@ -41,6 +41,31 @@
 //! against the point's deletion. A cocone would have to delete the image of the
 //! point, which holds the two ported vertices `p` and `q`, so there is no
 //! cocone at any size. Where a pushout exists, the pushed-out map is raising.
+//!
+//! Over `W ≀ W`, the wreath of the wiring site over itself, single maps run
+//! over the 224 objects of total size at most five, with 86796 maps, and
+//! composable pairs and spans over the 65 of total size at most four.
+//!
+//! | Condition | Size | Verdict | Cases |
+//! | --------- | ---- | ------- | ----- |
+//! | identities are units in both classes | ≤ 5 | holds | 87020 |
+//! | closure of the class | ≤ 4 | holds | 3109393 |
+//! | closure of the raising maps | ≤ 4 | holds | 7882 |
+//! | closure of the lowering maps | ≤ 4 | holds | 3023 |
+//! | raising ∩ lowering = isomorphisms | ≤ 5 | holds | 86796 |
+//! | degree orders both classes | ≤ 5 | holds | 5722 |
+//! | factorization, unique up to unique isomorphism | ≤ 5 | holds | 86796 |
+//! | rigidity (iv) | ≤ 5 | holds | 23334 |
+//! | dual rigidity (iv′) | ≤ 5 | holds | 36093 |
+//! | lowering maps split | ≤ 5 | holds | 1564 |
+//! | pushout along a deletion exists | ≤ 4 | fails | 14 |
+//! | pushed-out map is raising | ≤ 4 | fails | 250 |
+//!
+//! Every generalized Reedy axiom holds, with its dual rigidity, under the
+//! degree summed over the levels. The span without a pushout is level one's,
+//! on empty columns. Inside a column the same span has a pushout, the empty
+//! object, because every cocone deletes the outer vertex; the pushed-out map
+//! deletes it too, so it lowers where a raising map stood.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -51,7 +76,9 @@ use anodized::spec;
 use gandr_theory_circuit_algebras::Edge;
 
 use crate::catalogue::Catalogue;
+use crate::catalogue::ShapeIndex;
 use crate::degree::Degree;
+use crate::level::Level;
 use crate::map::Invertibility;
 use crate::map::Membership;
 use crate::map::SiteMap;
@@ -72,11 +99,11 @@ wrapper! {
 }
 
 /// One map of the site, sorted into its classes.
-#[derive(Clone, Copy, Debug)]
-struct Arrow<'catalogue>
+#[derive(Clone, Debug)]
+struct Arrow<'level, Map>
 {
     /// The map.
-    map: &'catalogue SiteMap,
+    map: &'level Map,
     /// Whether it is in the raising class.
     raising: Membership,
     /// Whether it is in the lowering class.
@@ -85,36 +112,41 @@ struct Arrow<'catalogue>
     invertibility: Invertibility,
 }
 
-/// A catalogue as a category: its shapes, and the maps between them sorted
-/// into the raising and the lowering class.
+/// A level as a category: its objects, and the maps between them sorted into
+/// the raising and the lowering class.
 ///
 /// # Specification
-/// - ensures: one node per catalogue shape in catalogue order, and every map of
-///   every hom set, each carrying [`SiteMap::raising`], [`SiteMap::lowering`]
-///   and [`SiteMap::invertibility`] against its target.
+/// - ensures: one node per object of the level in its order, and every map of
+///   every hom set, each carrying [`Level::raising`], [`Level::lowering`] and
+///   [`Level::invertibility`] against its target.
 /// - provides: the category every condition quantifies over.
 /// - panics: none.
 /// - executable: none — a type carries no runtime predicate; the constructor's
 ///   postcondition checks the node and map counts.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the conditions' case counts are related to the
-///   catalogue's shape and hom counts, so a lost node or map changes a count.
+/// - hypothesis: L2 — the conditions' case counts are related to the level's
+///   object and hom counts, so a lost node or map changes a count.
 /// - witness: `tests::reedy::the_class_is_a_category_with_two_classes`
+/// - witness: `tests::wreath::the_wreath_is_a_generalized_reedy_category`
 #[derive(Clone, Debug)]
-pub struct Site<'catalogue>
+pub struct Site<'level, L: Level = Catalogue>
 {
-    /// The shapes, in catalogue order.
-    nodes: Vec<&'catalogue Shape>,
+    /// The objects, in the level's order.
+    nodes: Vec<&'level L::Object>,
     /// The maps, row-major by source and target node.
-    arrows: Vec<Vec<Arrow<'catalogue>>>,
+    arrows: Vec<Vec<Arrow<'level, L::Map>>>,
     /// Every ordered pair of nodes, least total size first.
     pairs: Vec<(Node, Node)>,
 }
 
-impl<'catalogue> Site<'catalogue>
+/// A map of a level with its source and target, as a counter-example names
+/// it.
+type Case<L> = MapCase<<L as Level>::Object, <L as Level>::Map>;
+
+impl<'level, L: Level> Site<'level, L>
 {
-    /// The site of `catalogue`.
+    /// The site of `level`.
     ///
     /// # Specification
     /// - ensures: as the type states; the pairs are ordered by total size, then
@@ -127,29 +159,27 @@ impl<'catalogue> Site<'catalogue>
     #[inline]
     #[must_use]
     #[spec(ensures: |ref site| [
-        site.nodes.len() == catalogue.shapes().len(),
+        site.nodes.len() == level.objects().len(),
         site.arrows.len() == site.nodes.len().saturating_mul(site.nodes.len()),
         site.pairs.len() == site.arrows.len(),
-        site.arrows.iter().flatten().all(|arrow| arrow.raising == arrow.map.raising()),
+        site.arrows.iter().flatten().all(|arrow| arrow.raising == L::raising(arrow.map)),
     ])]
-    pub fn new(catalogue: &'catalogue Catalogue) -> Self
+    pub fn new(level: &'level L) -> Self
     {
-        let nodes: Vec<&Shape> = catalogue.shapes().iter().collect();
-        let mut arrows: Vec<Vec<Arrow<'catalogue>>> =
+        let nodes: Vec<&L::Object> = level.objects().iter().collect();
+        let mut arrows: Vec<Vec<Arrow<'level, L::Map>>> =
             Vec::with_capacity(nodes.len().saturating_mul(nodes.len()));
-        for (source_index, _) in catalogue.entries() {
-            for (target_index, target) in catalogue.entries() {
-                let maps = match catalogue.maps(source_index, target_index) {
-                    quenchant_shape::shape::Maybe::Present(maps) => maps,
-                    quenchant_shape::shape::Maybe::Absent(_) => &[],
-                };
+        for source in 0 .. nodes.len() {
+            for (target_index, target) in nodes.iter().enumerate() {
                 arrows.push(
-                    maps.iter()
+                    level
+                        .hom(ShapeIndex::from(source), ShapeIndex::from(target_index))
+                        .iter()
                         .map(|map| Arrow {
                             map,
-                            raising: map.raising(),
-                            lowering: map.lowering(target),
-                            invertibility: map.invertibility(target),
+                            raising: L::raising(map),
+                            lowering: L::lowering(map, target),
+                            invertibility: L::invertibility(map, target),
                         })
                         .collect(),
                 );
@@ -165,7 +195,7 @@ impl<'catalogue> Site<'catalogue>
             let size = |node: Node| {
                 nodes
                     .get(node.0)
-                    .map_or(0, |shape| usize::from(shape.size()))
+                    .map_or(0, |object| usize::from(L::size(object)))
             };
             (size(pair.0).saturating_add(size(pair.1)), pair.0, pair.1)
         });
@@ -190,7 +220,7 @@ impl<'catalogue> Site<'catalogue>
         )
     }
 
-    /// How many shapes the site holds.
+    /// How many objects the site holds.
     ///
     /// # Specification
     /// trivial.
@@ -207,7 +237,7 @@ impl<'catalogue> Site<'catalogue>
         &self,
         source: Node,
         target: Node,
-    ) -> &[Arrow<'catalogue>]
+    ) -> &[Arrow<'level, L::Map>]
     {
         let position = source
             .0
@@ -223,15 +253,15 @@ impl<'catalogue> Site<'catalogue>
     fn case(
         &self,
         (source, target): (Node, Node),
-        map: &SiteMap,
-    ) -> MapCase
+        map: &L::Map,
+    ) -> Case<L>
     {
-        let shape = |node: Node| {
+        let object = |node: Node| {
             self.nodes
                 .get(node.0)
-                .map_or_else(Shape::default, |shape| (*shape).clone())
+                .map_or_else(L::Object::default, |object| (*object).clone())
         };
-        MapCase::new(shape(source), shape(target), map.clone())
+        MapCase::new(object(source), object(target), map.clone())
     }
 
     /// Every ordered triple of nodes, least total size first.
@@ -244,7 +274,7 @@ impl<'catalogue> Site<'catalogue>
         let size = |node: Node| {
             self.nodes
                 .get(node.0)
-                .map_or(0, |shape| usize::from(shape.size()))
+                .map_or(0, |object| usize::from(L::size(object)))
         };
         let mut triples: Vec<(Node, Node, Node)> = Vec::new();
         for first in 0 .. count {
@@ -270,8 +300,8 @@ impl<'catalogue> Site<'catalogue>
     fn find(
         &self,
         (source, target): (Node, Node),
-        map: &SiteMap,
-    ) -> Option<&Arrow<'catalogue>>
+        map: &L::Map,
+    ) -> Option<&Arrow<'level, L::Map>>
     {
         let arrows = self.arrows(source, target);
         let position = arrows.binary_search_by(|arrow| arrow.map.cmp(map)).ok()?;
@@ -285,9 +315,9 @@ impl<'catalogue> Site<'catalogue>
     fn identity(
         &self,
         node: Node,
-    ) -> Option<SiteMap>
+    ) -> Option<L::Map>
     {
-        self.nodes.get(node.0).map(|shape| SiteMap::identity(shape))
+        self.nodes.get(node.0).map(|object| L::identity(object))
     }
 }
 
@@ -309,9 +339,9 @@ impl Part
     ///
     /// # Specification
     /// trivial.
-    const fn holds(
+    const fn holds<Map>(
         self,
-        arrow: &Arrow<'_>,
+        arrow: &Arrow<'_, Map>,
     ) -> Membership
     {
         match self {
@@ -325,16 +355,18 @@ impl Part
     ///
     /// # Specification
     /// trivial.
-    fn admits(
+    fn admits<L>(
         self,
-        map: &SiteMap,
-        target: &Shape,
+        map: &L::Map,
+        target: &L::Object,
     ) -> Membership
+    where
+        L: Level,
     {
         match self {
             Self::Whole => Membership::Inside,
-            Self::Raising => map.raising(),
-            Self::Lowering => map.lowering(target),
+            Self::Raising => L::raising(map),
+            Self::Lowering => L::lowering(map, target),
         }
     }
 }
@@ -342,7 +374,7 @@ impl Part
 /// Whether composites of composable maps in `part` are maps in `part`.
 ///
 /// # Specification
-/// - ensures: holds exactly when for every triple of shapes and every `f`, `g`
+/// - ensures: holds exactly when for every triple of objects and every `f`, `g`
 ///   in `part`, `g ∘ f` is a map of the class and lies in `part`; otherwise
 ///   fails at the first such pair, whose composite does not compose, is no map
 ///   or leaves `part`.
@@ -359,17 +391,19 @@ impl Part
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-        (Some(first), Some(second)) => first.map().then(second.map()).map_or(true, |composite| {
-            composite.validate(first.source(), second.target()).is_err()
-                || part.admits(&composite, second.target()) == Membership::Outside
+        (Some(first), Some(second)) => L::then(first.map(), second.map()).map_or(true, |composite| {
+            L::admits(&composite, first.source(), second.target()) == Membership::Outside
+                || part.admits::<L>(&composite, second.target()) == Membership::Outside
         }),
         _ => false,
     },
 })]
-pub fn closure(
-    site: &Site<'_>,
+pub fn closure<L>(
+    site: &Site<'_, L>,
     part: Part,
-) -> Outcome<Chain>
+) -> Outcome<Chain<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for (first, second, third) in site.triples() {
@@ -384,9 +418,7 @@ pub fn closure(
                 .filter(|arrow| part.holds(arrow) == Membership::Inside)
             {
                 tally.count();
-                let closed = left
-                    .map
-                    .then(right.map)
+                let closed = L::then(left.map, right.map)
                     .ok()
                     .and_then(|composite| site.find((first, third), &composite))
                     .is_some_and(|arrow| part.holds(arrow) == Membership::Inside);
@@ -402,18 +434,19 @@ pub fn closure(
     tally.holds()
 }
 
-/// Whether every shape's identity is in both classes, invertible, and a unit
+/// Whether every object's identity is in both classes, invertible, and a unit
 /// for composition on both sides.
 ///
 /// # Specification
 /// - ensures: holds exactly when each identity is a raising, lowering and
 ///   invertible map, and composing it before or after any map gives that map,
-///   after one case per shape and one per map; the first failing map otherwise.
+///   after one case per object and one per map; the first failing map
+///   otherwise.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the outcome and its case count, one per shape and one per
-///   map, are pinned at the bound.
+/// - hypothesis: L2 — the outcome and its case count, one per object and one
+///   per map, are pinned at the bound.
 /// - witness: `tests::reedy::the_class_is_a_category_with_two_classes`
 /// - witness: `tests::maps::the_class_is_a_category_at_the_bound`
 #[inline]
@@ -421,15 +454,17 @@ pub fn closure(
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => usize::from(cases) == usize::from(site.node_count()).saturating_add(usize::from(site.map_count())),
     Outcome::Fails { ref witness, .. } => {
-        let before = SiteMap::identity(witness.source());
-        let after = SiteMap::identity(witness.target());
-        before.then(witness.map()).as_ref() != Ok(witness.map())
-            || witness.map().then(&after).as_ref() != Ok(witness.map())
-            || (*witness.map() == before && (witness.map().raising() == Membership::Outside
-                || witness.map().lowering(witness.target()) == Membership::Outside))
+        let before = L::identity(witness.source());
+        let after = L::identity(witness.target());
+        L::then(&before, witness.map()).as_ref() != Ok(witness.map())
+            || L::then(witness.map(), &after).as_ref() != Ok(witness.map())
+            || (*witness.map() == before && (L::raising(witness.map()) == Membership::Outside
+                || L::lowering(witness.map(), witness.target()) == Membership::Outside))
     },
 })]
-pub fn identities(site: &Site<'_>) -> Outcome<MapCase>
+pub fn identities<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -450,8 +485,8 @@ pub fn identities(site: &Site<'_>) -> Outcome<MapCase>
         }
         for arrow in site.arrows(source, target) {
             tally.count();
-            let unit = before.then(arrow.map).is_ok_and(|map| map == *arrow.map)
-                && arrow.map.then(&after).is_ok_and(|map| map == *arrow.map);
+            let unit = L::then(&before, arrow.map).is_ok_and(|map| map == *arrow.map)
+                && L::then(arrow.map, &after).is_ok_and(|map| map == *arrow.map);
             if !unit {
                 return tally.fails(site.case((source, target), arrow.map));
             }
@@ -476,11 +511,13 @@ pub fn identities(site: &Site<'_>) -> Outcome<MapCase>
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => cases == site.map_count(),
-    Outcome::Fails { ref witness, .. } => (witness.map().raising() == Membership::Inside
-        && witness.map().lowering(witness.target()) == Membership::Inside)
-        != (witness.map().invertibility(witness.target()) == Invertibility::Invertible),
+    Outcome::Fails { ref witness, .. } => (L::raising(witness.map()) == Membership::Inside
+        && L::lowering(witness.map(), witness.target()) == Membership::Inside)
+        != (L::invertibility(witness.map(), witness.target()) == Invertibility::Invertible),
 })]
-pub fn intersection(site: &Site<'_>) -> Outcome<MapCase>
+pub fn intersection<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -512,9 +549,11 @@ pub fn intersection(site: &Site<'_>) -> Outcome<MapCase>
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => cases == site.map_count(),
-    Outcome::Fails { ref witness, .. } => witness.map().validate(witness.source(), witness.target()).is_ok(),
+    Outcome::Fails { ref witness, .. } => L::admits(witness.map(), witness.source(), witness.target()) == Membership::Inside,
 })]
-pub fn invertibility(site: &Site<'_>) -> Outcome<MapCase>
+pub fn invertibility<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -525,8 +564,8 @@ pub fn invertibility(site: &Site<'_>) -> Outcome<MapCase>
         for arrow in site.arrows(source, target) {
             tally.count();
             let inverse = site.arrows(target, source).iter().any(|back| {
-                arrow.map.then(back.map).is_ok_and(|map| map == left_unit)
-                    && back.map.then(arrow.map).is_ok_and(|map| map == right_unit)
+                L::then(arrow.map, back.map).is_ok_and(|map| map == left_unit)
+                    && L::then(back.map, arrow.map).is_ok_and(|map| map == right_unit)
             });
             if inverse != (arrow.invertibility == Invertibility::Invertible) {
                 return tally.fails(site.case((source, target), arrow.map));
@@ -566,18 +605,20 @@ pub enum Scope
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => {
-        let (low, high) = (Degree::of(witness.source()), Degree::of(witness.target()));
-        match witness.map().invertibility(witness.target()) {
+        let (low, high) = (L::degree(witness.source()), L::degree(witness.target()));
+        match L::invertibility(witness.map(), witness.target()) {
             Invertibility::Invertible => low != high,
-            Invertibility::NotInvertible if witness.map().raising() == Membership::Inside => low >= high,
+            Invertibility::NotInvertible if L::raising(witness.map()) == Membership::Inside => low >= high,
             Invertibility::NotInvertible => scope == Scope::Both && high >= low,
         }
     },
 })]
-pub fn degree_order(
-    site: &Site<'_>,
+pub fn degree_order<L>(
+    site: &Site<'_, L>,
     scope: Scope,
-) -> Outcome<MapCase>
+) -> Outcome<MapCase<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -585,7 +626,7 @@ pub fn degree_order(
         else {
             continue;
         };
-        let (low, high) = (Degree::of(from), Degree::of(to));
+        let (low, high) = (L::degree(from), L::degree(to));
         for arrow in site.arrows(source, target) {
             let ordered = match (arrow.invertibility, arrow.raising, arrow.lowering, scope) {
                 (Invertibility::Invertible, ..) => low == high,
@@ -760,17 +801,20 @@ impl fmt::Display for FactorizationDefect
     }
 }
 
-/// A map whose factorization fails, and how.
+/// A map whose factorization fails, and how; at level one a shape map.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct FactorizationFailure
+pub struct FactorizationFailure<Object = Shape, Map = SiteMap>
 {
     /// The map.
-    pub case: MapCase,
+    pub case: MapCase<Object, Map>,
     /// How its factorization fails.
     pub defect: FactorizationDefect,
 }
 
-impl fmt::Display for FactorizationFailure
+impl<Object, Map> fmt::Display for FactorizationFailure<Object, Map>
+where
+    Object: fmt::Display,
+    Map: fmt::Display,
 {
     /// Writes the defect and the map.
     ///
@@ -787,9 +831,9 @@ impl fmt::Display for FactorizationFailure
 }
 
 /// One factorization: the middle node, the lowering map and the raising map.
-type Factorization<'catalogue> = (Node, &'catalogue SiteMap, &'catalogue SiteMap);
+type Factorization<'level, Map> = (Node, &'level Map, &'level Map);
 
-/// Whether every map is a point deletion followed by a raising map, unique
+/// Whether every map is a lowering map followed by a raising map, unique
 /// up to a unique isomorphism of the middle.
 ///
 /// # Specification
@@ -811,9 +855,11 @@ type Factorization<'catalogue> = (Node, &'catalogue SiteMap, &'catalogue SiteMap
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => cases == site.map_count(),
-    Outcome::Fails { ref witness, .. } => witness.case.map().validate(witness.case.source(), witness.case.target()).is_ok(),
+    Outcome::Fails { ref witness, .. } => L::admits(witness.case.map(), witness.case.source(), witness.case.target()) == Membership::Inside,
 })]
-pub fn factorization(site: &Site<'_>) -> Outcome<FactorizationFailure>
+pub fn factorization<L>(site: &Site<'_, L>) -> Outcome<FactorizationFailure<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -837,12 +883,14 @@ pub fn factorization(site: &Site<'_>) -> Outcome<FactorizationFailure>
 ///
 /// # Specification
 /// trivial.
-fn factorizations<'catalogue>(
-    site: &Site<'catalogue>,
+fn factorizations<'level, L>(
+    site: &Site<'level, L>,
     (source, target): (Node, Node),
-) -> BTreeMap<SiteMap, Vec<Factorization<'catalogue>>>
+) -> BTreeMap<L::Map, Vec<Factorization<'level, L::Map>>>
+where
+    L: Level,
 {
-    let mut buckets: BTreeMap<SiteMap, Vec<Factorization<'catalogue>>> = BTreeMap::new();
+    let mut buckets: BTreeMap<L::Map, Vec<Factorization<'level, L::Map>>> = BTreeMap::new();
     for middle in (0 .. site.nodes.len()).map(Node) {
         for lower in site
             .arrows(source, middle)
@@ -854,7 +902,7 @@ fn factorizations<'catalogue>(
                 .iter()
                 .filter(|arrow| arrow.raising == Membership::Inside)
             {
-                if let Ok(composite) = lower.map.then(raise.map) {
+                if let Ok(composite) = L::then(lower.map, raise.map) {
                     buckets
                         .entry(composite)
                         .or_default()
@@ -884,10 +932,12 @@ fn factorizations<'catalogue>(
 ///   two factorizations related by the automorphism of `•⊔•` swapping its
 ///   points must pass.
 /// - witness: `tests::reedy::every_map_factors_through_a_point_deletion`
-fn factorization_defect(
-    site: &Site<'_>,
-    found: &[Factorization<'_>],
+fn factorization_defect<L>(
+    site: &Site<'_, L>,
+    found: &[Factorization<'_, L::Map>],
 ) -> Option<FactorizationDefect>
+where
+    L: Level,
 {
     let Some(&(middle, first_lower, first_raise)) = found.first()
     else {
@@ -896,7 +946,7 @@ fn factorization_defect(
     if found.iter().any(|entry| entry.0 != middle) {
         return Some(FactorizationDefect::SeveralMiddles);
     }
-    let automorphisms: Vec<&SiteMap> = site
+    let automorphisms: Vec<&L::Map> = site
         .arrows(middle, middle)
         .iter()
         .filter(|arrow| arrow.invertibility == Invertibility::Invertible)
@@ -906,8 +956,8 @@ fn factorization_defect(
         let connecting = automorphisms
             .iter()
             .filter(|theta| {
-                first_lower.then(theta).is_ok_and(|map| map == *lower)
-                    && theta.then(raise).is_ok_and(|map| map == *first_raise)
+                L::then(first_lower, theta).is_ok_and(|map| map == *lower)
+                    && L::then(theta, raise).is_ok_and(|map| map == *first_raise)
             })
             .count();
         match connecting {
@@ -938,13 +988,15 @@ fn factorization_defect(
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-        (Some(lower), Some(theta)) => lower.map().lowering(lower.target()) == Membership::Inside
-            && *theta.map() != SiteMap::identity(theta.source())
-            && lower.map().then(theta.map()).as_ref() == Ok(lower.map()),
+        (Some(lower), Some(theta)) => L::lowering(lower.map(), lower.target()) == Membership::Inside
+            && *theta.map() != L::identity(theta.source())
+            && L::then(lower.map(), theta.map()).as_ref() == Ok(lower.map()),
         _ => false,
     },
 })]
-pub fn rigidity(site: &Site<'_>) -> Outcome<Chain>
+pub fn rigidity<L>(site: &Site<'_, L>) -> Outcome<Chain<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -962,7 +1014,7 @@ pub fn rigidity(site: &Site<'_>) -> Outcome<Chain>
                     continue;
                 }
                 tally.count();
-                let fixes = lower.map.then(theta.map).is_ok_and(|map| map == *lower.map);
+                let fixes = L::then(lower.map, theta.map).is_ok_and(|map| map == *lower.map);
                 if fixes && *theta.map != unit {
                     return tally.fails(Chain::new(vec![
                         site.case((source, target), lower.map),
@@ -995,13 +1047,15 @@ pub fn rigidity(site: &Site<'_>) -> Outcome<Chain>
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-        (Some(theta), Some(raise)) => raise.map().raising() == Membership::Inside
-            && *theta.map() != SiteMap::identity(theta.source())
-            && theta.map().then(raise.map()).as_ref() == Ok(raise.map()),
+        (Some(theta), Some(raise)) => L::raising(raise.map()) == Membership::Inside
+            && *theta.map() != L::identity(theta.source())
+            && L::then(theta.map(), raise.map()).as_ref() == Ok(raise.map()),
         _ => false,
     },
 })]
-pub fn dual_rigidity(site: &Site<'_>) -> Outcome<Chain>
+pub fn dual_rigidity<L>(site: &Site<'_, L>) -> Outcome<Chain<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -1019,7 +1073,7 @@ pub fn dual_rigidity(site: &Site<'_>) -> Outcome<Chain>
                     continue;
                 }
                 tally.count();
-                let absorbed = theta.map.then(raise.map).is_ok_and(|map| map == *raise.map);
+                let absorbed = L::then(theta.map, raise.map).is_ok_and(|map| map == *raise.map);
                 if absorbed && *theta.map != unit {
                     return tally.fails(Chain::new(vec![
                         site.case((source, source), theta.map),
@@ -1047,9 +1101,11 @@ pub fn dual_rigidity(site: &Site<'_>) -> Outcome<Chain>
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
-    Outcome::Fails { ref witness, .. } => witness.map().lowering(witness.target()) == Membership::Inside,
+    Outcome::Fails { ref witness, .. } => L::lowering(witness.map(), witness.target()) == Membership::Inside,
 })]
-pub fn split_lowering(site: &Site<'_>) -> Outcome<MapCase>
+pub fn split_lowering<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -1066,7 +1122,7 @@ pub fn split_lowering(site: &Site<'_>) -> Outcome<MapCase>
             let split = site
                 .arrows(target, source)
                 .iter()
-                .any(|section| section.map.then(lower.map).is_ok_and(|map| map == unit));
+                .any(|section| L::then(section.map, lower.map).is_ok_and(|map| map == unit));
             if !split {
                 return tally.fails(site.case((source, target), lower.map));
             }
@@ -1075,18 +1131,18 @@ pub fn split_lowering(site: &Site<'_>) -> Outcome<MapCase>
     tally.holds()
 }
 
-/// The two pushout conditions' outcomes.
+/// The two pushout conditions' outcomes; at level one over shape maps.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PushoutOutcomes
+pub struct PushoutOutcomes<Object = Shape, Map = SiteMap>
 {
     /// Whether every span of a raising map and a deletion has a pushout.
-    pub existence: Outcome<Chain>,
+    pub existence: Outcome<Chain<Object, Map>>,
     /// Whether, where the pushout exists, the pushed-out map is raising.
-    pub stability: Outcome<Chain>,
+    pub stability: Outcome<Chain<Object, Map>>,
 }
 
 /// One cocone over a span: its vertex and its two legs.
-type Cocone<'catalogue> = (Node, &'catalogue SiteMap, &'catalogue SiteMap);
+type Cocone<'level, Map> = (Node, &'level Map, &'level Map);
 
 /// Whether a raising map pushes out along a deletion, and stays raising.
 ///
@@ -1109,19 +1165,21 @@ type Cocone<'catalogue> = (Node, &'catalogue SiteMap, &'catalogue SiteMap);
     match outcomes.existence {
         Outcome::Holds { .. } => true,
         Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-            (Some(raise), Some(deletion)) => raise.map().raising() == Membership::Inside
-                && deletion.map().lowering(deletion.target()) == Membership::Inside
-                && deletion.map().invertibility(deletion.target()) == Invertibility::NotInvertible
+            (Some(raise), Some(deletion)) => L::raising(raise.map()) == Membership::Inside
+                && L::lowering(deletion.map(), deletion.target()) == Membership::Inside
+                && L::invertibility(deletion.map(), deletion.target()) == Invertibility::NotInvertible
                 && raise.source() == deletion.source(),
             _ => false,
         },
     },
     match outcomes.stability {
         Outcome::Holds { .. } => true,
-        Outcome::Fails { ref witness, .. } => witness.links().get(2).is_some_and(|pushed| pushed.map().raising() == Membership::Outside),
+        Outcome::Fails { ref witness, .. } => witness.links().get(2).is_some_and(|pushed| L::raising(pushed.map()) == Membership::Outside),
     },
 ])]
-pub fn pushouts(site: &Site<'_>) -> PushoutOutcomes
+pub fn pushouts<L>(site: &Site<'_, L>) -> PushoutOutcomes<L::Object, L::Map>
+where
+    L: Level,
 {
     let (mut spans, mut pushed) = (Tally::default(), Tally::default());
     let (mut existence, mut stability) = (None, None);
@@ -1174,24 +1232,23 @@ pub fn pushouts(site: &Site<'_>) -> PushoutOutcomes
 ///
 /// # Specification
 /// trivial.
-fn cocones<'catalogue>(
-    site: &Site<'catalogue>,
+fn cocones<'level, L>(
+    site: &Site<'level, L>,
     (left, right): (Node, Node),
-    (raise, deletion): (&SiteMap, &SiteMap),
-) -> Vec<Cocone<'catalogue>>
+    (raise, deletion): (&L::Map, &L::Map),
+) -> Vec<Cocone<'level, L::Map>>
+where
+    L: Level,
 {
-    let mut found: Vec<Cocone<'catalogue>> = Vec::new();
+    let mut found: Vec<Cocone<'level, L::Map>> = Vec::new();
     for vertex in (0 .. site.nodes.len()).map(Node) {
         for upper in site.arrows(left, vertex) {
-            let Ok(through_left) = raise.then(upper.map)
+            let Ok(through_left) = L::then(raise, upper.map)
             else {
                 continue;
             };
             for lower in site.arrows(right, vertex) {
-                if deletion
-                    .then(lower.map)
-                    .is_ok_and(|map| map == through_left)
-                {
+                if L::then(deletion, lower.map).is_ok_and(|map| map == through_left) {
                     found.push((vertex, upper.map, lower.map));
                 }
             }
@@ -1204,10 +1261,12 @@ fn cocones<'catalogue>(
 ///
 /// # Specification
 /// trivial.
-fn universal<'cocones, 'catalogue>(
-    site: &Site<'catalogue>,
-    cocones: &'cocones [Cocone<'catalogue>],
-) -> Option<&'cocones Cocone<'catalogue>>
+fn universal<'cocones, 'level, L>(
+    site: &Site<'level, L>,
+    cocones: &'cocones [Cocone<'level, L::Map>],
+) -> Option<&'cocones Cocone<'level, L::Map>>
+where
+    L: Level,
 {
     cocones.iter().find(|candidate| {
         let &(vertex, upper, lower) = *candidate;
@@ -1217,8 +1276,8 @@ fn universal<'cocones, 'catalogue>(
                 .arrows(vertex, target)
                 .iter()
                 .filter(|arrow| {
-                    upper.then(arrow.map).is_ok_and(|map| map == *other_upper)
-                        && lower.then(arrow.map).is_ok_and(|map| map == *other_lower)
+                    L::then(upper, arrow.map).is_ok_and(|map| map == *other_upper)
+                        && L::then(lower, arrow.map).is_ok_and(|map| map == *other_lower)
                 })
                 .count();
             mediating == 1
@@ -1456,7 +1515,7 @@ pub fn corolla(site: &Site<'_>) -> Outcome<Shape>
         tally.count();
         return tally.fails(Shape::default());
     };
-    let mut raising: Vec<&Arrow<'_>> = Vec::new();
+    let mut raising: Vec<&Arrow<'_, SiteMap>> = Vec::new();
     let mut sorted: Vec<VertexSet> = Vec::new();
     let mut expected: Vec<VertexSet> = Vec::new();
     for (index, shape) in site.nodes.iter().enumerate() {

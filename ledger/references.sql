@@ -117,6 +117,7 @@ INSERT INTO reference VALUES('arXiv:2603.24468','theory-nominal-automata','','ba
 INSERT INTO reference VALUES('arXiv:2607.09383','core-checker','capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-checker','elaboration','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-unify','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:math/0512575','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45749-6_17','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','eliminator','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','solution','background',NULL,NULL,NULL);
@@ -157,6 +158,7 @@ INSERT INTO reference VALUES('doi:10.1016/0898-1221(81)90008-0','theory-graphs',
 INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/b978-0-08-012975-4.50028-x','theory-coherent-resolutions','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1016/j.aim.2006.12.006','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.aim.2018.03.016','theory-decomposition-spaces','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.jpdc.2026.105238','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.peva.2014.07.016','storage-chunker','','background',NULL,NULL,NULL);
@@ -471,4 +473,5 @@ INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surfa
 INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surface-session','session','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','core-term','syntax::shared','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','surface-dispatcher','tier','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
 COMMIT;

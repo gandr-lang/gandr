@@ -190,19 +190,20 @@ impl Tally
     }
 }
 
-/// One map with its source and target, as a counter-example names it.
+/// One map with its source and target, as a counter-example names it; at
+/// level one a shape map between shapes.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct MapCase
+pub struct MapCase<Object = Shape, Map = SiteMap>
 {
     /// The map's source.
-    source: Shape,
+    source: Object,
     /// The map's target.
-    target: Shape,
+    target: Object,
     /// The map.
-    map: SiteMap,
+    map: Map,
 }
 
-impl MapCase
+impl<Object, Map> MapCase<Object, Map>
 {
     /// The case of `map` from `source` to `target`.
     ///
@@ -211,9 +212,9 @@ impl MapCase
     #[inline]
     #[must_use]
     pub const fn new(
-        source: Shape,
-        target: Shape,
-        map: SiteMap,
+        source: Object,
+        target: Object,
+        map: Map,
     ) -> Self
     {
         Self {
@@ -229,7 +230,7 @@ impl MapCase
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn source(&self) -> &Shape
+    pub const fn source(&self) -> &Object
     {
         &self.source
     }
@@ -240,7 +241,7 @@ impl MapCase
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn target(&self) -> &Shape
+    pub const fn target(&self) -> &Object
     {
         &self.target
     }
@@ -251,13 +252,16 @@ impl MapCase
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn map(&self) -> &SiteMap
+    pub const fn map(&self) -> &Map
     {
         &self.map
     }
 }
 
-impl fmt::Display for MapCase
+impl<Object, Map> fmt::Display for MapCase<Object, Map>
+where
+    Object: fmt::Display,
+    Map: fmt::Display,
 {
     /// Writes `source → target by map`.
     ///
@@ -277,13 +281,13 @@ impl fmt::Display for MapCase
 /// span, a cycle or a chain.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Chain
+pub struct Chain<Object = Shape, Map = SiteMap>
 {
     /// The maps, in the order the condition names them.
-    links: Vec<MapCase>,
+    links: Vec<MapCase<Object, Map>>,
 }
 
-impl Chain
+impl<Object, Map> Chain<Object, Map>
 {
     /// The chain of `links`.
     ///
@@ -291,7 +295,7 @@ impl Chain
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(links: Vec<MapCase>) -> Self
+    pub const fn new(links: Vec<MapCase<Object, Map>>) -> Self
     {
         Self { links }
     }
@@ -302,13 +306,16 @@ impl Chain
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn links(&self) -> &[MapCase]
+    pub fn links(&self) -> &[MapCase<Object, Map>]
     {
         &self.links
     }
 }
 
-impl fmt::Display for Chain
+impl<Object, Map> fmt::Display for Chain<Object, Map>
+where
+    Object: fmt::Display,
+    Map: fmt::Display,
 {
     /// Writes the maps separated by ` ; `.
     ///

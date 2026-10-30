@@ -3922,11 +3922,11 @@ INSERT INTO purpose VALUES('theory-sites','catalogue::Catalogue','struct','Every
 INSERT INTO purpose VALUES('theory-sites','catalogue::Family','enum','Which shapes a catalogue holds: every stick-free wiring, or the chains with the empty shape and the point.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::ShapeIndex','struct','A shape''s position in a catalogue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationDefect','enum','How a map''s factorization fails.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationFailure','struct','A map whose factorization fails, and how.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationFailure','struct','A map whose factorization fails, and how; at level one a shape map.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::Part','enum','Which maps a closure check composes.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','conditions::PushoutOutcomes','struct','The two pushout conditions'' outcomes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','conditions::PushoutOutcomes','struct','The two pushout conditions'' outcomes; at level one over shape maps.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::Scope','enum','Which maps a degree check constrains.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','conditions::Site','struct','A catalogue as a category: its shapes, and the maps between them sorted into the raising and the lowering class.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','conditions::Site','struct','A level as a category: its objects, and the maps between them sorted into the raising and the lowering class.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::closure','function','Whether composites of composable maps in `part` are maps in `part`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::codegeneracies','function','Whether every deletion behaves as the codegeneracy the point grade expects.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::corolla','function','Whether the point, the arity-zero corolla, has only its identity as a raising endomorphism and reaches each point of a shape once.',NULL,'fits','sound',NULL);
@@ -3934,8 +3934,8 @@ INSERT INTO purpose VALUES('theory-sites','conditions::degree_order','function',
 INSERT INTO purpose VALUES('theory-sites','conditions::deletion_classes','function','Whether deletions out of each shape are addressed by their kernels.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::direct_core','function','Whether the point-free core is a direct category: every map between shapes without points is raising, and strictly raises the degree unless it is an isomorphism, which preserves it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::dual_rigidity','function','Whether an automorphism of a raising map''s source that the map absorbs is the identity: axiom (iv) of the opposite category, which a Reedy structure on presheaves needs.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','conditions::factorization','function','Whether every map is a point deletion followed by a raising map, unique up to a unique isomorphism of the middle.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','conditions::identities','function','Whether every shape''s identity is in both classes, invertible, and a unit for composition on both sides.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','conditions::factorization','function','Whether every map is a lowering map followed by a raising map, unique up to a unique isomorphism of the middle.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','conditions::identities','function','Whether every object''s identity is in both classes, invertible, and a unit for composition on both sides.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::intersection','function','Whether the maps in both classes are exactly the isomorphisms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::invertibility','function','Whether the class''s own isomorphisms are its maps with two-sided inverses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::latching','function','Whether the latching category at each shape is finite.',NULL,'fits','sound',NULL);
@@ -3946,6 +3946,7 @@ INSERT INTO purpose VALUES('theory-sites','degree::Degree','struct','A shape''s 
 INSERT INTO purpose VALUES('theory-sites','diagram::Boundary','struct','A cell''s boundary: the colour of each input leg and each output leg of the vertex it fills, each side in the shape''s wire order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','diagram::Unfilled','enum','Why a diagram does not fill a shape.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','diagram::fills','function','Whether cells, one per vertex of a shape, have their vertices'' profiles and meet along its inner wires, with the diagram''s boundary.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','level::Level','trait','A finite site the conditions read: one object per isomorphism class at a bound, every map between two of them, and the operations on both.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::CompositionMismatch','enum','Why two maps do not compose.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::ImageForm','enum','How a map''s vertex images are sized.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::Invertibility','enum','Whether a map has an inverse in the class.',NULL,'fits','sound',NULL);
@@ -3958,7 +3959,7 @@ INSERT INTO purpose VALUES('theory-sites','map::WireForm','enum','How a map''s w
 INSERT INTO purpose VALUES('theory-sites','map::homs','function','Every map of the class from `source` to `target`, in sorted order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','outcome::CaseCount','struct','How many cases a condition examined.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','outcome::Chain','struct','Several maps a counter-example names together: a composable pair, a span, a cycle or a chain.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','outcome::MapCase','struct','One map with its source and target, as a counter-example names it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','outcome::MapCase','struct','One map with its source and target, as a counter-example names it; at level one a shape map between shapes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','outcome::Outcome','enum','A condition''s result over a finite site.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','outcome::Tally','struct','A running count of examined cases.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','outcome::Verdict','enum','Whether a condition held.',NULL,'fits','sound',NULL);
@@ -4006,6 +4007,9 @@ INSERT INTO purpose VALUES('theory-sites','units::labelled_by_arity','function',
 INSERT INTO purpose VALUES('theory-sites','units::merge','function','The external product: `left` beside `right`, `right`''s wires numbered after `left`''s, `left`''s ports listed first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','units::scalars','function','Every closed diagram over the scalar signature with at most `bound` generators, one per isomorphism class: `cᵃ dᵇ (u→k)ᵐ` with `a + b + 2m ≤ bound`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','units::unit_property','function','The unit check over the scalars of at most `bound` generators, the unit checked on every shape of `diagrams` labelled by arity.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','wreath::Wreath','struct','The wreath of the wiring site over a level at a bound: every object of total size at most the bound, one per isomorphism class, and every map between two of them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','wreath::WreathMap','struct','A map of a wreath: an outer map and, for each source vertex, one inner map to each vertex of its image, in vertex order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','wreath::WreathShape','struct','An object of a wreath: an outer shape, and one inner object per outer vertex, in vertex order; the default is the empty outer shape.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-spec-combinators','holds::Holds','struct','Names whether a combinator''s claim holds of the state it was handed, so the answer''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-spec-combinators','sequence::Mark','struct','Names a position in a sequence, so the mark''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-spec-combinators','sequence::appended','function','Returns the elements of a sequence at or after a mark, so the sequence''s gain since the mark is read.',NULL,'fits','sound',NULL);
