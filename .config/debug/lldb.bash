@@ -11,20 +11,18 @@
 # A debugger that reads a wrong length can allocate without end, and a session
 # that takes the host's memory takes every process beside it (#3823). The
 # formatters bound every read to the process's mapped memory everywhere. Off
-# macOS the debugger also runs bounded to 8 GiB. Where a user systemd manager
-# runs, the bound is a scope of its own with that `MemoryMax` and no swap: it
-# holds lldb, its server and the program debugged together, and the kernel
-# kills inside it alone. Elsewhere the bound is `ulimit -v`, or a tighter one
-# already set, and where neither takes, it refuses. macOS has no systemd, and
-# its kernel refuses to lower `ulimit -v`, so there the formatters' read bound
-# is the only one (#3863).
+# macOS the debugger also runs under `.config/mise/bounded`, the 8 GiB bound a
+# scope with no swap sets where a user systemd manager runs: it holds lldb, its
+# server and the program debugged together. Elsewhere the bound is `ulimit -v`,
+# and where neither takes, it refuses. macOS has no systemd, and its kernel
+# refuses to lower `ulimit -v`, so there the formatters' read bound is the only
+# one (#3863).
 #
 # Usage: lldb.bash lldb|lldb-dap [args]... Exits 2 when the debugger is absent
 # or, off macOS, no bound takes.
 set -euo pipefail
 tool=${1:?lldb.bash lldb|lldb-dap [args]...}
 shift
-bound_kib=$((8 * 1024 * 1024))
 if [[ $(uname -s) == Darwin ]]; then
   prefix=$(brew --prefix lldb 2> /dev/null || true)
   if [[ -z $prefix || ! -x $prefix/bin/$tool ]]; then
@@ -37,13 +35,4 @@ if ! debugger=$(command -v "$tool"); then
   echo "debug: no $tool on PATH; install LLVM's lldb" >&2
   exit 2
 fi
-scope=(systemd-run --user --scope --quiet -p "MemoryMax=${bound_kib}K" -p MemorySwapMax=0 --)
-if command -v systemd-run > /dev/null && "${scope[@]}" true 2> /dev/null; then
-  exec "${scope[@]}" "$debugger" "$@"
-fi
-limit=$(ulimit -v)
-if [[ $limit == unlimited ]] || ((limit > bound_kib)) && ! ulimit -v "$bound_kib" 2> /dev/null; then
-  echo "debug: neither a systemd scope nor \`ulimit -v\` bounds $tool's memory here; it never runs unbounded (#3823)" >&2
-  exit 2
-fi
-exec "$debugger" "$@"
+exec "${BASH_SOURCE[0]%/*}/../mise/bounded" debug "$debugger" "$@"

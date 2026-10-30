@@ -98,3 +98,100 @@ END { printf "\nwall %s, peak resident set %s bytes\n", wall, peak }
 ' "$scratch/time"
 uptime | awk -F 'load averages?: ' '{ printf "load %s\n", $2 }'
 '''
+
+# Catt's wall time on one example, the oracle the rows at dimension 3 are read
+# against (#3833). Catt is the repository `thibautbenjamin/catt` at the
+# revision below, built once into the user's cache with an opam root of its
+# own. Its `catt.opam` asks for OCaml 4.14, and dune 3.24 drops the `coq`
+# extension its `dune-project` declares, so the switch pins dune 3.23.1 before
+# Catt's dependencies are solved; `-p catt` builds the command without the
+# Rocq plugin. Nothing of it lands in
+# the tree or in the user's own opam root. An example path that names no file
+# from the working directory is read in that checkout, so `examples/…` names
+# Catt's own examples. `--catt` names another program to run in its place.
+#
+# The run carries the host's memory bound (`.config/mise/bounded`) and a
+# wall-clock limit, 1800 s unless `--limit` names another. The task prints one
+# Markdown row, the example and its wall time; a run past either bound prints
+# `past bound` in its place and is never retried larger (#3855). Catt prints no
+# term's size, so the row has none: page 28's sizes stand in `bench:stress`.
+# Catt runs only at n = 2 and 3, so an example naming a cylinder or cone
+# built-in past n = 3 is refused before Catt runs. `.config/bench/row.jq` and
+# `.config/bench/dimension.jq` decide both, held to `check:bench`'s cases.
+["bench:catt"]
+description = "Catt's wall time on one example, under the host's memory bound and a wall-clock limit"
+usage = '''
+arg "<example>" help="the .catt file Catt runs"
+flag "--limit <seconds>" help="the wall-clock limit" default="1800"
+flag "--catt <program>" help="the program run in place of the pinned Catt"
+'''
+tools.jq = "1.8.1"
+tools.opam = "2.6.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+example=${usage_example:?}
+limit=${usage_limit:?}
+bench=.config/bench
+revision=3af8b816de62b6452e4382c70a8eaf9e3c153175
+catt=${usage_catt:-}
+checkout=
+if [[ -z $catt ]]; then
+  cache=${XDG_CACHE_HOME:-$HOME/.cache}/gandr/catt/$revision
+  checkout=$cache/catt
+  catt=$checkout/_build/default/bin/catt.exe
+  build() {
+    export OPAMROOT=$cache/opam OPAMYES=1 OPAMCOLOR=never
+    { [[ -d $OPAMROOT ]] || opam init --bare --disable-sandboxing --no-setup; } \
+      && { opam switch list --short | awk '$0 == "catt" { found = 1 } END { exit !found }' \
+        || opam switch create catt ocaml-base-compiler.4.14.2; } \
+      && { [[ -d $cache/catt ]] || git clone --quiet https://github.com/thibautbenjamin/catt "$cache/catt"; } \
+      && git -C "$cache/catt" checkout --quiet "$revision" \
+      && opam pin add --switch=catt --no-action dune 3.23.1 \
+      && opam install --switch=catt --deps-only "$cache/catt/catt.opam" \
+      && (cd "$cache/catt" && opam exec --switch=catt -- dune build -p catt @install)
+  }
+  if [[ ! -x $catt ]]; then
+    mkdir -p "$cache"
+    echo "bench:catt: building Catt at ${revision:0:12} into $cache, once" >&2
+    if ! build > "$cache/build.log" 2>&1; then
+      echo "bench:catt: the build fails; its log is $cache/build.log" >&2
+      exit 1
+    fi
+  fi
+fi
+if [[ ! -f $example && -n $checkout && -f $checkout/$example ]]; then
+  example=$checkout/$example
+fi
+if [[ ! -f $example ]]; then
+  echo "bench:catt: no example at $example" >&2
+  exit 2
+fi
+past=$(jq -R -s -c -f "$bench/dimension.jq" "$example")
+if [[ $past != '[]' ]]; then
+  echo "bench:catt: $example names $(jq -r 'join(", ")' <<< "$past") past n = 3; Catt runs only at n = 2 and 3 (#3855)" >&2
+  exit 2
+fi
+# The bound refuses here, before the run is timed, where no bound takes.
+.config/mise/bounded bench:catt true
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+status=0
+start=$(date +%s%N)
+.config/mise/bounded bench:catt timeout "$limit" "$catt" "$example" > "$scratch/out" 2> "$scratch/err" || status=$?
+end=$(date +%s%N)
+out_of_memory=false
+if [[ $(< "$scratch/err") == *Out_of_memory* ]]; then
+  out_of_memory=true
+fi
+if ! row=$(jq -n \
+  --arg example "${example##*/}" --argjson status "$status" --argjson out_of_memory "$out_of_memory" \
+  --argjson seconds "$(awk -v start="$start" -v end="$end" 'BEGIN { printf "%.6f", (end - start) / 1e9 }')" \
+  '{example: $example, status: $status, seconds: $seconds, out_of_memory: $out_of_memory}' \
+  | jq -r -f "$bench/row.jq" 2> "$scratch/refusal"); then
+  awk '{ sub(/^jq: error \(at [^)]*\): /, "bench:catt: "); print }' "$scratch/refusal" >&2
+  cat "$scratch/out" "$scratch/err" >&2
+  exit 1
+fi
+printf '| example | wall |\n| --- | --: |\n%s\n' "$row"
+{% endraw %}'''
