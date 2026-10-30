@@ -1423,6 +1423,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-orde
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-order-rules.txt Procedure b13d83b535eb81d0
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-order-signatures.txt Procedure a0cb84b173472244
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/shaped-signature.txt Procedure eb1b7db355fa30b3
+crates/surface-render-terminal/tests/golden/corpus/pathological/desc/theory-terms.txt Procedure e7b87b8288c2e9f9
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/hello-unprovided.txt Procedure 5cd48ab1a45a09c1
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/rows.txt Procedure 3bdc0addbf0ffa85
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/rows.txt Procedure b8715358ac806eba

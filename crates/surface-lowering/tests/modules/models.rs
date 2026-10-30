@@ -2044,3 +2044,161 @@ fn an_inert_field_is_read_only_by_another_3029()
         read("versionOf", "version", "r.version", 0_usize)
     );
 }
+
+/// A unital magma's signature, its two unit laws its rules.
+const MAG: &str = "theory Mag {\n  sort M : Type;\n  oper one : () --> M;\n  oper mul : (x : M, y \
+                   : M) --> M;\n  rule unitL : mul(one(), x) <=> x;\n  rule unitR : mul(x, one()) \
+                   <=> x;\n}\n";
+
+/// #4143: `Terms(S)` mints one data declaration per theory, before the first
+/// declaration asking for it, and it is the data block written by hand: one
+/// constructor per operation and the theory's rules its presentation. A
+/// monoid's associativity presents no type, so the checker refuses its
+/// terms and every declaration asking for them.
+#[test]
+fn a_theory_s_terms_are_its_operations_over_its_rules_4143()
+{
+    let askers = "def neutral : Terms(Mag) = Mag.one;\ndef twice : Terms(Mag) = \
+                  Mag.mul(Mag.one, Mag.one);\ndef again : Terms(Mag) = Mag.one;\n";
+    let by_hand = "data MagTerms : Type {\n  One : MagTerms;\n  Mul : (x : MagTerms, y : MagTerms) \
+                   --> MagTerms;\n  rule Mul(One, x) <=> x;\n  rule Mul(x, One) <=> x;\n}\n";
+    let source = format!("{MAG}{by_hand}{askers}");
+    let mut lowered = lower(source.as_str());
+    let found = rows(&lowered);
+    let termed: Vec<_> = found
+        .iter()
+        .filter(|&&(_, role, _)| role == Role::Terms)
+        .cloned()
+        .collect();
+    assert_eq!(
+        termed,
+        [row("Terms(Mag)", Role::Terms, Amounts::Data)],
+        "the three askers share one declaration of the terms: {found:?}"
+    );
+    let at = |path: &str| found.iter().position(|&(ref written, ..)| written == path);
+    assert!(
+        at("Terms(Mag)") < at("neutral"),
+        "the terms are minted before their first asker: {found:?}"
+    );
+    let signature = |role: Role| {
+        let outcome = lowered
+            .module
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == role
+                    && (role == Role::Terms || declaration.name().as_ref() == "MagTerms")
+            })
+            .map(gandr_surface_lowering::LoweredDeclaration::outcome);
+        let Some(gandr_surface_lowering::DeclarationOutcome::Data(index)) = outcome
+        else {
+            panic!("a data declaration in {role:?}: {found:?}");
+        };
+        let quenchant_shape::shape::Maybe::Present(signature) = lowered.module.data(index)
+        else {
+            panic!("a data declaration keeps its signature: {index:?}");
+        };
+        alloc::sync::Arc::clone(signature)
+    };
+    let (derived, written) = (signature(Role::Terms), signature(Role::Declared));
+    let arities = |signature: &gandr_core_term::DataSignature| {
+        signature
+            .constructors()
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        (arities(&derived), derived.parameters().len()),
+        (vec![0_usize, 2_usize], 0_usize),
+        "one constructor per operation, at its arity, and no parameter"
+    );
+    assert_eq!(
+        arities(&derived),
+        arities(&written),
+        "the derived constructors are the written ones"
+    );
+    assert_eq!(
+        derived.presentation(),
+        written.presentation(),
+        "the theory's rules present the terms as the written rules present `MagTerms`"
+    );
+    let judged = verdicts(&mut lowered);
+    assert!(
+        judged
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "the terms declare and every asker checks: {judged:?}"
+    );
+
+    let monoid = format!(
+        "{}{askers}",
+        MAG.replace(
+            "<=> x;\n}",
+            "<=> x;\n  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n}"
+        )
+    );
+    let mut refused = lower(monoid.as_str());
+    let judged = verdicts(&mut refused);
+    let termed: Vec<_> = refused
+        .module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == Role::Terms)
+        .map(gandr_surface_lowering::LoweredDeclaration::constant)
+        .collect();
+    let [terms] = *termed
+    else {
+        panic!("the monoid's terms are declared once: {judged:?}");
+    };
+    assert!(
+        judged
+            .iter()
+            .filter(|&&(constant, _)| constant >= terms)
+            .all(|&(_, judgement)| judgement == Judgement::Refused),
+        "the checker refuses the monoid's terms and every asker: {judged:?}"
+    );
+}
+
+/// #4143: a theory outside one plain sort, or one stating a law, has no
+/// terms: the type asking for them is refused where it is written, naming
+/// the issue that would build them, and no declaration of them is minted.
+#[test]
+fn the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143()
+{
+    let rows_of = [
+        (
+            "theory Pair {\n  sort P : Type;\n  sort Q : Type;\n  oper origin : () --> P;\n  oper \
+             pair : (x : P, y : P) --> Q;\n}\ndef paired : Terms(Pair) = Pair.origin;\n",
+            "paired",
+            "Terms(Pair)",
+            gandr_surface_lowering::Unbuilt::TermsType,
+        ),
+        (
+            "theory Idem {\n  sort M : Type;\n  oper twice : (x : M) --> M;\n  law settles : (x : \
+             M) => Path(M, twice(twice(x)), twice(x));\n}\ndef doubled : Terms(Idem) = \
+             Idem.twice;\n",
+            "doubled",
+            "Terms(Idem)",
+            gandr_surface_lowering::Unbuilt::LawTerms,
+        ),
+    ];
+    for (source, asker, written, unbuilt) in rows_of {
+        let found = rows(&lower(source));
+        assert!(
+            found.iter().all(|&(_, role, _)| role != Role::Terms),
+            "no terms are minted: {found:?}"
+        );
+        assert!(
+            found.iter().any(|&(ref path, _, amounts)| path == asker
+                && amounts
+                    == Amounts::Refused(LoweringRefusal::OutOfFragment {
+                        span: span_of(source, written, 0_usize),
+                        form: FormName::from(NamedKind("type_application")),
+                        sort: FragmentSort::ValueType,
+                        boundary: FragmentBoundary::Unadmitted(unbuilt),
+                    })),
+            "`{written}` is refused at the type as {unbuilt:?}: {found:?}"
+        );
+    }
+}

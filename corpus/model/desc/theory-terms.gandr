@@ -1,0 +1,100 @@
+// A theory's closed terms as a type, `Terms(S)`, and a fold out of them into
+// one of the theory's models.
+//
+// A theory has models, `Model(S)`, and the initial one is its terms. Without
+// `Terms(S)` a source writes the theory twice: once as the signature its
+// models meet, and again as a data block for the terms.
+//
+// `Terms(S)` derives one data declaration per theory, one constructor per
+// operation, named `S.op` in a term and in a pattern. The theory's rules
+// orient as the data block's own, and the block's presentation check judges
+// them. A fold into a model module respects that model's laws.
+//
+// - see: `pathological/desc/theory-terms.gandr` — a monoid's terms, refused
+// - see: #4148 — not implemented: the terms as a model, and a derived fold
+// - see: #4149 — not implemented: a fold over a model value
+// - see: #4150 — not implemented: terms over several sorts
+// - see: `model/identity/loop-winding.gandr` — a fold out of a presented type
+//   into a model module
+
+/// A unital magma's signature.
+theory Mag {
+  /// The carrier.
+  sort M : Type;
+  /// The unit.
+  oper one : () --> M;
+  /// The product.
+  oper mul : (x : M, y : M) --> M;
+  /// The unit on the left.
+  rule unitL : mul(one(), x) <=> x;
+  /// The unit on the right.
+  rule unitR : mul(x, one()) <=> x;
+}
+
+/// The unit as a term.
+def neutral : Terms(Mag) = Mag.one;
+
+/// Units cancel in conversion: the terms' identity is the theory's rules.
+def cancelled : Path(
+  Terms(Mag),
+  Mag.mul(Mag.mul(Mag.one, Mag.mul(Mag.one, Mag.one)), Mag.one),
+  Mag.one
+) = here(Mag.one);
+
+/// A term a function builds, which runs to itself.
+@[ runs("Mag.mul(Mag.one, Mag.one)") ]
+def built() -> Terms(Mag) { Mag.mul(Mag.one, Mag.one) }
+
+/// Counts: no tick, then one more.
+data Ticks : Type {
+  /// No tick.
+  NoTick : Ticks;
+  /// One tick more than `n`.
+  Tick : (n : Ticks) --> Ticks;
+}
+
+/// Joins two counts on the left.
+def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
+  case m {
+    NoTick => n,
+    Tick(k) => Tick(joinLeft[<](k, n))
+  }
+}
+
+/// One more tick.
+def tick(n : Ticks) -> Ticks { Tick(n) }
+
+/// No tick on the right, by induction.
+def rec noTickRight(n : Ticks) -> Path(Ticks, joinLeft(n, NoTick), n) {
+  case n {
+    NoTick => here(NoTick),
+    Tick(k) => cong(tick, noTickRight[<](k))
+  }
+}
+
+/// The counts as a model: the left unit by conversion, the right by induction.
+module Counts : Model(Mag) {
+  /// The carrier, the counts.
+  type M = Ticks;
+  /// The unit, no tick.
+  def one() -> Ticks { NoTick }
+  /// The product joins the counts.
+  def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft(x, y) }
+  /// The left unit holds by conversion.
+  def unitL(x : Ticks) -> Path(Ticks, mul(one(), x), x) { here(x) }
+  /// The right unit holds by induction.
+  def unitR(x : Ticks) -> Path(Ticks, mul(x, one()), x) { noTickRight(x) }
+}
+
+/// The fold into the counts, which respects the counts' laws.
+@[ respects((Counts.unitL, Counts.unitR)) ]
+def rec intoCounts(t : Terms(Mag)) -> Ticks {
+  case t {
+    Mag.one => Counts.one(),
+    Mag.mul(x, y) => Counts.mul(intoCounts[<](x), intoCounts[<](y))
+  }
+}
+
+/// A closed term folded into the counts.
+@[ runs("NoTick") ]
+def folded() -> Ticks { intoCounts(Mag.mul(Mag.one, Mag.mul(Mag.one, Mag.one))) }

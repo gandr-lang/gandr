@@ -214,6 +214,12 @@ impl TrackingIssue
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);
+    /// The terms of a theory of several sorts, of an indexed sort, or of an
+    /// operation that binds, abstracts or returns several results.
+    pub const SORTED_TERMS: Self = Self(4150);
+    /// A stated law the initial model carries as its cell, over the law's
+    /// binders.
+    pub const LAW_CELL: Self = Self(4105);
     /// A function-valued member other than a value function space, such as
     /// an observation taking an argument, which the description code does
     /// not hold.

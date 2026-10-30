@@ -250,6 +250,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Role::Operation
                 | Role::Derived
                 | Role::Words
+                | Role::Terms
                 | Role::Parameter
                 | Role::Generic
                 | Role::Admitted

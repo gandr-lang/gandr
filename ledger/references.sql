@@ -455,6 +455,7 @@ INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surfa
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-diagnostics','advice','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-dispatcher','typed','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-grammar','surface::term','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','lower::native','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','module::functor','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lsp','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-parser','mold','background',NULL,NULL,NULL);

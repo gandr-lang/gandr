@@ -2359,10 +2359,13 @@ impl TypeTable
         let mut declared = BTreeMap::new();
         let mut runs = Vec::new();
         for declaration in module.declarations() {
-            // A `data` family's operation and the words of its loops are
-            // declared from the family's form and have no form of their own:
-            // the family's key is the family's.
-            if matches!(declaration.role(), Role::Operation | Role::Words) {
+            // A `data` family's operation, the words of its loops and a
+            // theory's terms are declared from the family's or the theory's
+            // form and have no form of their own: the key is that form's.
+            if matches!(
+                declaration.role(),
+                Role::Operation | Role::Words | Role::Terms
+            ) {
                 continue;
             }
             let lowered = match declaration.outcome() {

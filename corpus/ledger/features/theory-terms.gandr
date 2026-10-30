@@ -1,0 +1,44 @@
+/// `theory-terms`: a theory's closed terms as a type, its rules the type's conversion.
+///
+/// Implemented: `Terms(S)` exists for a theory of one plain sort whose rules present a type. It has one constructor per operation, written `S.op` in a term and in a pattern. The theory's rules are its conversion. A monoid's terms are refused `RuleNotPresentable` at `Terms(S)`.
+/// Not implemented: #4148 owes the terms as a model of their theory and a derived fold, #4149 owes a fold over a model value, and #4150 owes terms over several sorts.
+///
+/// The unit's two cancellations convert a term to the unit. A case on the terms checks where its arms agree on the terms each rule identifies, as the terms' own fold does.
+///
+/// - see: corpus/model/desc/theory-terms.gandr
+
+/// A unital magma's signature.
+@[ checks ]
+theory Mag {
+  /// The carrier.
+  sort M : Type;
+  /// The unit.
+  oper one : () --> M;
+  /// The product.
+  oper mul : (x : M, y : M) --> M;
+  /// The unit on the left.
+  rule unitL : mul(one(), x) <=> x;
+  /// The unit on the right.
+  rule unitR : mul(x, one()) <=> x;
+}
+
+/// The unit cancels on both sides, so the product converts to the unit.
+@[ checks ]
+def cancelled : Path(
+  Terms(Mag),
+  Mag.mul(Mag.one, Mag.mul(Mag.one, Mag.one)),
+  Mag.one
+) = here(Mag.one);
+
+/// The terms' fold into themselves: each rule's two sides convert under it.
+@[ checks ]
+def rec copy(t : Terms(Mag)) -> Terms(Mag) {
+  case t {
+    Mag.one => Mag.one,
+    Mag.mul(x, y) => Mag.mul(copy[<](x), copy[<](y))
+  }
+}
+
+/// A term with one product, built and folded.
+@[ runs("Mag.mul(Mag.one, Mag.one)") ]
+def copied() -> Terms(Mag) { copy(Mag.mul(Mag.one, Mag.one)) }

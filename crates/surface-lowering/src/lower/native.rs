@@ -319,12 +319,40 @@
 //! pattern and body, keyed by the tree's root. A live match and a hole report
 //! read that one seam rather than parsing the tree back.
 //!
+//! # A theory's terms are a data declaration it derives
+//!
+//! `Terms(S)` is the data type of a theory's closed terms, the initial model
+//! the theory's models are read against. The collector mints one declaration
+//! per theory a unit asks for, before its first asker, and
+//! `Lowerer::mint_terms` lowers it as a written data block would lower: one
+//! constructor per operation at its arity, named `S.op`, and the theory's
+//! oriented rules as its presentation, each side read by `rule_side` under
+//! `Heads::Operations`. The checker judges the presentation as it judges a
+//! written block's, and a monoid's associativity is `RuleNotPresentable` at
+//! `Terms(S)`. The derived declaration and the block written by hand are one
+//! signature
+//! (`tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`).
+//! A theory of several sorts, an indexed or binding operation, and a stated law
+//! are refused by name before anything is minted, as `TermsType` and
+//! `LawTerms`.
+//!
+//! **Choice.** The terms as a derived data declaration, checked and readmitted
+//! as if written, so the derivation is never trusted. **Alternatives.** A
+//! former of its own in the core, which the kernel would have to learn; a
+//! derived declaration per asker, which makes two askers' terms two types.
+//! **Reversal.** The terms take a model instance of their theory once a derived
+//! declaration can carry a stated law as its cell.
+//!
 //! # References
 //!
 //! - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: the loops and
 //!   termination design (§ the decoder) — the fixpoint stages the code, and a
 //!   decode carries no stage, so a match on a decoded value under another match
 //!   leaves the staged parameter to the outer one (`Lowerer::decodes`).
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: the univalence
+//!   design (§ The formers, and where each stands) — `Terms(S, Γ ⊢ s)` is a
+//!   theory's initial model, its operations the constructors and its rules the
+//!   oriented theory.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -421,8 +449,10 @@ use crate::module::Generators;
 use crate::module::Half;
 use crate::module::Operand;
 use crate::module::SlotIndex;
+use crate::module::TermsForm;
 use crate::module::WordsForm;
 use crate::module::closed_term;
+use crate::module::term_generators;
 use crate::namespace::NamePath;
 use crate::namespace::PathResolution;
 use crate::namespace::Recognized;
@@ -2495,9 +2525,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is the qualified form or the form holding it.
     /// - ensures: the constructor of that name among the generators of the data
-    ///   family or the `Theory` code `family` resolves to, when its family's
-    ///   admission position is strictly earlier than the site's declaration's;
-    ///   otherwise the unnamed absence.
+    ///   family or the `Theory` code `family` resolves to, or among the terms
+    ///   of the theory it resolves to, `S.op` naming the operation `op`, when
+    ///   its family's admission position is strictly earlier than the site's
+    ///   declaration's; otherwise the unnamed absence.
     /// - fails: as [`Self::resolve_name`] at the family's name.
     /// - panics: none.
     ///
@@ -2506,9 +2537,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a qualified pattern of a family the source shadows a
-    ///   constructor of, and a qualified constructor value, each lower to the
-    ///   family's constructor.
+    ///   constructor of, a qualified constructor value, and a theory's
+    ///   operation applied and matched as a term, each lower to the family's
+    ///   constructor.
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
     pub(super) fn qualified_constructor(
         &mut self,
@@ -2577,6 +2610,27 @@ impl<'source> Lowerer<'_, 'source>
                     tag,
                     arity,
                     named: theory.named,
+                })
+        }
+        else if let Some((position, terms)) = self
+            .collected
+            .terms
+            .iter()
+            .enumerate()
+            .find(|&(_, terms)| slot_of(terms.theory))
+        {
+            terms
+                .operations
+                .iter()
+                .zip(&terms.arities)
+                .enumerate()
+                .find(|&(_, (&named, _))| SurfaceName::from(self.text_at(named)) == name)
+                .map(|(tag, (&named, &arity))| Constructor {
+                    family: terms.slot,
+                    form: Generators::Terms(position),
+                    tag,
+                    arity,
+                    named,
                 })
         }
         else {
@@ -2760,7 +2814,7 @@ impl<'source> Lowerer<'_, 'source>
                     .len()
                     .saturating_add(written.indices.len())
             }),
-            Generators::Presentation | Generators::Words(_) => 0_usize,
+            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => 0_usize,
         };
         // A constructor standing where a body ends is the value the body
         // returns, of the type the body answers.
@@ -4108,6 +4162,73 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Data(constant, applied));
 
         Ok(())
+    }
+
+    /// Classify a theory's terms as a type, `Terms(S)`, its operand `theory`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application headed `Terms`, which nothing
+    ///   the scope binds answers, written over `theory`.
+    /// - ensures: the form stands as the value type of the terms the collection
+    ///   took a slot for, for the theory the operand names, and is planned as
+    ///   that family over no arguments; the operand is read as the theory's
+    ///   name alone.
+    /// - fails: yields the wrong-sort refusal where no value type is read; an
+    ///   operand that is no capitalised name is out of the fragment at
+    ///   [`Unbuilt::TermsType`]; the refusals [`Collected::presented_theory`]
+    ///   yields at the operand; a theory [`term_generators`] refuses is out of
+    ///   the fragment at the feature it names, at the whole type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a unital magma's terms, a two-sorted theory's, a
+    ///   law-bearing theory's, and a name no theory answers.
+    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    /// - witness: `tests::modules::models::the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Data(..))))]
+    pub(super) fn terms_type(
+        &mut self,
+        site: Site,
+        theory: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let outside = |at: Site| at.out(FragmentBoundary::Unadmitted(Unbuilt::TermsType));
+        let Some(node) = self.tree.node(theory)
+        else {
+            return Err(outside(site));
+        };
+        let named = Placed::of(theory, node);
+        let Shape::Form {
+            former: Former::TypeHead | Former::Constructor,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Err(outside(Site { at: named, ..site }));
+        };
+        let (slot, presentation) =
+            self.collected
+                .presented_theory(named.span.start(), named.span, self.name_at(named))?;
+        let Some(constant) = self
+            .collected
+            .terms
+            .iter()
+            .find(|terms| terms.theory == slot)
+            .and_then(|terms| self.collected.slots.get(usize::from(terms.slot)))
+            .map(|terms| terms.constant)
+        else {
+            let feature = term_generators(presentation)
+                .err()
+                .unwrap_or(Unbuilt::TermsType);
+            return Err(site.out(FragmentBoundary::Unadmitted(feature)));
+        };
+        let none = Stretch {
+            start: self.operands.len(),
+            end: self.operands.len(),
+        };
+        self.family(site, constant, OperandCount::from(0_usize), none)
     }
 
     /// The data or codata family `head`, the head of a call written at
@@ -5661,12 +5782,18 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            // `Family.Constructor` names its family first.
+            // `Family.Constructor` names its family first, and `S.op` its
+            // theory, whose terms the operation constructs.
             let (family, head) = match cursor.tile(TileName::DOT) {
                 Maybe::Present(_) => {
-                    let Maybe::Present(head) = cursor.tile(TileName::CONSTRUCTOR)
-                    else {
-                        return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+                    let head = match cursor.tile(TileName::CONSTRUCTOR) {
+                        Maybe::Present(head) => head,
+                        Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                            Maybe::Present(head) => head,
+                            Maybe::Absent(_) => {
+                                return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+                            },
+                        },
                     };
                     (Some(first), head)
                 },
@@ -6771,6 +6898,12 @@ impl<'source> Lowerer<'_, 'source>
                 arities.resize(loops.saturating_mul(2).saturating_add(1), 1_usize);
                 arities
             },
+            Generators::Terms(terms) => self
+                .collected
+                .terms
+                .get(terms)
+                .map(|written| written.arities.clone())
+                .unwrap_or_default(),
         };
         let declared = match form {
             Generators::Written(position) => self
@@ -6788,6 +6921,11 @@ impl<'source> Lowerer<'_, 'source>
                 .collected
                 .words
                 .get(words)
+                .map(|written| (written.slot, true)),
+            Generators::Terms(terms) => self
+                .collected
+                .terms
+                .get(terms)
                 .map(|written| (written.slot, true)),
         };
         let declared = declared.and_then(|(slot, bare)| {
@@ -6812,7 +6950,7 @@ impl<'source> Lowerer<'_, 'source>
                 .data
                 .get(position)
                 .map_or(0, |written| written.indices.len()),
-            Generators::Presentation | Generators::Words(_) => 0,
+            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => 0,
         };
         let mut branches = Vec::with_capacity(arities.len());
         let mut fresh: Vec<TreeLevel> = Vec::new();
@@ -7700,6 +7838,7 @@ impl<'source> Lowerer<'_, 'source>
             let _first = self.signatures.insert(position, index);
         }
         self.mint_words(sink);
+        self.mint_terms(sink);
     }
 
     /// Mint the words of every family's loops at their point, and each
@@ -8070,8 +8209,20 @@ impl<'source> Lowerer<'_, 'source>
             };
             variables.clear();
             let (Maybe::Present(left), Maybe::Present(right), Some(from), Some(to)) = (
-                rule_side(&face.lhs, &names, &mut variables, Binding::Binds),
-                rule_side(&face.rhs, &names, &mut variables, Binding::Reads),
+                rule_side(
+                    &face.lhs,
+                    &names,
+                    &mut variables,
+                    Binding::Binds,
+                    Heads::Constructors,
+                ),
+                rule_side(
+                    &face.rhs,
+                    &names,
+                    &mut variables,
+                    Binding::Reads,
+                    Heads::Constructors,
+                ),
                 written.left.nodes.first(),
                 written.right.nodes.first(),
             )
@@ -8087,6 +8238,189 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         (gandr_core_term::Presentation::new(rules), spans)
+    }
+
+    /// Mint the terms of every theory a terms type of the source asks for.
+    ///
+    /// # Specification
+    /// - requires: the theories' descriptions and cells are read.
+    /// - ensures: per terms entry of the source, a signature without parameters
+    ///   at the fuss-free value universe whose constructors are the theory's
+    ///   operations in its presentation's order, each taking its inputs as
+    ///   terms and named `S.op`, presented by the rules [`Self::term_rules`]
+    ///   reads, its index recorded by the entry's position; a fault at the
+    ///   entry's slot in its place when the rules do not read. Every node is
+    ///   located at the type that asked for the terms, as an insertion.
+    /// - provides: the
+    ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data) outcome
+    ///   of a terms slot.
+    /// - fails: never; an entry whose slot or type has no origin mints nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a unital magma mints its terms with a nullary and a
+    ///   binary constructor and its two unit rules.
+    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    #[spec(captures: before = self.data.len(), ensures: self.data.len() >= before && self.termed.len() <= self.collected.terms.len())]
+    fn mint_terms(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for (index, terms) in self
+            .collected
+            .terms
+            .iter()
+            .enumerate()
+            .skip(self.current.terms)
+        {
+            let (Some(own), Some(theory)) = (
+                self.collected.slots.get(usize::from(terms.slot)),
+                self.collected.slots.get(usize::from(terms.theory)),
+            )
+            else {
+                continue;
+            };
+            let Maybe::Present(origin) = self.origin_at(own.introduced_by.node)
+            else {
+                continue;
+            };
+            let rules = match self.term_rules(terms) {
+                Ok(rules) => rules,
+                Err(refusal) => {
+                    let _first = self.faults.insert(terms.slot, refusal);
+                    continue;
+                },
+            };
+            // The source writes the type, never the terms' signature: each
+            // node is located at the type as an insertion.
+            let origin = origin.inserted(Insertion::Terms);
+            let term = sink.arena.value_type_data(own.constant, Vec::new());
+            sink.origins.record_value_type(term, origin);
+            let kind = sink.arena.value_type_universe(
+                Sort::Ground(GroundSort::Value),
+                Level::constant(super::Universe::FUSS_FREE.level),
+            );
+            sink.origins.record_value_type(kind, origin);
+            let constructors = terms
+                .arities
+                .iter()
+                .map(|&arity| alloc::vec![term; arity])
+                .collect();
+            let data = DataIndex::from(self.data.len());
+            self.data.push(Arc::new(
+                DataSignature::new(Vec::new(), constructors, kind).presented(rules),
+            ));
+            self.constructors.push(
+                terms
+                    .operations
+                    .iter()
+                    .map(|&named| alloc::format!("{}.{}", theory.name, self.text_at(named)))
+                    .collect(),
+            );
+            let _first = self.termed.insert(index, data);
+        }
+    }
+
+    /// The rules of the theory `terms` are the terms of, read over the terms'
+    /// constructors, as the checkers read a presented type.
+    ///
+    /// # Specification
+    /// - requires: the description route has read the theory's cells.
+    /// - ensures: one rule per rule of the theory, in rule order, oriented as
+    ///   its block orients it: each side in pre-order, an operation by the tag
+    ///   of its constructor and a variable by the order its first occurrence on
+    ///   the left takes; the empty presentation for a theory the collection
+    ///   holds no description of.
+    /// - provides: the rules [`DataSignature::presented`] carries to both
+    ///   checkers, which validate them against the constructor table: a rule no
+    ///   presented type rewrites by is refused there, at the terms.
+    /// - fails: [`LoweringRefusal::OutOfFragment`] at [`Unbuilt::TermsType`],
+    ///   over the rule's two sides, for a rule a side of which applies what is
+    ///   no operation of the theory or reads a variable its left side does not
+    ///   bind.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a unital magma's two unit rules lower to rules over
+    ///   its terms, and a monoid's associativity reaches the checker, which
+    ///   refuses it.
+    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.rules().len() <= match self.collected.slots.get(usize::from(terms.theory)).map(|slot| self.collected.descriptions.get(&slot.introduced_by.node)) {
+        Some(Maybe::Present(described)) => described.description.rules.len(),
+        _ => 0,
+    }))]
+    fn term_rules(
+        &self,
+        terms: &TermsForm,
+    ) -> Result<gandr_core_term::Presentation, LoweringRefusal<'source>>
+    {
+        let Some(block) = self
+            .collected
+            .slots
+            .get(usize::from(terms.theory))
+            .map(|slot| slot.introduced_by.node)
+        else {
+            return Ok(gandr_core_term::Presentation::default());
+        };
+        let Maybe::Present(described) = self.collected.descriptions.get(&block)
+        else {
+            return Ok(gandr_core_term::Presentation::default());
+        };
+        let faces = match self
+            .collected
+            .cells
+            .declarations
+            .iter()
+            .find(|cells| cells.at.node == block)
+        {
+            Some(cells) if !cells.oriented.is_empty() => cells.oriented.as_slice(),
+            Some(_) | None => described.description.rules.as_ref(),
+        };
+        let names: Vec<SourceFragment<'source>> = terms
+            .operations
+            .iter()
+            .map(|&named| self.text_at(named))
+            .collect();
+        let mut rules = Vec::with_capacity(faces.len());
+        let mut variables = Vec::new();
+        for (face, written) in faces.iter().zip(&described.written.faces) {
+            variables.clear();
+            let (Maybe::Present(left), Maybe::Present(right)) = (
+                rule_side(
+                    &face.lhs,
+                    &names,
+                    &mut variables,
+                    Binding::Binds,
+                    Heads::Operations,
+                ),
+                rule_side(
+                    &face.rhs,
+                    &names,
+                    &mut variables,
+                    Binding::Reads,
+                    Heads::Operations,
+                ),
+            )
+            else {
+                let span = match (written.left.nodes.first(), written.right.nodes.first()) {
+                    (Some(from), Some(to)) => from.span.join(to.span),
+                    _ => described.at.span,
+                };
+                return Err(LoweringRefusal::OutOfFragment {
+                    span,
+                    form: FormName::RULE_MEMBER,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::Unadmitted(Unbuilt::TermsType),
+                });
+            };
+            rules.push(gandr_core_term::PresentedRule::new(left, right));
+        }
+
+        Ok(gandr_core_term::Presentation::new(rules))
     }
 
     /// Mint the nominal type of the family at `constant` over the arguments
@@ -13842,14 +14176,26 @@ enum Binding
     Reads,
 }
 
+/// Which applications of a rule side apply the generators it is read over.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Heads
+{
+    /// A data declaration's constructors: an operation is another reading's.
+    Constructors,
+    /// A theory's operations, each the constructor of its terms: a
+    /// constructor is no operation of the theory.
+    Operations,
+}
+
 quenchant_shape::reason_enum! {
     /// Why a rule side is not a presented type's.
     pub(crate) mod rule_side {
         /// The reason the side was passed over.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub(crate) enum Absent {
-            /// It applies an operation or a results tuple, or a constructor
-            /// of another family.
+            /// It applies what is no generator: an operation of a family, a
+            /// constructor of a theory, a results tuple, or a generator `names`
+            /// does not hold.
             Foreign,
             /// Its right side names a variable its left side does not bind.
             Unbound,
@@ -13857,18 +14203,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One rule side in pre-order over a family's constructors `names`, its
-/// variables numbered through `variables`.
+/// One rule side in pre-order over the generators `names`, the applications
+/// `heads` names, its variables numbered through `variables`.
 ///
 /// # Specification
 /// - requires: `variables` holds the left side's variables when `binding` reads
 ///   them.
-/// - ensures: one node per term node, a constructor by its position in `names`
+/// - ensures: one node per term node, a generator by its position in `names`
 ///   and a variable by its position in `variables` — appended there on its
 ///   first occurrence when `binding` binds.
-/// - fails: [`rule_side::Absent::Foreign`] for an operation, a results tuple,
-///   an instantiation or a constructor `names` does not hold;
-///   [`rule_side::Absent::Unbound`] for a variable a reading side meets
+/// - fails: [`rule_side::Absent::Foreign`] for an application `heads` does not
+///   name, a results tuple, an instantiation or a generator `names` does not
+///   hold; [`rule_side::Absent::Unbound`] for a variable a reading side meets
 ///   unbound.
 /// - panics: none.
 ///
@@ -13877,8 +14223,9 @@ quenchant_shape::reason_enum! {
 /// - measure: the term nodes still to visit.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::presentation`].
+/// - hypothesis: L3 — as [`Lowerer::presentation`] and [`Lowerer::term_rules`].
 /// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
+/// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref nodes) => !nodes.is_empty(),
     Maybe::Absent(_) => true,
@@ -13895,13 +14242,14 @@ fn rule_side(
     names: &[SourceFragment<'_>],
     variables: &mut Vec<gandr_theory_levitation::Name>,
     binding: Binding,
+    heads: Heads,
 ) -> Maybe<alloc::boxed::Box<[gandr_core_term::RuleNode]>, rule_side::Absent>
 {
     let mut nodes = Vec::new();
     let mut pending = Vec::from([side.to_node()]);
     while let Some(node) = pending.pop() {
-        match node.view() {
-            gandr_theory_levitation::TermView::Var(name) => {
+        match (node.view(), heads) {
+            (gandr_theory_levitation::TermView::Var(name), _) => {
                 let position = match variables.iter().position(|bound| bound == name) {
                     Some(position) => position,
                     None if binding == Binding::Binds => {
@@ -13918,7 +14266,8 @@ fn rule_side(
                     gandr_core_term::RuleVariable::from(ordinal),
                 ));
             },
-            gandr_theory_levitation::TermView::Ctor { name, args } => {
+            (gandr_theory_levitation::TermView::Ctor { name, args }, Heads::Constructors)
+            | (gandr_theory_levitation::TermView::Op { name, args }, Heads::Operations) => {
                 let Some(tag) = names
                     .iter()
                     .position(|&written| <&str>::from(written) == name.as_ref())
@@ -13934,13 +14283,17 @@ fn rule_side(
                     children.reverse();
                 }
             },
-            gandr_theory_levitation::TermView::Op { .. }
-            | gandr_theory_levitation::TermView::Results { .. }
-            | gandr_theory_levitation::TermView::Inst { .. }
-            | gandr_theory_levitation::TermView::Abs { .. }
-            | gandr_theory_levitation::TermView::Atom(_)
-            | gandr_theory_levitation::TermView::Lam { .. }
-            | gandr_theory_levitation::TermView::Bound(_) => {
+            (
+                gandr_theory_levitation::TermView::Op { .. }
+                | gandr_theory_levitation::TermView::Ctor { .. }
+                | gandr_theory_levitation::TermView::Results { .. }
+                | gandr_theory_levitation::TermView::Inst { .. }
+                | gandr_theory_levitation::TermView::Abs { .. }
+                | gandr_theory_levitation::TermView::Atom(_)
+                | gandr_theory_levitation::TermView::Lam { .. }
+                | gandr_theory_levitation::TermView::Bound(_),
+                _,
+            ) => {
                 return Maybe::Absent(rule_side::Absent::Foreign);
             },
         }

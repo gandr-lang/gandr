@@ -72,6 +72,7 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::Judged;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ObligationCount;
@@ -166,6 +167,19 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// It is no law its module omits, or no source discharged it.
             Undischarged,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why refused terms have no declaration asking for them.
+    pub mod asked {
+        /// No declaration of the module is refused at the terms.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Every declaration reading the terms was refused for its own
+            /// cause, or none reads them.
+            Unasked,
         }
     }
 }
@@ -1283,6 +1297,11 @@ impl Error for SettleFault
                                 && matches!(answer.verdict(), Verdict::Owed(_))
                                 && usize::from(declaration.owed) == 0_usize))
                         && (declaration.produced == Produced::Judged(answer.verdict())
+                            || matches!(
+                                (answer.verdict(), declaration.produced),
+                                (Verdict::Refused(refusal), Produced::Judged(Verdict::Refused(cause)))
+                                    if cause == caused(module, verdicts, refusal)
+                            )
                             || matches!(declaration.produced, Produced::Guarded(_)))
                 })
     }
@@ -1372,11 +1391,13 @@ where
 ///   binds reads the application's attribute, and a refused declaration writing
 ///   its own halves keeps its own; a witness that checks beside its refused
 ///   function keeps the default, and so does a function that checks beside its
-///   refused witness.
+///   refused witness. A declaration refused at refused terms produces the
+///   terms' cause, and the terms state what their first asker states.
 /// - witness: `settle::tests::a_module_settled_after_its_leading_report_settles_as_a_whole_one_776`
 /// - witness: `settle::tests::an_application_s_attribute_states_its_refused_names_1274`
 /// - witness: `settle::tests::a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706`
 /// - witness: `settle::tests::a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840`
+/// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
@@ -1432,13 +1453,40 @@ where
                 (Produced::Judged(verdict), owed_by(verdicts, answer))
             },
         };
+        // A declaration refused at a theory's terms the checker refused is
+        // refused by the terms' cause: a refusal names its cause, never its
+        // consequence.
+        let produced = match produced {
+            Produced::Judged(Verdict::Refused(refusal)) => {
+                Produced::Judged(Verdict::Refused(caused(module, verdicts, refusal)))
+            },
+            Produced::Unlowered(_)
+            | Produced::Judged(
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_),
+            )
+            | Produced::Guarded(_) => produced,
+        };
         // A name an application or a module's header binds writes no half:
         // when it is refused, the attributes before that form state its
         // expectation, and a witness that checks keeps the default. A witness
         // of a written signature reads its function's form. When it checks,
         // the function alone states that form's expectation; when it is
-        // refused and the function checks, the witness alone states it.
+        // refused and the function checks, the witness alone states it. A
+        // theory's terms write no form of their own: refused, they state what
+        // the first declaration asking for them states.
         let expectations = match produced {
+            Produced::Judged(Verdict::Refused(_)) if lowered.role() == Role::Terms => {
+                match asker(module, verdicts, lowered.constant()) {
+                    Maybe::Present(asker) => {
+                        expected(roots.root_at(asker.span().start()), arena, module, asker)?
+                    },
+                    Maybe::Absent(_) => expectations,
+                }
+            },
             Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
                 if !header(module.attributes(), lowered).is_empty() =>
             {
@@ -2054,6 +2102,95 @@ fn form_keys<'declaration>(
         Maybe::Present(key) => Some(key),
         Maybe::Absent(_) => None,
     })
+}
+
+/// The cause of `refusal`, a refusal `verdicts` gives a declaration of
+/// `module`: the terms' own refusal when it is `NotADataType` at a theory's
+/// terms the checker refused, and `refusal` itself otherwise.
+///
+/// # Specification
+/// - requires: `verdicts` is the report the checker gave `module`.
+/// - ensures: the refusal `verdicts` gives the [`Role::Terms`] declaration a
+///   `NotADataType` refusal names, when it gives one; `refusal` for every other
+///   refusal, and for one naming data that formed or no terms.
+/// - provides: what a declaration asking for refused terms settles against.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration asking for a monoid's terms, refused at
+///   them, settles the refusal it states, and a declaration refused at formed
+///   data keeps its own.
+/// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
+#[spec(ensures: |ret| ret == refusal || matches!(refusal, CheckRefusal::NotADataType(_)))]
+fn caused(
+    module: &LoweredModule<'_>,
+    verdicts: &ModuleReport,
+    refusal: CheckRefusal,
+) -> CheckRefusal
+{
+    let CheckRefusal::NotADataType(terms) = refusal
+    else {
+        return refusal;
+    };
+    let termed = module
+        .declarations()
+        .iter()
+        .any(|declaration| declaration.constant() == terms && declaration.role() == Role::Terms);
+    if !termed {
+        return refusal;
+    }
+    verdicts
+        .judged()
+        .iter()
+        .find(|answer| answer.constant() == terms)
+        .and_then(|answer| match answer.verdict() {
+            Verdict::Refused(cause) => Some(cause),
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_)
+            | Verdict::Suspended(_) => None,
+        })
+        .unwrap_or(refusal)
+}
+
+/// The first declaration of `module` asking for the terms at `terms`: the
+/// first `verdicts` refuses `NotADataType` at them.
+///
+/// # Specification
+/// - requires: `verdicts` is the report the checker gave `module`.
+/// - ensures: the first declaration, in module order, whose verdict is
+///   `NotADataType` naming `terms`.
+/// - provides: whose expectation refused terms state.
+/// - fails: [`asked::Absent::Unasked`] when no declaration is refused so.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`caused`].
+/// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(asker) => verdicts.judged().iter().any(|answer| answer.constant() == asker.constant()
+        && answer.verdict() == Verdict::Refused(CheckRefusal::NotADataType(terms))),
+    Maybe::Absent(_) => true,
+})]
+fn asker<'module, 'source>(
+    module: &'module LoweredModule<'source>,
+    verdicts: &ModuleReport,
+    terms: ConstantIndex,
+) -> Maybe<&'module LoweredDeclaration<'source>, asked::Absent>
+{
+    verdicts
+        .judged()
+        .iter()
+        .find(|answer| answer.verdict() == Verdict::Refused(CheckRefusal::NotADataType(terms)))
+        .and_then(|answer| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.constant() == answer.constant())
+        })
+        .map_or(Maybe::Absent(asked::Absent::Unasked), Maybe::Present)
 }
 
 /// What the declaration `lowered` of `module` states under `root`: the
@@ -4049,6 +4186,63 @@ data NatUnits : Type {{
                 )
                 .is_ok(),
                 "a module's own verdicts and arena settle"
+            );
+        }
+    }
+
+    /// #4143: a declaration asking for a monoid's terms, refused at them,
+    /// settles the cause it states, and the terms settle with it. Stating
+    /// the consequence, `NotADataType`, settles neither.
+    #[test]
+    fn a_declaration_refused_at_refused_terms_states_their_cause_4143()
+    {
+        let theory = "theory Mon {
+          sort M : Type;
+          oper one : () --> M;
+          oper mul : (x : M, y : M) --> M;
+          rule unitL : mul(one(), x) <=> x;
+          rule unitR : mul(x, one()) <=> x;
+          rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
+        }";
+        let rows = [
+            (RefusalName::RuleNotPresentable, Settlement::Settled),
+            (RefusalName::NotADataType, Settlement::Unsettled),
+        ];
+        for (stated, settlement) in rows {
+            let source =
+                format!(r#"{theory} @[ refuses("{stated}") ] def neutral : Terms(Mon) = Mon.one;"#);
+            let report = settled(CorpusRoot::Fixture, SourceText::from(source.as_str()));
+            let produced: Vec<_> = report
+                .declarations()
+                .iter()
+                .map(|declaration| {
+                    (
+                        declaration.name().to_string(),
+                        declaration
+                            .produced()
+                            .refusal()
+                            .map(|refusal| refusal.name()),
+                        declaration.settlement(),
+                    )
+                })
+                .filter(|&(_, ref refusal, _)| matches!(*refusal, Maybe::Present(_)))
+                .collect();
+            assert_eq!(
+                produced,
+                [
+                    (
+                        String::from("Terms(Mon)"),
+                        Maybe::Present(RefusalName::RuleNotPresentable),
+                        settlement
+                    ),
+                    (
+                        String::from("neutral"),
+                        Maybe::Present(RefusalName::RuleNotPresentable),
+                        settlement
+                    ),
+                ],
+                "the terms and their asker produce the terms' cause, and stating {stated} \
+                 leaves both {settlement:?}"
             );
         }
     }

@@ -235,6 +235,10 @@ pub enum Insertion
     /// located at the declaration: the source writes the loops and their
     /// sides, never the words type, its point, the path type or a letter.
     Words,
+    /// A node of the terms a theory presents, every one located at the type
+    /// `Terms(S)` that first asks for them: the source writes the theory and
+    /// the type, never the terms' signature or its universe.
+    Terms,
     /// A node of the access a method call `s.f(…)` is, below the call itself,
     /// every one located at the call: the source writes the receiver, the
     /// method and the arguments, never the view, the application to it, the
