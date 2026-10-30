@@ -47,11 +47,6 @@ deps_block_named_epics() {
   done
 }
 
-# The open issues among those $2 is blocked by, as `#n` words.
-deps_open_blockers() {
-  deps_blocked_by "$1" "$2" | jq -r '[.[] | select(.state == "open") | "#\(.number)"] | join(", ")'
-}
-
 # The sub-issues of $2, as [{number, state}].
 deps_sub_issues() {
   gh api --paginate "repos/$1/issues/$2/sub_issues?per_page=100" --jq '[.[] | {number, state}]' | jq -s 'add // []'
