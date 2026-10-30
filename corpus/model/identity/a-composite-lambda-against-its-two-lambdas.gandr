@@ -1,0 +1,146 @@
+/// A lambda over a composite path, against the composite of two lambdas.
+///
+/// `q ↦ (q then g) then h` and the composite of `q ↦ q then g` and `r ↦ r then
+/// h` are one function. Each body agrees with the other once the machine takes
+/// the bind at the endpoint of `q then g`.
+///
+/// The composite's body binds `q then g`, a transport stuck on `g`, into `t ↦ t
+/// then h`. That transport returns the value it moves, whatever its path. So
+/// the bind is its continuation at that endpoint, the transport along `h` that
+/// the lambda writes. Inside an action's motive, the kernel reads the two codes
+/// by its own rules, which run the composite's calls.
+///
+/// - see: #3824 — a call of a returning variable held by the same law
+/// - see: #4011 — the checker refused the composite against its two lambdas
+/// - see: #4005 — the action over the composite, which the code walk hands on
+
+/// The composite of `F` and then `G`.
+def composeAfter(A : Type, B : Type, C : Type, F : A => B, G : B => C) -> A => C {
+  (fn (a : A) { G(F(a)) } : A => C)
+}
+
+/// The lambda over the composite path, against the composite of its two
+/// lambdas.
+def oneLambdaAgainstCompose(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(A, x, y) => Path(A, x, w),
+  (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+  composeAfter(
+    Path(A, x, y),
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))
+  )
+) {
+  here((fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)))
+}
+
+/// The same pair, the composite of the two lambdas its point.
+def composeAgainstOneLambda(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(A, x, y) => Path(A, x, w),
+  composeAfter(
+    Path(A, x, y),
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))
+  ),
+  (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w))
+) {
+  here(
+    composeAfter(
+      Path(A, x, y),
+      Path(A, x, z),
+      Path(A, x, w),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))
+    )
+  )
+}
+
+/// The action of `F` on `p`.
+def actThrough(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(
+  B,
+  F(x),
+  F(y)
+) {
+  cong(F, p)
+}
+
+/// The action of the composite of `F` and then `G` on `p`.
+def actOfCompose(
+  A : Type,
+  B : Type,
+  C : Type,
+  F : A => B,
+  G : B => C,
+  x : A,
+  y : A,
+  p : Path(A, x, y)
+) -> Path(C, G(F(x)), G(F(y))) {
+  actThrough(A, C, (fn (a : A) { G(F(a)) } : A => C), x, y, p)
+}
+
+/// The action of the lambda over the composite path, against the action of
+/// the composite of its two lambdas.
+def composedAgainstActOfCompose(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, (fp then g) then h),
+  actThrough(
+    Path(A, x, y),
+    Path(A, x, w),
+    (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+    fm,
+    fp,
+    fa
+  ),
+  actOfCompose(
+    Path(A, x, y),
+    Path(A, x, z),
+    Path(A, x, w),
+    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    fm,
+    fp,
+    fa
+  )
+) {
+  here(
+    actOfCompose(
+      Path(A, x, y),
+      Path(A, x, z),
+      Path(A, x, w),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+      fm,
+      fp,
+      fa
+    )
+  )
+}

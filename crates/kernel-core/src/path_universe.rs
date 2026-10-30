@@ -942,7 +942,8 @@ fn replay_checked(
     | (ConversionDecision::EtaExpand { side: first, .. }, ConversionDecision::EtaExpand { side: second, .. })
     | (ConversionDecision::ReturnEta { side: first }, ConversionDecision::ReturnEta { side: second })
     | (ConversionDecision::Reassociate { side: first }, ConversionDecision::Reassociate { side: second })
-    | (ConversionDecision::Discard { side: first }, ConversionDecision::Discard { side: second }) => first == second,
+    | (ConversionDecision::Discard { side: first }, ConversionDecision::Discard { side: second })
+    | (ConversionDecision::Hold { side: first }, ConversionDecision::Hold { side: second }) => first == second,
     (ConversionDecision::NegativeSubgoal { position: first }, ConversionDecision::NegativeSubgoal { position: second }) => first == second,
     (ConversionDecision::ReduceLeft { .. }, ConversionDecision::ReduceLeft { .. })
     | (ConversionDecision::ReduceRight { .. }, ConversionDecision::ReduceRight { .. })
