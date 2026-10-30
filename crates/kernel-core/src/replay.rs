@@ -164,11 +164,13 @@
 //! `post` the sum held reads to: a binder's call is a stop no step unfolds,
 //! and the law is the same, so it needs no argument of its own. The
 //! run is deterministic, so no decision names it and the vocabulary is
-//! unchanged. It fires only in a goal [`Replay::open_returned`] opened, and in
-//! [`Replay::normalize_returned`] read at [`Reduction::Endpoint`]: a
-//! computation goal of its own may be effectful, and there the two bind laws
-//! stay as the dialogue names them. A call a definition heads is not read
-//! through; the dialogue unfolds it first, as it does at reflexivity.
+//! unchanged. It fires only in a goal [`Replay::open_returned`] opened, in a
+//! computation premise such a goal decomposes into, which is a part of the
+//! same pure computation, and in [`Replay::normalize_returned`] read at
+//! [`Reduction::Endpoint`]: a computation goal of its own may be effectful,
+//! and there the two bind laws stay as the dialogue names them. A call a
+//! definition heads is not read through; the dialogue unfolds it first, as it
+//! does at reflexivity.
 //!
 //! A bind whose continuation eliminates its own variable at its head is passed
 //! over, as part of the call: it is the bind `E[c] ⇝ c to x. E[x]` builds, and
@@ -1271,7 +1273,7 @@ where
             right,
             defined: DefinedHead::Hold,
         };
-        let outcome = run.drive(Goal::premise(premise, expect));
+        let outcome = run.drive(Goal::premise(premise, expect, Reduction::Plain));
         run.arena.truncate_to(watermark);
         Ok(concluded(outcome, expect))
     }
@@ -1369,7 +1371,11 @@ pub fn convert(
         right,
         defined: DefinedHead::Hold,
     };
-    let outcome = run.drive(Goal::premise(premise, Expect::Convertible));
+    let outcome = run.drive(Goal::premise(
+        premise,
+        Expect::Convertible,
+        Reduction::Plain,
+    ));
     run.arena.truncate_to(watermark);
     concluded(outcome, Expect::Convertible)
 }
@@ -1507,7 +1513,11 @@ fn unfold_owing(
         right,
         defined: DefinedHead::Hold,
     };
-    let outcome = run.drive(Goal::premise(premise, Expect::Convertible));
+    let outcome = run.drive(Goal::premise(
+        premise,
+        Expect::Convertible,
+        Reduction::Plain,
+    ));
     let verdict = concluded(outcome, Expect::Convertible);
     let mut owed = run.owed;
     if verdict != KernelVerdict::Convertible {
@@ -2146,7 +2156,8 @@ struct Goal
     /// The verdict the derivation owes.
     expect: Expect,
     /// How the goal's computations reduce: as returned endpoints' once
-    /// [`Replay::open_returned`] has read the goal as their computations.
+    /// [`Replay::open_returned`] has read the goal as their computations, and
+    /// in each computation premise such a goal decomposes into.
     reduction: Reduction,
     /// How a closing on the goal reads an endpoint stuck at a defined head.
     defined: DefinedHead,
@@ -2332,21 +2343,57 @@ enum RunStep
 
 impl Goal
 {
-    /// A fresh goal over `premise`, with nothing frozen.
+    /// A fresh goal over `premise`, a part of a goal read at `within`, with
+    /// nothing frozen.
+    ///
+    /// A computation premise of a goal read as a returned endpoint's
+    /// computation, a bind's continuation among them, is a part of that one
+    /// pure computation, so it reads as the endpoint does: the engine reads a
+    /// continuation stuck at a bind of its own before it judges it. A value
+    /// premise reads plainly, a thunk's suspended computation among them,
+    /// until [`Replay::open_returned`] opens a returned endpoint there.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the goal's sides and defined-head reading are `premise`'s, it
+    ///   owes `expect` with nothing frozen, and it reads at `within` when both
+    ///   sides are computations, at [`Reduction::Plain`] otherwise.
+    /// - provides: the reading a decomposition's premise inherits.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two returned endpoints standing at one stuck call
+    ///   whose continuations case on its value decompose into arms, and an arm
+    ///   binding a call stuck at a variable before a call a definition heads
+    ///   meets the other arm's call there; read plainly, the bind sticks the
+    ///   arm and the replay refuses the decision the checker records next.
+    /// - witness: `replay::tests::an_endpoint_s_continuation_reads_through_a_bind_over_a_stuck_call_4246`
+    #[spec(ensures: |ret| ret.left == premise.left
+        && ret.right == premise.right
+        && ret.expect == expect
+        && ret.frozen == Frozen::default()
+        && ret.defined == premise.defined
+        && ret.reduction == match (premise.left, premise.right) {
+            (Term::Computation(_), Term::Computation(_)) => within,
+            _ => Reduction::Plain,
+        })]
     fn premise(
         premise: Premise,
         expect: Expect,
+        within: Reduction,
     ) -> Self
     {
+        let reduction = match (premise.left, premise.right) {
+            (Term::Computation(_), Term::Computation(_)) => within,
+            (Term::Value(_), _) | (_, Term::Value(_)) => Reduction::Plain,
+        };
         Self {
             left: premise.left,
             right: premise.right,
             frozen: Frozen::default(),
             expect,
-            reduction: Reduction::Plain,
+            reduction,
             defined: premise.defined,
         }
     }
@@ -2948,7 +2995,11 @@ where
         let mut goals: Vec<Goal> = parted
             .into_iter()
             .map(|(left, right)| {
-                Goal::premise(Premise::computations(left, right), Expect::Convertible)
+                Goal::premise(
+                    Premise::computations(left, right),
+                    Expect::Convertible,
+                    Reduction::Plain,
+                )
             })
             .collect();
         let mut outcome = Ok(Convertibility::Convertible);
@@ -4469,7 +4520,7 @@ where
                     premises
                         .into_iter()
                         .rev()
-                        .map(|premise| Goal::premise(premise, Expect::Convertible)),
+                        .map(|premise| Goal::premise(premise, Expect::Convertible, goal.reduction)),
                 );
                 Ok(Flow::Settled)
             },
@@ -4751,7 +4802,7 @@ where
                 ConversionSide::Right => Premise::computations(component, projection),
             });
         }
-        self.schedule(goal.expect, premises, goals)
+        self.schedule((goal.expect, goal.reduction), premises, goals)
     }
 
     /// Read the decision naming `wanted` off the trace, or fire it unread.
@@ -5257,17 +5308,20 @@ where
             Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
             Structure::Premises(premises) => premises,
         };
-        self.schedule(goal.expect, premises, goals)
+        self.schedule((goal.expect, goal.reduction), premises, goals)
     }
 
-    /// Schedule a decomposition's premises at the verdict its goal owes.
+    /// Schedule a decomposition's premises at the verdict its goal owes and
+    /// the reading it is read at.
     ///
     /// # Specification
     /// - requires: `premises` is non-empty.
     /// - ensures: owing convertibility, every premise is pushed, the first on
     ///   top, and no decision is read; owing a refutation, the premise the next
     ///   `NegativeSubgoal` names is pushed alone and that decision consumed.
-    ///   Every pushed goal owes `expect` with nothing frozen.
+    ///   Every pushed goal owes `owed`'s verdict with nothing frozen, and reads
+    ///   as [`Goal::premise`] reads a premise of a goal read at `owed`'s
+    ///   reading.
     /// - provides: the premise half shared by structural decomposition and the
     ///   lazy product's η.
     /// - fails: a refusal when a refutation's next decision is not a
@@ -5281,15 +5335,20 @@ where
     /// - hypothesis: L3: a pair and a lazy pairing against a neutral
     ///   distinguish selecting the refuting premise from accepting a positive
     ///   sibling or an out-of-range position, and a missing `NegativeSubgoal`
-    ///   from a present one.
+    ///   from a present one. A continuation of a returned endpoint's
+    ///   computation reads through a bind over a stuck call, as the endpoint
+    ///   does.
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
     /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
+    /// - witness: `replay::tests::an_endpoint_s_continuation_reads_through_a_bind_over_a_stuck_call_4246`
     #[spec(
         captures: before = (goals.len(), self.position, premises.len()),
         ensures: |ret| match ret {
             Ok(()) => goals.get(before.0..).is_some_and(|pending| {
-                pending.iter().all(|next| next.expect == expect && next.frozen == Frozen::default())
-                    && match expect {
+                pending.iter().all(|next| next.expect == owed.0
+                    && next.frozen == Frozen::default()
+                    && (next.reduction == Reduction::Plain || next.reduction == owed.1))
+                    && match owed.0 {
                         Expect::Convertible => pending.len() == before.2 && self.position == before.1,
                         Expect::NotConvertible => pending.len() == 1_usize && self.position == before.1.saturating_add(1),
                     }
@@ -5299,18 +5358,19 @@ where
     )]
     fn schedule(
         &mut self,
-        expect: Expect,
+        owed: (Expect, Reduction),
         premises: Vec<Premise>,
         goals: &mut Vec<Goal>,
     ) -> Result<(), Stop>
     {
+        let (expect, within) = owed;
         match expect {
             Expect::Convertible => {
                 goals.extend(
                     premises
                         .into_iter()
                         .rev()
-                        .map(|premise| Goal::premise(premise, Expect::Convertible)),
+                        .map(|premise| Goal::premise(premise, Expect::Convertible, within)),
                 );
                 Ok(())
             },
@@ -5327,7 +5387,7 @@ where
                     return Err(self.refuse(next));
                 };
                 self.take();
-                goals.push(Goal::premise(premise, Expect::NotConvertible));
+                goals.push(Goal::premise(premise, Expect::NotConvertible, within));
                 Ok(())
             },
         }
