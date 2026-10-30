@@ -19,4 +19,4 @@ error[GeneratorFamilyUnsupported]: `fill` lifts its generator along paths only
    │ └─┘ checked; while checking the body of this thunk
    │
    ├ note: `alongFlow` is refused with GeneratorFamilyUnsupported, as its expectation states
-   ╰ note: tracked by #3992 <https://github.com/gandr-lang/gandr/issues/3992>
+   ╰ note: tracked by #4093 <https://github.com/gandr-lang/gandr/issues/4093>

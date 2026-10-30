@@ -490,6 +490,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::ComposeDoesNotFill { .. } => {
             String::from("start each cell at the point where the cell before it ends")
         },
+        CheckRefusal::NoFiller { .. } => String::from(
+            "write the generator's sides as composites of its cells, give at least one cell as a \
+             path of paths, and ask for the square the generator makes",
+        ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
@@ -527,7 +531,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UaInequivalent { .. }
         | CheckRefusal::ComposeUncertified { .. }
         | CheckRefusal::FillUncertified { .. }
-        | CheckRefusal::NoFiller { .. }
         | CheckRefusal::GeneratorFamilyUnsupported { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::ShapeMismatch { .. }
@@ -595,7 +598,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 32] = [
+    const WORDED: [&str; 33] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -628,6 +631,7 @@ mod tests
         "UnlabelledRequirement",
         "ComposeNotAShape",
         "ComposeDoesNotFill",
+        "NoFiller",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

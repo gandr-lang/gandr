@@ -18,13 +18,13 @@
 //!   its environment entry by entry. A written call matches by its function and
 //!   its argument, and a written path transport, such as the composite `then`
 //!   lowers to, by its path, its value and its motive under one binder crossed
-//!   alike (#3968). A decode whose code reads as a quote is the quoted type,
-//!   read at the quote's place: core-term and the kernel fire that rule when
-//!   they mint a decode, and an environment holds codes no mint saw, so the
-//!   walk fires it too. Equal walks are [`CodeComparison::Equal`]. A dependent
-//!   arrow against a plain one crosses the dependent binder on its side alone,
-//!   so the two agree exactly when the dependent codomain does not name that
-//!   binder: `(x : A) -> B` with `x` absent from `B` is `A -> B` (#577).
+//!   alike. A decode whose code reads as a quote is the quoted type, read at
+//!   the quote's place: core-term and the kernel fire that rule when they mint
+//!   a decode, and an environment holds codes no mint saw, so the walk fires it
+//!   too. Equal walks are [`CodeComparison::Equal`]. A dependent arrow against
+//!   a plain one crosses the dependent binder on its side alone, so the two
+//!   agree exactly when the dependent codomain does not name that binder: `(x :
+//!   A) -> B` with `x` absent from `B` is `A -> B` (#577).
 //! - **Rigidity.** Two codes that are not α-equal are [`CodeComparison::Apart`]
 //!   only when neither holds anything that could still unfold: a constant with
 //!   a body, a neutral stuck on an elimination, or a value no code can be. A

@@ -100,10 +100,10 @@ fn chain(Head(degree, bound): Head) -> Composite
 /// trivial.
 fn variable(
     arena: &mut CoreArena,
-    index: u32,
+    index: DeBruijnIndex,
 ) -> ValueId
 {
-    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    arena.value_variable(Zone::Intuitionistic, index)
 }
 
 /// `(c₁ : Path(ℤ, 1, 1)) => (c₂ : Path(ℤ, 1, 1)) => Path(Path(ℤ, 1, 1), s,
@@ -120,8 +120,8 @@ fn generator(
 {
     let side = match sides {
         Sides::Composite => {
-            let first = variable(arena, 1);
-            let second = variable(arena, 0);
+            let first = variable(arena, DeBruijnIndex::from(1_u32));
+            let second = variable(arena, DeBruijnIndex::from(0_u32));
             let composite = identity::then(arena, integers.carrier, integers.one, first, second);
             arena.value_returned(composite)
         },
@@ -152,10 +152,10 @@ fn a_free_cell_fills_its_square_by_induction()
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
     // `p : Path(ℤ, 1, 1)`, then `α : Path(Path(ℤ, 1, 1), here(1), p)`.
-    let moving = variable(&mut arena, 0);
+    let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
     let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
-    let alpha = variable(&mut arena, 0);
-    let p = variable(&mut arena, 1);
+    let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let p = variable(&mut arena, DeBruijnIndex::from(1_u32));
     let generator = generator(&mut arena, integers, Sides::Composite);
     let fill = arena.value_fill(
         chain(Head(5, 7)),
@@ -210,8 +210,8 @@ fn a_fill_refuses_each_defect_by_name()
 {
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
-    let alpha = variable(&mut arena, 0);
-    let moving = variable(&mut arena, 0);
+    let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
     let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
     let flow = arena.value_type_flow(integers.cell, integers.reflexive, integers.reflexive);
     let composite = generator(&mut arena, integers, Sides::Composite);

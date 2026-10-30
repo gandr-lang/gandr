@@ -41,6 +41,8 @@
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: the filler
 //!   generator indexed by the cell family, its `Path` instance the family's
 //!   induction.
+//! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X` as the
+//!   dependent action of `t` on the paths of `X`.
 //! - Thibaut Benjamin, Ioannis Markakis, Wilfred Offord, Chiara Sarti and Jamie
 //!   Vicary. "Naturality for Higher-Dimensional Path Types." (2025).
 //!   `arXiv:2501.11620` — `t ↑ X` and its square; Example 1.3, the associator's
@@ -115,8 +117,19 @@ pub struct Realisation
 }
 
 /// How many path layers a type holds, the outermost first.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Layers(usize);
+
+/// How many cells a chain holds, or how many of its binders stand open.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Cells(usize);
+
+/// A cell's place in the chain, in vertex order from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Position(usize);
 
 /// One cell of the fill, as the rule reads it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -210,6 +223,7 @@ struct Chain
     | Err(CheckRefusal::FillUncertified { at: site, .. } | CheckRefusal::NoFiller { at: site, .. } | CheckRefusal::GeneratorFamilyUnsupported { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn realise(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -225,18 +239,20 @@ pub fn realise(
         return Err(CheckRefusal::MachineInvariant);
     };
     let written = cells.to_vec();
-    let shape = crate::compose::admit(at, composite).map_err(|refusal| match refusal {
-        CheckRefusal::ComposeUncertified { stratum, .. } => {
+    let shape = crate::compose::admit(context.strata_mut(), at, composite).map_err(|refusal| {
+        if let CheckRefusal::ComposeUncertified { stratum, .. } = refusal {
             CheckRefusal::FillUncertified { at, stratum }
-        },
-        other => other,
+        }
+        else {
+            refusal
+        }
     })?;
     let (&generator_type, cell_types) =
         types.split_first().ok_or(CheckRefusal::MachineInvariant)?;
     if cell_types.len() != written.len() {
         return Err(CheckRefusal::MachineInvariant);
     }
-    let (domains, sides) = telescope(context, at, generator_type, written.len())?;
+    let (domains, sides) = telescope(context, at, generator_type, Cells(written.len()))?;
     let mut read = Vec::with_capacity(written.len());
     let mut diagram = Vec::with_capacity(written.len());
     let mut carrier = None;
@@ -281,8 +297,8 @@ pub fn realise(
     };
     let arena = context.arena();
     let (Some(u), Some(v)) = (
-        composite_of(arena, sides.0, read.len()),
-        composite_of(arena, sides.1, read.len()),
+        composite_of(arena, sides.0, Cells(read.len())),
+        composite_of(arena, sides.1, Cells(read.len())),
     )
     else {
         return Err(no_filler(context));
@@ -306,13 +322,12 @@ pub fn realise(
     let lowest = builder.applied(arena, Binders::NONE, &lowered);
     let mut base = arena.value_here(lowest);
     let mut realised = None;
-    for (level, &position) in lifted.iter().enumerate().rev() {
+    for &position in lifted.iter().rev() {
         let Some(&Cell::Lifted { lo, path, .. }) = read.get(position)
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let transport =
-            builder.induction(arena, &read, &lifted, level, (position, lo, path), base)?;
+        let transport = builder.induction(arena, &read, (Position(position), lo, path), base)?;
         base = arena.value_returned(transport);
         realised = Some(transport);
     }
@@ -345,13 +360,13 @@ fn telescope(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     generator: ValueTypeId,
-    count: usize,
+    count: Cells,
 ) -> Result<(Vec<Layers>, (ValueId, ValueId)), CheckRefusal>
 {
-    let mut opened = 0_usize;
+    let mut opened = Cells(0);
     let read = curried(context, at, generator, count, &mut opened);
     let mut closed = Ok(());
-    for _ in 0 .. opened {
+    for _ in 0 .. opened.0 {
         if context.binders().close(Zone::Intuitionistic).is_err() {
             closed = Err(CheckRefusal::MachineInvariant);
         }
@@ -380,13 +395,13 @@ fn curried(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     generator: ValueTypeId,
-    count: usize,
-    opened: &mut usize,
+    count: Cells,
+    opened: &mut Cells,
 ) -> Result<(Vec<Layers>, (ValueId, ValueId)), CheckRefusal>
 {
-    let mut domains = Vec::with_capacity(count);
+    let mut domains = Vec::with_capacity(count.0);
     let mut current = generator;
-    for _ in 0 .. count {
+    for _ in 0 .. count.0 {
         let head = context.whnf_value_type(current)?;
         let not_a_function = CheckRefusal::ShapeMismatch {
             at: TermNode::Value(at),
@@ -413,7 +428,7 @@ fn curried(
         };
         domains.push(layers(context, domain)?);
         context.binders().open(Zone::Intuitionistic, domain);
-        *opened = opened.saturating_add(1);
+        opened.0 = opened.0.saturating_add(1);
         let returned = context.whnf_comp_type(codomain)?;
         current = match comp_type_view(context.arena(), returned)? {
             CompTypeView::Returner { result, effects }
@@ -458,7 +473,7 @@ fn curried(
 /// # Adequacy
 /// - hypothesis: L3 — as [`realise`].
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
-#[spec(ensures: |ret| ret.is_err() || ret.is_ok())]
+#[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
 fn layers(
     context: &mut CheckingContext<'_>,
     ty: ValueTypeId,
@@ -468,15 +483,14 @@ fn layers(
     let mut current = ty;
     loop {
         let head = context.whnf_value_type(current)?;
-        match value_type_view(context.arena(), head)? {
-            ValueTypeView::Path { carrier, .. }
-            | ValueTypeView::Flow { carrier, .. }
-            | ValueTypeView::Bridge { carrier, .. } => {
-                count = count.saturating_add(1);
-                current = carrier;
-            },
-            _ => return Ok(Layers(count)),
-        }
+        let (ValueTypeView::Path { carrier, .. }
+        | ValueTypeView::Flow { carrier, .. }
+        | ValueTypeView::Bridge { carrier, .. }) = value_type_view(context.arena(), head)?
+        else {
+            return Ok(Layers(count));
+        };
+        count = count.saturating_add(1);
+        current = carrier;
     }
 }
 
@@ -528,27 +542,28 @@ fn classify(
     if depth != Layers(wanted.0.saturating_add(1)) {
         return Err(not_a_cell(head));
     }
-    let (inner, lo, hi) = match value_type_view(context.arena(), head)? {
-        ValueTypeView::Path {
-            carrier,
-            left,
-            right,
-        } => (carrier, left, right),
-        ValueTypeView::Flow { .. } => {
-            return Err(CheckRefusal::GeneratorFamilyUnsupported {
-                at,
-                cell,
-                family: UnsupportedFamily::Flow,
-            });
-        },
-        ValueTypeView::Bridge { .. } => {
-            return Err(CheckRefusal::GeneratorFamilyUnsupported {
-                at,
-                cell,
-                family: UnsupportedFamily::Bridge,
-            });
-        },
-        _ => return Err(not_a_cell(head)),
+    let view = value_type_view(context.arena(), head)?;
+    if let ValueTypeView::Flow { .. } = view {
+        return Err(CheckRefusal::GeneratorFamilyUnsupported {
+            at,
+            cell,
+            family: UnsupportedFamily::Flow,
+        });
+    }
+    if let ValueTypeView::Bridge { .. } = view {
+        return Err(CheckRefusal::GeneratorFamilyUnsupported {
+            at,
+            cell,
+            family: UnsupportedFamily::Bridge,
+        });
+    }
+    let ValueTypeView::Path {
+        carrier: inner,
+        left: lo,
+        right: hi,
+    } = view
+    else {
+        return Err(not_a_cell(head));
     };
     let inner = context.whnf_value_type(inner)?;
     let ValueTypeView::Path {
@@ -580,11 +595,11 @@ fn classify(
 ///   a side that mentions no cell reads as none.
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 /// - witness: `fill::tests::a_fill_refuses_each_defect_by_name`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|tree| tree.first().is_some_and(|root| root.first == 0 && root.last.saturating_add(1) == count)))]
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|tree| tree.first().is_some_and(|root| root.first == 0 && root.last.saturating_add(1) == count.0)))]
 fn composite_of(
     arena: &CoreArena,
     side: ValueId,
-    count: usize,
+    count: Cells,
 ) -> Option<Vec<Spanned>>
 {
     let mut values: Vec<Option<ValueId>> = Vec::from([Some(side)]);
@@ -592,65 +607,67 @@ fn composite_of(
     let mut index = 0_usize;
     while index < values.len() {
         if let Some(Some(value)) = values.get(index).copied() {
-            let read = match *arena.value(value)? {
-                Value::Variable {
-                    zone: Zone::Intuitionistic,
-                    index: bound,
-                } => {
-                    let bound = usize::try_from(u32::from(bound)).ok()?;
-                    if bound >= count {
-                        return None;
-                    }
-                    Side::Leaf(count.saturating_sub(1).saturating_sub(bound))
-                },
-                Value::Returned(composite) => {
-                    let &Computation::PathTransport {
-                        motive,
-                        path: second,
-                        value: first,
-                    } = arena.computation(composite)?
-                    else {
-                        return None;
-                    };
-                    let &ValueType::Path { right, .. } = arena.value_type(motive)?
-                    else {
-                        return None;
-                    };
-                    if arena.value(right)
-                        != Some(&Value::Variable {
-                            zone: Zone::Intuitionistic,
-                            index: DeBruijnIndex::from(0_u32),
-                        })
-                    {
-                        return None;
-                    }
-                    let next = values.len();
-                    values.extend([Some(first), Some(second)]);
-                    sides.extend([None, None]);
-                    Side::Composite(next, next.saturating_add(1))
-                },
-                Value::Compose { ref cells, .. } => {
-                    let (&head, rest) = cells.split_first()?;
-                    let Some((&last, middle)) = rest.split_last()
-                    else {
-                        values.get_mut(index)?.replace(head);
-                        continue;
-                    };
-                    let mut left = values.len();
-                    values.push(Some(head));
-                    sides.push(None);
-                    for &cell in middle {
-                        let right = values.len();
-                        values.extend([Some(cell), None]);
-                        sides.extend([None, Some(Side::Composite(left, right))]);
-                        left = right.saturating_add(1);
-                    }
+            let node = arena.value(value)?;
+            let read = if let Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: bound,
+            } = *node
+            {
+                let bound = usize::try_from(u32::from(bound)).ok()?;
+                if bound >= count.0 {
+                    return None;
+                }
+                Side::Leaf(count.0.saturating_sub(1).saturating_sub(bound))
+            }
+            else if let Value::Returned(composite) = *node {
+                let &Computation::PathTransport {
+                    motive,
+                    path: second,
+                    value: first,
+                } = arena.computation(composite)?
+                else {
+                    return None;
+                };
+                let &ValueType::Path { right, .. } = arena.value_type(motive)?
+                else {
+                    return None;
+                };
+                if arena.value(right)
+                    != Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index: DeBruijnIndex::from(0_u32),
+                    })
+                {
+                    return None;
+                }
+                let next = values.len();
+                values.extend([Some(first), Some(second)]);
+                sides.extend([None, None]);
+                Side::Composite(next, next.saturating_add(1))
+            }
+            else if let Value::Compose { ref cells, .. } = *node {
+                let (&head, rest) = cells.split_first()?;
+                let Some((&last, middle)) = rest.split_last()
+                else {
+                    values.get_mut(index)?.replace(head);
+                    continue;
+                };
+                let mut left = values.len();
+                values.push(Some(head));
+                sides.push(None);
+                for &cell in middle {
                     let right = values.len();
-                    values.push(Some(last));
-                    sides.push(None);
-                    Side::Composite(left, right)
-                },
-                _ => return None,
+                    values.extend([Some(cell), None]);
+                    sides.extend([None, Some(Side::Composite(left, right))]);
+                    left = right.saturating_add(1);
+                }
+                let right = values.len();
+                values.push(Some(last));
+                sides.push(None);
+                Side::Composite(left, right)
+            }
+            else {
+                return None;
             };
             *sides.get_mut(index)? = Some(read);
         }
@@ -675,7 +692,7 @@ fn composite_of(
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|tree| tree.len() == sides.len()))]
 fn spanned(
     sides: &[Option<Side>],
-    count: usize,
+    count: Cells,
 ) -> Option<Vec<Spanned>>
 {
     let mut spans: Vec<Option<(usize, usize)>> = Vec::from_iter(sides.iter().map(|_| None));
@@ -707,7 +724,7 @@ fn spanned(
         .collect();
     let tree = tree?;
     let root = tree.first()?;
-    (root.first == 0 && root.last.saturating_add(1) == count).then_some(tree)
+    (root.first == 0 && root.last.saturating_add(1) == count.0).then_some(tree)
 }
 
 /// `side`, scoped under one binder per value of `values`, with each binder
@@ -848,9 +865,9 @@ impl Builder<'_>
         function
     }
 
-    /// The based path induction on the cell of `X` at `level` of `lifted`,
-    /// at `position` from `lo` along `path`, its base `base`: the earlier
-    /// cells of `X` at their left ends and `here`, the later at their paths.
+    /// The based path induction on the cell of `X` at `position`, from `lo`
+    /// along `path`, its base `base`: the earlier cells of `X` at their left
+    /// ends and `here`, the later at their paths.
     ///
     /// # Specification
     /// - requires: `base` fills the square with this cell and every earlier
@@ -872,21 +889,18 @@ impl Builder<'_>
         &self,
         arena: &mut CoreArena,
         cells: &[Cell],
-        lifted: &[usize],
-        level: usize,
-        (position, lo, path): (usize, ValueId, ValueId),
+        (position, lo, path): (Position, ValueId, ValueId),
         base: ValueId,
     ) -> Result<ComputationId, CheckRefusal>
     {
         let two = Binders::from(2_u32);
-        let earlier = lifted.get(.. level).ok_or(CheckRefusal::MachineInvariant)?;
         let moving = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let over = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let mut bound = Vec::with_capacity(cells.len());
         for (index, cell) in cells.iter().enumerate() {
             bound.push(match *cell {
                 Cell::Plain(value) => Cell::Plain(lift_value(arena, value, two)),
-                Cell::Lifted { lo: low, .. } if earlier.contains(&index) => {
+                Cell::Lifted { lo: low, .. } if index < position.0 => {
                     let low = lift_value(arena, low, two);
                     let reflexive = arena.value_here(low);
                     Cell::Lifted {
@@ -895,7 +909,7 @@ impl Builder<'_>
                         path: reflexive,
                     }
                 },
-                Cell::Lifted { lo: low, .. } if index == position => Cell::Lifted {
+                Cell::Lifted { lo: low, .. } if index == position.0 => Cell::Lifted {
                     lo: lift_value(arena, low, two),
                     hi: moving,
                     path: over,
@@ -943,14 +957,14 @@ impl Builder<'_>
     fn cell_type(
         &self,
         arena: &mut CoreArena,
-        position: usize,
+        position: Position,
     ) -> Result<ValueTypeId, CheckRefusal>
     {
         let (&left, &right) = self
             .chain
             .vertices
-            .get(position)
-            .zip(self.chain.vertices.get(position.saturating_add(1)))
+            .get(position.0)
+            .zip(self.chain.vertices.get(position.0.saturating_add(1)))
             .ok_or(CheckRefusal::MachineInvariant)?;
         Ok(arena.value_type_path(self.chain.carrier, left, right))
     }

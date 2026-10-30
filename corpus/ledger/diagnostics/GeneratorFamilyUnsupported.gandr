@@ -16,7 +16,7 @@ def alongPath(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa
   fill[1, 3](chain(1), selfLoop(A, x, y), (fa))
 }
 
-/// The same fill over a flow of paths, whose instance #3992 lands.
+/// The same fill over a flow of paths, whose instance #4093 lands.
 @[ refuses("GeneratorFamilyUnsupported") ]
 def alongFlow(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Flow(Path(A, x, y), fm, fp)) -> Path(Path(A, x, y), fm, fp) {
   fill[1, 3](chain(1), selfLoop(A, x, y), (fa))

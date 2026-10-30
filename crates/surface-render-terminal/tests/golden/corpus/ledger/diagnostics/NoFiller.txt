@@ -12,4 +12,5 @@ error[NoFiller]: `fill` needs a generator whose sides compose its cells, a cell 
 25 │ │ }
    │ └─┘ checked against `Path(Path(Circle, Base, Base), loop, loop) => Path(Path(Circle, Base, Base), loop, here(Base))`; while checking the body of this thunk
    │
-   ╰ note: `unmade` is refused with NoFiller, as its expectation states
+   ├ note: `unmade` is refused with NoFiller, as its expectation states
+   ╰ help: write the generator's sides as composites of its cells, give at least one cell as a path of paths, and ask for the square the generator makes

@@ -131,9 +131,8 @@ impl Source for ContentSource<'_>
     ///   constructor table gives its family's tag, a composite, returned or
     ///   not, as the fold it realises; the honest set's members — a hole, a
     ///   mark, the unknown type, a lift, a fill — as unreadable, an unresolved
-    ///   node and
-    ///   an index past the table as dangling, and a name the table cannot spell
-    ///   as unnamed.
+    ///   node and an index past the table as dangling, and a name the table
+    ///   cannot spell as unnamed.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
