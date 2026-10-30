@@ -40,6 +40,8 @@ use crate::closure::CompBody;
 use crate::code::CodeComparison;
 use crate::code::CodeReading;
 use crate::code::ConstantReading;
+use crate::code::SetAside;
+use crate::code::WrittenCall;
 use crate::code::compare_codes_over;
 use crate::conv::ConversionFault;
 use crate::conv::Early;
@@ -267,6 +269,9 @@ pub enum Subgoal
         /// The component or field on the other side.
         field: DomainValueId,
     },
+    /// A call one side's quote writes, entered in the quote's environment,
+    /// against the computation whose returned endpoint the other side holds.
+    Written(WrittenCall),
 }
 
 /// A forced rule with one premise.
@@ -2887,7 +2892,10 @@ fn codes_plan(reading: CodeReading) -> Plan
         CodeReading::Over(pairs) => Plan::SharedOver(
             pairs
                 .into_iter()
-                .map(|(left, right)| Subgoal::Values(left, right))
+                .map(|pair| match pair {
+                    SetAside::Held(left, right) => Subgoal::Values(left, right),
+                    SetAside::Written(written) => Subgoal::Written(written),
+                })
                 .collect(),
         ),
     }

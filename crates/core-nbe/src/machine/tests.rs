@@ -4905,6 +4905,129 @@ fn a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025()
 }
 
 #[test]
+fn a_written_transport_converts_with_its_held_endpoint_4038()
+{
+    // Under rigid `x`, `f`, `g`, `q` and `p` at levels 0 to 4, `f then g` the
+    // transport `tr(s. Path(Unit, x, s), g, f)`: `tr(t. Path(Unit, ⟨f then g⟩,
+    // t), q, p)` against `(λe. tr(t. Path(Unit, e, t), q, p)) ⟨f then g⟩`
+    // (#4038). The first motive writes the composite's call, and the second
+    // reads it through the environment the application bound, as a
+    // definition's body does. The two transports along `q` convert, on either
+    // side and under either endpoint reading, and the kernel replays it.
+    let mut core = CoreArena::new();
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let unit_type = core.value_type_unit();
+    let from = |core: &mut CoreArena, start| {
+        let point = variable(core, 0);
+        core.value_type_path(unit_type, start, point)
+    };
+    let composite = |core: &mut CoreArena, past: u32| {
+        let x = variable(core, past.saturating_add(5));
+        let over_x = from(core, x);
+        let (g, f) = (
+            variable(core, past.saturating_add(2)),
+            variable(core, past.saturating_add(3)),
+        );
+        core.computation_path_transport(over_x, g, f)
+    };
+    let inner = composite(&mut core, 1);
+    let start = core.value_returned(inner);
+    let over_start = from(&mut core, start);
+    let (q, p) = (variable(&mut core, 1), variable(&mut core, 0));
+    let written = core.computation_path_transport(over_start, q, p);
+    let e = variable(&mut core, 1);
+    let over_e = from(&mut core, e);
+    let (q_under, p_under) = (variable(&mut core, 2), variable(&mut core, 1));
+    let body = core.computation_path_transport(over_e, q_under, p_under);
+    let lambda = core.computation_lambda(body);
+    let thunk = core.value_thunk(lambda);
+    let forced = core.computation_force(thunk);
+    let outer = composite(&mut core, 0);
+    let argument = core.value_returned(outer);
+    let held = core.computation_application(forced, argument);
+    let world = World::new(core, &[]);
+
+    for endpoints in [Endpoints::Run, Endpoints::Hold] {
+        for (left, right) in [(written, held), (held, written)] {
+            let definitions =
+                Definitions::new(&world.chain, &world.environment, world.environment.root())
+                    .reading_endpoints(endpoints);
+            let mut domain = DomainArena::new();
+            let mut environment = crate::closure::Environment::new();
+            for level in 0_u32 .. 5 {
+                let neutral = domain
+                    .neutral_node(
+                        crate::domain::NeutralHead::Variable {
+                            zone: Zone::Intuitionistic,
+                            level: BinderLevel::from(level),
+                        },
+                        Vec::new(),
+                        crate::domain::Unfolding::Rigid,
+                    )
+                    .expect("a variable is a neutral");
+                let variable = domain
+                    .value_neutral(neutral, crate::domain::TermFace::Reduced)
+                    .expect("a neutral is a value");
+                environment.extend(Zone::Intuitionistic, variable);
+            }
+            let fuel = Fuel::from(4_096_u32);
+            let evaluate = |domain: &mut DomainArena, term| {
+                crate::eval::eval_comp_within(
+                    &world.core,
+                    domain,
+                    definitions,
+                    fuel,
+                    term,
+                    environment.clone(),
+                )
+                .map(|(evaluated, _remaining)| evaluated)
+                .expect("each side evaluates")
+            };
+            let one = evaluate(&mut domain, left);
+            let other = evaluate(&mut domain, right);
+            let problem = Problem::computations(one, other).under(BinderLevel::from(5_u32));
+            let mut log = TraceLog::new();
+            let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+                &world.core,
+                &mut domain,
+                definitions,
+                MachineSettings::default(),
+                problem,
+                &mut log,
+            )
+            .expect("the machine answers");
+            let decisions: Vec<ConversionDecision<TraceNode>> = log.decisions().copied().collect();
+            assert_eq!(
+                MachineVerdict::Convertible,
+                report.verdict(),
+                "a transport whose motive writes a call converts with one whose motive holds \
+                 its endpoint ({endpoints:?}): {decisions:?}"
+            );
+            let mut kernel = Kernel::default();
+            let sides = ReplaySides::Computations(
+                kernel.computation(&world.core, left),
+                kernel.computation(&world.core, right),
+            );
+            let replayed = replay(
+                &mut kernel.arena,
+                &Unfoldings::new(Vec::new()),
+                sides,
+                EngineClaim::Convertible,
+                decisions.iter().map(|&decision| kernel_decision(decision)),
+                ReplayBudget::DEFAULT,
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                replayed,
+                "the kernel replays the conversion ({endpoints:?}): {decisions:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
 {
     // `⟨g ⟨S⟩ ⟨unit⟩⟩` against `⟨g ⟨S⟩ ()⟩` for the stuck call `S`, the

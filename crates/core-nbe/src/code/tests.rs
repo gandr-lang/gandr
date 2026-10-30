@@ -5,6 +5,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -14,6 +15,8 @@ use super::Alike;
 use super::CodeComparison;
 use super::CodeReading;
 use super::ConstantReading;
+use super::SetAside;
+use super::WrittenCall;
 use super::compare_codes;
 use super::compare_codes_over;
 use super::motives_alike;
@@ -853,7 +856,7 @@ fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
         "two endpoints of one shape written apart are undecided by identity"
     );
     assert_eq!(
-        Ok(CodeReading::Over(alloc::vec![(once, other)])),
+        Ok(CodeReading::Over(alloc::vec![SetAside::Held(once, other)])),
         compare_codes_over(
             &core,
             &domain,
@@ -898,7 +901,10 @@ fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
         "two thunks whose bodies differ as written are undecided"
     );
     assert_eq!(
-        Ok(CodeReading::Over(alloc::vec![(f, f_rebinding)])),
+        Ok(CodeReading::Over(alloc::vec![SetAside::Held(
+            f,
+            f_rebinding
+        )])),
         compare_codes_over(
             &core,
             &domain,
@@ -912,6 +918,97 @@ fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
         Ok(CodeReading::Compared(CodeComparison::Undecided)),
         compare_codes_over(&core, &domain, ConstantReading::Unread, calling, over_unit),
         "a code over another former sets nothing aside and stays undecided"
+    );
+}
+
+#[test]
+fn a_written_call_against_a_held_endpoint_is_set_aside_4038()
+{
+    // #4038: `El(⟨tr(Unit, #0, #1)⟩)` written in one quote over `[v, p]`, and
+    // `El(#0)` in the other over the endpoint that transport returned, held as
+    // a definition's parameter holds it. The walk cannot match a written call
+    // with a held one, so the codes are undecided. The walk that sets aside
+    // hands the machine the call and the held computation, on either side.
+    // Against a held variable it sets nothing aside.
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let index = |core: &mut CoreArena, at: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let (path, carried) = (index(&mut core, 0), index(&mut core, 1));
+    let call = core.computation_path_transport(unit, path, carried);
+    let endpoint = core.value_returned(call);
+    let written = core.value_type_element(endpoint, Level::zero());
+    let read = index(&mut core, 0);
+    let inside = core.value_type_element(read, Level::zero());
+
+    let mut domain = DomainArena::new();
+    let p = variable(&mut domain, BinderLevel::from(0_u32));
+    let v = variable(&mut domain, BinderLevel::from(1_u32));
+    let closure = |domain: &mut DomainArena, body, captures: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &capture in captures {
+            environment.extend(Zone::Intuitionistic, capture);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    let motive = closure(&mut domain, unit, &[]);
+    let transported = domain
+        .neutral_node(
+            NeutralHead::Variable {
+                zone: Zone::Intuitionistic,
+                level: BinderLevel::from(0_u32),
+            },
+            Vec::from([Elimination::PathTransport { motive, value: v }]),
+            Unfolding::Rigid,
+        )
+        .expect("a transport along a variable mints");
+    let held = domain.comp_neutral(transported, crate::domain::CompTermFace::Reduced);
+    let returned = domain
+        .neutral_node(NeutralHead::Returned(held), Vec::new(), Unfolding::Rigid)
+        .expect("a returned call mints");
+    let endpoint_held = domain
+        .value_neutral(returned, TermFace::Reduced)
+        .expect("the returned call resolves");
+    let writing = closure(&mut domain, written, &[v, p]);
+    let holding = closure(&mut domain, inside, &[endpoint_held]);
+    let over_variable = closure(&mut domain, inside, &[p]);
+    let set_aside = |side| {
+        Ok(CodeReading::Over(alloc::vec![SetAside::Written(
+            WrittenCall {
+                side,
+                call,
+                closure: writing,
+                held,
+            }
+        )]))
+    };
+
+    assert_eq!(
+        Ok(CodeComparison::Undecided),
+        compare_codes(&core, &domain, ConstantReading::Unread, writing, holding),
+        "a written call against a held endpoint is undecided by node"
+    );
+    assert_eq!(
+        set_aside(ConversionSide::Left),
+        compare_codes_over(&core, &domain, ConstantReading::Unread, writing, holding),
+        "setting the written call aside, the two codes are α-equal over it"
+    );
+    assert_eq!(
+        set_aside(ConversionSide::Right),
+        compare_codes_over(&core, &domain, ConstantReading::Unread, holding, writing),
+        "and so on the other side"
+    );
+    assert_eq!(
+        Ok(CodeReading::Compared(CodeComparison::Undecided)),
+        compare_codes_over(
+            &core,
+            &domain,
+            ConstantReading::Unread,
+            writing,
+            over_variable
+        ),
+        "a written call against a held variable sets nothing aside"
     );
 }
 

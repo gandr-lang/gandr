@@ -31,13 +31,14 @@
 //!   is [`CodeComparison::Undecided`].
 //! - **Setting aside.** Where the first two passes leave a pair undecided,
 //!   [`compare_codes_over`] walks the two types again and sets aside each pair
-//!   of held values the walk cannot match as nodes: two endpoints a call
-//!   returned apart, or two thunks whose bodies differ as written. Two held
-//!   values over one neutral still agree. Two types α-equal over the pairs set
-//!   aside are [`CodeReading::Over`] those pairs, which the machine decides as
-//!   value premises. Anything else stays undecided, and the machine declines
-//!   rather than answer, which is the honest answer at a rung where nothing
-//!   reduces inside a type.
+//!   the walk cannot match as nodes: two endpoints a call returned apart, two
+//!   thunks whose bodies differ as written, or a call one quote writes against
+//!   an endpoint a call returned in the other's environment. Two held values
+//!   over one neutral still agree. Two types α-equal over the pairs set aside
+//!   are [`CodeReading::Over`] those pairs, which the machine decides as
+//!   premises. Anything else stays undecided, and the machine declines rather
+//!   than answer, which is the honest answer at a rung where nothing reduces
+//!   inside a type.
 //!
 //! The rigidity criterion is the one the kernel's replay applies to a shared
 //! comparison, so an answer of [`CodeComparison::Apart`] is one the kernel
@@ -66,13 +67,23 @@
 //! constant as one that could unfold, and defer; the machine reads the
 //! definitions, closes an equal or a rigidly apart pair as one
 //! `ComparedShared`, and walks an undecided pair a third time, setting aside
-//! the held values the walk cannot match. It decides those as value premises
-//! and closes the pair as one `ComparedShared` once each converts. A premise
-//! that does not convert, or a pair still undecided, declines with
+//! the pairs the walk cannot match. It decides those as premises and closes
+//! the pair as one `ComparedShared` once each converts. A premise that does
+//! not convert, or a pair still undecided, declines with
 //! `DeclineReason::UndecidedCodes`. The kernel's replay closes a shared
 //! comparison as equal when the sides are α-equal once it reads their held
 //! values through, and separates it only when both are rigid, so an answer
 //! here is one the kernel re-derives on its own terms.
+//!
+//! A definition's type reads a parameter through the environment its call
+//! bound, so an endpoint passed to it as a stuck call is held there, while
+//! the same type written in place writes the call (#4038). The walk sets the
+//! written call aside against the held endpoint, and the machine enters the
+//! call in its quote's environment against the computation the endpoint
+//! returned. Alternatives: matching the written call against the held
+//! computation node by node, which misses a call that unfolds; and evaluating
+//! the call inside the walk, which reads the domain without changing it.
+//! Reversal: types that evaluate, where both endpoints are held.
 //!
 //! The lockstep walk gives paired binders one identity and retains each side’s
 //! outer chain separately. Its binder counter uses the arena’s index width: a
@@ -185,10 +196,12 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_computation_syntax_up_to_free;
+use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 
 use crate::arena::DomainArena;
+use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
@@ -214,16 +227,43 @@ pub enum CodeComparison
     Undecided,
 }
 
-/// What comparing two codes found once the held values the walk cannot read
-/// are set aside for the machine.
+/// What comparing two codes found once the pairs the walk cannot read are set
+/// aside for the machine.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CodeReading
 {
     /// The comparison's answer, nothing set aside.
     Compared(CodeComparison),
-    /// The two types are α-equal once each pair of held values converts, the
-    /// pairs in walk order.
-    Over(Vec<(DomainValueId, DomainValueId)>),
+    /// The two types are α-equal once each pair set aside converts, the pairs
+    /// in walk order.
+    Over(Vec<SetAside>),
+}
+
+/// One pair the walk that sets aside hands the machine as a premise.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SetAside
+{
+    /// Two values environments hold, compared as they stand.
+    Held(DomainValueId, DomainValueId),
+    /// A call one side's quote writes against an endpoint a call returned on
+    /// the other.
+    Written(WrittenCall),
+}
+
+/// A call one side's quote writes, outside every binder the quoted type
+/// opens, against the computation whose returned endpoint the other side's
+/// environment holds: the two endpoints agree where the two calls convert.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WrittenCall
+{
+    /// The side the written call stands on.
+    pub side: ConversionSide,
+    /// The written call.
+    pub call: ComputationId,
+    /// The quote whose environment the call reads.
+    pub closure: ValueClosureId,
+    /// The computation the other side's endpoint returned.
+    pub held: DomainCompId,
 }
 
 /// How a comparison reads a constant a quoted type names.
@@ -488,9 +528,9 @@ struct Walk<'run>
     links: Vec<Link>,
     /// The next binder number.
     next: Binder,
-    /// The pairs of held values set aside for the machine, in walk order, when
-    /// the walk sets aside rather than separates; `None` when it separates.
-    aside: Option<Vec<(DomainValueId, DomainValueId)>>,
+    /// The pairs set aside for the machine, in walk order, when the walk sets
+    /// aside rather than separates; `None` when it separates.
+    aside: Option<Vec<SetAside>>,
 }
 
 impl<'run> Walk<'run>
@@ -2344,9 +2384,10 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     ///   also agree. Two written pure calls agree when their functions and
     ///   their arguments do, each read through its own side's closure. Two held
     ///   values over one neutral agree. A walk that sets aside records any
-    ///   other two held values and goes on; otherwise two held thunks agree
-    ///   when their source bodies are equal as syntax and their environments'
-    ///   entries agree pair by pair.
+    ///   other two held values, and a call one side writes outside every binder
+    ///   its type opens against an endpoint a call returned on the other, and
+    ///   goes on; otherwise two held thunks agree when their source bodies are
+    ///   equal as syntax and their environments' entries agree pair by pair.
     /// - fails: a dangling child or malformed source.
     /// - panics: none.
     ///
@@ -2471,9 +2512,23 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         if first != second =>
                     {
                         if let Some(aside) = self.aside.as_mut() {
-                            aside.push((first, second));
+                            aside.push(SetAside::Held(first, second));
                         }
                         else if self.held_thunks(first, second, &mut atoms)? == Alike::Different {
+                            return Ok(Alike::Different);
+                        }
+                    },
+                    (Atom::Called(call, here), Atom::Other(Node::Held(held))) => {
+                        if self.set_aside_call(ConversionSide::Left, call, here, held)?
+                            == Alike::Different
+                        {
+                            return Ok(Alike::Different);
+                        }
+                    },
+                    (Atom::Other(Node::Held(held)), Atom::Called(call, there)) => {
+                        if self.set_aside_call(ConversionSide::Right, call, there, held)?
+                            == Alike::Different
+                        {
                             return Ok(Alike::Different);
                         }
                     },
@@ -2527,6 +2582,81 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         else {
             Alike::Different
         }
+    }
+
+    /// Set aside a call one side's quote writes against a value the other
+    /// side's environment holds, for the machine to enter the call in the
+    /// quote's environment against the computation the held endpoint returned.
+    ///
+    /// # Specification
+    /// - requires: nothing — dangling ids are admissible input and refused.
+    /// - ensures: [`Alike::Same`], one [`SetAside::Written`] naming `side`,
+    ///   `call` and `place`'s closure pushed, exactly when the walk sets aside,
+    ///   `place` crosses no binder the quoted type opens, and `held` is a
+    ///   neutral headed by a returned endpoint with no elimination;
+    ///   [`Alike::Different`], nothing pushed, otherwise.
+    /// - provides: the premise that relates an endpoint one quote writes as a
+    ///   call to the same endpoint the other quote's environment holds, which
+    ///   the walk cannot match as nodes.
+    /// - fails: [`ConversionFault::Domain`] for a held value or neutral that
+    ///   does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport written in one motive against the
+    ///   endpoint the same transport returned in the other's environment is set
+    ///   aside, on either side; a written call under a binder the type opens,
+    ///   or against a held variable, separates. Matching the written call by
+    ///   its node leaves the first undecided.
+    /// - witness: `code::tests::a_written_call_against_a_held_endpoint_is_set_aside_4038`
+    #[spec(
+        captures: before = self.aside.as_ref().map(Vec::len),
+        ensures: |ret| match ret {
+            Ok(Alike::Same) => before.is_some_and(|length| self.aside.as_ref().is_some_and(|pushed|
+                pushed.len() == length.saturating_add(1)
+                    && matches!(pushed.last(), Some(&SetAside::Written(written))
+                        if written.side == side && written.call == call && written.closure == place.closure))),
+            Ok(Alike::Different) | Err(_) => self.aside.as_ref().map(Vec::len) == before,
+        },
+    )]
+    fn set_aside_call(
+        &mut self,
+        side: ConversionSide,
+        call: ComputationId,
+        place: Place,
+        held: DomainValueId,
+    ) -> Result<Alike, ConversionFault>
+    {
+        let dangling = ConversionFault::Domain(DomainFault::Dangling);
+        if self.aside.is_none() || place.chain != Chain(0_usize) {
+            return Ok(Alike::Different);
+        }
+        let DomainValue::Neutral { neutral, .. } = *self.domain.value(held).ok_or(dangling)?
+        else {
+            return Ok(Alike::Different);
+        };
+        let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
+        let NeutralHead::Returned(computation) = stuck.head()
+        else {
+            return Ok(Alike::Different);
+        };
+        if !stuck.spine().is_empty() {
+            return Ok(Alike::Different);
+        }
+        let Some(aside) = self.aside.as_mut()
+        else {
+            return Ok(Alike::Different);
+        };
+        aside.push(SetAside::Written(WrittenCall {
+            side,
+            call,
+            closure: place.closure,
+            held: computation,
+        }));
+        Ok(Alike::Same)
     }
 
     /// Compare two held thunks by their closures, queueing the environment
@@ -2953,8 +3083,8 @@ pub fn compare_codes(
 }
 
 /// Compare two codes or two type operators as [`compare_codes`] does, and
-/// where that is undecided, walk them again setting aside each pair of held
-/// values the walk cannot read.
+/// where that is undecided, walk them again setting aside each pair the walk
+/// cannot read.
 ///
 /// # Specification
 /// - requires: as [`compare_codes`].
@@ -2964,9 +3094,10 @@ pub fn compare_codes(
 ///   walk order, when the second walk finds the two α-equal over at least one
 ///   pair.
 /// - provides: the machine's reading of two codes, whose set-aside pairs it
-///   decides as value premises: an endpoint a call returned twice, or a thunk
-///   whose body differs as written, is a value the machine reads through, never
-///   a node the walk matches.
+///   decides as premises: an endpoint a call returned twice, a thunk whose body
+///   differs as written, or a call one quote writes where the other holds its
+///   endpoint, is a value the machine reads through, never a node the walk
+///   matches.
 /// - fails: as [`compare_codes`].
 /// - panics: none.
 ///
@@ -2975,10 +3106,12 @@ pub fn compare_codes(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two codes over two endpoints a transport returned apart,
-///   or over two thunks whose bodies differ as written, are α-equal over that
-///   pair, and a code over another former is not; reading held values by
-///   identity instead leaves the first undecided.
+///   over two thunks whose bodies differ as written, or over a transport one
+///   writes and the other holds, are α-equal over that pair, and a code over
+///   another former is not; reading held values by identity instead leaves the
+///   first undecided.
 /// - witness: `code::tests::codes_over_held_values_the_walk_cannot_match_set_them_aside_4005`
+/// - witness: `code::tests::a_written_call_against_a_held_endpoint_is_set_aside_4038`
 #[spec(ensures: |ret| match compare_codes(core, domain, constants, left, right) {
     Ok(CodeComparison::Undecided) => matches!(ret, Ok(CodeReading::Compared(CodeComparison::Undecided)))
         || matches!(ret, Ok(CodeReading::Over(ref pairs)) if !pairs.is_empty()),

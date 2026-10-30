@@ -254,6 +254,7 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::code::WrittenCall;
 use crate::conv::ConversionFault;
 use crate::conv::Settlement;
 use crate::conv::convert_computations;
@@ -1570,9 +1571,10 @@ where
     ///   `level`, the process recorded under it, and nothing is started;
     ///   otherwise a pending goal with no frozen constant and an empty chain —
     ///   two heads compared from `level`, two closures opened at `level` on
-    ///   their opening channels and compared one binder deeper, or one closure
-    ///   so opened against a head in hand — recorded under its support as a
-    ///   memo entry. The null memo starts every goal.
+    ///   their opening channels and compared one binder deeper, one closure so
+    ///   opened against a head in hand, or one closure entered at `level` on
+    ///   its entry channel against a head in hand — recorded under its support
+    ///   as a memo entry. The null memo starts every goal.
     /// - provides: process re-sharing, at the two places a goal is started
     ///   fresh: the root and a decomposition's premises.
     /// - fails: [`ConversionFault::Domain`] for a node that does not resolve,
@@ -1667,6 +1669,21 @@ where
                     left,
                     right,
                     depth: deeper,
+                    frozen: Frozen::default(),
+                    chain: Chain::default(),
+                    next: Next::Classify,
+                }
+            },
+            SupportSides::EnteredBeside(side, closure, head) => {
+                let entered = Slot::Waiting(self.enter_channel(closure)?);
+                let (left, right) = match side {
+                    ConversionSide::Left => (entered, Slot::Ready(head)),
+                    ConversionSide::Right => (Slot::Ready(head), entered),
+                };
+                Goal {
+                    left,
+                    right,
+                    depth: level,
                     frozen: Frozen::default(),
                     chain: Chain::default(),
                     next: Next::Classify,
@@ -3044,15 +3061,19 @@ where
     /// - ensures: an empty decomposition answers convertible at once; otherwise
     ///   one child per subgoal, started fresh or re-shared by
     ///   [`Scheduler::start_fresh`] — a value pair as it stands, an opened pair
-    ///   at this depth — with one premise per position even where two positions
-    ///   name one process. A known refutation or no pending premise schedules
-    ///   another turn; otherwise completion of a pending child wakes the goal.
+    ///   at this depth, or a written call entered beside the computation the
+    ///   other side holds — with one premise per position even where two
+    ///   positions name one process. A known refutation or no pending premise
+    ///   schedules another turn; otherwise completion of a pending child wakes
+    ///   the goal.
     /// - provides: every rule with premises compared child by child.
-    /// - fails: as [`Scheduler::start_fresh`] and [`Scheduler::depend`].
+    /// - fails: as [`Scheduler::start_fresh`], [`Scheduler::written_call`] and
+    ///   [`Scheduler::depend`].
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`Scheduler::start_fresh`] and [`Scheduler::depend`].
+    /// As [`Scheduler::start_fresh`], [`Scheduler::written_call`] and
+    /// [`Scheduler::depend`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a decomposition has no premises, pending premises or
@@ -3204,6 +3225,17 @@ where
                         goal.depth,
                     )
                 },
+                Subgoal::Written(written) => {
+                    let entered = self.written_call(written)?;
+                    (
+                        SupportSides::EnteredBeside(
+                            written.side,
+                            entered,
+                            Glued::Computation(written.held),
+                        ),
+                        goal.depth,
+                    )
+                },
             };
             let child = self.start_fresh(sides, depth)?;
             let outcome = self.depend(id, child)?;
@@ -3325,6 +3357,43 @@ where
         environment.extend(Zone::Intuitionistic, variable);
         let quoted = self.domain.value_closure_node(body, environment);
         Ok(self.domain.value_code(quoted, TermFace::Reduced))
+    }
+
+    /// Close a call one side's quote writes over the quote's environment, to
+    /// be entered against the computation the other side's endpoint returned.
+    ///
+    /// # Specification
+    /// - requires: nothing — a dangling quote closure is refused.
+    /// - ensures: a closure whose body is the written call and whose
+    ///   environment is the quote's.
+    /// - provides: the written side of [`Subgoal::Written`].
+    /// - fails: [`ConversionFault::Domain`] for a quote closure that does not
+    ///   resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport one motive writes and the other holds
+    ///   converts once the written one runs in its quote's environment; closing
+    ///   it over another environment reads its variables elsewhere and parts
+    ///   the pair.
+    /// - witness: `machine::tests::a_written_transport_converts_with_its_held_endpoint_4038`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|closure| self.domain.comp_closure(*closure)
+        .is_some_and(|entered| entered.body() == crate::closure::CompBody::Source(written.call))))]
+    fn written_call(
+        &mut self,
+        written: WrittenCall,
+    ) -> Result<CompClosureId, ConversionFault>
+    {
+        let environment = self
+            .domain
+            .value_closure(written.closure)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+            .environment()
+            .clone();
+        Ok(self.domain.comp_closure_node(written.call, environment))
     }
 
     /// Capture one ordinary case branch without introducing an implicit field
