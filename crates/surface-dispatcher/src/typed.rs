@@ -8877,6 +8877,49 @@ mod tests
         );
     }
 
+    /// #3942: a `cong` over a lambda whose binder states its type has, at a
+    /// point, the lambda's body under the bind that checks the point against
+    /// that type. The printer spelled the bind a bare `run` in an argument,
+    /// which does not parse; every printed type parses and reads back.
+    #[test]
+    fn a_typed_lambda_s_cong_image_in_a_type_reads_back_3942()
+    {
+        let source = SourceText::from(
+            "def whiskerStatedHere(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, \
+             y),\n  f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) \
+             -> Path(\n  Path(Path(A, x, z), f1 then g, f2 then g),\n  cong(fn (q : Path(A, x, y)) \
+             { q then g }, a),\n  cong(fn (q : Path(A, x, y)) { q then g }, a)\n) {\n  here(cong(fn \
+             (q : Path(A, x, y)) { q then g }, a))\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<(String, super::RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            reads
+                .iter()
+                .any(|&(ref spelled, _)| spelled.contains("transport(")),
+            "a printed type holds the image: {reads:?}"
+        );
+        let unread: Vec<_> = reads
+            .iter()
+            .filter(|&&(_, ref trip)| {
+                matches!(
+                    *trip,
+                    super::RoundTrip::Unparsed
+                        | super::RoundTrip::Different
+                        | super::RoundTrip::Refused(_)
+                )
+            })
+            .collect();
+        assert!(
+            unread.is_empty(),
+            "every printed type parses and reads back: {unread:#?}"
+        );
+    }
+
     /// #3010: a record whose last field is a record sharing a label with an
     /// earlier field, read back, reprints with the labels it was written and
     /// printed with.
