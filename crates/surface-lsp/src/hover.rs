@@ -2918,8 +2918,8 @@ mod tests
                      Semigroup;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> \
                      x;\n}\n\nmodule Ints : Model(Semigroup) {\n  type M = Integer;\n  def \
                      mul(x : Integer, y : Integer) -> -F Integer { return y }\n}\n";
-        let shaped = "theory Generated {\n  shape Two : 2 {\n    left = {0};\n  };\n  sort Val : \
-                      Type;\n  oper zero : Val;\n  ext Cell = Val on left is zero;\n}\n\ntheory \
+        let shaped = "theory Generated {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val \
+                      : Type;\n  oper zero : Val;\n  ext Cell = Val on left is zero;\n}\n\ntheory \
                       Wheel {\n  sort Nat : Type;\n  obs emit : (s : Nat, x : Nat) --> (y : \
                       Nat);\n  rule spin : (data stream : Nat) ==> (out : Nat) {\n    node : \
                       emit(state, stream) --> (out);\n    feed : (out) --> (state);\n  };\n}\n";
@@ -2931,7 +2931,8 @@ mod tests
             ))
         );
         let module = fenced(SourceText::from("module Ints : Model(Semigroup)"));
-        let shape = fenced(SourceText::from("shape Two : 2 {\n  left = {0};\n}"));
+        let boundary = fenced(SourceText::from("boundary Two { p, q }"));
+        let face = fenced(SourceText::from("face left = { p }"));
         let rule = fenced(SourceText::from(
             "rule spin : (data stream : Nat) ==> (out : Nat)",
         ));
@@ -2946,9 +2947,9 @@ mod tests
                 (13, 7),
                 Ok(fenced(SourceText::from("type M = Integer"))),
             ),
-            ("a shape's name", shaped, (1, 9), Ok(shape.clone())),
-            ("a shape's face", shaped, (2, 5), Ok(shape)),
-            ("a circuit rule's name", shaped, (12, 8), Ok(rule)),
+            ("a boundary's name", shaped, (1, 11), Ok(boundary)),
+            ("a face's name", shaped, (2, 7), Ok(face)),
+            ("a circuit rule's name", shaped, (11, 8), Ok(rule)),
         ];
         for (position, text, (line, character), expected) in rows {
             assert_eq!(

@@ -1569,31 +1569,34 @@ mod tests
     }
 
     /// A theory's members nest under it, one of each kind with its own kind;
-    /// a face list's braces and `;` stay inside its shape; an `include` is no
-    /// member; and a codata declaration's observations nest under it.
+    /// a name list's braces and `;` stay inside its boundary or face; an
+    /// `include` is no member; and a codata declaration's observations nest
+    /// under it.
     #[test]
     fn a_theory_holds_its_members()
     {
         let source = "theory Shapes {\n  sort M : Type;\n  data Unit : M;\n  oper mul : (x : M, y \
                       : M) --> M;\n  obs size : (m : M) --> M;\n  rule assoc : mul(mul(x, y), z) \
-                      ==> mul(x, mul(y, z));\n  shape Square : 4 {\n    left = {0, 2};\n  };\n  \
-                      ext Cell = M on left is zero;\n}\ntheory Monoid {\n  include Shapes;\n  oper \
+                      ==> mul(x, mul(y, z));\n  boundary Square { tl, tr, bl, br };\n  face \
+                      left = { tl, bl };\n  ext Cell = M on left is zero;\n}\ntheory Monoid {\n  \
+                      include Shapes;\n  oper \
                       one : () --> M;\n}\ncodata Stream : Type {\n  head : M;\n  tail : \
                       Stream;\n}\n";
         assert_eq!(outline(&Reading::of(SourceText::from(source)).symbols()), [
-            "Shapes 11 0:0-10:1 at 0:7-0:13",
+            "Shapes 11 0:0-9:1 at 0:7-0:13",
             "  M 26 1:2-1:16 at 1:7-1:8",
             "  Unit 9 2:2-2:16 at 2:7-2:11",
             "  mul 6 3:2-3:34 at 3:7-3:10",
             "  size 8 4:2-4:27 at 4:6-4:10",
             "  assoc 7 5:2-5:55 at 5:7-5:12",
-            "  Square 26 6:2-8:4 at 6:8-6:14",
-            "  Cell 26 9:2-9:31 at 9:6-9:10",
-            "Monoid 11 11:0-14:1 at 11:7-11:13",
-            "  one 6 13:2-13:22 at 13:7-13:10",
-            "Stream 23 15:0-18:1 at 15:7-15:13",
-            "  head 8 16:2-16:11 at 16:2-16:6",
-            "  tail 8 17:2-17:16 at 17:2-17:6",
+            "  Square 26 6:2-6:37 at 6:11-6:17",
+            "  left 8 7:2-7:25 at 7:7-7:11",
+            "  Cell 26 8:2-8:31 at 8:6-8:10",
+            "Monoid 11 10:0-13:1 at 10:7-10:13",
+            "  one 6 12:2-12:22 at 12:7-12:10",
+            "Stream 23 14:0-17:1 at 14:7-14:13",
+            "  head 8 15:2-15:11 at 15:2-15:6",
+            "  tail 8 16:2-16:16 at 16:2-16:6",
         ]);
     }
 
@@ -1602,7 +1605,7 @@ mod tests
     {
         let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
-                      theory T {\n  sort M : Type;\n  shape Square : 4 {\n    left = {0, 2};\n  \
+                      theory T {\n  sort M : Type;\n  boundary Square {\n    tl, tr, bl, br\n  \
                       };\n  oper mul :\n    (M, M) => M;\n}\ndef k =\n  1 ;\n";
         let answered: Vec<(u64, u64, Option<&str>, Option<String>)> =
             Reading::of(SourceText::from(source))
@@ -1626,7 +1629,7 @@ mod tests
                 (2, 4, None, shown("def f(x: Integer) -> -F Integer { … }")),
                 (6, 7, Some("comment"), None),
                 (9, 16, None, shown("theory T { … }")),
-                (11, 13, None, shown("  shape Square : 4 { … }")),
+                (11, 13, None, shown("  boundary Square { … }")),
                 (14, 15, None, shown("  oper mul : (M, M) => M;")),
                 (17, 18, None, shown("def k = …;")),
             ],

@@ -360,10 +360,11 @@ quenchant_shape::reason_enum! {
 /// A signature's shape parameter: the finite shape its cells are stated over,
 /// and the named faces of it a cell may be fixed on.
 ///
-/// `shape Square : 4 { left = {0, 2}; right = {1, 3}; }` states a shape of
-/// four points and two faces of it, each the subshape of the points it lists
-/// (Schönlank, Nuyts and Devriese, _Towards `FaceTT`_, TYPES 2026: the shape
-/// parameter `ft` and its subshapes). The table holds what was written, and
+/// `boundary Square { tl, tr, bl, br }; face left = { tl, bl };` states a
+/// shape of four points and a face of it, the subshape of the points its
+/// names read as (Schönlank, Nuyts and Devriese, _Towards `FaceTT`_, TYPES
+/// 2026: the shape parameter `ft` and its subshapes). The reader takes the
+/// names in and hands this table the points over `Fin(m)`, in name order.
 /// [`check_desc`] refuses a face with a point outside the shape and a face
 /// name stated twice; a face that passes reads as a subshape of the shape's
 /// carrier, whose inclusions `gandr-theory-shapes` decides. That reading is

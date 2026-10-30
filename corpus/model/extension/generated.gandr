@@ -3,18 +3,18 @@
 // `left`, and the face theory generates its signature — `inCell` introducing
 // a cell by its values off the face, `outCellp` reading it at each point `p`,
 // and the boundary, β and η laws among the block's rules (Tesla Zhang, _Three
-// non-cubical applications of extension types_, arXiv:2311.05658). Over two
+// non-cubical applications of extension types_, arXiv:2311.05658). Each
+// generated member is named for its point by the point's name. Over two
 // points it is the signature `zero-fiber.gandr` writes by hand (#641).
 
 /// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
 /// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`
 /// included; β reads an introduced cell's value at the point off the face; η
 /// rebuilds a cell from its value there.
-@[ normalizes("cells(outCell0(c), outCell1(inCell(one)), inCell(outCell1(c))) ~> cells(zero, one, c)") ]
+@[ normalizes("cells(outCellp(c), outCellq(inCell(one)), inCell(outCellq(c))) ~> cells(zero, one, c)") ]
 theory Generated {
-  shape Two : 2 {
-    left = {0};
-  };
+  boundary Two { p, q };
+  face left = {p};
   sort Val : Type;
 
   oper zero : Val;
@@ -26,11 +26,10 @@ theory Generated {
 
 /// Over three points with one on the face, a cell holds two values: `inWide`
 /// takes both, β reads each back, and η rebuilds a cell from its two reads.
-@[ normalizes("cells(outWide0(d), outWide2(inWide(one, zero)), inWide(outWide1(d), outWide2(d))) ~> cells(zero, zero, d)") ]
+@[ normalizes("cells(outWidep(d), outWider(inWide(one, zero)), inWide(outWideq(d), outWider(d))) ~> cells(zero, zero, d)") ]
 theory Wider {
-  shape Three : 3 {
-    left = {0};
-  };
+  boundary Three { p, q, r };
+  face left = {p};
   sort Val : Type;
 
   oper zero : Val;

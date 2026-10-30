@@ -202,13 +202,13 @@
 //!
 //! # The shape parameter
 //!
-//! A signature stated over a finite shape, `shape Square : 4 { left = {0, 2};
-//! }`, codes it as a `Shape` member at the head of its sort chain: the shape's
-//! name, its size as a decimal numeral, and the chain of its faces, each a
-//! `Face` with its name and its points as decimal numerals joined by `,`,
-//! ascending and each once. A sort chain holds at most one `Shape`, first; a
-//! presentation that states none keeps the bytes it had, as a first-order one
-//! does beside the second-order constructors.
+//! A signature stated over a finite shape, `boundary Square { tl, tr, bl, br
+//! }; face left = { tl, bl };`, codes it as a `Shape` member at the head of its
+//! sort chain over `Fin(m)`: the shape's name, its size as a decimal numeral,
+//! and the chain of its faces, each a `Face` with its name and its points as
+//! decimal numerals joined by `,`, ascending and each once. A sort chain holds
+//! at most one `Shape`, first; a presentation that states none keeps the bytes
+//! it had, as a first-order one does beside the second-order constructors.
 //!
 //! - **Choice.** A size and a point are numerals in a `String` field, as a name
 //!   is: one constructor for the shape and one for a face, and a face's points

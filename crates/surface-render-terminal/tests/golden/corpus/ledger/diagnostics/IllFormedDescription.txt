@@ -1,11 +1,8 @@
-error[IllFormedDescription]: the face `far` holds a point outside the shape `Square`
-  ╭▸ corpus/ledger/diagnostics/IllFormedDescription.gandr:3:1
+error[IllFormedDescription]: the face `far` holds a name the boundary `Square` does not list
+  ╭▸ corpus/ledger/diagnostics/IllFormedDescription.gandr:5:3
   │
-3 │ ┏ theory Past {
-4 │ ┃   shape Square : 4 { far = {1, 4}; };
-5 │ ┃   sort Cell : Type;
-6 │ ┃ }
-  │ ┗━┛ what the description check refuses
+5 │   face far = {b, e};
+  │   ━━━━━━━━━━━━━━━━━ what the description check refuses
   │
   ├ note: `Past` is refused with IllFormedDescription, as its expectation states
-  ╰ help: put in the face only points that the shape holds
+  ╰ help: put in the face only names that the boundary lists

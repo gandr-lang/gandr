@@ -380,8 +380,10 @@ impl DescriptionDiagnostic
     ///   description check refuses an ill-formed description carrying the
     ///   check's kind and its first two subjects as `written` spells them, a
     ///   theory an `under` row names that no block presents an unresolved type
-    ///   head and one it names twice a duplicate definition, each named as
-    ///   `written` spells it, and every other fault a malformed form.
+    ///   head and one it names twice a duplicate definition, a point a
+    ///   `boundary` lists twice a duplicate definition, each named as `written`
+    ///   spells it, a `shape` member a malformed form naming `boundary` as the
+    ///   keyword it retires to, and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -442,16 +444,23 @@ impl DescriptionDiagnostic
                 },
                 Maybe::Absent(_) => malformed(),
             },
-            DescriptionFault::Signature(crate::circuit::SignatureFault::RepeatedRowTheory {
-                ref name,
-                first,
-            }) => match spelled(Some(name), written) {
+            DescriptionFault::Signature(
+                crate::circuit::SignatureFault::RepeatedRowTheory { ref name, first }
+                | crate::circuit::SignatureFault::RepeatedPoint { ref name, first },
+            ) => match spelled(Some(name), written) {
                 Maybe::Present(name) => LoweringRefusal::DuplicateDefinition {
                     span: self.span,
                     name,
                     first,
                 },
                 Maybe::Absent(_) => malformed(),
+            },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::RetiredShapeMember) => {
+                LoweringRefusal::MalformedForm {
+                    span: self.span,
+                    form: crate::FormName::DECLARATION,
+                    fault: crate::FormFault::Retired(crate::form::TileName::BOUNDARY),
+                }
             },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
                 span: self.span,

@@ -936,6 +936,16 @@ default-features = false
 path = "crates/theory-path-orders"
 default-features = false
 
+# Finite shapes: decidable subshapes, the outer pushout, face entailment,
+# and a boundary of names read as `Fin(m)`.
+# features:
+# - none: alloc-only shapes and their evidence.
+# consumers:
+# - surface-lowering
+[workspace.dependencies.gandr-theory-shapes]
+path = "crates/theory-shapes"
+default-features = false
+
 # The carrier's shapes as a site, its degree, Reedy and Segal checks, and
 # the certified strata's species and their equivalences.
 # consumers:

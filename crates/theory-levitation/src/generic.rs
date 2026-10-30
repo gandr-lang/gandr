@@ -718,7 +718,8 @@ pub fn serialize_value<G>(
 ///   datatype's name, its parameters in parentheses when it has any, then the
 ///   shape parameter, the sorts, operations, rule faces and circuit rules in
 ///   declaration order, each terminated by `;`, or `{}` when there are none. A
-///   shape renders `shape Name : size { face = {points}; … }`, its points
+///   shape renders `boundary Name {p0, p1, …};` with its points' names padded
+///   to one width, then one `face name = {pi, …};` per face, its points
 ///   ascending.
 /// - panics: none.
 ///
@@ -757,26 +758,20 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
     };
     let mut members: Vec<String> = Vec::new();
     if let Maybe::Present(ref shape) = desc.shape {
+        // The description keeps its points over `Fin(m)`, so the rendering
+        // names point `i` `p` and `i` padded to the width of the last point:
+        // the names then sort in point order, as a boundary orders them.
+        let count = usize::from(shape.points);
+        let width = count.saturating_sub(1).to_string().len();
+        let point = |index: usize| format!("p{index:0width$}");
+        let names: Vec<String> = (0 .. count).map(point).collect();
+        members.push(format!("boundary {} {{{}}}", shape.name, names.join(", ")));
         let mut points: Vec<String> = Vec::new();
-        let faces: Vec<String> = shape
-            .faces
-            .iter()
-            .map(|face| {
-                points.clear();
-                points.extend(
-                    face.points()
-                        .iter()
-                        .map(|point| format!("{}", usize::from(*point))),
-                );
-                format!("{} = {{{}}}; ", face.name(), points.join(", "))
-            })
-            .collect();
-        members.push(format!(
-            "shape {} : {} {{ {}}}",
-            shape.name,
-            usize::from(shape.points),
-            faces.concat()
-        ));
+        for face in &shape.faces {
+            points.clear();
+            points.extend(face.points().iter().map(|at| point(usize::from(*at))));
+            members.push(format!("face {} = {{{}}}", face.name(), points.join(", ")));
+        }
     }
     let mut indices: Vec<String> = Vec::new();
     for sort in &desc.sorts {
@@ -1333,8 +1328,20 @@ mod tests
             .with_shape(TheoryShape::new("Point", ShapeSize::from(1_usize), []));
         assert_eq!(
             serialize_desc(&bare).as_ref(),
-            "theory Cells { shape Point : 1 { }; }",
-            "a shape is a member: a description of nothing else is not empty"
+            "theory Cells { boundary Point {p0}; }",
+            "a boundary is a member: a description of nothing else is not empty"
+        );
+        let eleven =
+            empty
+                .clone()
+                .with_shape(TheoryShape::new("Line", ShapeSize::from(11_usize), [
+                    ShapeFace::new("ends", points(&[10, 0])),
+                ]));
+        assert_eq!(
+            serialize_desc(&eleven).as_ref(),
+            "theory Cells { boundary Line {p00, p01, p02, p03, p04, p05, p06, p07, p08, p09, p10}; \
+             face ends = {p00, p10}; }",
+            "past ten points each name is padded, so the names sort in point order"
         );
         let square = empty
             .with_sorts([SortDesc::new("A", DeclPolarity::Data)])
@@ -1345,8 +1352,9 @@ mod tests
             ]));
         assert_eq!(
             serialize_desc(&square).as_ref(),
-            "theory Cells { shape Square : 4 { left = {0, 2}; right = {1, 3}; none = {}; }; sort A : Type; }",
-            "the shape comes first, each face its points ascending"
+            "theory Cells { boundary Square {p0, p1, p2, p3}; face left = {p0, p2}; face right = \
+             {p1, p3}; face none = {}; sort A : Type; }",
+            "the boundary comes first, then each face, its names in point order"
         );
     }
 

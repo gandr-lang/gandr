@@ -200,7 +200,7 @@ fn the_printer_decides_every_inner_space()
                   def c = thunk { fn( x ) { x } } ;\n\
                   def m = r . a [ 0 ] ;\n\
                   module M :> #{type T} { type T = Integer ; }\n\
-                  theory S { shape Q : 2 {left = { 0 , 1 } ;} ; }\n\
+                  theory S { boundary Q {p,q} ; face left = { p , q } ; }\n\
                   theory Kit . Shape { sort T : Type ; }\n\
                   module Kit . Made : Model( Kit . Shape ) { type T = Integer ; }\n";
     assert_eq!(
@@ -214,7 +214,7 @@ fn the_printer_decides_every_inner_space()
          def c = thunk { fn (x) { x } };\n\
          def m = r.a[0];\n\
          module M :> #{ type T } { type T = Integer; }\n\
-         theory S { shape Q : 2 { left = {0, 1}; }; }\n\
+         theory S { boundary Q { p, q }; face left = {p, q}; }\n\
          theory Kit.Shape { sort T : Type; }\n\
          module Kit.Made : Model(Kit.Shape) { type T = Integer; }\n",
         "each space inside a line is the printer's, whatever the source wrote"

@@ -459,7 +459,6 @@ corpus/model/desc/sealed-lawful-model.gandr Passive 157c27d0d47ed70d
 corpus/model/desc/sealed-lawful-model.gandr Tense 157c27d0d47ed70d
 corpus/model/desc/second-order-rules.gandr Passive 3f715cb8edb8e901
 corpus/model/desc/second-order-rules.gandr Passive 65616374f73fa03e
-corpus/model/desc/shaped-signature.gandr Tense fb9d659038f6c123
 corpus/model/desc/theory-constructor-names.gandr Passive 6a2edd5a239f5866
 corpus/model/desc/theory-constructor-names.gandr Passive cd835148a25a0434
 corpus/model/desc/theory-constructor-names.gandr Tense 87e5a9015754caf0
@@ -907,7 +906,6 @@ corpus/pathological/desc/rules-never-complete.gandr Passive 082c1e6c69b4738f
 corpus/pathological/desc/second-order-rules.gandr Passive 62dc58e31b3a0df4
 corpus/pathological/desc/second-order-rules.gandr Passive 860849383db60d0a
 corpus/pathological/desc/shaped-signature.gandr Passive 121ef9bf45225b92
-corpus/pathological/desc/shaped-signature.gandr Passive 5a635ead77899300
 corpus/pathological/effects/state-handler.gandr Passive 22deb93941c284ca
 corpus/pathological/effects/state-handler.gandr Passive 48444e7e2311b85d
 corpus/pathological/effects/state-handler.gandr IngMain 51547cec65718e56
@@ -1203,7 +1201,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldCopied
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldKept.txt Procedure 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldShared.txt Procedure a2867329083b61d8
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HoldElsewhere.txt Procedure 1f4f6176c64090b2
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/IllFormedDescription.txt Procedure eb1b7db355fa30b3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/IllTypedPayload.txt Procedure 21920c631ffb9cde
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImplicitInParentheses.txt Procedure 12479629ce566b12
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImplicitUnsupplied.txt Procedure d73c75948dd32c9e
@@ -1421,7 +1418,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-unori
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-order-rules.txt Procedure 3301bdb784dd322b
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-order-rules.txt Procedure b13d83b535eb81d0
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-order-signatures.txt Procedure a0cb84b173472244
-crates/surface-render-terminal/tests/golden/corpus/pathological/desc/shaped-signature.txt Procedure eb1b7db355fa30b3
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/theory-terms.txt Procedure e7b87b8288c2e9f9
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/hello-unprovided.txt Procedure 5cd48ab1a45a09c1
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/rows.txt Procedure 3bdc0addbf0ffa85

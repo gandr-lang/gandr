@@ -522,6 +522,8 @@ impl TileName
     pub const BAR: Self = Self("|");
     /// The bind arrow `<-` of a `run` statement.
     pub const BIND: Self = Self("<-");
+    /// The theory member `boundary` naming a shape parameter's points.
+    pub const BOUNDARY: Self = Self("boundary");
     /// A bracket closer `]`.
     pub const BRACKET_CLOSE: Self = Self("]");
     /// A bracket opener `[`.

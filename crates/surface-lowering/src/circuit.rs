@@ -32,6 +32,17 @@ pub enum SignatureFault
     /// A theory block presents sorts, operations and rules, not item-level
     /// data.
     RetiredDataMember,
+    /// A theory block states its shape parameter by `boundary` and `face`:
+    /// `shape` is the retired spelling, and the word is the site's.
+    RetiredShapeMember,
+    /// A `boundary` lists one name twice: a carrier holds each point once.
+    RepeatedPoint
+    {
+        /// The name listed twice.
+        name: Name,
+        /// The bytes its first listing covers.
+        first: ByteSpan,
+    },
     /// A theory block's written face names itself, `rule name : lhs ==> rhs`;
     /// the unnamed face is the data and codata blocks' spelling.
     WrittenFace,
@@ -125,7 +136,7 @@ pub struct JoinFault
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExtensionFault
 {
-    /// The block states no `shape` for a cell to be stated over.
+    /// The block states no `boundary` for a cell to be stated over.
     Unshaped,
     /// The shape has no face of the name the member fixes the cell on.
     UnknownFace(Name),

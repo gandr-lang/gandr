@@ -1,13 +1,12 @@
 /// `RulesUncompleted`: two rules of a block rewriting one term to two normal forms no rule the path order orients joins.
 @[ refuses("RulesUncompleted") ]
 theory Leaked {
-  shape Two : 2 {
-    left = {0};
-  };
+  boundary Two { p, q };
+  face left = {p};
   sort Val : Type;
 
   oper zero : Val;
   ext Cell = Val on left is zero;
 
-  rule leaked : outCell0(inCell(y1)) ==> y1;
+  rule leaked : outCellp(inCell(yq)) ==> yq;
 }

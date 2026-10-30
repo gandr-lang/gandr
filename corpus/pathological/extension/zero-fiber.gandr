@@ -5,22 +5,21 @@
 // `../../model/extension/zero-fiber.gandr` introduces a cell by its value off
 // the face alone (#641).
 
-/// `ins` takes the cell's value at both points, so `out0(ins(x, y))` reads
+/// `ins` takes the cell's value at both points, so `outp(ins(x, y))` reads
 /// `zero` by the boundary and `x` by β (#641).
 @[ refuses("RulesUncompleted") ]
 theory FreeFiber {
-  shape Two : 2 {
-    left = {0};
-  };
+  boundary Two { p, q };
+  face left = {p};
   sort Val : Type;
   sort Ext : Type;
 
   oper zero : Val;
   oper ins : (x : Val, y : Val) --> Ext;
-  oper out0 : (e : Ext) --> Val;
-  oper out1 : (e : Ext) --> Val;
+  oper outp : (e : Ext) --> Val;
+  oper outq : (e : Ext) --> Val;
 
-  rule boundary : out0(e) ==> zero();
-  rule betaLeft : out0(ins(x, y)) ==> x;
-  rule betaRight : out1(ins(x, y)) ==> y;
+  rule boundary : outp(e) ==> zero();
+  rule betaLeft : outp(ins(x, y)) ==> x;
+  rule betaRight : outq(ins(x, y)) ==> y;
 }

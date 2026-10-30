@@ -510,6 +510,11 @@ fn lowered(
                     "this word reads as a name, and this {form} then holds an operand it does not \
                      take"
                 ),
+                FormFault::Retired(keyword) => write!(
+                    f,
+                    "this keyword is retired here, and `{}` replaces it",
+                    keyword.as_ref()
+                ),
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",

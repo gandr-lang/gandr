@@ -290,6 +290,12 @@ fn malformed(
                 keyword.as_ref()
             )
         },
+        FormFault::Retired(keyword) => {
+            format!(
+                "write `{}` in place of the retired keyword",
+                keyword.as_ref()
+            )
+        },
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",
@@ -339,8 +345,8 @@ fn ill_formed(kind: WfKind) -> String
         },
         WfKind::NonRepresentableBinder => "bind the variable over a declared, representable sort",
         WfKind::SplitCircuitOutputs => "read all the outputs of the many-out node together",
-        WfKind::DuplicateFaceName => "give each face of the shape its own name",
-        WfKind::FaceOutsideShape => "put in the face only points that the shape holds",
+        WfKind::DuplicateFaceName => "give each face of the boundary its own name",
+        WfKind::FaceOutsideShape => "put in the face only names that the boundary lists",
         WfKind::UnsortedBinding => {
             "use the variable where a port binds it over the same sorts, with one argument for \
              each variable it binds"
