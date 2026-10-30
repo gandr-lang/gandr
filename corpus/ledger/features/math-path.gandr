@@ -1,13 +1,13 @@
 /// `math-path`: `math.path` states composition and a function's action with endpoints, and proves composition's groupoid laws.
 ///
-/// Implemented: the module holds composition `join`, the actions `ap` and `apd`, the associator `assoc` and the unitors `leftUnit` and `rightUnit`. Each law holds by based path induction or by conversion, and the kernel replays each.
+/// Implemented: the module holds composition `join`, the actions `ap` and `apd`, the associator `assoc`, the unitors `leftUnit` and `rightUnit`, `ap`'s functoriality `apComp` and a homotopy's naturality `natural`. Each law holds by based path induction or by conversion, and the kernel replays each.
 ///
 /// Each law computes at a reflexivity, so each declaration states a law there and proves it by reflexivity.
 ///
 /// - see: library/math/src/path.gandr
 /// - see: #3786 — a family that `transport` takes by name, which `apd` writes as a lambda until then
 
-// `join`, `ap`, `apd`, `assoc`, `leftUnit`, `rightUnit`.
+// `join`, `ap`, `apd`, `apComp`, `assoc`, `leftUnit`, `natural`, `rightUnit`.
 import "../../../library/math/src/path.gandr";
 
 /// The left unitor at a reflexivity is the reflexivity of that reflexivity.
@@ -44,4 +44,37 @@ def apAtHere(A : Type, B : Type, F : A => B, x : A) -> Path(
   here(F(x))
 ) {
   here(here(F(x)))
+}
+
+/// `ap`'s functoriality at a reflexivity is the reflexivity at the composite's value.
+def apCompAtHere(A : Type, B : Type, C : Type, F : A => B, G : B => C, x : A) -> Path(
+  Path(
+    Path(C, G(F(x)), G(F(x))),
+    ap(A, C, (fn (a : A) { G(F(a)) } : A => C), x, x, here(x)),
+    ap(B, C, G, F(x), F(x), ap(A, B, F, x, x, here(x)))
+  ),
+  apComp(A, B, C, F, G, x, x, here(x)),
+  here(here(G(F(x))))
+) {
+  here(here(here(G(F(x)))))
+}
+
+/// A homotopy's naturality along a reflexivity is the reflexivity of the homotopy at its point.
+def naturalAtHere(
+  A : Type,
+  B : Type,
+  F : A => B,
+  G : A => B,
+  H : (q : A) => Path(B, F(q), G(q)),
+  a : A
+) -> Path(
+  Path(
+    Path(B, F(a), G(a)),
+    join(B, F(a), G(a), G(a), H(a), ap(A, B, G, a, a, here(a))),
+    join(B, F(a), F(a), G(a), ap(A, B, F, a, a, here(a)), H(a))
+  ),
+  natural(A, B, F, G, H, a, a, here(a)),
+  here(H(a))
+) {
+  here(here(H(a)))
 }
