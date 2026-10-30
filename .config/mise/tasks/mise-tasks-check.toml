@@ -1364,7 +1364,8 @@ FROM reference;"); keys read $resolved"
 # `.config/pr-stack/fetched-base.bash` stacks an upper on a lower in a
 # scratch repository, once per case in `.config/pr-stack/fetched.json`: a
 # lower merged on the origin since the last fetch measures the upper from the
-# lower's head, not the stale trunk (#3148, `measured_from`).
+# lower's head, not the stale trunk (#3148, `measured_from`), and so does a
+# lower that restacked after `pr:open` recorded the upper on it (#4064).
 # `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
 # repository, once per case in `.config/pr-stack/behind.json`: a queued lower
 # that lacks the trunk change the upper builds on is waited out, one not

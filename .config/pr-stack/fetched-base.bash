@@ -6,10 +6,13 @@
 # merges on the origin, from another clone, after the stack's clone last
 # fetched. The stack's clone has no open pull requests to read, so the
 # measurement is the merge base with `origin/main`, as `evidence:base` reads
-# it then. `measured_from` on the upper names the commit it measures from,
-# compared with the case's `output`: `lower`, the lower's head, or `base`, the
-# trunk's commit the lower forked from. On a stale trunk a merged lower reads
-# `base`, and its paths read as the upper's own.
+# it then. When the case's `restacked` is true, `pr:open` has recorded the
+# upper as stacked on the lower (`record_stack_base`, #3877), and the lower
+# then restacks: its head moves, so no open head the upper carries names it
+# (#4064). `measured_from` on the upper names the commit it measures from,
+# compared with the case's `output`: `lower`, the lower's head the upper
+# carries, or `base`, the trunk's commit the lower forked from. On a stale
+# trunk a merged lower reads `base`, and its paths read as the upper's own.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
@@ -41,6 +44,13 @@ for (( i = 0; i < count; i++ )); do
   git switch --quiet --create upper
   commit u.txt upper 'upper (#2)'
   git push --quiet origin lower upper
+  if [[ $(jq -r ".[$i].restacked // false" "$cases") == true ]]; then
+    record_stack_base lower
+    git switch --quiet lower
+    git commit --quiet --amend --message 'lower (#1), restacked'
+    git push --quiet --force origin lower
+    git switch --quiet upper
+  fi
   if [[ $(jq -r ".[$i].merged" "$cases") == true ]]; then
     git clone --quiet "$dir/origin.git" "$dir/merger" 2> /dev/null
     cd "$dir/merger"
