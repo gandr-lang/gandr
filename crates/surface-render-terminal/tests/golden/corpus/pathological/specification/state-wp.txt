@@ -1,4 +1,4 @@
-error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory it handles
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/pathological/specification/state-wp.gandr:12:3
    │
 12 │ ┏   handle st : StateLaws with sort S = Integer {

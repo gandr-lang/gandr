@@ -148,7 +148,7 @@ pub struct HandlerLaw
 {
     /// The scope whose clauses the law is read through.
     pub scope: ComputationId,
-    /// The law's place among its theory's rules.
+    /// The law's place among its theory's rules, then its stated laws.
     pub rule: RuleIndex,
     /// Its left side, read through the clauses, beneath its metavariables in
     /// the scope's context.

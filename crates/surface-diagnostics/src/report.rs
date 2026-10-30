@@ -1221,8 +1221,10 @@ impl fmt::Display for MessageText<'_>
     ///   model slot no module or more than one answers, naming every module
     ///   that answers it; a capability scope's model left to the models in
     ///   scope names the theory instead, and `with M`, its spelling naming one;
-    ///   a source refused as a whole says so, then the plain message; every
-    ///   other report writes its title, which is already the user's.
+    ///   a scope not shown to satisfy a law names the law, where the origins
+    ///   record it; a source refused as a whole says so, then the plain
+    ///   message; every other report writes its title, which is already the
+    ///   user's.
     /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1416,6 +1418,17 @@ impl fmt::Display for MessageText<'_>
                 },
                 Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
+            },
+            Subject::Refused {
+                refusal: refusal @ Refusal::Checking(CheckRefusal::HandlerUnlawful { at, rule, .. }),
+                origins,
+                ..
+            } => match origins.scope_law(at, rule) {
+                Maybe::Present(law) => write!(
+                    f,
+                    "this handler is not shown to satisfy the law `{law}` of the theory it handles"
+                ),
+                Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
             Subject::Source(refusal) => write!(

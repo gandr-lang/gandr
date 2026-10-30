@@ -7,10 +7,11 @@
 //! built where the scope is lowered and decided once the declaration holding
 //! it is judged; a scope whose clauses are not shown to identify a law's
 //! sides is refused `HandlerUnlawful`, naming the scope, the law and its two
-//! sides as read. A law is the rule's `Path` component in a model, which
-//! `gandr-surface-lowering`'s `model` derives, and a scope witnesses each one
-//! by conversion alone. A fold out of the presented type rests on the same
-//! law where conversion leaves the rule's sides apart ([`crate::respect`]).
+//! sides as read. A law is a rule's or a stated law's `Path` component in a
+//! model, which `gandr-surface-lowering`'s `model` derives, and a scope
+//! witnesses each one by conversion alone. A fold out of the presented type
+//! rests on the same law where conversion leaves the rule's sides apart
+//! ([`crate::respect`]).
 //!
 //! # Examples
 //!

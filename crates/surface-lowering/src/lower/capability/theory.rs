@@ -77,6 +77,7 @@ use crate::model::InterfaceFault;
 use crate::model::Members;
 use crate::model::Port;
 use crate::model::PresentedOperation;
+use crate::model::StatedLaw;
 
 #[cfg(test)]
 mod tests;
@@ -185,8 +186,10 @@ pub(in crate::lower) struct Operations
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::lower) struct TheoryLaw
 {
-    /// The law's place among the theory's rules.
+    /// The law's place among the theory's rules, then its stated laws.
     pub rule: RuleIndex,
+    /// Its name, which a refusal at it names.
+    pub name: Name,
     /// Its two sides, over its metavariables.
     pub read: ReadLaw,
 }
@@ -266,16 +269,18 @@ pub(in crate::lower) fn operations(
     Ok(read)
 }
 
-/// The laws of the theory `members` presents, each read for the clauses of a
-/// scope that answers `operations`, a law applying one of `values` left to the
-/// model that answers it.
+/// The laws of the theory `members` presents, then the laws `stated` states,
+/// each read for the clauses of a scope that answers `operations`, a law
+/// applying one of `values` left to the model that answers it.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: one law per law `members` presents that applies none of `values`,
-///   in order, at its place among the theory's rules, its sides read by
+/// - requires: `stated` holds the laws the block presenting `members` states.
+/// - ensures: one law per rule `members` presents, then one per law `stated`
+///   holds, each applying none of `values`, in order, at its place among the
+///   rules then the stated laws, under its name, its sides read by
 ///   [`handler::read_law`] over the payload and reply each operation's clause
-///   takes; every law when `values` is empty.
+///   takes; a stated law's hypotheses are not read, so its sides are owed
+///   without them; every law when `values` is empty.
 /// - fails: the first law no handler's clauses read that applies none of
 ///   `values`, beside its name tile and [`InterfaceFault::Law`].
 /// - panics: none.
@@ -285,37 +290,49 @@ pub(in crate::lower) fn operations(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — put-get read over State's operations, a law storing a
-///   constructor refused, and a cost theory's two laws, each applying a value
-///   operation, left to the model.
+///   constructor refused, a cost theory's two laws, each applying a value
+///   operation, left to the model, and a stated law owed after the rules.
 /// - witness: `lower::capability::theory::tests::a_theory_s_laws_read_for_its_handler_2272`
 /// - witness: `lower::capability::theory::tests::a_value_operation_is_read_apart_from_the_effects_2288`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |laws| laws.len() <= members.laws.len() && (laws.len() == members.laws.len() || !values.is_empty())))]
+/// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |laws| {
+    let all = members.laws.len().saturating_add(stated.len());
+    laws.len() <= all && (laws.len() == all || !values.is_empty())
+}))]
 pub(in crate::lower) fn laws(
     members: &Members,
+    stated: &[StatedLaw],
     operations: &[TheoryOperation],
     values: &[ValueOperation],
 ) -> Result<Vec<TheoryLaw>, (Placed, InterfaceFault)>
 {
     let arities = arities(operations);
     let valued: BTreeSet<&Name> = values.iter().map(|value| &value.name).collect();
-    members
+    let rules = members
         .laws
         .iter()
+        .map(|law| (&law.name, law.named, &law.left, &law.right));
+    let stated = stated
+        .iter()
+        .map(|law| (&law.name, law.named, &law.left, &law.right));
+    rules
+        .chain(stated)
         .enumerate()
-        .filter_map(|(place, law)| {
-            if applied_value(&law.left, &valued)
-                .or_else(|| applied_value(&law.right, &valued))
+        .filter_map(|(place, (named_law, named, left, right))| {
+            if applied_value(left, &valued)
+                .or_else(|| applied_value(right, &valued))
                 .is_some()
             {
                 return None;
             }
             Some(
-                handler::read_law((&law.left, &law.right), |name| arities.get(name).copied())
+                handler::read_law((left, right), |name| arities.get(name).copied())
                     .map(|read| TheoryLaw {
                         rule: RuleIndex::from(place),
+                        name: named_law.clone(),
                         read,
                     })
-                    .map_err(|_unread| (law.named, InterfaceFault::Law)),
+                    .map_err(|_unread| (named, InterfaceFault::Law)),
             )
         })
         .collect()

@@ -1,4 +1,4 @@
-error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory it handles
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/pathological/effects/state-laws.gandr:12:3
    │
 12 │ ┏   handle st : StatePutGet with sort S = Integer {
@@ -12,7 +12,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory
    │
    ╰ note: `forgetful` is refused with HandlerUnlawful, as its expectation states
 
-error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory it handles
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/pathological/effects/state-laws.gandr:28:3
    │
 28 │ ┏   handle st : StatePutLaws with sort S = Integer {

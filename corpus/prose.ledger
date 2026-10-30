@@ -1199,7 +1199,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ForwardMem
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/GenericMisplaced.txt Procedure 80df5a14cc037f5d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/GenericUncovered.txt Procedure 779823a8cfb670c3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HandlerCoverage.txt Procedure 152985141415fec7
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HandlerUnlawful.txt Procedure 8c4d6ba4f102e9e3
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HandlerUnlawful.txt Procedure 93708959f7b9a967
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldCaptured.txt Procedure 4b248657a88f1895
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldConsumed.txt Procedure 33c6a839a89ab7b9
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldCopied.txt Procedure 09c0734f4ff9a5d2
@@ -1434,10 +1434,12 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-ha
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 738a7b48dc9b18fd
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 9619f730573c14e2
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure ec151e0249661fd9
-crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-laws.txt Procedure 8c4d6ba4f102e9e3
+crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-laws.txt Procedure 93708959f7b9a967
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure 3301bdb784dd322b
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure b13d83b535eb81d0
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure b8715358ac806eba
+crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/path-cells.txt Procedure 07f0db2f3b7cdd63
+crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/path-cells.txt Procedure dfc3f6c77cc4eeed
 crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/ua-by-hand-unnatural.txt Procedure 4797678d36947fb9
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/atom-identity.txt Procedure 02a6dd8aa9cfc435
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt Procedure 921d4bf9ff1bfecc
@@ -1522,7 +1524,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/session
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/session-identity-symmetric.txt Procedure 197aae62a2bd61f5
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/session-payloads-unpaid.txt Procedure 27896c42602dd438
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/type-quote.txt Procedure 6fbf774237261d9c
-crates/surface-render-terminal/tests/golden/corpus/pathological/specification/state-wp.txt Procedure 8c4d6ba4f102e9e3
+crates/surface-render-terminal/tests/golden/corpus/pathological/specification/state-wp.txt Procedure 93708959f7b9a967
 crates/surface-render-terminal/tests/golden/corpus/pathological/strings/method-ambiguity.txt Procedure 1d2c614c2721c010
 crates/surface-render-terminal/tests/golden/corpus/pathological/strings/methods.txt Procedure 33c6a839a89ab7b9
 crates/surface-render-terminal/tests/golden/corpus/pathological/strings/methods.txt Procedure 4b248657a88f1895
