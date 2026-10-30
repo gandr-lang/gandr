@@ -138,6 +138,59 @@ fn then_transports_the_first_path_along_the_second()
 }
 
 #[test]
+fn a_whisker_moves_one_half_of_a_composite()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let [start, end, first, second, path] =
+        [0_u32, 1, 2, 3, 4].map(|index| variable(&mut arena, index.into()));
+    let built = super::whisker(
+        &mut arena,
+        (integer, start, end),
+        (first, second),
+        super::Whisker::Right,
+        path,
+    );
+
+    let image = super::then(&mut arena, integer, start, first, second);
+    let image = arena.value_returned(image);
+    let [lifted_start, lifted_end, lifted_first, lifted_second] =
+        [1_u32, 2, 3, 4].map(|index| variable(&mut arena, index.into()));
+    let moving = variable(&mut arena, 0_u32.into());
+    let lifted_codomain = arena.value_type_path(integer, lifted_start, lifted_end);
+    let lifted_image = super::then(
+        &mut arena,
+        integer,
+        lifted_start,
+        lifted_first,
+        lifted_second,
+    );
+    let lifted_image = arena.value_returned(lifted_image);
+    let mut expected = |left, right| {
+        let moved = super::then(&mut arena, integer, lifted_start, left, right);
+        let moved = arena.value_returned(moved);
+        let motive = arena.value_type_path(lifted_codomain, lifted_image, moved);
+        let base = arena.value_here(image);
+        let transported = arena.computation_path_transport(motive, path, base);
+        let returned = arena.value_returned(transported);
+        arena.computation_return(returned)
+    };
+    let right = expected(moving, lifted_second);
+    let left = expected(lifted_first, moving);
+    let built = arena.computation_return(built);
+    assert_eq!(
+        compared(&arena, built, right),
+        CertificateEquality::Equal,
+        "the right whisker moves the first half under the motive's binder"
+    );
+    assert_eq!(
+        compared(&arena, built, left),
+        CertificateEquality::Different,
+        "moving the second half is the left whisker, another term"
+    );
+}
+
+#[test]
 fn cong_applies_the_map_to_the_moving_endpoint()
 {
     let mut arena = CoreArena::new();

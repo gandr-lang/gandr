@@ -278,3 +278,58 @@ fn a_fill_refuses_each_defect_by_name()
         "a directed cell of X is refused with the family"
     );
 }
+
+/// `fill[degree, bound](chain(2, (a₁, a₂)), …)`'s composite.
+///
+/// # Specification
+/// trivial.
+fn columns(
+    Head(degree, bound): Head,
+    heights: [CellCount; 2],
+) -> Composite
+{
+    Composite {
+        stratum: Stratum {
+            degree: Degree::from(degree),
+            bound: ShapeSize::from(bound),
+        },
+        pasting: Pasting::Columns {
+            heights: gandr_core_term::compose::Heights::new(&heights).expect("two columns pack"),
+        },
+    }
+}
+
+#[test]
+fn a_level_two_fill_names_x_by_its_columns()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
+    let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let generator = generator(&mut arena, integers, Sides::Composite);
+    let cells = || Box::from([alpha, integers.reflexive]);
+    let [none, one, two] = [0_usize, 1, 2].map(CellCount::from);
+    let whiskered = arena.value_fill(columns(Head(4, 9), [one, none]), generator, cells());
+    let crossed = arena.value_fill(columns(Head(4, 9), [none, one]), generator, cells());
+    let tall = arena.value_fill(columns(Head(6, 11), [two, none]), generator, cells());
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.binders().open(Zone::Intuitionistic, integers.cell);
+    context.binders().open(Zone::Intuitionistic, lifted);
+    assert!(
+        synthesise_value(&mut context, whiskered).is_ok(),
+        "the whisker names α as its column of one 2-cell and fills as the chain does"
+    );
+    for (refused, name) in [
+        (crossed, "a column of one 2-cell at a plain cell"),
+        (tall, "a column of two 2-cells"),
+    ] {
+        assert!(
+            matches!(
+                synthesise_value(&mut context, refused),
+                Err(CheckRefusal::ComposeNotAShape { at, .. }) if at == refused
+            ),
+            "{name} is refused by name"
+        );
+    }
+}

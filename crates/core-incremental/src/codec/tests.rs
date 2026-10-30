@@ -3088,6 +3088,14 @@ fn every_refusal() -> Vec<Refusal>
             cells: gandr_core_term::compose::CellCount::from(4_usize),
         },
     });
+    let whisker = [1_usize, 0, 3].map(gandr_core_term::compose::CellCount::from);
+    refusals.push(Refusal::ComposeNotAShape {
+        at,
+        pasting: gandr_core_term::compose::Pasting::Columns {
+            heights: gandr_core_term::compose::Heights::new(&whisker)
+                .expect("three short columns pack"),
+        },
+    });
     refusals.extend(
         [
             gandr_theory_sites::Unfilled::Cells {
@@ -3105,8 +3113,21 @@ fn every_refusal() -> Vec<Refusal>
                 wire: 1_usize.into(),
             },
         ]
-        .map(|defect| Refusal::ComposeDoesNotFill { at, defect }),
+        .map(|defect| Refusal::ComposeDoesNotFill {
+            at,
+            seam: gandr_core_term::compose::Seam::Outer,
+            defect,
+        }),
     );
+    refusals.push(Refusal::ComposeDoesNotFill {
+        at,
+        seam: gandr_core_term::compose::Seam::Column(
+            gandr_core_term::compose::Column::try_from(2_usize).expect("a byte holds column 2"),
+        ),
+        defect: gandr_theory_sites::Unfilled::Wire {
+            wire: 1_usize.into(),
+        },
+    });
     refusals.push(Refusal::FillUncertified {
         at,
         stratum: StratumDefect::Degree {

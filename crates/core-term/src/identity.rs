@@ -437,6 +437,74 @@ pub fn then(
     arena.computation_path_transport(motive, second, first)
 }
 
+/// Which half of a composite `first then second` a whisker moves.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Whisker
+{
+    /// The first half moves, the second stays: `q ↦ q then second`.
+    Right,
+    /// The second half moves, the first stays: `q ↦ first then q`.
+    Left,
+}
+
+/// The whisker of `path`, a path from the moving half of `first then second`.
+///
+/// It is the action of composing with the half that stays, `cong(q ↦ q then
+/// second, path)` or `cong(q ↦ first then q, path)`. The map's body stands
+/// under the motive's binder, as the lowering reads a `cong` over a lambda, so
+/// no lambda stands in a type.
+///
+/// # Specification
+/// - requires: `ends` are the carrier and the two outer ends of the composite,
+///   all in one context with the paths.
+/// - ensures: `tr(q. Path(Path(A, x, z)↑, (first then second)↑, ⟨m(q)⟩), path,
+///   here(first then second))`, returned, `m` the composing map.
+/// - provides: `whiskerRight` and `whiskerLeft`, the filler generator's lifts
+///   and the horizontal fold of a level-two composite.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the right whisker moves the first half under the motive's
+///   binder and the left the second, each from reflexivity at the composite.
+/// - witness: `identity::tests::a_whisker_moves_one_half_of_a_composite`
+#[spec(ensures: |ret| matches!(arena.value(ret), Some(&crate::syntax::Value::Returned(_))))]
+#[inline]
+#[must_use]
+pub fn whisker(
+    arena: &mut CoreArena,
+    (carrier, start, end): (ValueTypeId, ValueId, ValueId),
+    (first, second): (ValueId, ValueId),
+    half: Whisker,
+    path: ValueId,
+) -> ValueId
+{
+    let codomain = arena.value_type_path(carrier, start, end);
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE).settle(arena);
+    let lifted_start = shift_value(arena, start, Binders::ONE).settle(arena);
+    let bound = moving(arena);
+    let (left, right) = match half {
+        Whisker::Right => (
+            bound,
+            shift_value(arena, second, Binders::ONE).settle(arena),
+        ),
+        Whisker::Left => (shift_value(arena, first, Binders::ONE).settle(arena), bound),
+    };
+    let body = then(arena, lifted_carrier, lifted_start, left, right);
+    let moved = arena.value_returned(body);
+    let image = then(arena, carrier, start, first, second);
+    let image = arena.value_returned(image);
+    let lifted_codomain = shift_value_type(arena, codomain, Binders::ONE).settle(arena);
+    let lifted_image = shift_value(arena, image, Binders::ONE).settle(arena);
+    let motive = arena.value_type_path(lifted_codomain, lifted_image, moved);
+    let base = arena.value_here(image);
+    let transported = arena.computation_path_transport(motive, path, base);
+    arena.value_returned(transported)
+}
+
 /// `back(f)` for `f : Flow(A, a, b)`: the ride of `stay(a)` along `f` in the
 /// family `y. Flow(A, y, a)`, the symmetry a flow does not have.
 ///

@@ -62,6 +62,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::identity;
+use gandr_core_term::identity::Whisker;
 use gandr_kernel_term::DeBruijnIndex;
 
 use crate::compose::Endpoint;
@@ -205,8 +206,11 @@ struct Chain
 ///   induction realising it, both under the judgement's binders.
 /// - fails: as the module states; [`CheckRefusal::ShapeMismatch`] for a
 ///   generator that is no curried function of the cells into a path type, or a
-///   cell neither of its domain's type nor a path one layer deeper; a machine
-///   invariant for a node that is no fill or types of another count.
+///   cell neither of its domain's type nor a path one layer deeper;
+///   [`CheckRefusal::ComposeNotAShape`] for a level-two shape whose columns are
+///   not the cells of `X`, a column of one 2-cell each and an empty column each
+///   other cell; a machine invariant for a node that is no fill or types of
+///   another count.
 /// - panics: none.
 ///
 /// # Errors
@@ -216,9 +220,11 @@ struct Chain
 /// - hypothesis: L3 — a free path between two cells' first fills its square by
 ///   induction, from `u` at the path's left end to `v` at its right; sides that
 ///   are no composites, an `X` of no cell, an uncertified stratum and a `Flow`
-///   cell are each refused by name.
+///   cell are each refused by name. The whisker names `X` by its columns, and a
+///   column at a plain cell or of two 2-cells is refused by name.
 /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
 /// - witness: `fill::tests::a_fill_refuses_each_defect_by_name`
+/// - witness: `fill::tests::a_level_two_fill_names_x_by_its_columns`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::FillUncertified { at: site, .. } | CheckRefusal::NoFiller { at: site, .. } | CheckRefusal::GeneratorFamilyUnsupported { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
@@ -265,7 +271,28 @@ pub fn realise(
             Endpoint::Known(right),
         ));
     }
-    let (Endpoint::Known(start), _) = crate::compose::fill(context, at, &shape, &diagram)?
+    // A level-two shape names the cells of `X`: a column of one 2-cell each,
+    // and an empty column each other cell.
+    if let gandr_core_term::compose::Pasting::Columns { heights } = composite.pasting
+        && (heights.columns().count() != read.len()
+            || !heights.columns().zip(&read).all(|(height, cell)| {
+                matches!(
+                    (usize::from(height), cell),
+                    (0, &Cell::Plain(_)) | (1, &Cell::Lifted { .. })
+                )
+            }))
+    {
+        return Err(CheckRefusal::ComposeNotAShape {
+            at,
+            pasting: composite.pasting,
+        });
+    }
+    let (Endpoint::Known(start), _) = crate::compose::fill(
+        context,
+        (at, gandr_core_term::compose::Seam::Outer),
+        &shape,
+        &diagram,
+    )?
     else {
         return Err(CheckRefusal::MachineInvariant);
     };
@@ -1048,14 +1075,14 @@ fn lifted(
                 let ends = (carrier, start, end);
                 let lift = match (left.lift, right.lift) {
                     (None, None) => None,
-                    (Some(alpha), None) => Some(whisker(
+                    (Some(alpha), None) => Some(identity::whisker(
                         arena,
                         ends,
                         (left.lo, right.lo),
                         Whisker::Right,
                         alpha,
                     )),
-                    (None, Some(beta)) => Some(whisker(
+                    (None, Some(beta)) => Some(identity::whisker(
                         arena,
                         ends,
                         (left.lo, right.lo),
@@ -1063,9 +1090,20 @@ fn lifted(
                         beta,
                     )),
                     (Some(alpha), Some(beta)) => {
-                        let first =
-                            whisker(arena, ends, (left.lo, right.lo), Whisker::Right, alpha);
-                        let second = whisker(arena, ends, (left.hi, right.lo), Whisker::Left, beta);
+                        let first = identity::whisker(
+                            arena,
+                            ends,
+                            (left.lo, right.lo),
+                            Whisker::Right,
+                            alpha,
+                        );
+                        let second = identity::whisker(
+                            arena,
+                            ends,
+                            (left.hi, right.lo),
+                            Whisker::Left,
+                            beta,
+                        );
                         let composites = arena.value_type_path(carrier, start, end);
                         let both = identity::then(arena, composites, lo, first, second);
                         Some(arena.value_returned(both))
@@ -1083,62 +1121,6 @@ fn lifted(
         hi: unit,
         lift: None,
     })
-}
-
-/// Which half of a composite a whisker moves.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Whisker
-{
-    /// The first half moves, the second stays: `q ↦ q then second`.
-    Right,
-    /// The second half moves, the first stays: `q ↦ first then q`.
-    Left,
-}
-
-/// The whisker of `path`, a path from the moving half of `first then second`
-/// to another: the action of composing with the half that stays, `cong(q ↦
-/// q then second, path)` or `cong(q ↦ first then q, path)`. The map's body
-/// stands under the motive's binder, as the lowering reads a `cong` over a
-/// lambda, so no lambda stands in a type.
-///
-/// # Specification
-/// - requires: `ends` are the carrier and the two outer ends of the composite,
-///   all in one context with the paths.
-/// - ensures: `tr(q. Path(Path(A, x, z)↑, (first then second)↑, ⟨m(q)⟩), path,
-///   here(first then second))`, returned, `m` the composing map.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`realise`].
-/// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
-#[spec(ensures: |ret| matches!(arena.value(ret), Some(&Value::Returned(_))))]
-fn whisker(
-    arena: &mut CoreArena,
-    (carrier, start, end): (ValueTypeId, ValueId, ValueId),
-    (first, second): (ValueId, ValueId),
-    moving: Whisker,
-    path: ValueId,
-) -> ValueId
-{
-    let codomain = arena.value_type_path(carrier, start, end);
-    let lifted_carrier = lift_type(arena, carrier, Binders::ONE);
-    let lifted_start = lift_value(arena, start, Binders::ONE);
-    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let (left, right) = match moving {
-        Whisker::Right => (bound, lift_value(arena, second, Binders::ONE)),
-        Whisker::Left => (lift_value(arena, first, Binders::ONE), bound),
-    };
-    let body = identity::then(arena, lifted_carrier, lifted_start, left, right);
-    let moved = arena.value_returned(body);
-    let image = identity::then(arena, carrier, start, first, second);
-    let image = arena.value_returned(image);
-    let lifted_codomain = lift_type(arena, codomain, Binders::ONE);
-    let lifted_image = lift_value(arena, image, Binders::ONE);
-    let motive = arena.value_type_path(lifted_codomain, lifted_image, moved);
-    let base = arena.value_here(image);
-    let transported = arena.computation_path_transport(motive, path, base);
-    arena.value_returned(transported)
 }
 
 /// `value` read `amount` binders deeper.

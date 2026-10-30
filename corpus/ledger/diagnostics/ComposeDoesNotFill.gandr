@@ -8,3 +8,13 @@ def meeting(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z))
 def apart(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, x, z)) -> Path(A, x, z) {
   compose[3, 5](chain(2), (p, q))
 }
+
+@[ checks ]
+def stacked(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Path(Path(A, x, y), g, h)) -> Path(Path(A, x, y), f, h) {
+  compose[4, 9](chain(1, (2)), (a, b))
+}
+
+@[ refuses("ComposeDoesNotFill") ]
+def columnApart(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), k : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Path(Path(A, x, y), h, k)) -> Path(Path(A, x, y), f, k) {
+  compose[4, 9](chain(1, (2)), (a, b))
+}

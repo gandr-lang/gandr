@@ -1,10 +1,13 @@
-/// `unbiased-composition`: a chain of paths composes unbiased at a stratum the chain sub-site certifies.
+/// `unbiased-composition`: a chain of paths composes unbiased at a stratum the chain sub-site certifies, and a level-two shape of 2-cells at a stratum the wreath certifies.
 ///
 /// Implemented: `compose[n, k](chain(m), (c₁, …, cₘ))` checks its cells against the chain of `m` cells at the stratum `n` over `k`. The node holds its cells beside their left-nested `then` fold. Evaluation runs the fold, and the kernel replays it. `p then q` at paths is the composite of its 2-chain, `compose[3, 5](chain(2), (p, q))`. The printer and the formatter write the form back as it is written, and that composite as `p then q`.
+///
+/// Level two: `compose[n, k](chain(m, (a₁, …, aₘ)), cells)` composes the level-two shape `[m](a₁, …, aₘ)`, an object of the wreath of the chains over themselves. Column `i` holds `aᵢ` 2-cells, or one 1-cell when `aᵢ` is zero. Level two certifies at the stratum, and each column's 2-cells meet along their 1-cells, the columns along their points. The node holds the cells beside their fold: each column vertically by `then`, the columns horizontally by the whiskers the filler generator lifts by. The whisker `[2](1, 0)` is the right whisker itself, and `[2](1, 1)` the horizontal composite.
 ///
 /// A composite of reflexivities reduces to reflexivity, so the declaration states it and proves it by reflexivity.
 ///
 /// - see: corpus/model/identity/compose-chain.gandr
+/// - see: corpus/ledger/features/filler-generator.gandr
 
 /// Three reflexivities composed unbiased are reflexivity.
 def composedAtHere(A : Type, x : A) -> Path(
@@ -13,4 +16,42 @@ def composedAtHere(A : Type, x : A) -> Path(
   here(x)
 ) {
   here(here(x))
+}
+
+/// The right whisker of `fa` by `g`: the transport along `fa` of the composite's first half.
+def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  transport(\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))
+}
+
+/// The whisker `[2](1, 0)`: a 2-cell beside a 1-cell, composed at level two.
+def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  compose[4, 9](chain(2, (1, 0)), (fa, g))
+}
+
+/// The level-two whisker is the right whisker, so reflexivity relates the two.
+def whiskeredIsRight(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  whiskered(A, x, y, z, fm, fp, fa, g),
+  rightWhisker(A, x, y, z, fm, fp, fa, g)
+) {
+  here(rightWhisker(A, x, y, z, fm, fp, fa, g))
+}
+
+/// The horizontal composite `[2](1, 1)` of two 2-cells side by side.
+def horizontal(A : Type, x : A, y : A, z : A, f : Path(A, x, y), f2 : Path(A, x, y), g : Path(A, y, z), g2 : Path(A, y, z), a : Path(Path(A, x, y), f, f2), b : Path(Path(A, y, z), g, g2)) -> Path(Path(A, x, z), f then g, f2 then g2) {
+  compose[5, 11](chain(2, (1, 1)), (a, b))
+}
+
+/// The left whisker of `ga` by `f`: the transport along `ga` of the composite's second half.
+def leftWhisker(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(Path(A, x, z), f then gm, f then gp) {
+  transport(\a. Path(Path(A, x, z), f then gm, f then a), ga, here(f then gm))
+}
+
+/// The horizontal composite is the right whisker of `a` then the left whisker of `b`, so reflexivity relates the two.
+def horizontalIsWhiskers(A : Type, x : A, y : A, z : A, f : Path(A, x, y), f2 : Path(A, x, y), g : Path(A, y, z), g2 : Path(A, y, z), a : Path(Path(A, x, y), f, f2), b : Path(Path(A, y, z), g, g2)) -> Path(
+  Path(Path(A, x, z), f then g, f2 then g2),
+  horizontal(A, x, y, z, f, f2, g, g2, a, b),
+  rightWhisker(A, x, y, z, f, f2, a, g) then leftWhisker(A, x, y, z, f2, g, g2, b)
+) {
+  here(horizontal(A, x, y, z, f, f2, g, g2, a, b))
 }

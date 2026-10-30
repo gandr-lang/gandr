@@ -1016,12 +1016,25 @@ fn checked(
         CheckRefusal::ComposeUncertified { .. } => {
             f.write_str("`compose` needs a stratum the chain sub-site certifies")
         },
-        CheckRefusal::ComposeNotAShape { .. } => {
-            f.write_str("`compose` needs a chain within the degree and the bound of its stratum")
-        },
-        CheckRefusal::ComposeDoesNotFill { .. } => {
-            f.write_str("a composite needs its cells to meet end to end along the chain")
-        },
+        CheckRefusal::ComposeNotAShape {
+            pasting: gandr_core_term::compose::Pasting::Chain { .. },
+            ..
+        } => f.write_str("`compose` needs a chain within the degree and the bound of its stratum"),
+        CheckRefusal::ComposeNotAShape {
+            pasting: gandr_core_term::compose::Pasting::Columns { .. },
+            ..
+        } => f.write_str(
+            "`compose` needs a level-two shape the wreath holds within the degree and the bound \
+             of its stratum",
+        ),
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Outer,
+            ..
+        } => f.write_str("a composite needs its cells to meet end to end along the chain"),
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
+            ..
+        } => f.write_str("a composite needs each column's 2-cells to meet end to end"),
         CheckRefusal::FillUncertified { .. } => {
             f.write_str("`fill` needs a stratum the chain sub-site certifies")
         },
@@ -2201,6 +2214,7 @@ pub mod tests
             },
             CheckRefusal::ComposeDoesNotFill {
                 at: value,
+                seam: gandr_core_term::compose::Seam::Outer,
                 defect: gandr_theory_sites::Unfilled::Wire {
                     wire: 1_usize.into(),
                 },
@@ -2437,6 +2451,7 @@ pub mod tests
             },
             CheckRefusal::ComposeDoesNotFill {
                 at: value,
+                seam: gandr_core_term::compose::Seam::Outer,
                 defect: gandr_theory_sites::Unfilled::Wire {
                     wire: 1_usize.into(),
                 },

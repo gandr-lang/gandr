@@ -646,7 +646,9 @@ pub enum Refusal
     {
         /// The `compose`.
         at: Site,
-        /// The first defect of the diagram.
+        /// The chain the defect sits in: the outer one, or a column's.
+        seam: gandr_core_term::compose::Seam,
+        /// The first defect of that chain's diagram.
         defect: gandr_theory_sites::Unfilled,
     },
     /// A fill at a stratum the chain sub-site does not certify.
@@ -1558,7 +1560,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::UaInequivalent { at, defect } = matched_left_value && let Refusal::UaInequivalent { at: projected, defect: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == defect }
  else if let CheckRefusal::ComposeUncertified { at, stratum } = matched_left_value && let Refusal::ComposeUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
  else if let CheckRefusal::ComposeNotAShape { at, pasting } = matched_left_value && let Refusal::ComposeNotAShape { at: projected, pasting: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == pasting }
- else if let CheckRefusal::ComposeDoesNotFill { at, defect } = matched_left_value && let Refusal::ComposeDoesNotFill { at: projected, defect: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == defect }
+ else if let CheckRefusal::ComposeDoesNotFill { at, seam, defect } = matched_left_value && let Refusal::ComposeDoesNotFill { at: projected, seam: held, defect: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && held == seam && stored == defect }
  else if let CheckRefusal::FillUncertified { at, stratum } = matched_left_value && let Refusal::FillUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
  else if let CheckRefusal::NoFiller { at, left, right, stratum } = matched_left_value && let Refusal::NoFiller { at: projected, left: projected_left, right: projected_right, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) && stored == stratum }
  else if let CheckRefusal::GeneratorFamilyUnsupported { at, cell, family } = matched_left_value && let Refusal::GeneratorFamilyUnsupported { at: projected, cell: projected_cell, family: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_cell == self.site(ArenaNode::Value(cell)) && stored == family }
@@ -1865,8 +1867,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Value(at)),
                 pasting,
             },
-            CheckRefusal::ComposeDoesNotFill { at, defect } => Refusal::ComposeDoesNotFill {
+            CheckRefusal::ComposeDoesNotFill { at, seam, defect } => Refusal::ComposeDoesNotFill {
                 at: self.site(ArenaNode::Value(at)),
+                seam,
                 defect,
             },
             CheckRefusal::FillUncertified { at, stratum } => Refusal::FillUncertified {

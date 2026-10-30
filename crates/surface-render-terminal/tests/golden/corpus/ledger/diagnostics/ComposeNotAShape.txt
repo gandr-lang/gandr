@@ -30,3 +30,25 @@ error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound
    │
    ├ note: `pastBound` is refused with ComposeNotAShape, as its expectation states
    ╰ help: write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m cells
+
+error[ComposeNotAShape]: `compose` needs a level-two shape the wreath holds within the degree and the bound of its stratum
+   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:30:3
+   │
+29 │   def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Pa…
+   │   │                     ┬         ┬      ┬      ┬      ┬─                  ┬─                  ┬─                                ─ checked against `(a : Path(A, y, z)) -> -F Path(Path(A, x, z), fm then a, fp then a)`; while checking the body of this function; binds g : Path(A, y, z)
+   │   │                     │         │      │      │      │                   │                   │
+   │   │                     │         │      │      │      │                   │                   checked against `Path(Path(A, x, y), fm, fp) -> (g : Path(A, y, z)) -> -F Path(Path(A, x, z), fm then g, fp then g)`; while checking the body of this function; binds fa : Path(Path(A, x, y), fm, fp)
+   │   │                     │         │      │      │      │                   checked; while checking the body of this function; binds fp : Path(A, x, y)
+   │   │                     │         │      │      │      checked; while checking the body of this function; binds fm : Path(A, x, y)
+   │   │                     │         │      │      checked; while checking the body of this function; binds z : A
+   │   │                     │         │      checked; while checking the body of this function; binds y : A
+   │   │                     │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘                     checked; while checking the body of this function; binds A : Type
+   │ │
+30 │ │   compose[3, 9](chain(2, (1, 0)), (fa, g))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a level-two shape past its stratum
+31 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ├ note: `whiskerPastDegree` is refused with ComposeNotAShape, as its expectation states
+   ╰ help: write a stratum whose bound holds the level-two shape and whose degree reaches its degree

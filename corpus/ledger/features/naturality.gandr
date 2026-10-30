@@ -100,6 +100,26 @@ def natassoc(
   fill[5, 7](chain(3), assocGenerator(A, x, y, z, w), (fa, g, h))
 }
 
+/// The same naturality over the level-two shape `[3](1, 0, 0)`: `fa` a column of one 2-cell, and `g` and `h` columns of none.
+def natassocColumns(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(
+  Path(Path(A, x, w), (fm then g) then h, fp then (g then h)),
+  assoc(A, x, y, z, w, fm, g, h) then liftRight(A, x, y, w, fm, fp, fa, g then h),
+  liftRight(A, x, z, w, fm then g, fp then g, liftRight(A, x, y, z, fm, fp, fa, g), h) then assoc(A, x, y, z, w, fp, g, h)
+) {
+  fill[6, 11](chain(3, (1, 0, 0)), assocGenerator(A, x, y, z, w), (fa, g, h))
+}
+
 /// At `here(fm)` the filler generator's square and `assoc_nat` convert.
 def natassocAtHere(
   A : Type,

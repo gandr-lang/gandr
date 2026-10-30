@@ -10445,21 +10445,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::MachineInvariant);
         }
         let shape = crate::compose::admit(self.context.strata_mut(), at, composite)?;
-        let mut diagram = Vec::with_capacity(cells.len());
+        let mut readings = Vec::with_capacity(cells.len());
         for (&cell, &ty) in cells.iter().zip(types) {
-            let (left, right) = match self.transported_path(TermNode::Value(cell), ty)? {
-                PathReading::Known { left, right, .. } => (
-                    crate::compose::Endpoint::Known(left),
-                    crate::compose::Endpoint::Known(right),
-                ),
-                PathReading::Unknown(_) => (
-                    crate::compose::Endpoint::Unknown,
-                    crate::compose::Endpoint::Unknown,
-                ),
-            };
-            diagram.push(crate::compose::cell(left, right));
+            readings.push(match self.transported_path(TermNode::Value(cell), ty)? {
+                PathReading::Known {
+                    carrier,
+                    left,
+                    right,
+                } => crate::compose::CellReading::Known {
+                    carrier,
+                    left,
+                    right,
+                },
+                PathReading::Unknown(_) => crate::compose::CellReading::Unknown,
+            });
         }
-        crate::compose::fill(self.context, at, &shape, &diagram)?;
+        match composite.pasting {
+            gandr_core_term::compose::Pasting::Chain { .. } => {
+                let diagram: Vec<_> = readings
+                    .iter()
+                    .map(|&reading| match reading {
+                        crate::compose::CellReading::Known { left, right, .. } => {
+                            crate::compose::cell(
+                                crate::compose::Endpoint::Known(left),
+                                crate::compose::Endpoint::Known(right),
+                            )
+                        },
+                        crate::compose::CellReading::Unknown => crate::compose::cell(
+                            crate::compose::Endpoint::Unknown,
+                            crate::compose::Endpoint::Unknown,
+                        ),
+                    })
+                    .collect();
+                crate::compose::fill(
+                    self.context,
+                    (at, gandr_core_term::compose::Seam::Outer),
+                    &shape,
+                    &diagram,
+                )?;
+            },
+            gandr_core_term::compose::Pasting::Columns { heights } => {
+                crate::compose::fill_columns(self.context, at, (heights, &shape), &readings)?;
+            },
+        }
         self.wait(Frame::ReturnedEndpoint { at });
         Ok(Step::Descend(Goal::Computation {
             term: realised,

@@ -1460,7 +1460,23 @@ impl fmt::Display for Checked
                 "a chain of m = {} cells has size 2m + 1 and degree 2m - 1, which must lie within the stratum's bound and degree",
                 usize::from(cells)
             ),
-            | CheckRefusal::ComposeDoesNotFill { defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
+            | CheckRefusal::ComposeNotAShape { pasting: gandr_core_term::compose::Pasting::Columns { heights }, .. } => {
+                f.write_str("the level-two shape [")?;
+                write!(f, "{}](", heights.columns().count())?;
+                for (position, height) in heights.columns().enumerate() {
+                    if position > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}", usize::from(height))?;
+                }
+                f.write_str(") must be an object of the wreath of the chains within the stratum's bound, and its degree within the stratum's")
+            },
+            | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Outer, defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
+            | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Column(before), defect, .. } => write!(
+                f,
+                "the 2-cells of column {} do not fill its chain: {defect}",
+                usize::from(before).saturating_add(1)
+            ),
             | CheckRefusal::FillUncertified { stratum, .. } => uncertified(f, Chained::Fill, stratum),
             | CheckRefusal::NoFiller { .. } => f.write_str("the filler generator fills only the square it makes with its cells: each side a composite of the cells, one cell or more a path between two cells, and the square asked for that one"),
             | CheckRefusal::GeneratorFamilyUnsupported { family, .. } => match family {
@@ -3085,8 +3101,29 @@ mod tests
                     cells: gandr_core_term::compose::CellCount::from(4_usize),
                 },
             },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::Columns {
+                    heights: gandr_core_term::compose::Heights::new(&[
+                        gandr_core_term::compose::CellCount::from(1_usize),
+                        gandr_core_term::compose::CellCount::from(0_usize),
+                    ])
+                    .expect("the whisker's columns pack"),
+                },
+            },
             CheckRefusal::ComposeDoesNotFill {
                 at: value,
+                seam: gandr_core_term::compose::Seam::Outer,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                seam: gandr_core_term::compose::Seam::Column(
+                    gandr_core_term::compose::Column::try_from(1_usize)
+                        .expect("a byte holds column 1"),
+                ),
                 defect: gandr_theory_sites::Unfilled::Wire {
                     wire: 1_usize.into(),
                 },
