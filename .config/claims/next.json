@@ -2288,5 +2288,59 @@
       ]
     },
     "output": "focus: #80\n83\tfocus\tworkflow: the focus epic's own unit"
+  },
+  {
+    "name": "#4104: an issue the board reads blocked, its dependency gone when read now, is claimed",
+    "input": {
+      "areas": ["area:workflow"],
+      "issues": [
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": 1
+        },
+        {
+          "number": 43,
+          "title": "issue 43",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ],
+      "order": {},
+      "live": { "42": [] }
+    },
+    "output": "42\tgap\tissue 42"
+  },
+  {
+    "name": "#4104: an issue the board reads unblocked, an open blocker set when read now, is passed over and named",
+    "input": {
+      "areas": ["area:workflow"],
+      "issues": [
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        },
+        {
+          "number": 43,
+          "title": "issue 43",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ],
+      "order": {},
+      "live": { "42": [7] }
+    },
+    "output": "blocked: #42\n43\tgap\tissue 43"
   }
 ]

@@ -2,7 +2,8 @@
 # that claimed it, `<!-- claim: lane=<lane> -->`, written by `claim:next`, or
 # the lane that last let it go and when, `<!-- released: lane=<lane>
 # at=<time> -->`, written by `claim:release` and by the merge that advances
-# it. Writing one removes the other, so a body carries at most one.
+# it. Writing one removes the other, so a body carries at most one. A
+# release under `--forgo` writes neither (#4104).
 
 def claim_marker($lane): "<!-- claim: lane=\($lane) -->";
 def released_marker($lane; $at): "<!-- released: lane=\($lane) at=\($at) -->";

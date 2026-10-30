@@ -14,7 +14,12 @@
 #   issues   the open issues: [{number, title, labels: [name], parent, body,
 #            blocked}], parent the number of the issue's parent, or null; body
 #            the issue's body, or null; blocked how many open issues it is
-#            GitHub-`blocked by` (#2902), or null for none
+#            GitHub-`blocked by` (#2902), or null for none, as the board
+#            reads it
+#   live     the open issues each issue it names is GitHub-`blocked by`,
+#            read from the issue now: {"<n>": [number]}; absent reads as
+#            none. It outranks `blocked`, which lags a dependency set or
+#            removed (#4104)
 #   order    each open epic's sub-issues in the epic's order: {"<epic>": [number]}
 #   refusals the refusals `.config/debug/refusals.toml` names; absent reads
 #            as none
@@ -63,9 +68,10 @@
 # without which `pr:open` refuses the landing (`opening.jq`). A collector
 # keeps its own shape, so a collector pick prints no section due and no
 # reading to restate. Each candidate ranked ahead of the pick that an open
-# issue blocks is named once, so the seat sees why it was passed over. A pick
-# whose reading is the `unstated` placeholder is claimed all the same, its
-# axes' questions printed first.
+# issue blocks is named once, so the seat sees why it was passed over. An
+# issue `live` names is blocked by the open issues it lists there alone. A
+# pick whose reading is the `unstated` placeholder is claimed all the same,
+# its axes' questions printed first.
 #
 # A claim is the slice in hand (`tracker.md` § tracker-claims, #3915). A lane
 # holds a claimed issue when its claim marker names the lane (`markers.jq`),
@@ -108,7 +114,8 @@ def priority:
   | [.labels[] as $l | $ranks | index($l) | values] | min // 3;
 def unstated_axes: [.body // "" | marks | select(.reason | unstated) | .axis];
 def quoted($marked): [axes[] | . as $axis | select($marked | index($axis)) | "`\($axis)`: \(questions[$axis])"];
-def blocked: (.blocked // 0) > 0;
+def blocked($live): $live["\(.number)"] as $read
+  | if $read != null then $read | length > 0 else (.blocked // 0) > 0 end;
 
 # A release within the 2 hours a lane keeps its continuation (#3915).
 def kept($now): .body | release | select(. != null and $now - .at < 7200);
@@ -131,6 +138,7 @@ def observation($refusals):
 | (.refusals // []) as $refusals
 | .lane as $lane
 | (.now // 0) as $now
+| (.live // {}) as $live
 | (.prs // []) as $prs
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
 | (if .focus == null or (.focus.epics | length) == 0 then null
@@ -189,7 +197,7 @@ def observation($refusals):
 | ([.issues[] | select(has("collector") and within($areas) and (has("kind:defect") | not))]
     | sort_by(.number) | .[] | open_rows as $k | select($k > 0)
     | "collector: #\(.number) (\($k) open row\(if $k == 1 then "" else "s" end))"),
-  ([range(0; $ranked | length) | select($ranked[.][0] | blocked | not)] | first) as $at
+  ([range(0; $ranked | length) | select($ranked[.][0] | blocked($live) | not)] | first) as $at
 | ($ranked[:$at // ($ranked | length)]
     | reduce .[] as $entry ([]; if any(.[]; .number == $entry[0].number) then . else . + [$entry[0]] end)
     | .[] | "blocked: #\(.number)"),

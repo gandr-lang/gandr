@@ -1782,7 +1782,10 @@ fi
 # the claim opens with one `restate: `<axis>`: <question>` line per such
 # axis. An issue with an open `blocked by` dependency is not picked (#2902):
 # each one ranked ahead of the pick is printed on stderr as `blocked: #n by
-# #a, #b`, its open blockers read from GitHub. A `kind:defect` `collector` in
+# #a, #b`. The board's count of open blockers lags a dependency set or
+# removed (#4104), so each issue the order passes over as blocked, and the
+# pick, is read from GitHub, and the order taken again until every issue it
+# rests on is read. A `kind:defect` `collector` in
 # the lane's areas holding an open row heads the order (#3326): it is claimed
 # as the defect it is, its rows worked by the landing, and prints no section
 # due, keeping its own shape. The lane's defects and refactors come next,
@@ -1866,10 +1869,20 @@ concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id F
 refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
 gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {body: (.body // ""), head: .head.ref}]' | jq -s 'add // []' > "$board/prs.json"
-lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
-  --arg lane "$lane" --argjson now "$(date +%s)" --slurpfile prs "$board/prs.json" --argjson focus "$focus" \
-  '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus}' \
-  | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
+now=$(date +%s)
+live='{}'
+while :; do
+  lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
+    --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson live "$live" \
+    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, live: $live}' \
+    | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
+  unread=$(jq -R -r --argjson live "$live" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[.] == null)' <<< "$lines")
+  [[ -n $unread ]] || break
+  for number in $unread; do
+    live=$(jq -c --arg n "$number" --argjson read "$(deps_blocked_by "$repo" "$number")" \
+      '.[$n] = [$read[] | select(.state == "open") | .number]' <<< "$live")
+  done
+done
 awk '/^focus: /' <<< "$lines" >&2
 held=$(awk '/^held: /' <<< "$lines")
 if [[ -n $held ]]; then
@@ -1879,7 +1892,7 @@ if [[ -n $held ]]; then
 fi
 awk '/^collector: /' <<< "$lines" >&2
 while read -r _ issue; do
-  echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
+  echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' <<< "$live")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^(observation due|sections due|restate): /' <<< "$lines"
 pick=$(awk '!/^(focus|collector|blocked|observation due|sections due|restate): /' <<< "$lines")
@@ -1905,12 +1918,15 @@ printf '#%s %s\n' "$number" "$title"
 # body (`.config/claims/markers.jq`), so `claim:next <lane>` offers it first
 # for 2 hours and another lane passes it over meanwhile. A seat releases what
 # it stops working without landing: a blocked unit, or one it hands back with
-# findings.
+# findings. `--forgo` gives the continuation up (#4104): the body keeps no
+# marker, so the next `claim:next` walks the order, as after a ruling that
+# names another unit first.
 ["claim:release"]
-description = "Let a lane's claim go, keeping the continuation for the lane"
+description = "Let a lane's claim go, keeping the continuation for the lane unless it is forgone"
 usage = '''
 arg "<lane>" help="the lane, a key of .config/issues/lanes.toml"
 arg "<issue>" help="the claimed issue's number"
+flag "--forgo" help="give the lane's continuation up, so claim:next walks the order"
 '''
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
@@ -1931,10 +1947,15 @@ if [[ $(jq -r .claimed <<< "$issue") != true ]]; then
   exit 1
 fi
 gh api -X DELETE "repos/$repo/issues/$number/labels/status:claimed" > /dev/null
-jq -c -L "$root/.config/claims" --arg lane "$lane" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  'include "markers"; {body: (.body | marked(released_marker($lane; $at)))}' <<< "$issue" \
+forgo=${usage_forgo:-false}
+jq -c -L "$root/.config/claims" --arg lane "$lane" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson forgo "$forgo" \
+  'include "markers"; {body: (.body | if $forgo then unmarked else marked(released_marker($lane; $at)) end)}' <<< "$issue" \
   | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
-echo "claim:release: released #$number to $lane for 2 hours" >&2
+if [[ $forgo == true ]]; then
+  echo "claim:release: released #$number to the order" >&2
+else
+  echo "claim:release: released #$number to $lane for 2 hours" >&2
+fi
 '''
 
 # A landing patches the features ledger rows it names, in the landing (#2525):
