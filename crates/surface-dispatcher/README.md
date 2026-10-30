@@ -44,7 +44,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
 - `Census`, `CensusStep`, `CensusFault` and `CellRow`: the cells verb ([`cells`](src/cells.rs)).
-- `measure`, `Measure`, `measured::Absent`, `Walk::measuring`, `Positioning`, `ArtifactPositions` and `positioned::Absent`: each declaration's sizes in its kernel artifact ([`measure`](src/measure.rs)).
+- `measure`, `Measure`, `measured::Absent`, `Walk::measuring`, `Positioning`, `ArtifactPositions`, `Placed` and `positioned::Absent`: each declaration's artifact sizes and tally ([`measure`](src/measure.rs)).
 - `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 

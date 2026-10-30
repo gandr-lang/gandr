@@ -297,7 +297,20 @@ impl ProgramSpec
 /// The process's monotonic clock, from the run's start.
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-struct Monotonic(Instant);
+pub struct Monotonic(Instant);
+
+impl Monotonic
+{
+    /// The clock, its run started now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn started() -> Self
+    {
+        Self(Instant::now())
+    }
+}
 
 impl Clock for Monotonic
 {
@@ -765,7 +778,7 @@ impl Staging
     ) -> Result<StageRun, PoolFault>
     {
         let forked = pool.forked()?;
-        let clock = Monotonic(Instant::now());
+        let clock = Monotonic::started();
         let mut memo = Memo::default();
         let mut programs = Vec::with_capacity(self.programs.len());
         for (index, spec) in self.programs.into_iter().enumerate() {

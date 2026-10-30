@@ -703,6 +703,11 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
     assert_eq!(printed(&again), "", "the fixed source has no finding");
 }
 
+/// `gandr check --measure` prints one line per declaration a source writes:
+/// its sizes, the goals the kernel's check of it charged and the time its
+/// admission took. A check without the flag prints none. A declaration a
+/// recorded verdict admits ran no check, and its line says so in place of the
+/// counts.
 #[test]
 fn check_measures_each_declaration_a_source_writes()
 {
@@ -715,62 +720,116 @@ fn check_measures_each_declaration_a_source_writes()
         Path::new("top.gandr"),
         Text::from("import \"./base.gandr\" ;\ndef two(n: Integer) -> -F Integer { one(n) }\n"),
     );
-    let check = Path::new("check");
-    let plain = ran(gandr(&[check, &scratch.0]));
-    assert_eq!(code(&plain), Code(0_i32), "{}", stdout(&plain));
+    // A key and a verdict cache of the test's own: the shared ones hold the
+    // receipts other tests leave, so a first run would recall `one`.
+    let home = scratch.0.join("configuration");
+    let cache = scratch.0.join("cache");
+    let check = |flags: &[&Path]| {
+        let mut arguments = vec![Path::new("check")];
+        arguments.extend_from_slice(flags);
+        arguments.push(&scratch.0);
+        let mut command = gandr(&arguments);
+        let _configured = command
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache);
+        let output = ran(command);
+        assert_eq!(
+            code(&output),
+            Code(0_i32),
+            "a measure settles nothing: {}",
+            stderr(&output)
+        );
+        output
+    };
+    let count = |field: &str, unit: &str| -> u64 {
+        field
+            .strip_suffix(unit)
+            .and_then(|count| count.trim_end().parse().ok())
+            .unwrap_or_else(|| panic!("{field:?} spells its {unit}"))
+    };
+    // Each row's source, its declaration and the fields after its sizes.
+    let rows = |output: &Output| -> Vec<(String, String, Vec<String>)> {
+        let mut rows: Vec<(String, String, Vec<String>)> = stdout(output)
+            .lines()
+            .filter_map(|line| line.strip_prefix("measure: "))
+            .map(|row| {
+                let (path, rest) = row.split_once(": ").expect("a row names its source");
+                let (name, fields) = rest.split_once(": ").expect("a row names its declaration");
+                let mut fields = fields.split(", ");
+                let (Some(bytes), Some(shared), Some(unshared)) =
+                    (fields.next(), fields.next(), fields.next())
+                else {
+                    panic!("{row:?} spells three sizes");
+                };
+                assert!(count(bytes, "bytes") > 0, "a segment holds bytes: {row}");
+                assert!(
+                    count(shared, "shared") <= count(unshared, "unshared"),
+                    "a segment adds no more entries than its roots' trees hold: {row}"
+                );
+                let file = Path::new(path)
+                    .file_name()
+                    .map(|file| file.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                (file, name.to_owned(), fields.map(str::to_owned).collect())
+            })
+            .collect();
+        rows.sort();
+        rows
+    };
+    let written = [
+        ("base.gandr".to_owned(), "one".to_owned()),
+        ("top.gandr".to_owned(), "two".to_owned()),
+    ];
+    let named = |rows: &[(String, String, Vec<String>)]| -> Vec<(String, String)> {
+        rows.iter()
+            .map(|&(ref file, ref name, _)| (file.clone(), name.clone()))
+            .collect()
+    };
+
+    let checked = rows(&check(&[Path::new("--measure")]));
+    assert_eq!(
+        named(&checked),
+        written,
+        "each source measures the declaration it writes, and none it imports"
+    );
+    for &(_, ref name, ref tally) in &checked {
+        let [ref expanded, ref recalled, ref kept, ref took] = *tally.as_slice()
+        else {
+            panic!("{name}'s checked row spells three counts and a time: {tally:?}");
+        };
+        assert!(
+            count(expanded, "expanded")
+                .saturating_add(count(recalled, "recalled"))
+                .saturating_add(count(kept, "kept"))
+                > 0,
+            "the kernel's check of {name} charges at least its declared type's formation"
+        );
+        let _nanoseconds = count(took, "ns");
+    }
+
+    let plain = check(&[]);
     assert!(
         !stdout(&plain).contains("measure: "),
         "a check measures nothing unasked"
     );
 
-    let measured = ran(gandr(&[check, Path::new("--measure"), &scratch.0]));
+    let recorded = rows(&check(&[Path::new("--measure")]));
     assert_eq!(
-        code(&measured),
-        Code(0_i32),
-        "a measure settles nothing: {}",
-        stderr(&measured)
+        named(&recorded),
+        written,
+        "a recorded verdict's admission is measured as a checked one is"
     );
-    let printed = stdout(&measured);
-    let mut rows: Vec<(String, String)> = printed
-        .lines()
-        .filter_map(|line| line.strip_prefix("measure: "))
-        .map(|row| {
-            let (path, rest) = row.split_once(": ").expect("a row names its source");
-            let (name, sizes) = rest.split_once(": ").expect("a row names its declaration");
-            assert_eq!(sizes.split(", ").count(), 3, "{sizes:?} spells three sizes");
-            let mut read = [0_u64; 3];
-            for ((slot, size), unit) in read
-                .iter_mut()
-                .zip(sizes.split(", "))
-                .zip(["bytes", "shared", "unshared"])
-            {
-                *slot = size
-                    .strip_suffix(unit)
-                    .and_then(|count| count.trim_end().parse().ok())
-                    .unwrap_or_else(|| panic!("{sizes:?} spells its {unit}"));
-            }
-            let [bytes, shared, unshared] = read;
-            assert!(bytes > 0, "a segment holds bytes: {row}");
-            assert!(
-                shared <= unshared,
-                "a segment adds no more entries than its roots' trees hold: {row}"
-            );
-            let file = Path::new(path)
-                .file_name()
-                .map(|file| file.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            (file, name.to_owned())
-        })
-        .collect();
-    rows.sort();
-    assert_eq!(
-        rows,
-        [
-            ("base.gandr".to_owned(), "one".to_owned()),
-            ("top.gandr".to_owned(), "two".to_owned())
-        ],
-        "each source measures the declaration it writes, and none it imports: {printed}"
-    );
+    for &(_, ref name, ref tally) in &recorded {
+        let [ref verdict, ref took] = *tally.as_slice()
+        else {
+            panic!("{name}'s recalled row spells its admission and a time: {tally:?}");
+        };
+        assert_eq!(
+            verdict, "admitted on a recorded verdict",
+            "{name} ran no check, and its row says so rather than counting nothing"
+        );
+        let _nanoseconds = count(took, "ns");
+    }
 }
 
 #[test]

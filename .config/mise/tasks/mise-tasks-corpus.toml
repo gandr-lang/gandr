@@ -37,10 +37,13 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 # Markakis, Offord, Sarti and Vicary, "Naturality for Higher-Dimensional Path
 # Types", arXiv:2501.11620, Example 1.4 and § 6). A row's bytes are its
 # segment in the kernel artifact, its shared size the subterm-table entries
-# the segment adds, and its unshared size its roots' expanded work. The
-# check's wall time and peak resident set follow, with the load average they
-# were taken under. The check runs over scratch configuration, cache and data
-# directories, so it reads no verdict and commits nothing to the user's store.
+# the segment adds, and its unshared size its roots' expanded work. Its goals
+# are those the kernel's check of it expanded, recalled from its memo and
+# answered by an earlier admission's kept outcome, and its time the kernel's
+# admission of it. The check's wall time and peak resident set follow, with
+# the load average they were taken under. The check runs over scratch
+# configuration, cache and data directories, so it reads no verdict and
+# commits nothing to the user's store.
 ["bench:stress"]
 description = "Check library/math measured and timed, its cylinder composites beside Catt's artifact sizes"
 run = '''
@@ -76,16 +79,18 @@ BEGIN {
   if (part[3] in bytes) {
     split(part[4], size, ", ")
     sub(/ bytes$/, "", size[1]); sub(/ shared$/, "", size[2]); sub(/ unshared$/, "", size[3])
-    row[part[3]] = size[1] "\t" size[2] "\t" size[3]
+    sub(/ expanded$/, "", size[4]); sub(/ recalled$/, "", size[5]); sub(/ kept$/, "", size[6])
+    if (size[7] ~ / ns$/) { sub(/ ns$/, "", size[7]); size[7] = sprintf("%.1f", size[7] / 1000) }
+    row[part[3]] = size[1] "\t" size[2] "\t" size[3] "\t" size[4] "\t" size[5] "\t" size[6] "\t" size[7]
   }
 }
 END {
-  print "| declaration | Catt built-in | Catt bytes | gandr bytes | shared | unshared |"
-  print "| --- | --- | --: | --: | --: | --: |"
+  print "| declaration | Catt built-in | Catt bytes | gandr bytes | shared | unshared | expanded | recalled | kept | kernel µs |"
+  print "| --- | --- | --: | --: | --: | --: | --: | --: | --: | --: |"
   for (i = 1; i <= count; i++) {
     if (!(name[i] in row)) { missing = missing " " name[i]; continue }
     split(row[name[i]], size, "\t")
-    printf "| `%s` | `%s` | %s | %s | %s | %s |\n", name[i], builtin[name[i]], bytes[name[i]], size[1], size[2], size[3]
+    printf "| `%s` | `%s` | %s | %s | %s | %s | %s | %s | %s | %s |\n", name[i], builtin[name[i]], bytes[name[i]], size[1], size[2], size[3], size[4], size[5], size[6], size[7]
   }
   if (missing != "") { printf "bench:stress: no row for%s\n", missing > "/dev/stderr"; exit 1 }
 }' "$scratch/check"

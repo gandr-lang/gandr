@@ -1,5 +1,5 @@
 //! Each declaration a settled source writes, measured in the kernel artifact
-//! its component's admission exported.
+//! its component's admission exported, and in the tally of that admission.
 //!
 //! # A row is a segment of the kernel's artifact
 //!
@@ -13,13 +13,20 @@
 //! is one node, so a row measures the declaration as written over the
 //! definitions it names, never unfolded.
 //!
+//! A row also reads what the admission tallied: the census the kernel's check
+//! charged, goal by goal, and the time the kernel took to admit it. The census
+//! counts each goal the check expanded, each its memo recalled and each an
+//! earlier admission's kept outcome answered. A declaration a recorded verdict
+//! admitted ran no check, and its row says so rather than counting nothing. A
+//! resumed declaration carries the tally of the run that admitted it.
+//!
 //! # Measuring reads and never checks
 //!
 //! [`measure`] decodes the artifact the admission already exported and
 //! changes no verdict. It reads each declaration at the position its
 //! admission recorded, which only a walk asked to measure records
-//! ([`crate::Walk::measuring`]), so a check that measures nothing records
-//! and decodes nothing more.
+//! ([`crate::Walk::measuring`]), so a check that measures nothing records,
+//! times and decodes nothing more.
 //!
 //! # References
 //!
@@ -33,6 +40,9 @@
 //!   and unshared sizes a row reads.
 
 use anodized::spec;
+use gandr_core_checker::bridge::AdmissionTime;
+use gandr_kernel_core::ExpansionCensus;
+use gandr_kernel_core::tallied;
 use gandr_kernel_term::ByteCount;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::ExpandedWork;
@@ -44,12 +54,13 @@ use quenchant_shape::shape::Maybe;
 use crate::compose::Composed;
 
 /// One declaration a source writes, measured in its component's kernel
-/// artifact.
+/// artifact and in its admission's tally.
 ///
 /// # Specification
 /// - requires: built by [`measure`].
 /// - ensures: the declaration's name, its segment's bytes, the table entries
-///   its segment adds and the expanded work of its roots.
+///   its segment adds, the expanded work of its roots, the census its check
+///   charged and the time its admission took.
 /// - panics: none.
 /// - executable: none — the fields are private and set only by [`measure`],
 ///   whose specification states them.
@@ -68,6 +79,11 @@ pub struct Measure<'source>
     shared: TableEntryCount,
     /// The expanded work of its roots: its unshared size.
     unshared: ExpandedWork,
+    /// What the kernel's check of it charged, goal by goal, or why no check
+    /// was tallied.
+    census: Maybe<ExpansionCensus, tallied::Absent>,
+    /// How long the kernel took to admit it, or why no time was read.
+    took: AdmissionTime,
 }
 
 impl<'source> Measure<'source>
@@ -115,6 +131,30 @@ impl<'source> Measure<'source>
     {
         self.unshared
     }
+
+    /// What the kernel's check of the declaration charged: each goal it
+    /// expanded, each its memo recalled and each an earlier admission's kept
+    /// outcome answered. A declaration a recorded verdict admitted ran no
+    /// check here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn census(&self) -> Maybe<ExpansionCensus, tallied::Absent>
+    {
+        self.census
+    }
+
+    /// How long the kernel took to admit the declaration, or why no time was
+    /// read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn took(&self) -> AdmissionTime
+    {
+        self.took
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -146,9 +186,11 @@ quenchant_shape::reason_enum! {
 ///   positions. Otherwise one row per declaration the source's report names
 ///   that crossed into the kernel, in the report's order, read at the artifact
 ///   position the admission gave it: its name, its segment's bytes, the table
-///   entries its segment adds and the expanded work of its roots. No row names
+///   entries its segment adds, the expanded work of its roots, the census the
+///   kernel's check of it charged and the time its admission took. No row names
 ///   a declaration of the source's import closure.
-/// - provides: the sizes `gandr check --measure` prints for each declaration.
+/// - provides: the sizes and the tally `gandr check --measure` prints for each
+///   declaration.
 /// - fails: [`DecodeError`] when the exported artifact does not decode, which
 ///   the kernel's own export never meets.
 /// - panics: none.
@@ -162,8 +204,10 @@ quenchant_shape::reason_enum! {
 ///   writes, in order, and none its closure holds. Each row reads the segment
 ///   of the artifact's declaration of its name, which a row read at its module
 ///   position does not. A shared size never passes its unshared size, which
-///   separates the two columns swapped. A walk not asked to measure answers
-///   that it recorded no positions, rather than no rows.
+///   separates the two columns swapped. Each row's census charges at least one
+///   goal and its admission is timed, which a row read from an untimed or
+///   unchecked admission is not. A walk not asked to measure answers that it
+///   recorded no positions, rather than no rows.
 /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
 #[inline]
 #[spec(ensures: |ret| match (composed, ret.as_ref()) {
@@ -199,7 +243,11 @@ pub fn measure<'source>(
         .declarations()
         .iter()
         .filter_map(|declaration| {
-            let position = positions.position(declaration.constant())?;
+            let Maybe::Present(placed) = positions.placed(declaration.constant())
+            else {
+                return None;
+            };
+            let position = placed.position();
             let measure = measures.get(usize::from(position))?;
             let span = layout.declaration_segment(position)?;
             Some(Measure {
@@ -209,6 +257,8 @@ pub fn measure<'source>(
                 ),
                 shared: measure.entries(),
                 unshared: measure.expanded_work(),
+                census: placed.census(),
+                took: placed.took(),
             })
         })
         .collect();

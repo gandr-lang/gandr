@@ -1663,6 +1663,7 @@ where
         // whole block is a constant-false branch that monomorphization
         // removes.
         let mut recalled: Option<Level> = None;
+        let mut answered = ExpansionKind::Expanded;
         if matches!(M::ACTIVITY, MemoActivity::Active) {
             let question = Question::ask(arena, session, goal.support());
             let hit = memo.filed(question.digest()).find(|hit| {
@@ -1683,6 +1684,7 @@ where
                 // had run.
                 session.read(hit.support().reads(), &context);
                 recalled = Some(level.clone());
+                answered = ExpansionKind::Recalled;
             }
             else if let Some(NodeOutcome::Formed(level)) = parameters
                 .name(arena, &judgement, session)
@@ -1691,16 +1693,14 @@ where
                 // An earlier admission formed it under these parameters. Its
                 // binders are read here as if its walk had run.
                 recalled = Some(level);
+                answered = ExpansionKind::Kept;
             }
             else {
                 let opened = session.open(&context);
                 frames.push(TypeLevelFrame::Memoize(question, opened));
             }
         }
-        census.record(SupportPlane::Type, match recalled {
-            Some(_) => ExpansionKind::Recalled,
-            None => ExpansionKind::Expanded,
-        });
+        census.record(SupportPlane::Type, answered);
         let mut produced: Level = match recalled {
             Some(level) => level,
             None => match goal {
@@ -3227,6 +3227,7 @@ where
         // constant-false branch that monomorphization removes, so the memoless
         // path compiles to the code it would have with no memo at all.
         let mut recalled: Option<Produced> = None;
+        let mut answered = ExpansionKind::Expanded;
         if matches!(M::ACTIVITY, MemoActivity::Active)
             && matches!(root, Maybe::Absent(_))
             && staged_bodies == 0
@@ -3245,6 +3246,7 @@ where
                 // subgoals had run.
                 session.read(hit.support().reads(), &context);
                 recalled = Some(outcome);
+                answered = ExpansionKind::Recalled;
             }
             else if let Some(Maybe::Present(outcome)) = parameters
                 .name(arena, &judgement, session)
@@ -3254,16 +3256,14 @@ where
                 // An earlier admission answered it under these parameters.
                 // Its binders are read here as if its subgoals had run.
                 recalled = Some(outcome);
+                answered = ExpansionKind::Kept;
             }
             else {
                 let opened = session.open(&context);
                 frames.push(Frame::Memoize(question, opened));
             }
         }
-        census.record(SupportPlane::Term, match recalled {
-            Some(_) => ExpansionKind::Recalled,
-            None => ExpansionKind::Expanded,
-        });
+        census.record(SupportPlane::Term, answered);
         let mut produced: Produced = match recalled {
             Some(outcome) => outcome,
             None => match goal {
@@ -6375,7 +6375,8 @@ fn check_sealing_provenance(
 }
 
 /// Check a declaration through the default path: a fresh live memo, built here
-/// and dropped here, against the session its environment lends it.
+/// and dropped here, against the session its environment lends it, charging
+/// each goal to the census the caller keeps.
 ///
 /// This is the entry the admission choke point calls, and it takes **no memo
 /// parameter** — which is the structural form of the lifetime rule. A caller
@@ -6402,9 +6403,11 @@ fn check_sealing_provenance(
 ///   readable. Synthesized intermediates are appended for the caller to
 ///   truncate.
 /// - provides: the body check the choke point runs, with a fresh live memo on
-///   both machines, and the environment's names and kept outcomes. Full typing
-///   and admission-log provenance still require the rule derivation. An
-///   operational refusal does not establish ill-typedness.
+///   both machines, and the environment's names and kept outcomes. `census`
+///   gains one charge per goal, as [`check_declaration_with_memo`] charges it,
+///   so the caller keeps the admission's tally. Full typing and admission-log
+///   provenance still require the rule derivation. An operational refusal does
+///   not establish ill-typedness.
 /// - fails: any [`KernelError`] the checker surfaces.
 /// - panics: none.
 ///
@@ -6438,19 +6441,12 @@ pub(crate) fn check_declaration(
     judgement: Judgement<'_>,
     declaration: &Declaration,
     session: &mut SupportContext,
+    census: &mut ExpansionCensus,
 ) -> Result<occurrence::Accessibility, KernelError>
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
-    let mut census = ExpansionCensus::new();
     session.begin_admission();
-    check_declaration_with_memo(
-        arena,
-        judgement,
-        declaration,
-        &mut memo,
-        session,
-        &mut census,
-    )
+    check_declaration_with_memo(arena, judgement, declaration, &mut memo, session, census)
 }
 
 /// Form a mutual block definition's declared type before its block's
@@ -6462,7 +6458,8 @@ pub(crate) fn check_declaration(
 ///   with no arena but `arena`.
 /// - ensures: `Ok(())` when the type forms and every code it owes checks, as a
 ///   lone declaration's declared type does; intermediates are appended for the
-///   caller to truncate.
+///   caller to truncate. `census` gains one charge per goal the formation
+///   walks.
 /// - provides: the foresight a family's fields rest on when they name the
 ///   definition at this type.
 /// - fails: any [`KernelError`] the formation surfaces.
@@ -6481,10 +6478,10 @@ pub(crate) fn form_declared(
     judgement: Judgement<'_>,
     declared: ValueTypeId,
     session: &mut SupportContext,
+    census: &mut ExpansionCensus,
 ) -> Result<(), KernelError>
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
-    let mut census = ExpansionCensus::new();
     session.begin_admission();
     session.name_constants(judgement.entries);
     let presentations = crate::presented::Presentations::of(judgement.entries);
@@ -6500,11 +6497,11 @@ pub(crate) fn form_declared(
         Recording {
             memo: &mut memo,
             session,
-            census: &mut census,
+            census,
             owed: &mut owed,
         },
     )?;
-    drain_code_obligations(arena, judgement, &mut memo, session, &mut census, owed)
+    drain_code_obligations(arena, judgement, &mut memo, session, census, owed)
 }
 
 /// Check a declaration against a caller-supplied memo — the **opt-in** entry.
@@ -6574,24 +6571,30 @@ pub(crate) fn form_declared(
 #[spec(captures: [entry_mark = arena.watermark(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
+    entry_term_kept = u64::from(census.plane_kept(SupportPlane::Term)),
     entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
-    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type))],
+    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type)),
+    entry_type_kept = u64::from(census.plane_kept(SupportPlane::Type))],
     ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
         let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
         let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
+        let term_kept = u64::from(census.plane_kept(SupportPlane::Term));
         let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
         let type_recalled = u64::from(census.plane_recalls(SupportPlane::Type));
+        let type_kept = u64::from(census.plane_kept(SupportPlane::Type));
         term_expanded >= entry_term_expanded
             && term_recalled >= entry_term_recalled
+            && term_kept >= entry_term_kept
             && type_expanded >= entry_type_expanded
             && type_recalled >= entry_type_recalled
+            && type_kept >= entry_type_kept
             && (matches!(ret, Err(KernelError::CrossBlockReference { .. }
                     | KernelError::NegativeOccurrence(_)
                     | KernelError::IndexOccurrence(_)
                     | KernelError::NestedOccurrence(_)
                     | KernelError::NonUniformOccurrence(_)))
-                || type_expanded.saturating_add(type_recalled)
-                    >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(1_u64))
+                || type_expanded.saturating_add(type_recalled).saturating_add(type_kept)
+                    >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(entry_type_kept).saturating_add(1_u64))
     })]
 #[inline]
 pub fn check_declaration_with_memo<M>(
@@ -7172,27 +7175,38 @@ where
 #[spec(captures: [entry_mark = arena.watermark(), entry_empty = owed.is_empty(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
+    entry_term_kept = u64::from(census.plane_kept(SupportPlane::Term)),
     entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
-    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type))],
+    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type)),
+    entry_type_kept = u64::from(census.plane_kept(SupportPlane::Type))],
     ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
         let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
         let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
+        let term_kept = u64::from(census.plane_kept(SupportPlane::Term));
         let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
         let type_recalled = u64::from(census.plane_recalls(SupportPlane::Type));
+        let type_kept = u64::from(census.plane_kept(SupportPlane::Type));
         term_expanded >= entry_term_expanded
             && term_recalled >= entry_term_recalled
+            && term_kept >= entry_term_kept
             && type_expanded >= entry_type_expanded
             && type_recalled >= entry_type_recalled
+            && type_kept >= entry_type_kept
             && if entry_empty {
                 ret.is_ok() && arena.watermark() == entry_mark
                 && term_expanded == entry_term_expanded
                 && term_recalled == entry_term_recalled
+                && term_kept == entry_term_kept
                 && type_expanded == entry_type_expanded
                 && type_recalled == entry_type_recalled
+                && type_kept == entry_type_kept
             } else {
                 (usize::from(MAX_CODE_OBLIGATIONS) == 0
-                    || term_expanded.saturating_add(term_recalled)
-                        >= entry_term_expanded.saturating_add(entry_term_recalled).saturating_add(1_u64))
+                    || term_expanded.saturating_add(term_recalled).saturating_add(term_kept)
+                        >= entry_term_expanded
+                            .saturating_add(entry_term_recalled)
+                            .saturating_add(entry_term_kept)
+                            .saturating_add(1_u64))
                     && match ret {
                         Err(KernelError::CodeObligationCeiling { ceiling }) => ceiling == MAX_CODE_OBLIGATIONS,
                         _ => true,

@@ -64,6 +64,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::time::Duration;
 
 use anodized::spec;
 use gandr_core_nbe::TraceNode;
@@ -128,12 +129,15 @@ use super::Recall;
 use super::Refusal;
 use super::Replayed;
 use super::Source;
+use super::Timed;
+use super::Untimed;
 use super::crossed;
 use super::fault;
 use super::readmit;
 use super::readmit_resuming;
 use super::readmit_retiring;
 use super::readmit_with;
+use super::timed;
 use crate::code::Lift;
 use crate::code::Unfolded;
 use crate::context::CheckBudget;
@@ -169,6 +173,7 @@ use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
 use crate::retire::Polled;
 use crate::retire::Unretired;
+use crate::template::Clock;
 
 /// A module position in a fixture.
 #[repr(transparent)]
@@ -1188,6 +1193,7 @@ fn a_retired_readmission_resumes_from_its_record_1547()
         (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
         &Recall::recheck(),
         &poll,
+        &mut Untimed,
     );
     let Polled::Retired((), Maybe::Present(record)) = retired
     else {
@@ -1238,10 +1244,131 @@ fn a_retired_readmission_resumes_from_its_record_1547()
                 (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
                 &Recall::recheck(),
                 &at_once,
+                &mut Untimed,
             ),
             Polled::Retired((), Maybe::Absent(crossed::Absent::Unchanged))
         ),
         "retired before its first declaration, a readmission crossed nothing to record"
+    );
+}
+
+/// A clock one microsecond past its last reading at each reading.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default)]
+struct Ticking(Duration);
+
+impl Clock for Ticking
+{
+    /// One microsecond past the last reading.
+    ///
+    /// # Specification
+    /// trivial.
+    fn now(&mut self) -> Duration
+    {
+        self.0 = self.0.saturating_add(Duration::from_micros(1));
+        self.0
+    }
+}
+
+/// A readmission timed by a clock that ticks once per reading times each
+/// declaration it offers the kernel at the one tick its admission spans, and
+/// marks each one it never offers. An untimed readmission reads no clock, and
+/// a resumed declaration keeps the time of the run that admitted it.
+#[test]
+fn a_timed_readmission_times_each_admission_it_makes()
+{
+    let offered = |outcome: &Outcome| match *outcome {
+        Outcome::Defined { .. }
+        | Outcome::Data { .. }
+        | Outcome::Assumed { .. }
+        | Outcome::Rejected(_) => true,
+        Outcome::Marked(_) | Outcome::Static | Outcome::Suspended | Outcome::Refused(_) => false,
+    };
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Integer, At(4));
+    let timed = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Timed::by(Ticking::default()),
+    )
+    .whole()
+    .0;
+    let kinds: Vec<bool> = timed
+        .readmitted()
+        .iter()
+        .map(|entry| offered(entry.outcome()))
+        .collect();
+    assert!(
+        kinds.contains(&true) && kinds.contains(&false),
+        "`Alias` is refused, so the module holds a declaration the kernel is never offered: {kinds:?}"
+    );
+    for entry in timed.readmitted() {
+        let expected = if offered(entry.outcome()) {
+            Maybe::Present(Duration::from_micros(1))
+        }
+        else {
+            Maybe::Absent(timed::Absent::Unoffered)
+        };
+        assert_eq!(entry.took(), expected, "{:?}", entry.outcome());
+    }
+
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Integer, At(4));
+    let untimed = readmit(&mut arena, &report);
+    assert_eq!(
+        untimed
+            .readmitted()
+            .iter()
+            .map(Readmitted::took)
+            .collect::<Vec<_>>(),
+        kinds
+            .iter()
+            .map(|&offered| Maybe::Absent(if offered {
+                timed::Absent::Untimed
+            }
+            else {
+                timed::Absent::Unoffered
+            }))
+            .collect::<Vec<_>>(),
+        "an untimed readmission reads no clock"
+    );
+
+    let (mut first, first_report) = numerals(Padding(0), AliasBody::Num, At(3));
+    let Polled::Whole((_, Maybe::Present(recorded))) = readmit_retiring(
+        &mut first,
+        &first_report,
+        (
+            LeadingCount::from(2_usize),
+            Maybe::Absent(crossed::Absent::Unasked),
+        ),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Timed::by(Ticking::default()),
+    )
+    else {
+        panic!("the first two declarations are recorded");
+    };
+    let (mut again, again_report) = numerals(Padding(7), AliasBody::Num, At(4));
+    let (resumed, _) = readmit_resuming(
+        &mut again,
+        &again_report,
+        LeadingCount::NONE,
+        Maybe::Present(&recorded),
+    );
+    assert_eq!(
+        resumed
+            .readmitted()
+            .iter()
+            .map(Readmitted::took)
+            .collect::<Vec<_>>(),
+        vec![
+            Maybe::Present(Duration::from_micros(1)),
+            Maybe::Present(Duration::from_micros(1)),
+            Maybe::Absent(timed::Absent::Untimed),
+            Maybe::Absent(timed::Absent::Untimed),
+        ],
+        "the two resumed declarations keep the timed run's ticks, and the two crossed again read no clock"
     );
 }
 
@@ -1286,6 +1413,7 @@ fn readmitted_under(recall: &Recall) -> Readmission
         (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
         recall,
         &Unretired,
+        &mut Untimed,
     )
     .whole()
     .0

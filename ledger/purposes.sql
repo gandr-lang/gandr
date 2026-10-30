@@ -46,16 +46,20 @@ CREATE TABLE purpose(
   CONSTRAINT "a finding is written exactly when naming is not fits or doc is not sound" CHECK((finding IS NULL) = (naming = 'fits' AND doc = 'sound'))
 ) WITHOUT ROWID;
 INSERT INTO purpose VALUES('core-checker','access::AccessDefect','enum','How a held value or a view broke the access discipline.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::AdmissionTime','type_alias','How long the kernel took to admit one declaration, or why no time was read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::ArtifactAudit','struct','What a readmitted artifact rests on: the union of its declarations'' audits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Crossed','struct','The environment once the leading declarations crossed, beside the declarations that crossed and their boundary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::LeadingCount','struct','Counts the leading declarations a readmission crosses before the rest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Outcome','enum','What became of one declaration at the kernel boundary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Readmission','struct','A module''s readmission: the kernel environment it built, one outcome per declaration, the artifact''s audit, and the declarations the kernel admitted.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','bridge::Readmitted','struct','One declaration''s outcome, beside the position and origin the judgement echoed and the certificates its erasure replayed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Readmitted','struct','One declaration''s outcome, beside the position and origin the judgement echoed, the certificates its erasure replayed and the time its admission took.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Readmitting','type_alias','The declarations a readmitting run crossed before it, as a polled readmission beside what retired it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Recall','struct','Holds whose recorded kernel verdicts a fresh readmission believes and the source it reads them from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Refusal','enum','Whose fact a readmission''s refusal records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Replayed','struct','One certificate the kernel replayed for a declaration: what its step unfolded, the content of the instance it fired at, and the kernel''s verdict on its trace.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Stopwatch','trait','How a readmission times each admission it asks of the kernel.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Timed','struct','A stopwatch that reads the caller''s clock around each admission.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Untimed','struct','A stopwatch that reads no clock.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::readmit','function','Readmits a module''s report to the kernel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::readmit_resuming','function','Readmits a module''s report, resuming at the boundary it crossed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::readmit_retiring','function','Readmits a module''s report, resuming at the boundary it crossed and polling a retirement.',NULL,'fits','sound',NULL);
@@ -2039,7 +2043,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','component::lay_out_written','fu
 INSERT INTO purpose VALUES('surface-dispatcher','component::named_path','function','The path a laid-out closure names the file at `path` by: its canonical path when it exists, else the path a file written there will have, as lay_out states for Laid::named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::path_imports','function','The path addresses the imports at `tree`''s root write, in source order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Admission','struct','What offering a judged module to the kernel needs: the arena it was judged over, its verdicts, and the structured names the export writes.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','compose::ArtifactPositions','struct','Where each declaration that crossed into the kernel stands in its artifact, by its module position.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::ArtifactPositions','struct','Where each declaration that crossed into the kernel stands in its artifact, and what its admission tallied, by its module position.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Checking','enum','How a lowered module is checked: whole, or after a closure judged once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::ComposeFault','enum','Why one source could not be carried through the pipeline: an engine fault, never a verdict about the source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Composed','enum','What one source became.',NULL,'fits','sound',NULL);
@@ -2049,7 +2053,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::JudgedClosure','struct
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowered','enum','What the lowering made of one parsed source, before any checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowering','struct','One source parsed and lowered: what the lowering made of it, beside the completion obligations the parser recorded while committing its tree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::LoweringCount','struct','How many sources a run has lowered.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','compose::Positioning','enum','Whether an admission records where each declaration stands in its artifact, which a measure reads.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::Placed','struct','Where one declaration stands in its component''s kernel artifact, and the census and the time of its admission.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::Positioning','enum','Whether an admission records where each declaration stands in its artifact and what its admission tallied, which a measure reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Recorded','struct','The untabled judgement of a module''s latest revision, held so that the next revision whose judgement reads the same inputs takes its verdicts rather than judging again.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Recording','enum','Whether an untabled judgement answers from, and keeps, the judgement of a module''s revision before.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Resumption','struct','What Admission::admit_resuming answers.',NULL,'fits','sound',NULL);
@@ -2137,7 +2142,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secrets','enum','Wher
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Site','struct','One place a world runs at, as its file''s `Site` model states it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Stated','enum','A field a site''s, a manifold''s or a secrets model''s file states.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Undeployed','enum','Why a site''s or a manifold''s file deploys nothing.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','measure::Measure','struct','One declaration''s sizes in its component''s kernel artifact: its segment''s bytes, the table entries the segment adds and its roots'' expanded work.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','measure::Measure','struct','One declaration''s sizes in its component''s kernel artifact and its admission''s tally: its segment''s bytes, the table entries the segment adds, its roots'' expanded work, the census its check charged and the time its admission took.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','measure::measure','function','Measure each declaration a settled source writes in its component''s kernel artifact.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Absence','enum','Whether reconciling a held file writes it where none stands, or leaves none because the model states nothing it would record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Body','struct','The body of a file the checker wrote, below its digest header.',NULL,'fits','sound',NULL);
