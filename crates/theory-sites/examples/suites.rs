@@ -13,6 +13,9 @@
 //!
 //! Run it with `cargo run --release -p gandr-theory-sites --example suites`.
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use core::fmt::Display;
 use std::io::Write;
 use std::io::stdout;
@@ -165,8 +168,8 @@ fn stratum_row(
 ) -> Result<(), RunError>
 {
     let start = Instant::now();
-    let catalogue = build(bound)?;
-    let verdict = match SegalStratum::certify(&catalogue, degree) {
+    let catalogue = Arc::new(build(bound)?);
+    let verdict = match SegalStratum::certify(Arc::clone(&catalogue), degree) {
         Ok(stratum) => format!(
             "certified: {} corollas, {} cocones",
             stratum.corollas().len(),

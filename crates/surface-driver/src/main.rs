@@ -3112,13 +3112,15 @@ fn stage(
 ///   manifold the walk settled is judged as a deployment, as [`deployed`]
 ///   states. Then the final report, at the detailed and debug levels the line
 ///   `kernel: <n> recalled, <n> recorded, <n> unwritten; signed by <key>` when
-///   a verdict cache is installed, and the verdict, at the JSON level as one
-///   object whose `level` is `summary`. The exit is zero for settled, one for
-///   unsettled and two for faulted, as the walk's final report decides under
-///   the offered verb, or a lock, a manifest, an export, a dependency's export
-///   or a deployment when that is worse, at every verbosity. Every byte written
-///   and the exit are the same at every width, save the time each measure line
-///   reads off the clock.
+///   a verdict cache is installed, and the line `strata: <n> recalled, <n>
+///   certified, <n> refused, <n> unattested, <n> unwritten; signed by <key>`
+///   with one `strata:` line per refusal when a stratum store is installed and
+///   was asked, and the verdict, at the JSON level as one object whose `level`
+///   is `summary`. The exit is zero for settled, one for unsettled and two for
+///   faulted, as the walk's final report decides under the offered verb, or a
+///   lock, a manifest, an export, a dependency's export or a deployment when
+///   that is worse, at every verbosity. Every byte written and the exit are the
+///   same at every width, save the time each measure line reads off the clock.
 /// - provides: ordered rendering and severity aggregation for check and test.
 /// - fails: the first write error, without visiting or writing anything after
 ///   it.
@@ -3299,10 +3301,18 @@ fn run(
     }
     else {
         writeln!(stdout, "{report}")?;
-        if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug)
-            && let Maybe::Present(tally) = gandr_surface_dispatcher::verdict_tally()
-        {
-            writeln!(stdout, "kernel: {tally}")?;
+        if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug) {
+            if let Maybe::Present(tally) = gandr_surface_dispatcher::verdict_tally() {
+                writeln!(stdout, "kernel: {tally}")?;
+            }
+            if let Maybe::Present(tally) = gandr_surface_dispatcher::strata_tally()
+                && tally.asked() == gandr_surface_dispatcher::Asking::Asked
+            {
+                writeln!(stdout, "strata: {tally}")?;
+                for refusal in tally.refusals() {
+                    writeln!(stdout, "strata: {refusal}")?;
+                }
+            }
         }
         match admitted {
             Maybe::Present(tally) => {

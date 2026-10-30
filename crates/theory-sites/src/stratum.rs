@@ -111,6 +111,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -133,6 +134,12 @@ use crate::segal::Cocones;
 use crate::segal::walk;
 use crate::shape::End;
 use crate::shape::Shape;
+
+mod image;
+
+pub use image::SitesBuild;
+pub use image::StratumImage;
+pub use image::Unreplayed;
 
 wrapper! {
     /// How many ports one side of a generator has.
@@ -1007,13 +1014,47 @@ impl Vacuity
     }
 }
 
+/// Every shape of degree one in `catalogue`, in catalogue order, with its
+/// automorphisms: the included maps of its hom set to itself, in hom-set
+/// order.
+///
+/// # Specification
+/// trivial.
+fn corollas_of(catalogue: &Catalogue) -> Vec<Corolla>
+{
+    let one = Degree::from(1_usize);
+    let mut corollas = Vec::new();
+    for (index, shape) in catalogue.entries() {
+        if Degree::of(shape) != one {
+            continue;
+        }
+        let automorphisms = match catalogue.maps(index, index) {
+            Maybe::Present(maps) => maps
+                .iter()
+                .filter(|map| included(map) == Membership::Inside)
+                .cloned()
+                .collect(),
+            Maybe::Absent(_) => Vec::new(),
+        };
+        corollas.push(Corolla {
+            index,
+            legs: Legs::of(shape, Edge::from(0_usize)),
+            automorphisms,
+        });
+    }
+    corollas
+}
+
 /// The stratum of a degree over a catalogue whose site passes the corolla
 /// condition and, above degree one, the Segal condition to that degree.
+///
+/// The stratum shares its catalogue, so a holder keeps the stratum without
+/// the catalogue's lifetime.
 #[derive(Clone, Debug)]
-pub struct SegalStratum<'catalogue>
+pub struct SegalStratum
 {
     /// The catalogue.
-    catalogue: &'catalogue Catalogue,
+    catalogue: Arc<Catalogue>,
     /// The degree.
     degree: Degree,
     /// The degrees it names as vacuous.
@@ -1025,7 +1066,7 @@ pub struct SegalStratum<'catalogue>
     cocones: Vec<Cocone>,
 }
 
-impl<'catalogue> SegalStratum<'catalogue>
+impl SegalStratum
 {
     /// The stratum of `degree` over `catalogue`, when it is certified.
     ///
@@ -1068,18 +1109,21 @@ impl<'catalogue> SegalStratum<'catalogue>
     ///
     /// [`segal`]: crate::segal()
     #[inline]
-    #[spec(ensures: |ref ret| match *ret {
-        | Ok(ref stratum) => stratum.degree == degree && stratum.vacuity == Vacuity::new(Degree::top(catalogue.shapes()), degree) && stratum.corollas.iter().all(|corolla| {
-            matches!(catalogue.shape(corolla.index), Maybe::Present(shape) if Degree::of(shape) == Degree::from(1_usize))
-        }) && stratum.cocones.iter().all(|cocone| {
-            matches!(catalogue.shape(cocone.shape()), Maybe::Present(shape) if Degree::of(shape) > Degree::from(1_usize) && Degree::of(shape) <= degree)
-        }),
-        | Err(Uncertified::Degree { degree: refused }) => refused == degree && (degree == Degree::default() || catalogue.reach() < degree),
-        | Err(Uncertified::Condition { ref witness, degree: failing }) => failing <= degree
-            && (failing == Degree::from(1_usize) || Degree::of(witness) == failing),
-    })]
+    #[spec(
+        captures: [held = Arc::clone(&catalogue)],
+        ensures: |ref ret| match *ret {
+            | Ok(ref stratum) => Arc::ptr_eq(&stratum.catalogue, &held) && stratum.degree == degree && stratum.vacuity == Vacuity::new(Degree::top(held.shapes()), degree) && stratum.corollas.iter().all(|corolla| {
+                matches!(held.shape(corolla.index), Maybe::Present(shape) if Degree::of(shape) == Degree::from(1_usize))
+            }) && stratum.cocones.iter().all(|cocone| {
+                matches!(held.shape(cocone.shape()), Maybe::Present(shape) if Degree::of(shape) > Degree::from(1_usize) && Degree::of(shape) <= degree)
+            }),
+            | Err(Uncertified::Degree { degree: refused }) => refused == degree && (degree == Degree::default() || held.reach() < degree),
+            | Err(Uncertified::Condition { ref witness, degree: failing }) => failing <= degree
+                && (failing == Degree::from(1_usize) || Degree::of(witness) == failing),
+        },
+    )]
     pub fn certify(
-        catalogue: &'catalogue Catalogue,
+        catalogue: Arc<Catalogue>,
         degree: Degree,
     ) -> Result<Self, Uncertified>
     {
@@ -1087,7 +1131,7 @@ impl<'catalogue> SegalStratum<'catalogue>
         if degree < one {
             return Err(Uncertified::Degree { degree });
         }
-        if let Outcome::Fails { witness, .. } = corolla(&Site::new(catalogue)) {
+        if let Outcome::Fails { witness, .. } = corolla(&Site::new(&catalogue)) {
             return Err(Uncertified::Condition {
                 witness,
                 degree: one,
@@ -1096,36 +1140,19 @@ impl<'catalogue> SegalStratum<'catalogue>
         if catalogue.reach() < degree {
             return Err(Uncertified::Degree { degree });
         }
-        let (outcome, cocones) = walk(catalogue, degree, Cocones::Admitted);
+        let (outcome, cocones) = walk(&catalogue, degree, Cocones::Admitted);
         if let Outcome::Fails { witness, .. } = outcome {
             return Err(Uncertified::Condition {
                 degree: Degree::of(&witness.shape),
                 witness: witness.shape,
             });
         }
-        let mut corollas = Vec::new();
-        for (index, shape) in catalogue.entries() {
-            if Degree::of(shape) != one {
-                continue;
-            }
-            let automorphisms = match catalogue.maps(index, index) {
-                Maybe::Present(maps) => maps
-                    .iter()
-                    .filter(|map| included(map) == Membership::Inside)
-                    .cloned()
-                    .collect(),
-                Maybe::Absent(_) => Vec::new(),
-            };
-            corollas.push(Corolla {
-                index,
-                legs: Legs::of(shape, Edge::from(0_usize)),
-                automorphisms,
-            });
-        }
+        let corollas = corollas_of(&catalogue);
+        let vacuity = Vacuity::new(Degree::top(catalogue.shapes()), degree);
         Ok(Self {
             catalogue,
             degree,
-            vacuity: Vacuity::new(Degree::top(catalogue.shapes()), degree),
+            vacuity,
             corollas,
             cocones,
         })
@@ -1172,9 +1199,9 @@ impl<'catalogue> SegalStratum<'catalogue>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn catalogue(&self) -> &'catalogue Catalogue
+    pub fn catalogue(&self) -> &Catalogue
     {
-        self.catalogue
+        &self.catalogue
     }
 
     /// The corollas, in catalogue order.
@@ -1269,7 +1296,7 @@ impl Equivalence
         | Err(_) => true,
     })]
     pub fn check(
-        stratum: &SegalStratum<'_>,
+        stratum: &SegalStratum,
         sides: (&Species, &Species),
         mut components: BTreeMap<ShapeIndex, Bijection>,
     ) -> Result<Self, Defect>
@@ -1359,7 +1386,7 @@ impl Equivalence
         && probed(stratum, sides, natural) == Verdict::Holds)]
     pub fn extend(
         &self,
-        stratum: &SegalStratum<'_>,
+        stratum: &SegalStratum,
         sides: (&Species, &Species),
     ) -> Natural
     {
@@ -1517,12 +1544,12 @@ impl Natural
 ///   the identity at the graft does not.
 /// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
 fn probed(
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     sides: (&Species, &Species),
     natural: &Natural,
 ) -> Verdict
 {
-    let catalogue = stratum.catalogue;
+    let catalogue: &Catalogue = &stratum.catalogue;
     let sources = stratum
         .corollas
         .iter()
@@ -1620,12 +1647,12 @@ fn probed(
     | Err(_) => true,
 })]
 pub fn restrict(
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     sides: (&Species, &Species),
     natural: &Natural,
 ) -> Result<Equivalence, Defect>
 {
-    let catalogue = stratum.catalogue;
+    let catalogue: &Catalogue = &stratum.catalogue;
     let mut terms = Vec::with_capacity(catalogue.shapes().len());
     for (shape, form) in catalogue.entries() {
         let Some(bijection) = natural.components.get(usize::from(shape))

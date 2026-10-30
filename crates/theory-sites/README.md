@@ -33,6 +33,7 @@ The level-two evidence: over the chains to total size 13 and `W ≀ W` to 5, the
 ## References
 
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the programme's design for the iterated site (§ The design), one site under the wreath product. No level holds a stick, and an outer vertex may carry the empty shape, which the wreath builds.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: a stored image replays, never trusted.
 - `Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces` — lineage: Clemens Berger, "Iterated Wreath Product of the Simplex Category and Iterated Loop Spaces", _Advances in Mathematics_ 213, 2007, `doi:10.1016/j.aim.2006.12.006` — Definitions 3.1 and 3.3, the wreath and Θₙ as the iterated wreath of Δ.
 - `Henry-2018-nonunital_polygraphs_form_presheaf_category` — background: Simon Henry, "Non-Unital Polygraphs Form a Presheaf Category", preprint, 2018, `arXiv:1711.00744` — Corollary 2.4.9, the dropped stick's parallel one level up.
 - `Ruit-2024-pasting_theorem_iterated_segal_spaces` — exemplar: Jaco Ruit, "A Pasting Theorem for Iterated Segal Spaces", _Journal of Pure and Applied Algebra_ 228, 2024, `arXiv:2210.04549` — Theorem 3.49 and Corollaries 3.52 and 3.55, the pasting theorem level two's certificate instances; § 3.2, the pinwheel.
@@ -51,7 +52,7 @@ The level-two evidence: over the chains to total size 13 and `W ≀ W` to 5, the
 - `core_decomposition`, `grounded_stratum`, `deletion_classes`, `codegeneracies`, `corolla`: the point-count grade.
 - `merge`, `scalars`, `labelled_by_arity`, `unit_property`: the external product and the finite check that the empty diagram is its one weak unit.
 - `segal`, `Cocones`, `Cocone`, `Inclusion`, `Graft`, `Leg`, `SegalFailure`, `SegalDefect`: the Segal condition at degree `n`, each shape of degree two to `n` the colimit of its corollas along its grafting pushouts, over the families of maps whose images are disjoint, and refused at the first shape, test shape and family over the blanket families.
-- `SegalStratum`, `Uncertified`, `Vacuity`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`: the stratum certified at degree `n` through the corolla and Segal conditions, graphical species and their terms at every shape, an equivalence of species as the finite certificate natural along the corolla automorphisms, its extension to the free algebras, and the corolla restriction that reflects a natural isomorphism of the free algebras back to the species.
+- `SegalStratum`, `Uncertified`, `Vacuity`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`, `StratumImage`, `Unreplayed`, `SitesBuild`: the stratum certified at degree `n` through the corolla and Segal conditions, its image and the replay of its structure, graphical species and their terms at every shape, an equivalence of species as the finite certificate natural along the corolla automorphisms, its extension to the free algebras, and the corolla restriction that reflects a natural isomorphism of the free algebras back to the species.
 - `WreathStratum`, `WreathCocone`, `Cell`, `Spot`, `InnerGraft`, `segal_two`, `LevelFailure`, `LevelDefect`, `LevelUncertified`: level two certified at degree `n` from level one's certificate, its grounded objects direct with automorphisms and each object of degree two to `n` the colimit of its cells.
 
 Each item's rustdoc names its witnesses under `# Adequacy`.
@@ -97,13 +98,7 @@ fn example() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
-Print every condition's outcome at the bounds below, then run the tests in both modes:
-
-```sh
-cargo run --release -p gandr-theory-sites --example suites
-cargo nextest run -p gandr-theory-sites
-RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-theory-sites
-```
+[`src/lib.rs`](src/lib.rs) § Running prints every condition's outcome and runs the tests in both modes.
 
 ## Where the detail lives
 

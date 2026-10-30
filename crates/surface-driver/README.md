@@ -98,6 +98,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — `gandr cells` reports each cell's counts.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — the installation's key signs; the policy is the user's.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the stratum store a `check` installs.
 - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed hydration — a dependent reads each dependency's export by its address and re-admits it through the kernel.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage programme's worlds — `gandr host` is the process a migration runs at.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local artifact, the endpoint of a one-role choreography.

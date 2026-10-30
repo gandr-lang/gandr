@@ -539,7 +539,9 @@
 //!
 //! The source `# Specification` is authoritative; `#[spec(...)]` checks
 //! executable clauses. `# Adequacy` bounds finite witnesses, not unbounded
-//! proofs.
+//! proofs. Built with `--cfg anodized_panic` across the whole dependency
+//! graph, the `#[spec]` attributes check their clauses at runtime and panic
+//! on a violation; the enforcing test lane sets it.
 //!
 //! | Area | Contract source |
 //! | ---- | --------------- |

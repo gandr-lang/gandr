@@ -31,5 +31,10 @@ anodized.workspace = true
 gandr-theory-circuit-algebras.workspace = true
 quenchant-shape.workspace = true
 
+# The build script digests the theory crates' files and the lock into the
+# build identity a stored stratum's key binds.
+[build-dependencies]
+blake3.workspace = true
+
 [lints]
 workspace = true

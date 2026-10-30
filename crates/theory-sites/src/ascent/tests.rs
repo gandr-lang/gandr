@@ -2,6 +2,7 @@
 //! condition's unmediated family is stated on.
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec;
 
 use gandr_theory_circuit_algebras::EdgeCount;
@@ -28,15 +29,16 @@ use crate::wreath::WreathShape;
 fn a_cover_without_its_outer_graft_leaves_a_family_unmediated()
 {
     let bound = ShapeSize::from(13_usize);
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
-    let wreath = Wreath::build(&chains, &chains, bound);
-    let top = chains
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let level: &Catalogue = &chains;
+    let wreath = Wreath::build(level, level, bound);
+    let top = level
         .shapes()
         .iter()
         .map(Degree::of)
         .max()
         .expect("the catalogue holds shapes");
-    let below = SegalStratum::certify(&chains, top).expect("level one is certified");
+    let below = SegalStratum::certify(Arc::clone(&chains), top).expect("level one is certified");
     let outer = Shape::chain(EdgeCount::from(2_usize)).expect("the 2-chain is admitted");
     let object = WreathShape::new(outer, vec![Shape::default(), Shape::default()])
         .expect("one column per outer vertex");

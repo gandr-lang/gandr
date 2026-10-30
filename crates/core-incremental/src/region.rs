@@ -20,6 +20,12 @@
 //! that position and how many items of that key precede it — or `Unoccupied`.
 //! Two revisions agree on what an item reads exactly when they agree on
 //! references.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
+//!   strata persist in the store, which a [`Program`] hands every context its
+//!   pass makes.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -379,6 +385,8 @@ pub struct Program
         gandr_core_checker::tier::MakeTier,
         gandr_kernel_core::AdmissionPolicy,
     )>,
+    /// The store each pass's context recalls strata from and keeps them to.
+    strata: alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>,
 }
 
 impl Program
@@ -495,6 +503,7 @@ impl Program
                 },
             },
             tier: None,
+            strata: alloc::sync::Arc::new(gandr_core_checker::ua::NoStratumStore),
         })
     }
 
@@ -560,6 +569,42 @@ impl Program
     )>
     {
         self.tier
+    }
+
+    /// Hand each later pass's context `store`, which it recalls strata from
+    /// and keeps them to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later pass's context is handed `store`
+    ///   ([`gandr_core_checker::CheckingContext::keep_strata_in`]); the last
+    ///   store handed is the one kept.
+    /// - provides: the front end's hand-in of its stratum store to the
+    ///   incremental checker, whose passes make their own contexts.
+    /// - panics: none.
+    /// - executable: none — the store is a trait object no predicate compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two statements at one stratum ask the program's store
+    ///   once and hand it the stratum once, on a fresh pass and on one resumed
+    ///   after leading items.
+    /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_stratum_store_4034`
+    #[inline]
+    pub fn keep_strata_in(
+        &mut self,
+        store: alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>,
+    )
+    {
+        self.strata = store;
+    }
+
+    /// The store each pass's context is handed.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn strata(&self) -> alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>
+    {
+        alloc::sync::Arc::clone(&self.strata)
     }
 
     /// The arena, mutably, beside the layout: a pass grows the one while it

@@ -17,6 +17,13 @@
 //! refusal is never recorded. [`Environment::handed_on`] hands the chain to a
 //! resumed run without its records.
 //!
+//! An installation's key also signs a stratum of the checker's site, which
+//! the checker certified, under a derivation context no admission receipt
+//! uses ([`KernelSigner::sign_stratum`]). A run believes a stored stratum
+//! under the same [`TrustPolicy`] as a recorded verdict
+//! ([`TrustPolicy::believes_stratum`]), and the checker replays its structure
+//! before it uses it.
+//!
 //! [`Environment::handed_on`]: crate::Environment::handed_on
 //!
 //! # References
@@ -25,6 +32,8 @@
 //!   kernel-verdict-reuse — the key binds the kernel's whole input under a
 //!   collision-resistant hash, the record is attested, and a full re-check is
 //!   always available.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
+//!   strata persist in the store, under a receipt the installation's key signs.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -50,6 +59,9 @@ const KEY_CONTEXT: &str = "gandr kernel verdict key 2026-10-27";
 
 /// The context a receipt's message derives under.
 const RECEIPT_CONTEXT: &str = "gandr kernel verdict receipt 2026-10-27";
+
+/// The context a stratum receipt's message derives under.
+const STRATUM_CONTEXT: &str = "gandr checker stratum receipt 2026-10-30";
 
 /// The version byte every encoded verdict leads with.
 const VERDICT_VERSION: u8 = 1;
@@ -616,30 +628,121 @@ impl Receipt
         records: &[VerdictRecord],
     ) -> Attestation
     {
+        self.verifies(ReceiptMessage::of(records))
+    }
+
+    /// Whether this receipt's signature verifies over `message` under its
+    /// signer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn verifies(
+        &self,
+        message: ReceiptMessage,
+    ) -> Attestation
+    {
         let Ok(signer) = ed25519_dalek::VerifyingKey::from_bytes(&self.signer.0)
         else {
             return Attestation::Refused;
         };
         let signature = ed25519_dalek::Signature::from_bytes(&self.signature.0);
-        match signer.verify_strict(&ReceiptMessage::of(records).0, &signature) {
+        match signer.verify_strict(&message.0, &signature) {
             Ok(()) => Attestation::Attested,
             Err(_) => Attestation::Refused,
         }
     }
 }
 
-/// Whether a receipt attests its records.
+/// Whether a receipt attests what it is read beside.
+///
+/// # Specification
+/// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Attestation
+pub enum Attestation
 {
-    /// The signature verifies.
+    /// The signature verifies, under a signer the policy lists.
     Attested,
-    /// The signer's key or the signature does not verify.
+    /// The policy lists no such signer, or the signer's key or the signature
+    /// does not verify.
     Refused,
 }
 
+/// The key a stored stratum of the checker's site is recalled by: a digest of
+/// the build that certifies it, its bound and its degree.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StratumKey([u8; 32]);
+
+impl From<[u8; 32]> for StratumKey
+{
+    /// The key whose digest is `bytes`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: [u8; 32]) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl From<StratumKey> for [u8; 32]
+{
+    /// The digest of `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(key: StratumKey) -> Self
+    {
+        key.0
+    }
+}
+
+impl core::fmt::Display for StratumKey
+{
+    /// The digest as 64 lowercase hexadecimal digits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
+/// The canonical image of a stratum the checker certified, as a stratum
+/// receipt signs it.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StratumBytes<'image>(&'image [u8]);
+
+impl<'image> From<&'image [u8]> for StratumBytes<'image>
+{
+    /// The image whose bytes are `bytes`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: &'image [u8]) -> Self
+    {
+        Self(bytes)
+    }
+}
+
 /// The message a receipt signs: a digest over its records in key order, each
-/// as its key and its counted verdict bytes.
+/// as its key and its counted verdict bytes, or over a stratum's key and its
+/// counted image under a context no admission receipt uses.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ReceiptMessage([u8; 32]);
@@ -666,6 +769,29 @@ impl ReceiptMessage
                 .update(&encoded.0);
         }
         Self(*hasher.finalize().as_bytes())
+    }
+
+    /// The message over the stratum of `key` whose image is `image`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of_stratum(
+        key: StratumKey,
+        image: StratumBytes<'_>,
+    ) -> Self
+    {
+        Self(
+            *blake3::Hasher::new_derive_key(STRATUM_CONTEXT)
+                .update(&key.0)
+                .update(
+                    &u64::try_from(image.0.len())
+                        .unwrap_or(u64::MAX)
+                        .to_le_bytes(),
+                )
+                .update(image.0)
+                .finalize()
+                .as_bytes(),
+        )
     }
 }
 
@@ -737,6 +863,41 @@ impl KernelSigner
             signature: ReceiptSignature(self.0.sign(&ReceiptMessage::of(records).0).to_bytes()),
         }
     }
+
+    /// A receipt over the stratum of `key` whose canonical image is `image`,
+    /// which the checker certified in this process.
+    ///
+    /// # Specification
+    /// - requires: the checker certified the stratum `image` holds, at the
+    ///   build, bound and degree `key` digests.
+    /// - ensures: a receipt [`TrustPolicy::believes_stratum`] believes over
+    ///   `key` and `image` under a policy listing this signer, and over no
+    ///   other key or image; it verifies as no admission receipt.
+    /// - panics: none.
+    /// - executable: none — the signature is Ed25519's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stratum receipt is believed under its own signer
+    ///   and refused over a changed image, under an unlisted signer and under
+    ///   the recheck policy.
+    /// - witness: `tests::verdicts::a_stratum_receipt_is_believed_only_as_signed_4034`
+    #[inline]
+    #[must_use]
+    pub fn sign_stratum(
+        &self,
+        key: StratumKey,
+        image: StratumBytes<'_>,
+    ) -> Receipt
+    {
+        Receipt {
+            signer: self.identity(),
+            signature: ReceiptSignature(
+                self.0
+                    .sign(&ReceiptMessage::of_stratum(key, image).0)
+                    .to_bytes(),
+            ),
+        }
+    }
 }
 
 /// Which recorded verdicts a run believes.
@@ -751,6 +912,42 @@ pub enum TrustPolicy
     Recheck,
     /// Those a receipt from one of these signers attests.
     Trusted(BTreeSet<KernelIdentity>),
+}
+
+impl TrustPolicy
+{
+    /// Whether this policy believes `receipt` over the stored stratum of `key`
+    /// whose image is `image`.
+    ///
+    /// # Specification
+    /// - requires: nothing; what a store answers is verified here before it is
+    ///   believed.
+    /// - ensures: [`Attestation::Attested`] exactly when the policy lists the
+    ///   receipt's signer and its signature verifies over `key` and `image` as
+    ///   [`KernelSigner::sign_stratum`] signs them; under
+    ///   [`TrustPolicy::Recheck`], [`Attestation::Refused`].
+    /// - panics: none.
+    /// - executable: none — the signature is Ed25519's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`KernelSigner::sign_stratum`].
+    /// - witness: `tests::verdicts::a_stratum_receipt_is_believed_only_as_signed_4034`
+    #[inline]
+    #[must_use]
+    pub fn believes_stratum(
+        &self,
+        receipt: &Receipt,
+        key: StratumKey,
+        image: StratumBytes<'_>,
+    ) -> Attestation
+    {
+        match *self {
+            Self::Trusted(ref trusted) if trusted.contains(&receipt.signer) => {
+                receipt.verifies(ReceiptMessage::of_stratum(key, image))
+            },
+            Self::Recheck | Self::Trusted(_) => Attestation::Refused,
+        }
+    }
 }
 
 /// A receipt and the records it attests, as a store holds them, the records

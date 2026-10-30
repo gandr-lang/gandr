@@ -42,7 +42,9 @@ path = "tests/lib.rs"
 # and records the pointer the value plane returns; a package's export commits
 # there too, each kernel artifact as the artifact crate's declaration records.
 # A `check` that keeps the kernel's verdicts admits under the policy and key
-# the kernel's verdict vocabulary names.
+# the kernel's verdict vocabulary names, and commits each stratum it
+# certifies through the store under that key, its image and its build from
+# the site crate.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a closure's lowering and
 # judgement, the prelude's among them, for the benchmark report.
@@ -73,6 +75,7 @@ gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-cell-complexes.workspace = true
+gandr-theory-sites.workspace = true
 hotpath = { workspace = true, optional = true }
 memmap2.workspace = true
 quenchant-shape.workspace = true

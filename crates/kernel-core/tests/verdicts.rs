@@ -9,9 +9,12 @@ use alloc::vec::Vec;
 
 use gandr_kernel_core::Admission;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::StoredReceipt;
+use gandr_kernel_core::verdict::StratumBytes;
+use gandr_kernel_core::verdict::StratumKey;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictImage;
 use gandr_kernel_core::verdict::VerdictKey;
@@ -351,4 +354,54 @@ fn a_handed_on_environment_keys_on_and_signs_only_its_own()
     );
     assert_eq!(admit_one(&mut handed, named), Admission::Recalled);
     assert_eq!(usize::from(handed.recalls()), 1);
+}
+
+/// #4034: a stratum receipt is believed over its own key and image under a
+/// policy listing its signer. A changed image, another key, an unlisted signer
+/// and the recheck policy believe nothing, and a stratum receipt beside an
+/// admission's records recalls none of them.
+#[test]
+fn a_stratum_receipt_is_believed_only_as_signed_4034()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let key = StratumKey::from([3_u8; 32]);
+    let held = [1_u8, 2, 3];
+    let image = StratumBytes::from(held.as_slice());
+    let receipt = signer.sign_stratum(key, image);
+    let policy = trusting(&signer);
+    assert_eq!(
+        policy.believes_stratum(&receipt, key, image),
+        Attestation::Attested
+    );
+    assert_eq!(
+        policy.believes_stratum(&receipt, key, StratumBytes::from([1_u8, 2, 4].as_slice())),
+        Attestation::Refused,
+        "another image"
+    );
+    assert_eq!(
+        policy.believes_stratum(&receipt, StratumKey::from([4_u8; 32]), image),
+        Attestation::Refused,
+        "another key"
+    );
+    let other = KernelSigner::from([8_u8; 32]);
+    assert_eq!(
+        trusting(&other).believes_stratum(&receipt, key, image),
+        Attestation::Refused,
+        "an unlisted signer"
+    );
+    assert_eq!(
+        TrustPolicy::Recheck.believes_stratum(&receipt, key, image),
+        Attestation::Refused,
+        "the recheck policy"
+    );
+
+    let named = ConstantIndex::from(0_usize);
+    let admitted = recorded(&signer, named);
+    let borrowed = StoredReceipt::new(receipt, admitted.records().to_vec());
+    let mut again = Environment::recalling(policy, Store::holding(&[&borrowed]));
+    assert_eq!(
+        admit(&mut again, named),
+        [Admission::Checked; 3],
+        "a stratum receipt attests no admission"
+    );
 }

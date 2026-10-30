@@ -3,6 +3,7 @@
 //! isomorphism of the free algebras.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 
 use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_circuit_algebras::EdgeCount;
@@ -40,8 +41,10 @@ use gandr_theory_sites::Site;
 use gandr_theory_sites::SiteMap;
 use gandr_theory_sites::Species;
 use gandr_theory_sites::Spot;
+use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Table;
 use gandr_theory_sites::Uncertified;
+use gandr_theory_sites::Unreplayed;
 use gandr_theory_sites::Wreath;
 use gandr_theory_sites::WreathShape;
 use gandr_theory_sites::WreathStratum;
@@ -119,7 +122,7 @@ fn bijection(Tables(forward, backward): Tables<'_>) -> Bijection
 /// # Specification
 /// trivial.
 fn corolla(
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     legs: Legs,
 ) -> ShapeIndex
 {
@@ -201,9 +204,9 @@ fn elements_attach_every_leg_order_and_labellings_read_by_vertex()
 #[test]
 fn the_corolla_stratum_is_certified_at_degree_one()
 {
-    let catalogue = Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds");
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let catalogue = Arc::new(Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds"));
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     assert!(
         stratum.cocones().is_empty(),
         "degree one holds no shape above the corollas"
@@ -250,15 +253,15 @@ fn the_corolla_stratum_is_certified_at_degree_one()
     );
     assert!(
         matches!(
-            SegalStratum::certify(&catalogue, Degree::from(0)),
+            SegalStratum::certify(Arc::clone(&catalogue), Degree::from(0)),
             Err(Uncertified::Degree { degree }) if degree == Degree::from(0)
         ),
         "the stratum below the corollas is not certified"
     );
-    let empty = Catalogue::build(ShapeSize::from(0)).expect("the catalogue builds");
+    let empty = Arc::new(Catalogue::build(ShapeSize::from(0)).expect("the catalogue builds"));
     assert!(
         matches!(
-            SegalStratum::certify(&empty, Degree::from(1)),
+            SegalStratum::certify(empty, Degree::from(1)),
             Err(Uncertified::Condition { witness, degree })
                 if witness == Shape::default() && degree == Degree::from(1)
         ),
@@ -275,9 +278,9 @@ fn the_corolla_stratum_is_certified_at_degree_one()
 #[test]
 fn an_equivalence_commutes_with_the_corolla_automorphisms()
 {
-    let catalogue = Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds");
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let catalogue = Arc::new(Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds"));
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     let binary = corolla(&stratum, Legs(2, 1));
     let constant = corolla(&stratum, Legs(0, 1));
     let monoid = monoid();
@@ -360,9 +363,9 @@ fn an_equivalence_commutes_with_the_corolla_automorphisms()
 #[test]
 fn restriction_reflects_a_natural_isomorphism_to_its_species()
 {
-    let catalogue = Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds");
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let catalogue = Arc::new(Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds"));
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     let binary = corolla(&stratum, Legs(2, 1));
     let constant = corolla(&stratum, Legs(0, 1));
     let monoid = monoid();
@@ -445,9 +448,9 @@ fn restriction_reflects_a_natural_isomorphism_to_its_species()
 #[test]
 fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
 {
-    let catalogue = Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds");
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(2)).expect("degree two is certified");
+    let catalogue = Arc::new(Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds"));
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(2))
+        .expect("degree two is certified");
     assert_eq!(stratum.degree(), Degree::from(2));
     assert_eq!(
         stratum.cocones().len(),
@@ -489,7 +492,8 @@ fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
     ]);
     let swap = Equivalence::check(&stratum, (&monoid, &monoid), tables)
         .expect("the swap is natural at degree two");
-    let one = SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let one = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     let natural = swap.extend(&stratum, (&monoid, &monoid));
     assert_eq!(
         natural,
@@ -512,8 +516,9 @@ fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
     };
     assert_eq!((refused, shape), (binary, graft));
 
-    let small = Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds");
-    let three = SegalStratum::certify(&small, Degree::from(3)).expect("degree three is certified");
+    let small = Arc::new(Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds"));
+    let three = SegalStratum::certify(Arc::clone(&small), Degree::from(3))
+        .expect("degree three is certified");
     let chain = position(&small, &shape!(2; 0 > 1));
     let cocone = three
         .cocones()
@@ -582,7 +587,7 @@ fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
     );
     assert!(
         matches!(
-            SegalStratum::certify(&small, Degree::from(5)),
+            SegalStratum::certify(Arc::clone(&small), Degree::from(5)),
             Err(Uncertified::Degree { degree }) if degree == Degree::from(5)
         ),
         "no shape of degree five at size four"
@@ -642,9 +647,11 @@ fn top(catalogue: &Catalogue) -> Degree
 fn the_whisker_and_both_composites_are_certified_at_level_two()
 {
     let bound = ShapeSize::from(13_usize);
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
-    let wreath = Wreath::build(&chains, &chains, bound);
-    let below = SegalStratum::certify(&chains, top(&chains)).expect("level one is certified");
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let level: &Catalogue = &chains;
+    let wreath = Wreath::build(level, level, bound);
+    let below =
+        SegalStratum::certify(Arc::clone(&chains), top(level)).expect("level one is certified");
     assert_eq!(below.cocones().len(), 5);
     let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
         .expect("level two is certified at degree five");
@@ -691,7 +698,8 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
         );
     }
     assert_eq!(stratum.cocones().len(), 16);
-    let below = SegalStratum::certify(&chains, top(&chains)).expect("level one is certified");
+    let below =
+        SegalStratum::certify(Arc::clone(&chains), top(level)).expect("level one is certified");
     let whole = WreathStratum::certify(&wreath, Degree::from(11_usize), below)
         .expect("level two is certified at the bound's top");
     assert_eq!(whole.cocones().len(), 111);
@@ -773,9 +781,11 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
         "two opposite cells across columns are refused as a directed cycle: {as_outer:?}"
     );
     let small = ShapeSize::from(5_usize);
-    let wirings = Catalogue::build(small).expect("the catalogue builds");
-    let wreath = Wreath::build(&wirings, &wirings, small);
-    let below = SegalStratum::certify(&wirings, top(&wirings)).expect("level one is certified");
+    let wirings = Arc::new(Catalogue::build(small).expect("the catalogue builds"));
+    let level: &Catalogue = &wirings;
+    let wreath = Wreath::build(level, level, small);
+    let below =
+        SegalStratum::certify(Arc::clone(&wirings), top(level)).expect("level one is certified");
     assert_eq!(
         segal_two(&wreath, &below, Degree::from(5_usize)),
         Outcome::Holds {
@@ -785,4 +795,118 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
     let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
         .expect("level two over the wirings is certified at five");
     assert_eq!(stratum.cocones().len(), 208);
+}
+
+/// #4034: at size five the stratum of degree three replays from its image to
+/// its own corollas and cocones. An image damaged at its version, its length,
+/// its catalogue, its degree, its corollas, its cocones' shapes, an inclusion
+/// and a graft is refused under each name.
+#[test]
+fn a_stratum_replays_its_image_and_refuses_a_damaged_one_4034()
+{
+    let catalogue = Arc::new(Catalogue::build(ShapeSize::from(5)).expect("the catalogue builds"));
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(3))
+        .expect("degree three is certified");
+    let image = stratum.image();
+    let replayed =
+        SegalStratum::replay(Arc::clone(&catalogue), &image).expect("the stratum's image replays");
+    assert_eq!(replayed.degree(), stratum.degree());
+    assert_eq!(replayed.vacuity(), stratum.vacuity());
+    assert_eq!(replayed.corollas(), stratum.corollas());
+    assert_eq!(replayed.cocones(), stratum.cocones());
+    assert_eq!(replayed.image(), image, "the image is canonical");
+
+    let replay = |image: &StratumImage| SegalStratum::replay(Arc::clone(&catalogue), image).err();
+    let mut bytes = Vec::from(image.clone());
+    *bytes.first_mut().expect("the version byte") = 2;
+    assert_eq!(
+        replay(&StratumImage::from(bytes)),
+        Some(Unreplayed::Malformed)
+    );
+    let mut bytes = Vec::from(image.clone());
+    let _last = bytes.pop();
+    assert_eq!(
+        replay(&StratumImage::from(bytes)),
+        Some(Unreplayed::Malformed)
+    );
+    let small = Arc::new(Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds"));
+    assert_eq!(
+        SegalStratum::replay(small, &image).err(),
+        Some(Unreplayed::Catalogue)
+    );
+
+    let words: Vec<u64> = image
+        .as_ref()
+        .get(1 ..)
+        .expect("an image leads with its version")
+        .chunks_exact(8)
+        .map(|word| u64::from_le_bytes(word.try_into().expect("eight bytes")))
+        .collect();
+    let imaged = |words: &[u64]| {
+        let mut bytes = vec![1_u8];
+        bytes.extend(words.iter().flat_map(|word| word.to_le_bytes()));
+        StratumImage::from(bytes)
+    };
+    let damaged = |position: usize, word: u64| {
+        let mut words = words.clone();
+        *words.get_mut(position).expect("the word is in the image") = word;
+        replay(&imaged(&words))
+    };
+    assert_eq!(damaged(1, 0), Some(Unreplayed::Degree), "degree zero");
+    assert_eq!(damaged(1, 6), Some(Unreplayed::Degree), "past every shape");
+    let first = *words.get(3).expect("a corolla");
+    assert_eq!(damaged(3, first + 1), Some(Unreplayed::Corollas));
+    assert_eq!(
+        damaged(1, 2),
+        Some(Unreplayed::Cocones),
+        "the cocones of degree three stand past degree two"
+    );
+    // The positions among the words of the first cocone's first inclusion's
+    // hom-set position, and of the first graft's producer wire.
+    let (inclusion, graft) = {
+        let at = |position: usize| {
+            usize::try_from(*words.get(position).expect("the word is in the image"))
+                .expect("the word counts")
+        };
+        let past = |cursor: usize, by: usize| cursor.checked_add(by).expect("the image is short");
+        let times = |count: usize, by: usize| count.checked_mul(by).expect("the image is short");
+        let corollas = at(2);
+        let mut cursor = past(3, corollas);
+        let cocones = at(cursor);
+        cursor = past(cursor, 1);
+        let mut inclusion = None;
+        let mut graft = None;
+        for _cocone in 0 .. cocones {
+            let inclusions = at(past(cursor, 1));
+            let _first = inclusion.get_or_insert_with(|| past(cursor, 3));
+            cursor = past(cursor, past(2, times(2, inclusions)));
+            let grafts = at(cursor);
+            if grafts > 0 {
+                let _first = graft.get_or_insert_with(|| past(cursor, 3));
+            }
+            cursor = past(cursor, past(1, times(5, grafts)));
+        }
+        (
+            inclusion.expect("a cocone includes a corolla"),
+            graft.expect("a cocone grafts two corollas"),
+        )
+    };
+    let cocone = stratum.cocones().first().expect("a cocone").shape();
+    assert_eq!(
+        damaged(inclusion, u64::MAX >> 1_u32),
+        Some(Unreplayed::Cocone { shape: cocone }),
+        "a position past the hom set"
+    );
+    let grafted = stratum
+        .cocones()
+        .iter()
+        .find(|cocone| !cocone.grafts().is_empty())
+        .expect("a cocone grafts")
+        .shape();
+    let wire = *words.get(graft).expect("the producer's wire");
+    assert_eq!(
+        damaged(graft, wire + 1),
+        Some(Unreplayed::Cocone { shape: grafted }),
+        "a producer's leg its inclusion does not send onto the wire"
+    );
 }

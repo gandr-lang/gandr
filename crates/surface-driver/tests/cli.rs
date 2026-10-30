@@ -635,6 +635,72 @@ fn a_second_check_recalls_what_the_first_recorded_2799()
     );
 }
 
+/// The counts of a detailed `check`'s `strata:` line as it prints them,
+/// without the signer; absent when it printed none.
+///
+/// # Specification
+/// trivial.
+fn strata_tally(output: &Output) -> Option<String>
+{
+    stdout(output).lines().find_map(|line| {
+        let (counts, _signer) = line.strip_prefix("strata: ")?.split_once("; signed by ")?;
+        Some(counts.to_owned())
+    })
+}
+
+/// #4034: a second `check` of a `ua` statement reads its stratum from the
+/// store the first kept and certifies nothing; `--recheck` asks no store, and
+/// a stratum another key signed is not believed and is certified afresh.
+#[test]
+fn a_second_check_replays_the_strata_the_first_kept_4034()
+{
+    let scratch = Scratch::new(Path::new("stratum-store"));
+    let source = scratch.file(
+        Path::new("six.gandr"),
+        Text::from(
+            "pub theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
+             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  case b {\n    \
+             true => +{.1 = unit},\n    false => +{.0 = unit}\n  }\n}\n\npub def keep(e : +{Unit}) \
+             -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, #{.mul = exchange, .one = \
+             keep}, #{.mul = exchange, .one = keep});\n",
+        ),
+    );
+    let home = scratch.0.join("configuration");
+    let cache = scratch.0.join("cache");
+    let check = |flags: &[&str]| {
+        let mut command = gandr(&["check", "--verbosity", "detailed"]);
+        let _configured = command
+            .args(flags)
+            .arg(&source)
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        strata_tally(&output)
+    };
+    let counts = |counts: &str| Some(counts.to_owned());
+
+    assert_eq!(
+        check(&[]),
+        counts("0 recalled, 1 certified, 0 refused, 0 unattested, 0 unwritten"),
+        "a cold check certifies the stratum and keeps it"
+    );
+    assert_eq!(
+        check(&[]),
+        counts("1 recalled, 0 certified, 0 refused, 0 unattested, 0 unwritten"),
+        "a warm check replays the kept stratum and certifies nothing"
+    );
+    assert_eq!(check(&["--recheck"]), None, "`--recheck` asks no store");
+
+    std::fs::write(home.join("gandr").join("kernel.key"), [1_u8; 32])
+        .expect("another key is written");
+    assert_eq!(
+        check(&[]),
+        counts("0 recalled, 1 certified, 0 refused, 1 unattested, 0 unwritten"),
+        "a stratum another key signed is not believed"
+    );
+}
+
 #[test]
 fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 {

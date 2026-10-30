@@ -4196,8 +4196,9 @@ impl Opening<'static>
 }
 
 /// The checking context of `module` over `arena`, opened as `opening` says:
-/// the closed tier handed, `holes` read as the module's pattern holes, and
-/// the reducts and forgetting maps the module mints kept.
+/// the closed tier and the installed stratum store handed, `holes` read as
+/// the module's pattern holes, and the reducts and forgetting maps the module
+/// mints kept.
 ///
 /// # Specification
 /// - requires: `holes` are the [`pattern_holes`] of `module`; a resumed
@@ -4237,6 +4238,7 @@ pub fn checking_context<'arena>(
         Opening::Resumed(checkpoint) => CheckingContext::resume(arena, checkpoint.clone()),
     };
     context.decide_endpoints_on(crate::tier::Emitted::boxed(), crate::tier::admitting());
+    context.keep_strata_in(crate::strata::stratum_store());
     context.keep_pattern_holes(holes);
     context.keep_reducts(module.reducts());
     context.keep_reducts(module.forgets());
@@ -4561,6 +4563,7 @@ pub fn item_program(
         .collect();
     let mut program = gandr_core_incremental::Program::new(arena, items)?;
     program.decide_endpoints_on(crate::tier::Emitted::boxed, crate::tier::admitting());
+    program.keep_strata_in(crate::strata::stratum_store());
     Ok(program)
 }
 

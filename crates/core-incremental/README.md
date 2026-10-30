@@ -118,6 +118,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: a stored `FootprintsOverlap` keeps both halves' footprints and what they share.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — the verdict store is untrusted by naming rule.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the strata a pass hands on.
 - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — both file stores publish through `core-publish`, whose guard owns each temporary.
 
 ## License

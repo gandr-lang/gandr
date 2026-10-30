@@ -196,25 +196,20 @@
 //!   which the surface has no spelling for, and a list by position, which a
 //!   reordered signature silently re-wires. Reversal: a surface spelling for
 //!   corollas.
-//! - **Each stratum is certified once per process, under a budget.** Building
-//!   the catalogue and certifying its stratum take about a millisecond at bound
-//!   four and degree one, most of a decision, and depend on the bound and the
-//!   degree alone; an editor re-decides every accepted statement on each
-//!   keystroke. Both are held in a table keyed by bound and degree: one cell
-//!   per bound up to the largest a catalogue builds at, and a degree row per
-//!   bound sized when its catalogue builds. The cells are statics, raced into
-//!   place by `once_cell`'s `OnceBox`, the ecosystem's `no_std`
-//!   single-assignment cell, with `alloc` its only feature. The hom sets grow
-//!   with the square of the classes, so a catalogue whose enumeration passes
-//!   the stratum budget is refused before any hom set is built, at a cost the
-//!   budget bounds whatever the bound. The alternatives were a cache per
-//!   checking context, which an editor rebuilds on each keystroke, a cache the
-//!   caller threads through the incremental checker, which every face would
-//!   have to own, a spinning `Once` from `spin`, whose initialiser has carried
-//!   an unsoundness advisory where a race loser here only drops its copy, and a
-//!   fixed allowance of bounds, which refuses a stratum that certifies in under
-//!   a second. Reversal: strata persisted across processes, or an advisory
-//!   against `once_cell`.
+//! - **A context holds its strata, and a store carries them on, under a
+//!   budget.** A context builds each catalogue once and holds each stratum it
+//!   certifies or recalls for its own life ([`StratumStore`]). A run that keeps
+//!   strata hands its contexts a store, and a later context, in this process or
+//!   another, replays the stored image instead of certifying. At bound 7 and
+//!   degree 7 the replay takes 0.18 ms and the certification 2.56 s on the
+//!   release profile. The hom sets grow with the square of the classes, so a
+//!   catalogue whose enumeration passes the stratum budget is refused before
+//!   any hom set is built, at a cost the budget bounds whatever the bound. The
+//!   alternatives were statics holding every catalogue and stratum for the
+//!   process, which leave a second process certifying again, and a fixed
+//!   allowance of bounds, which refuses a stratum that certifies in under a
+//!   second. Reversal: a stratum whose replay costs what its certification
+//!   costs.
 //!
 //! # References
 //!
@@ -230,8 +225,6 @@
 //!   `doi:10.1017/S0960129514000565` — diagrams built degree by degree, each
 //!   stage over its matching object: the telescope.
 
-use alloc::borrow::Cow;
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -249,7 +242,6 @@ use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_theory_sites::Bijection;
-use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
@@ -260,19 +252,23 @@ use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeIndex;
-use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Species;
 use gandr_theory_sites::Table;
-use gandr_theory_sites::Uncertified;
-use once_cell::race::OnceBox;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::refusal::CheckRefusal;
 
+mod strata;
 #[cfg(test)]
 mod tests;
+
+pub use strata::NoStratumStore;
+pub(crate) use strata::Strata;
+pub use strata::StratumAt;
+pub use strata::StratumStore;
+pub use strata::recalled;
 
 /// The two translators an equivalence gives at one corolla.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -596,7 +592,7 @@ struct Stage
 })]
 pub fn derive(
     context: &mut CheckingContext<'_>,
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     sides: (&Species, &Species),
     translators: &BTreeMap<ShapeIndex, Translators>,
 ) -> Result<Universal, UaRefusal>
@@ -728,121 +724,6 @@ pub fn derive(
 fn stratum_budget() -> ShapeBudget
 {
     ShapeBudget::from(1000_usize)
-}
-
-/// One cell per index, each filled on first use.
-type Cells<Cell> = Box<[OnceBox<Cell>]>;
-
-/// The catalogue at each bound up to [`ShapeSize::LARGEST`], built on first
-/// use under the budget of its first decision.
-static CATALOGUES: OnceBox<Cells<Catalogue>> = OnceBox::new();
-
-/// The strata of each catalogue in [`CATALOGUES`], by bound then degree, one
-/// row per bound sized by its catalogue's top degree, certified on first use.
-static STRATA: OnceBox<Cells<Cells<SegalStratum<'static>>>> = OnceBox::new();
-
-/// One empty cell per bound a catalogue builds at.
-///
-/// # Specification
-/// trivial.
-fn bounds<Cell>() -> Cells<Cell>
-{
-    core::iter::repeat_with(OnceBox::new)
-        .take(usize::from(ShapeSize::LARGEST).saturating_add(1))
-        .collect()
-}
-
-/// The stratum of `degree` over the catalogue at `bound`, certified once per
-/// process.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the stratum [`SegalStratum::certify`] gives at `degree` over
-///   [`Catalogue::within`] at `bound` and `budget`; every call at one bound and
-///   one degree answers the same stratum.
-/// - fails: [`StratumDefect::Allowance`] for a bound past
-///   [`ShapeSize::LARGEST`] or a catalogue the site refuses;
-///   [`StratumDefect::Budget`] for a catalogue of more classes than `budget`;
-///   [`StratumDefect::Degree`] and [`StratumDefect::Condition`] as
-///   [`SegalStratum::certify`] refuses.
-/// - panics: none.
-/// - intension: the first call at a bound builds its catalogue and the first at
-///   a degree certifies; a degree past the catalogue's top degree is certified
-///   anew, and a refusal is not held, so a refused stratum is checked again. A
-///   catalogue built under one budget answers a later call under any other.
-///
-/// # Errors
-/// [`StratumDefect`] as above.
-///
-/// # Adequacy
-/// - hypothesis: L3 — every written statement is decided over the stratum this
-///   answers; a wrong bound or degree refuses or derives another path, and the
-///   degree, condition, allowance and budget refusals are each written in the
-///   corpus; a bound past the old allowance of five derives its path.
-/// - witness: `ua::tests::a_written_statement_derives_the_path_at_its_stratum`
-/// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
-#[spec(ensures: |ref ret| match *ret {
-    | Ok(ref stratum) => bound <= ShapeSize::LARGEST && stratum.degree() == degree,
-    | Err(StratumDefect::Allowance { bound: refused }) => refused == bound,
-    | Err(StratumDefect::Budget { bound: refused, counted }) => refused == bound
-        && usize::from(counted) > usize::from(budget),
-    | Err(StratumDefect::Degree { degree: refused }) => refused == degree,
-    | Err(StratumDefect::Condition { degree: failing }) => failing <= degree,
-})]
-fn certified(
-    bound: ShapeSize,
-    degree: Degree,
-    budget: ShapeBudget,
-) -> Result<Cow<'static, SegalStratum<'static>>, StratumDefect>
-{
-    let at = usize::from(bound);
-    let Some(cell) = CATALOGUES.get_or_init(|| Box::new(bounds())).get(at)
-    else {
-        return Err(StratumDefect::Allowance { bound });
-    };
-    let catalogue = cell
-        .get_or_try_init(|| Catalogue::within(bound, budget).map(Box::new))
-        .map_err(|obstruction| match obstruction {
-            ShapeObstruction::PastTheBudget { counted } => StratumDefect::Budget { bound, counted },
-            ShapeObstruction::TooManyVertices { .. }
-            | ShapeObstruction::UnknownVertex { .. }
-            | ShapeObstruction::Stick { .. }
-            | ShapeObstruction::UnknownWire { .. }
-            | ShapeObstruction::Carrier(_) => StratumDefect::Allowance { bound },
-        })?;
-    let certify = || {
-        SegalStratum::certify(catalogue, degree).map_err(|refused| match refused {
-            Uncertified::Degree { degree: refused } => StratumDefect::Degree { degree: refused },
-            Uncertified::Condition {
-                degree: failing, ..
-            } => StratumDefect::Condition { degree: failing },
-        })
-    };
-    let row = STRATA
-        .get_or_init(|| Box::new(bounds()))
-        .get(at)
-        .map(|row| {
-            row.get_or_init(|| {
-                let top = catalogue
-                    .shapes()
-                    .iter()
-                    .map(Degree::of)
-                    .fold(Degree::from(0_usize), core::cmp::max);
-                Box::new(
-                    core::iter::repeat_with(OnceBox::new)
-                        .take(usize::from(top).saturating_add(1))
-                        .collect(),
-                )
-            })
-        });
-    row.and_then(|row| row.get(usize::from(degree)))
-        .map_or_else(
-            || certify().map(Cow::Owned),
-            |held| {
-                held.get_or_try_init(|| certify().map(Box::new))
-                    .map(Cow::Borrowed)
-            },
-        )
 }
 
 /// Why the stratum a `ua` statement names is not certified.
@@ -1184,9 +1065,9 @@ pub(crate) fn premises(
 /// - fails: a stratum that is not certified; translators that are no
 ///   equivalence of the species there; code univalence's own refusal.
 /// - panics: none.
-/// - intension: the stratum comes from [`certified`] under the stratum budget,
-///   certified once per bound, degree and process and shared by every statement
-///   decided after.
+/// - intension: the stratum comes from the context's strata under the stratum
+///   budget, held for the context's life and shared by every statement it
+///   decides after; a context handed a store replays the store's image first.
 ///
 /// # Errors
 /// [`CheckRefusal::UaUncertified`] for a bound past the largest a catalogue
@@ -1221,8 +1102,16 @@ pub(crate) fn decide(
     } = statement(context.arena(), at)?;
     let uncertified = |stratum| CheckRefusal::UaUncertified { at, stratum };
     let inequivalent = |defect| CheckRefusal::UaInequivalent { at, defect };
-    let certified =
-        certified(stratum.bound, stratum.degree, stratum_budget()).map_err(uncertified)?;
+    let certified = context
+        .strata_mut()
+        .certified(
+            StratumAt {
+                bound: stratum.bound,
+                degree: stratum.degree,
+            },
+            stratum_budget(),
+        )
+        .map_err(uncertified)?;
     let ways = [
         (Way::Forward, forward, &sides.source),
         (Way::Backward, backward, &sides.target),
