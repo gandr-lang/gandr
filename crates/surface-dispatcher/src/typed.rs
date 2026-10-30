@@ -1852,15 +1852,19 @@ impl TypeTable
                     .collect()
             })
             .collect();
-        // An index a data constructor's result states is judged under the
-        // family's parameters and the constructor's fields, which no term of
-        // the declaration binds: every term written in it answers under the
-        // names the lowering framed it with.
+        // A data declaration's types and stated indices are judged under the
+        // family's parameters and the indices or fields before them, which no
+        // term of the declaration binds: a term written in one answers under
+        // the names the lowering framed it with, where the run judged it
+        // under exactly those binders.
         for &(framed, ref names) in origins.framed() {
             let named = NamedContext(contexts.len());
             contexts.push(names.clone());
             for entry in &mut entries {
-                if matches!(entry.standing, Standing::Judged(_))
+                if let Standing::Judged(within) = entry.standing
+                    && within
+                        .depth
+                        .is_none_or(|depth| usize::from(depth) == names.len())
                     && entry.span.start() >= framed.start()
                     && entry.span.end() <= framed.end()
                 {

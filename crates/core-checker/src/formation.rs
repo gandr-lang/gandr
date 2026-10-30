@@ -96,7 +96,9 @@ use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::failure::Failure;
 use crate::judgement::form;
+use crate::judgement::form_with_failure;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TypeNode;
@@ -239,6 +241,35 @@ pub fn form_value_type(
 ) -> Result<FormedValueType, CheckRefusal>
 {
     form(context, TypeNode::Value(value_type))?;
+    Ok(FormedValueType(value_type))
+}
+
+/// Form the value type `value_type` in the context's binders, keeping the
+/// failure of a refused run.
+///
+/// # Specification
+/// - requires: as for [`form_value_type`].
+/// - ensures: as for [`form_value_type`].
+/// - fails: the failure whose refusal [`form_value_type`] gives, with the rules
+///   pending and the binders the run had opened when it came.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as for [`form_value_type`]; a refusal inside a data
+///   declaration's field type keeps the binders the declaration had opened.
+/// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
+#[spec(
+    captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
+    ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth
+        && ret.as_ref().is_ok_and(|formed| formed.id() == value_type) == ret.is_ok(),
+)]
+#[inline]
+pub fn form_value_type_with_failure(
+    context: &mut CheckingContext<'_>,
+    value_type: ValueTypeId,
+) -> Result<FormedValueType, Failure>
+{
+    form_with_failure(context, TypeNode::Value(value_type))?;
     Ok(FormedValueType(value_type))
 }
 

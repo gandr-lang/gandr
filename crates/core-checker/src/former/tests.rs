@@ -247,3 +247,58 @@ fn a_dependent_field_checks_at_the_value_of_the_field_it_names()
         "the second checks at the decode of the code the first gives"
     );
 }
+
+/// A refused data signature keeps the binders it stood under: a field's type
+/// refused past the parameter and the field before it keeps both, and a stated
+/// index refused past two fields keeps both fields (#4028).
+#[test]
+fn a_refused_field_keeps_the_binders_it_was_formed_under_4028()
+{
+    // `Bad(p : Integer) { b : (x : Integer, y : Path(Integer, x, ())) }`: the
+    // second field's endpoint `()` is no integer.
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let misread = arena.value_type_path(integer, near, unit);
+    let bad = ConstantIndex::from(0_usize);
+    let fields = Arc::new(DataSignature::new(
+        vec![integer],
+        vec![vec![integer, misread]],
+        kind,
+    ));
+    // `Marked : Integer -> Type { mark : (u : Unit, v : Unit) --> Marked(()) }`:
+    // the stated index `()` is no integer.
+    let marked = ConstantIndex::from(0_usize);
+    let stated = Arc::new(
+        DataSignature::new(vec![], vec![vec![unit_type, unit_type]], kind)
+            .indexed(vec![integer], vec![vec![unit]]),
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (signature, position, opened, written) in [
+        (&fields, bad, [integer, integer], "the field"),
+        (&stated, marked, [unit_type, unit_type], "the stated index"),
+    ] {
+        let refused = form_signature_with_failure(&mut context, position, signature);
+        let Err(failure) = refused
+        else {
+            panic!("{written} is refused: {refused:?}");
+        };
+        assert!(
+            matches!(failure.refusal(), CheckRefusal::TypeMismatch(_)),
+            "{written} is refused as a mismatch: {failure:?}"
+        );
+        assert_eq!(
+            failure.hypotheses(),
+            opened,
+            "{written} keeps the binders the signature opened before it, outermost first"
+        );
+        assert_eq!(
+            form_signature(&mut context, position, signature),
+            Err(failure.refusal()),
+            "the projected face refuses alike"
+        );
+    }
+}

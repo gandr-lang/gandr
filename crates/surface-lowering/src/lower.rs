@@ -3205,9 +3205,13 @@ struct Lowerer<'run, 'source>
     grouped: BTreeMap<NodeIndex, Placed>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
-    /// Each index a data constructor's result states, with the frame of the
-    /// family's parameters and the constructor's fields it is read under.
-    index_frames: Vec<(NodeIndex, Frame)>,
+    /// Each type and stated index a data declaration writes, with the frame
+    /// of the binders it is read under: a parameter's type under the
+    /// parameters before it, an index's under the parameters and the indices
+    /// before it, a field's under the parameters and its constructor's fields
+    /// before it, and a stated index under the parameters and all its
+    /// constructor's fields.
+    data_frames: Vec<(NodeIndex, Frame)>,
     /// Each type head that stands for a type minted elsewhere: a manifest
     /// component's or a functor instance's, which the head adopts.
     stand_ins: BTreeSet<NodeIndex>,
@@ -3768,8 +3772,8 @@ struct Current
     synthesised: usize,
     /// Where its labels begin.
     labels: usize,
-    /// Where its stated indices begin.
-    index_frames: usize,
+    /// Where its data declarations' framed sites begin.
+    data_frames: usize,
     /// Where its letters begin.
     lettered: usize,
     /// Where its empty words' points begin.
@@ -5220,7 +5224,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             inherited: BTreeMap::new(),
             grouped: BTreeMap::new(),
             labels: Vec::new(),
-            index_frames: Vec::new(),
+            data_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
             fixed_sorts: BTreeMap::new(),
             fixed_carriers: Vec::new(),
@@ -5382,7 +5386,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scopes: self.collected.scopes.len(),
             synthesised: self.synthesised.len(),
             labels: self.labels.len(),
-            index_frames: self.index_frames.len(),
+            data_frames: self.data_frames.len(),
             lettered: self.lettered.len(),
             pointed: self.pointed.len(),
         };
@@ -15166,29 +15170,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Record every index a data constructor's result states with the names
-    /// of the binders it is read under.
+    /// Record every type and stated index a data declaration writes with the
+    /// names of the binders it is read under.
     ///
     /// # Specification
     /// - requires: every node is minted or absent.
-    /// - ensures: one framed span per index site of the current source whose
+    /// - ensures: one framed span per data site of the current source whose
     ///   node has a span, with the names of the frames its site is read under
     ///   that bind in its telescope, outermost first: the family's parameters,
-    ///   then the constructor's fields.
+    ///   then the indices or the constructor's fields before the site.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Cons`'s `S(n)` is framed under the family's
-    ///   parameter and the constructor's fields.
-    /// - witness: `lower::native::tests::each_stated_index_is_framed_under_its_family_s_telescope_931`
-    #[spec(captures: before = sink.origins.framed().len(), ensures: sink.origins.framed().len() <= before.saturating_add(self.index_frames.len()))]
+    ///   parameter and the constructor's fields, a field's type under the
+    ///   parameter and the fields before it, and an index's type under the
+    ///   parameters.
+    /// - witness: `lower::native::tests::each_data_type_and_stated_index_is_framed_under_its_telescope_931`
+    #[spec(captures: before = sink.origins.framed().len(), ensures: sink.origins.framed().len() <= before.saturating_add(self.data_frames.len()))]
     fn record_framed(
         &self,
         sink: &mut Sink<'_>,
     )
     {
-        for &(node, frame) in self.index_frames.iter().skip(self.current.index_frames) {
+        for &(node, frame) in self.data_frames.iter().skip(self.current.data_frames) {
             let Some(span) = self.tree.node(node).map(gandr_surface_syntax::Node::span)
             else {
                 continue;

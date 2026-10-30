@@ -70,11 +70,14 @@
 //! the rules pending when the refusal came, each on the node it stands on and
 //! the type that node was checked against, and the hypotheses the run had
 //! opened. They are the refusal's nested reasons, read from the run that
-//! refused rather than from a second one. A declaration refused before its body
-//! was run — out of order, a signature that did not form, a data signature, a
-//! hole in synthesis position — keeps none: no rule of the judgement was
-//! pending. [`check_declaration`] runs the same judgement and hands back the
-//! verdict alone. Witness:
+//! refused rather than from a second one. A refused data signature keeps the
+//! failure of the step that refused: its hypotheses are the parameters, then
+//! the indices or the fields the signature had opened there, and then any
+//! binder the step's own run opened. A declaration refused before its body
+//! was run — out of order, a signature that did not form, a hole in synthesis
+//! position — keeps none: no rule of the judgement was pending.
+//! [`check_declaration`] runs the same judgement and hands back the verdict
+//! alone. Witness:
 //! `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`.
 //!
 //! # A typed module keeps the type of every term each body judged
@@ -554,7 +557,8 @@ pub struct ModuleReport
     /// The sealed abstract types that formed, by position, for kernel
     /// readmission.
     abstract_types: BTreeMap<ConstantIndex, AbstractType>,
-    /// The failure of each body the judgement refused, by position.
+    /// The failure of each body and each data signature the judgement refused,
+    /// by position.
     failures: BTreeMap<ConstantIndex, Failure>,
     /// What elaborating each body that held a computation written where a
     /// value is read did, by position.
@@ -890,8 +894,9 @@ impl ModuleReport
         &self.definitions
     }
 
-    /// The failure of each body the judgement refused, by position; a
-    /// declaration refused before its body was run, or accepted, has no entry.
+    /// The failure of each body and each data signature the judgement refused,
+    /// by position; a declaration refused before its body was run, or
+    /// accepted, has no entry.
     ///
     /// # Specification
     /// trivial.
@@ -1299,14 +1304,15 @@ struct Decision
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
-///   `context`; beside it, when a run of the body refused, the failure of that
-///   run, whose refusal is the verdict's; when the body's calls omit implicits,
-///   the verdict of the run over the body and the declared type both filled
-///   with their solutions ([`implicits`]), and the declared type so filled
-///   beside the verdict when the fill changed it; when the first run accepted a
-///   body holding a computation written where a value is read, a value the
-///   bridge carried by a reduct, or a record update, what elaborating it did,
-///   the verdict then being the second run's over the elaborated body at the
+///   `context`; beside it, when a run of the body or a step of a data signature
+///   refused, the failure of that run or step under the binders it stood under,
+///   whose refusal is the verdict's; when the body's calls omit implicits, the
+///   verdict of the run over the body and the declared type both filled with
+///   their solutions ([`implicits`]), and the declared type so filled beside
+///   the verdict when the fill changed it; when the first run accepted a body
+///   holding a computation written where a value is read, a value the bridge
+///   carried by a reduct, or a record update, what elaborating it did, the
+///   verdict then being the second run's over the elaborated body at the
 ///   declared type so filled; and, when `run` is [`Run::Typed`] and the body
 ///   was run, what [`type_value`] keeps for the body as written, each type read
 ///   with the solutions of the holes its calls nominated, read before the
@@ -1408,12 +1414,22 @@ fn decide(
     };
     let (signature, body) = match *(declaration.content()) {
         crate::DeclarationContent::Data(ref signature) => {
-            let verdict = crate::former::form_signature(context, constant, signature);
+            let verdict = crate::former::form_signature_with_failure(context, constant, signature);
             if verdict.is_ok() {
                 context.record_data(constant, alloc::sync::Arc::clone(signature));
             }
             let signed = finish(context, outer);
-            return formed(verdict, kept(signed));
+            return match verdict {
+                Ok(()) => formed(Ok(()), kept(signed)),
+                // The signature's refusal keeps the binders it stood under.
+                Err(failure) => {
+                    let refusal = failure.refusal();
+                    Decision {
+                        failure: Maybe::Present(failure),
+                        ..formed(Err(refusal), kept(signed))
+                    }
+                },
+            };
         },
         crate::DeclarationContent::Codata(ref signature) => {
             let verdict = crate::codata::form_signature(context, constant, signature);

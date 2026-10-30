@@ -145,8 +145,14 @@ use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::TypeNode;
 use crate::declaration::AbstractType;
+use crate::failure::Failure;
+use crate::failure::Pursuit;
+use crate::failure::Stage;
+use crate::failure::judged;
 use crate::formation::form_value_type;
+use crate::formation::form_value_type_with_failure;
 use crate::formation::level_of;
+use crate::refusal::CoreNode;
 
 /// Read a data kind's value-universe level.
 ///
@@ -230,6 +236,50 @@ pub fn form_signature(
     signature: &Arc<DataSignature>,
 ) -> Result<(), CheckRefusal>
 {
+    form_signature_with_failure(context, position, signature).map_err(|failure| failure.refusal())
+}
+
+/// [`form_signature`], keeping the failure of a refused signature.
+///
+/// # Specification
+/// - requires: as for [`form_signature`].
+/// - ensures: as for [`form_signature`].
+/// - fails: the failure whose refusal [`form_signature`] gives. Its hypotheses
+///   are the binders the signature had opened where it refused, outermost
+///   first: the parameters, then the indices or the constructor's fields before
+///   the refused position. A step the machine runs, forming a type or checking
+///   a stated index, adds its own pending rules and the binders it had opened
+///   inside them; any other step pursues the type it formed, with no rule
+///   pending.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field's type refused after a parameter and a field
+///   keeps both, and a stated index refused past two fields keeps both fields;
+///   the projected refusal is [`form_signature`]'s.
+/// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
+#[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
+pub fn form_signature_with_failure(
+    context: &mut CheckingContext<'_>,
+    position: ConstantIndex,
+    signature: &Arc<DataSignature>,
+) -> Result<(), Failure>
+{
+    // A step that runs no machine pursues the type it formed or read.
+    let bare = |refusal: CheckRefusal, node: ValueTypeId| {
+        Failure::bare(
+            refusal,
+            Pursuit::new(
+                CoreNode::Type(TypeNode::Value(node)),
+                Maybe::Absent(judged::Absent::Formed),
+                Stage::Starting,
+            ),
+        )
+    };
+    let kind = signature.kind();
     let accessibility = crate::occurrence::occurrences(
         context.arena(),
         (
@@ -238,17 +288,18 @@ pub fn form_signature(
             context.accessibility(),
         ),
         signature,
-    )?;
+    )
+    .map_err(|refusal| bare(refusal, kind))?;
     let depth = context.depth(Zone::Intuitionistic);
     context.open_block(position, Arc::clone(signature));
     let outcome = (|| {
-        let _kind = form_value_type(context, signature.kind())?;
-        let level = kind_level(context, signature.kind())?;
+        let _kind = form_value_type_with_failure(context, kind)?;
+        let level = kind_level(context, kind).map_err(|refusal| bare(refusal, kind))?;
         let upper = level
             .succ()
-            .map_err(|_cause| CheckRefusal::DataKindNotUniverse(signature.kind()))?;
+            .map_err(|_cause| bare(CheckRefusal::DataKindNotUniverse(kind), kind))?;
         for &parameter in signature.parameters() {
-            let _formed = form_value_type(context, parameter)?;
+            let _formed = form_value_type_with_failure(context, parameter)?;
             context.binders().open(Zone::Intuitionistic, parameter);
         }
         let stated = signature.results().len() == signature.constructors().len()
@@ -261,28 +312,27 @@ pub fn form_signature(
         if !signature.indices().is_empty() && (!stated || presented)
             || signature.indices().is_empty() && !signature.results().is_empty()
         {
-            return Err(CheckRefusal::MachineInvariant);
+            return Err(bare(CheckRefusal::MachineInvariant, kind));
         }
         let below = context.depth(Zone::Intuitionistic);
         for &index in signature.indices() {
-            let _formed = form_value_type(context, index)?;
+            let _formed = form_value_type_with_failure(context, index)?;
             context.binders().open(Zone::Intuitionistic, index);
         }
         while context.depth(Zone::Intuitionistic) != below {
             let _closed = context
                 .binders()
                 .close(Zone::Intuitionistic)
-                .map_err(|_cause| CheckRefusal::MachineInvariant)?;
+                .map_err(|_cause| bare(CheckRefusal::MachineInvariant, kind))?;
         }
         for (tag, fields) in signature.constructors().iter().enumerate() {
             let below = context.depth(Zone::Intuitionistic);
             for &field in fields {
-                let _formed = form_value_type(context, field)?;
-                if !bool::from(level_of(context, TypeNode::Value(field))?.lt(&upper)) {
-                    return Err(CheckRefusal::DataFieldLevel {
-                        field,
-                        kind: signature.kind(),
-                    });
+                let _formed = form_value_type_with_failure(context, field)?;
+                let level = level_of(context, TypeNode::Value(field))
+                    .map_err(|refusal| bare(refusal, field))?;
+                if !bool::from(level.lt(&upper)) {
+                    return Err(bare(CheckRefusal::DataFieldLevel { field, kind }, field));
                 }
                 context.binders().open(Zone::Intuitionistic, field);
             }
@@ -291,32 +341,32 @@ pub fn form_signature(
                 let binders = |count: usize| {
                     u32::try_from(count)
                         .map(Binders::from)
-                        .map_err(|_cause| CheckRefusal::MachineInvariant)
+                        .map_err(|_cause| bare(CheckRefusal::MachineInvariant, index))
                 };
-                let expected = index_at(
-                    context,
-                    index,
-                    (stated, binders(position)?),
-                    binders(fields.len())?,
-                )?;
-                let formed = form_value_type(context, expected)?;
-                let _checked = crate::judgement::check_value(context, value, formed)?;
+                let at = binders(position)?;
+                let past = binders(fields.len())?;
+                let expected = index_at(context, index, (stated, at), past)
+                    .map_err(|refusal| bare(refusal, index))?;
+                let formed = form_value_type_with_failure(context, expected)?;
+                let _checked = crate::judgement::check_value_with_failure(context, value, formed)?;
             }
             while context.depth(Zone::Intuitionistic) != below {
                 let _closed = context
                     .binders()
                     .close(Zone::Intuitionistic)
-                    .map_err(|_cause| CheckRefusal::MachineInvariant)?;
+                    .map_err(|_cause| bare(CheckRefusal::MachineInvariant, kind))?;
             }
         }
-        present(context, position, signature)
+        present(context, position, signature).map_err(|refusal| bare(refusal, kind))
     })();
+    // A refusal stands under every binder the signature had opened.
+    let outcome = outcome.map_err(|failure| failure.under(context.opened_since(depth)));
     context.close_block(position);
     while context.depth(Zone::Intuitionistic) != depth {
         let _closed = context
             .binders()
             .close(Zone::Intuitionistic)
-            .map_err(|_cause| CheckRefusal::MachineInvariant)?;
+            .map_err(|_cause| bare(CheckRefusal::MachineInvariant, kind))?;
     }
     if outcome.is_ok() {
         context.record_accessibility(position, accessibility);

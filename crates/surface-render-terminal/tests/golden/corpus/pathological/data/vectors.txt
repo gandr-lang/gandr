@@ -36,7 +36,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │                             ─── the type it is checked against
 36 │   /// An element standing where its length goes.
 37 │   Wrong : (x : a) --> Misindexed(a, x);
-   │                                     ━ its type does not convert: expected `Nat`, found `?`
+   │                                     ━ its type does not convert: expected `Nat`, found `a`
    │
    ├ note: `Misindexed` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
