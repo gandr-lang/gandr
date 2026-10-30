@@ -2342,5 +2342,58 @@
       "live": { "42": [7] }
     },
     "output": "blocked: #42\n43\tgap\tissue 43"
+  },
+  {
+    "name": "#4110: a sub-epic's unit comes where the sub-epic sits in the focus epic, after a direct unit ahead of the sub-epic though its own index is lower",
+    "input": {
+      "areas": ["area:workflow"],
+      "focus": {
+        "epics": [90],
+        "members": [
+          { "number": 91, "epic": 90, "parent": 90 },
+          { "number": 92, "epic": 90, "parent": 90 },
+          { "number": 93, "epic": 90, "parent": 90 },
+          { "number": 94, "epic": 90, "parent": 93 },
+          { "number": 95, "epic": 90, "parent": 93 }
+        ],
+        "landings": []
+      },
+      "issues": [
+        {
+          "number": 90,
+          "title": "workflow: the focus epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 92,
+          "title": "workflow: the focus epic's direct unit",
+          "labels": ["kind:feature", "area:workflow", "priority:high"],
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        },
+        {
+          "number": 93,
+          "title": "workflow: the sub-epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": 90,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 95,
+          "title": "workflow: the sub-epic's unit",
+          "labels": ["kind:feature", "area:workflow", "priority:high"],
+          "parent": 93,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ],
+      "order": { "90": [91, 92, 93], "93": [95, 94] }
+    },
+    "output": "focus: #90\n92\tfocus\tworkflow: the focus epic's direct unit"
   }
 ]

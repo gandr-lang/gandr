@@ -1863,7 +1863,7 @@ if [[ $focus != null ]]; then
         gh api "repos/$repo/issues/$landing" --jq 'select(.pull_request.merged_at != null) | .number' \
           | while read -r merged; do gh api "repos/$repo/pulls/$merged" --jq '{number, body: (.body // ""), head: .head.ref}'; done
       done | jq -s -c .)
-  focus=$(jq -c --argjson landings "$landings" '{epics, members: [.members[] | {number, epic}], $landings}' <<< "$focus")
+  focus=$(jq -c --argjson landings "$landings" '{epics, members: [.members[] | {number, epic, parent}], $landings}' <<< "$focus")
 fi
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
