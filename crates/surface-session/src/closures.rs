@@ -35,6 +35,8 @@ use gandr_core_incremental::ItemCheckpoint;
 use gandr_kernel_term::DecodedPrefix;
 use gandr_surface_syntax::SourceText;
 
+use crate::memo::Memo;
+
 /// The most closure runs the process's store holds before it lets the one
 /// asked for longest ago go: those of the few documents an editor has open.
 const CLOSURES_HELD: usize = 8;
@@ -127,8 +129,6 @@ struct Held
     checkpoints: Vec<ItemCheckpoint>,
     /// What readmitting them built.
     admission: Arc<ClosureAdmission>,
-    /// The tick of the store's clock it was last asked for at.
-    used: u64,
 }
 
 /// Readmissions of leading runs under the closure's text and each run's
@@ -145,13 +145,12 @@ struct Held
 /// # Adequacy
 /// - hypothesis: L3 — as [`find`].
 /// - witness: `tests::session::an_admission_resumes_the_declarations_a_revision_left_alone_2102`
+#[repr(transparent)]
 #[derive(Debug)]
 pub struct Runs<const HELD: usize>
 {
-    /// The runs, in no order.
-    held: Vec<Held>,
-    /// Ticks once per question.
-    clock: u64,
+    /// The runs.
+    held: Memo<Held, HELD>,
 }
 
 impl<const HELD: usize> Runs<HELD>
@@ -164,10 +163,7 @@ impl<const HELD: usize> Runs<HELD>
     #[must_use]
     pub const fn new() -> Self
     {
-        Self {
-            held: Vec::new(),
-            clock: 0_u64,
-        }
+        Self { held: Memo::new() }
     }
 
     /// The readmission held for a revision laid out after the closure `text`,
@@ -194,18 +190,12 @@ impl<const HELD: usize> Runs<HELD>
         checkpoints: &[ItemCheckpoint],
     ) -> Option<Arc<ClosureAdmission>>
     {
-        self.clock = self.clock.saturating_add(1);
-        let now = self.clock;
         self.held
-            .iter_mut()
-            .filter(|held| {
-                held.text == <&str>::from(text) && checkpoints.starts_with(&held.checkpoints)
+            .find(|held| {
+                (held.text == <&str>::from(text) && checkpoints.starts_with(&held.checkpoints))
+                    .then_some(held.checkpoints.len())
             })
-            .max_by_key(|held| held.checkpoints.len())
-            .map(|held| {
-                held.used = now;
-                Arc::clone(&held.admission)
-            })
+            .map(|held| Arc::clone(&held.admission))
     }
 
     /// Hold `crossed`, the readmission of the leading declarations of a
@@ -229,10 +219,7 @@ impl<const HELD: usize> Runs<HELD>
     /// - hypothesis: L3 — as [`find`].
     /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
     /// - witness: `tests::session::an_admission_resumes_the_declarations_a_revision_left_alone_2102`
-    #[spec(
-        requires: usize::from(crossed.boundary()) == checkpoints.len(),
-        ensures: self.held.len() <= HELD,
-    )]
+    #[spec(requires: usize::from(crossed.boundary()) == checkpoints.len())]
     pub fn keep(
         &mut self,
         text: String,
@@ -244,34 +231,22 @@ impl<const HELD: usize> Runs<HELD>
             crossed,
             decoded: OnceLock::new(),
         });
-        self.clock = self.clock.saturating_add(1);
-        let now = self.clock;
-        self.held
-            .retain(|held| held.text != text || held.checkpoints != checkpoints);
-        self.held.push(Held {
-            text,
-            checkpoints,
-            admission: Arc::clone(&admission),
-            used: now,
-        });
-        while self.held.len() > HELD {
-            let oldest = self
-                .held
-                .iter()
-                .enumerate()
-                .min_by_key(|&(_, held)| held.used)
-                .map(|(index, _)| index);
-            let Some(oldest) = oldest
-            else {
-                break;
-            };
-            let _gone = self.held.swap_remove(oldest);
-        }
+        self.held.keep(
+            Held {
+                text,
+                checkpoints,
+                admission: Arc::clone(&admission),
+            },
+            |held, kept| held.text == kept.text && held.checkpoints == kept.checkpoints,
+        );
         admission
     }
 }
 
 /// The process's runs of closure declarations, shared by every session.
+// economy: no byte form, the codec is #4084. A run's core bodies name nodes
+// of the closure lowering's arena, so the run crosses the store beside the
+// lowering; the kernel's verdicts already cross through the verdict cache.
 static CLOSURES: Mutex<Runs<CLOSURES_HELD>> = Mutex::new(Runs::new());
 
 /// The readmission the process holds for a revision laid out after the closure
