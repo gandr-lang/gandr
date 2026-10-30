@@ -4,6 +4,7 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -18,6 +19,10 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 **Why.** A circuit pattern is neither a spine nor a tree: it may have several roots, reconverge, or hold components with no wire between them, so the substrate's one-sided matcher over command patterns cannot match it. Matching becomes sub-diagram embedding, and an embedding is a legal rewrite site only when it is convex. Both the embedding and the convexity verdict are claims a consumer has to be able to refute, so each comes with the data that refutes it. Two presentations of one diagram differ only in how they number wires and generators, so a consumer that keys on diagrams needs one representative per class, and a verdict that two diagrams are one is a claim too, with the isomorphism as its evidence.
 
 **How.** Monogamy, at most one producer and one consumer per wire, means one assigned wire forces the generators on either side of it, so the search seeds one choice per connected component and propagates the rest. The same forcing makes the canon a traversal rather than a search: the boundary numbers its wires by position, each numbered wire numbers its producer and consumer, and only a component the boundary never reaches needs a seed, chosen by trying every member. Every walk is a loop over explicit frames; nothing recurses on diagram size. Absence and refusal are values: a lookup that can miss returns `Maybe` with a named reason, a refused operation returns `Result` with a typed refusal naming its locus.
+
+## References
+
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — background: the programme's design for the iterated site (§ The design), one site under the wreath product, where `WiringObstruction::DirectedCycle` is the pinwheel's refusal at every level.
 
 ## Provided features
 

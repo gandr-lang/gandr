@@ -144,6 +144,14 @@ pub trait Level
     /// trivial.
     fn degree(object: &Self::Object) -> Degree;
 
+    /// Whether `object` is grounded: no shape of it, at any level, holds a
+    /// point. An empty shape is grounded, so an outer vertex carrying the
+    /// empty column keeps its object.
+    ///
+    /// # Specification
+    /// trivial.
+    fn grounded(object: &Self::Object) -> Membership;
+
     /// The size of `object`, which the level's bound bounds.
     ///
     /// # Specification
@@ -373,6 +381,21 @@ impl Level for Catalogue
     fn degree(object: &Shape) -> Degree
     {
         Degree::of(object)
+    }
+
+    /// Whether the shape holds no point.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn grounded(object: &Shape) -> Membership
+    {
+        if usize::from(object.point_count()) == 0 {
+            Membership::Inside
+        }
+        else {
+            Membership::Outside
+        }
     }
 
     /// [`Shape::size`].

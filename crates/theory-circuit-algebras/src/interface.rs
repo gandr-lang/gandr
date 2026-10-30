@@ -85,6 +85,12 @@
 //! wrappers too, so a wire is never passed where a generator position is
 //! expected. The substrate's wrappers stay the substrate's: one shared
 //! vocabulary would make every budget here a substrate change.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — background: the programme's
+//!   design for the iterated site (§ The design), one site under the wreath
+//!   product, where the acyclicity refusal is the pinwheel's at every level.
 
 pub mod spine;
 
@@ -909,7 +915,11 @@ pub enum WiringObstruction
         wire: Wire,
     },
     /// The diagram has a directed cycle, outside the acyclic fragment every
-    /// theorem the matcher quotes quantifies over.
+    /// theorem the matcher quotes quantifies over. Above dimension one this
+    /// refusal is the pinwheel's: two cells each the other's source are no
+    /// pasting scheme, Leclerc and Mimram's Lemma 3 (pasting schemes are
+    /// acyclic), so `gandr-theory-sites` holds no shape whose cells meet in a
+    /// cycle at any level.
     DirectedCycle
     {
         /// A generator the cycle runs through.

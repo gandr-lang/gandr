@@ -31,6 +31,47 @@
 //! `m_i` is zero, and the 0-cell is an outer wire. Its maps are the site's,
 //! fewer than Θₙ's: faces only, with the empty column initial.
 //!
+//! # The two units, one level up
+//!
+//! Inside a column whose inner shape is empty, a span of two lowering maps has
+//! the empty object as its pushout, and the pushed-out map lowers
+//! (`tests::wreath::a_column_pushes_out_only_by_deleting_its_vertex`).
+//!
+//! The finding is the site's two-units distinction at the wreath level. At
+//! level one the stick, the contraction unit, is refused as an object, since
+//! no degree exists with it. The empty diagram, the external product's unit,
+//! stays. Its one shadow among shapes is the isolated point. The point's
+//! deletion is the one codegeneracy the class keeps, and `Grounded` fences it.
+//! At level two the empty inner shape sits on an outer vertex and reads as an
+//! identity 1-cell. The external product's unit of level one is the
+//! contraction unit of level two. Its deletion is the level-two point
+//! deletion, and the failing pushout is a span of two such deletions
+//! collapsing to the empty object. Level two cannot refuse that object, since
+//! it is the whisker, which the probe certifies. So the level-two answer is
+//! the `Grounded` move, fencing the degeneracy and keeping the object, never
+//! the stick move.
+//!
+//! The level-two unit is a fat object. The site does not drop it, which is the
+//! stick move. The site does not read it as an identity map, which is the
+//! Eilenberg-Zilber move. It is an object of a direct category, and the nerve
+//! theorem characterises its Segal condition. That is the `Grounded` move,
+//! now with a published nerve theorem (de Jong, Kraus, Paoli and Pradal 2026,
+//! Theorems 4.22 and 4.23). Its proof machinery, monads with arities, is the
+//! machinery the vault already uses for the circuit nerve.
+//!
+//! # One site, two uses
+//!
+//! One site serves two uses. The wiring site indexes the ambient model, where
+//! a type is a diagram over the arities and a higher cell is an identity type.
+//! The same site, under the wreath, indexes the cells. There the Segal
+//! condition at a level certifies the composite over a pasting shape. The two
+//! uses coincide at level one, because a 1-pasting is a wiring of 1-cells and
+//! the chains are Δ. The univalence warrant is Shulman's inverse EI theorem
+//! over the level-one site. A wreath level inherits it only through directness
+//! with automorphisms, which the level's certificate re-derives from the level
+//! below. This site drops Eilenberg-Zilber. So Berger and Moerdijk's wreath
+//! theorem is not the warrant.
+//!
 //! # References
 //!
 //! - `Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces`
@@ -40,6 +81,11 @@
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design, the
 //!   iterated site — one site under the wreath product, the stick refused at
 //!   each level and the empty inner shape kept.
+//! - `deJong-2026-study_kocks_fat_delta` — background: Theorems 4.22 and 4.23,
+//!   the fat Δ as relative semiordinals, a direct category whose nerve theorem
+//!   characterises its Segal condition.
+//! - `Shulman-2017-univalence_inverse_ei_diagrams` — background: the univalent
+//!   universe over inverse EI diagrams, the level-one warrant.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -882,6 +928,26 @@ impl<Inner: Level> Level for Wreath<Inner>
         }
         else {
             Invertibility::NotInvertible
+        }
+    }
+
+    /// Whether the outer shape and every column are grounded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn grounded(object: &Self::Object) -> Membership
+    {
+        let grounded = <Catalogue as Level>::grounded(&object.outer) == Membership::Inside
+            && object
+                .columns
+                .iter()
+                .all(|column| Inner::grounded(column) == Membership::Inside);
+        if grounded {
+            Membership::Inside
+        }
+        else {
+            Membership::Outside
         }
     }
 
