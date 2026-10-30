@@ -42,11 +42,14 @@
 #                  stalled or paged again. With a programme focus set and no
 #                  open member unowned (#3959), the line names the focus: no
 #                  claim serves the lane, so the coordinator assigns it.
-# A pull request's lane is its branch's first word, `triage-2783-stack-prefix`
-# the triage lane's; `stall:watch` pages each new finding to its lane's seat
-# and to the coordinator at once (#2972). A lane outside `lanes`, when given,
-# is one no seat holds: its finding is unplaced, and `stall:watch` files it as
-# an issue. A `seat-idle` lane is a seat's by its reading, so always placed.
+# A pull request's lane is the longest lane of `areas` its branch is, or opens
+# with before a `-` (#4058): `triage-2783-stack-prefix` the triage lane's,
+# `triage-2-2784-stall` the triage-2 lane's. A branch naming no lane of
+# `areas` is its first word's. `stall:watch` pages each new finding to its
+# lane's seat and to the coordinator at once (#2972). A lane outside `lanes`,
+# when given, is one no seat holds: its finding is unplaced, and `stall:watch`
+# files it as an issue. A `seat-idle` lane is a seat's by its reading, so
+# always placed.
 #
 # A finding standing `escalate` minutes after it was first paged stalls its
 # pull request: `stall:watch` writes the `stall` comment and adds the
@@ -106,7 +109,11 @@
 | ($in.stalled // {}) as $stalled
 | $in.thresholds as $t
 | def minutes: . / 60 | floor;
-  def lane: .head | split("-")[0];
+  # The longest lane of `areas` the branch is, or opens with before a `-`,
+  # as `claims.sh` reads a merged branch's (#4058); else its first word.
+  def lane: .head as $head
+    | ([($in.areas // {}) | keys[] | select(. as $lane | $head == $lane or ($head | startswith($lane + "-")))]
+       | max_by(length)) // ($head | split("-")[0]);
   def placed: lane as $lane | $in.lanes == null or ($in.lanes | index($lane)) != null;
   def reading: . as $pr
     | [$in.required[] as $name

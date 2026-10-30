@@ -597,6 +597,72 @@
     "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2784:red-unrevised\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
+    "name": "a triage-2 branch is the triage-2 lane's and a triage branch still the triage lane's, the longest lane the branch opens with (#4058)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "areas": { "triage": ["workflow", "ci"], "triage-2": ["workflow", "ci"] },
+      "prs": [
+        {
+          "number": 2784,
+          "draft": false,
+          "bot": false,
+          "head": "triage-2-2784-stall",
+          "base": "main",
+          "oid": "o2784",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "CANCELLED",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        },
+        {
+          "number": 2785,
+          "draft": false,
+          "bot": false,
+          "head": "triage-2785-stack-prefix",
+          "base": "main",
+          "oid": "o2785",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "CANCELLED",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage-2\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage-2 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":2785,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2785 triage 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage-2\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage-2 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":2785,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2785 triage 90m: `test` cancelled, no new head since\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2784:red-unrevised\":{\"first\":100000,\"last\":100000},\"2785:red-unrevised\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
+  },
+  {
     "name": "a check that is not required never makes a pull request red (#2785)",
     "program": "detect.jq",
     "input": {
