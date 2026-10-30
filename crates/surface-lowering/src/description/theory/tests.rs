@@ -1660,7 +1660,8 @@ fn a_rendered_signature_reparses_to_itself()
         ),
     ]);
     // A square's cells over two of its sides, with a face of no point: the
-    // shape renders first and its faces their points ascending.
+    // boundary renders first and each face its names in point order. Past
+    // ten points the rendered names are padded, so they read back in order.
     let points = |raw: &[usize]| {
         raw.iter()
             .copied()
@@ -1674,6 +1675,13 @@ fn a_rendered_signature_reparses_to_itself()
         ShapeFace::new("left", points(&[0, 2])),
         ShapeFace::new("right", points(&[3, 1])),
         ShapeFace::new("none", []),
+    ]));
+    let line = signature("Line", vec![SortDesc::new("A", DeclPolarity::Data)], vec![
+        operation("cell", vec![], SortRef::new("", "A")),
+    ])
+    .with_shape(TheoryShape::new("Eleven", ShapeSize::from(11_usize), [
+        ShapeFace::new("ends", points(&[0, 10])),
+        ShapeFace::new("second", points(&[2])),
     ]));
     // Names and terms over them: an atom sort, taken by two operations.
     let renaming = signature(
@@ -1740,6 +1748,7 @@ fn a_rendered_signature_reparses_to_itself()
         identity_return,
         naturals,
         square,
+        line,
         renaming,
         restriction,
     ] {
@@ -1788,15 +1797,18 @@ fn a_rendered_signature_reparses_to_itself()
 #[test]
 fn a_face_past_its_shape_is_refused_by_name()
 {
-    for (source, kind, written) in [
+    for (source, kind, subjects, written) in [
         (
-            "theory Cells { shape Square : 4 { far = {1, 4}; }; sort A : Type; }",
+            "theory Cells { boundary Square { a, b, c, d }; face far = { b, e }; sort A : Type; }",
             gandr_theory_levitation::WfKind::FaceOutsideShape,
-            "a face holding a point past its shape",
+            ["far", "Square"],
+            "a face holding a name its boundary lacks",
         ),
         (
-            "theory Cells { shape Square : 4 { left = {0}; left = {2}; }; sort A : Type; }",
+            "theory Cells { boundary Square { a, b, c, d }; face left = { a }; face left = { c }; \
+             sort A : Type; }",
             gandr_theory_levitation::WfKind::DuplicateFaceName,
+            ["Square", "left"],
             "a face named twice",
         ),
     ] {
@@ -1809,19 +1821,81 @@ fn a_face_past_its_shape_is_refused_by_name()
             matches!(
                 diagnostic.fault,
                 DescriptionFault::IllFormed(ref reason) if reason.kind == kind
+                    && reason.subjects.iter().map(AsRef::as_ref).eq(subjects)
             ),
-            "{written} is the description check's: {diagnostic:?}"
+            "{written} is the description check's, by name: {diagnostic:?}"
         );
     }
-    let report =
-        described("theory Cells { shape Square : 4 { }; shape Line : 2 { }; sort A : Type; }");
+    let report = described("theory Cells { boundary Line { a, b, b }; sort A : Type; }");
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
-        panic!("a signature states one shape: {:?}", report.diagnostics)
+        panic!("a repeated name is one refusal: {:?}", report.diagnostics)
     };
     assert!(
-        matches!(diagnostic.fault, DescriptionFault::Malformed),
-        "a second shape is malformed: {diagnostic:?}"
+        matches!(
+            diagnostic.fault,
+            DescriptionFault::Signature(SignatureFault::RepeatedPoint { ref name, .. })
+                if name.as_ref() == "b"
+        ),
+        "a name the boundary lists twice is refused by the name: {diagnostic:?}"
+    );
+    for (source, fault, written) in [
+        (
+            "theory Cells { boundary Square { a, b, c, d }; boundary Line { a, b }; sort A : Type; }",
+            DescriptionFault::Malformed,
+            "a second boundary",
+        ),
+        (
+            "theory Cells { face left = { a }; sort A : Type; }",
+            DescriptionFault::Malformed,
+            "a face with no boundary",
+        ),
+        (
+            "theory Cells { shape Square : 4 { left = {0, 2}; }; sort A : Type; }",
+            DescriptionFault::Signature(SignatureFault::RetiredShapeMember),
+            "the retired `shape`",
+        ),
+    ] {
+        let report = described(source);
+        let [ref diagnostic] = *report.diagnostics.as_slice()
+        else {
+            panic!("{written}: one refusal: {:?}", report.diagnostics)
+        };
+        assert_eq!(diagnostic.fault, fault, "{written}");
+    }
+}
+
+#[test]
+fn a_face_reads_its_points_in_the_boundary_s_name_order()
+{
+    let report = described(
+        "theory Cells { boundary Square { tl, tr, bl, br }; face left = { tl, bl }; face top = { \
+         tr, tl }; sort A : Type; }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let [ref theory] = *report.declarations.as_slice()
+    else {
+        panic!("one theory: {:?}", report.declarations)
+    };
+    let Maybe::Present(ref shape) = theory.description.shape
+    else {
+        panic!("the block states a shape")
+    };
+    let faces: Vec<(&str, Vec<usize>)> = shape
+        .faces
+        .iter()
+        .map(|face| {
+            (
+                face.name().as_ref(),
+                face.points().iter().copied().map(usize::from).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(usize::from(shape.points), 4);
+    assert_eq!(
+        faces,
+        [("left", vec![0, 2]), ("top", vec![2, 3])],
+        "`bl`, `br`, `tl`, `tr` are points 0 to 3, whatever order the boundary and the face write"
     );
 }
 
@@ -2537,10 +2611,10 @@ fn two_joins_of_one_pair_are_refused_by_name()
 fn an_extension_generates_its_signature()
 {
     let generated = described(
-        "theory Gen {\n  shape Two : 2 {\n    left = {0};\n  };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
+        "theory Gen {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
     );
     let written = described(
-        "theory Gen {\n  shape Two : 2 {\n    left = {0};\n  };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (y1 : Val) --> Cell;\n  oper outCell0 : (e : Cell) --> Val;\n  oper outCell1 : (e : Cell) --> Val;\n  rule boundaryCell0 : outCell0(e) ==> zero();\n  rule betaCell1 : outCell1(inCell(y1)) ==> y1;\n  rule etaCell : inCell(outCell1(e)) ==> e;\n}\n",
+        "theory Gen {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (yq : Val) --> Cell;\n  oper outCellp : (e : Cell) --> Val;\n  oper outCellq : (e : Cell) --> Val;\n  rule boundaryCellp : outCellp(e) ==> zero();\n  rule betaCellq : outCellq(inCell(yq)) ==> yq;\n  rule etaCell : inCell(outCellq(e)) ==> e;\n}\n",
     );
     assert_eq!(generated.diagnostics, []);
     assert_eq!(written.diagnostics, []);
@@ -2557,7 +2631,7 @@ fn an_extension_generates_its_signature()
 #[test]
 fn an_extension_is_refused_by_name()
 {
-    let shaped = "  shape Two : 2 {\n    left = {0};\n    both = {0, 1};\n  };\n";
+    let shaped = "  boundary Two { p, q };\n  face left = { p };\n  face both = { p, q };\n";
     let refused = |fault| DescriptionFault::Signature(SignatureFault::Extension(fault));
     for (shape, member, fault) in [
         (
@@ -2943,7 +3017,7 @@ fn each_malformed_member_is_refused_by_its_fault()
             DescriptionFault::TypeShape,
         ),
         (
-            "theory T { sort Tm : Type+; shape Q : 4 { a = {0 1}; }; }",
+            "theory T { sort Tm : Type+; boundary Q { a, b }; face f = { a b }; }",
             DescriptionFault::Malformed,
         ),
         (

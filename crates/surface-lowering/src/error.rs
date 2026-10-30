@@ -488,6 +488,9 @@ pub enum FormFault
     /// A word one edit from this keyword, standing where the form then holds
     /// an operand it does not take: the keyword misspelt, read as a name.
     Misspelt(crate::form::TileName),
+    /// A retired keyword standing where the form spells this one: the site
+    /// names the keyword that replaces it.
+    Retired(crate::form::TileName),
 }
 
 impl fmt::Display for FormFault
@@ -522,6 +525,13 @@ impl fmt::Display for FormFault
                 )
             },
             Self::Misspelt(keyword) => write!(f, "misspells `{}`", keyword.as_ref()),
+            Self::Retired(keyword) => {
+                write!(
+                    f,
+                    "uses a retired keyword in place of `{}`",
+                    keyword.as_ref()
+                )
+            },
         }
     }
 }
@@ -1881,9 +1891,14 @@ fn ill_formed(
             "the wiring of the rule {one} reads the port {other}, one output of a many-out \
              node, on its own"
         ),
-        WfKind::DuplicateFaceName => write!(f, "the shape {one} names the face {other} twice"),
+        WfKind::DuplicateFaceName => {
+            write!(f, "the boundary {one} names the face {other} twice")
+        },
         WfKind::FaceOutsideShape => {
-            write!(f, "the face {one} holds a point outside the shape {other}")
+            write!(
+                f,
+                "the face {one} holds a name the boundary {other} does not list"
+            )
         },
         WfKind::UnsortedBinding => write!(
             f,
@@ -3220,6 +3235,7 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Bracket),
             &FormFault::MissingOpen(ClosingClass::Brace),
             &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
+            &FormFault::Retired(crate::form::TileName::BOUNDARY),
         ]));
         assert_apart(&render(&[
             &FragmentBoundary::Reserved(Unbuilt::Dup),

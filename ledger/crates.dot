@@ -249,6 +249,7 @@ digraph crates {
   "surface-lowering" -> "theory-coherent-resolutions";
   "surface-lowering" -> "theory-computads";
   "surface-lowering" -> "theory-levitation";
+  "surface-lowering" -> "theory-shapes";
   "surface-lowering" -> "theory-spec-combinators";
   "surface-lsp" -> "core-incremental";
   "surface-lsp" -> "storage-records";

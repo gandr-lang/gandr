@@ -1,6 +1,7 @@
 /// `IllFormedDescription`: a description the description check refuses.
 @[ refuses("IllFormedDescription") ]
 theory Past {
-  shape Square : 4 { far = {1, 4}; };
+  boundary Square { a, b, c, d };
+  face far = {b, e};
   sort Cell : Type;
 }

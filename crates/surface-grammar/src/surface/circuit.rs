@@ -620,18 +620,18 @@ fn top_level_judgment() -> Regex
 /// `sort` a colour, `data` a constructor, `oper` a circuit 1-cell, `obs` an
 /// observation of a sort, `rule` a rewrite face. `sort` and `data` are
 /// boundary-only; `oper` and `rule` may carry a filler, and `obs` rides
-/// `oper`'s form. A sixth, `shape`, states the finite shape the signature's
-/// cells are stated over and its named faces, each the subshape of the points
-/// it lists; its spelling is provisional. A sixth, `include`, names a theory
-/// whose members the block extends. A seventh, `ext`, states an extension
-/// type over the shape: a sort of cells fixed to a constant on a face. An
-/// eighth, `law`, states an equation no rule orients, as the path type a model
-/// proves it at.
+/// `oper`'s form. `shape` is the retired spelling of the shape parameter,
+/// read so the description refuses it naming `boundary`. `include` names a
+/// theory whose members the block extends. `ext` states an extension type
+/// over the boundary: a sort of cells fixed to a constant on a face. `law`
+/// states an equation no rule orients, as the path type a model proves it at.
+/// `boundary` names the carrier the signature's cells are stated over, one
+/// name per point, and `face` names a sub-store of it by the names it holds.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the sort, data, circuit-judgment, shape, include, extension and
-///   law member alternatives.
+/// - ensures: the sort, data, circuit-judgment, retired shape, include,
+///   extension, law, boundary and face member alternatives.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -643,7 +643,7 @@ fn top_level_judgment() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include")))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "ext")))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 9 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include")))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "ext")))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law")))) && parts.get(7).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "boundary")))) && parts.get(8).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "face"))))))]
 fn theory_member() -> Regex
 {
     alt([
@@ -668,9 +668,8 @@ fn theory_member() -> Regex
             signature(),
         ]),
         circuit_judgment(),
-        // `shape Square : 4 { left = {0, 2}; }` — the shape parameter: a
-        // finite shape of the written size and its named faces, each the
-        // subshape of the points it lists.
+        // `shape Square : 4 { left = {0, 2}; }` — the retired spelling of
+        // the shape parameter, read so the description refuses it by name.
         seq([
             t(TileLabel("shape")),
             t(TileLabel("type_identifier")),
@@ -715,7 +714,51 @@ fn theory_member() -> Regex
             t(TileLabel(":")),
             h(Sort::Type),
         ]),
+        // `boundary Square { tl, tr, bl, br }` — the carrier the signature's
+        // cells are stated over, one name per point.
+        seq([
+            t(TileLabel("boundary")),
+            t(TileLabel("type_identifier")),
+            t(TileLabel("{")),
+            names(),
+            t(TileLabel("}")),
+        ]),
+        // `face left = { tl, bl }` — a face of the boundary, the sub-store of
+        // the names it holds.
+        seq([
+            t(TileLabel("face")),
+            t(TileLabel("identifier")),
+            t(TileLabel("=")),
+            t(TileLabel("{")),
+            names(),
+            t(TileLabel("}")),
+        ]),
     ])
+}
+
+/// Build a comma-separated list of names, possibly empty: a boundary's points
+/// or a face's.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an optional sequence of one identifier and any number of comma
+///   and identifier pairs.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root. This is
+///   not a language-equivalence proof beyond the finite corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Optional(_)))]
+fn names() -> Regex
+{
+    opt(seq([
+        t(TileLabel("identifier")),
+        repeat(seq([t(TileLabel(",")), t(TileLabel("identifier"))])),
+    ]))
 }
 
 /// Build a sort's index telescope `( a : A, … )`: an operation's parameter

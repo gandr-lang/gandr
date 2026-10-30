@@ -1,14 +1,14 @@
 //! The `ext` member: an extension type stated as the signature the face theory
 //! generates for it.
 //!
-//! `ext Cell = Val on left is zero` over a `shape` of `n` points declares the
-//! sort `Cell` of cells of `Val` fixed to `zero` on the face `left`, and
-//! generates its operations and laws (Tesla Zhang, _Three non-cubical
-//! applications of extension types_, arXiv:2311.05658):
+//! `ext Cell = Val on left is zero` over a `boundary` declares the sort `Cell`
+//! of cells of `Val` fixed to `zero` on the face `left`, and generates its
+//! operations and laws (Tesla Zhang, _Three non-cubical applications of
+//! extension types_, arXiv:2311.05658), each named for the point `p` it
+//! concerns by the point's name:
 //!
-//! - `inCell`, one input `yq : Val` per point `q` off the face, in ascending
-//!   order, and one output at `Cell`: a cell is introduced by its values off
-//!   the face;
+//! - `inCell`, one input `yq : Val` per point `q` off the face, in point order,
+//!   and one output at `Cell`: a cell is introduced by its values off the face;
 //! - `outCellp : (e : Cell) --> Val` for every point `p`: a cell read at `p`;
 //! - `boundaryCellp : outCellp(e) ==> zero()` for every point `p` of the face;
 //! - `betaCellq : outCellq(inCell(yq₁, …)) ==> yq` for every point `q` off it;
@@ -26,6 +26,7 @@
 
 use alloc::collections::BTreeSet;
 use alloc::format;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -191,14 +192,15 @@ impl Reader<'_, '_>
     /// # Specification
     /// - requires: `parts` holds the block's shape, sorts and operations, the
     ///   cell sort among them; `tiles` holds the name tile of each of `parts`'
-    ///   operations, in order, and `faces` the name tile of each of its shape's
-    ///   faces the block writes, in order.
-    /// - ensures: `inCell` over the points off the face, ascending; one
-    ///   `outCellp` per point of the shape; one boundary law per point of the
-    ///   face, one β law per point off it, and the η law — each named for the
-    ///   cell sort and the point, as the module states, none with a written
-    ///   name or arrow; and the face's and the boundary's names as uses of the
-    ///   face's and the constant's name tiles, each where its tile is held.
+    ///   operations, in order; `faces.0` the name tile of each of its shape's
+    ///   faces the block writes, in order, and `faces.1` each point's name.
+    /// - ensures: `inCell` over the points off the face, in point order; one
+    ///   `outCellp` per point `p` of the shape; one boundary law per point of
+    ///   the face, one β law per point off it, and the η law — each named for
+    ///   the cell sort and the point's name, as the module states, none with a
+    ///   written name or arrow; and the face's and the boundary's names as uses
+    ///   of the face's and the constant's name tiles, each where its tile is
+    ///   held.
     /// - fails: a block with no shape, a face the shape does not name, a face
     ///   holding every point, an extended type that is not an unindexed sort of
     ///   the block other than the cell sort, and a boundary that is not a
@@ -220,7 +222,7 @@ impl Reader<'_, '_>
         extension: &Extension,
         parts: &TheoryParts,
         tiles: &[Placed],
-        faces: &[Placed],
+        (faces, names): (&[Placed], &[Written<'_>]),
     ) -> Result<Generated, DescriptionDiagnostic>
     {
         let refused = |fault: ExtensionFault| DescriptionDiagnostic {
@@ -276,8 +278,14 @@ impl Reader<'_, '_>
             return Err(refused(ExtensionFault::CoveringFace(Name::from(face_name))));
         }
         let introduce = Name::from(format!("in{cell}"));
-        let read = |point: ShapePoint| Name::from(format!("out{cell}{}", usize::from(point)));
-        let value = |point: ShapePoint| Name::from(format!("y{}", usize::from(point)));
+        let named = |point: ShapePoint| {
+            names.get(usize::from(point)).map_or_else(
+                || format!("{}", usize::from(point)),
+                |&Written(name)| String::from(name),
+            )
+        };
+        let read = |point: ShapePoint| Name::from(format!("out{cell}{}", named(point)));
+        let value = |point: ShapePoint| Name::from(format!("y{}", named(point)));
         let port = |name: Name, sort: &str| TheoryPort {
             name,
             sort: Name::from(sort),
@@ -359,14 +367,14 @@ impl Reader<'_, '_>
         let mut laws = Vec::with_capacity(points.len().saturating_add(1));
         for &point in face.points() {
             laws.push(law(
-                Name::from(format!("boundary{cell}{}", usize::from(point))),
+                Name::from(format!("boundary{cell}{}", named(point))),
                 FreeTerm::op(read(point), [cell_variable()]),
                 FreeTerm::op(boundary, []),
             ));
         }
         for &point in &off {
             laws.push(law(
-                Name::from(format!("beta{cell}{}", usize::from(point))),
+                Name::from(format!("beta{cell}{}", named(point))),
                 FreeTerm::op(read(point), [introduced.clone()]),
                 FreeTerm::var(value(point)),
             ));

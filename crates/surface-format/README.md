@@ -68,7 +68,7 @@ The formatter reads the concrete syntax tree, because the core drops comments an
 Only layout changes. Every token and comment is written once, in source order, with its own bytes. Where a line breaks is the source's (below); the space between two tokens on one line is the printer's, whatever the source wrote, as rustfmt decides Rust's. The parse reads no space inside a line. The rules, each form's cases in `src/space.rs`:
 
 - **Separators.** A `,` or `;` touches what precedes it and is followed by one space: `f(a, b)`, `def a = 1;`.
-- **Brackets.** `(`, `[`, a record's `#{`, a sum's `+{`, a lazy record's `&{`, a shape face's `{` and an implicit telescope's `@[` hug: `(x)`, `#{a = 1}`, `left = {0, 2}`, `@[r : Row]`. A block's `{`, an attribute block's `@[` and a module signature's `#{` pad: `{ x }`, `@[ checks ]`, `#{ type T }`. An empty group hugs.
+- **Brackets.** `(`, `[`, a record's `#{`, a sum's `+{`, a lazy record's `&{`, a face's `{` and an implicit telescope's `@[` hug: `(x)`, `#{a = 1}`, `face left = {tl, bl}`, `@[r : Row]`. A block's `{`, a boundary's `{`, an attribute block's `@[` and a module signature's `#{` pad: `{ x }`, `boundary Square { tl, bl }`, `@[ checks ]`, `#{ type T }`. An empty group hugs.
 - **Application.** A `(` or `[` touches the word or hugging bracket it applies to, `f(x)`, `x[0]`; one opening an operand, a row, a world or a binder list stands apart: `-F (A)`, `-F [Div] A`, `requires [Console]`, `fn (x)`, `@[r : Row] (k : K)`.
 - **Dots and prefixes.** A path's `.` touches both sides, `r.a`; a binder's is followed by one space, `\x. x`. A prefix operator touches its operand: `-2`, `!A`.
 - **Everything else.** One space, a comment included: `x : T`, `a = b`, `a + b`.

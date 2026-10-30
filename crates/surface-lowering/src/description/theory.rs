@@ -109,20 +109,24 @@
 //!
 //! # The shape parameter
 //!
-//! A `shape` member states the finite shape the signature's cells are stated
-//! over and its named faces: `shape Square : 4 { left = {0, 2}; right = {1,
-//! 3}; }` is a shape of four points and two faces of it, each the subshape of
-//! the points it lists (Schönlank, Nuyts and Devriese, _Towards `FaceTT`_,
-//! TYPES 2026: the shape parameter `ft`). The reader codes it in the value at
-//! the head of the sort chain, so the block's rendering reads back to its
-//! description; a face with a point past the shape and a face named twice are
-//! the description check's `FaceOutsideShape` and `DuplicateFaceName`, and a
-//! second `shape` member is malformed. The extension type reads a face as the
-//! subshape a cell is fixed on. The spelling is provisional: the keyword, the
-//! size after the colon and the braces around each face's points are the
-//! first that read, not a settled surface. Witnesses:
+//! A `boundary` member names the carrier the signature's cells are stated
+//! over, one name per point, and each `face` member a face of it by the names
+//! it holds: `boundary Square { tl, tr, bl, br }; face left = { tl, bl };`
+//! (Schönlank, Nuyts and Devriese, _Towards `FaceTT`_, TYPES 2026: the shape
+//! parameter `ft`). The reader takes the names through
+//! `gandr_theory_shapes::Boundary`, which runs the points in name order, and
+//! codes the shape over `Fin(m)` in the value at the head of the sort chain,
+//! so the block's rendering reads back to its description. A name listed
+//! twice is refused by the name, a face holding a name the boundary lacks is
+//! the description check's `FaceOutsideShape` naming the face, a face named
+//! twice its `DuplicateFaceName`, and a second `boundary` or a face with none
+//! is malformed. The retired spelling `shape Square : 4 { … }` is refused
+//! naming `boundary`, so the word is the site's alone. The extension type
+//! reads a face as the subshape a cell is fixed on, and names each point it
+//! generates a member for by the point's name. Witnesses:
 //! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
-//! `description::theory::tests::a_face_past_its_shape_is_refused_by_name`.
+//! `description::theory::tests::a_face_past_its_shape_is_refused_by_name`,
+//! `description::theory::tests::a_face_reads_its_points_in_the_boundary_s_name_order`.
 //!
 //! # A presentation is a value
 //!
@@ -223,7 +227,12 @@ use gandr_theory_levitation::WfDiagnostic;
 use gandr_theory_levitation::WfKind;
 use gandr_theory_levitation::derive_boundaries;
 use gandr_theory_levitation::derive_cell_var_meta;
+use gandr_theory_levitation::diagnostic_span;
 use gandr_theory_levitation::row_condition;
+use gandr_theory_shapes::Boundary as Carrier;
+use gandr_theory_shapes::BoundaryError;
+use gandr_theory_shapes::Membership;
+use gandr_theory_shapes::Point;
 use quenchant_shape::shape::Maybe;
 
 use super::DescribedDeclaration;
@@ -508,6 +517,9 @@ impl Reader<'_, '_>
         let mut included_circuits = BTreeSet::new();
         let mut extensions = Vec::new();
         let mut face_tiles = Vec::new();
+        let mut point_names: Vec<Written<'_>> = Vec::new();
+        let mut boundary: Option<(ByteSpan, Placed, Vec<Placed>)> = None;
+        let mut faces: Vec<(ByteSpan, Placed, Vec<Placed>)> = Vec::new();
         let mut laws: Vec<StatedLaw> = Vec::new();
         // Each stated law's name, at its place among `laws`.
         let mut stated: BTreeMap<Name, usize> = BTreeMap::new();
@@ -651,14 +663,22 @@ impl Reader<'_, '_>
                 continue;
             }
             if reading.eat(Spelling("shape")).0 {
-                match self.signature_shape(&mut reading) {
-                    Ok(_) if matches!(parts.shape, Maybe::Present(_)) => {
+                diagnostics.push(reading.signature_fault(SignatureFault::RetiredShapeMember));
+                continue;
+            }
+            if reading.eat(Spelling("boundary")).0 {
+                match Self::named_points(&mut reading) {
+                    Ok(_) if boundary.is_some() => {
                         diagnostics.push(reading.fault(DescriptionFault::Malformed));
                     },
-                    Ok((shape, tiles)) => {
-                        parts.shape = Maybe::Present(shape);
-                        face_tiles = tiles;
-                    },
+                    Ok(read) => boundary = Some((span, read.0, read.1)),
+                    Err(diagnostic) => diagnostics.push(diagnostic),
+                }
+                continue;
+            }
+            if reading.eat(Spelling("face")).0 {
+                match Self::named_face(&mut reading) {
+                    Ok(read) => faces.push((span, read.0, read.1)),
                     Err(diagnostic) => diagnostics.push(diagnostic),
                 }
                 continue;
@@ -687,6 +707,15 @@ impl Reader<'_, '_>
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
+        match self.boundary_shape(boundary.as_ref(), &faces) {
+            Ok(Some((shape, tiles, names))) => {
+                parts.shape = Maybe::Present(shape);
+                face_tiles = tiles;
+                point_names = names;
+            },
+            Ok(None) => {},
+            Err(refused) => diagnostics.extend(refused),
+        }
         for (marked, member) in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -698,7 +727,11 @@ impl Reader<'_, '_>
                     fault: DescriptionFault::Malformed,
                 });
             }
-            let result = if reading.eat(Spelling("sort")).0 || reading.eat(Spelling("shape")).0 {
+            let result = if reading.eat(Spelling("sort")).0
+                || reading.eat(Spelling("shape")).0
+                || reading.eat(Spelling("boundary")).0
+                || reading.eat(Spelling("face")).0
+            {
                 continue;
             }
             else if reading.eat(Spelling("data")).0 {
@@ -767,7 +800,12 @@ impl Reader<'_, '_>
             }
         }
         for extension in &extensions {
-            match self.extended(extension, &parts, &placement.operations, &face_tiles) {
+            match self.extended(
+                extension,
+                &parts,
+                &placement.operations,
+                (&face_tiles, &point_names),
+            ) {
                 Ok(generated) => {
                     for (operation, tile, ports) in generated.operations {
                         parts.operations.push(operation);
@@ -1181,101 +1219,231 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a shape member: the finite shape the signature's cells are stated
-    /// over, its named faces, and each face's name tile.
+    /// Read a `boundary` member after its keyword, `Square { tl, tr, bl, br }`:
+    /// its name tile and the tiles of the names it lists.
     ///
     /// # Specification
-    /// - ensures: the shape of the written name and size, one face per written
-    ///   face in order, each holding the points it lists, and beside it the
-    ///   faces' name tiles in the same order; a point past the shape is kept
-    ///   for the description check to refuse by name.
-    /// - fails: a size or a point that is not a decimal numeral, and a member
-    ///   missing its colon, a brace, an equals sign or a separator, is a
-    ///   member-local refusal.
+    /// - requires: `run` stands after the member's `boundary` keyword.
+    /// - ensures: the boundary's name tile and each listed name's tile, in
+    ///   written order, a repetition kept for [`Self::boundary_shape`] to
+    ///   refuse by name.
+    /// - fails: a member missing its name, a brace or a separator, or with a
+    ///   trailing piece, is a member-local refusal.
     /// - panics: none.
-    /// - executable: none — the written member is source syntax the shape does
+    /// - executable: none — the written member is source syntax the tiles do
     ///   not retain.
     ///
     /// # Errors
     /// Returns malformed syntax.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a shape with two faces and an empty one reads back
-    ///   from its rendering, and a face past its shape is refused by the
-    ///   description check rather than by the reader.
+    /// - hypothesis: L3 — a boundary with two faces and an empty one reads back
+    ///   from its rendering.
     /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
-    /// - witness: `description::theory::tests::a_face_past_its_shape_is_refused_by_name`
-    fn signature_shape(
-        &self,
-        run: &mut Run<'_>,
-    ) -> Result<(TheoryShape, Vec<Placed>), DescriptionDiagnostic>
+    fn named_points(run: &mut Run<'_>) -> Result<(Placed, Vec<Placed>), DescriptionDiagnostic>
     {
         let name = run.take()?;
-        if !run.eat(Spelling(":")).0 {
-            return Err(run.signature_fault(SignatureFault::MissingJudgment));
+        let names = Self::braced_names(run)?;
+        run.end()?;
+        Ok((name, names))
+    }
+
+    /// Read a `face` member after its keyword, `left = { tl, bl }`: its name
+    /// tile and the tiles of the names it holds.
+    ///
+    /// # Specification
+    /// - requires: `run` stands after the member's `face` keyword.
+    /// - ensures: the face's name tile and each held name's tile, in written
+    ///   order.
+    /// - fails: a member missing its name, its `=`, a brace or a separator, or
+    ///   with a trailing piece, is a member-local refusal.
+    /// - panics: none.
+    /// - executable: none — the written member is source syntax the tiles do
+    ///   not retain.
+    ///
+    /// # Errors
+    /// Returns malformed syntax.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::named_points`].
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
+    fn named_face(run: &mut Run<'_>) -> Result<(Placed, Vec<Placed>), DescriptionDiagnostic>
+    {
+        let name = run.take()?;
+        if !run.eat(Spelling("=")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
         }
-        let size = run.take()?;
-        let size: ShapeSize = self.numeral(size, run)?;
+        let names = Self::braced_names(run)?;
+        run.end()?;
+        Ok((name, names))
+    }
+
+    /// Read `{ a, b, … }`: the tiles of the names between the braces.
+    ///
+    /// # Specification
+    /// - ensures: each name's tile, in written order.
+    /// - fails: a missing brace or separator is a member-local refusal.
+    /// - panics: none.
+    /// - executable: none — the braces and names are source syntax the tiles do
+    ///   not retain.
+    ///
+    /// # Errors
+    /// Returns malformed syntax.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::named_points`].
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
+    fn braced_names(run: &mut Run<'_>) -> Result<Vec<Placed>, DescriptionDiagnostic>
+    {
         if !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let mut faces = Vec::new();
-        let mut tiles = Vec::new();
+        let mut names = Vec::new();
         while !run.eat(Spelling("}")).0 {
-            let face = run.take()?;
-            if !run.eat(Spelling("=")).0 || !run.eat(Spelling("{")).0 {
+            names.push(run.take()?);
+            if !run.eat(Spelling(",")).0 && !run.at(Spelling("}")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
-            let mut points: Vec<ShapePoint> = Vec::new();
-            while !run.eat(Spelling("}")).0 {
-                let point = run.take()?;
-                points.push(self.numeral(point, run)?);
-                if !run.eat(Spelling(",")).0 && !run.at(Spelling("}")).0 {
-                    return Err(run.fault(DescriptionFault::Malformed));
-                }
-            }
-            if !run.eat(Spelling(";")).0 {
-                return Err(run.fault(DescriptionFault::Malformed));
-            }
-            faces.push(ShapeFace::new(self.text(face).0, points));
-            tiles.push(face);
         }
-        run.end()?;
-        Ok((TheoryShape::new(self.text(name).0, size, faces), tiles))
+        Ok(names)
     }
 
-    /// The count a numeral tile writes, as the wrapper `Count` that holds it.
+    /// The shape parameter a block's `boundary` and `face` members state, read
+    /// through the nominal substrate: names in, points over `Fin(m)` out.
     ///
     /// # Specification
-    /// - ensures: the decimal value of the tile's text.
-    /// - fails: text that is not a decimal numeral within the machine word is a
-    ///   member-local refusal.
+    /// - requires: `boundary` is the block's one `boundary` member, as its
+    ///   span, name tile and name tiles, and `faces` its `face` members alike,
+    ///   in written order.
+    /// - ensures: none with no boundary and no face; otherwise the shape of the
+    ///   boundary's name with one point per name, in name order, and one face
+    ///   per `face` member in written order, each holding the points of its
+    ///   names; beside it the faces' name tiles in the same order and each
+    ///   point's name.
+    /// - fails: a name the boundary lists twice is refused by the name at its
+    ///   second listing, a face holding a name the boundary lacks is refused as
+    ///   `FaceOutsideShape` naming the face and the boundary, and a face with
+    ///   no boundary is malformed.
     /// - panics: none.
-    /// - executable: none — the numeral's text is source syntax the count does
-    ///   not retain.
+    /// - executable: none — the faces' membership is the substrate's, decided
+    ///   over names the result does not retain.
     ///
     /// # Errors
-    /// Returns malformed syntax.
+    /// Returns each refused member's diagnostic.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::signature_shape`].
+    /// - hypothesis: L3 — a face's points follow the boundary's name order, not
+    ///   the written one, and each refusal names what it refuses.
     /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
-    fn numeral<Count>(
+    /// - witness: `description::theory::tests::a_face_past_its_shape_is_refused_by_name`
+    #[expect(
+        clippy::type_complexity,
+        reason = "the shape, its face tiles and its point names are read together"
+    )]
+    fn boundary_shape(
         &self,
-        at: Placed,
-        run: &Run<'_>,
-    ) -> Result<Count, DescriptionDiagnostic>
-    where
-        Count: From<usize>,
+        boundary: Option<&(ByteSpan, Placed, Vec<Placed>)>,
+        faces: &[(ByteSpan, Placed, Vec<Placed>)],
+    ) -> Result<Option<(TheoryShape, Vec<Placed>, Vec<Written<'_>>)>, Vec<DescriptionDiagnostic>>
     {
-        let written = self.text(at).0;
-        if written.is_empty() || !written.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(run.fault(DescriptionFault::Malformed));
+        let Some(&(_, name, ref points)) = boundary
+        else {
+            return if faces.is_empty() {
+                Ok(None)
+            }
+            else {
+                Err(faces
+                    .iter()
+                    .map(|&(span, ..)| DescriptionDiagnostic {
+                        span,
+                        fault: DescriptionFault::Malformed,
+                    })
+                    .collect())
+            };
+        };
+        let shape_name = self.text(name).0;
+        let written: Vec<&str> = points.iter().map(|&point| self.text(point).0).collect();
+        let carrier = match Carrier::new(written.clone()) {
+            Ok(carrier) => carrier,
+            Err(BoundaryError::Repeated(repeated)) => {
+                let mut listed = points
+                    .iter()
+                    .filter(|&&point| self.text(point).0 == repeated);
+                let first = listed.next().map_or(name.span, |point| point.span);
+                let second = listed.next().map_or(name.span, |point| point.span);
+                return Err(vec![DescriptionDiagnostic {
+                    span: second,
+                    fault: DescriptionFault::Signature(SignatureFault::RepeatedPoint {
+                        name: Name::from(repeated),
+                        first,
+                    }),
+                }]);
+            },
+            Err(
+                BoundaryError::Unbound(_)
+                | BoundaryError::Disagreement(_)
+                | BoundaryError::Shape(_),
+            ) => {
+                return Err(vec![DescriptionDiagnostic {
+                    span: name.span,
+                    fault: DescriptionFault::Malformed,
+                }]);
+            },
+        };
+        let mut refused = Vec::new();
+        let mut read = Vec::with_capacity(faces.len());
+        let mut held: Vec<&str> = Vec::new();
+        for &(span, face, ref names) in faces {
+            held.clear();
+            held.extend(names.iter().map(|&point| self.text(point).0));
+            let face_name = self.text(face).0;
+            match carrier.face(&held) {
+                Ok(subshape) => read.push(ShapeFace::new(
+                    face_name,
+                    subshape
+                        .decisions()
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, decision)| *decision == Membership::Inside)
+                        .map(|(point, _)| ShapePoint::from(point)),
+                )),
+                Err(BoundaryError::Unbound(outside)) => refused.push(DescriptionDiagnostic {
+                    span,
+                    fault: DescriptionFault::IllFormed(WfDiagnostic::new(
+                        WfKind::FaceOutsideShape,
+                        Box::from([Name::from(face_name), Name::from(shape_name)]),
+                        DiagnosticMessage::from(format!(
+                            "face '{face_name}' of boundary '{shape_name}' holds '{outside}', a \
+                             name the boundary lacks"
+                        )),
+                        Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+                    )),
+                }),
+                Err(
+                    BoundaryError::Repeated(_)
+                    | BoundaryError::Disagreement(_)
+                    | BoundaryError::Shape(_),
+                ) => {
+                    refused.push(DescriptionDiagnostic {
+                        span,
+                        fault: DescriptionFault::Malformed,
+                    });
+                },
+            }
         }
-        written
-            .parse::<usize>()
-            .map(Count::from)
-            .map_err(|_overflow| run.fault(DescriptionFault::Malformed))
+        if !refused.is_empty() {
+            return Err(refused);
+        }
+        let names = (0 .. usize::from(carrier.carrier()))
+            .filter_map(|point| carrier.name(Point::from(point)).ok())
+            .map(Written)
+            .collect();
+        let tiles = faces.iter().map(|&(_, face, _)| face).collect();
+        Ok(Some((
+            TheoryShape::new(shape_name, ShapeSize::from(written.len()), read),
+            tiles,
+            names,
+        )))
     }
 
     /// Read a boundary-only operation; never discard its filler or a port.

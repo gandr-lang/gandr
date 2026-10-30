@@ -63,9 +63,9 @@ const TELESCOPES: [&str; 5] = [
     "lazy_record_expression",
 ];
 
-/// What a shape face's `{` follows in a theory: its `=`, the one `{` of the
-/// rule written there. The face lists the points it holds, hugged by its
-/// braces: `left = {0, 2}`.
+/// What a face's `{` follows in a theory: its `=`, the one `{` of the rule
+/// written there. The face lists the names it holds, hugged by its braces:
+/// `face left = {tl, bl}`.
 const FACE: &[RCtxStep] = &[RCtxStep {
     crossed: StepSym::Tile("="),
 }];

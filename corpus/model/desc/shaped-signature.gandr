@@ -1,22 +1,21 @@
-// A signature stated over a finite shape. The member `shape Square : 4 { … }`
-// names the shape the signature's cells are stated over and the faces of it a
-// cell may be fixed on, each the subshape of the points it lists (Schönlank,
-// Nuyts and Devriese, _Towards FaceTT_, TYPES 2026: the shape parameter `ft`
-// and its subshapes). The member's spelling is provisional. The block's value
-// codes the shape at the head of its sort chain, so a program reads it back by
-// `case`.
+// A signature stated over a finite shape. The member `boundary Square { … }`
+// names the carrier the signature's cells are stated over, one name per point,
+// and each `face` member a face a cell may be fixed on, the subshape of the
+// names it holds (Schönlank, Nuyts and Devriese, _Towards FaceTT_, TYPES 2026:
+// the shape parameter `ft` and its subshapes). The points run in name order.
+// The block's value codes the shape at the head of its sort chain, so a
+// program reads it back by `case`.
 
-/// Cells over a square of four corners, numbered row by row: its left and
-/// right sides, its top and bottom, one corner and the empty face.
+/// Cells over a square of four corners, top left to bottom right: its left
+/// and right sides, its top and bottom, one corner and the empty face.
 theory Cells {
-  shape Square : 4 {
-    left = {0, 2};
-    right = {1, 3};
-    top = {0, 1};
-    bottom = {2, 3};
-    corner = {0};
-    none = {};
-  };
+  boundary Square { tl, tr, bl, br };
+  face left = {tl, bl};
+  face right = {tr, br};
+  face top = {tl, tr};
+  face bottom = {bl, br};
+  face corner = {tl};
+  face none = {};
   sort Cell : Type;
   oper fill : () --> Cell;
 }

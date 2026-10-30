@@ -1596,6 +1596,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-computads",
  "gandr-theory-levitation",
+ "gandr-theory-shapes",
  "gandr-theory-sites",
  "gandr-theory-spec-combinators",
  "hotpath",

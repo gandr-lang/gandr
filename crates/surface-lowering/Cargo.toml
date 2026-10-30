@@ -36,6 +36,7 @@ gandr-theory-circuit-algebras.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
 gandr-theory-computads.workspace = true
 gandr-theory-levitation.workspace = true
+gandr-theory-shapes.workspace = true
 gandr-theory-spec-combinators.workspace = true
 hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true

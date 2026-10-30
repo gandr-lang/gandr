@@ -5839,8 +5839,8 @@ mod tests
         };
         assert_eq!(
             at("left is zero;\n  oper c"),
-            named("left = {0}", "left"),
-            "the face names the shape's face"
+            named("left = {p}", "left"),
+            "the face names the boundary's face"
         );
         assert_eq!(
             at("zero;\n  oper c"),

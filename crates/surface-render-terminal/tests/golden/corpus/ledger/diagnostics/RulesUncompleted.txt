@@ -1,10 +1,10 @@
 error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
-   ╭▸ corpus/ledger/diagnostics/RulesUncompleted.gandr:10:3
+   ╭▸ corpus/ledger/diagnostics/RulesUncompleted.gandr:9:3
    │
-10 │   ext Cell = Val on left is zero;
+ 9 │   ext Cell = Val on left is zero;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
-11 │
-12 │   rule leaked : outCell0(inCell(y1)) ==> y1;
+10 │
+11 │   rule leaked : outCellp(inCell(yq)) ==> yq;
    │   ───────────────────────────────────────── the rule it overlaps
    │
    ├ note: `Leaked` is refused with RulesUncompleted, as its expectation states

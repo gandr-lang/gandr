@@ -1,11 +1,14 @@
-// The twin of `model/desc/shaped-signature.gandr`: a face holding a point
-// past its shape, a face named twice, and a signature stating two shapes.
+// The twin of `model/desc/shaped-signature.gandr`, one refusal per block. A
+// face holds a name its boundary lacks, a face is named twice, and a boundary
+// lists a name twice. A signature states two boundaries, and one spells the
+// retired `shape`.
 
-/// `far` holds point 4 of a shape of four points: the description check
+/// `far` holds `e`, which the boundary does not list: the description check
 /// refuses the face by name (`FaceOutsideShape`).
 @[ refuses("IllFormedDescription") ]
 theory Past {
-  shape Square : 4 { far = {1, 4}; };
+  boundary Square { a, b, c, d };
+  face far = {b, e};
   sort Cell : Type;
 }
 
@@ -13,14 +16,32 @@ theory Past {
 /// (`DuplicateFaceName`).
 @[ refuses("IllFormedDescription") ]
 theory Twice {
-  shape Square : 4 { left = {0, 2}; left = {1, 3}; };
+  boundary Square { a, b, c, d };
+  face left = {a, c};
+  face left = {b, d};
   sort Cell : Type;
 }
 
-/// A signature is stated over one shape: the second member is malformed.
+/// The boundary lists `b` twice, and a boundary holds each point once: the
+/// second listing is refused by the name.
+@[ refuses("DuplicateDefinition") ]
+theory Repeated {
+  boundary Line { a, b, b };
+  sort Cell : Type;
+}
+
+/// A signature states one boundary: the second member is malformed.
 @[ refuses("MalformedForm") ]
-theory TwoShapes {
-  shape Square : 4 {};
-  shape Line : 2 {};
+theory TwoBoundaries {
+  boundary Square { a, b, c, d };
+  boundary Line { a, b };
+  sort Cell : Type;
+}
+
+/// `shape` is the retired spelling of the shape parameter, refused naming
+/// `boundary`, so the word is the site's alone.
+@[ refuses("MalformedForm") ]
+theory Retired {
+  shape Square : 4 { left = {0, 2}; };
   sort Cell : Type;
 }
