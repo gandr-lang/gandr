@@ -14,6 +14,14 @@
     "bound": "none"
   },
   {
+    "name": "#4040: macOS runs LLVM's lldb with no bound of its own inside a host scope bounded to 8 GiB",
+    "system": "Darwin",
+    "within": true,
+    "lldb": true,
+    "exit": 0,
+    "bound": "none"
+  },
+  {
     "name": "#3823: Linux runs its lldb on its arguments bounded to 8 GiB",
     "system": "Linux",
     "lldb": true,

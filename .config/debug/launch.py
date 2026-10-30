@@ -13,9 +13,9 @@ gives: its exit status, a line its error holds, or the bound the debugger
 runs under, `8 GiB` or `none`. Every case stubs `uname` to answer its system,
 so a case runs alike on every host (#3867); a case naming a `host` puts a
 `uname` answering that host behind the stubs, as a host's own stands on
-`PATH`. The debugger is a stub that prints its arguments, its `ulimit -v` and
-its cgroup's `memory.max`. On a stub macOS, `systemd-run` is a stub that
-records its call and fails.
+`PATH`. The debugger is a stub that prints its arguments, its `ulimit -v`, its
+cgroup and that cgroup's `memory.max`. On a stub macOS, `systemd-run` is a
+stub that records its call and fails.
 
 The 8 GiB bound is the host's own: a stub reads it but cannot set it. So a
 case that records the bound runs only where the host bounds a process, by a
@@ -23,11 +23,19 @@ systemd scope or by `ulimit -v`, and elsewhere it is reported skipped, never
 failed: a macOS host bounds none (#3894). A case with `bounds` false puts
 such a host behind the stubs, a `systemd-run` that fails and a `ulimit` that
 refuses to lower `-v`, as macOS's kernel does.
+
+A host may run the check itself inside a bounded scope. The stub's cgroup is
+then the caller's, and its `memory.max` is the host's bound, not one
+`lldb.bash` set: the case reads `memory.max` only from a cgroup of the
+debugger's own (#4040). A case with `within` true runs the launch inside such
+a scope of the host's, bounded to 8 GiB, and is skipped where the host runs
+no systemd scope.
 """
 
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,7 +45,9 @@ BOUND_KIB = 8 * 1024 * 1024
 STUB_LLDB = """#!/usr/bin/env bash
 printf '%s\\n' "$*"
 ulimit -v
-cat "/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup 2> /dev/null)/memory.max" 2> /dev/null || true
+group=$(cut -d: -f3 /proc/self/cgroup 2> /dev/null || true)
+printf '%s\\n' "$group"
+cat "/sys/fs/cgroup$group/memory.max" 2> /dev/null || true
 """
 
 
@@ -48,13 +58,19 @@ def stub(path: pathlib.Path, text: str) -> None:
     path.chmod(0o755)
 
 
-def bound(lines: list[str], caller: str, scoped: bool) -> str:
-    """The bound the stub debugger ran under: `8 GiB`, `none`, or what it read."""
-    if str(BOUND_KIB) in lines or str(BOUND_KIB * 1024) in lines:
+def bound(lines: list[str], caller: tuple[str, str], scoped: bool) -> str:
+    """The bound the stub debugger ran under: `8 GiB`, `none`, or what it read.
+
+    `caller` is the checker's own `ulimit -v` and cgroup. A `memory.max` read
+    in the caller's cgroup is the host's bound, and the reading leaves it out.
+    """
+    limit, group, memory = (lines[1:] + ["", "", ""])[:3]
+    readings = [limit] if group == caller[1] else [limit, memory]
+    if str(BOUND_KIB) in readings or str(BOUND_KIB * 1024) in readings:
         return "8 GiB"
-    if not scoped and len(lines) > 1 and lines[1] == caller:
+    if not scoped and (limit, group) == caller:
         return "none"
-    return " ".join(lines[1:])
+    return " ".join(readings)
 
 
 def can_bound(environment: dict) -> bool:
@@ -91,23 +107,38 @@ def launched(case: dict, scratch: pathlib.Path) -> tuple[str, str] | None:
         )
     if case["system"] != "Darwin" and case.get("bound") == "8 GiB" and not can_bound(environment):
         return "SKIPPED", "this host bounds no process, by a systemd scope or by `ulimit -v`"
-    caller = subprocess.run(["bash", "-c", "ulimit -v"], capture_output=True, text=True, check=True).stdout.strip()
+    # The caller's `ulimit -v` and cgroup, read where `lldb.bash` starts.
+    launch = ["bash", "-c", 'ulimit -v; cut -d: -f3 /proc/self/cgroup 2> /dev/null || echo; exec "$@"', "bash"]
+    if case.get("within"):
+        host_scope = [
+            shutil.which("systemd-run") or "systemd-run",
+            "--user",
+            "--scope",
+            "--quiet",
+            "-p",
+            f"MemoryMax={BOUND_KIB}K",
+            "--",
+        ]
+        if subprocess.run([*host_scope, "true"], capture_output=True, check=False).returncode != 0:
+            return "SKIPPED", "this host runs no systemd scope to hold the check"
+        launch = host_scope + launch
     run = subprocess.run(
-        [str(LLDB_BASH), "lldb", "--batch", "--", "program"],
+        [*launch, str(LLDB_BASH), "lldb", "--batch", "--", "program"],
         capture_output=True,
         text=True,
         env=environment,
         check=False,
     )
+    caller_lines, lines = run.stdout.splitlines()[:2], run.stdout.splitlines()[2:]
     if run.returncode != case["exit"]:
         return "FAILED", f"exit {run.returncode}, wanted {case['exit']}: {run.stderr.strip()}"
     if "error" in case and case["error"] not in run.stderr:
         return "FAILED", f"error {run.stderr.strip()!r}, wanted one holding {case['error']!r}"
     if "bound" in case:
-        lines = run.stdout.splitlines()
         if not lines or lines[0] != "--batch -- program":
             return "FAILED", f"ran with {lines[:1]}, wanted its arguments"
-        got = bound(lines, caller, marker.exists())
+        limit, group = (caller_lines + ["", ""])[:2]
+        got = bound(lines, (limit, group), marker.exists())
         if got != case["bound"]:
             return "FAILED", f"bound {got}, wanted {case['bound']}"
     return None
