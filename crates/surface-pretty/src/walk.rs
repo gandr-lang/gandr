@@ -1708,6 +1708,20 @@ enum Surface
     Type,
 }
 
+/// Whether a checker elaborates the text at a node: whether it inserts the
+/// thunk a computation checked against a thunk type takes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Elaboration
+{
+    /// A checker elaborates it: a definition's body, a computation, and an
+    /// argument either passes.
+    Checked,
+    /// A type reads it, and no checker elaborates anything below it: the
+    /// lowering reads a type's call arguments in the type's telescope, and
+    /// every node under a path's endpoint as the endpoint (#3972).
+    Read,
+}
+
 /// The grammar sort a slot of `former`, spelled in `surface`, is read in.
 ///
 /// # Specification
@@ -1829,6 +1843,14 @@ enum Binding
     /// `run x <- c ; rest`, whose rest runs to the end of the block it stands
     /// in; anywhere else it is a block of its own, `{ … }`.
     Sequence,
+}
+
+impl Binding
+{
+    /// The loosest piece an argument stands bare in, between commas or a
+    /// bracket's delimiters: anything but a statement, which outside its
+    /// block is a block of its own.
+    const ARGUMENT: Self = Self::Arrow;
 }
 
 /// One finished document and how it binds.
@@ -2663,6 +2685,9 @@ enum Join
     TypedSequence,
     /// A lambda over its body, its binder named as a dependent arrow's is.
     Lambda,
+    /// A lambda whose parameter states its type, over the type and its body:
+    /// `fn (x : A) { c }`.
+    TypedLambda,
     /// A thunk over its body.
     Thunk,
     /// A bracketed value former over its items.
@@ -4228,7 +4253,7 @@ impl Parts
     ) -> &mut Self
     {
         for _ in 0_usize .. count.0 {
-            let _ = self.text(",").part(Part::Space).piece(Binding::Sequence);
+            let _ = self.text(",").part(Part::Space).piece(Binding::ARGUMENT);
         }
         self.part(Part::Tight).text(")")
     }
@@ -4247,7 +4272,7 @@ impl Parts
             if index > 0_usize {
                 let _ = self.text(",").part(Part::Space);
             }
-            let _ = self.piece(Binding::Sequence);
+            let _ = self.piece(Binding::ARGUMENT);
         }
         self.part(Part::Tight).text(")")
     }
@@ -4487,6 +4512,8 @@ enum Task<Node>
     Join(Join),
     /// Read the nodes visited next in this grammar sort.
     Surface(Surface),
+    /// Read the nodes visited next under this elaboration.
+    Elaboration(Elaboration),
 }
 
 /// What a walk produced.
@@ -5432,6 +5459,9 @@ struct Walk<'walk, 'names>
     remaining: u32,
     /// The grammar sort the node visited now is read in.
     surface: Surface,
+    /// Whether a checker elaborates the node visited now. A call reads its
+    /// arguments as expressions in a type, yet no checker elaborates them.
+    elaboration: Elaboration,
 }
 
 impl Walk<'_, '_>
@@ -6926,6 +6956,61 @@ impl Walk<'_, '_>
         Some((value, result))
     }
 
+    /// The stated type and the body of the lambda whose body is `body`, when
+    /// its parameter states its type: `body` the bind of the parameter
+    /// returned and ascribed the returner `-F A`, `(return #0 : -F A) to _.
+    /// rest`, whose `rest` never reads the bind's binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: `A` and `rest` when `body` reads as that bind and `rest`
+    ///   reads the lambda's binder alone; none when any link is anything else,
+    ///   when `rest` reads the bind's binder, or when the walk's remaining
+    ///   visits run out first. Every link read is one visit spent, so a
+    ///   recognised parameter spends exactly five.
+    /// - provides: the shape the lowering gives `fn (x : A) { rest }`, which
+    ///   the printer spells back as written (#3943).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda stating its parameter's type, one whose bind
+    ///   holds another value and one whose body reads the bind's binder
+    ///   distinguish the stated parameter from a statement the body writes.
+    /// - witness: `tests::goldens::a_stated_parameter_spells_as_written_3943`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(5_u32) == Some(entry)),
+    )]
+    fn stated_parameter<S>(
+        &mut self,
+        source: &S,
+        body: S::Node,
+        admits: Admits,
+    ) -> Option<(S::Node, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let Former::Bind(bound, rest) = source.read(body)
+        else {
+            return None;
+        };
+        let (value, stated) = self.ascribed_return(source, bound)?;
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = source.read(value)
+        else {
+            return None;
+        };
+        (u32::from(index) == 0_u32
+            && reads_binders(source, rest, admits, Arity(1_usize)) == Reading::Unread)
+            .then_some((stated, rest))
+    }
+
     /// The former of the eliminator `body`, when an ascription over it writes
     /// its answer: a sum case, a split or a list case.
     ///
@@ -7196,13 +7281,17 @@ impl Walk<'_, '_>
         self.builder.concat(inner, close)
     }
 
-    /// `piece`, parenthesized when it binds looser than `loosest`.
+    /// `piece` bare when it binds at most as loosely as `loosest`, a block
+    /// `{ … }` when it is a bind's statements, and parenthesized otherwise.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the piece's document bare when its binding is at most
-    ///   `loosest`, else between parentheses.
-    /// - provides: the one parenthesization rule of every slot.
+    ///   `loosest`; between braces, as [`Self::block`] lays them out, when it
+    ///   is a [`Binding::Sequence`] the slot does not admit, since no slot
+    ///   reads statements between parentheses; else between parentheses.
+    /// - provides: the one rule of every slot for a piece looser than it
+    ///   admits, a statement outside its block among them.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
     ///
@@ -7211,10 +7300,15 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — bridge and arrow fixtures distinguish wrong
-    ///   precedence and missing parentheses. The finite grammar cases do not
-    ///   exhaust all possible composite trees.
+    ///   precedence and missing parentheses; a bind run by a bind, a returner
+    ///   at a call's head and a call's argument over statements distinguish a
+    ///   block from parentheses and from a bare operand. The finite grammar
+    ///   cases do not exhaust all possible composite trees.
     /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_block_body_holds_its_sequence_bare`
+    /// - witness: `tests::goldens::a_statement_outside_its_block_is_a_block_3972`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -7231,6 +7325,10 @@ impl Walk<'_, '_>
     {
         if piece.binding <= loosest {
             return Ok(piece.doc);
+        }
+        if piece.binding == Binding::Sequence {
+            let open = self.leaf(Glyphs("{"))?;
+            return self.block(open, piece.doc);
         }
         self.parenthesized(piece.doc)
     }
@@ -7373,48 +7471,6 @@ impl Walk<'_, '_>
         let close = self.leaf(Glyphs("}"))?;
         let doc = self.builder.concat_all(&[head, inner, line, close])?;
         self.builder.group(doc)
-    }
-
-    /// `piece` bare when it binds at most as loosely as `loosest`, a block
-    /// `{ … }` when it is a bind's statements, and parenthesized otherwise.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the piece's document bare when its binding is at most
-    ///   `loosest`; between braces, as [`Self::block`] lays them out, when it
-    ///   is a [`Binding::Sequence`] the slot does not admit; else between
-    ///   parentheses.
-    /// - provides: the slots a computation stands in where its body goes on.
-    /// - fails: as [`Self::leaf`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As [`Self::leaf`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a bind run by a bind and a returner at a call's head
-    ///   distinguish a block from parentheses and from a bare operand.
-    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `tests::goldens::a_block_body_holds_its_sequence_bare`
-    #[spec(
-        captures: [entry = self.pieces.len()],
-        ensures: |ref ret| self.pieces.len() == entry && match *ret {
-            | Ok(doc) => (doc == piece.doc) == (piece.binding <= loosest),
-            | Err(PresentationError::Build(_)) => piece.binding > loosest,
-            | Err(_) => false,
-        },
-    )]
-    fn bare_or_block(
-        &mut self,
-        piece: Piece,
-        loosest: Binding,
-    ) -> Result<Doc, PresentationError>
-    {
-        if piece.binding == Binding::Sequence && loosest < Binding::Sequence {
-            let open = self.leaf(Glyphs("{"))?;
-            return self.block(open, piece.doc);
-        }
-        self.bare_up_to(piece, loosest)
     }
 
     /// Spells one node, or schedules its children and their join.
@@ -8467,6 +8523,40 @@ impl Walk<'_, '_>
                     None
                 },
             },
+            // A lambda whose parameter states its type is the bind the
+            // lowering holds the argument to that type by, `(return #0 :
+            // -F A) to _. rest`: it is written `fn (x : A) { rest }`, the
+            // bind's binder unwritten, as a resumed shift's is (#3943).
+            Former::Lambda(body)
+                if let Some((stated, rest)) = self.stated_parameter(source, body, admits) =>
+            {
+                let inner = children(source, node, &former, admits, self.bodies)
+                    .first()
+                    .map_or(admits, |slot| slot.admits);
+                let depth = below(depth, kind);
+                tasks.push(Task::Join(Join::TypedLambda));
+                tasks.push(Task::Unbind);
+                tasks.push(Task::Unbind);
+                tasks.push(Task::Visit {
+                    node: rest,
+                    admits: inner,
+                    depth,
+                });
+                tasks.push(Task::BindLoop(Zone::Intuitionistic, LoopBinder::Hidden));
+                // A binder's type is read as a type, where no checker
+                // elaborates.
+                tasks.push(Task::Elaboration(self.elaboration));
+                tasks.push(Task::Surface(self.surface));
+                tasks.push(Task::Visit {
+                    node: stated,
+                    admits: Admits::ValueType,
+                    depth,
+                });
+                tasks.push(Task::Surface(Surface::Type));
+                tasks.push(Task::Elaboration(Elaboration::Read));
+                tasks.push(Task::Bind(Zone::Intuitionistic, Some(node)));
+                return writes(Production("lambda_expression"), Ok(()));
+            },
             Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
             // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
             // spells as the call it was written as, `g(f(a))`: a type has no
@@ -8630,6 +8720,15 @@ impl Walk<'_, '_>
                 tasks.push(Task::Unbind);
             }
             let surface = surface_below(source, self.surface, &former, slot.admits);
+            // Below a type no checker elaborates, whatever sort a slot is
+            // spelled in there.
+            let elaboration = match surface {
+                Surface::Type => Elaboration::Read,
+                Surface::Expression => self.elaboration,
+            };
+            if elaboration != self.elaboration {
+                tasks.push(Task::Elaboration(self.elaboration));
+            }
             if surface != self.surface {
                 tasks.push(Task::Surface(self.surface));
             }
@@ -8640,6 +8739,9 @@ impl Walk<'_, '_>
             }));
             if surface != self.surface {
                 tasks.push(Task::Surface(surface));
+            }
+            if elaboration != self.elaboration {
+                tasks.push(Task::Elaboration(elaboration));
             }
             let opener = (slot.binds.count == 1_usize).then_some(node);
             // A capability scope's subject, its first slot, and a hold's scope,
@@ -9165,7 +9267,7 @@ impl Walk<'_, '_>
                     Resident::Node(_) => {
                         let _ = parts
                             .text(format!("{} = ", name.as_ref()))
-                            .piece(Binding::Sequence);
+                            .piece(Binding::ARGUMENT);
                     },
                     Resident::Path(ref path) => {
                         let _ = parts.text(format!("{} = {path}", name.as_ref()));
@@ -9177,7 +9279,7 @@ impl Walk<'_, '_>
                 if index > 0_usize {
                     let _ = parts.text(",").part(Part::Space);
                 }
-                let _ = parts.piece(Binding::Sequence);
+                let _ = parts.piece(Binding::ARGUMENT);
             }
             let _ = parts.text(")");
             let pieces = Arity(parts.pieces);
@@ -9241,18 +9343,21 @@ impl Walk<'_, '_>
     /// definition's body against its signature and an argument against its
     /// parameter, and a value of a thunk type standing there is the thunk it
     /// inserts. Either form leaves it out, as either leaves out the exit the
-    /// lowering infers: the formatter writes neither back. A function needs no
+    /// lowering infers: the formatter writes neither back. No checker
+    /// elaborates below a type, even where a call there reads its arguments
+    /// as expressions, so such a thunk is kept there. A function needs no
     /// checker: the lowering thunks a function written as a value wherever it
-    /// stands, so its thunk is left out where a type is read as well.
+    /// stands, so its thunk is left out below a type as well.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the body when thunks are spelled and `node` reads as a thunk
-    ///   of a function, or, where the walk writes an expression, as a thunk
-    ///   whose body is one expression the checker wraps — a call, a forced
-    ///   value or a lazy record; `None` otherwise, a thunk of a returned value,
-    ///   of a bind's statements or of anything else among them, and a thunk of
-    ///   a call, a forced value or a lazy record where a type is read.
+    ///   of a function, or, where a checker elaborates
+    ///   ([`Elaboration::Checked`]), as a thunk whose body is one expression
+    ///   the checker wraps — a call, a forced value or a lazy record; `None`
+    ///   otherwise, a thunk of a returned value, of a bind's statements or of
+    ///   anything else among them, and a thunk of a call, a forced value or a
+    ///   lazy record anywhere below a type.
     /// - provides: the thunks the walk leaves out, as the formatter's
     ///   `inserted-thunk` rewrite leaves them out.
     /// - fails: never.
@@ -9263,12 +9368,16 @@ impl Walk<'_, '_>
     ///   returned value, and a definition's thunk over a function and over a
     ///   statement block, distinguish a thunk left out from one kept; a call's
     ///   thunk argument over a function and over a call, where a type is read,
-    ///   distinguish the function's thunk left out from the call's kept.
+    ///   distinguish the function's thunk left out from the call's kept; a
+    ///   call's thunk argument over a call, in a call a type writes and in a
+    ///   thunk a path type's endpoint writes, distinguish the mark from the
+    ///   sort the argument is spelled in.
     /// - witness: `tests::goldens::a_thunk_the_checker_inserts_is_left_out_1457`
     /// - witness: `tests::goldens::a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933`
+    /// - witness: `tests::goldens::no_thunk_is_left_out_below_a_type_3972`
     #[spec(ensures: |ref ret| ret.is_none()
         || (self.bodies == Bodies::Spelled
-            && (self.surface == Surface::Expression
+            && (self.elaboration == Elaboration::Checked
                 || matches!(*ret, Some(body) if matches!(source.read(body), Former::Lambda(_))))))]
     fn inserted<S>(
         &self,
@@ -9290,7 +9399,7 @@ impl Walk<'_, '_>
             source.read(body),
             Former::Application(..) | Former::Force(_) | Former::Lazy(_)
         );
-        (function || (wrapped && self.surface == Surface::Expression)).then_some(body)
+        (function || (wrapped && self.elaboration == Elaboration::Checked)).then_some(body)
     }
 
     /// Schedules a computation whose runs bind calls as its last step with
@@ -10053,9 +10162,9 @@ impl Walk<'_, '_>
             // `Path(Bool, alike(a, a), true)`: an endpoint the source wrote as
             // a word holds the word ascribed `Bool`, which spells as the word.
             Former::Path { .. } => {
-                let _ = parts.text("Path(").piece(Binding::Sequence);
+                let _ = parts.text("Path(").piece(Binding::ARGUMENT);
                 for _end in 0_usize .. 2_usize {
-                    let _ = parts.text(",").part(Part::Space).piece(Binding::Sequence);
+                    let _ = parts.text(",").part(Part::Space).piece(Binding::ARGUMENT);
                 }
                 let _ = parts.part(Part::Tight).text(")");
                 writes(Production("path_type"), Binding::Atom)
@@ -10067,9 +10176,9 @@ impl Walk<'_, '_>
             // `Bridge(List(Integer), [1, 2], [1, 2])`: its endpoints are terms,
             // as a path's are, so it spells through its own production.
             Former::Bridge { .. } => {
-                let _ = parts.text("Bridge(").piece(Binding::Sequence);
+                let _ = parts.text("Bridge(").piece(Binding::ARGUMENT);
                 for _end in 0_usize .. 2_usize {
-                    let _ = parts.text(",").part(Part::Space).piece(Binding::Sequence);
+                    let _ = parts.text(",").part(Part::Space).piece(Binding::ARGUMENT);
                 }
                 let _ = parts.part(Part::Tight).text(")");
                 writes(Production("bridge_type"), Binding::Atom)
@@ -10129,9 +10238,9 @@ impl Walk<'_, '_>
                         None => &mut parts,
                     };
                     let _ = match step.action {
-                        ActionKind::Send => parts.text("sent(").piece(Binding::Sequence).text(")"),
+                        ActionKind::Send => parts.text("sent(").piece(Binding::ARGUMENT).text(")"),
                         ActionKind::Receive => {
-                            parts.text("received(").piece(Binding::Sequence).text(")")
+                            parts.text("received(").piece(Binding::ARGUMENT).text(")")
                         },
                         ActionKind::Select => {
                             let label = self.spelled(step.label, Unspelled::Missing);
@@ -10372,7 +10481,7 @@ impl Walk<'_, '_>
             Former::TelescopeTransport { .. } => {
                 let _ = parts
                     .text("transport(")
-                    .piece(Binding::Sequence)
+                    .piece(Binding::ARGUMENT)
                     .rest(Arity(4_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
@@ -11117,14 +11226,14 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::TypedLambda | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
-                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Lambda | Join::Thunk => Binding::Prefix,
+                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Lambda | Join::TypedLambda | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
@@ -11473,7 +11582,7 @@ impl Walk<'_, '_>
             Join::Sequence => {
                 let rest = self.pop()?;
                 let bound = self.pop()?;
-                let bound = self.bare_or_block(bound, Binding::Arrow)?;
+                let bound = self.bare_up_to(bound, Binding::Arrow)?;
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let run = self.leaf(Glyphs("run "))?;
                 let arrow = self.leaf(Glyphs(" <- "))?;
@@ -11489,7 +11598,7 @@ impl Walk<'_, '_>
                 let rest = self.pop()?;
                 let result = self.pop()?;
                 let bound = self.pop()?;
-                let bound = self.bare_or_block(bound, Binding::Arrow)?;
+                let bound = self.bare_up_to(bound, Binding::Arrow)?;
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let run = self.leaf(Glyphs("run "))?;
                 let colon = self.leaf(Glyphs(" : "))?;
@@ -11511,6 +11620,19 @@ impl Walk<'_, '_>
                 let head = self.builder.concat_all(&[open, binder, close])?;
                 (self.block(head, body.doc)?, Binding::Prefix)
             },
+            Join::TypedLambda => {
+                let body = self.pop()?;
+                let stated = self.pop()?;
+                let stated = self.bare_up_to(stated, Binding::ARGUMENT)?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("fn ("))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let close = self.leaf(Glyphs(") {"))?;
+                let head = self
+                    .builder
+                    .concat_all(&[open, binder, colon, stated, close])?;
+                (self.block(head, body.doc)?, Binding::Prefix)
+            },
             Join::Thunk => {
                 let body = self.pop()?;
                 let head = self.leaf(Glyphs("thunk {"))?;
@@ -11522,15 +11644,15 @@ impl Walk<'_, '_>
                     arguments.push(self.pop()?);
                 }
                 let operator = self.pop()?;
-                let operator = self.bare_or_block(operator, Binding::Atom)?;
+                let operator = self.bare_up_to(operator, Binding::Atom)?;
                 let opener = self.leaf(Glyphs("("))?;
                 let mut items = Vec::from([operator, opener]);
-                for (position, argument) in arguments.iter().rev().enumerate() {
+                for (position, &argument) in arguments.iter().rev().enumerate() {
                     if position > 0_usize {
                         let comma = self.leaf(Glyphs(","))?;
                         items.push(self.space_or_break(comma)?);
                     }
-                    items.push(argument.doc);
+                    items.push(self.bare_up_to(argument, Binding::ARGUMENT)?);
                 }
                 let inner = self.builder.concat_all(&items)?;
                 let inner = self.none_or_break(inner)?;
@@ -11553,22 +11675,27 @@ impl Walk<'_, '_>
                     | Bracket::Cong
                     | Bracket::Arrow => {
                         let second = self.pop()?;
+                        let second = self.bare_up_to(second, Binding::ARGUMENT)?;
                         let first = self.pop()?;
+                        let first = self.bare_up_to(first, Binding::ARGUMENT)?;
                         let opener = self.leaf(bracket.opener())?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
-                        items.extend([opener, first.doc, comma, second.doc]);
+                        items.extend([opener, first, comma, second]);
                     },
                     Bracket::BisimPaid => {
                         let third = self.pop()?;
+                        let third = self.bare_up_to(third, Binding::ARGUMENT)?;
                         let second = self.pop()?;
+                        let second = self.bare_up_to(second, Binding::ARGUMENT)?;
                         let first = self.pop()?;
+                        let first = self.bare_up_to(first, Binding::ARGUMENT)?;
                         let opener = self.leaf(bracket.opener())?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
                         let last = self.leaf(Glyphs(","))?;
                         let last = self.space_or_break(last)?;
-                        items.extend([opener, first.doc, comma, second.doc, last, third.doc]);
+                        items.extend([opener, first, comma, second, last, third]);
                     },
                     Bracket::Here
                     | Bracket::Univalence
@@ -11584,8 +11711,9 @@ impl Walk<'_, '_>
                     | Bracket::TypeQuote
                     | Bracket::Break => {
                         let body = self.pop()?;
+                        let body = self.bare_up_to(body, Binding::ARGUMENT)?;
                         let opener = self.leaf(bracket.opener())?;
-                        items.extend([opener, body.doc]);
+                        items.extend([opener, body]);
                     },
                 }
                 let inner = self.builder.concat_all(&items)?;
@@ -11595,13 +11723,13 @@ impl Walk<'_, '_>
             },
             Join::Ua(head) => {
                 let backward = self.pop()?;
+                let backward = self.bare_up_to(backward, Binding::ARGUMENT)?;
                 let forward = self.pop()?;
+                let forward = self.bare_up_to(forward, Binding::ARGUMENT)?;
                 let head = self.space_or_break(head)?;
                 let comma = self.leaf(Glyphs(","))?;
                 let comma = self.space_or_break(comma)?;
-                let inner = self
-                    .builder
-                    .concat_all(&[head, forward.doc, comma, backward.doc])?;
+                let inner = self.builder.concat_all(&[head, forward, comma, backward])?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
@@ -11635,7 +11763,7 @@ impl Walk<'_, '_>
                         },
                         Part::Piece(loosest) => {
                             let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
-                            current.push(self.bare_or_block(piece, loosest)?);
+                            current.push(self.bare_up_to(piece, loosest)?);
                         },
                         Part::Spliced(content) => {
                             let _literal = children.pop().ok_or(PresentationError::Unbalanced)?;
@@ -11645,7 +11773,7 @@ impl Walk<'_, '_>
                         },
                         Part::Last(loosest) => {
                             let piece = last.pop().ok_or(PresentationError::Unbalanced)?;
-                            current.push(self.bare_or_block(piece, loosest)?);
+                            current.push(self.bare_up_to(piece, loosest)?);
                         },
                         Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
                         Part::Endpoint(index) => {
@@ -11775,6 +11903,14 @@ where
             | Admits::Stated
             | Admits::Operand
             | Admits::Computation(_) => Surface::Expression,
+        },
+        elaboration: match admits {
+            Admits::Type | Admits::ValueType | Admits::CompType => Elaboration::Read,
+            Admits::Thunked
+            | Admits::Value
+            | Admits::Stated
+            | Admits::Operand
+            | Admits::Computation(_) => Elaboration::Checked,
         },
     };
     // A definition's body checked against its signature's thunk type is the
@@ -11967,6 +12103,7 @@ where
             Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
             Task::Join(join) => walk.join(join)?,
             Task::Surface(surface) => walk.surface = surface,
+            Task::Elaboration(elaboration) => walk.elaboration = elaboration,
         }
     }
     let root = walk.pop()?;
@@ -12234,6 +12371,7 @@ mod tests
             spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
             surface: super::Surface::Expression,
+            elaboration: super::Elaboration::Checked,
         };
         let refusal = super::PresentationError::Build(
             gandr_surface_layout::error::BuildError::LimitExceeded {
@@ -12329,6 +12467,7 @@ mod tests
             spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
             surface: super::Surface::Expression,
+            elaboration: super::Elaboration::Checked,
         };
         walk.atom(super::Glyphs("x")).expect("one operand builds");
         assert_eq!(
