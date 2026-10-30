@@ -141,11 +141,19 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
             [
                 "cylinderComposite2".to_owned(),
                 "cylinderStack2".to_owned(),
-                "coneComposite2".to_owned()
+                "coneComposite2".to_owned(),
+                "chainComposite".to_owned(),
+                "cylinderFill2".to_owned(),
+                "cylinderFillAt2".to_owned(),
+                "cylinderFillOver2".to_owned(),
+                "liftRight".to_owned(),
+                "liftLeft".to_owned(),
+                "liftHorizontal".to_owned(),
+                "cylinderFill3".to_owned()
             ]
             .as_slice()
         ),
-        "math.cylinder measures the three composites it writes, none of math.path's"
+        "math.cylinder measures the composites it writes, none of math.path's"
     );
     assert!(
         kept > 0,

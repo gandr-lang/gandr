@@ -6,15 +6,22 @@
 // triangles over one apex compose, as higher categories compose cylinders
 // and cones.
 //
-// Each composite is the term Catt's built-in prints at dimension 2, written
+// Each composite at dimension 2 is the term Catt's built-in prints, written
 // over `math.path`. The associator regroups a composite, and a whisker
 // carries a filler along a fixed path. A stacking is the side-by-side
 // composite of its transposed squares, read back.
 //
+// The composite at `n + 1` is `fill` at the composite at `n`, as the
+// paper's induction states. At `n = 2` the step is Example 1.2: `fill` at
+// the 2-chain's whole context, its generator the chain's composite. At
+// constant verticals `then`'s unit laws hold by conversion, so that square
+// is a generator over the level-two shape `[2](1, 1)`, the step at `n = 3`.
+//
 // - see: #3712 — the composites at dimension 2, written from Catt's terms
-// - see: #3833 — the composites at dimension 3, by the naturality operation
+// - see: #3931 — the composite at `n + 1` as `fill` at the composite at `n`
+// - see: #3833 — the composites at dimension 3 compared with Catt's
 
-// `assoc`, `whiskerLeft`, `whiskerRight`.
+// `assoc`, `join`, `whiskerLeft`, `whiskerRight`.
 import "path.gandr";
 
 /// Two squares side by side compose to a square: Catt's `cylcomp(2,1,2)`.
@@ -83,4 +90,198 @@ pub def coneComposite2(
   a
     then whiskerLeft(A, x, y, c, f, q, g then r, b)
     then back(assoc(A, x, y, w, c, f, g, r))
+}
+
+/// The 2-chain's pasting context into its composite: Example 1.2's generator over `x, y, f, z, g`.
+def chainComposite(A : Type) -> (x : A) => (y : A) => Path(A, x, y) => (z : A) => Path(
+  A,
+  y,
+  z
+) => Path(
+  A,
+  x,
+  z
+) {
+  thunk {
+    fn (x) {
+      thunk {
+        fn (y) {
+          thunk { fn (f) { thunk { fn (z) { thunk { fn (g) { join(A, x, y, z, f, g) } } } } } }
+        }
+      }
+    }
+  }
+}
+
+/// Two squares side by side compose to a square by `fill`: Example 1.2, the composite at `n = 2`.
+pub def cylinderFill2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  x2 : A,
+  y2 : A,
+  f2 : Path(A, x2, y2),
+  xs : Path(A, x, x2),
+  ys : Path(A, y, y2),
+  a : Path(Path(A, x, y2), f then ys, xs then f2),
+  z : A,
+  g : Path(A, y, z),
+  z2 : A,
+  g2 : Path(A, y2, z2),
+  zs : Path(A, z, z2),
+  b : Path(Path(A, y, z2), g then zs, ys then g2)
+) -> Path(Path(A, x, z2), (f then g) then zs, xs then (f2 then g2)) {
+  fill[5, 7](chain(2), chainComposite(A), (xs, ys, a, zs, b))
+}
+
+/// The composite at `n = 2` with its points fixed and its verticals constant, stated at the sides the level-two `fill` reads.
+pub def cylinderFillAt2(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f0 : Path(A, x, y),
+  f1 : Path(A, x, y),
+  a : Path(Path(A, x, y), f0, f1),
+  g0 : Path(A, y, z),
+  g1 : Path(A, y, z),
+  b : Path(Path(A, y, z), g0, g1)
+) -> Path(Path(A, x, z), f0 then g0, f1 then g1) {
+  cylinderFill2(A, x, y, f0, x, y, f1, here(x), here(y), a, z, g0, z, g1, here(z), b)
+}
+
+/// The composite at `n = 2` curried over `[2](1, 1)`: the generator of the step at `n = 3`.
+pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path(A, x, y)) => (f1 : Path(
+  A,
+  x,
+  y
+)) => Path(
+  Path(A, x, y),
+  f0,
+  f1
+) => (g0 : Path(A, y, z)) => (g1 : Path(A, y, z)) => Path(Path(A, y, z), g0, g1) => Path(
+  Path(A, x, z),
+  f0 then g0,
+  f1 then g1
+) {
+  thunk {
+    fn (f0) {
+      thunk {
+        fn (f1) {
+          thunk {
+            fn (a) {
+              thunk {
+                fn (g0) {
+                  thunk {
+                    fn (g1) {
+                      thunk { fn (b) { cylinderFillAt2(A, x, y, z, f0, f1, a, g0, g1, b) } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// The right whisker of `fa` by `g`, the transport along `fa` that `fill` lifts a column's first cell by.
+def liftRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), fm then g, fp then g) {
+  transport(\c. Path(Path(A, x, z), fm then g, c then g), fa, here(fm then g))
+}
+
+/// The left whisker of `ga` by `f`, the transport along `ga` that `fill` lifts a column's second cell by.
+def liftLeft(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(Path(A, x, z), f then gm, f then gp) {
+  transport(\c. Path(Path(A, x, z), f then gm, f then c), ga, here(f then gm))
+}
+
+/// The horizontal composite of `fa` and `ga`, the lift of a composite of two cells that `fill` writes.
+def liftHorizontal(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(Path(A, x, z), fm then gm, fp then gp) {
+  liftRight(A, x, y, z, fm, fp, fa, gm) then liftLeft(A, x, y, z, fp, gm, gp, ga)
+}
+
+/// Two 3-cylinders side by side compose to a 3-cylinder by the level-two `fill`: Example 1.4 at the composite at `n = 2`, its points fixed.
+pub def cylinderFill3(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  ),
+  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cylinderFillAt2(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  )
+) {
+  fill[5, 11](chain(2, (1, 1)), cylinderFillOver2(A, x, y, z), (fa, pa, aa, ga, qa, ka))
 }

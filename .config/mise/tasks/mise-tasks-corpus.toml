@@ -33,9 +33,12 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 # The page-28 stress, as far as the library writes it: `library/math` checked
 # whole, every verdict rechecked and each declaration measured, under the
 # platform's `time`. The cylinder composites' rows stand beside the artifact
-# sizes Catt reports for the same constructions at dimension 2 (Benjamin,
-# Markakis, Offord, Sarti and Vicary, "Naturality for Higher-Dimensional Path
-# Types", arXiv:2501.11620, Example 1.4 and § 6). A row's bytes are its
+# sizes Catt reports for the same constructions at dimensions 2 and 3
+# (Benjamin, Markakis, Offord, Sarti and Vicary, "Naturality for
+# Higher-Dimensional Path Types", arXiv:2501.11620, Example 1.4 and § 6).
+# `cylinderFill2` and `cylinderFill3` are the composites `fill` generates.
+# `cylinderFill3` fixes its points, while Catt's `cylcomp(3,1,3)` leaves its
+# verticals free (#3833). A row's bytes are its
 # segment in the kernel artifact, its shared size the subterm-table entries
 # the segment adds, and its unshared size its roots' expanded work. Its goals
 # are those the kernel's check of it expanded, recalled from its memo and
@@ -73,6 +76,8 @@ BEGIN {
   catt("cylinderComposite2", "cylcomp(2,1,2)", 818)
   catt("cylinderStack2", "cylstack(2)", 830)
   catt("coneComposite2", "conecomp(2,1,2)", 501)
+  catt("cylinderFill2", "cylcomp(2,1,2)", 818)
+  catt("cylinderFill3", "cylcomp(3,1,3)", 10236)
 }
 /^measure: / {
   split($0, part, ": ")
