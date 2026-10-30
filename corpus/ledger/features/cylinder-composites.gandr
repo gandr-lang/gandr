@@ -1,21 +1,48 @@
-/// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them.
+/// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them, and `fill` composes cylinders at dimensions 2 and 3.
 ///
-/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each composite is the term Catt's built-in prints, and the kernel replays each.
+/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each composite is the term Catt's built-in prints, and the kernel replays each. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed.
 ///
-/// Not implemented: the composites at dimension 3, which the naturality operation generates, and the harness that compares Catt's output (#3833).
+/// Not implemented: #3833 owes the composite at `n = 3` with its verticals free, the stacks and cones at dimension 3, and the comparison with Catt's output. #4186 owes the composite at `n = 3` at reflexivities, which the kernel does not replay.
 ///
 /// Each composite computes at reflexivities, so each declaration states a composite of reflexivities and proves it by reflexivity.
 ///
 /// - see: library/math/src/cylinder.gandr
 /// - see: #3712 — the composites at dimension 2, written from Catt's terms
+/// - see: #3931 — the composite at `n + 1` as `fill` at the composite at `n`
 
-// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`.
+// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`, `cylinderFill2`.
 import "../../../library/math/src/cylinder.gandr";
 
 /// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
 def cylinderCompositeAtHere(A : Type, x : A) -> Path(
   Path(Path(A, x, x), here(x), here(x)),
   cylinderComposite2(
+    A,
+    x,
+    x,
+    here(x),
+    x,
+    x,
+    here(x),
+    here(x),
+    here(x),
+    here(here(x)),
+    x,
+    here(x),
+    x,
+    here(x),
+    here(x),
+    here(here(x))
+  ),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
+
+/// Two squares of reflexivities filled side by side reduce to the reflexivity of the reflexivity, as Catt's composite does.
+def cylinderFillAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  cylinderFill2(
     A,
     x,
     x,
