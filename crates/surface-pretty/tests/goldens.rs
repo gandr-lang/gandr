@@ -5030,6 +5030,106 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     );
 }
 
+/// A recursive definition's call of itself omits each parameter its
+/// telescope names where it passes the parameter as itself, as the surface
+/// writes a descent: an implicit bound outside the fixpoint, and an instance
+/// the fixpoint takes after the argument it descends on. A call passing any
+/// such parameter otherwise writes every argument in place.
+#[test]
+fn a_recursive_call_omits_the_instance_it_passes_as_itself()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let curried = core.comp_type_arrow(nat, function);
+    let ty = core.value_type_thunk(curried);
+    let (kept_case, kept) = one_uniform(&mut core);
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // `fix(λa. λo. case a { Zero => o, Succ(b) => down b p })`: under the
+    // successor's field, `b`, `o`, `a`, the fixpoint's own; `p` is `o` itself
+    // in one body and `a` in the other.
+    let instanced = |core: &mut CoreArena, passed: u32| {
+        let staged = variable(core, 1_u32);
+        let instance = variable(core, 0_u32);
+        let returned = core.computation_return(instance);
+        let (field, own, itself) = (
+            variable(core, 0_u32),
+            variable(core, passed),
+            variable(core, 3_u32),
+        );
+        let forced = core.computation_force(itself);
+        let descended = core.computation_application(forced, field);
+        let call = core.computation_application(descended, own);
+        let succeeded = core.computation_lambda(call);
+        let case = core.computation_data_case(
+            staged,
+            returns_nat,
+            vec![returned, succeeded],
+            [0_usize, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
+        let inner = core.computation_lambda(case);
+        let outer = core.computation_lambda(inner);
+        let fixpoint = core.computation_fixpoint(
+            outer,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        (case, core.value_thunk(fixpoint))
+    };
+    let (own_case, own) = instanced(&mut core, 1_u32);
+    let (other_case, other) = instanced(&mut core, 2_u32);
+    let mut constructors = Constructors::default();
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    for case in [kept_case, own_case, other_case] {
+        constructors.case(case, FamilyKey::Named(Name::from("Nat")));
+    }
+    let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
+    let wide = PageWidth::from(100_u32);
+    let implicit = [(ConstantIndex::from(1_usize), vec![
+        Some(Name::from("x")),
+        None,
+    ])];
+    let source = CoreSource::new(&core, &names)
+        .naming(&constructors)
+        .naming_implicits(&implicit);
+    assert_eq!(
+        declared_whole(&source, (ty, kept), wide),
+        written(
+            "def rec down @[x : Nat] (a : Nat) -> Nat {\n  case a { Zero => x, Succ(b) => down[<](b) }\n}"
+        ),
+        "the implicit bound outside the fixpoint goes unwritten"
+    );
+    let instance = [(ConstantIndex::from(1_usize), vec![
+        None,
+        Some(Name::from("o")),
+    ])];
+    let source = CoreSource::new(&core, &names)
+        .naming(&constructors)
+        .naming_implicits(&instance);
+    assert_eq!(
+        declared_whole(&source, (ty, own), wide),
+        written(
+            "def rec down @[o : Nat] (a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b) }\n}"
+        ),
+        "the instance passed as itself goes unwritten"
+    );
+    assert_eq!(
+        declared_whole(&source, (ty, other), wide),
+        written(
+            "def rec down @[o : Nat] (a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b, a) }\n}"
+        ),
+        "a parameter passed in the instance's place is written with the rest"
+    );
+}
+
 /// A function definition with no fixpoint spells whole as the `def` that
 /// declares it, every parameter its body abstracts in the header with its
 /// stated type and the body under them, so an observation of a parameter

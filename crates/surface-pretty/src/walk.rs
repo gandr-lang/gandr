@@ -6444,17 +6444,44 @@ impl Walk<'_, '_>
         else {
             return Arity(0_usize);
         };
-        let Former::Variable { zone, index } = source.read(forced)
-        else {
-            return Arity(0_usize);
-        };
         let own = usize::from(recursive.uniform);
-        if self.context_position(zone, index) == Some(ContextPosition(own)) {
+        if self.binder_of(source, forced) == Some(ContextPosition(own)) {
             Arity(own)
         }
         else {
             Arity(0_usize)
         }
+    }
+
+    /// The context binder `node` reads as, when it is a variable naming one.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: [`Self::context_position`] of the variable `node` reads as;
+    ///   none for any other node.
+    /// - provides: the head of a call of a recursive definition, and an
+    ///   argument the call passes as the parameter itself.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::uniform`].
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself`
+    #[spec(ensures: |ret| ret.is_none_or(|at| at.0 < self.context.len()))]
+    fn binder_of<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<ContextPosition>
+    where
+        S: Source + ?Sized,
+    {
+        let Former::Variable { zone, index } = source.read(node)
+        else {
+            return None;
+        };
+        self.context_position(zone, index)
     }
 
     /// Pushes the name of the context binder at `position`, outermost first.
@@ -9308,6 +9335,47 @@ impl Walk<'_, '_>
         // A recursive definition's call of itself passes each uniform
         // parameter as itself, ahead of the arguments its fixpoint takes.
         let Arity(uniform) = self.uniform(source, head);
+        let mut passed_uniform: Vec<ContextPosition> =
+            (0_usize .. uniform).map(ContextPosition).collect();
+        // It passes each implicit and instance as the definition's own, and
+        // omits them: a descent that writes one argument per explicit
+        // parameter has the lowering pass the function's own for each it
+        // leaves out before the fixpoint, and the one in scope past it. It
+        // omits them all or none.
+        let itself = self.recursive.is_some_and(|recursive| {
+            matches!(source.read(head), Former::Force(forced)
+                if self.binder_of(source, forced) == Some(ContextPosition(usize::from(recursive.uniform))))
+        });
+        if itself {
+            let telescope = source.recursive_telescope();
+            let named = |at: usize| telescope.get(at).is_some_and(Option::is_some);
+            let count = arguments.len();
+            // `arguments` holds the spine's last argument first. The spine's
+            // argument at `at` is the parameter past the uniform ones at
+            // `at`, its binder one past it, behind the definition's own.
+            let passed: Vec<Option<bool>> = (0_usize .. count)
+                .zip(&arguments)
+                .map(|(place, &node)| {
+                    let at =
+                        uniform.checked_add(count.checked_sub(place)?.checked_sub(1_usize)?)?;
+                    named(at).then_some(())?;
+                    Some(
+                        self.binder_of(source, node)
+                            == Some(ContextPosition(at.checked_add(1_usize)?)),
+                    )
+                })
+                .collect();
+            if ((0_usize .. uniform).any(named) || passed.iter().any(Option::is_some))
+                && !passed.contains(&Some(false))
+            {
+                arguments = arguments
+                    .into_iter()
+                    .zip(passed)
+                    .filter_map(|(node, own)| own.is_none().then_some(node))
+                    .collect();
+                passed_uniform.retain(|&ContextPosition(at)| !named(at));
+            }
+        }
         // A callee whose telescope names an implicit at an argument's place
         // takes that argument by name, `f[x = a](b)`, where the spine is read
         // whole: the core applies every argument in place, and the
@@ -9386,7 +9454,7 @@ impl Walk<'_, '_>
         }
         if residents.is_empty() {
             tasks.push(Task::Join(Join::Apply(Arity(
-                arguments.len().saturating_add(uniform),
+                arguments.len().saturating_add(passed_uniform.len()),
             ))));
         }
         else {
@@ -9448,8 +9516,8 @@ impl Walk<'_, '_>
                 });
             }
         }
-        for position in (0_usize .. uniform).rev() {
-            tasks.push(Task::Context(ContextPosition(position)));
+        for &position in passed_uniform.iter().rev() {
+            tasks.push(Task::Context(position));
         }
         tasks.push(if let Former::Force(thunk) = source.read(head) {
             Task::Visit {

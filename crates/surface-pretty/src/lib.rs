@@ -1441,7 +1441,7 @@ pub fn present_whole(
         .collect();
     let within = source.within(&context);
     let (under, opener) = fixpoint.map_or((within, "def"), |recursive| {
-        (within.recursing(recursive), "def rec")
+        (within.recursing(recursive, implicit), "def rec")
     });
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
