@@ -206,6 +206,7 @@ use gandr_core_term::session::ProtocolNode;
 use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::WebPiece;
+use gandr_core_term::ua::Stratum;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -5622,6 +5623,60 @@ impl Walk<'_, '_>
         self.builder.text(glyphs)
     }
 
+    /// A former written at a stratum: its head `keyword[n, k](operands,`, a
+    /// text leaf `join` takes. The stratum's two numerals are the
+    /// instantiation's type residents, each a numeral where a type is read.
+    ///
+    /// # Specification
+    /// - requires: `keyword` and `operands` hold no line feed, carriage return
+    ///   or tab.
+    /// - ensures: `join` takes one text leaf holding exactly `keyword[n,
+    ///   k](operands,`, `n` the stratum's degree and `k` its bound.
+    /// - provides: the heads of `ua`, `compose` and `fill`.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each former's golden spells its degree, its bound and
+    ///   its operands apart, so a swapped numeral, a lost operand or a wrong
+    ///   keyword changes its text.
+    /// - witness: `tests::goldens::univalence_spells_its_stratum_and_descriptions`
+    /// - witness: `tests::goldens::a_composite_spells_its_stratum_chain_and_cells_3957`
+    /// - witness: `tests::goldens::a_fill_spells_its_stratum_chain_generator_and_cells_4075`
+    #[spec(
+        requires: !keyword.0.contains(['\r', '\n', '\t']),
+        ensures: |ref ret| matches!(*ret, Ok(_) | Err(PresentationError::Build(_))),
+    )]
+    fn at_stratum(
+        &mut self,
+        keyword: Glyphs<'_>,
+        stratum: Stratum,
+        operands: core::fmt::Arguments<'_>,
+        join: impl FnOnce(Doc) -> Join,
+    ) -> Result<Join, PresentationError>
+    {
+        let head = format!(
+            "{}[{}, {}]({operands},",
+            keyword.0,
+            usize::from(stratum.degree),
+            usize::from(stratum.bound),
+        );
+        let head = self.leaf(Glyphs(&head))?;
+        Ok(writes(
+            Production("instantiation_expression"),
+            writes(
+                Production("instantiation.type"),
+                writes(
+                    Production("number.type"),
+                    writes(Production("call_expression"), join(head)),
+                ),
+            ),
+        ))
+    }
+
     /// Pushes a finished atom holding `glyphs`.
     ///
     /// # Specification
@@ -8445,75 +8500,29 @@ impl Walk<'_, '_>
                 source: from,
                 target: to,
                 ..
-            } => {
-                let head = alloc::format!(
-                    "ua[{}, {}]({}, {},",
-                    usize::from(stratum.degree),
-                    usize::from(stratum.bound),
-                    from.as_ref(),
-                    to.as_ref(),
-                );
-                let head = self.leaf(Glyphs(&head))?;
-                // The stratum's two numerals are the instantiation's type
-                // residents, each a numeral where a type is read.
-                Some(writes(
-                    Production("instantiation_expression"),
-                    writes(
-                        Production("instantiation.type"),
-                        writes(
-                            Production("number.type"),
-                            writes(Production("call_expression"), Join::Ua(head)),
-                        ),
-                    ),
-                ))
-            },
+            } => Some(self.at_stratum(
+                Glyphs("ua"),
+                stratum,
+                format_args!("{}, {}", from.as_ref(), to.as_ref()),
+                Join::Ua,
+            )?),
             Former::Compose { composite, cells } => {
                 let Pasting::Chain { cells: count } = composite.pasting;
-                let head = alloc::format!(
-                    "compose[{}, {}](chain({}),",
-                    usize::from(composite.stratum.degree),
-                    usize::from(composite.stratum.bound),
-                    usize::from(count),
-                );
-                let head = self.leaf(Glyphs(&head))?;
-                // The stratum's two numerals are the instantiation's type
-                // residents, as `ua[n, k]`'s are.
-                Some(writes(
-                    Production("instantiation_expression"),
-                    writes(
-                        Production("instantiation.type"),
-                        writes(
-                            Production("number.type"),
-                            writes(
-                                Production("call_expression"),
-                                Join::Compose(head, Arity(usize::from(cells))),
-                            ),
-                        ),
-                    ),
-                ))
+                Some(self.at_stratum(
+                    Glyphs("compose"),
+                    composite.stratum,
+                    format_args!("chain({})", usize::from(count)),
+                    |head| Join::Compose(head, Arity(usize::from(cells))),
+                )?)
             },
             Former::Fill { composite, cells } => {
                 let Pasting::Chain { cells: count } = composite.pasting;
-                let head = alloc::format!(
-                    "fill[{}, {}](chain({}),",
-                    usize::from(composite.stratum.degree),
-                    usize::from(composite.stratum.bound),
-                    usize::from(count),
-                );
-                let head = self.leaf(Glyphs(&head))?;
-                Some(writes(
-                    Production("instantiation_expression"),
-                    writes(
-                        Production("instantiation.type"),
-                        writes(
-                            Production("number.type"),
-                            writes(
-                                Production("call_expression"),
-                                Join::Fill(head, Arity(usize::from(cells))),
-                            ),
-                        ),
-                    ),
-                ))
+                Some(self.at_stratum(
+                    Glyphs("fill"),
+                    composite.stratum,
+                    format_args!("chain({})", usize::from(count)),
+                    |head| Join::Fill(head, Arity(usize::from(cells))),
+                )?)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
