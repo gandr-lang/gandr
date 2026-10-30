@@ -1,0 +1,75 @@
+test: net::a_host_s_peer_is_read_past_its_diagnostics_4006
+package: gandr-lang
+command: mise run debug:test gandr-lang net::a_host_s_peer_is_read_past_its_diagnostics_4006 --break net::Line.*::writer
+
+(lldb) target create "target/debug-trace/debug/deps/tests-3315178708c5291e"
+Current executable set to 'target/debug-trace/debug/deps/tests-3315178708c5291e' (x86_64).
+(lldb) settings set -- target.run-args  "net::a_host_s_peer_is_read_past_its_diagnostics_4006" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex net::Line.*::writer
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-3315178708c5291e`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000000b71558
+(lldb) run
+
+running 1 test
+test net::a_host_s_peer_is_read_past_its_diagnostics_4006 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1467363 launched: 'target/debug-trace/debug/deps/tests-3315178708c5291e' (x86_64)
+Process 1467363 stopped
+* thread #2, name = 'net::a_host_s_p', stop reason = breakpoint 1.1
+       frame #0: 0x000055555586e0b4 tests-3315178708c5291e`<tests::net::Line>::writer(self={0:"2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs"}) at net.rs:475:33
+   472 	    /// trivial.
+   473 	    fn writer(self) -> Writer
+   474 	    {
+-> 475 	        let mut fields = self.0.split_whitespace();
+    	                                ^
+   476 	        let stamped = fields
+   477 	            .next()
+   478 	            .is_some_and(|stamp| stamp.ends_with('Z') && stamp.contains('T'));
+(lldb) bt 24
+* thread #2, name = 'net::a_host_s_p', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555586e0b4 tests-3315178708c5291e`<tests::net::Line>::writer(self={0:"2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs"}) at net.rs:475:33
+     frame #1: 0x000055555586d8ea tests-3315178708c5291e`tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0}((null)={}, line="2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs") at net.rs:506:37
+     frame #2: 0x00005555558992bd tests-3315178708c5291e`core::iter::traits::iterator::Iterator::find::check::<&str, tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0}>::{closure#0}((null)=<unavailable>, x="2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs") at iterator.rs:2967:20
+     frame #3: 0x00005555558976e7 tests-3315178708c5291e`<core::str::iter::Lines as core::iter::traits::iterator::Iterator>::try_fold::<(self={__0:{iter:{0:{start:118, end:274, matcher:{haystack:"2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs\ned4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1@127.0.0.1:39684@[::]:38070\n2026-10-30T00:05:38.307738Z  INFO driver: gandr: output flushed\n", finger:118, finger_back:274, needle:U+000A U'\n', utf8_size:'\x01', utf8_encoded:(…)}, allow_trailing_empty:false, finished:false}}, f:{}}}, init=<unavailable>, f={predicate:{}}), core::iter::traits::iterator::Iterator::find::check<&str, tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<&str>> at iterator.rs:2494:21
+     frame #4: 0x000055555589617e tests-3315178708c5291e`<core::str::iter::Lines as core::iter::traits::iterator::Iterator>::find::<tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0}>(self={__0:{iter:{0:{start:118, end:274, matcher:{haystack:"2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs\ned4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1@127.0.0.1:39684@[::]:38070\n2026-10-30T00:05:38.307738Z  INFO driver: gandr: output flushed\n", finger:118, finger_back:274, needle:U+000A U'\n', utf8_size:'\x01', utf8_encoded:(…)}, allow_trailing_empty:false, finished:false}}, f:{}}}, predicate={}) at iterator.rs:2971:14
+     frame #5: 0x0000555555871a86 tests-3315178708c5291e`tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006 at net.rs:506:14
+     frame #6: 0x000055555586d247 tests-3315178708c5291e`tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0}((null)={}) at net.rs:495:53
+     frame #7: 0x0000555555893136 tests-3315178708c5291e`<tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #8: 0x00005555558a922b tests-3315178708c5291e`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #9: 0x00005555558a9229 tests-3315178708c5291e`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #10: 0x00005555558b6885 tests-3315178708c5291e`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #11: 0x00005555558b6880 tests-3315178708c5291e`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #12: 0x00005555558b6880 tests-3315178708c5291e`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #13: 0x00005555558b686b tests-3315178708c5291e`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #14: 0x00005555558b686b tests-3315178708c5291e`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #15: 0x00005555558b686b tests-3315178708c5291e`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #16: 0x00005555558b6856 tests-3315178708c5291e`test::run_test::{closure#0} at lib.rs:668:43
+     frame #17: 0x00005555558b13e4 tests-3315178708c5291e`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #18: 0x00005555558b1369 tests-3315178708c5291e`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #19: 0x00005555558b99c2 tests-3315178708c5291e`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #20: 0x00005555558b99b3 tests-3315178708c5291e`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #21: 0x00005555558b99b3 tests-3315178708c5291e`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #22: 0x00005555558b99a3 tests-3315178708c5291e`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #23: 0x00005555558b99a3 tests-3315178708c5291e`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+(lldb) frame variable --depth 3
+(tests::net::Line) self = {0:"2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs"}
+(lldb) up
+frame #1: 0x000055555586d8ea tests-3315178708c5291e`tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure#0}((null)={}, line="2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs") at net.rs:506:37
+   503 	    assert_eq!(
+   504 	        named
+   505 	            .lines()
+-> 506 	            .find(|line| Line(line).writer() == Writer::Host),
+    	                                    ^
+   507 	        Some(format!("{peer}@[::]:38070").as_str()),
+   508 	        "the first line the subscriber did not write is the peer"
+   509 	    );
+(lldb) frame variable --depth 3
+(tests::net::a_host_s_peer_is_read_past_its_diagnostics_4006::{closure_env#0} *)  = 0x00007ffff79fe16f {}
+(&str *) line = 0x00007ffff79fe0c8 "2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close time.busy=1.48ms time.idle=3.26µs"

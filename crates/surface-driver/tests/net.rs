@@ -271,10 +271,10 @@ fn two_processes_run_the_far_world_from_their_site_and_manifold_3374()
     assert!(
         named
             .lines()
-            .next()
+            .find(|line| Line(line).writer() == Writer::Host)
             .is_some_and(|first| { first == peer || first.starts_with(&format!("{peer}@")) }),
-        "the host's first line is the peer the site names, before any other socket it bound: \
-         {named}"
+        "the host's first line past its diagnostics is the peer the site names, before any \
+         other socket it bound: {named}"
     );
     assert_eq!(
         (
@@ -389,8 +389,14 @@ fn a_host_reads_its_site_s_secret_by_name_3375()
         .spawn()
         .expect("the host starts");
     let mut first = String::new();
-    let read_first = BufReader::new(host.stderr.take().expect("the host's standard error"))
-        .read_line(&mut first);
+    let mut lines = BufReader::new(host.stderr.take().expect("the host's standard error"));
+    let read_first = loop {
+        first.clear();
+        match lines.read_line(&mut first) {
+            Ok(read) if read > 0 && Line(first.trim_end()).writer() == Writer::Subscriber => {},
+            read => break read,
+        }
+    };
     host.kill().expect("the bound host stops");
     let _ended = host.wait();
     read_first.expect("the host's first line reads");
@@ -439,5 +445,71 @@ fn a_host_reads_its_site_s_secret_by_name_3375()
     assert!(
         code == Some(2_i32) && refusal.contains("`--net-secret`") && refusal.contains("`--site`"),
         "a network secret beside a site is refused, naming both: {refusal}"
+    );
+}
+
+/// Who wrote a line of the host's standard error (#4006).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Writer
+{
+    /// The `tracing` feature's subscriber, which shares the stream.
+    Subscriber,
+    /// The host itself: its peer, its migrations, its refusals.
+    Host,
+}
+
+/// A line of the host's standard error.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct Line<'line>(&'line str);
+
+impl Line<'_>
+{
+    /// Who wrote this line: the subscriber's lines open with a timestamp,
+    /// then a level, so a host's first line is read past them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn writer(self) -> Writer
+    {
+        let mut fields = self.0.split_whitespace();
+        let stamped = fields
+            .next()
+            .is_some_and(|stamp| stamp.ends_with('Z') && stamp.contains('T'));
+        let levelled = fields
+            .next()
+            .is_some_and(|level| ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"].contains(&level));
+        if stamped && levelled {
+            Writer::Subscriber
+        }
+        else {
+            Writer::Host
+        }
+    }
+}
+
+/// #4006: with every feature on, the host's standard error opens with the
+/// subscriber's close of the dispatch span, then the peer. The peer is read
+/// past the subscriber's lines, and the peer line is none of them.
+#[test]
+fn a_host_s_peer_is_read_past_its_diagnostics_4006()
+{
+    let peer = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1@127.0.0.1:39684";
+    let named = format!(
+        "2026-10-30T00:05:38.237291Z  INFO driver:dispatch: gandr_surface_dispatcher: close \
+         time.busy=1.48ms time.idle=3.26µs\n{peer}@[::]:38070\n2026-10-30T00:05:38.307738Z  INFO \
+         driver: gandr: output flushed\n"
+    );
+    assert_eq!(
+        named
+            .lines()
+            .find(|line| Line(line).writer() == Writer::Host),
+        Some(format!("{peer}@[::]:38070").as_str()),
+        "the first line the subscriber did not write is the peer"
+    );
+    assert_eq!(
+        named.lines().next().map(|line| Line(line).writer()),
+        Some(Writer::Subscriber),
+        "the dispatch span's close is the subscriber's"
     );
 }
