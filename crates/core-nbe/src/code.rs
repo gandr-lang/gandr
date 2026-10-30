@@ -35,12 +35,13 @@
 //!   [`compare_codes_over`] walks the two types again and sets aside each pair
 //!   the walk cannot match as nodes: two endpoints a call returned apart, two
 //!   thunks whose bodies differ as written, or a call one quote writes against
-//!   an endpoint a call returned in the other's environment. Two held values
-//!   over one neutral still agree. Two types α-equal over the pairs set aside
-//!   are [`CodeReading::Over`] those pairs, which the machine decides as
-//!   premises. Anything else stays undecided, and the machine declines rather
-//!   than answer, which is the honest answer at a rung where nothing reduces
-//!   inside a type.
+//!   a held endpoint, a variable or another call in the other. Two written
+//!   calls compare by their parts first and are set aside whole only when their
+//!   parts part. Two held values over one neutral still agree. Two types
+//!   α-equal over the pairs set aside are [`CodeReading::Over`] those pairs,
+//!   which the machine decides as premises. Anything else stays undecided, and
+//!   the machine declines rather than answer, which is the honest answer at a
+//!   rung where nothing reduces inside a type.
 //!
 //! The rigidity criterion is the one the kernel's replay applies to a shared
 //! comparison, so an answer of [`CodeComparison::Apart`] is one the kernel
@@ -79,13 +80,16 @@
 //!
 //! A definition's type reads a parameter through the environment its call
 //! bound, so an endpoint passed to it as a stuck call is held there, while
-//! the same type written in place writes the call (#4038). The walk sets the
-//! written call aside against the held endpoint, and the machine enters the
-//! call in its quote's environment against the computation the endpoint
-//! returned. Alternatives: matching the written call against the held
-//! computation node by node, which misses a call that unfolds; and evaluating
-//! the call inside the walk, which reads the domain without changing it.
-//! Reversal: types that evaluate, where both endpoints are held.
+//! the same type written in place writes the call (#4038). A type may also
+//! write a call that reduces to a variable or to another call (#4179). The
+//! walk sets the written call aside against what the other type holds there,
+//! and the machine enters each call in its quote's environment. The kernel's
+//! replay reads such a motive's endpoints by its own reduction. A written call
+//! against a constant or a first-order value still stays undecided.
+//! Alternatives: matching the written call against the held computation node
+//! by node, which misses a call that unfolds; and evaluating the call inside
+//! the walk, which reads the domain without changing it. Reversal: types that
+//! evaluate, where both endpoints are held.
 //!
 //! The lockstep walk gives paired binders one identity and retains each side’s
 //! outer chain separately. Its binder counter uses the arena’s index width: a
@@ -248,14 +252,14 @@ pub enum SetAside
 {
     /// Two values environments hold, compared as they stand.
     Held(DomainValueId, DomainValueId),
-    /// A call one side's quote writes against an endpoint a call returned on
-    /// the other.
+    /// A call one side's quote writes against what the other side reads at
+    /// the same place.
     Written(WrittenCall),
 }
 
 /// A call one side's quote writes, outside every binder the quoted type
-/// opens, against the computation whose returned endpoint the other side's
-/// environment holds: the two endpoints agree where the two calls convert.
+/// opens, against what the other side reads at the same place: the two agree
+/// where the call, entered in its quote's environment, converts with it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WrittenCall
 {
@@ -265,8 +269,23 @@ pub struct WrittenCall
     pub call: ComputationId,
     /// The quote whose environment the call reads.
     pub closure: ValueClosureId,
-    /// The computation the other side's endpoint returned.
-    pub held: DomainCompId,
+    /// What the other side reads there.
+    pub against: Against,
+}
+
+/// What the other side of a [`WrittenCall`] reads where the call is written.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Against
+{
+    /// The computation whose returned endpoint the other side's environment
+    /// holds.
+    Returned(DomainCompId),
+    /// Any other value the other side's environment holds.
+    Held(DomainValueId),
+    /// A variable of the context, by level.
+    Variable(Zone, BinderLevel),
+    /// A call the other side's quote writes, with that quote's closure.
+    Written(ComputationId, ValueClosureId),
 }
 
 /// How a comparison reads a constant a quoted type names.
@@ -537,6 +556,20 @@ struct Walk<'run>
     /// Each binder a step into a stated lambda's body binds, beside the
     /// argument the call applies the lambda to, at the call's place.
     bound: alloc::collections::BTreeMap<Binder, Node>,
+}
+
+/// Two written calls under comparison by their parts, and the comparison
+/// they suspend until their parts agree or part.
+struct Frame
+{
+    /// The suspended comparison's atom pairs.
+    atoms: Vec<(Atom, Atom)>,
+    /// The suspended comparison's node pairs.
+    pending: Vec<(Node, Node)>,
+    /// The pairs set aside before the frame opened.
+    aside: Vec<SetAside>,
+    /// The two calls set aside whole, should their parts part.
+    whole: SetAside,
 }
 
 impl<'run> Walk<'run>
@@ -2566,18 +2599,118 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// # Specification
     /// - requires: roots belong to the held arenas.
     /// - ensures: equal live roots compare reflexively; every queued child must
-    ///   also agree. Two written pure calls agree when their functions and
-    ///   their arguments do, each read through its own side's closure, a call
-    ///   of a stated lambda read first as its reduct ([`Walk::reduced`]). Two
-    ///   written transports along element paths agree when their paths and
-    ///   values do, and their motives under one fresh binder. Two held values
-    ///   over one neutral agree. A walk that sets aside records any other two
-    ///   held values, and a call one side writes outside every binder its type
-    ///   opens against an endpoint a call returned on the other, and goes on;
-    ///   otherwise two held thunks agree when their source bodies are equal as
-    ///   syntax and their environments' entries agree pair by pair.
+    ///   also agree, each pair as [`Walk::equal_step`] reads it. In a walk that
+    ///   sets aside, two calls written outside every binder their types open
+    ///   compare by their parts in a frame that suspends the rest. When the
+    ///   parts agree, the walk keeps the pairs they set aside. When the parts
+    ///   part, the walk sets the two calls aside whole and resumes.
     /// - fails: a dangling child or malformed source.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two calls whose parts part are set aside whole, such
+    ///   as a composite against a call around it, and two calls whose parts set
+    ///   aside held values keep those pairs. Setting aside every pair of calls
+    ///   whole changes the second answer, and separating them changes the
+    ///   first.
+    /// - witness: `code::tests::a_written_call_against_a_variable_or_a_call_is_set_aside_4179`
+    /// - witness: `code::tests::codes_over_held_values_the_walk_cannot_match_set_them_aside_4005`
+    /// - witness: `code::tests::motives_over_composites_written_apart_are_alike_3968`
+    #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
+    fn equal_atoms(
+        &mut self,
+        left_atom: Atom,
+        right_atom: Atom,
+    ) -> Result<Alike, ConversionFault>
+    {
+        let mut pending: Vec<(Node, Node)> = Vec::new();
+        let mut atoms = Vec::from([(left_atom, right_atom)]);
+        let mut frame: Option<Frame> = None;
+        loop {
+            let alike = if let Some((one, other)) = atoms.pop() {
+                if one == other {
+                    continue;
+                }
+                match (self.reduced(one)?, self.reduced(other)?) {
+                    // Two calls outside every binder, in a walk that sets
+                    // aside, are alike by their parts or set aside whole: a
+                    // composite and its right unit part at their paths.
+                    (Atom::Called(first, here), Atom::Called(second, there))
+                        if frame.is_none()
+                            && self.aside.is_some()
+                            && here.chain == Chain(0_usize)
+                            && there.chain == Chain(0_usize) =>
+                    {
+                        frame = Some(Frame {
+                            atoms: core::mem::take(&mut atoms),
+                            pending: core::mem::take(&mut pending),
+                            aside: self.aside.replace(Vec::new()).unwrap_or_default(),
+                            whole: SetAside::Written(WrittenCall {
+                                side: ConversionSide::Left,
+                                call: first,
+                                closure: here.closure,
+                                against: Against::Written(second, there.closure),
+                            }),
+                        });
+                        self.equal_step(
+                            (Atom::Called(first, here), Atom::Called(second, there)),
+                            &mut atoms,
+                            &mut pending,
+                        )?
+                    },
+                    pair => self.equal_step(pair, &mut atoms, &mut pending)?,
+                }
+            }
+            else if let Some((one, other)) = pending.pop() {
+                self.formers(one, other, &mut pending, &mut atoms)?
+            }
+            else if let Some(outer) = frame.take() {
+                // The parts agree: the pairs they set aside join the rest.
+                let found = self.aside.replace(outer.aside);
+                if let (Some(found), Some(aside)) = (found, self.aside.as_mut()) {
+                    aside.extend(found);
+                }
+                (atoms, pending) = (outer.atoms, outer.pending);
+                continue;
+            }
+            else {
+                return Ok(Alike::Same);
+            };
+            if alike == Alike::Different {
+                // The parts part: the two calls are set aside whole.
+                let Some(outer) = frame.take()
+                else {
+                    return Ok(Alike::Different);
+                };
+                let mut aside = outer.aside;
+                aside.push(outer.whole);
+                self.aside = Some(aside);
+                (atoms, pending) = (outer.atoms, outer.pending);
+            }
+        }
+    }
+
+    /// Compare one pair of atoms, queueing the pairs that must also agree.
+    ///
+    /// # Specification
+    /// - requires: both atoms belong to the held arenas.
+    /// - ensures: [`Alike::Different`], nothing queued, when the pair
+    ///   separates; [`Alike::Same`] otherwise, its children queued. Two written
+    ///   pure calls agree when their functions and their arguments do, each
+    ///   read through its own side's closure, a call of a stated lambda read
+    ///   first as its reduct ([`Walk::reduced`]). Two written transports along
+    ///   element paths agree when their paths and values do, and their motives
+    ///   under one fresh binder. Two held values over one neutral agree. A walk
+    ///   that sets aside records any other two held values, and a call one side
+    ///   writes outside every binder its type opens against what the other side
+    ///   reads there, and goes on; otherwise two held thunks agree when their
+    ///   source bodies are equal as syntax and their environments' entries
+    ///   agree pair by pair.
+    /// - fails: a dangling child or malformed source.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nominal identities and unequal ordinary arguments
@@ -2597,189 +2730,168 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
     /// - witness: `code::tests::motives_applying_a_stated_lambda_agree_with_its_reduct_4073`
     /// - witness: `code::tests::motives_over_composites_written_apart_are_alike_3968`
-    #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
-    fn equal_atoms(
+    #[spec(
+        captures: [entry_atoms = atoms.len(), entry_pending = pending.len()],
+        ensures: |ret| ret != Ok(Alike::Different)
+            || (atoms.len() == entry_atoms && pending.len() == entry_pending),
+    )]
+    fn equal_step(
         &mut self,
-        left_atom: Atom,
-        right_atom: Atom,
+        pair: (Atom, Atom),
+        atoms: &mut Vec<(Atom, Atom)>,
+        pending: &mut Vec<(Node, Node)>,
     ) -> Result<Alike, ConversionFault>
     {
-        let mut pending: Vec<(Node, Node)> = Vec::new();
-        let mut atoms = Vec::from([(left_atom, right_atom)]);
-        loop {
-            while let Some((one, other)) = atoms.pop() {
-                if one == other {
-                    continue;
+        match pair {
+            (Atom::FirstOrder(first), Atom::FirstOrder(second)) => {
+                if self.first_order_pair(first, second, pending)? == Alike::Different {
+                    return Ok(Alike::Different);
                 }
-                let (one, other) = (self.reduced(one)?, self.reduced(other)?);
-                match (one, other) {
-                    (Atom::FirstOrder(first), Atom::FirstOrder(second)) => {
-                        if self.first_order_pair(first, second, &mut pending)? == Alike::Different {
-                            return Ok(Alike::Different);
-                        }
-                    },
-                    (Atom::Quote(first, here), Atom::Quote(second, there)) => {
-                        pending
-                            .push((Node::ValueType(first, here), Node::ValueType(second, there)));
-                    },
-                    (
-                        Atom::QuoteComputation(first, here),
-                        Atom::QuoteComputation(second, there),
-                    ) => {
-                        pending.push((Node::CompType(first, here), Node::CompType(second, there)));
-                    },
-                    (Atom::Lift(first, here), Atom::Lift(second, there)) => {
-                        let (
-                            Some(&Value::Lift {
-                                target: ref left_target,
-                                body: left_body,
-                            }),
-                            Some(&Value::Lift {
-                                target: ref right_target,
-                                body: right_body,
-                            }),
-                        ) = (self.core.value(first), self.core.value(second))
-                        else {
-                            return Err(ConversionFault::MachineInvariant);
-                        };
-                        if left_target != right_target {
-                            return Ok(Alike::Different);
-                        }
-                        let one = self.atom(Node::Code(left_body, here))?;
-                        let other = self.atom(Node::Code(right_body, there))?;
-                        atoms.push((one, other));
-                    },
-                    (Atom::Applied(head, argument), Atom::Applied(other_head, other_argument)) => {
-                        let arguments = (self.atom(argument)?, self.atom(other_argument)?);
-                        let heads = (self.atom(head)?, self.atom(other_head)?);
-                        atoms.push(arguments);
-                        atoms.push(heads);
-                    },
-                    (Atom::Operator(first, here), Atom::Operator(second, there)) => {
-                        let (
-                            Some(&Value::StaticLambda(left_body)),
-                            Some(&Value::StaticLambda(right_body)),
-                        ) = (self.core.value(first), self.core.value(second))
-                        else {
-                            return Err(ConversionFault::MachineInvariant);
-                        };
-                        let (inside, other_inside) = self.crossed(here, there);
-                        let one = self.atom(Node::Code(left_body, inside))?;
-                        let other = self.atom(Node::Code(right_body, other_inside))?;
-                        atoms.push((one, other));
-                    },
-                    (Atom::Called(first, here), Atom::Called(second, there)) => {
-                        let (Some(call), Some(other_call)) =
-                            (self.core.computation(first), self.core.computation(second))
-                        else {
-                            return Err(ConversionFault::MachineInvariant);
-                        };
-                        if let (
-                            &Computation::Application(function, argument),
-                            &Computation::Application(other_function, other_argument),
-                        ) = (call, other_call)
-                        {
-                            let one = self.atom(Node::Code(argument, here))?;
-                            let other = self.atom(Node::Code(other_argument, there))?;
-                            atoms.push((one, other));
-                            atoms.push((
-                                Atom::Called(function, here),
-                                Atom::Called(other_function, there),
-                            ));
-                        }
-                        else if let (
-                            &Computation::Force(value),
-                            &Computation::Force(other_value),
-                        ) = (call, other_call)
-                        {
-                            let one = self.atom(Node::Code(value, here))?;
-                            let other = self.atom(Node::Code(other_value, there))?;
-                            atoms.push((one, other));
-                        }
-                        else if let (
-                            &Computation::PathTransport {
-                                motive,
-                                path,
-                                value,
-                            },
-                            &Computation::PathTransport {
-                                motive: other_motive,
-                                path: other_path,
-                                value: other_value,
-                            },
-                        ) = (call, other_call)
-                        {
-                            let one = self.atom(Node::Code(path, here))?;
-                            let other = self.atom(Node::Code(other_path, there))?;
-                            atoms.push((one, other));
-                            let one = self.atom(Node::Code(value, here))?;
-                            let other = self.atom(Node::Code(other_value, there))?;
-                            atoms.push((one, other));
-                            let (inside, other_inside) = self.crossed(here, there);
-                            pending.push((
-                                Node::ValueType(motive, inside),
-                                Node::ValueType(other_motive, other_inside),
-                            ));
-                        }
-                        else if (first, here) != (second, there) {
-                            return Ok(Alike::Different);
-                        }
-                    },
-                    (Atom::Local(first), Atom::Local(second)) if first == second => {},
-                    (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
-                        if (zone, first) == (other_zone, second) => {},
-                    (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {},
-                    (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
-                        if self.one_neutral(first, second) == Alike::Same => {},
-                    (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
-                        if first != second =>
-                    {
-                        if let Some(aside) = self.aside.as_mut() {
-                            aside.push(SetAside::Held(first, second));
-                        }
-                        else if self.held_thunks(first, second, &mut atoms)? == Alike::Different {
-                            return Ok(Alike::Different);
-                        }
-                    },
-                    (Atom::Called(call, here), Atom::Other(Node::Held(held))) => {
-                        if self.set_aside_call(ConversionSide::Left, call, here, held)?
-                            == Alike::Different
-                        {
-                            return Ok(Alike::Different);
-                        }
-                    },
-                    (Atom::Other(Node::Held(held)), Atom::Called(call, there)) => {
-                        if self.set_aside_call(ConversionSide::Right, call, there, held)?
-                            == Alike::Different
-                        {
-                            return Ok(Alike::Different);
-                        }
-                    },
-                    (Atom::Other(first), Atom::Other(second)) if first == second => {},
-                    (
-                        Atom::Local(_)
-                        | Atom::FirstOrder(_)
-                        | Atom::Variable(..)
-                        | Atom::Constant(..)
-                        | Atom::Quote(..)
-                        | Atom::QuoteComputation(..)
-                        | Atom::Lift(..)
-                        | Atom::Applied(..)
-                        | Atom::Called(..)
-                        | Atom::Operator(..)
-                        | Atom::Other(_),
-                        _,
-                    ) => return Ok(Alike::Different),
+            },
+            (Atom::Quote(first, here), Atom::Quote(second, there)) => {
+                pending.push((Node::ValueType(first, here), Node::ValueType(second, there)));
+            },
+            (Atom::QuoteComputation(first, here), Atom::QuoteComputation(second, there)) => {
+                pending.push((Node::CompType(first, here), Node::CompType(second, there)));
+            },
+            (Atom::Lift(first, here), Atom::Lift(second, there)) => {
+                let (
+                    Some(&Value::Lift {
+                        target: ref left_target,
+                        body: left_body,
+                    }),
+                    Some(&Value::Lift {
+                        target: ref right_target,
+                        body: right_body,
+                    }),
+                ) = (self.core.value(first), self.core.value(second))
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                if left_target != right_target {
+                    return Ok(Alike::Different);
                 }
-            }
-            let Some((one, other)) = pending.pop()
-            else {
-                return Ok(Alike::Same);
-            };
-            if self.formers(one, other, &mut pending, &mut atoms)? == Alike::Different {
-                return Ok(Alike::Different);
-            }
+                let one = self.atom(Node::Code(left_body, here))?;
+                let other = self.atom(Node::Code(right_body, there))?;
+                atoms.push((one, other));
+            },
+            (Atom::Applied(head, argument), Atom::Applied(other_head, other_argument)) => {
+                let arguments = (self.atom(argument)?, self.atom(other_argument)?);
+                let heads = (self.atom(head)?, self.atom(other_head)?);
+                atoms.push(arguments);
+                atoms.push(heads);
+            },
+            (Atom::Operator(first, here), Atom::Operator(second, there)) => {
+                let (Some(&Value::StaticLambda(left_body)), Some(&Value::StaticLambda(right_body))) =
+                    (self.core.value(first), self.core.value(second))
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let (inside, other_inside) = self.crossed(here, there);
+                let one = self.atom(Node::Code(left_body, inside))?;
+                let other = self.atom(Node::Code(right_body, other_inside))?;
+                atoms.push((one, other));
+            },
+            (Atom::Called(first, here), Atom::Called(second, there)) => {
+                let (Some(call), Some(other_call)) =
+                    (self.core.computation(first), self.core.computation(second))
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                if let (
+                    &Computation::Application(function, argument),
+                    &Computation::Application(other_function, other_argument),
+                ) = (call, other_call)
+                {
+                    let one = self.atom(Node::Code(argument, here))?;
+                    let other = self.atom(Node::Code(other_argument, there))?;
+                    atoms.push((one, other));
+                    atoms.push((
+                        Atom::Called(function, here),
+                        Atom::Called(other_function, there),
+                    ));
+                }
+                else if let (&Computation::Force(value), &Computation::Force(other_value)) =
+                    (call, other_call)
+                {
+                    let one = self.atom(Node::Code(value, here))?;
+                    let other = self.atom(Node::Code(other_value, there))?;
+                    atoms.push((one, other));
+                }
+                else if let (
+                    &Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    },
+                    &Computation::PathTransport {
+                        motive: other_motive,
+                        path: other_path,
+                        value: other_value,
+                    },
+                ) = (call, other_call)
+                {
+                    let one = self.atom(Node::Code(path, here))?;
+                    let other = self.atom(Node::Code(other_path, there))?;
+                    atoms.push((one, other));
+                    let one = self.atom(Node::Code(value, here))?;
+                    let other = self.atom(Node::Code(other_value, there))?;
+                    atoms.push((one, other));
+                    let (inside, other_inside) = self.crossed(here, there);
+                    pending.push((
+                        Node::ValueType(motive, inside),
+                        Node::ValueType(other_motive, other_inside),
+                    ));
+                }
+                else if (first, here) != (second, there) {
+                    return Ok(Alike::Different);
+                }
+            },
+            (Atom::Local(first), Atom::Local(second)) if first == second => {},
+            (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
+                if (zone, first) == (other_zone, second) => {},
+            (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {},
+            (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
+                if self.one_neutral(first, second) == Alike::Same => {},
+            (Atom::Other(Node::Held(first)), Atom::Other(Node::Held(second)))
+                if first != second =>
+            {
+                if let Some(aside) = self.aside.as_mut() {
+                    aside.push(SetAside::Held(first, second));
+                }
+                else if self.held_thunks(first, second, atoms)? == Alike::Different {
+                    return Ok(Alike::Different);
+                }
+            },
+            (Atom::Called(call, here), other) => {
+                if self.set_aside_call(ConversionSide::Left, call, here, other)? == Alike::Different
+                {
+                    return Ok(Alike::Different);
+                }
+            },
+            (other, Atom::Called(call, there)) => {
+                if self.set_aside_call(ConversionSide::Right, call, there, other)?
+                    == Alike::Different
+                {
+                    return Ok(Alike::Different);
+                }
+            },
+            (Atom::Other(first), Atom::Other(second)) if first == second => {},
+            (
+                Atom::Local(_)
+                | Atom::FirstOrder(_)
+                | Atom::Variable(..)
+                | Atom::Constant(..)
+                | Atom::Quote(..)
+                | Atom::QuoteComputation(..)
+                | Atom::Lift(..)
+                | Atom::Applied(..)
+                | Atom::Operator(..)
+                | Atom::Other(_),
+                _,
+            ) => return Ok(Alike::Different),
         }
+        Ok(Alike::Same)
     }
 
     /// Whether two held values are one neutral held twice:
@@ -2807,20 +2919,23 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         }
     }
 
-    /// Set aside a call one side's quote writes against a value the other
-    /// side's environment holds, for the machine to enter the call in the
-    /// quote's environment against the computation the held endpoint returned.
+    /// Set aside a call one side's quote writes against what the other side
+    /// reads at the same place, for the machine to enter the call in the
+    /// quote's environment against it.
     ///
     /// # Specification
     /// - requires: nothing — dangling ids are admissible input and refused.
     /// - ensures: [`Alike::Same`], one [`SetAside::Written`] naming `side`,
     ///   `call` and `place`'s closure pushed, exactly when the walk sets aside,
-    ///   `place` crosses no binder the quoted type opens, and `held` is a
-    ///   neutral headed by a returned endpoint with no elimination;
-    ///   [`Alike::Different`], nothing pushed, otherwise.
+    ///   `place` crosses no binder the quoted type opens, and `other` is a held
+    ///   value, a variable of the context, or a call written outside every
+    ///   binder its own type opens; [`Alike::Different`], nothing pushed,
+    ///   otherwise. A held neutral headed by a returned endpoint with no
+    ///   elimination is set aside as the computation it returned.
     /// - provides: the premise that relates an endpoint one quote writes as a
-    ///   call to the same endpoint the other quote's environment holds, which
-    ///   the walk cannot match as nodes.
+    ///   call to what the other quote reads there, which the walk cannot match
+    ///   as nodes: the endpoint its environment holds, a variable the call
+    ///   reduces to, or another call reducing alike.
     /// - fails: [`ConversionFault::Domain`] for a held value or neutral that
     ///   does not resolve.
     /// - panics: none.
@@ -2831,10 +2946,12 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// # Adequacy
     /// - hypothesis: L3 — a transport written in one motive against the
     ///   endpoint the same transport returned in the other's environment is set
-    ///   aside, on either side; a written call under a binder the type opens,
-    ///   or against a held variable, separates. Matching the written call by
-    ///   its node leaves the first undecided.
+    ///   aside, on either side, and so is a call against a held variable and
+    ///   against another call; a written call under a binder the type opens, or
+    ///   against a constant, separates. Matching the written call by its node
+    ///   leaves the first undecided.
     /// - witness: `code::tests::a_written_call_against_a_held_endpoint_is_set_aside_4038`
+    /// - witness: `code::tests::a_written_call_against_a_variable_or_a_call_is_set_aside_4179`
     #[spec(
         captures: before = self.aside.as_ref().map(Vec::len),
         ensures: |ret| match ret {
@@ -2850,25 +2967,43 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         side: ConversionSide,
         call: ComputationId,
         place: Place,
-        held: DomainValueId,
+        other: Atom,
     ) -> Result<Alike, ConversionFault>
     {
         let dangling = ConversionFault::Domain(DomainFault::Dangling);
         if self.aside.is_none() || place.chain != Chain(0_usize) {
             return Ok(Alike::Different);
         }
-        let DomainValue::Neutral { neutral, .. } = *self.domain.value(held).ok_or(dangling)?
-        else {
-            return Ok(Alike::Different);
+        let against = match other {
+            Atom::Other(Node::Held(held)) => {
+                let mut against = Against::Held(held);
+                if let DomainValue::Neutral { neutral, .. } =
+                    *self.domain.value(held).ok_or(dangling)?
+                {
+                    let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
+                    if let NeutralHead::Returned(computation) = stuck.head()
+                        && stuck.spine().is_empty()
+                    {
+                        against = Against::Returned(computation);
+                    }
+                }
+                against
+            },
+            Atom::Variable(zone, level) => Against::Variable(zone, level),
+            Atom::Called(written, at) if at.chain == Chain(0_usize) => {
+                Against::Written(written, at.closure)
+            },
+            Atom::Local(_)
+            | Atom::Constant(..)
+            | Atom::Quote(..)
+            | Atom::QuoteComputation(..)
+            | Atom::Lift(..)
+            | Atom::Applied(..)
+            | Atom::Called(..)
+            | Atom::Operator(..)
+            | Atom::FirstOrder(_)
+            | Atom::Other(_) => return Ok(Alike::Different),
         };
-        let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
-        let NeutralHead::Returned(computation) = stuck.head()
-        else {
-            return Ok(Alike::Different);
-        };
-        if !stuck.spine().is_empty() {
-            return Ok(Alike::Different);
-        }
         let Some(aside) = self.aside.as_mut()
         else {
             return Ok(Alike::Different);
@@ -2877,7 +3012,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
             side,
             call,
             closure: place.closure,
-            held: computation,
+            against,
         }));
         Ok(Alike::Same)
     }

@@ -3091,6 +3091,52 @@ fn a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #4179: two transports along one stuck path, at one operand, were refused
+/// when their motives' fixed starts differ by a reduction. `then` after a
+/// 2-path stated from a right unit converts with `then` after the 2-path, and
+/// written transports whose starts differ by an unfolding, by transport along
+/// a reflexivity and by a composite's right unit law convert.
+#[test]
+fn transports_whose_motive_starts_differ_by_a_reduction_convert_4179()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def same(A : Type, a : A) -> A {\n  a\n}\n\ndef fromUnit(A : Type, x : A, y : A, z \
+             : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, x, z), s : Path(Path(A, x, \
+             z), f then g, h)) -> Path(Path(A, x, z), (f then g) then here(z), h) {\n  s\n}\n\ndef \
+             thenStart(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z), h : \
+             Path(A, x, z), k : Path(A, x, z), s : Path(Path(A, x, z), f then g, h), r : \
+             Path(Path(A, x, z), h, k)) -> Path(Path(Path(A, x, z), f then g, k), fromUnit(A, x, \
+             y, z, f, g, h, s) then r, s then r) {\n  here(s then r)\n}\n\ndef unfoldStart(A : \
+             Type, x : A, y : A, k : A, s : Path(A, x, y), r : Path(A, y, k)) -> Path(Path(A, x, \
+             k), transport(\\c. Path(A, same(A, x), c), r, s), transport(\\c. Path(A, x, c), r, \
+             s)) {\n  here(transport(\\c. Path(A, x, c), r, s))\n}\n\ndef hereStart(A : Type, x : \
+             A, y : A, k : A, s : Path(A, x, y), r : Path(A, y, k)) -> Path(Path(A, x, k), \
+             transport(\\c. Path(A, transport(\\d. A, here(x), x), c), r, s), transport(\\c. \
+             Path(A, x, c), r, s)) {\n  here(transport(\\c. Path(A, x, c), r, s))\n}\n\ndef \
+             unitStart(A : Type, x : A, y : A, z : A, k : Path(A, x, z), f : Path(A, x, y), g : \
+             Path(A, y, z), s : Path(Path(A, x, z), f then g, k), m : Path(A, x, z), r : \
+             Path(Path(A, x, z), k, m)) -> Path(Path(Path(A, x, z), f then g, m), transport(\\c. \
+             Path(Path(A, x, z), (f then g) then here(z), c), r, s), transport(\\c. Path(Path(A, \
+             x, z), f then g, c), r, s)) {\n  here(transport(\\c. Path(Path(A, x, z), f then g, \
+             c), r, s))\n}\n",
+        ),
+        &mut arena,
+    );
+    for name in ["thenStart", "unfoldStart", "hereStart", "unitStart"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// The numbers `compose[n, k](chain(m), d)` writes: `n`, `k` and `m`.
 #[derive(Clone, Copy, Debug)]
 struct Written(usize, usize, usize);

@@ -394,7 +394,7 @@ fn an_unread_pair_of_returned_calls_walks_their_computations_3920()
         let mut parted = Vec::new();
         run.endpoints_alike(
             Vec::from([crate::conv::SetAside::Values(left, right)]),
-            super::Reduction::Endpoint,
+            (super::Reduction::Endpoint, super::DefinedHead::Hold),
             &mut parted,
         )
         .map(|walked| {
@@ -3726,6 +3726,84 @@ fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
         .reached,
         Ok(content_digest(&arena, AnyNode::Computation(kept))),
         "a family reading the bound path leaves the bind as it is"
+    );
+}
+
+#[test]
+fn stuck_transports_read_their_motives_endpoints_by_unfolding_4179()
+{
+    // #4179: over `[x, y, q, v]`, `tr(t. Path(Unit, ⟨same x⟩, t), q, v)`
+    // against `tr(t. Path(Unit, x, t), q, v)`, `same` returning its argument.
+    // The motive premise closes on the shared pair once its start reads by
+    // unfolding `same`. The two quotes compared as any other pair hold `same`
+    // and stay open, and a start reading to `y` does not close.
+    let mut arena = TermArena::new();
+    let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(argument);
+    let lambda = arena.computation_lambda(returned);
+    let body = arena.value_thunk(lambda);
+    let unfoldings = Unfoldings::new(Vec::from([Unfoldable::Body(body)]));
+    let same = arena.value_constant(ConstantIndex::from(0_usize));
+    let unit_type = arena.value_type_unit();
+    // Under the motive's binder `t`, `x` is #4 and `y` #3.
+    let motive = |arena: &mut TermArena, start: ValueId| {
+        let point = arena.value_variable(DeBruijnIndex::from(0_u32));
+        arena.value_type_path(unit_type, start, point)
+    };
+    let called = |arena: &mut TermArena, index: u32| {
+        let forced = arena.computation_force(same);
+        let at = arena.value_variable(DeBruijnIndex::from(index));
+        let applied = arena.computation_application(forced, at);
+        arena.value_returned(applied)
+    };
+    let x = arena.value_variable(DeBruijnIndex::from(4_u32));
+    let (same_x, same_y) = (called(&mut arena, 4), called(&mut arena, 3));
+    let (over_same_x, over_x, over_same_y) = (
+        motive(&mut arena, same_x),
+        motive(&mut arena, x),
+        motive(&mut arena, same_y),
+    );
+    let (q, v) = (
+        arena.value_variable(DeBruijnIndex::from(1_u32)),
+        arena.value_variable(DeBruijnIndex::from(0_u32)),
+    );
+    let one = arena.computation_path_transport(over_same_x, q, v);
+    let other = arena.computation_path_transport(over_x, q, v);
+    let apart = arena.computation_path_transport(over_same_y, q, v);
+    let decomposed = [ConversionDecision::Decompose, SHARED, SHARED];
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(one, other),
+            EngineClaim::Convertible,
+            &decomposed
+        ),
+        KernelVerdict::Convertible,
+        "the motive premise reads `⟨same x⟩` to `x`"
+    );
+    let (quoted_same_x, quoted_x) = (arena.value_quote(over_same_x), arena.value_quote(over_x));
+    assert_ne!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(quoted_same_x, quoted_x),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "the two quotes as any other pair hold `same`"
+    );
+    assert_ne!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(apart, other),
+            EngineClaim::Convertible,
+            &decomposed
+        ),
+        KernelVerdict::Convertible,
+        "a start reading to `y` does not close against `x`"
     );
 }
 

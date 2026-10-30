@@ -1,0 +1,104 @@
+/// Motives whose fixed endpoints reduce alike.
+///
+/// Two transports along one path compare by their motives, then by their
+/// operands. Here the motives' fixed endpoints differ as written and agree once
+/// they reduce. One endpoint calls a definition returning its argument. One
+/// transports along a reflexivity. One composes a path with a reflexivity on
+/// the right.
+///
+/// The checker enters each written call against what the other motive holds
+/// there. The kernel reads the motives' endpoints by its own reduction and
+/// agrees.
+///
+/// - see: #4179 — the checker refused transports whose motives' fixed endpoints differ by a reduction
+
+/// The identity on a type, a definition a motive may call.
+def itself(A : Type, a : A) -> A {
+  a
+}
+
+/// A 2-path stated from a composite's right unit.
+def fromUnit(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, x, z),
+  s : Path(Path(A, x, z), f then g, h)
+) -> Path(Path(A, x, z), (f then g) then here(z), h) {
+  s
+}
+
+/// Two composites whose first 2-paths' starts differ by the right unit.
+def thenStart(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, x, z),
+  k : Path(A, x, z),
+  s : Path(Path(A, x, z), f then g, h),
+  r : Path(Path(A, x, z), h, k)
+) -> Path(Path(Path(A, x, z), f then g, k), fromUnit(A, x, y, z, f, g, h, s) then r, s then r) {
+  here(s then r)
+}
+
+/// Motives whose fixed endpoints differ by unfolding `itself(A, x)`.
+def unfoldEnd(A : Type, x : A, y : A, k : A, s : Path(A, y, x), r : Path(A, y, k)) -> Path(
+  Path(A, k, x),
+  transport(\c. Path(A, c, itself(A, x)), r, s),
+  transport(\c. Path(A, c, x), r, s)
+) {
+  here(transport(\c. Path(A, c, x), r, s))
+}
+
+/// Motives whose fixed endpoints differ by a transport along a reflexivity.
+def hereEnd(A : Type, x : A, y : A, k : A, s : Path(A, y, x), r : Path(A, y, k)) -> Path(
+  Path(A, k, x),
+  transport(\c. Path(A, c, transport(\d. A, here(x), x)), r, s),
+  transport(\c. Path(A, c, x), r, s)
+) {
+  here(transport(\c. Path(A, c, x), r, s))
+}
+
+/// Motives whose fixed endpoints differ by the right unit of a composite.
+def unitEnd(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  k : Path(A, x, z),
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  s : Path(Path(A, x, z), k, f then g),
+  m : Path(A, x, z),
+  r : Path(Path(A, x, z), k, m)
+) -> Path(
+  Path(Path(A, x, z), m, f then g),
+  transport(\c. Path(Path(A, x, z), c, (f then g) then here(z)), r, s),
+  transport(\c. Path(Path(A, x, z), c, f then g), r, s)
+) {
+  here(transport(\c. Path(Path(A, x, z), c, f then g), r, s))
+}
+
+/// Motives whose fixed endpoints differ by the right unit of a variable path.
+def unitVariableEnd(
+  A : Type,
+  x : A,
+  z : A,
+  f : Path(A, x, z),
+  k : Path(A, x, z),
+  s : Path(Path(A, x, z), k, f),
+  m : Path(A, x, z),
+  r : Path(Path(A, x, z), k, m)
+) -> Path(
+  Path(Path(A, x, z), m, f),
+  transport(\c. Path(Path(A, x, z), c, f then here(z)), r, s),
+  transport(\c. Path(Path(A, x, z), c, f), r, s)
+) {
+  here(transport(\c. Path(Path(A, x, z), c, f), r, s))
+}
