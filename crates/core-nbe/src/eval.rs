@@ -265,7 +265,8 @@
 //! # References
 //!
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite
-//!   evaluates as the left-nested fold it realises.
+//!   evaluates as the left-nested fold it realises, and every nesting of its
+//!   chain evaluates to that fold.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
@@ -3637,9 +3638,11 @@ fn run(
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
                     if matches!((domain.value(value), domain.value(word)), (Some(&DomainValue::Constructor { tag, .. }), Some(&DomainValue::Constructor { tag: first, .. })) if tag == first)),
-            Task::Body { body: crate::closure::CompBody::Appending { motive, path, .. }, env } => machine.values.len() == entry_values.saturating_add(2)
+            Task::Body { body: crate::closure::CompBody::Appending { motive, path, operand }, env } => machine.values.len() == entry_values.saturating_add(2)
                 && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[path, bound])))
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::PathTransport(held)]) if held == motive)
+                || machine.values.len() == entry_values.saturating_add(2) && machine.values.last() == Some(&operand)
+                    && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::PathTransport(held)]) if held == motive)
                 || machine.values.len() == entry_values && machine.tasks.len() == entry_tasks
                     && machine.comps.len() == entry_comps.saturating_add(1),
             Task::Body { body: crate::closure::CompBody::Conjugated { .. } | crate::closure::CompBody::Mapping(_) | crate::closure::CompBody::Selecting(_), .. } => machine.values.len() == entry_values
@@ -4065,7 +4068,7 @@ fn step(
                     motive,
                     path,
                     operand,
-                } => words::ran(domain, machine, (motive, path, operand), bound),
+                } => words::ran(core, domain, machine, (motive, path, operand), bound),
                 // `w. return ℓ ∷ w`: the word's first letter goes back before
                 // the rest's transport.
                 crate::closure::CompBody::Prefixed(word) => {
@@ -6275,6 +6278,16 @@ fn step_transport(
 
 /// Transport the operand above an element path along it, in a motive.
 ///
+/// **Along a stuck composite.** A path [`composite_legs`] reads as `p then q`
+/// moves the operand along `p`, then along `q`: transport's functoriality,
+/// the reading the kernel's replay gives a stuck composite. The row replaces
+/// the transport along a composite by transports along its two paths, proper
+/// parts of it, so it terminates, and each step spends fuel. It fires only
+/// after every row the motive, the operand and a word direct has declined, so
+/// it overlaps none of them at the transport. A componentwise row fires first
+/// and moves each component along the composite, which this row then splits:
+/// the components the split-first order reaches.
+///
 /// # Specification
 /// - requires: the path, then the operand, occupy the top of the value stack;
 ///   `motive` closes a value type under one binder over the environment the
@@ -6299,15 +6312,17 @@ fn step_transport(
 ///   path no word rule reads moves the empty word or a letter-headed word by
 ///   appending on it; a function motive along `ua(e)`, `equiv(f, g)` or a held
 ///   transport returns the thunk [`CompBody::TransportFunction`] holds,
-///   wherever [`function_parts`] reads its motives; any other configuration
-///   over a held operand — a returned computation, read by [`held_endpoint`] —
-///   stacks the transport on the operand's spine, as the kernel runs a returned
-///   operand before it reads the path; over a stuck path it stacks the
-///   transport on the path's spine, and over a canonical path and a stuck
-///   operand on the operand's.
+///   wherever [`function_parts`] reads its motives; along a stuck composite `p
+///   then q`, read by [`composite_legs`], the transport along `p` bound into
+///   [`CompBody::AlongThen`]'s along `q`; any other configuration over a held
+///   operand — a returned computation, read by [`held_endpoint`] — stacks the
+///   transport on the operand's spine, as the kernel runs a returned operand
+///   before it reads the path; over a stuck path it stacks the transport on the
+///   path's spine, and over a canonical path and a stuck operand on the
+///   operand's.
 /// - provides: transport's computation rules — identity on `here` and in a
-///   constant motive, through the motive's constructors, the singleton's, and
-///   along a word — and its stuck form.
+///   constant motive, through the motive's constructors, the singleton's, along
+///   a word and along a composite — and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
 ///   closure holding no type; [`EvalFault::TransportedNonPath`] for a path that
 ///   is neither reflexivity nor stuck over an operand that is not stuck; domain
@@ -6323,10 +6338,11 @@ fn step_transport(
 ///   motive over a tuple and in a record motive over a record, a stuck path in
 ///   a sum motive over an injection, a stuck path in the singleton over
 ///   reflexivity, a stuck path in a motive reading its binder, a stuck path
-///   over a held operand, and a canonical path over a stuck operand each reach
-///   their own arm; dropping the reflexivity or the constant rule, reordering
-///   components or labels, losing the summand, computing a family whose left
-///   endpoint moves or losing the transport a stuck operand waits on changes
+///   over a held operand, a canonical path over a stuck operand and a stuck
+///   composite each reach their own arm; dropping the reflexivity or the
+///   constant rule, reordering components or labels, losing the summand,
+///   computing a family whose left endpoint moves, losing the transport a stuck
+///   operand waits on or moving along a composite's paths out of order changes
 ///   the read-back term, and holding the transport over a held operand on the
 ///   path compares the transports before the call the kernel unfolds first,
 ///   which the kernel's replay refuses.
@@ -6348,6 +6364,7 @@ fn step_transport(
 /// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
 /// - witness: `identity::tests::a_suspension_moves_its_result_along_an_equivalence`
 /// - witness: `machine::tests::a_transport_of_a_call_s_result_unfolds_the_call_first_3806`
+/// - witness: `identity::tests::transport_along_a_stuck_composite_moves_along_each_path_in_order`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -6615,6 +6632,17 @@ fn step_path_transport(
     if words::appended(core, domain, machine, motive, (path, value))? == words::Moved::Stepped {
         return Ok(());
     }
+    // Along a stuck composite, the operand moves along the composite's first
+    // path, then along its second: transport's functoriality, as along a held
+    // `then` at the universe's decode. A held operand stays held, so each
+    // path's transport waits on it as the kernel's binds of its run wait.
+    if let Some((first, second)) = composite_legs(core, domain, path)? {
+        let onward = domain.native_continuation(CompBody::AlongThen { motive, second });
+        machine.tasks.push(Task::BindClosure(onward));
+        machine.tasks.push(Task::PathTransport(motive));
+        machine.values.extend([first, value]);
+        return Ok(());
+    }
     let grown = stuck_transport(domain, motive, (path, value))?;
     machine
         .comps
@@ -6758,6 +6786,115 @@ fn along_held(
         },
         crate::identity::TransportFamily::Other => Err(EvalFault::MachineInvariant),
     }
+}
+
+/// The two paths of a stuck composite: a held endpoint whose computation is a
+/// transport in the singleton `y. Path(D, l, y)` that no rule moved.
+///
+/// The composite `p then q` is that transport of `p` along `q`. Stuck on `q`,
+/// its neutral ends in a path transport of `p`. Stuck on `p`, a held or a
+/// neutral operand, its neutral ends in an operand transport along `q`.
+///
+/// # Specification
+/// - requires: `path` lives in `domain`.
+/// - ensures: `Some((p, q))` when `path` is a held endpoint over a neutral
+///   computation whose last elimination is a transport in a family
+///   [`crate::identity::transport_family`] reads as the singleton: of `p` along
+///   the rest of the neutral, or of the rest along `q`. The rest stands as a
+///   value neutral when its spine applies statically, else as the held endpoint
+///   of its computation. `None` for any other path.
+/// - provides: the two paths [`step_path_transport`] moves an operand along in
+///   order, whichever of them the composite is stuck on.
+/// - fails: domain faults for dangling nodes; as [`held_family`] for the
+///   transport's motive.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `f then (g then h)` and `k then ((f then g) then h)` read
+///   as their left nestings, and a transport along them moves the operand along
+///   each path in order; swapping the two paths, or reading a reversed family
+///   as a composite, changes the read-back term.
+/// - witness: `identity::tests::transport_along_a_stuck_composite_moves_along_each_path_in_order`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |legs| legs.is_none_or(|(first, second)|
+    domain.value(first).is_some() && domain.value(second).is_some())))]
+fn composite_legs(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    path: DomainValueId,
+) -> Result<Option<(DomainValueId, DomainValueId)>, EvalFault>
+{
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    let Some(computation) = held_endpoint(domain, path).map_err(EvalFault::Domain)?
+    else {
+        return Ok(None);
+    };
+    let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(computation)
+    else {
+        return Ok(None);
+    };
+    let node = domain.neutral(neutral).ok_or(dangling)?;
+    let (head, unfolding) = (node.head(), node.unfolding());
+    let Some((&last, prefix)) = node.spine().split_last()
+    else {
+        return Ok(None);
+    };
+    let prefix = prefix.to_vec();
+    let (motive, held) = match last {
+        Elimination::PathTransport { motive, value } => (motive, Leg::First(value)),
+        Elimination::OperandTransport { motive, path } => (motive, Leg::Second(path)),
+        Elimination::Bind(_)
+        | Elimination::DataCase(_)
+        | Elimination::Split(_)
+        | Elimination::Projection(_)
+        | Elimination::Transport(_)
+        | Elimination::ProductTransport(_)
+        | Elimination::Ride { .. }
+        | Elimination::OperandRide { .. }
+        | Elimination::TelescopeTransport { .. }
+        | Elimination::Apply(_)
+        | Elimination::Force
+        | Elimination::Case(_)
+        | Elimination::ListFold { .. }
+        | Elimination::ListCase { .. }
+        | Elimination::StaticApply(_)
+        | Elimination::Fixpoint { .. } => return Ok(None),
+    };
+    if held_family(core, domain, motive)? != crate::identity::TransportFamily::Singleton {
+        return Ok(None);
+    }
+    let applies_statically = prefix
+        .iter()
+        .all(|elimination| matches!(elimination, Elimination::StaticApply(_)));
+    let rest = domain
+        .neutral_node(head, prefix, unfolding)
+        .map_err(EvalFault::Domain)?;
+    let rest = if applies_statically {
+        domain
+            .value_neutral(rest, TermFace::Reduced)
+            .map_err(EvalFault::Domain)?
+    }
+    else {
+        let stuck = domain.comp_neutral(rest, CompTermFace::Reduced);
+        returned_value(domain, stuck)?
+    };
+    Ok(Some(match held {
+        Leg::First(first) => (first, rest),
+        Leg::Second(second) => (rest, second),
+    }))
+}
+
+/// The path of a stuck composite its transport holds; the neutral it is stuck
+/// on stands for the other.
+#[derive(Clone, Copy)]
+enum Leg
+{
+    /// The first path, `p` of `p then q`: the composite is stuck on `q`.
+    First(DomainValueId),
+    /// The second path, `q` of `p then q`: the composite is stuck on `p`.
+    Second(DomainValueId),
 }
 
 /// Transport the operand back along a universe path at the decode of the

@@ -1,27 +1,28 @@
 error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
-   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:47:1
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:65:1
    │
-47 │ ┏ module Unwitnessed : Model(Glob) {
-48 │ ┃   /// The circle's points.
-49 │ ┃   type Ob = Circle;
-50 │ ┃   /// The paths between two points.
+65 │ ┏ module Unwitnessed : Model(Glob) {
+66 │ ┃   /// The one object.
+67 │ ┃   type Ob = One;
+68 │ ┃   /// The numbers, each a cell from the object to itself.
    ‡ ┃
-70 │ ┃ }
+75 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus(f, g) }
+76 │ ┃ }
    │ ┗━┛ a law whose sides do not convert
    │
    ├ note: `assoc` is refused with NoFiller.Omitted, as its expectation states
    ╰ help: prove the law by a definition at its type, or admit it where the host asserts it
 
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` of the theory it handles
-   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:90:3
-   │
-90 │ ┏   handle st : Skipping with sort S = Integer {
-91 │ ┃     st.put(1);
-92 │ ┃     run a <- st.get();
-93 │ ┃     pure a
-   ‡ ┃
-97 │ ┃     oper put(s, k) => pure 9
-98 │ ┃   }
-   │ ┗━━━┛ not shown to satisfy a law of its theory
-   │
-   ╰ note: `discarding` is refused with HandlerUnlawful, as its expectation states
+    ╭▸ corpus/pathological/higher-cells/path-cells.gandr:96:3
+    │
+ 96 │ ┏   handle st : Skipping with sort S = Integer {
+ 97 │ ┃     st.put(1);
+ 98 │ ┃     run a <- st.get();
+ 99 │ ┃     pure a
+    ‡ ┃
+103 │ ┃     oper put(s, k) => pure 9
+104 │ ┃   }
+    │ ┗━━━┛ not shown to satisfy a law of its theory
+    │
+    ╰ note: `discarding` is refused with HandlerUnlawful, as its expectation states

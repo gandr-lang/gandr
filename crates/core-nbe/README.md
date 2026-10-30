@@ -123,7 +123,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — background: sharing as descent; the spinal granularity makes the Courant and Leroy row finer along the spinal row.
 - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — background: a finer sharing installs only behind a replayed trace.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep, and § 4.2's useful sharing, whose compact normal form readback builds.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite evaluates as the fold it realises.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite evaluates as the fold it realises, and every nesting of its chain evaluates to that fold.
 
 ## License
 

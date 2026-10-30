@@ -121,7 +121,7 @@ pub def apComp(
   )
 }
 
-/// The associator: composition is associative, by based path induction on the last path.
+/// The associator: composition is associative by conversion, since both nestings move along each path in turn.
 pub def assoc(
   A : Type,
   x : A,
@@ -132,13 +132,7 @@ pub def assoc(
   g : Path(A, y, z),
   h : Path(A, z, w)
 ) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
-  transport(
-    (v : A, k : Path(A, z, v)) => Path(Path(A, x, v), (f then g) then k, f then (g then k)),
-    h,
-    here(z),
-    here(h),
-    here(f then g)
-  )
+  here((f then g) then h)
 }
 
 /// The left unitor: a reflexivity composed on the left leaves a path, by based path induction on it.

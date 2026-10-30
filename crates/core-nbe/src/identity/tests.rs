@@ -2372,6 +2372,122 @@ fn then_is_unital_at_a_stuck_path()
 }
 
 #[test]
+fn transport_along_a_stuck_composite_moves_along_each_path_in_order()
+{
+    // Paths no rule reduces, `k`, `f`, `g` and `h`, composed in the link at
+    // "five", each nested composite standing as the value it returns: every
+    // nesting of one chain is its left-nested fold, and a transport along a
+    // nesting in a family that is no link moves along each path in turn.
+    let mut core = CoreArena::new();
+    let carrier = text_type(&mut core);
+    let five = literal(&mut core, Word::Five);
+    let [k, f, g, h, operand] =
+        [0_usize, 1, 2, 3, 4].map(|at| stuck(&mut core, ConstantIndex::from(at)));
+    let composed = |core: &mut CoreArena, first: ValueId, second: ValueId| {
+        let composite = then(core, carrier, five, first, second);
+        core.value_returned(composite)
+    };
+    // f then (g then h) against (f then g) then h.
+    let gh = composed(&mut core, g, h);
+    let right = then(&mut core, carrier, five, f, gh);
+    let fg = composed(&mut core, f, g);
+    let left = then(&mut core, carrier, five, fg, h);
+    // k then ((f then g) then h): a composite standing as the later path.
+    let fgh = core.value_returned(left);
+    let later = then(&mut core, carrier, five, k, fgh);
+    let kf = composed(&mut core, k, f);
+    let kfg = composed(&mut core, kf, g);
+    let fold = then(&mut core, carrier, five, kfg, h);
+    // (k then f) then (g then h): a held operand along a held composite.
+    let pairs = then(&mut core, carrier, five, kf, gh);
+    // (g then f) then h: the paths in another order.
+    let gf = composed(&mut core, g, f);
+    let swapped = then(&mut core, carrier, five, gf, h);
+    // Along f then (g then h) in the diagonal, against along each path.
+    let diagonal = diagonal(&mut core);
+    let nested = core.value_returned(right);
+    let moved = core.computation_path_transport(diagonal, nested, operand);
+    let along = |core: &mut CoreArena, path: ValueId, value: ValueId| {
+        let transport = core.computation_path_transport(diagonal, path, value);
+        core.value_returned(transport)
+    };
+    let along_f = along(&mut core, f, operand);
+    let along_g = along(&mut core, g, along_f);
+    let folded = core.computation_path_transport(diagonal, h, along_g);
+    // Along g in the diagonal from f: no composite, so no path splits.
+    let carried = along(&mut core, g, f);
+    let unsplit = core.computation_path_transport(diagonal, carried, operand);
+    let split = core.computation_path_transport(diagonal, g, along_f);
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let mut run = |term| {
+        eval_computation(&core, &mut domain, definitions, ample(), term)
+            .expect("closed composites evaluate")
+    };
+    let [
+        right,
+        left,
+        later,
+        fold,
+        pairs,
+        swapped,
+        moved,
+        folded,
+        unsplit,
+        split,
+    ] = [
+        right, left, later, fold, pairs, swapped, moved, folded, unsplit, split,
+    ]
+    .map(&mut run);
+    let mut decided = |one, other| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::computations(one, other),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(
+        decided(right, left),
+        MachineVerdict::Convertible,
+        "the two nestings of a 3-chain"
+    );
+    assert_eq!(
+        decided(later, fold),
+        MachineVerdict::Convertible,
+        "a composite standing as the later path"
+    );
+    assert_eq!(
+        decided(pairs, fold),
+        MachineVerdict::Convertible,
+        "a held operand moved along a held composite"
+    );
+    assert_eq!(
+        decided(moved, folded),
+        MachineVerdict::Convertible,
+        "a family that is no link moves along each path in turn"
+    );
+    // Two bodiless constants may still unfold, so the machine refutes
+    // neither pair: it only never converts them.
+    assert_ne!(
+        decided(right, swapped),
+        MachineVerdict::Convertible,
+        "the paths in another order"
+    );
+    assert_ne!(
+        decided(unsplit, split),
+        MachineVerdict::Convertible,
+        "a transport in a family that is no link composes nothing"
+    );
+}
+
+#[test]
 fn back_inverts_at_reflexivity()
 {
     let mut core = CoreArena::new();
