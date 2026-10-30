@@ -30,9 +30,9 @@ path = "tests/lib.rs"
 # The content table's interner indexes its nodes in a `hashbrown` table under
 # `foldhash`'s fixed seed, the grammar's label-index pair.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled. The kernel's verdict vocabulary is what the
-# verdict store keeps on disk and answers the kernel with. Both file stores
-# publish their records through the one writer.
+# logic/BigInt stays disabled. The kernel's admission policy is what a program
+# hands each pass's tier. The checkpoint store publishes its records through
+# the one writer.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true

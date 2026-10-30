@@ -1,8 +1,9 @@
 //! The kernel verdict cache a `check` installs: this installation's key, read
-//! or minted, the store under the cache directory, and the policy the user's
-//! configuration names (`config` § The kernel's key and its verdicts). The
-//! stratum store beside it believes the same policy and signs with the same
-//! key, and holds its strata in a store under the cache directory's `strata`.
+//! or minted, the store under the cache directory's `receipts`, and the policy
+//! the user's configuration names (`config` § The kernel's key and its
+//! verdicts). The stratum store beside it believes the same policy and signs
+//! with the same key, and holds its strata in a store under the cache
+//! directory's `strata`.
 //!
 //! # References
 //!
@@ -12,13 +13,15 @@
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
 //!   strata persist in the store, which a `check` installs beside the verdict
 //!   cache.
+//! - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — lineage: §
+//!   build-owner-store — the receipts and the strata each sit in a store under
+//!   the cache directory, the one store the storage tier opens.
 
 use core::fmt;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
-use gandr_core_incremental::FileVerdictStore;
 use gandr_core_publish::Access;
 use gandr_core_publish::Contents;
 use gandr_core_publish::Placement;
@@ -28,6 +31,7 @@ use gandr_core_publish::publish_as;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_surface_dispatcher::StoredStrata;
+use gandr_surface_dispatcher::StoredVerdicts;
 use gandr_surface_dispatcher::VerdictCache;
 use gandr_surface_dispatcher::install_stratum_store;
 use gandr_surface_dispatcher::install_verdict_cache;
@@ -73,10 +77,11 @@ impl fmt::Display for Uninstalled
 /// - requires: called once, before the walk.
 /// - ensures: under [`config::Kernel::Trusting`], with both directories named,
 ///   the process's readmissions recall what this installation's key or a listed
-///   one signed, and keep what they check under this installation's key; its
-///   contexts recall the strata such a key signed from the store under the
-///   cache directory's `strata`, and keep there what they certify; otherwise
-///   nothing is installed and every declaration and stratum is checked.
+///   one signed from the store under the cache directory's `receipts`, and keep
+///   there what they check under this installation's key; its contexts recall
+///   the strata such a key signed from the store under the cache directory's
+///   `strata`, and keep there what they certify; otherwise nothing is installed
+///   and every declaration and stratum is checked.
 /// - fails: the key cannot be read or minted, or the store cannot be opened.
 /// - panics: none.
 /// - executable: none — the key, the store and the installation are external
@@ -111,10 +116,11 @@ pub fn install(kernel: config::Kernel) -> Result<(), Uninstalled>
         },
     };
     let _own = trusted.insert(signer.identity());
-    let Ok(store) = FileVerdictStore::open(&directory)
+    let receipts = directory.join("receipts");
+    let Ok(store) = StoredVerdicts::open(&receipts)
     else {
         return Err(Uninstalled {
-            path: directory,
+            path: receipts,
             why: String::from("cannot be opened"),
         });
     };

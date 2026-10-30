@@ -57,12 +57,11 @@ required-features = ["hotpath"]
 # through. The network's runtime reads the `--net-*` flags `run` binds a
 # program's network with. hotpath profiles the benchmark report behind the
 # `hotpath` feature. A `check` keeps the kernel's verdicts: the kernel's key
-# and policy, the incremental checker's verdict store, and getrandom's
-# entropy for minting the key, which the one writer publishes.
+# and policy, the dispatcher's receipt store, and getrandom's entropy for
+# minting the key, which the one writer publishes.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
-gandr-core-incremental.workspace = true
 gandr-core-publish.workspace = true
 gandr-kernel-core.workspace = true
 gandr-runtime-net.workspace = true

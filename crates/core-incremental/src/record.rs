@@ -1,13 +1,13 @@
-//! One record file, which both of the crate's file stores write and read.
+//! One record file, which the crate's checkpoint store writes and reads.
 //!
 //! # The frame
 //!
 //! A record is a magic, a version, the store's key, the payload's length and
 //! its BLAKE3 digest, then the payload. A store fixes its key's length: the
-//! checkpoint store keys a record by its address and its backend, and the
-//! verdict store by nothing. A read checks the magic, the version, the length
-//! and the digest before it hands the payload on, so a store decodes only
-//! bytes its own frame wrote. The digest is integrity only: it never admits.
+//! checkpoint store keys a record by its address and its backend. A read
+//! checks the magic, the version, the length and the digest before it hands
+//! the payload on, so a store decodes only bytes its own frame wrote. The
+//! digest is integrity only: it never admits.
 //!
 //! # Publication
 //!
@@ -20,7 +20,7 @@
 //!
 //! | Decision | Alternatives | Reversal |
 //! | -------- | ------------ | -------- |
-//! | The frame lives here, below both stores | the store facade in `storage-store`, which a `core` crate cannot depend on under the layering; the writer's crate below both tiers | the facade frames its files, and the frame joins the writer |
+//! | The frame lives here, beside the checkpoint store | the store facade in `storage-store`, which a `core` crate cannot depend on under the layering; the writer's crate below both tiers | the facade frames its files, and the frame joins the writer |
 //! | The checkpoint record's header is the frame under a 64-byte key | a second header beside the frame, which would write the format twice | none: the checkpoint files keep their bytes |
 //!
 //! # References
@@ -30,6 +30,10 @@
 //! - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: § The real leak
 //!   was in the filesystem — a record's temporary has one owner, the guard of
 //!   the writer it publishes through.
+//! - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: §
+//!   build-owner-store — the one store sits above this layer, so the checkpoint
+//!   store keeps its own frame and the verdict cache's receipts live in the
+//!   dispatcher.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -123,7 +127,6 @@ pub fn failure_of(error: &std::io::Error) -> Failure
 /// # Adequacy
 /// - hypothesis: L3 — as [`Format::frame`] and [`Format::read`].
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-/// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Format
 {
@@ -164,7 +167,6 @@ pub struct Framed<'bytes>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Format::frame`].
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-/// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Payload<'out>(&'out mut Vec<u8>);
@@ -215,15 +217,13 @@ impl Format
     /// [`RecordFault::Unrepresentable`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — checkpoint and receipt records round-trip through a
-    ///   reopened store; a changed address, extent or digest is refused on
-    ///   load; a checkpoint record written by hand under the unmoved header
-    ///   loads. A key of another length and an unrepresentable length are
-    ///   unwitnessed.
+    /// - hypothesis: L3 — checkpoint records round-trip through a reopened
+    ///   store; a changed address, extent or digest is refused on load; a
+    ///   checkpoint record written by hand under the unmoved header loads. A
+    ///   key of another length and an unrepresentable length are unwitnessed.
     /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
     /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
     /// - witness: `persistence::tests::a_record_under_the_unmoved_header_loads`
-    /// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
     #[spec(
         ensures: |ret| match ret {
             | Ok(ref record) => match self.read(Bytes(&record.0)) {
@@ -286,7 +286,6 @@ impl Format
     ///   trailing byte are each refused; a record of another magic is passed
     ///   over; a whole record is read.
     /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
-    /// - witness: `verdicts::tests::a_damaged_file_is_passed_over`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(ref framed) => {
@@ -418,7 +417,6 @@ impl RecordName
     /// - hypothesis: L3 — a store's open and prune read the records and leave a
     ///   temporary and a file of another name.
     /// - witness: `persistence::tests::pruning_keeps_only_the_kept_backend_s_records_1816`
-    /// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
     #[spec(
         ensures: |ret| (ret == Spelling::Record) == file.to_str().is_some_and(|spelled| {
             spelled.len() == 64
@@ -453,23 +451,9 @@ impl RecordName
 /// - hypothesis: L3 — real file round-trips and mutations of record integrity
 ///   exercise the frame.
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-/// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactBytes(Vec<u8>);
-
-impl ArtifactBytes
-{
-    /// The name of the record whose name is the BLAKE3 digest of these bytes.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    pub fn named_by_digest(&self) -> RecordName
-    {
-        RecordName::of(blake3::hash(&self.0))
-    }
-}
 
 impl AsRef<[u8]> for ArtifactBytes
 {
@@ -501,12 +485,11 @@ impl AsRef<[u8]> for ArtifactBytes
 /// [`RecordFault::Io`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a checkpoint and a receipt read back after reopening, and
-///   a directory at a checkpoint's name refuses the store with `Io` and leaves
-///   no temporary. The writer's own clauses carry its crate's witnesses.
+/// - hypothesis: L3 — a checkpoint reads back after reopening, and a directory
+///   at a checkpoint's name refuses the store with `Io` and leaves no
+///   temporary. The writer's own clauses carry its crate's witnesses.
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-/// - witness: `verdicts::tests::a_kept_receipt_is_answered_after_reopening`
 pub fn publish(
     root: &Path,
     name: &RecordName,

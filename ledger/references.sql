@@ -353,7 +353,7 @@ INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surfa
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','core-checker','template::memo','exemplar','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','21da273baaf8fa8b1851c07f04df073e5f74b03c');
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','core-nbe','machine','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kernel-core','descent','exemplar','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','f69d6a7559364f8975c6703d516f594e90adc0e7');
-INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','598eae9b2c06ca03405201deb229c39e1d1dfc04');
+INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','bc468ed7bf854d175494383216341bc52e916430','2026-10-29','715ec7ca272d78491f01e8f72c273f72564822ce');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','2a6bd5457b0841455e1db0206b2e709077fe173c');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
@@ -417,8 +417,7 @@ INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','b2c8a4df8de0c7c5ff66936671cffeac70d29b8c','2026-10-27','e1dcbc647274f9f7095957e40ce3af95f7bc688b');
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','ua::strata','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','record','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','verdicts','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','record','lineage','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-core','verdict','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','kernel-term','encode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','runtime-emitter','seam','lineage',NULL,NULL,NULL);
@@ -427,6 +426,7 @@ INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','stora
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','storage-values','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-dispatcher','package::export','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-dispatcher','receipts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-dispatcher','strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-dispatcher','verdicts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-driver','verdicts','lineage',NULL,NULL,NULL);
@@ -453,9 +453,12 @@ INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surfa
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','module::functor','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lsp','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-parser','mold','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','core-incremental','record','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::export','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','receipts','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-driver','verdicts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','runtime-emitter','','background','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','36029ff370a4f09ce9349dce5f00d2c8f44f78d3');
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-corpus','refusal','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17f02-42f0-7920-bede-5615d3bade8c','surface-diagnostics','advice','background',NULL,NULL,NULL);
