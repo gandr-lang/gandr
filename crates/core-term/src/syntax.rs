@@ -1497,39 +1497,188 @@ pub fn equal_comp_type_syntax(
     )
 }
 
-/// Compare computation syntax as [`equal_certificate_syntax`] compares
-/// values: every constructor, leaf and child but path evidence, with no
-/// reduction.
+/// One variable two computations each read past the binders a comparison
+/// crossed: its zone, and the index each side reads it at from its own root.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FreePair
+{
+    /// The zone both sides read the variable in.
+    pub zone: Zone,
+    /// The index the left computation reads it at, counted from its root.
+    pub left: DeBruijnIndex,
+    /// The index the right computation reads it at, counted from its root.
+    pub right: DeBruijnIndex,
+}
+
+/// Compare two computations as syntax up to what each reads free: two
+/// computations written apart over scopes laid out apart.
+///
+/// The walk crosses each former's binders as [`crate::children`] hands them.
+/// Two variables under a crossed binder compare by index; two past every
+/// crossed binder are a free pair, each index read from its side's root. Every
+/// other pair compares as [`equal_certificate_syntax`] compares values: every
+/// constructor, leaf and child but path evidence, with no reduction.
 ///
 /// # Specification
 /// - requires: nothing; unreadable roots or children fail closed.
-/// - ensures: equal roots have the same former and structurally equal children.
-/// - provides: the comparison of two computations written apart, such as two
-///   thunks' bodies a caller reads under one environment.
+/// - ensures: [`CertificateEquality::Equal`] when the two agree as above,
+///   `free` then holding each free pair once, in order;
+///   [`CertificateEquality::Different`] at the first pair that differs, at two
+///   variables of which one stands under a crossed binder and the other past
+///   them, and at a session action's endpoint or a memory form's resident past
+///   the crossed binders, which the former's shape compares as written.
+/// - provides: the comparison of two closures' bodies, each free pair then read
+///   through its own closure's environment.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
+/// # Termination
+/// - reason: each goal names nodes of a finite acyclic arena and queues only
+///   its children, and a goal under one crossing is read once.
+/// - measure: the goals reachable from the roots not yet read.
+///
 /// # Adequacy
-/// - hypothesis: L3 — two allocations of one lambda compare equal, and the same
-///   lambda returning another variable compares different.
-/// - witness: `syntax::tests::computation_syntax_ignores_allocation_identity`
+/// - hypothesis: L3 — two allocations of one lambda agree with no free pair,
+///   two lambdas reading one variable from scopes laid out apart agree with its
+///   pair, a variable bound on one side and free on the other differs, a
+///   variable read at another binder differs, and a free endpoint is declined.
+/// - witness: `syntax::tests::computation_syntax_pairs_what_each_side_reads_free`
 #[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.computation(left), arena.computation(right)) {
     (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
     _ => false,
 })]
 #[inline]
-#[must_use]
-pub fn equal_computation_syntax(
+pub fn equal_computation_syntax_up_to_free(
     arena: &crate::CoreArena,
     left: ComputationId,
     right: ComputationId,
+    free: &mut Vec<FreePair>,
 ) -> CertificateEquality
 {
-    equal_syntax(
-        arena,
-        Reading::Syntax,
+    let unread = BTreeMap::new();
+    let mut syntax = alloc::borrow::Cow::Borrowed(arena);
+    let mut pending = alloc::vec![(
         StructuralGoal::Computation(left, right),
-    )
+        crate::support::Crossing::default(),
+    )];
+    let mut visited = alloc::collections::BTreeSet::new();
+    free.clear();
+    while let Some((goal, under)) = pending.pop() {
+        if !visited.insert((goal, under)) {
+            continue;
+        }
+        match read_free(&syntax, goal, under) {
+            FreeReading::Formers => {},
+            FreeReading::Bound => continue,
+            FreeReading::Free(pair) => {
+                free.push(pair);
+                continue;
+            },
+            FreeReading::Apart => return CertificateEquality::Different,
+        }
+        let mut placed = Placed {
+            pending: &mut pending,
+            under,
+        };
+        if pair_step(&mut syntax, Reading::Syntax, &unread, goal, &mut placed)
+            == CertificateEquality::Different
+        {
+            return CertificateEquality::Different;
+        }
+    }
+    free.sort_unstable();
+    free.dedup();
+    CertificateEquality::Equal
+}
+
+/// How [`equal_computation_syntax_up_to_free`] reads a pair before its
+/// formers.
+enum FreeReading
+{
+    /// Neither side is a variable or names its own linear binder past the
+    /// crossed binders: the pair's formers decide.
+    Formers,
+    /// Two variables naming one crossed binder.
+    Bound,
+    /// Two variables each read past the crossed binders.
+    Free(FreePair),
+    /// A pair told apart, or declined, outright.
+    Apart,
+}
+
+/// Read a pair standing under `under` for the variables it names.
+///
+/// # Specification
+/// - ensures: for two variables, [`FreeReading::Bound`] when they share a zone
+///   and one index under that zone's crossed binders, [`FreeReading::Free`]
+///   when both of one zone reach past them, each index read past the crossed
+///   binders, and [`FreeReading::Apart`] otherwise; [`FreeReading::Apart`] for
+///   a left session action or memory form whose endpoint or resident reaches
+///   past the crossed linear binders; [`FreeReading::Formers`] for every other
+///   pair.
+/// - panics: none.
+/// - executable: none — the reading is the body's table, which a predicate
+///   would state again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_computation_syntax_up_to_free`].
+/// - witness: `syntax::tests::computation_syntax_pairs_what_each_side_reads_free`
+fn read_free(
+    arena: &crate::CoreArena,
+    goal: StructuralGoal,
+    under: crate::support::Crossing,
+) -> FreeReading
+{
+    use crate::support::outer;
+    match goal {
+        StructuralGoal::Value(left, right) => {
+            let (
+                Some(&Value::Variable { zone, index: left }),
+                Some(&Value::Variable {
+                    zone: other,
+                    index: right,
+                }),
+            ) = (arena.value(left), arena.value(right))
+            else {
+                return FreeReading::Formers;
+            };
+            if zone != other {
+                return FreeReading::Apart;
+            }
+            let crossed = under.depth(zone);
+            match (outer(left, crossed), outer(right, crossed)) {
+                (Maybe::Absent(_), Maybe::Absent(_)) if left == right => FreeReading::Bound,
+                (Maybe::Present(left), Maybe::Present(right)) => {
+                    FreeReading::Free(FreePair { zone, left, right })
+                },
+                _ => FreeReading::Apart,
+            }
+        },
+        // A former's own linear name is compared as written in its shape:
+        // under the crossed binders that is one binder on both sides, past
+        // them two names the shape cannot pair.
+        StructuralGoal::Computation(left, _) => {
+            let named = match arena.computation(left) {
+                Some(&Computation::Session(ref action)) => match action.endpoint() {
+                    Maybe::Present(index) => Some(index),
+                    Maybe::Absent(_) => None,
+                },
+                Some(&Computation::Memory(ref form)) => match form.resident() {
+                    Maybe::Present(index) => Some(index),
+                    Maybe::Absent(_) => None,
+                },
+                _ => None,
+            };
+            match named.map(|index| outer(index, under.depth(Zone::Linear))) {
+                Some(Maybe::Present(_)) => FreeReading::Apart,
+                Some(Maybe::Absent(_)) | None => FreeReading::Formers,
+            }
+        },
+        StructuralGoal::ValueType(..) | StructuralGoal::CompType(..) => FreeReading::Formers,
+    }
 }
 
 /// Compare type syntax as [`equal_type_syntax`] does, as a printed type reads.
@@ -2514,20 +2663,23 @@ fn signatures_agree(
 ///   do not.
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
 /// - witness: `effect::tests::a_signature_includes_another_only_at_one_name_and_one_operation_table`
-fn signature_children(
-    pending: &mut alloc::vec::Vec<StructuralGoal>,
+fn signature_children<P>(
+    pending: &mut P,
     left: &crate::effect::EffectSig,
     right: &crate::effect::EffectSig,
 ) -> CertificateEquality
+where
+    P: Pending,
 {
     if signatures_agree(left, right) == CertificateEquality::Different {
         return CertificateEquality::Different;
     }
-    pending.extend(
-        left.types()
-            .zip(right.types())
-            .map(|(first, second)| StructuralGoal::ValueType(first, second)),
-    );
+    for (first, second) in left.types().zip(right.types()) {
+        pending.queue(
+            StructuralGoal::ValueType(first, second),
+            crate::support::Crossing::default(),
+        );
+    }
     CertificateEquality::Equal
 }
 
@@ -2584,11 +2736,13 @@ fn rows_agree(
 /// # Adequacy
 /// - hypothesis: L3 — as [`equal_type_reading`].
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
-fn session_children(
-    pending: &mut alloc::vec::Vec<StructuralGoal>,
+fn session_children<P>(
+    pending: &mut P,
     left: &crate::session::SessionType,
     right: &crate::session::SessionType,
 ) -> CertificateEquality
+where
+    P: Pending,
 {
     use crate::session::Protocol;
     use crate::session::ProtocolNode;
@@ -2666,7 +2820,10 @@ fn session_children(
                 else {
                     return CertificateEquality::Different;
                 };
-                pending.push(StructuralGoal::ValueType(sent, other));
+                pending.queue(
+                    StructuralGoal::ValueType(sent, other),
+                    crate::support::Crossing::default(),
+                );
                 states.push((next, then));
             },
             (&ProtocolNode::Select(ref arms), &ProtocolNode::Select(ref others))
@@ -2845,6 +3002,157 @@ fn equal_syntax(
     CertificateEquality::Equal
 }
 
+/// The place of a goal on a structural comparison's work list.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Queued(usize);
+
+/// The work list a structural comparison queues pairs of children on.
+trait Pending
+{
+    /// Queue `goal`, a pair of children standing under `crossing` below the
+    /// pair being read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn queue(
+        &mut self,
+        goal: StructuralGoal,
+        crossing: crate::support::Crossing,
+    );
+
+    /// The place the next queued goal takes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn queued(&self) -> Queued;
+
+    /// The goal queued at `at`, absent past the queue.
+    ///
+    /// # Specification
+    /// trivial.
+    fn goal_at(
+        &mut self,
+        at: Queued,
+    ) -> Option<&mut StructuralGoal>;
+}
+
+impl Pending for Vec<StructuralGoal>
+{
+    /// Push `goal`: a comparison that reads no variable by its binders keeps
+    /// no crossing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queue(
+        &mut self,
+        goal: StructuralGoal,
+        _crossing: crate::support::Crossing,
+    )
+    {
+        self.push(goal);
+    }
+
+    /// The queue's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queued(&self) -> Queued
+    {
+        Queued(self.len())
+    }
+
+    /// The goal at `at`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn goal_at(
+        &mut self,
+        at: Queued,
+    ) -> Option<&mut StructuralGoal>
+    {
+        self.get_mut(at.0)
+    }
+}
+
+/// The work list of [`equal_computation_syntax_up_to_free`] while it reads a
+/// pair standing under `under`: each goal kept with the binders crossed from
+/// the comparison's roots down to it.
+struct Placed<'pending>
+{
+    /// The work list.
+    pending: &'pending mut Vec<(StructuralGoal, crate::support::Crossing)>,
+    /// The binders crossed from the roots down to the pair being read.
+    under: crate::support::Crossing,
+}
+
+impl Pending for Placed<'_>
+{
+    /// Push `goal` under the binders above the pair being read and those
+    /// `crossing` adds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queue(
+        &mut self,
+        goal: StructuralGoal,
+        crossing: crate::support::Crossing,
+    )
+    {
+        self.pending.push((goal, deeper(self.under, crossing)));
+    }
+
+    /// The queue's length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn queued(&self) -> Queued
+    {
+        Queued(self.pending.len())
+    }
+
+    /// The goal at `at`, its crossing kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn goal_at(
+        &mut self,
+        at: Queued,
+    ) -> Option<&mut StructuralGoal>
+    {
+        self.pending
+            .get_mut(at.0)
+            .map(|&mut (ref mut goal, _)| goal)
+    }
+}
+
+/// The binders `inner` crosses below a node that stands under `outer`, counted
+/// from the comparison's roots.
+///
+/// # Specification
+/// trivial.
+fn deeper(
+    outer: crate::support::Crossing,
+    inner: crate::support::Crossing,
+) -> crate::support::Crossing
+{
+    let sum = |zone| {
+        crate::context::BinderDepth::from(
+            usize::from(outer.depth(zone)).saturating_add(usize::from(inner.depth(zone))),
+        )
+    };
+    crate::support::Crossing::new(sum(Zone::Intuitionistic), sum(Zone::Linear))
+}
+
 /// Which node's children a [`Pairing`] is reading.
 #[derive(Clone, Copy)]
 enum Side
@@ -2852,16 +3160,16 @@ enum Side
     /// The left node's, each queued as it comes.
     Left,
     /// The right node's, the next one written into the goal at this place.
-    Right(usize),
+    Right(Queued),
 }
 
 /// Two nodes' children paired place by place on the work list: the left
 /// node's queued first, each as a goal pairing the child with itself, then the
 /// right node's written into those goals in turn.
-struct Pairing<'pending>
+struct Pairing<'pending, P>
 {
     /// The work list.
-    pending: &'pending mut Vec<StructuralGoal>,
+    pending: &'pending mut P,
     /// Which node's children are being read, and where the next right child
     /// pairs.
     side: Side,
@@ -2869,26 +3177,27 @@ struct Pairing<'pending>
     agreed: CertificateEquality,
 }
 
-impl Pairing<'_>
+impl<P: Pending> Pairing<'_, P>
 {
-    /// Queue `child`, a goal pairing a child with itself, while the left
-    /// node's children are read; afterwards write its child, as the right
-    /// side, into the next queued goal.
+    /// Queue `child`, a goal pairing a child with itself standing under
+    /// `crossing`, while the left node's children are read; afterwards write
+    /// its child, as the right side, into the next queued goal.
     ///
     /// # Specification
     /// trivial.
     fn place(
         &mut self,
         child: StructuralGoal,
+        crossing: crate::support::Crossing,
     )
     {
         let Side::Right(next) = self.side
         else {
-            self.pending.push(child);
+            self.pending.queue(child, crossing);
             return;
         };
-        self.side = Side::Right(next.saturating_add(1));
-        let Some(goal) = self.pending.get_mut(next)
+        self.side = Side::Right(Queued(next.0.saturating_add(1)));
+        let Some(goal) = self.pending.goal_at(next)
         else {
             self.agreed = CertificateEquality::Different;
             return;
@@ -2914,7 +3223,7 @@ impl Pairing<'_>
     }
 }
 
-impl crate::children::Visit for Pairing<'_>
+impl<P: Pending> crate::children::Visit for Pairing<'_, P>
 {
     /// Place a value child.
     ///
@@ -2923,10 +3232,10 @@ impl crate::children::Visit for Pairing<'_>
     fn value(
         &mut self,
         child: ValueId,
-        _crossing: crate::support::Crossing,
+        crossing: crate::support::Crossing,
     )
     {
-        self.place(StructuralGoal::Value(child, child));
+        self.place(StructuralGoal::Value(child, child), crossing);
     }
 
     /// Place a computation child.
@@ -2936,10 +3245,10 @@ impl crate::children::Visit for Pairing<'_>
     fn computation(
         &mut self,
         child: ComputationId,
-        _crossing: crate::support::Crossing,
+        crossing: crate::support::Crossing,
     )
     {
-        self.place(StructuralGoal::Computation(child, child));
+        self.place(StructuralGoal::Computation(child, child), crossing);
     }
 
     /// Place a value-type child.
@@ -2949,10 +3258,10 @@ impl crate::children::Visit for Pairing<'_>
     fn value_type(
         &mut self,
         child: ValueTypeId,
-        _crossing: crate::support::Crossing,
+        crossing: crate::support::Crossing,
     )
     {
-        self.place(StructuralGoal::ValueType(child, child));
+        self.place(StructuralGoal::ValueType(child, child), crossing);
     }
 
     /// Place a computation-type child.
@@ -2962,10 +3271,10 @@ impl crate::children::Visit for Pairing<'_>
     fn comp_type(
         &mut self,
         child: CompTypeId,
-        _crossing: crate::support::Crossing,
+        crossing: crate::support::Crossing,
     )
     {
-        self.place(StructuralGoal::CompType(child, child));
+        self.place(StructuralGoal::CompType(child, child), crossing);
     }
 }
 
@@ -2986,13 +3295,15 @@ impl crate::children::Visit for Pairing<'_>
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
-fn paired_children<Former>(
-    pending: &mut Vec<StructuralGoal>,
+fn paired_children<Former, P>(
+    pending: &mut P,
     (left, right): (&Former, &Former),
-    of: fn(&Former, &mut Pairing<'_>),
+    of: fn(&Former, &mut Pairing<'_, P>),
 ) -> CertificateEquality
+where
+    P: Pending,
 {
-    let start = pending.len();
+    let start = pending.queued();
     let mut pairing = Pairing {
         pending,
         side: Side::Left,
@@ -3002,7 +3313,7 @@ fn paired_children<Former>(
     pairing.side = Side::Right(start);
     of(right, &mut pairing);
     match pairing.side {
-        Side::Right(next) if next == pairing.pending.len() => pairing.agreed,
+        Side::Right(next) if next == pairing.pending.queued() => pairing.agreed,
         Side::Right(_) | Side::Left => CertificateEquality::Different,
     }
 }
@@ -3536,18 +3847,24 @@ fn comp_type_formers(
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
-fn pair_step(
+fn pair_step<P>(
     arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
     reading: Reading<'_>,
     signatures: &BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>,
     goal: StructuralGoal,
-    pending: &mut Vec<StructuralGoal>,
+    pending: &mut P,
 ) -> CertificateEquality
+where
+    P: Pending,
 {
     use StructuralGoal::CompType as CT;
     use StructuralGoal::Computation as C;
     use StructuralGoal::Value as V;
     use StructuralGoal::ValueType as VT;
+
+    use crate::support::Crossing;
+    let beside = Crossing::default();
+    let under_one = Crossing::of(Zone::Intuitionistic, crate::context::BinderDepth::from(1));
     match goal {
         V(a, b) => {
             if empty_word(arena, signatures, (a, b)) == CertificateEquality::Equal
@@ -3573,7 +3890,7 @@ fn pair_step(
                 | (&Value::Nested(left), &Value::Returned(right))
                     if matches!(reading, Reading::Printed(_)) =>
                 {
-                    pending.push(C(left, right));
+                    pending.queue(C(left, right), beside);
                     CertificateEquality::Equal
                 },
                 (&Value::Recorded(ref left), &Value::Recorded(ref right))
@@ -3581,7 +3898,7 @@ fn pair_step(
                 {
                     for (left, right) in left.iter().zip(right.iter()) {
                         match move_pair(left, right) {
-                            MovePair::Payloads(a, b) => pending.push(V(a, b)),
+                            MovePair::Payloads(a, b) => pending.queue(V(a, b), beside),
                             MovePair::Agreed => {},
                             MovePair::Different => return CertificateEquality::Different,
                         }
@@ -3591,7 +3908,9 @@ fn pair_step(
                 // A dialogue is its endpoints' moves: two logs that
                 // interleave the same moves differently are one dialogue.
                 (&Value::Dialogue(ref left), &Value::Dialogue(ref right)) => {
-                    crate::session::pair_dialogues(left, right, |a, b| pending.push(V(a, b)))
+                    crate::session::pair_dialogues(left, right, |a, b| {
+                        pending.queue(V(a, b), beside);
+                    })
                 },
                 _ => CertificateEquality::Different,
             }
@@ -3647,7 +3966,8 @@ fn pair_step(
                         crate::rewrite::Binders::ONE,
                     )
                     .settle(arena.to_mut());
-                    pending.extend([VT(first, component), VT(second, rest)]);
+                    pending.queue(VT(first, component), beside);
+                    pending.queue(VT(second, rest), under_one);
                     CertificateEquality::Equal
                 },
                 (&ValueType::Session(ref left), &ValueType::Session(ref right))
@@ -3726,7 +4046,8 @@ fn pair_step(
                         crate::rewrite::Binders::ONE,
                     )
                     .settle(arena.to_mut());
-                    pending.extend([VT(a, c), CT(b, d)]);
+                    pending.queue(VT(a, c), beside);
+                    pending.queue(CT(b, d), under_one);
                     CertificateEquality::Equal
                 },
                 _ => CertificateEquality::Different,
@@ -3797,29 +4118,116 @@ mod tests
     }
 
     #[test]
-    fn computation_syntax_ignores_allocation_identity()
+    fn computation_syntax_pairs_what_each_side_reads_free()
     {
+        use crate::session::SessionAction;
         let mut arena = crate::CoreArena::new();
-        let returning = |arena: &mut crate::CoreArena, index: u32| {
-            let variable = arena.value_variable(
-                crate::Zone::Intuitionistic,
-                gandr_kernel_term::DeBruijnIndex::from(index),
-            );
-            let returned = arena.computation_return(variable);
+        let variable = |arena: &mut crate::CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let returning = |arena: &mut crate::CoreArena, indices: &[u32]| {
+            let read = if let [index] = *indices {
+                variable(arena, index)
+            }
+            else {
+                let fields = indices
+                    .iter()
+                    .map(|&index| variable(arena, index))
+                    .collect::<Vec<_>>();
+                arena.value_tuple(&fields)
+            };
+            let returned = arena.computation_return(read);
             arena.computation_lambda(returned)
         };
-        let first = returning(&mut arena, 0);
-        let twin = returning(&mut arena, 0);
-        let other = returning(&mut arena, 1);
+        let compare = |arena: &crate::CoreArena, left, right| {
+            let mut free = Vec::new();
+            let equality = equal_computation_syntax_up_to_free(arena, left, right, &mut free);
+            (equality, free)
+        };
+        let pair = |left: u32, right: u32| FreePair {
+            zone: Zone::Intuitionistic,
+            left: DeBruijnIndex::from(left),
+            right: DeBruijnIndex::from(right),
+        };
+        let bound = returning(&mut arena, &[0]);
+        let twin = returning(&mut arena, &[0]);
+        let near = returning(&mut arena, &[1]);
+        let far = returning(&mut arena, &[3]);
         assert_eq!(
-            equal_computation_syntax(&arena, first, twin),
-            CertificateEquality::Equal,
-            "two allocations of one lambda are one computation"
+            compare(&arena, bound, twin),
+            (CertificateEquality::Equal, Vec::new()),
+            "two allocations of one lambda are one computation reading nothing free"
         );
         assert_eq!(
-            equal_computation_syntax(&arena, first, other),
+            compare(&arena, near, far),
+            (CertificateEquality::Equal, alloc::vec![pair(0, 2)]),
+            "two lambdas reading one variable past their binder at other indices agree, \
+             the pair left to their scopes"
+        );
+        assert_eq!(
+            compare(&arena, bound, near).0,
             CertificateEquality::Different,
-            "a lambda returning another variable is another computation"
+            "a lambda returning its own binder is not one returning a variable past it"
+        );
+        let both = returning(&mut arena, &[1, 2]);
+        let once = returning(&mut arena, &[1, 1]);
+        let again = returning(&mut arena, &[2, 2]);
+        assert_eq!(
+            compare(&arena, both, once),
+            (CertificateEquality::Equal, alloc::vec![
+                pair(0, 0),
+                pair(1, 0)
+            ]),
+            "two variables read against one are two pairs, in order"
+        );
+        assert_eq!(
+            compare(&arena, once, again),
+            (CertificateEquality::Equal, alloc::vec![pair(0, 1)]),
+            "one pair read twice is one pair"
+        );
+        let outer_binder = arena.computation_lambda(bound);
+        let inner_binder = arena.computation_lambda(near);
+        assert_eq!(
+            compare(&arena, outer_binder, inner_binder).0,
+            CertificateEquality::Different,
+            "two crossed binders are apart"
+        );
+        let linear = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+        let linear = arena.computation_return(linear);
+        let linear = arena.computation_lambda(linear);
+        assert_eq!(
+            compare(&arena, near, linear).0,
+            CertificateEquality::Different,
+            "variables of two zones are apart"
+        );
+        let close = |arena: &mut crate::CoreArena| {
+            arena.computation_session(SessionAction::Close {
+                endpoint: DeBruijnIndex::from(0_u32),
+            })
+        };
+        let fork = |arena: &mut crate::CoreArena| {
+            let protocol = arena.value_type_unit();
+            let child = close(arena);
+            let unit = arena.value_unit();
+            let parent = arena.computation_return(unit);
+            arena.computation_session(SessionAction::Fork {
+                protocol,
+                child,
+                parent,
+            })
+        };
+        let (forked, refork) = (fork(&mut arena), fork(&mut arena));
+        assert_eq!(
+            compare(&arena, forked, refork),
+            (CertificateEquality::Equal, Vec::new()),
+            "an endpoint the fork binds is compared as written"
+        );
+        let (closed, reclosed) = (close(&mut arena), close(&mut arena));
+        assert_eq!(
+            compare(&arena, closed, reclosed).0,
+            CertificateEquality::Different,
+            "an endpoint past the crossed binders is declined: its action's shape names it as \
+             written"
         );
     }
 
