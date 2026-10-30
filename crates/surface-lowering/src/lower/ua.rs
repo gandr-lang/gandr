@@ -233,8 +233,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The count a resident of `ua[n, k]`, `compose[n, k]` or `fill[n, k]`
-    /// writes, a degree
-    /// or a catalogue bound, or the cell count of the chain `chain(m)` names.
+    /// writes, a degree or a catalogue bound, or the cell count of the chain
+    /// `chain(m)` names.
     ///
     /// A resident is read in the instantiation sort, which holds a type where
     /// a literal is written; a resident whose whole text is decimal digits is
