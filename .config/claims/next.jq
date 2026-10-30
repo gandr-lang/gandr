@@ -28,11 +28,11 @@
 #   now      the reading's time, in seconds since the epoch
 #   prs      the open pull requests: [{body, head}]
 #   focus    the programme focus (`.config/issues/focus.toml`, #3959), or
-#            absent for none: {epics: [number], members: [{number, epic}],
-#            landings: [{number, body, head}]}, members every sub-issue of a
-#            focus epic in any state, a sub-epic's in turn, each with the
-#            focus epic it falls under; landings the merged pull requests the
-#            open issues' `from:` lines name
+#            absent for none: {epics: [number], members: [{number, epic,
+#            parent}], landings: [{number, body, head}]}, members every
+#            sub-issue of a focus epic in any state, a sub-epic's in turn,
+#            each with the focus epic it falls under and its parent; landings
+#            the merged pull requests the open issues' `from:` lines name
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
@@ -92,7 +92,9 @@
 # These rank by priority, effort and age, the lane's areas first, then any
 # area. Then a member, the focus units, in the focus epics' order and each
 # epic's sub-issue order, by priority first, the lane's areas first, then any
-# area. A member waits while a sub-epic between it and its focus epic carries
+# area. A sub-epic's units come where the sub-epic sits in its parent's order
+# (#4110): a unit ranks by the indices from its focus epic down to it. A
+# member waits while a sub-epic between it and its focus epic carries
 # `status:deferred` (#4063), as the plain order passes over a deferred epic's
 # units. A lane still holds what it holds, the focus aside.
 
@@ -160,8 +162,14 @@ def observation($refusals):
       elif (.labels // [] | index("status:deferred")) != null then true
       else waits end;
   def focus_unit: membership as $m | $m != null and ($m | waits | not) and (focus_fix | not);
+  # The indices from the focus epic down to issue `$n` under parent `$p`,
+  # each in its parent's sub-issue order.
+  def focus_path($n; $p):
+    ($order["\($p)"] // [] | index($n) // infinite) as $at
+    | (first($focus.members[] | select(.number == $p)) // null) as $up
+    | if $up == null then [$at] else focus_path($up.number; $up.parent) + [$at] end;
   def focus_rank: membership as $m
-    | [($focus.epics | index($m.epic)), (.number as $n | $order["\(.parent)"] // [] | index($n) // infinite)];
+    | [($focus.epics | index($m.epic))] + focus_path(.number; $m.parent // .parent);
   def fixed: [., if has("kind:defect") then "defect" else "refactor" end];
   (if $focus == null then empty else "focus: \($focus.epics | map("#\(.)") | join(" "))" end),
   (.
