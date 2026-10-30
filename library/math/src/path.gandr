@@ -13,7 +13,14 @@
 // composite with a reflexivity on the right reduces to its left operand.
 // The whiskers are `ap` of a composition with a fixed path.
 //
+// `apComp` is `ap`'s functoriality, and `natural` is a homotopy's
+// naturality along a path. Both go by based path induction on the path.
+// `natural` is the naturality operation at one variable, the `Path`
+// family's filler. Its type is written in `join` and `ap`, the family's
+// composite and action, so a generator over the family takes it by name.
+//
 // - see: #3711 — the naturality meta-operation these definitions serve
+// - see: #3922 — `natural`, and `assoc_nat` as its instance
 // - see: #628 — `math` beside `std`, and the groupoid laws it holds
 
 /// The composite of two paths, whose type states its endpoints.
@@ -86,6 +93,34 @@ pub def apd(
   )
 }
 
+/// The action of a composite is the action of the outer function on the inner action, by based path induction on the path.
+pub def apComp(
+  A : Type,
+  B : Type,
+  C : Type,
+  F : A => B,
+  G : B => C,
+  x : A,
+  y : A,
+  p : Path(A, x, y)
+) -> Path(
+  Path(C, G(F(x)), G(F(y))),
+  ap(A, C, (fn (a : A) { G(F(a)) } : A => C), x, y, p),
+  ap(B, C, G, F(x), F(y), ap(A, B, F, x, y, p))
+) {
+  transport(
+    (v : A, k : Path(A, x, v)) => Path(
+      Path(C, G(F(x)), G(F(v))),
+      ap(A, C, (fn (a : A) { G(F(a)) } : A => C), x, v, k),
+      ap(B, C, G, F(x), F(v), ap(A, B, F, x, v, k))
+    ),
+    p,
+    here(x),
+    here(p),
+    here(here(G(F(x))))
+  )
+}
+
 /// The associator: composition is associative, by based path induction on the last path.
 pub def assoc(
   A : Type,
@@ -128,4 +163,32 @@ pub def rightUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
   p
 ) {
   here(p)
+}
+
+/// A homotopy's naturality along a path: the homotopy at the start then `G`'s action meets `F`'s action then the homotopy at the end, by based path induction on the path.
+pub def natural(
+  A : Type,
+  B : Type,
+  F : A => B,
+  G : A => B,
+  H : (q : A) => Path(B, F(q), G(q)),
+  a : A,
+  b : A,
+  p : Path(A, a, b)
+) -> Path(
+  Path(B, F(a), G(b)),
+  join(B, F(a), G(a), G(b), H(a), ap(A, B, G, a, b, p)),
+  join(B, F(a), F(b), G(b), ap(A, B, F, a, b, p), H(b))
+) {
+  transport(
+    (v : A, k : Path(A, a, v)) => Path(
+      Path(B, F(a), G(v)),
+      join(B, F(a), G(a), G(v), H(a), ap(A, B, G, a, v, k)),
+      join(B, F(a), F(v), G(v), ap(A, B, F, a, v, k), H(v))
+    ),
+    p,
+    here(a),
+    here(p),
+    here(H(a))
+  )
 }

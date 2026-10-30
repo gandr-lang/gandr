@@ -1,14 +1,15 @@
 /// `naturality`: a term's naturality along a path in one of its arguments, the action of the term on that path.
 ///
-/// Implemented: `assoc_nat` states the associator's naturality in its first argument. Its type is the square that Example 1.3 of the paper states. Its sides whisker the path of paths `fa` by `whiskerRight`. Based path induction on `fa` proves it, and the kernel replays the proof.
+/// Implemented: `math.path` holds `natural`, the operation at one variable, a homotopy's naturality along a path. `assoc_nat` states the associator's naturality in its first argument, at the square that Example 1.3 of the paper states. Its term is `natural` at the associator, and the kernel replays it.
 ///
-/// The square is the type Catt answers for `assoc [a] g h`. Its source is the associator at `fm`, then `fa` whiskered by `g then h`. Its target is `fa` whiskered by `g` and then by `h`, then the associator at `fp`.
+/// The square is the type Catt answers for `assoc [a] g h`. Its source is the associator at `fm`, then `fa` whiskered by `g then h`. Its target is `fa` whiskered by `g` and then by `h`, then the associator at `fp`. `natural` acts on `fa` by the composite function instead, so `apComp` carries its target side to the two whiskers.
 ///
 /// - see: library/math/src/path.gandr
 /// - see: #3711 — the paper, arXiv:2501.11620, and its Example 1.3
+/// - see: #3922 — `natural`, and this instance of it
 /// - see: crates/surface-corpus/README.md
 
-// `assoc`, `whiskerRight`.
+// `apComp`, `assoc`, `natural`, `whiskerRight`.
 import "../../../library/math/src/path.gandr";
 
 /// The associator's naturality in its first argument: the square whose sides are the associators at `fm` and `fp` and whose other sides whisker `fa`.
@@ -37,24 +38,32 @@ def assoc_nat(
     h
   ) then assoc(A, x, y, z, w, fp, g, h)
 ) {
-  transport(
-    (kp : Path(A, x, y), e : Path(Path(A, x, y), fm, kp)) => Path(
-      Path(Path(A, x, w), (fm then g) then h, kp then (g then h)),
-      assoc(A, x, y, z, w, fm, g, h) then whiskerRight(A, x, y, w, fm, kp, e, g then h),
-      whiskerRight(
-        A,
-        x,
-        z,
-        w,
-        fm then g,
-        kp then g,
-        whiskerRight(A, x, y, z, fm, kp, e, g),
-        h
-      ) then assoc(A, x, y, z, w, kp, g, h)
+  natural(
+    Path(A, x, y),
+    Path(A, x, w),
+    (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+    (fn (q : Path(A, x, y)) { q then (g then h) } : Path(A, x, y) => Path(A, x, w)),
+    (fn (q : Path(A, x, y)) { assoc(A, x, y, z, w, q, g, h) } : (q : Path(A, x, y)) => Path(Path(A, x, w), (q then g) then h, q then (g then h))),
+    fm,
+    fp,
+    fa
+  ) then whiskerRight(
+    Path(A, x, w),
+    (fm then g) then h,
+    (fp then g) then h,
+    fp then (g then h),
+    ap(Path(A, x, y), Path(A, x, w), (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)), fm, fp, fa),
+    whiskerRight(A, x, z, w, fm then g, fp then g, whiskerRight(A, x, y, z, fm, fp, fa, g), h),
+    apComp(
+      Path(A, x, y),
+      Path(A, x, z),
+      Path(A, x, w),
+      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+      fm,
+      fp,
+      fa
     ),
-    fa,
-    here(fm),
-    here(fa),
-    here(assoc(A, x, y, z, w, fm, g, h))
+    assoc(A, x, y, z, w, fp, g, h)
   )
 }
