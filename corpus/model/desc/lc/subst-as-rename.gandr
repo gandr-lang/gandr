@@ -30,9 +30,10 @@ def substRenamesLift(
 ) -> Path(Term, look(n, Lift(s), Z), Ix(rlook(n, RLift(r)))) {
   case n {
     Z => here(Ix(Z)),
-    S(m) => lookWeakens(m, s, Z) then (weakenedVariable(s, r, h, m) then ixShiftAdds(
-      rlook(m, r),
-      S(Z)
+    S(m) => compose[5, 7](chain(3), (
+      lookWeakens(m, s, Z),
+      weakenedVariable(s, r, h, m),
+      ixShiftAdds(rlook(m, r), S(Z))
     ))
   }
 }

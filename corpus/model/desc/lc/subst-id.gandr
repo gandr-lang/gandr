@@ -18,7 +18,11 @@ def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N)
 ) {
   case n {
     Z => here(Ix(Z)),
-    S(m) => lookWeakens(m, s, Z) then (wkCong(look(m, s, Z), Ix(m), h(m)) then ixShiftAdds(m, S(Z)))
+    S(m) => compose[5, 7](chain(3), (
+      lookWeakens(m, s, Z),
+      wkCong(look(m, s, Z), Ix(m), h(m)),
+      ixShiftAdds(m, S(Z))
+    ))
   }
 }
 
