@@ -1022,17 +1022,22 @@ fn checked(
         CheckRefusal::ComposeUncertified { .. } => {
             f.write_str("`compose` needs a stratum the chain sub-site certifies")
         },
-        CheckRefusal::ComposeNotAShape {
-            pasting: gandr_core_term::compose::Pasting::Chain { .. },
-            ..
-        } => f.write_str("`compose` needs a chain within the degree and the bound of its stratum"),
-        CheckRefusal::ComposeNotAShape {
-            pasting: gandr_core_term::compose::Pasting::Columns { .. },
-            ..
-        } => f.write_str(
-            "`compose` needs a level-two shape the wreath holds within the degree and the bound \
-             of its stratum",
-        ),
+        CheckRefusal::ComposeNotAShape { pasting, .. }
+            if pasting.level() == gandr_core_term::compose::Level::ONE =>
+        {
+            f.write_str("`compose` needs a chain within the degree and the bound of its stratum")
+        },
+        CheckRefusal::ComposeNotAShape { pasting, .. }
+            if pasting.level() == gandr_core_term::compose::Level::TWO =>
+        {
+            f.write_str(
+                "`compose` needs a level-two shape the wreath holds within the degree and the \
+                 bound of its stratum",
+            )
+        },
+        CheckRefusal::ComposeNotAShape { .. } => {
+            f.write_str("`compose` reads a pasting at level one or two, and no stratum past them")
+        },
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,
             ..
@@ -2218,9 +2223,10 @@ pub mod tests
             },
             CheckRefusal::ComposeNotAShape {
                 at: value,
-                pasting: gandr_core_term::compose::Pasting::Chain {
-                    cells: gandr_core_term::compose::CellCount::from(4_usize),
-                },
+                pasting: gandr_core_term::compose::Pasting::chain(
+                    gandr_core_term::compose::CellCount::from(4_usize),
+                )
+                .expect("the 4-chain packs"),
             },
             CheckRefusal::ComposeDoesNotFill {
                 at: value,
@@ -2455,9 +2461,10 @@ pub mod tests
             },
             CheckRefusal::ComposeNotAShape {
                 at: value,
-                pasting: gandr_core_term::compose::Pasting::Chain {
-                    cells: gandr_core_term::compose::CellCount::from(4_usize),
-                },
+                pasting: gandr_core_term::compose::Pasting::chain(
+                    gandr_core_term::compose::CellCount::from(4_usize),
+                )
+                .expect("the 4-chain packs"),
             },
             CheckRefusal::ComposeDoesNotFill {
                 at: value,

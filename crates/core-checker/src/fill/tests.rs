@@ -99,9 +99,7 @@ fn chain(
             degree: Degree::from(degree),
             bound: ShapeSize::from(bound),
         },
-        pasting: Pasting::Chain {
-            cells: CellCount::from(cells),
-        },
+        pasting: Pasting::chain(CellCount::from(cells)).expect("the chain packs"),
     }
 }
 
@@ -572,9 +570,7 @@ fn columns(
             degree: Degree::from(degree),
             bound: ShapeSize::from(bound),
         },
-        pasting: Pasting::Columns {
-            heights: gandr_core_term::compose::Heights::new(&heights).expect("two columns pack"),
-        },
+        pasting: Pasting::columns(&heights).expect("two columns pack"),
     }
 }
 

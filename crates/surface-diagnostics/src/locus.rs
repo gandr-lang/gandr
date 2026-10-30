@@ -1466,15 +1466,16 @@ impl fmt::Display for Checked
                 },
             },
             | CheckRefusal::ComposeUncertified { stratum, .. } => uncertified(f, Chained::Composition, stratum),
-            | CheckRefusal::ComposeNotAShape { pasting: gandr_core_term::compose::Pasting::Chain { cells }, .. } => write!(
+            | CheckRefusal::ComposeNotAShape { pasting, .. } if pasting.level() == gandr_core_term::compose::Level::ONE => write!(
                 f,
                 "a chain of m = {} cells has size 2m + 1 and degree 2m - 1, which must lie within the stratum's bound and degree",
-                usize::from(cells)
+                usize::from(pasting.cells())
             ),
-            | CheckRefusal::ComposeNotAShape { pasting: gandr_core_term::compose::Pasting::Columns { heights }, .. } => {
+            | CheckRefusal::ComposeNotAShape { pasting, .. } if pasting.level() == gandr_core_term::compose::Level::TWO => {
+                let tree = pasting.tree();
                 f.write_str("the level-two shape [")?;
-                write!(f, "{}](", heights.columns().count())?;
-                for (position, height) in heights.columns().enumerate() {
+                write!(f, "{}](", tree.columns().count())?;
+                for (position, height) in tree.columns().enumerate() {
                     if position > 0 {
                         f.write_str(", ")?;
                     }
@@ -1482,6 +1483,11 @@ impl fmt::Display for Checked
                 }
                 f.write_str(") must be an object of the wreath of the chains within the stratum's bound, and its degree within the stratum's")
             },
+            | CheckRefusal::ComposeNotAShape { pasting, .. } => write!(
+                f,
+                "a pasting at level {} reads no stratum: only levels one and two are certified",
+                usize::from(pasting.level())
+            ),
             | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Outer, defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
             | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Column(before), defect, .. } => write!(
                 f,
@@ -3112,19 +3118,29 @@ mod tests
             },
             CheckRefusal::ComposeNotAShape {
                 at: value,
-                pasting: gandr_core_term::compose::Pasting::Chain {
-                    cells: gandr_core_term::compose::CellCount::from(4_usize),
-                },
+                pasting: gandr_core_term::compose::Pasting::chain(
+                    gandr_core_term::compose::CellCount::from(4_usize),
+                )
+                .expect("the 4-chain packs"),
             },
             CheckRefusal::ComposeNotAShape {
                 at: value,
-                pasting: gandr_core_term::compose::Pasting::Columns {
-                    heights: gandr_core_term::compose::Heights::new(&[
-                        gandr_core_term::compose::CellCount::from(1_usize),
-                        gandr_core_term::compose::CellCount::from(0_usize),
-                    ])
-                    .expect("the whisker's columns pack"),
-                },
+                pasting: gandr_core_term::compose::Pasting::columns(&[
+                    gandr_core_term::compose::CellCount::from(1_usize),
+                    gandr_core_term::compose::CellCount::from(0_usize),
+                ])
+                .expect("the whisker's columns pack"),
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::new(
+                    gandr_core_term::compose::Level::try_from(3_usize).expect("a byte holds three"),
+                    gandr_core_term::compose::Tree::chain(
+                        gandr_core_term::compose::CellCount::from(2_usize),
+                    )
+                    .expect("[2] packs"),
+                )
+                .expect("a tree of height one stands at level three"),
             },
             CheckRefusal::ComposeDoesNotFill {
                 at: value,

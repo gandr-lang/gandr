@@ -3153,9 +3153,7 @@ fn chain_at(Written(degree, bound, cells): Written) -> Composite
             degree: Degree::from(degree),
             bound: ShapeSize::from(bound),
         },
-        pasting: Pasting::Chain {
-            cells: CellCount::from(cells),
-        },
+        pasting: Pasting::chain(CellCount::from(cells)).expect("the chain packs"),
     }
 }
 
@@ -3304,9 +3302,7 @@ fn a_level_two_pasting_reads_its_columns()
     };
     let columns = |heights: &[usize]| {
         let heights: Vec<CellCount> = heights.iter().copied().map(CellCount::from).collect();
-        Pasting::Columns {
-            heights: gandr_core_term::compose::Heights::new(&heights).expect("the columns pack"),
-        }
+        Pasting::columns(&heights).expect("the columns pack")
     };
     assert_eq!(
         pasting("whiskered"),

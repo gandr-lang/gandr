@@ -3085,17 +3085,30 @@ fn every_refusal() -> Vec<Refusal>
     });
     refusals.push(Refusal::ComposeNotAShape {
         at,
-        pasting: gandr_core_term::compose::Pasting::Chain {
-            cells: gandr_core_term::compose::CellCount::from(4_usize),
-        },
+        pasting: gandr_core_term::compose::Pasting::chain(
+            gandr_core_term::compose::CellCount::from(4_usize),
+        )
+        .expect("the 4-chain packs"),
     });
     let whisker = [1_usize, 0, 3].map(gandr_core_term::compose::CellCount::from);
     refusals.push(Refusal::ComposeNotAShape {
         at,
-        pasting: gandr_core_term::compose::Pasting::Columns {
-            heights: gandr_core_term::compose::Heights::new(&whisker)
-                .expect("three short columns pack"),
-        },
+        pasting: gandr_core_term::compose::Pasting::columns(&whisker)
+            .expect("three short columns pack"),
+    });
+    let edge =
+        gandr_core_term::compose::Tree::chain(gandr_core_term::compose::CellCount::from(1_usize))
+            .expect("[1] packs");
+    let stalk = gandr_core_term::compose::Tree::graft([edge]).expect("a stalk packs");
+    let two_three_cells =
+        gandr_core_term::compose::Tree::graft([stalk, stalk]).expect("two stalks pack");
+    refusals.push(Refusal::ComposeNotAShape {
+        at,
+        pasting: gandr_core_term::compose::Pasting::new(
+            gandr_core_term::compose::Level::try_from(3_usize).expect("a byte holds three"),
+            two_three_cells,
+        )
+        .expect("two 3-cells stand at level three"),
     });
     refusals.extend(
         [

@@ -5939,9 +5939,8 @@ mod tests
         ));
         let composite = |degree, cells| crate::compose::Composite {
             stratum: stratum(degree),
-            pasting: crate::compose::Pasting::Chain {
-                cells: crate::compose::CellCount::from(cells),
-            },
+            pasting: crate::compose::Pasting::chain(crate::compose::CellCount::from(cells))
+                .expect("the chain packs"),
         };
         let [twin, same, other_degree, other_count] = [(3_usize, 2_usize), (3, 2), (2, 2), (3, 1)]
             .map(|(degree, cells)| {
