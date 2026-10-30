@@ -1301,7 +1301,6 @@ name = "gandr-lang"
 version = "0.0.0"
 dependencies = [
  "clap",
- "gandr-core-incremental",
  "gandr-core-publish",
  "gandr-kernel-core",
  "gandr-runtime-net",

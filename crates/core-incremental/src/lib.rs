@@ -171,7 +171,6 @@ mod session;
 mod stream;
 mod support;
 mod typing;
-mod verdicts;
 
 pub use crate::boundary::ItemCount;
 pub use crate::boundary::ItemOrdinal;
@@ -263,6 +262,3 @@ pub use crate::typing::Refusal;
 pub use crate::typing::Site;
 pub use crate::typing::Typing;
 pub use crate::typing::project;
-pub use crate::verdicts::DamagedCount;
-pub use crate::verdicts::FileVerdictStore;
-pub use crate::verdicts::VerdictStoreError;

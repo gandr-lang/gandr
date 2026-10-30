@@ -361,9 +361,6 @@ INSERT INTO purpose VALUES('core-incremental','typing::Refusal','enum','Names wh
 INSERT INTO purpose VALUES('core-incremental','typing::Site','enum','Names where in its item a refusal stood, the node''s table index or its unreached absence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Typing','enum','Names an item''s typing: the checker''s verdict, projected free of arena ids and positions.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::project','function','Projects a checker''s verdict to an item''s typing, its ids and positions replaced by their content.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','verdicts::DamagedCount','struct','Counts the files a verdict store passed over because they did not read as a receipt.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','verdicts::FileVerdictStore','struct','Holds the kernel''s receipts in a directory, one file per receipt named by its digest, indexed by every key they hold.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','verdicts::VerdictStoreError','enum','Why a verdict store could not open its directory or write a receipt.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','arena::BranchSpan','struct','A half-open range of case-branch closures in one domain arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','arena::CompClosureId','struct','The id of a comp closure in the domain arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','arena::DomainArena','struct','The per-run arena owning every glued node one evaluation run produces.',NULL,'fits','sound',NULL);
@@ -2195,6 +2192,9 @@ INSERT INTO purpose VALUES('surface-dispatcher','presentation::Presentation','st
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::PresentationFault','enum','Why a `[presentation]` table could not be read: the file unread, not TOML, or naming a spelling there is none of.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::presented','function','Read the `[presentation]` table of a document another reader has already parsed, so one parse of a file serves each of its tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::read_presentation','function','Read the `[presentation]` table of the file at a path, an absent file naming nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','receipts::DamagedCount','struct','Counts the receipts a verdict store passed over because they did not read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','receipts::StoredVerdicts','struct','Holds the kernel''s receipts as values in the storage tier''s store, each named by a root, indexed by every key they hold.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','receipts::VerdictStoreError','enum','Why a verdict store could not open its store or keep a receipt.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Goals','enum','What `check` does with a declaration unsettled by its obligations alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Lints','struct','Where `check` reports each lint''s findings; `test` reports none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Reach','enum','Where a lint reports its findings: only within the declarations and modules an attribute enables it on, or everywhere.',NULL,'fits','sound',NULL);

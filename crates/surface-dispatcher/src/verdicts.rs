@@ -24,13 +24,14 @@ use std::sync::OnceLock;
 use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
 use gandr_core_checker::bridge;
-use gandr_core_incremental::FileVerdictStore;
 use gandr_core_term::CoreArena;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictSource;
 use quenchant_shape::shape::Maybe;
+
+use crate::receipts::StoredVerdicts;
 
 /// The recall of a process that installed no cache.
 static RECHECK: LazyLock<bridge::Recall> = LazyLock::new(bridge::Recall::recheck);
@@ -60,7 +61,7 @@ pub struct VerdictCache
     /// The policy and store a fresh readmission admits under.
     recall: bridge::Recall,
     /// Where receipts are kept.
-    store: Arc<FileVerdictStore>,
+    store: Arc<StoredVerdicts>,
     /// This installation's key.
     signer: KernelSigner,
     /// Admissions a recorded verdict answered.
@@ -82,12 +83,12 @@ impl VerdictCache
     #[must_use]
     pub fn new(
         policy: TrustPolicy,
-        store: FileVerdictStore,
+        store: StoredVerdicts,
         signer: KernelSigner,
     ) -> Self
     {
         let store = Arc::new(store);
-        let source: Arc<dyn VerdictSource> = Arc::<FileVerdictStore>::clone(&store);
+        let source: Arc<dyn VerdictSource> = Arc::<StoredVerdicts>::clone(&store);
         Self {
             recall: bridge::Recall::trusting(policy, source),
             store,
@@ -302,7 +303,6 @@ mod tests
     use gandr_core_checker::Unretired;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
-    use gandr_core_incremental::FileVerdictStore;
     use gandr_core_term::CoreArena;
     use gandr_kernel_core::verdict::KernelSigner;
     use gandr_kernel_core::verdict::TrustPolicy;
@@ -316,6 +316,7 @@ mod tests
 
     use super::VerdictCache;
     use crate::compose::adapt;
+    use crate::receipts::StoredVerdicts;
 
     /// The outcomes `cache` readmits a module of two definitions to, the
     /// second reading the first.
@@ -371,7 +372,7 @@ mod tests
         let cache = || {
             VerdictCache::new(
                 TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
-                FileVerdictStore::open(&directory).expect("the store opens"),
+                StoredVerdicts::open(&directory).expect("the store opens"),
                 signer.clone(),
             )
         };

@@ -48,16 +48,16 @@
 //! A `check` keeps the verdicts its kernel checked under a receipt signed with
 //! this installation's key, `gandr/kernel.key` under the configuration
 //! directory, minted from the operating system's entropy the first time a
-//! `check` needs it; the receipts go to `gandr/verdicts` under the cache
-//! directory. A later `check` admits a declaration on a recorded verdict only
-//! when a key its policy trusts signed it: this installation's own, and each
-//! that `kernel.trusted` lists by its public half, which `check --verbosity
-//! detailed` prints after `signed by`. `policy = "recheck"`, or `--recheck`
-//! for one invocation, checks every declaration and records nothing. The
-//! `[kernel]` table is the user's file's alone: whose keys to believe is an
-//! installation's decision, never a project's, so the dispatcher's
-//! presentation reader does not read it. A table that names no policy there
-//! is, or a key that is not one, is a fault as a bad spelling is.
+//! `check` needs it; the receipts go to `gandr/verdicts/receipts` under the
+//! cache directory. A later `check` admits a declaration on a recorded verdict
+//! only when a key its policy trusts signed it: this installation's own, and
+//! each that `kernel.trusted` lists by its public half, which `check
+//! --verbosity detailed` prints after `signed by`. `policy = "recheck"`, or
+//! `--recheck` for one invocation, checks every declaration and records
+//! nothing. The `[kernel]` table is the user's file's alone: whose keys to
+//! believe is an installation's decision, never a project's, so the
+//! dispatcher's presentation reader does not read it. A table that names no
+//! policy there is, or a key that is not one, is a fault as a bad spelling is.
 //!
 //! The same key and policy sign and believe the certified strata a `ua`
 //! statement reads, kept in `gandr/verdicts/strata`. A later `check` replays
@@ -338,8 +338,8 @@ pub fn store() -> Option<PathBuf>
     )
 }
 
-/// The directory the kernel's receipts are kept in, `gandr/verdicts` under
-/// the cache directory [`checkpoints`] sits in.
+/// The directory the kernel's receipts and strata are kept under,
+/// `gandr/verdicts` under the cache directory [`checkpoints`] sits in.
 ///
 /// # Specification
 /// - requires: nothing.
