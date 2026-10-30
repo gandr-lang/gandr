@@ -86,7 +86,9 @@
 # These rank by priority, effort and age, the lane's areas first, then any
 # area. Then a member, the focus units, in the focus epics' order and each
 # epic's sub-issue order, by priority first, the lane's areas first, then any
-# area. A lane still holds what it holds, the focus aside.
+# area. A member waits while a sub-epic between it and its focus epic carries
+# `status:deferred` (#4063), as the plain order passes over a deferred epic's
+# units. A lane still holds what it holds, the focus aside.
 
 include "sections";
 include "findings";
@@ -143,7 +145,13 @@ def observation($refusals):
     and ((.parent | IN($focus.named[])) or any(written[]; IN($focus.named[]))
       or any(.body // "" | from_lines[]; IN($focus.landings[])));
   def membership: .number as $n | first($focus.members[] | select(.number == $n)) // null;
-  def focus_unit: membership != null and (focus_fix | not);
+  # Whether a member's chain of parents up to its focus epic meets a deferred
+  # sub-epic.
+  def waits: .parent as $p | first($focus.members[] | select(.number == $p)) // null
+    | if . == null then false
+      elif (.labels // [] | index("status:deferred")) != null then true
+      else waits end;
+  def focus_unit: membership as $m | $m != null and ($m | waits | not) and (focus_fix | not);
   def focus_rank: membership as $m
     | [($focus.epics | index($m.epic)), (.number as $n | $order["\(.parent)"] // [] | index($n) // infinite)];
   def fixed: [., if has("kind:defect") then "defect" else "refactor" end];
