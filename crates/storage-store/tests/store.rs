@@ -377,6 +377,136 @@ fn two_stores_over_one_directory_keep_each_other_s_roots()
     assert_eq!(after.roots().root(&second), Maybe::Present(two));
 }
 
+/// Naming roots one at a time writes the record plane no tree per naming: a
+/// store that names 256 roots, each by a change of its own, holds far fewer
+/// nodes than namings, and every root reads back after reopening.
+#[test]
+fn naming_roots_one_at_a_time_writes_no_tree_per_naming_4081()
+{
+    let root = scratch(Path::new("journaled"));
+    let mut store = Store::open(&root).expect("the store opens");
+    let pointer = store.commit(&labels(Count(3))).expect("a value commits");
+    let names: Vec<RootName> = (0_u16 .. 256_u16)
+        .map(|index| RootName::new(format!("verdict/{index:04}")))
+        .collect();
+    for name in &names {
+        store
+            .set_root(name.clone(), pointer)
+            .expect("each root is set");
+    }
+    let nodes = files(&root.join("nodes")).len();
+    assert!(
+        nodes.saturating_mul(4) < names.len(),
+        "256 namings leave {nodes} nodes on the record plane"
+    );
+    let reopened = Store::open(&root).expect("the store opens again");
+    assert!(
+        names
+            .iter()
+            .all(|name| reopened.roots().root(name) == Maybe::Present(pointer)),
+        "every root reads back after reopening"
+    );
+}
+
+/// Two stores over one directory keep each other's roots across folds: a
+/// store reads the tree another folded, the journal another appended to, and
+/// a tree folded again after its own reading.
+#[test]
+fn two_stores_keep_each_other_s_roots_across_a_fold_4081()
+{
+    let root = scratch(Path::new("folded"));
+    let mut left = Store::open(&root).expect("the first store opens");
+    let mut right = Store::open(&root).expect("the second store opens");
+    let pointer = left.commit(&labels(Count(2))).expect("a value commits");
+    let named = |range: core::ops::Range<u16>| -> Vec<RootName> {
+        range
+            .map(|index| RootName::new(format!("lock/{index:03}")))
+            .collect()
+    };
+    let early = named(0_u16 .. 200_u16);
+    for name in &early {
+        left.set_root(name.clone(), pointer)
+            .expect("the first store names a root");
+    }
+    let own = RootName::new(String::from("verdict/right"));
+    right
+        .set_root(own.clone(), pointer)
+        .expect("the second store names its root");
+    assert!(
+        early
+            .iter()
+            .all(|name| right.roots().root(name) == Maybe::Present(pointer)),
+        "the second store reads every root the first named, folded or journaled"
+    );
+    let late = named(200_u16 .. 400_u16);
+    for name in &late {
+        left.set_root(name.clone(), pointer)
+            .expect("the first store names a root");
+    }
+    assert_eq!(
+        left.roots().root(&own),
+        Maybe::Present(pointer),
+        "the first store reads the second's journaled root"
+    );
+    let again = RootName::new(String::from("verdict/right-again"));
+    right
+        .set_root(again, pointer)
+        .expect("the second store names a root again");
+    assert!(
+        late.iter()
+            .all(|name| right.roots().root(name) == Maybe::Present(pointer)),
+        "the second store reads the roots folded after its own reading"
+    );
+    let after = Store::open(&root).expect("a third store opens");
+    assert_eq!(
+        after.roots().names().count(),
+        early.len().saturating_add(late.len()).saturating_add(2),
+        "a store opened after both reads every root"
+    );
+}
+
+/// A journal entry torn by a naming that stopped while it appended ends the
+/// journal: the roots before it read back, and the next naming cuts it and
+/// stands after it.
+#[test]
+fn a_torn_journal_entry_is_cut_by_the_next_naming_4081()
+{
+    let root = scratch(Path::new("torn"));
+    let first = RootName::new(String::from("verdict/first"));
+    let second = RootName::new(String::from("verdict/second"));
+    let third = RootName::new(String::from("verdict/third"));
+    let pointer = {
+        let mut store = Store::open(&root).expect("the store opens");
+        let pointer = store.commit(&labels(Count(2))).expect("a value commits");
+        store
+            .set_root(first.clone(), pointer)
+            .expect("the first root is set");
+        store
+            .set_root(second.clone(), pointer)
+            .expect("the second root is set");
+        pointer
+    };
+    let journal = root.join("roots.journal");
+    let mut bytes = std::fs::read(&journal).expect("the journal reads");
+    bytes.extend_from_slice(&[16_u8, 0_u8, 0_u8, 0_u8, b'v', b'e']);
+    std::fs::write(&journal, &bytes).expect("a torn entry is appended");
+    let mut reopened = Store::open(&root).expect("a store opens over the torn journal");
+    assert_eq!(
+        reopened.roots().root(&second),
+        Maybe::Present(pointer),
+        "the entry before the torn one reads back"
+    );
+    reopened
+        .set_root(third.clone(), pointer)
+        .expect("the third root is set");
+    let again = Store::open(&root).expect("the store opens again");
+    assert_eq!(
+        again.roots().names().cloned().collect::<Vec<_>>(),
+        vec![first, second, third],
+        "the naming after the torn entry stands, and the torn entry names nothing"
+    );
+}
+
 /// A roots file naming no node is refused by name on opening.
 #[test]
 fn a_roots_file_naming_no_node_is_refused_on_opening()

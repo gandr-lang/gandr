@@ -1425,6 +1425,7 @@ dependencies = [
 name = "gandr-storage-store"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "gandr-core-publish",
  "gandr-storage-chunker",
  "gandr-storage-records",
