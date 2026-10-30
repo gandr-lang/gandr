@@ -1923,16 +1923,18 @@ impl CodeDefinitions
     }
 
     /// Read the closed claim `claim` back under `definitions`, round by round,
-    /// until a round changes nothing.
+    /// until a round is final.
     ///
     /// # Specification
     /// - requires: as [`Self::evaluate_claim`].
-    /// - ensures: at the first round that reads back what it read,
-    ///   [`Readback::Returned`] when that readback is `thunk (λⁿ. return v)`
-    ///   and [`Readback::Stuck`] otherwise; [`Readback::Unsuspended`] for a
-    ///   readback that is no thunk. A round that returns but still changed
-    ///   something is read again: its readback spends a call an arm of a stuck
-    ///   case makes without running it, and the next round runs it.
+    /// - ensures: at the first final round, [`Readback::Returned`] when its
+    ///   readback is `thunk (λⁿ. return v)` and [`Readback::Stuck`] otherwise;
+    ///   [`Readback::Unsuspended`] for a readback that is no thunk. A round is
+    ///   final when its readback ran every call it spent
+    ///   ([`gandr_core_nbe::SpentCalls::Ran`]) or reads back what it read. A
+    ///   round that held a spent call and still changed something is read
+    ///   again: an arm of a stuck case makes that call, and the next round runs
+    ///   it.
     /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
     ///   readback faults or runs out of fuel, or the rounds run out.
     /// - panics: none.
@@ -1972,7 +1974,7 @@ impl CodeDefinitions
             let evaluated =
                 gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, current)
                     .map_err(|_fault| undecided)?;
-            let read = gandr_core_nbe::readback_value(
+            let (read, spent) = gandr_core_nbe::readback_value_spending(
                 core,
                 &mut domain,
                 definitions,
@@ -1981,6 +1983,7 @@ impl CodeDefinitions
                 evaluated,
             )
             .map_err(|_fault| undecided)?;
+            let ran = spent == gandr_core_nbe::SpentCalls::Ran;
             let Some(&Value::Thunk(mut body)) = core.value(read)
             else {
                 return Ok(Readback::Unsuspended);
@@ -1990,9 +1993,10 @@ impl CodeDefinitions
             }
             // A round that returns may still hold a call it spent without
             // running, a definition called in an arm of a case stuck on a
-            // binder: the next round runs it, so only a round that reads back
-            // what it read is the normal form (#2831).
-            if equal_certificate_syntax(core, read, current) == CertificateEquality::Equal {
+            // binder: the next round runs it (#2831). A round that ran every
+            // call it spent is the normal form, and one that held a call is
+            // final only once it reads back what it read (#3337).
+            if ran || equal_certificate_syntax(core, read, current) == CertificateEquality::Equal {
                 if let Some(&Computation::Return(returned)) = core.computation(body) {
                     return Ok(Readback::Returned {
                         normal: read,

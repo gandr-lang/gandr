@@ -125,6 +125,13 @@
 //! `ReadbackFault::MachineInvariant`, while a failure from a driven evaluation
 //! remains `ReadbackFault::Eval`.
 //!
+//! An unfolding spent under a spine folds the spine's leading static
+//! applications by beta. Any other elimination left on the spine folds onto
+//! the definition's body as syntax, so the result holds that call unrun.
+//! `readback_value_spending` reports such a run as `SpentCalls::Held`, and a
+//! caller that wants a normal form evaluates the result again. A run that
+//! holds no such call reports `SpentCalls::Ran`.
+//!
 //! One budget covers the readback tasks and every evaluation they drive. A
 //! force completed before a later refusal remains cached in the domain;
 //! truncating the core arena does not undo it. Budget witnesses therefore start
@@ -210,6 +217,25 @@ pub enum ReadbackMode
     /// body no entry of the chain names is refused with
     /// [`ReadbackFault::UnloweredBody`].
     Unfolding,
+}
+
+/// Whether a readback under [`ReadbackMode::Unfolding`] read a call through
+/// its definition's body without running it.
+///
+/// A spent unfolding meets its spine's leading static applications by beta.
+/// Any other elimination left on the spine folds onto the body as syntax: a
+/// `force` of the definition's thunk, applied, is a redex the result holds.
+/// The report is conservative, because a held elimination need not form a
+/// redex.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SpentCalls
+{
+    /// No spent unfolding kept an elimination of its spine: the result holds
+    /// no call it read through a body.
+    Ran,
+    /// Some spent unfolding kept an elimination of its spine: the result may
+    /// hold the call unrun, and another evaluation may run it.
+    Held,
 }
 
 /// Why a readback was refused.
@@ -958,6 +984,8 @@ struct Machine<'run>
     /// The core value this run built for each domain value at its open
     /// binders.
     read: BTreeMap<(DomainValueId, OpenBinders), ValueId>,
+    /// Whether a spent unfolding kept an elimination of its spine.
+    spent: SpentCalls,
 }
 
 impl<'run> Machine<'run>
@@ -987,6 +1015,7 @@ impl<'run> Machine<'run>
         ensures: |ret| ret.tasks.is_empty() && ret.values.is_empty() && ret.comps.is_empty()
             && ret.value_types.is_empty() && ret.comp_types.is_empty() && ret.frames.is_empty()
             && ret.mode == mode && ret.fuel == fuel && ret.writing == Writing::Nothing
+            && ret.spent == SpentCalls::Ran
             && core::ptr::eq(core::ptr::from_ref(ret.definitions.bodies()), core::ptr::from_ref(definitions.bodies())),
     )]
     fn new(
@@ -1007,6 +1036,7 @@ impl<'run> Machine<'run>
             fuel,
             writing: Writing::Nothing,
             read: BTreeMap::new(),
+            spent: SpentCalls::Ran,
         }
     }
 
@@ -1795,6 +1825,53 @@ pub fn readback_value(
         value,
         OpenBinders::none(),
     )
+}
+
+/// Read a domain value back into the core arena as [`readback_value`] does,
+/// and report whether the run read a call through its definition's body
+/// without running it.
+///
+/// # Specification
+/// - requires: as [`readback_value`].
+/// - ensures: on success the term [`readback_value`] reads, paired with
+///   [`SpentCalls::Held`] when some unfolding the run spent kept an elimination
+///   of its spine past the static applications beta folds, and
+///   [`SpentCalls::Ran`] otherwise. [`ReadbackMode::ZeroUnfold`] spends
+///   nothing, so it always reports [`SpentCalls::Ran`].
+/// - provides: the question a caller iterating readback to a normal form asks
+///   before it pays one more evaluation to confirm one.
+/// - fails: as [`readback_value`].
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`ReadbackFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a spent operator whose spine is static applications alone
+///   reports `Ran`; a spent definition forced and applied reports `Held` and
+///   reads back a redex a second evaluation reduces.
+/// - witness: `readback::tests::a_spent_call_left_unrun_is_reported_held`
+#[inline]
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|&(term, spent)| core.value(term).is_some()
+        && (mode == ReadbackMode::Unfolding || spent == SpentCalls::Ran)))]
+pub fn readback_value_spending(
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    mode: ReadbackMode,
+    fuel: Fuel,
+    value: DomainValueId,
+) -> Result<(ValueId, SpentCalls), ReadbackFault>
+{
+    let mut machine = Machine::new(definitions, mode, fuel);
+    machine.tasks.push(Task::Value {
+        value,
+        binders: OpenBinders::none(),
+    });
+    run(core, domain, &mut machine)?;
+    let spent = machine.spent;
+    Ok((machine.pop_value()?, spent))
 }
 
 /// Read a domain computation back into the core arena, under no open binder.
@@ -4522,6 +4599,13 @@ fn step_neutral(
         },
         None | Some(Glued::Computation(_)) => (spent, SpineOffset::innermost()),
     };
+    if spent.is_some()
+        && domain
+            .neutral(neutral)
+            .is_some_and(|held| held.spine().len() > start.0)
+    {
+        machine.spent = SpentCalls::Held;
+    }
     let polarity = match spent {
         None => match head {
             NeutralHead::Hole {

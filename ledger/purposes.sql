@@ -514,8 +514,10 @@ INSERT INTO purpose VALUES('core-nbe','policy::SharedPart','enum','A part of a s
 INSERT INTO purpose VALUES('core-nbe','presented::Presented','struct','A presented type''s rules beside its constructor table''s arities.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','readback::ReadbackFault','enum','Why a readback was refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','readback::ReadbackMode','enum','Which of the domain''s two faces a readback spends.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','readback::SpentCalls','enum','Whether a readback holds a call it spent without running.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','readback::readback_computation','function','Read a domain computation back into the core arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','readback::readback_value','function','Read a domain value back into the core arena.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','readback::readback_value_spending','function','Read a domain value back, reporting whether it holds a spent call unrun.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','resharing::EdgeCount','struct','How many support edges a run''s memo entries hold.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','resharing::GoalSupport','struct','The whole input of a goal the machine starts fresh.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','resharing::ResharingMemo','type_alias','The memo the conversion machine re-shares its goals through.','sharing','fits','sound',NULL);
