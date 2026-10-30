@@ -1470,6 +1470,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-u
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/inert-field.txt Procedure 07c7bd3847fd9dba
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/inert-field.txt Procedure 0b1fe9c1e58df6a9
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/inert-field.txt Procedure f43265b374f6605f
+crates/surface-render-terminal/tests/golden/corpus/pathological/modules/law-collapsed.txt Procedure 6dd4420754dc5df4
+crates/surface-render-terminal/tests/golden/corpus/pathological/modules/law-collapsed.txt Procedure 89e7f8688ab83ad8
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure 26d9ff6919ba277d
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure 30d812f3c1961dba
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-resolution.txt Procedure 595e44f6adfd7ed9
