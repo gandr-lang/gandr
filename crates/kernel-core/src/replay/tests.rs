@@ -1319,6 +1319,60 @@ fn a_held_call_replays_as_its_continuation_at_its_endpoint()
 }
 
 #[test]
+fn a_held_transport_replays_as_its_continuation_at_its_endpoint_4011()
+{
+    // `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to t. tr(m, h, t)`, `m`
+    // the motive `t. Path(Unit, x, t)` and `x`, `g`, `h` and `q` free: the
+    // transport stuck on `g` returns its endpoint, so the bind is the
+    // transport along `h` over that endpoint (#4011).
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let hold = |side| ConversionDecision::Hold { side };
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let unit_type = arena.value_type_unit();
+    let motive = |arena: &mut TermArena, x: u32| {
+        let (x, point) = (variable(arena, x), variable(arena, 0));
+        arena.value_type_path(unit_type, x, point)
+    };
+    let (g, h, q) = (
+        variable(&mut arena, 2),
+        variable(&mut arena, 1),
+        variable(&mut arena, 0),
+    );
+    let over_x = motive(&mut arena, 4);
+    let stuck = arena.computation_path_transport(over_x, g, q);
+    let endpoint = arena.value_returned(stuck);
+    let written = arena.computation_path_transport(over_x, h, endpoint);
+    let (h_under, t) = (variable(&mut arena, 2), variable(&mut arena, 0));
+    let over_x_under = motive(&mut arena, 5);
+    let along_h = arena.computation_path_transport(over_x_under, h_under, t);
+    let bound = arena.computation_bind(stuck, along_h);
+    let held = ReplaySides::Computations(written, bound);
+    assert_eq!(
+        run(&mut arena, &none, held, EngineClaim::Convertible, &[hold(
+            ConversionSide::Right
+        )]),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(bound, written),
+            EngineClaim::Convertible,
+            &[hold(ConversionSide::Left)]
+        ),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        convert(&mut arena, &none, held, ReplayBudget::default()),
+        KernelVerdict::Convertible,
+        "the kernel's own reading holds the transport"
+    );
+}
+
+#[test]
 fn the_kernel_converts_by_the_forced_rules_alone()
 {
     let mut arena = TermArena::new();

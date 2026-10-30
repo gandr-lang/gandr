@@ -4314,45 +4314,43 @@ where
         Ok(Some(side))
     }
 
-    /// Read a call on one side as its continuation at the call's returned
-    /// endpoint.
+    /// Read a computation on one side that returns as its continuation at the
+    /// computation's returned endpoint.
     ///
     /// # Specification
     /// - requires: `shapes` are the goal's left and right shapes, and `next`
     ///   the trace's next decision.
-    /// - ensures: a side holds a call when its shape [`unread_call`] reads, its
-    ///   term binds that call into that continuation, and the continuation
-    ///   reads its binder and is, under its applications, a force of another
-    ///   variable. Under [`Reading::Recorded`], when `next` is `Hold` naming a
-    ///   side that holds one, that decision is consumed and the side becomes
-    ///   the continuation instantiated at the call's returned endpoint; `None`
-    ///   and nothing changed when `next` is no `Hold`. Under
-    ///   [`Reading::Forced`] and [`Reading::Unfolding`], the left side's held
-    ///   call is read before the right's, reading nothing.
+    /// - ensures: a side holds a computation when its shape [`held_bind`]
+    ///   reads, its term binds that computation into that continuation, and the
+    ///   continuation reads its binder. Under [`Reading::Recorded`], when
+    ///   `next` is `Hold` naming a side that holds one, that decision is
+    ///   consumed and the side becomes the continuation instantiated at the
+    ///   computation's returned endpoint; `None` and nothing changed when
+    ///   `next` is no `Hold`. Under [`Reading::Forced`] and
+    ///   [`Reading::Unfolding`], the left side's held computation is read
+    ///   before the right's, reading nothing.
     /// - provides: the replay of the hold, `M to x. N ≡ N[⟨M⟩/x]` when `M` is a
-    ///   call of a variable and `N` passes `x` to another variable's call: the
-    ///   instantiation the endpoint reading of [`Self::whnf`] performs for a
-    ///   continuation that does not inspect its binder. Every call of the
-    ///   fragment returns, so the forced reading takes it as it takes the
-    ///   discard.
+    ///   call of a variable or a transport stuck on a path (#4011) and `N`
+    ///   reads `x`: the instantiation the endpoint reading of [`Self::whnf`]
+    ///   performs for a continuation that does not inspect its binder. Every
+    ///   call of the fragment returns, and so does every transport, so the
+    ///   forced reading takes it as it takes the discard.
     /// - fails: a refusal when the trace names a `Hold` on a side that holds no
-    ///   such call.
+    ///   such computation.
     /// - panics: none.
     ///
     /// # Errors
     /// [`Stop::Refused`].
     ///
-    /// # Termination
-    /// - reason: the `while let` walks the continuation's applications to their
-    ///   head, not recursion.
-    /// - measure: the applications left above the head.
-    ///
     /// # Adequacy
     /// - hypothesis: L3: a call passed on against the other variable's call
-    ///   over its endpoint replays on either side by the named decision and by
-    ///   the forced reading alone; a decision naming the side with no such call
-    ///   refuses; a call passed to another function stands apart once held.
+    ///   over its endpoint, and a transport stuck on a path against the
+    ///   continuation's transport over its endpoint, replay on either side by
+    ///   the named decision and by the forced reading alone; a decision naming
+    ///   the side with no such computation refuses; a call passed to another
+    ///   function stands apart once held.
     /// - witness: `replay::tests::a_held_call_replays_as_its_continuation_at_its_endpoint`
+    /// - witness: `replay::tests::a_held_transport_replays_as_its_continuation_at_its_endpoint_4011`
     #[spec(
         captures: before = (self.position, goal.side(ConversionSide::Left), goal.side(ConversionSide::Right)),
         ensures: |ret| match ret {
@@ -4380,7 +4378,7 @@ where
                 ConversionSide::Left => left,
                 ConversionSide::Right => right,
             };
-            let continuation = unread_call(shape)?;
+            let continuation = held_bind(shape)?;
             let Term::Computation(bound) = goal.side(side)
             else {
                 return None;
@@ -4389,14 +4387,7 @@ where
             else {
                 return None;
             };
-            let mut head = body;
-            while let Some(&Computation::Application(function, _)) = arena.computation(head) {
-                head = function;
-            }
-            let binder = DeBruijnIndex::from(0_u32);
             let passed_on = body == continuation
-                && matches!(arena.computation(head), Some(&Computation::Force(function))
-                    if matches!(arena.value(function), Some(&Value::Variable(index)) if index != binder))
                 && innermost(arena.computation_support(body)) != BinderUse::Ignored;
             passed_on.then_some((call, body))
         };
@@ -8517,6 +8508,43 @@ fn unread_call(shape: &Shape) -> Option<ComputationId>
             )
         })
         .then_some(continuation)
+}
+
+/// The continuation a computation that returns is bound last into, when
+/// `shape` is one: a call as [`unread_call`] reads it, or one transport along
+/// a path variable, which returns the value it moves (#4011).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(continuation)` exactly when [`unread_call`] answers it, or
+///   when `shape` is a neutral headed by a variable whose spine is one path
+///   transport and then a bind into `continuation`; `None` otherwise. Whether
+///   the continuation reads its binder is the caller's question.
+/// - provides: the shape half of the hold.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Replay::hold`].
+/// - witness: `replay::tests::a_held_transport_replays_as_its_continuation_at_its_endpoint_4011`
+#[spec(ensures: |ret| ret.is_none() || matches!(*shape, Shape::Neutral(Head::Variable(_), ref spine)
+    if matches!(spine.last(), Some(&Elimination::Bind(continuation)) if ret == Some(continuation))))]
+fn held_bind(shape: &Shape) -> Option<ComputationId>
+{
+    if let Some(continuation) = unread_call(shape) {
+        return Some(continuation);
+    }
+    let Shape::Neutral(Head::Variable(_), ref spine) = *shape
+    else {
+        return None;
+    };
+    match *spine.as_slice() {
+        [
+            Elimination::PathTransport(_),
+            Elimination::Bind(continuation),
+        ] => Some(continuation),
+        _ => None,
+    }
 }
 
 /// The premises two spines decompose into, innermost elimination first.
