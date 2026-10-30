@@ -218,12 +218,15 @@
 //! bytes, and the checker decides it by three rules. *Direction*: against a
 //! thunk type it is suspended, against any other type it runs, and with no
 //! type expected it is refused by name (`NotSynthesisable`, the form
-//! `Nested`). *Order*: runs bind in written order around the innermost
+//! `Nested`). A call at an application's head stands nested under the force
+//! the head takes, and the checker runs it when it returns a function (#3935).
+//! *Order*: runs bind in written order around the innermost
 //! enclosing computation, never out of a `thunk` or a `case` arm. *Where*:
 //! the checker's elaboration, each minted bind carrying the nested call's
 //! span. `run c` is the written spelling of the same run, an expression
-//! wherever a value is read; first in a block's statement it is
-//! parenthesised, `(run c)`, because there `run` opens a bind.
+//! wherever a value is read; first in a block's statement or at an
+//! application's head it is parenthesised, `(run c)`, because there `run`
+//! opens a bind or takes the whole application.
 //!
 //! The recorded decision was the lowering's: it inserted every bridge,
 //! because the checker returned verdicts rather than terms, so a computation

@@ -1721,6 +1721,9 @@ enum Bridge
     Bare,
     /// The bridge from the node's sort to the one its position reads.
     Inserted(Insertion),
+    /// A call at an application's head, nested and then forced: the checker
+    /// runs it when it returns a function, and suspends it otherwise (#3935).
+    HeadCall,
 }
 
 quenchant_shape::reason_enum! {
@@ -7449,17 +7452,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: nothing.
     /// - ensures: the frame the position carries when it reads the produced
     ///   sort. An application's head reads a computation and reaches a value by
-    ///   a force; a function's result reads a computation type and reaches a
-    ///   value type by a returner; a value position reaches a type of either
-    ///   sort by a quote, and a computation as the value it returns at an
-    ///   endpoint or where a type reads it, a lambda there as its thunk (#3697,
-    ///   #3767), a lambda `cong` maps by as its thunk (#3773), and nested
-    ///   everywhere else; a tail, where a path through a body ends, reaches a
-    ///   value by the `return` its polarity names, recorded as inferred and
-    ///   leaving; a `while` loop's condition, and a tail of a handled subject,
-    ///   which is the subject's result, reach a value by a `return` recorded as
-    ///   no exit; the bridge is recorded for the form's node, and every other
-    ///   match records none.
+    ///   a force, and a call there is nested and forced, which the checker runs
+    ///   when it returns a function (#3935); a function's result reads a
+    ///   computation type and reaches a value type by a returner; a value
+    ///   position reaches a type of either sort by a quote, and a computation
+    ///   as the value it returns at an endpoint or where a type reads it, a
+    ///   lambda there as its thunk (#3697, #3767), a lambda `cong` maps by as
+    ///   its thunk (#3773), and nested everywhere else; a tail, where a path
+    ///   through a body ends, reaches a value by the `return` its polarity
+    ///   names, recorded as inferred and leaving; a `while` loop's condition,
+    ///   and a tail of a handled subject, which is the subject's result, reach
+    ///   a value by a `return` recorded as no exit; the bridge is recorded for
+    ///   the form's node, and every other match records none.
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
@@ -7487,9 +7491,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::loops::tests::a_while_tests_its_condition_on_every_pass`
     /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
     /// - witness: `lower::tests::a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341`
+    /// - witness: `lower::runs::tests::a_call_returning_a_function_runs_where_it_is_applied_3935`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
+                | (Reading::Head(frame), Produced::Computation)
+                    if self.tree.node(site.at.node).is_some_and(|node| matches!(shape_of(self.pbg, node), Ok(Shape::Form { former: Former::Call, .. }))) =>
+                {
+                    Some((frame, Bridge::HeadCall))
+                },
                 | (Reading::Value(frame), Produced::Value)
                 | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation)
                 | (Reading::ValueType(frame), Produced::ValueType)
@@ -7556,6 +7566,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
         let (frame, bridge) = match (site.reading, produced) {
+            // A call at an application's head may return the function the
+            // application reads, which only the checker can say (#3935).
+            (Reading::Head(frame), Produced::Computation)
+                if self.tree.node(site.at.node).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.pbg, node),
+                        Ok(Shape::Form {
+                            former: Former::Call,
+                            ..
+                        })
+                    )
+                }) =>
+            {
+                (frame, Bridge::HeadCall)
+            },
             (Reading::Value(frame), Produced::Value)
             | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation)
             | (Reading::ValueType(frame), Produced::ValueType)
@@ -15487,7 +15512,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if self.inferred.contains(&position) {
                 self.elided.push((position, match bridge {
                     Bridge::Inserted(Insertion::Return) => Exit::Return,
-                    Bridge::Bare | Bridge::Inserted(_) => Exit::Become,
+                    Bridge::Bare | Bridge::Inserted(_) | Bridge::HeadCall => Exit::Become,
                 }));
             }
             else if let Some((operand, returned)) = self.elidable_at(position) {
@@ -20739,9 +20764,18 @@ impl Sink<'_>
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `lower::identity::tests::a_lambda_argument_in_an_endpoint_is_its_thunk_3697`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `lower::runs::tests::a_call_returning_a_function_runs_where_it_is_applied_3935`
     #[spec(
         ensures: |ret| match bridge {
             | Bridge::Bare => ret == minted,
+            | Bridge::HeadCall => match (minted, ret) {
+                | (Maybe::Present(Lowered::Computation(_)), Maybe::Present(Lowered::Computation(id))) => {
+                    self.origins.computation(id) == Maybe::Present(origin.inserted(Insertion::Force))
+                },
+                | (Maybe::Present(Lowered::Computation(_)), _) => false,
+                | (Maybe::Absent(reason), _) => ret == Maybe::Absent(reason),
+                | (Maybe::Present(_), _) => ret == Maybe::Absent(lowered::Absent::OtherSort),
+            },
             | Bridge::Inserted(insertion) => match (minted, insertion, ret) {
                 | (Maybe::Absent(reason), ..) => ret == Maybe::Absent(reason),
                 | (
@@ -20783,9 +20817,22 @@ impl Sink<'_>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let Bridge::Inserted(insertion) = bridge
-        else {
-            return minted;
+        let insertion = match (bridge, minted) {
+            (Bridge::Bare, _) => return minted,
+            // A call at an application's head stands nested under a force: the
+            // checker decides whether it runs (#3935).
+            (Bridge::HeadCall, Maybe::Present(Lowered::Computation(call))) => {
+                let nested = self.arena.value_nested(call);
+                self.origins
+                    .record_value(nested, origin.inserted(Insertion::Nested));
+                let id = self.arena.computation_force(nested);
+                return Maybe::Present(self.computation(id, origin.inserted(Insertion::Force)));
+            },
+            (Bridge::HeadCall, Maybe::Present(_)) => {
+                return Maybe::Absent(lowered::Absent::OtherSort);
+            },
+            (Bridge::HeadCall, Maybe::Absent(reason)) => return Maybe::Absent(reason),
+            (Bridge::Inserted(insertion), _) => insertion,
         };
         let inserted = origin.inserted(insertion);
         match (minted, insertion) {

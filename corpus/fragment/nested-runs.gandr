@@ -76,3 +76,17 @@ def passed_alone() -> -F Nat { at_zero(constantly(Succ(Zero))) }
 /// #2327: the same call passed beside another argument.
 @[ runs("Succ(Succ(Zero))") ]
 def passed_beside() -> -F Nat { at_point(constantly(Succ(Succ(Zero))), Zero) }
+
+/// A call returning a function, applied in place, runs before the
+/// application, which applies what it returned.
+@[ runs("Succ(Succ(Zero))") ]
+def applied_in_place() -> -F Nat { constantly(Succ(Succ(Zero)))(Zero) }
+
+/// The second of two naturals.
+@[ checks ]
+def second(_a : Nat, b : Nat) -> -F Nat { b }
+
+/// A call of a function of two parameters, applied in place, stays the one
+/// call it spells.
+@[ runs("Zero") ]
+def applied_curried() -> -F Nat { second(Succ(Zero))(Zero) }

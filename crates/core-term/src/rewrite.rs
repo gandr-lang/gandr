@@ -575,7 +575,8 @@ struct Engine<'arena>
     /// no memo entry reports.
     closings: Vec<Carried>,
     /// Each region that only returned its run's value, answered by that run's
-    /// computation rather than a node rebuilt from it.
+    /// computation rather than a node rebuilt from it, and each force of a
+    /// suspended head answered by its call (#3935).
     returned: alloc::collections::BTreeSet<ComputationId>,
     /// The constants and atoms a renaming replaces; nothing outside one.
     renaming: &'arena Renaming,
@@ -1349,8 +1350,10 @@ impl<'arena> Engine<'arena>
     ///   fresh mark over `rewritten` when the sites name `node` and it is a
     ///   term; under an elaboration, a fresh thunk over the computation of
     ///   `rewritten` when `node` is a nested computation the checker decided to
-    ///   suspend, and a fresh returned value over it when the checker decided
-    ///   it stands as what it returns; `rewritten` itself otherwise.
+    ///   suspend, a fresh returned value over it when the checker decided it
+    ///   stands as what it returns, and the suspended call itself when `node`
+    ///   forces a nested computation the checker suspended (#3935); `rewritten`
+    ///   itself otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -1360,9 +1363,11 @@ impl<'arena> Engine<'arena>
     /// - hypothesis: L3 — a marked leaf, a marked variable, a marked compound
     ///   whose child is marked too, and an unmarked sibling separate wrapping,
     ///   nesting and the identity on unnamed nodes; a suspended nested
-    ///   computation beside a run one separates the two elaborations.
+    ///   computation beside a run one separates the two elaborations, and a
+    ///   forced suspension stands as its call.
     /// - witness: `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`
     /// - witness: `rewrite::tests::an_elaboration_suspends_and_runs_as_decided`
+    /// - witness: `rewrite::tests::a_forced_suspension_elaborates_as_its_call_3935`
     #[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&rewritten))]
     fn wrapped(
         &mut self,
@@ -1381,6 +1386,20 @@ impl<'arena> Engine<'arena>
                 Nesting::Returned => return Node::Value(self.arena.value_returned(nested)),
                 Nesting::Run => {},
             }
+        }
+        // A force of a nested call the checker suspended is the call itself,
+        // as a call written at an application's head reads (#3935). The call
+        // stands for the force without being rebuilt from it, so the force is
+        // not reported beside it.
+        if rewrite == Rewrite::Elaborate
+            && let (Node::Computation(held), Node::Computation(id)) = (node, rewritten)
+            && let Some(&Computation::Force(operand)) = self.arena.computation(held)
+            && self.nesting.get(&operand) == Some(&Nesting::Thunk)
+            && let Some(&Computation::Force(thunk)) = self.arena.computation(id)
+            && let Some(&Value::Thunk(call)) = self.arena.value(thunk)
+        {
+            let _first = self.returned.insert(held);
+            return Node::Computation(call);
         }
         if rewrite == Rewrite::Resumed
             && let Node::Computation(id) = rewritten

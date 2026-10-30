@@ -159,6 +159,62 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
     );
 }
 
+/// A call written where a function is read runs when it returns one, and is
+/// spelled grouped, since `run f(n)(1)` reads as the run of the whole
+/// application; a curried call there stays in place (#3935).
+#[test]
+fn a_call_returning_a_function_runs_where_it_is_applied_3935()
+{
+    let text = SourceText::from(
+        "def plus(n : Integer) -> Integer => Integer { thunk { fn (m : Integer) { m + n } } }\n\
+         def applied(n : Integer) -> Integer { run h <- plus(n)(1) ; h }\n\
+         def dependent(A : Type) -> A => A { thunk { fn (x : A) { x } } }\n\
+         def picked(A : Type, x : A) -> A { dependent(A)(x) }\n\
+         def curried(n : Integer, m : Integer) -> Integer { n + m }\n\
+         def partial(n : Integer) -> Integer { curried(n)(1) }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let site = NestedSite {
+        asked: AskedRuns::Unasked,
+        spelling: RunSpelling::Parenthesised,
+        operand: RunOperand::Tight,
+    };
+    assert_eq!(
+        module
+            .inferred_runs(ran(&report))
+            .into_iter()
+            .map(|run| (run.span, run.site))
+            .collect::<Vec<_>>(),
+        [
+            (at("run h <- plus(n)(1)", "plus(n)"), site),
+            (at("{ dependent(A)(x) }", "dependent(A)"), site),
+        ],
+        "a head call returning a function runs, spelled grouped where a bound statement \
+         reads it as at a tail's start; a curried call runs nothing"
+    );
+    let written = SourceText::from(
+        "def plus(n : Integer) -> Integer => Integer { thunk { fn (m : Integer) { m + n } } }\n\
+         def applied(n : Integer) -> Integer { run h <- (run plus(n))(1) ; h }\n\
+         def dependent(A : Type) -> A => A { thunk { fn (x : A) { x } } }\n\
+         def picked(A : Type, x : A) -> A { (run dependent(A))(x) }\n",
+    );
+    let mut rewritten = CoreArena::new();
+    let fixed = lowered(written, &mut rewritten);
+    let rechecked = judged(&fixed, &mut rewritten);
+    assert_accepted(&rechecked);
+    assert_eq!(
+        fixed.inferred_runs(ran(&rechecked)),
+        [],
+        "each head run written as its site spells it reads back, so the checker infers none"
+    );
+}
+
 #[test]
 fn a_run_read_once_first_is_linear()
 {

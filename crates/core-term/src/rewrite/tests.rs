@@ -3264,6 +3264,53 @@ fn an_elaboration_suspends_and_runs_as_decided()
     assert_eq!(mark, arena.watermark(), "and nothing minted");
 }
 
+/// A call written at an application's head is forced nested: suspended, the
+/// force of its thunk stands as the call itself, which was not rebuilt from
+/// the force and so is not reported beside it; run, the force reads the
+/// bind's variable (#3935).
+#[test]
+fn a_forced_suspension_elaborates_as_its_call_3935()
+{
+    let mut arena = CoreArena::new();
+    let x = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let head = call(&mut arena, ConstantIndex::from(1_usize), x);
+    let nested = arena.value_nested(head);
+    let forced = arena.computation_force(nested);
+    let argument = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let applied = arena.computation_application(forced, argument);
+    let lambda = arena.computation_lambda(applied);
+    let subject = arena.value_thunk(lambda);
+    for (decided, expected, why) in [
+        (
+            Nesting::Thunk,
+            "thunk(lambda(apply(apply(force(#1),v0),v0)))",
+            "a suspended head is the call it spells",
+        ),
+        (
+            Nesting::Run,
+            "thunk(lambda(bind(apply(force(#1),v0),apply(force(v0),v1))))",
+            "a run head binds ahead and the force reads its variable",
+        ),
+    ] {
+        let mut carried = Vec::new();
+        let Ok(elaborated) = elaborate_nested_traced(
+            &mut arena,
+            subject,
+            &BTreeMap::from([(nested, decided)]),
+            &mut carried,
+            &mut Vec::new(),
+        )
+        else {
+            panic!("the head stands in the application");
+        };
+        assert_eq!(term_text(&arena, elaborated), expected, "{why}");
+        assert!(
+            !carried.contains(&Carried::Computation(forced, head)),
+            "the call a suspended head stands as is no node rebuilt from its force"
+        );
+    }
+}
+
 #[test]
 fn an_elaboration_never_hoists_out_of_a_thunk_or_an_arm()
 {

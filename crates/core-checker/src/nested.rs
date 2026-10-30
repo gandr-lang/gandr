@@ -13,15 +13,19 @@
 //! against the unknown type it is suspended too, as a written thunk checks
 //! there. Against any other type `A` it runs: it must synthesise a returner
 //! `F^e A'` whose `A'` crosses the value bridge to `A`. With no expected type —
-//! an application's head, an unsigned definition — there is nothing to decide
-//! by, and the judgement refuses it by name, [`CheckRefusal::NotSynthesisable`]
-//! with [`CheckingForm::Nested`], rather than guessing. The synthesis positions
+//! an unsigned definition, say — there is nothing to decide by, and the
+//! judgement refuses it by name, [`CheckRefusal::NotSynthesisable`] with
+//! [`CheckingForm::Nested`], rather than guessing. The synthesis positions
 //! where no thunk can stand decide by their own sort: a case's, a split's and a
 //! list case's scrutinee is never a thunk, nor is the path an element transport
 //! follows, so a nested computation there runs, as `case n >= 5 { … }` reads
 //! the comparison's answer and `cong(loopOn, sect[<](q))` carries the recursive
-//! call's path. A written `run c` always runs and synthesises the value `c`
-//! returns.
+//! call's path. A call written at an application's head stands forced and
+//! nested, and the call's own type decides it: a returner runs and the force
+//! reads the function it returns, and a call of any other type is suspended,
+//! the force of its thunk elaborating as the call itself, so `curried(n)(1)`
+//! stays the one call it spells (#3935). A written `run c` always runs and
+//! synthesises the value `c` returns.
 //!
 //! **Order: written order, before the innermost enclosing computation.** A
 //! run's region is the innermost computation whose values it stands in; an
