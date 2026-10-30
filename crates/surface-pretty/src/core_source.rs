@@ -481,6 +481,9 @@ pub struct CoreSource<'arena>
     /// The binder of `context` that is a recursive definition's own, and the
     /// claim its calls write.
     recursive: Option<Recursive>,
+    /// The telescope of the recursive definition `recursive` names, as
+    /// [`Source::recursive_telescope`] reads it.
+    recursive_telescope: &'arena [Option<Name<'arena>>],
     /// The names of the capability scopes the root stands in, outermost
     /// first.
     regions: &'arena [Option<Name<'arena>>],
@@ -554,6 +557,7 @@ impl<'arena> CoreSource<'arena>
             constructors: UNNAMED,
             context: &[],
             recursive: None,
+            recursive_telescope: &[],
             regions: &[],
             binders: &[],
             arrows: &[],
@@ -625,7 +629,8 @@ impl<'arena> CoreSource<'arena>
 
     /// This source, the binder of its context at `recursive`'s position a
     /// recursive definition's own, each call of which writes its claim after
-    /// the uniform parameters bound before it.
+    /// the uniform parameters bound before it, over the parameters
+    /// `telescope` names.
     ///
     /// # Specification
     /// trivial.
@@ -634,10 +639,12 @@ impl<'arena> CoreSource<'arena>
     pub const fn recursing(
         self,
         recursive: Recursive,
+        telescope: &'arena [Option<Name<'arena>>],
     ) -> Self
     {
         Self {
             recursive: Some(recursive),
+            recursive_telescope: telescope,
             ..self
         }
     }
@@ -2892,6 +2899,16 @@ impl Source for CoreSource<'_>
     fn recursive(&self) -> Option<Recursive>
     {
         self.recursive
+    }
+
+    /// The telescope of the recursive definition the root stands in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn recursive_telescope(&self) -> &[Option<Name<'_>>]
+    {
+        self.recursive_telescope
     }
 
     /// The names of the capability scopes the root stands in.

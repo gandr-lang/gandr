@@ -3836,10 +3836,12 @@ impl TypeTable
             .flattening(&flattened)
             .within(&binders)
             .scoped(&regions);
-        // A recursive definition's own binder writes its claim, `f[<](…)`.
+        // A recursive definition's own binder writes its claim, `f[<](…)`; a
+        // type at a node records no telescope, so its calls write every
+        // argument.
         let printer = context
             .recursive
-            .map_or(printer, |recursive| printer.recursing(recursive));
+            .map_or(printer, |recursive| printer.recursing(recursive, &[]));
         present_type(&printer, root(node), page, style)
             .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
     }

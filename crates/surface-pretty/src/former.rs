@@ -198,7 +198,9 @@ impl From<FixpointEvidence> for Recursion
 /// reads `p₁ … pₖ`, then the definition's own name, then the parameters the
 /// fixpoint binds. A call of the definition passes each uniform parameter as
 /// itself before its own arguments, `f[<](p₁, …, pₖ, a, …)`, which lowers to
-/// the fixpoint applied to its arguments alone.
+/// the fixpoint applied to its arguments alone. It omits each implicit and
+/// instance its telescope names ([`Source::recursive_telescope`]) where it
+/// passes every one as itself, as the surface writes a descent.
 ///
 /// # Specification
 /// trivial.
@@ -1631,6 +1633,35 @@ pub trait Source
     fn recursive(&self) -> Option<Recursive>
     {
         None
+    }
+
+    /// The telescope of the recursive definition [`Self::recursive`] names:
+    /// one entry per parameter, the uniform ones first, in the order the core
+    /// applies them, an implicit's or an instance's name and none for an
+    /// explicit one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the telescope the source records beside its recursive
+    ///   definition, or the empty slice; the default records none, so a call of
+    ///   the definition writes every argument it passes.
+    /// - provides: the parameters a claimed call of the definition omits where
+    ///   it passes each as itself, as the lowering passes the one in scope.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a descent under a row that labels its instance passes
+    ///   the instance as itself, and its call writes the explicit argument
+    ///   alone.
+    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself_4102`
+    #[inline]
+    fn recursive_telescope(&self) -> &[Option<Name<'_>>]
+    {
+        &[]
     }
 
     /// The names of the capability scopes the presented root stands in,
