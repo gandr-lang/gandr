@@ -1,8 +1,8 @@
 /// `filler-generator`: a cell over a chain of paths lifts along the cells it takes as paths of paths.
 ///
-/// Implemented: `fill[n, k](chain(m), t, (d₁, …, dₘ))` checks its generator `t` as a function of the chain's cells into a path between two of their composites. Each `dᵢ` that is a path of paths is a cell of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction on each cell of `X` proves it, and the kernel replays the proof. The printer and the formatter write the form back as it is written, and `natassoc` fills the associator over the 3-chain. At the associator over all three cells, the fill states Example 1.3 of the paper. At level two, `fill[n, k](chain(m, (a₁, …, aₘ)), t, cells)` names `X` by its columns: a column of one 2-cell for each cell of `X`, and an empty column for each other cell. Level two certifies the shape at the stratum.
+/// Implemented: `fill[n, k](chain(m), t, d)` checks its generator `t` as a function of the chain's cells, or of its whole pasting context, into a path type. Each entry of `d` that is a path one layer deeper is an entry of `X`. The node's type is the square from `t[X⁻] then (v ↑ X)` to `(u ↑ X) then t[X⁺]`, each lift a whisker. Based path induction proves it, each vertex path of `X` first and then each cell of `X`, and the kernel replays the proof. The printer and the formatter write the form back as it is written, and `natassoc` fills the associator over the 3-chain. Examples 1.1 to 1.3 of the paper are rows below, each at the type Catt answers, Example 1.3 at the associator over all three cells. At level two, `fill[n, k](chain(m, (a₁, …, aₘ)), t, cells)` names `X` by its columns: a column of one 2-cell for each cell of `X`, and an empty column for each other cell. Level two certifies the shape at the stratum.
 ///
-/// Not implemented: the agreement of `natassoc` with `assoc_nat` at a general cell (#4120), and the `Flow` and bridge instances (#4093, #642).
+/// Not implemented: #4120 owes the agreement of `natassoc` with `assoc_nat` at a general cell. #3833 owes the level-two fill and Example 1.4, and #4093 and #642 owe the `Flow` and bridge instances.
 ///
 /// Over a `here` cell the filler reduces to `here`, which `walkAtHere` states and proves by reflexivity.
 ///
@@ -18,7 +18,14 @@ def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y
 }
 
 /// The 1-chain's cell lifts along `fa`, and its sides compose the generator's reflexivities with `fa`.
-def oneCell(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp)) -> Path(
+def oneCell(
+  A : Type,
+  x : A,
+  y : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp)
+) -> Path(
   Path(Path(A, x, y), fm, fp),
   here(fm) then fa,
   fa then here(fp)
@@ -27,27 +34,62 @@ def oneCell(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa :
 }
 
 /// Two cells' composite, answered by its declared type.
-def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {
+def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(
+  A,
+  x,
+  z
+) {
   f then g
 }
 
 /// Two cells, the reflexivity of their composite: the generator over the 2-chain.
-def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {
+def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(
+  A,
+  y,
+  z
+)) => Path(Path(A, x, z), f then g, f then g) {
   thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }
 }
 
 /// The right whisker of `fa` by `g`: the transport along `fa` the generator lifts the first cell by.
-def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+def rightWhisker(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), fm then g, fp then g) {
   transport(\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))
 }
 
 /// The left whisker of `ga` by `f`: the transport along `ga` the generator lifts the second cell by.
-def leftWhisker(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(Path(A, x, z), f then gm, f then gp) {
+def leftWhisker(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(Path(A, x, z), f then gm, f then gp) {
   transport(\a. Path(Path(A, x, z), f then gm, f then a), ga, here(f then gm))
 }
 
 /// The 2-chain's first cell lifts along `fa`, and each side whiskers `fa` by `g`.
-def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+def firstLifted(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(
   Path(Path(A, x, z), fm then g, fp then g),
   here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g),
   rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)
@@ -56,7 +98,16 @@ def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, 
 }
 
 /// The 2-chain's second cell lifts along `ga`, and each side whiskers `ga` by `f`.
-def secondLifted(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(
+def secondLifted(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(
   Path(Path(A, x, z), f then gm, f then gp),
   here(f then gm) then leftWhisker(A, x, y, z, f, gm, gp, ga),
   leftWhisker(A, x, y, z, f, gm, gp, ga) then here(f then gp)
@@ -65,12 +116,27 @@ def secondLifted(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, 
 }
 
 /// The horizontal composite of `fa` and `ga`: `fa` whiskered by `gm`, then `ga` whiskered by `fp`.
-def horizontal(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(Path(A, x, z), fm then gm, fp then gp) {
+def horizontal(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(Path(A, x, z), fm then gm, fp then gp) {
   rightWhisker(A, x, y, z, fm, fp, fa, gm) then leftWhisker(A, x, y, z, fp, gm, gp, ga)
 }
 
 /// The associator as the generator over the 3-chain.
-def associated(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => (h : Path(A, z, w)) => Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+def associated(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(A, x, y)) => (g : Path(
+  A,
+  y,
+  z
+)) => (h : Path(A, z, w)) => Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
   thunk { fn (f) { thunk { fn (g) { thunk { fn (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
 }
 
@@ -93,14 +159,45 @@ def associatorNatural(
   ha : Path(Path(A, z, w), hm, hp)
 ) -> Path(
   Path(Path(A, x, w), (fm then gm) then hm, fp then (gp then hp)),
-  assoc(A, x, y, z, w, fm, gm, hm) then horizontal(A, x, y, w, fm, fp, fa, gm then hm, gp then hp, horizontal(A, y, z, w, gm, gp, ga, hm, hp, ha)),
-  horizontal(A, x, z, w, fm then gm, fp then gp, horizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), hm, hp, ha) then assoc(A, x, y, z, w, fp, gp, hp)
+  assoc(A, x, y, z, w, fm, gm, hm) then horizontal(
+    A,
+    x,
+    y,
+    w,
+    fm,
+    fp,
+    fa,
+    gm then hm,
+    gp then hp,
+    horizontal(A, y, z, w, gm, gp, ga, hm, hp, ha)
+  ),
+  horizontal(
+    A,
+    x,
+    z,
+    w,
+    fm then gm,
+    fp then gp,
+    horizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    hm,
+    hp,
+    ha
+  ) then assoc(A, x, y, z, w, fp, gp, hp)
 ) {
   fill[5, 7](chain(3), associated(A, x, y, z, w), (fa, ga, ha))
 }
 
 /// The same lift at level two: the whisker `[2](1, 0)` names `fa` as the column of one 2-cell and `g` as a column of none.
-def firstLiftedColumns(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+def firstLiftedColumns(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(
   Path(Path(A, x, z), fm then g, fp then g),
   here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g),
   rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)
@@ -115,4 +212,66 @@ def walkAtHere(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), g : Path(A, y,
   here(here(fm then g))
 ) {
   here(here(here(fm then g)))
+}
+
+/// Two cells' composite as a curried function: the generator of dimension one over the 2-chain.
+def composed(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(
+  A,
+  x,
+  z
+) {
+  thunk { fn (f) { thunk { fn (g) { composite(A, x, y, z, f, g) } } } }
+}
+
+/// Example 1.1: the composite is natural in its first cell, `(f ∗ g) ↑ {f}`. Catt answers a path from `fm then g` to `fp then g`, which `then`'s unit laws meet.
+def naturalInFirst(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), fm then g, fp then g) {
+  fill[5, 7](chain(2), composed(A, x, y, z), (fa, g))
+}
+
+/// The 2-chain's pasting context into its composite: the generator of dimension one over `x, y, f, z, g`.
+def composedOver(A : Type) -> (x : A) => (y : A) => (f : Path(A, x, y)) => (z : A) => (g : Path(
+  A,
+  y,
+  z
+)) => Path(A, x, z) {
+  thunk {
+    fn (x) {
+      thunk {
+        fn (y) {
+          thunk { fn (f) { thunk { fn (z) { thunk { fn (g) { composite(A, x, y, z, f, g) } } } } } }
+        }
+      }
+    }
+  }
+}
+
+/// Example 1.2: the composite is natural in its whole context, `(f ∗ g) ↑ {x, f, y, g, z}`. Each cell of `X` is a square over its vertices' paths, and Catt answers the square from `(fm then gm) then za` to `xa then (fp then gp)`.
+def naturalInContext(
+  A : Type,
+  xm : A,
+  xp : A,
+  xa : Path(A, xm, xp),
+  ym : A,
+  yp : A,
+  ya : Path(A, ym, yp),
+  zm : A,
+  zp : A,
+  za : Path(A, zm, zp),
+  fm : Path(A, xm, ym),
+  fp : Path(A, xp, yp),
+  fa : Path(Path(A, xm, yp), fm then ya, xa then fp),
+  gm : Path(A, ym, zm),
+  gp : Path(A, yp, zp),
+  ga : Path(Path(A, ym, zp), gm then za, ya then gp)
+) -> Path(Path(A, xm, zp), (fm then gm) then za, xa then (fp then gp)) {
+  fill[5, 7](chain(2), composedOver(A), (xa, ya, fa, za, ga))
 }
