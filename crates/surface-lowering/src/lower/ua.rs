@@ -110,10 +110,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: present for an instantiation whose head is the name `ua` or
     ///   `compose`, free at the call, with two number literals between its
     ///   brackets: `n` the degree and `k` the bound; absent for any other head,
-    ///   so a descent claim `f[<]` and a binder named `ua` read as before.
-    /// - fails: an instantiation of either name with other than two residents,
-    ///   a resident that is no decimal number, and the name resolution's own
-    ///   refusals.
+    ///   so a descent claim `f[<]`, a binder named `ua` and a recursive
+    ///   function named `compose` read as before.
+    /// - fails: an instantiation of either free name with other than two
+    ///   residents, a resident that is no decimal number, and the name
+    ///   resolution's own refusals but the unmarked self-reference.
     /// - panics: none.
     ///
     /// # Errors
@@ -188,7 +189,9 @@ impl<'source> Lowerer<'_, 'source>
         // The name inside the instantiation is owned by no declaration until
         // the call around it is read, so it resolves at the call's node, at
         // its own bytes: a later member named `ua` is then a forward
-        // reference, as for the identity heads (#633).
+        // reference, as for the identity heads (#633). A recursive function
+        // of the name shadows the former too, so `compose[<](…)` in its own
+        // body is its claimed recursion.
         let at_name = Site {
             at: Placed {
                 node: site.at.node,
@@ -196,8 +199,12 @@ impl<'source> Lowerer<'_, 'source>
             },
             ..site
         };
-        if let Maybe::Present(_shadowed) = self.resolve_name(at_name, site.reading.frame(), name)? {
-            return unspelled;
+        match self.resolve_name(at_name, site.reading.frame(), name) {
+            Ok(Maybe::Present(_)) | Err(LoweringRefusal::UnmarkedSelfReference { .. }) => {
+                return unspelled;
+            },
+            Ok(Maybe::Absent(_)) => {},
+            Err(refusal) => return Err(refusal),
         }
         let &[degree, bound] = residents.as_slice()
         else {
