@@ -3192,5 +3192,59 @@
       "shared": []
     },
     "output": "{\"act\":\"refuse\",\"why\":\"the stack top #3842 left the stack while the obligations were measured\"}"
+  },
+  {
+    "name": "#4164: an issue waiting on `shape:signed` wakes its seat once the label stands",
+    "program": "awaited.jq",
+    "input": { "kind": "issue", "state": "OPEN", "labels": ["kind:defect", "shape:signed"] },
+    "output": "{\"event\":\"signed\",\"exit\":0}"
+  },
+  {
+    "name": "#4164: an issue without the label is waited on",
+    "program": "awaited.jq",
+    "input": { "kind": "issue", "state": "OPEN", "labels": ["kind:defect"] },
+    "output": "null"
+  },
+  {
+    "name": "#4164: an issue closed while it waited needs a hand",
+    "program": "awaited.jq",
+    "input": { "kind": "issue", "state": "CLOSED", "labels": [] },
+    "output": "{\"event\":\"issue-closed\",\"exit\":1}"
+  },
+  {
+    "name": "#4164: a top that merged wakes the seat",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "MERGED", "merge": "UNKNOWN", "lacks": true, "age": 60 },
+    "output": "{\"event\":\"top-merged\",\"exit\":0}"
+  },
+  {
+    "name": "#4164: a top closed without merging needs a hand",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "CLOSED", "merge": "UNKNOWN", "lacks": true, "age": 60 },
+    "output": "{\"event\":\"top-closed\",\"exit\":1}"
+  },
+  {
+    "name": "#4164: a top still lacking the trunk change is waited on",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "BEHIND", "lacks": true, "age": 60 },
+    "output": "null"
+  },
+  {
+    "name": "#4164: a top rebased to hold the trunk change wakes the seat",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "BLOCKED", "lacks": false, "age": 60 },
+    "output": "{\"event\":\"top-current\",\"exit\":0}"
+  },
+  {
+    "name": "#4164: a top conflicting with the trunk within its seat's claim window is waited on, whatever it holds",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": false, "age": 14399 },
+    "output": "null"
+  },
+  {
+    "name": "#4164: a top conflicting past its seat's claim window wakes the seat to stack past it",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": true, "age": 14400 },
+    "output": "{\"event\":\"top-stale\",\"exit\":0}"
   }
 ]

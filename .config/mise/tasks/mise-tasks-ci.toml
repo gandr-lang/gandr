@@ -3055,11 +3055,16 @@ fi
 # A top can lack a change of the trunk that the new pull request builds on
 # (#3654): it forked before the change merged. The rebase onto it then
 # conflicts, though the own commits apply to the trunk. A top bound for the
-# trunk carries the change once it merges, so the task waits for it and reads
-# the top again (`stack_on_top`): one queued, and one behind the trunk with its
-# checks pending or passed, which its watch queues (#4124, `bound.jq`). A top
-# held as a draft, conflicting with the trunk or failed is refused, naming the
-# changes it lacks.
+# trunk carries the change once it merges or its seat rebases it: one queued,
+# one behind the trunk with its checks pending or passed, which its watch
+# queues (#4124), and one conflicting with the trunk within its seat's claim
+# window. Each is a future event, so the task prints what it waits on and an
+# `arm:` line for `pr:await` on the top, and exits 0 (#4164, `bound.jq`): the
+# seat arms the job and ends its turn, and the job's exit wakes it to run
+# `pr:open` again. A top conflicting past the window has no seat rebasing it,
+# so the task stacks past it, on the highest pull request below it that does
+# not conflict, or on the trunk as a second bottom (`stack_on_top`). A top
+# held as a draft or failed is refused, naming the changes it lacks.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
@@ -3113,8 +3118,10 @@ fi
 # Each issue the body works, an epic or a `collector` aside, passes
 # `unit:check` and carries the coordinator's `shape:signed` (#3134,
 # `.config/claims/signed.jq`): the seat that sections an issue on its claim
-# pages for the label and works on, and the landing waits for it. A body
-# working a `collector` (#3326) `Advances` it, never closes it, and lists the
+# pages for the label and works on, and the landing waits for it. A missing
+# label is a wait (#4164): with nothing else refused, the task prints its
+# `wait:` line and an `arm:` line for `pr:await` on the issue, and exits 0. A
+# body working a `collector` (#3326) `Advances` it, never closes it, and lists the
 # rows it clears under `## Rows`, each an open row as the collector keys it.
 #
 # Vault pages are cited by their mint (#2793). With the vault checkout
@@ -3230,9 +3237,13 @@ absorbing=$(jq -n --rawfile body "$body" --argjson issues "$issues" --argjson ab
   '{body: $body, issues: $issues, absorption: $absorption}' | jq -r -L "$claims" -f "$claims/absorbing.jq")
 if [[ -n $absorbing ]]; then findings=${findings:+$findings$'\n'}$absorbing; fi
 rm -rf "$vaultdir"
+# A `wait:` line names a future event, never a refusal (#4164): with nothing
+# else refused, the task prints it and its `arm:` line and exits 0, the seat
+# arms `pr:await`, and its exit wakes the seat to run `pr:open` again.
 if [[ -n "$findings" ]]; then
+  if grep -qvE '^(note|wait|arm): ' <<< "$findings"; then echo "$findings" >&2; exit 2; fi
+  if grep -q '^arm: ' <<< "$findings"; then echo "$findings"; exit 0; fi
   echo "$findings" >&2
-  if grep -qv '^note: ' <<< "$findings"; then exit 2; fi
 fi
 # The title and the body name nothing private and keep the body rules before
 # anything is built (#3849), so a long sentence costs no measurement; they
@@ -3264,12 +3275,13 @@ else
   top=$(await_top "$own")
 fi
 git fetch --quiet origin "$trunk"
-stack_on_top "$own" "$top" || exit 1
+stack_on_top "$own" "$top" || { status=$?; (( status == 3 )) && exit 0; exit 1; }
 top=$stacked_top
 if [[ "$top" == null ]]; then
   base=$trunk
   measured=$(mise run --quiet evidence:base)
-  if [[ -z "$unblocks" ]]; then echo "no pull request is open: opening against $trunk"; fi
+  if [[ -n "$stacked_past" ]]; then echo "opening against $trunk past #$stacked_past"
+  elif [[ -z "$unblocks" ]]; then echo "no pull request is open: opening against $trunk"; fi
 else
   base=$(jq -r .head <<< "$top")
   top_number=$(jq -r .number <<< "$top")
@@ -3313,7 +3325,9 @@ fi
 # A top that moved while the obligations were measured is restacked onto
 # when it stands above the measured fork and shares no path with the change,
 # and refused otherwise (#3849, `restack_moved`).
-if [[ -z "$unblocks" ]]; then
+# A branch stacked past a top no seat rebases stays where it stacked
+# (#4164): that top would read as moved.
+if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
   restack_moved "$own" "$top" "$measured" || exit 2
   top=$stacked_top
   if [[ "$top" != null ]]; then
@@ -3323,7 +3337,7 @@ if [[ -z "$unblocks" ]]; then
 fi
 # A second bottom is refused unless it unblocks the open stack: with any other
 # pull request open and not landing, the base is a branch of the stack.
-if [[ -z "$unblocks" && "$base" == "$trunk" && $(landable_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
+if [[ -z "$unblocks" && -z "$stacked_past" && "$base" == "$trunk" && $(landable_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
   echo "$own would open a second bottom on $trunk while another pull request is open; run \`pr:open\` again to stack it on the top" >&2
   exit 2
 fi
@@ -3776,6 +3790,73 @@ if [[ "$owner" == true ]]; then gh pr edit "$number" -R "$repo" --remove-label h
 if [[ "$draft" == true ]]; then gh pr ready "$number" -R "$repo" > /dev/null; fi
 echo "#$number released: its next \`pr:watch\` lands it once green"
 '''
+
+# The wake-up a seat arms when `pr:open` waits on a future event (#4164),
+# from the `arm:` line `pr:open` prints. It polls the issue or the top pull
+# request it names every 30 seconds and exits the moment its event happens,
+# printing one line and nothing else on stdout (`.config/pr-stack/await.jq`):
+#   signed #n         the issue carries `shape:signed` (exit 0)
+#   top-merged #n     the top merged (exit 0)
+#   top-current #n    the top holds every change of the trunk the branch
+#                     builds on, and does not conflict (exit 0)
+#   top-stale #n      the top has conflicted with the trunk past its seat's
+#                     claim window, so `pr:open` stacks past it (exit 0)
+#   issue-closed #n   the issue closed (exit 1)
+#   top-closed #n     the top closed without merging (exit 1)
+#   await-timeout #n  the deadline passed (exit 2)
+# On an exit 0 the seat runs `pr:open` again; any other needs a hand. A
+# reading that fails, a rate-limited one among them, is tried again at the
+# next poll. It runs in the branch's worktree, which `top-current` reads.
+["pr:await"]
+description = "Wait for the future event pr:open waits on: an issue's sign-off, or a top that merged, is current or went stale"
+quiet = true
+usage = '''
+arg "<number>" help="the issue waiting on `shape:signed`, or the top pull request"
+flag "--timeout <seconds>" default="10800" help="give up after this many seconds"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+number=${usage_number:?}
+timeout=${usage_timeout:-10800}
+[[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected an issue or pull request number' >&2; exit 2; }
+[[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
+deadline=$((SECONDS + timeout))
+# One poll's reading, as `awaited` reads it: an issue's state and labels, or
+# a pull request's state, merge state, the age of its head commit and
+# whether it still lacks a trunk change the branch builds on.
+reading() {
+  local issue pull head lacks=false
+  issue=$(gh api "repos/$repo/issues/$number")
+  if [[ $(jq -r 'has("pull_request")' <<< "$issue") == false ]]; then
+    jq -c '{kind: "issue", state: (.state | ascii_upcase), labels: [.labels[].name]}' <<< "$issue"
+    return
+  fi
+  pull=$(gh pr view "$number" -R "$repo" --json state,mergeStateStatus,headRefName,commits \
+    --jq '{kind: "pull", state, merge: .mergeStateStatus, head: .headRefName, age: (now - (.commits[-1].committedDate | fromdateiso8601) | floor)}')
+  if [[ $(jq -r .state <<< "$pull") == OPEN ]]; then
+    head=$(jq -r .head <<< "$pull")
+    git fetch --quiet origin "$head" "$trunk"
+    if [[ -n $(trunk_lacked "$head") ]]; then lacks=true; fi
+  fi
+  jq -c --argjson lacks "$lacks" '. + {lacks: $lacks}' <<< "$pull"
+}
+while :; do
+  if read=$(reading 2> /dev/null); then
+    event=$(jq -c -L "$pr_stack_dir" 'include "await"; awaited' <<< "$read")
+    if [[ $event != null ]]; then
+      printf '%s #%s\n' "$(jq -r .event <<< "$event")" "$number"
+      exit "$(jq -r .exit <<< "$event")"
+    fi
+  fi
+  (( SECONDS < deadline )) || { echo "await-timeout #$number"; exit 2; }
+  sleep "${pr_stack_poll:-30}"
+done
+{% endraw %}'''
 
 # The wake-up a seat arms after `pr:land`: it polls the pull request and its
 # queue entry and exits the moment one of these holds, printing one line and

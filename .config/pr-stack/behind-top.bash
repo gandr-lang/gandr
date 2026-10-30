@@ -12,10 +12,11 @@
 # - `restacked` (#3877): the upper is stacked on the lower once, and the
 #   lower's own commit is then rewritten with another patch and pushed, as
 #   its seat's restack does, before the step runs.
-# The server is stubbed: no other pull request is open, and the top read
-# after a wait is `null`, the lower having merged. The result is one line
-# compared with the case's `output`: `stacked on <branch>`, with `, waited`
-# when the step waited, or `refused: <why>`.
+# The server is stubbed: no other pull request is open, so a top stacked past
+# leaves the trunk. The result is one line compared with the case's
+# `output`: `stacked on <branch>`, with `, past #<n>` when the step stacked
+# past a stale top; `armed: <the arm line>` when it waits on the top (#4164);
+# or `refused: <why>`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
@@ -24,7 +25,6 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-behind-top.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 repo=case/case
 trunk=main
-pr_stack_poll=0
 failed=0
 
 commit() { printf '%s\n' "$2" > "$1" && git add "$1" && git commit --quiet --message "$3"; }
@@ -68,7 +68,6 @@ for (( i = 0; i < count; i++ )); do
   cd "$dir/clone"
   open_prs() { echo '[]'; }
   top_reading() { echo "$reading"; }
-  await_top() { echo null; }
   if [[ $(jq -r ".[$i].restacked // false" "$cases") == true ]]; then
     stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1
     (
@@ -83,9 +82,13 @@ for (( i = 0; i < count; i++ )); do
     ) > /dev/null
     git fetch --quiet origin
   fi
-  if stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1; then
+  status=0
+  stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1 || status=$?
+  if (( status == 0 )); then
     if [[ $stacked_top == null ]]; then actual="stacked on main"; else actual="stacked on $(jq -r .head <<< "$stacked_top")"; fi
-    if grep -q 'waiting for it to merge' "$dir/out"; then actual+=", waited"; fi
+    if [[ -n $stacked_past ]]; then actual+=", past #$stacked_past"; fi
+  elif (( status == 3 )); then
+    actual="armed: $(grep -E '^arm: ' "$dir/out" || true)"
   else
     actual="refused: $(grep -o -E 'lacks these changes[^;]*|conflicts; resolve' "$dir/out" | head -n 1 || true)"
     if grep -q -F 'trunk B' "$dir/out"; then actual+=" (names trunk B)"; fi

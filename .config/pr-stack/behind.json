@@ -1,65 +1,132 @@
 [
   {
-    "name": "#3654: a queued top that lacks the trunk change the branch builds on is waited out, and the branch opens on the trunk once the top merges",
+    "name": "#4164: a queued top that lacks the trunk change the branch builds on arms `pr:await` on it",
     "top": "behind",
     "lower": "apart",
-    "reading": { "queued": true, "draft": false, "merge": "BLOCKED", "checks": "PENDING" },
-    "output": "stacked on main, waited"
+    "reading": {
+      "queued": true,
+      "draft": false,
+      "merge": "BLOCKED",
+      "checks": "PENDING",
+      "age": 60
+    },
+    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
   },
   {
-    "name": "#4124: a top not queued, BEHIND with its checks pending, that lacks the trunk change the branch builds on is waited out as a queued one is",
+    "name": "#4164: a top not queued, BEHIND with its checks pending, that lacks the trunk change arms `pr:await` as a queued one does",
     "top": "behind",
     "lower": "apart",
-    "reading": { "queued": false, "draft": false, "merge": "BEHIND", "checks": "PENDING" },
-    "output": "stacked on main, waited"
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "BEHIND",
+      "checks": "PENDING",
+      "age": 60
+    },
+    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
   },
   {
-    "name": "#4124: a top not queued, BLOCKED and green, is waited out too",
+    "name": "#4164: a top not queued, BLOCKED and green, arms `pr:await` too",
     "top": "behind",
     "lower": "apart",
-    "reading": { "queued": false, "draft": false, "merge": "BLOCKED", "checks": "SUCCESS" },
-    "output": "stacked on main, waited"
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "BLOCKED",
+      "checks": "SUCCESS",
+      "age": 60
+    },
+    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
   },
   {
-    "name": "#4124: a top not queued that conflicts with the trunk is refused, naming the change",
+    "name": "#4164: a top that conflicts with the trunk within its seat's claim window arms `pr:await` on it",
     "top": "behind",
     "lower": "apart",
-    "reading": { "queued": false, "draft": false, "merge": "DIRTY", "checks": "SUCCESS" },
-    "output": "refused: lacks these changes of main the branch builds on, and it conflicts with main (names trunk B)"
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "DIRTY",
+      "checks": "SUCCESS",
+      "age": 14399
+    },
+    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
+  },
+  {
+    "name": "#4164: a top that has conflicted with the trunk past its seat's claim window is stacked past, onto the trunk when nothing below it is clean",
+    "top": "behind",
+    "lower": "apart",
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "DIRTY",
+      "checks": "SUCCESS",
+      "age": 14400
+    },
+    "output": "stacked on main, past #1"
   },
   {
     "name": "#4124: a top not queued whose checks failed is refused, naming the change",
     "top": "behind",
     "lower": "apart",
-    "reading": { "queued": false, "draft": false, "merge": "BEHIND", "checks": "FAILURE" },
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "BEHIND",
+      "checks": "FAILURE",
+      "age": 60
+    },
     "output": "refused: lacks these changes of main the branch builds on, and a check on its head failed (names trunk B)"
   },
   {
     "name": "#4124: a draft top that lacks the trunk change the branch builds on is refused as held, naming the change",
     "top": "behind",
     "lower": "apart",
-    "reading": { "queued": false, "draft": true, "merge": "BEHIND", "checks": "SUCCESS" },
+    "reading": {
+      "queued": false,
+      "draft": true,
+      "merge": "BEHIND",
+      "checks": "SUCCESS",
+      "age": 60
+    },
     "output": "refused: lacks these changes of main the branch builds on, and it is a draft, held (names trunk B)"
   },
   {
     "name": "a top that holds the trunk change takes the branch's own commit",
     "top": "current",
     "lower": "apart",
-    "reading": { "queued": true, "draft": false, "merge": "BLOCKED", "checks": "PENDING" },
+    "reading": {
+      "queued": true,
+      "draft": false,
+      "merge": "BLOCKED",
+      "checks": "PENDING",
+      "age": 60
+    },
     "output": "stacked on lower"
   },
   {
     "name": "a conflict with the top's own change is refused without a wait, naming no trunk change",
     "top": "current",
     "lower": "clashes",
-    "reading": { "queued": true, "draft": false, "merge": "BLOCKED", "checks": "PENDING" },
+    "reading": {
+      "queued": true,
+      "draft": false,
+      "merge": "BLOCKED",
+      "checks": "PENDING",
+      "age": 60
+    },
     "output": "refused: conflicts; resolve"
   },
   {
     "name": "#3877: a branch stacked once, over a top restacked since with its own commit's patch changed, replays its own commit alone",
     "top": "current",
     "lower": "apart",
-    "reading": { "queued": false, "draft": false, "merge": "BEHIND", "checks": "PENDING" },
+    "reading": {
+      "queued": false,
+      "draft": false,
+      "merge": "BEHIND",
+      "checks": "PENDING",
+      "age": 60
+    },
     "restacked": true,
     "output": "stacked on lower"
   }
