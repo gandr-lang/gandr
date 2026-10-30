@@ -1958,6 +1958,23 @@ set -euo pipefail
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
+# The Catt harness's readings (#3930). A run past the host's bound is recorded
+# `past bound` and never retried larger, and Catt runs only at n = 2 and 3
+# (#3855): a run misread as a time, or an example past n = 3 let through,
+# would send a seat to rerun larger on a host it could exhaust. `row.jq`
+# writes a finished run's row and `dimension.jq` names an example's built-ins
+# past n = 3. Each case in `.config/bench/cases.json` holds a recorded run or
+# an example's text, and the row or the built-ins it must give.
+["check:bench"]
+description = "The Catt harness writes each recorded run's row, past bound where a bound was met, and names each recorded example's built-ins past n = 3"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq
+echo "bench check OK: $(jq length .config/bench/cases.json) cases read as recorded"
+'''
+
 # The stall detector's readings (#2785): `facts.jq` reads the open pull
 # requests off one answer to `.config/stall/query.graphql`, `detect.jq`
 # decides the stalls among them, what to page and what to remember, and

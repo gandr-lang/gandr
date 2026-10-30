@@ -1,0 +1,60 @@
+[
+  {
+    "name": "#3930: a run that checks prints its wall time to the hundredth",
+    "program": "row.jq",
+    "input": {
+      "example": "naturality.catt",
+      "status": 0,
+      "seconds": 0.079358,
+      "out_of_memory": false
+    },
+    "output": "| `naturality.catt` | 0.08 s |"
+  },
+  {
+    "name": "#3930: a whole second keeps its hundredths",
+    "program": "row.jq",
+    "input": { "example": "cylinders.catt", "status": 0, "seconds": 12.5, "out_of_memory": false },
+    "output": "| `cylinders.catt` | 12.50 s |"
+  },
+  {
+    "name": "#3855: a run past the wall-clock limit prints past bound",
+    "program": "row.jq",
+    "input": {
+      "example": "cylcomp3.catt",
+      "status": 124,
+      "seconds": 1800.004,
+      "out_of_memory": false
+    },
+    "output": "| `cylcomp3.catt` | past bound |"
+  },
+  {
+    "name": "#3855: a run the scope kills at the memory bound prints past bound",
+    "program": "row.jq",
+    "input": { "example": "cylcomp3.catt", "status": 137, "seconds": 41.2, "out_of_memory": false },
+    "output": "| `cylcomp3.catt` | past bound |"
+  },
+  {
+    "name": "#3855: a run out of memory under ulimit prints past bound",
+    "program": "row.jq",
+    "input": { "example": "cylcomp3.catt", "status": 2, "seconds": 38.7, "out_of_memory": true },
+    "output": "| `cylcomp3.catt` | past bound |"
+  },
+  {
+    "name": "#3930: an example Catt refuses prints no row",
+    "program": "row.jq",
+    "input": { "example": "broken.catt", "status": 1, "seconds": 0.02, "out_of_memory": false },
+    "fails": true
+  },
+  {
+    "name": "#3855: built-ins at n = 2 and 3 are named nowhere",
+    "program": "dimension.jq",
+    "input": "check cylcomp(2,1,2)\ncheck cylcomp(3,1,3)\ncheck cylstack(3)\ncheck conecomp(3,1,3)\n",
+    "output": []
+  },
+  {
+    "name": "#3855: each built-in past n = 3 is named, in the order written",
+    "program": "dimension.jq",
+    "input": "check cylcomp(2,1,4)\ncheck conecomp(3,1,3)\nlet t = cylstack(5)\ncheck conecomp(6,1,6)\n",
+    "output": ["cylcomp(2,1,4)", "cylstack(5)", "conecomp(6,1,6)"]
+  }
+]
