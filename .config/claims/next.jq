@@ -27,12 +27,14 @@
 #            the board is read for no lane, and neither rule below applies
 #   now      the reading's time, in seconds since the epoch
 #   prs      the open pull requests: [{body, head}]
-#   focus    the programme focus (`.config/issues/focus.toml`, #3959), or
-#            absent for none: {epics: [number], members: [{number, epic,
-#            parent}], landings: [{number, body, head}]}, members every
+#   focus    the programme focus (`.config/issues/focus.toml`, #3959) as
+#            `deps_focus` reads it, or absent for none: {epics: [number],
+#            members: [{number, epic, parent, state, labels}]}, members every
 #            sub-issue of a focus epic in any state, a sub-epic's in turn,
-#            each with the focus epic it falls under and its parent; landings
-#            the merged pull requests the open issues' `from:` lines name
+#            each with the focus epic it falls under, its parent, its state
+#            and its labels. `claim:next` hands it over as it stands (#4118)
+#   landings the merged pull requests the open issues' `from:` lines name:
+#            [{number, body, head}]; absent reads as none
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
@@ -143,11 +145,12 @@ def observation($refusals):
 | (.live // {}) as $live
 | (.prs // []) as $prs
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
+| (.landings // []) as $landings
 | (if .focus == null or (.focus.epics | length) == 0 then null
    else .focus as $focus
      | {epics: $focus.epics, members: $focus.members,
         named: ($focus.epics + [$focus.members[].number]),
-        landings: [$focus.landings[] | . as $pr | select(any($focus.members[]; . as $m | $pr | names($m.number))) | .number]}
+        landings: [$landings[] | . as $pr | select(any($focus.members[]; . as $m | $pr | names($m.number))) | .number]}
    end) as $focus
 | def written: [.body // "" | scan("(?<![\\w/])#([0-9]+)\\b") | .[0] | tonumber];
   def focus_fix:

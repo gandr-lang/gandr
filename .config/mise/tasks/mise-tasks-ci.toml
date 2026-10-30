@@ -1852,8 +1852,10 @@ for epic in $epics; do
 done
 # The programme focus (#3959): its members (`deps_focus`), each parent's in
 # its sub-issue order, and the merged pull requests the open defects' and
-# refactors' `from:` lines name.
+# refactors' `from:` lines name. `next.jq` reads both as they stand, so a
+# recorded case reads what a live run does (#4118).
 focus=$(deps_focus "$repo")
+landings='[]'
 if [[ $focus != null ]]; then
   order=$(jq -c --argjson focus "$focus" \
     '. + ($focus.members | group_by(.parent) | map({key: "\(.[0].parent)", value: map(.number)}) | from_entries)' <<< "$order")
@@ -1863,7 +1865,6 @@ if [[ $focus != null ]]; then
         gh api "repos/$repo/issues/$landing" --jq 'select(.pull_request.merged_at != null) | .number' \
           | while read -r merged; do gh api "repos/$repo/pulls/$merged" --jq '{number, body: (.body // ""), head: .head.ref}'; done
       done | jq -s -c .)
-  focus=$(jq -c --argjson landings "$landings" '{epics, members: [.members[] | {number, epic, parent}], $landings}' <<< "$focus")
 fi
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
@@ -1873,8 +1874,8 @@ now=$(date +%s)
 live='{}'
 while :; do
   lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
-    --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson live "$live" \
-    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, live: $live}' \
+    --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson landings "$landings" --argjson live "$live" \
+    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live}' \
     | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
   unread=$(jq -R -r --argjson live "$live" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[.] == null)' <<< "$lines")
   [[ -n $unread ]] || break

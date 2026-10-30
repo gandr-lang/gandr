@@ -1911,8 +1911,7 @@
             "number": 41,
             "epic": 40
           }
-        ],
-        "landings": []
+        ]
       },
       "issues": [
         {
@@ -1970,20 +1969,20 @@
             "number": 42,
             "epic": 40
           }
-        ],
-        "landings": [
-          {
-            "number": 900,
-            "body": "Closes #42",
-            "head": "core-42-done"
-          },
-          {
-            "number": 901,
-            "body": "Closes #7",
-            "head": "core-7-other"
-          }
         ]
       },
+      "landings": [
+        {
+          "number": 900,
+          "body": "Closes #42",
+          "head": "core-42-done"
+        },
+        {
+          "number": 901,
+          "body": "Closes #7",
+          "head": "core-7-other"
+        }
+      ],
       "issues": [
         {
           "number": 40,
@@ -2046,8 +2045,7 @@
             "number": 72,
             "epic": 70
           }
-        ],
-        "landings": []
+        ]
       },
       "issues": [
         {
@@ -2109,8 +2107,7 @@
             "number": 41,
             "epic": 40
           }
-        ],
-        "landings": []
+        ]
       },
       "issues": [
         {
@@ -2143,8 +2140,7 @@
       "prs": [],
       "focus": {
         "epics": [],
-        "members": [],
-        "landings": []
+        "members": []
       },
       "issues": [
         {
@@ -2249,8 +2245,7 @@
             "state": "open",
             "labels": ["kind:feature", "area:workflow"]
           }
-        ],
-        "landings": []
+        ]
       },
       "issues": [
         {
@@ -2355,8 +2350,7 @@
           { "number": 93, "epic": 90, "parent": 90 },
           { "number": 94, "epic": 90, "parent": 93 },
           { "number": 95, "epic": 90, "parent": 93 }
-        ],
-        "landings": []
+        ]
       },
       "issues": [
         {
@@ -2395,5 +2389,92 @@
       "order": { "90": [91, 92, 93], "93": [95, 94] }
     },
     "output": "focus: #90\n92\tfocus\tworkflow: the focus epic's direct unit"
+  },
+  {
+    "name": "#4118: next.jq reads the focus as deps_focus records it, the landings beside it, so a unit under a deferred sub-epic two levels up is passed over",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": { "80": [81, 83], "81": [84], "84": [85] },
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [80],
+        "members": [
+          {
+            "number": 81,
+            "epic": 80,
+            "parent": 80,
+            "state": "open",
+            "labels": ["kind:epic", "area:workflow", "status:deferred"]
+          },
+          {
+            "number": 84,
+            "epic": 80,
+            "parent": 81,
+            "state": "open",
+            "labels": ["kind:epic", "area:workflow"]
+          },
+          {
+            "number": 85,
+            "epic": 80,
+            "parent": 84,
+            "state": "open",
+            "labels": ["kind:feature", "area:workflow"]
+          },
+          {
+            "number": 83,
+            "epic": 80,
+            "parent": 80,
+            "state": "open",
+            "labels": ["kind:feature", "area:workflow"]
+          }
+        ]
+      },
+      "landings": [{ "number": 900, "body": "Closes #79", "head": "workflow-79-other" }],
+      "issues": [
+        {
+          "number": 80,
+          "title": "programme: the focus epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 81,
+          "title": "programme: a sub-epic the owner defers",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": 80,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 83,
+          "title": "workflow: the focus epic's own unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 80,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        },
+        {
+          "number": 84,
+          "title": "programme: a sub-epic under the deferred one",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": 81,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 85,
+          "title": "workflow: a unit two levels under the deferred sub-epic",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 84,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "focus: #80\n83\tfocus\tworkflow: the focus epic's own unit"
   }
 ]
