@@ -399,11 +399,15 @@ impl Referents
                 .entry(native.named.span)
                 .or_insert(native.written.constructors.as_slice());
         }
-        // Each declared name, a family's constructors after it; an operation
-        // or a loop's words is declared from its family's form and named by it.
+        // Each declared name, a family's constructors after it; an operation,
+        // a loop's words or a theory's terms is declared from its family's or
+        // its theory's form and named by it.
         let mut offered: Vec<(Referent, NameKind)> = Vec::new();
         for declaration in module.declarations() {
-            if matches!(declaration.role(), Role::Operation | Role::Words) {
+            if matches!(
+                declaration.role(),
+                Role::Operation | Role::Words | Role::Terms
+            ) {
                 continue;
             }
             let (Some((source, named)), Some((_, extent))) = (

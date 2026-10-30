@@ -363,6 +363,8 @@ mod reduct;
 
 mod sealing;
 
+mod terms;
+
 mod layered;
 
 pub use self::layered::Layered;
@@ -427,6 +429,9 @@ pub use self::sealing::Sealed;
 pub use self::sealing::SealedComponent;
 pub use self::sealing::Sealing;
 pub use self::sealing::TypeMeaning;
+pub use self::terms::TERMS;
+pub use self::terms::TermsForm;
+pub use self::terms::term_generators;
 pub use self::world::RequiredEntry;
 
 quenchant_shape::reason_enum! {
@@ -806,6 +811,10 @@ pub enum Role
     /// path at that point reads as, minted from the family's form and entered
     /// in no namespace.
     Words,
+    /// The terms of a theory a source writes as `Terms(S)`: a presented type
+    /// whose constructors are the theory's operations and whose rules are
+    /// its rules, minted from its presentation and entered in no namespace.
+    Terms,
     /// A component of a functor's parameter: the template's stand-in for the
     /// argument's component, which each application renames and which
     /// declares nothing.
@@ -1156,6 +1165,9 @@ pub enum Operand
     /// The words at this position of the collection's words list, minted
     /// from the loops of the data declaration that wrote this half.
     Words(usize),
+    /// The terms at this position of the collection's terms list, minted
+    /// from the presentation of the theory they are the terms of.
+    Terms(usize),
     /// The loop of the words at `words` whose letter is the `generator`-th:
     /// the word of that one letter, at the path type of its point.
     Loop
@@ -1535,6 +1547,9 @@ pub struct Collected<'source>
     /// The words of the data declarations' loops, one per point, in the order
     /// they are admitted.
     pub words: Vec<WordsForm>,
+    /// The terms of the theories the sources write `Terms(S)` of, one per
+    /// theory, in the order they are admitted.
+    pub terms: Vec<TermsForm>,
     /// Every constructor a data declaration declares, by the source declaring
     /// it and its name.
     pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
@@ -3435,6 +3450,7 @@ pub fn begin_collection<'source>(
         unit: unit.clone(),
         data: Vec::new(),
         words: Vec::new(),
+        terms: Vec::new(),
         constructors: BTreeMap::new(),
         shadowed: BTreeSet::new(),
         operations: BTreeMap::new(),
@@ -3767,12 +3783,14 @@ pub fn collect_source<'source>(
     let placed: Vec<Placed> = pieces.iter().map(|piece| piece.placed()).collect();
     let mut torn = collector.torn_lines(&placed);
     collector.torn_forms(&placed, &mut torn);
-    // A manifest model type asks for the maps forgetting its sorts, which take
-    // their slots before the root child writing the type, so every
-    // declaration that crosses by one is judged after it; those minted are
-    // counted apart, since they declare nothing the source writes.
+    // A manifest model type asks for the maps forgetting its sorts, and a
+    // terms type for its theory's terms, which take their slots before the
+    // root child writing the type, so every declaration that crosses by one
+    // is judged after it; those minted are counted apart, since they declare
+    // nothing the source writes.
     let mut manifests = collector.manifest_types().into_iter().peekable();
     let mut forgotten = collector.forgotten();
+    let mut termed = collector.terms_types().into_iter().peekable();
     let mut minted = 0_usize;
     // The documentation the parser left beside the roots' children, and the
     // run of it written before the mark read last. A unit laid after a held
@@ -3823,6 +3841,15 @@ pub fn collect_source<'source>(
             if at.span.start() >= child.span.start() {
                 let before = collector.collected.slots.len();
                 collector.forget(at, &mut forgotten)?;
+                minted =
+                    minted.saturating_add(collector.collected.slots.len().saturating_sub(before));
+            }
+        }
+        while let Some((at, named)) = termed.next_if(|&(at, _)| at.span.start() < child.span.end())
+        {
+            if at.span.start() >= child.span.start() {
+                let before = collector.collected.slots.len();
+                collector.terms(at, named)?;
                 minted =
                     minted.saturating_add(collector.collected.slots.len().saturating_sub(before));
             }
@@ -9741,6 +9768,7 @@ impl<'source> Collector<'_, 'source>
                 | Operand::Member(_)
                 | Operand::Data(_)
                 | Operand::Words(_)
+                | Operand::Terms(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
                 | Operand::Derived

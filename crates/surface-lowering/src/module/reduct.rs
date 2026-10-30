@@ -59,6 +59,7 @@ use crate::form::shape_of;
 use crate::model::Included;
 use crate::model::ModelForm;
 use crate::model::derive;
+use crate::resolve::SurfaceName;
 
 /// A slot a theory's reduct takes: the theory whose models it restricts, the
 /// theory it restricts them to, and the inclusion it restricts along.
@@ -483,7 +484,7 @@ impl<'source> Collector<'_, 'source>
     ) -> Option<(Placed, Vec<Placed>)>
     {
         let (applied, mut bound) = self.halves(at, pieces)?;
-        let named = self.model_operand(applied, pieces)?;
+        let named = self.applied_operand(applied, SurfaceName::from("Model"), pieces)?;
         let mut sorts = Vec::new();
         loop {
             let node = self.tree.node(bound.node)?;
@@ -628,7 +629,7 @@ impl<'source> Collector<'_, 'source>
             };
             sorts.push(sort);
         }
-        let named = self.model_operand(stated, pieces)?;
+        let named = self.applied_operand(stated, SurfaceName::from("Model"), pieces)?;
 
         Some((named, sorts))
     }
@@ -678,21 +679,23 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// The name tile of the theory the application `applied` writes, when it
-    /// is `Model(T)` with `T` one name.
+    /// is `head` applied to one name: `Model(T)` and `Terms(T)`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name tile of `T` when `applied` reads `Model ( T )`.
+    /// - ensures: the name tile of `T` when `applied` reads `head ( T )`.
     /// - panics: none.
     /// - executable: none — as [`Self::manifest_chain`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `Model(Pairing)` read to its theory's name, as
-    ///   [`Self::forget`].
+    /// - hypothesis: L3 — `Model(Pairing)` and `Terms(Mag)` read to their
+    ///   theory's name, as [`Self::forget`] and [`Self::terms`].
     /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
-    fn model_operand(
+    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    pub(super) fn applied_operand(
         &self,
         applied: Placed,
+        head: SurfaceName<'_>,
         pieces: &mut Pieces,
     ) -> Option<Placed>
     {
@@ -706,11 +709,11 @@ impl<'source> Collector<'_, 'source>
         };
         read_pieces(self.pbg, self.tree, applied.node, pieces).ok()?;
         let mut cursor = Cursor::new(&pieces.pieces, applied.span);
-        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        let Maybe::Present(written) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return None;
         };
-        if self.name_of(head).as_ref() != "Model" {
+        if self.name_of(written).as_ref() != head.as_ref() {
             return None;
         }
         let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN)

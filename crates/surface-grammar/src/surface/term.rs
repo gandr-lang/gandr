@@ -1521,7 +1521,9 @@ fn attributes_parameters_externs(
 ///
 /// A constructor pattern names its constructor bare, `Leaf(x)`, or qualified
 /// by its family, `Tree.Leaf(x)`: the form opens on the family's name either
-/// way, and the `.` after it discriminates.
+/// way, and the `.` after it discriminates. A theory's terms are qualified by
+/// the theory and named by its operations, `Mag.mul(x, y)`, so the qualified
+/// member is a constructor or an identifier.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1564,7 +1566,10 @@ fn patterns(
         atom,
         seq([
             t(TileLabel("constructor")),
-            opt(seq([t(TileLabel(".")), t(TileLabel("constructor"))])),
+            opt(seq([
+                t(TileLabel(".")),
+                alt([t(TileLabel("constructor")), t(TileLabel("identifier"))]),
+            ])),
             opt(seq([t(TileLabel("(")), comma1(h(s)), t(TileLabel(")"))])),
         ]),
     ));

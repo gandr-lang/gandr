@@ -651,6 +651,7 @@ use crate::module::Sealing;
 use crate::module::SlotIndex;
 use crate::module::Stratum;
 use crate::module::StructureIndex;
+use crate::module::TERMS;
 use crate::module::THEORY_CODE;
 use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
@@ -3399,6 +3400,9 @@ struct Lowerer<'run, 'source>
     /// The position each words' signature takes, by its position in the
     /// collection's words list.
     worded: BTreeMap<usize, DataIndex>,
+    /// The position each theory's terms' signature takes, by their position
+    /// in the collection's terms list.
+    termed: BTreeMap<usize, DataIndex>,
     /// The path type at each minted words' point and the family the point
     /// lives in, by its position in the collection's words list: what a later
     /// source's letters and empty words are labelled at.
@@ -3767,6 +3771,8 @@ struct Current
     data: usize,
     /// Where its words begin.
     words: usize,
+    /// Where its theories' terms begin.
+    terms: usize,
     /// Where its family members begin.
     families: usize,
     /// Where its functors begin.
@@ -5285,6 +5291,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             projected: Vec::new(),
             signatures: BTreeMap::new(),
             worded: BTreeMap::new(),
+            termed: BTreeMap::new(),
             word_types: BTreeMap::new(),
             looped: BTreeMap::new(),
             lettered: Vec::new(),
@@ -5389,6 +5396,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             structures: self.collected.structures.len(),
             data: self.collected.data.len(),
             words: self.collected.words.len(),
+            terms: self.collected.terms.len(),
             families: self.collected.families.len(),
             functors: self.collected.functors.len(),
             instances: self.collected.instances.len(),
@@ -6216,6 +6224,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Operand::Member(_)
                     | Operand::Data(_)
                     | Operand::Words(_)
+                    | Operand::Terms(_)
                     | Operand::Loop { .. }
                     | Operand::Operation
                     | Operand::Derived
@@ -13254,10 +13263,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `Stack` and applied to two the continuation type [`Self::stack_type`]
     ///   plans, one named `Iso` and applied to two the quasi-inverse `A ≅ B`
     ///   [`Self::relation_of`] plans, one named `Model` and applied to one the
-    ///   bundled record [`Self::model_type`] plans with its manifest sorts; any
-    ///   other head applied to one argument resolves against the unary table,
-    ///   stands at the sort its former produces, reads its argument at the sort
-    ///   the former takes, and is planned over it.
+    ///   bundled record [`Self::model_type`] plans with its manifest sorts, one
+    ///   named `Terms` and applied to one the theory's terms
+    ///   [`Self::terms_type`] plans; any other head applied to one argument
+    ///   resolves against the unary table, stands at the sort its former
+    ///   produces, reads its argument at the sort the former takes, and is
+    ///   planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
@@ -13287,7 +13298,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && (ret.is_err()
                     || matches!(
                         self.plans.get(site.at.node),
-                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..) | Plan::Bundle(_)))
+                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..) | Plan::Bundle(_) | Plan::Data(..)))
                     ))
         },
     )]
@@ -13319,6 +13330,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Some(&(sort, _)) = manifests.first() {
             return Err(site.fault(sort.span, FormFault::MisplacedTile));
+        }
+        if let (Some(argument), 1_usize) = (first, count)
+            && name.as_ref() == TERMS
+        {
+            return self.terms_type(site, argument);
         }
         if let Some(written) = triple
             && let Some(relating) = [Relating::Path, Relating::Bridge]
@@ -13354,6 +13370,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 STACK,
                 identity::ISO,
                 MODEL,
+                TERMS,
             ]
             .contains(&name.as_ref());
         let marked = if spelled { site.at.span } else { head.span };
@@ -13379,9 +13396,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `head` is the first operand of the call at `site`.
     /// - ensures: the head's name when it is a capitalised name spelling
-    ///   `Path`, `Flow`, `Stack`, `Iso`, `Model` or a unary type former, and no
-    ///   constructor, binder, earlier declaration or stated type carries that
-    ///   name; the unformed absence for any other head.
+    ///   `Path`, `Flow`, `Stack`, `Iso`, `Model`, `Terms` or a unary type
+    ///   former, and no constructor, binder, earlier declaration or stated type
+    ///   carries that name; the unformed absence for any other head.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold; the refusals the name's resolution yields.
     /// - panics: none.
@@ -13434,6 +13451,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             STACK,
             identity::ISO,
             MODEL,
+            TERMS,
         ]
         .contains(&name.as_ref())
             || matches!(type_former(name), Maybe::Present(_));
@@ -20030,7 +20048,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(Half { operand: Operand::Member(target), .. })
                     if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_)))))
             && [slot.signature, slot.definition].into_iter().any(|half| matches!(half,
-                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Presented | Operand::Code | Operand::Model(_), .. })))
+                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Terms(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Presented | Operand::Code | Operand::Model(_), .. })))
         ),
     )]
     fn lowers_a_half(
@@ -20062,6 +20080,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Member(_)
                         | Operand::Data(_)
                         | Operand::Words(_)
+                        | Operand::Terms(_)
                         | Operand::Loop { .. }
                         | Operand::Operation
                         | Operand::Derived
@@ -20135,6 +20154,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Maybe::Present(Half { operand: Operand::Words(words), .. }) = slot.definition {
                 ret == self.worded.get(&words).map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| Maybe::Present(DeclarationOutcome::Data(index)))
             }
+            else if let Maybe::Present(Half { operand: Operand::Terms(terms), .. }) = slot.definition {
+                ret == self.termed.get(&terms).map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| Maybe::Present(DeclarationOutcome::Data(index)))
+            }
             else if let Maybe::Present(Half { operand: Operand::Loop { .. }, .. }) = slot.definition {
                 ret == self.looped.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
             }
@@ -20169,7 +20191,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Terms(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => self.annotated_type(slot),
                 };
@@ -20182,7 +20204,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Words(_) | Operand::Terms(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -20256,6 +20278,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self
                 .worded
                 .get(&words)
+                .map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| {
+                    Maybe::Present(DeclarationOutcome::Data(index))
+                });
+        }
+        if let Maybe::Present(Half {
+            operand: Operand::Terms(terms),
+            ..
+        }) = slot.definition
+        {
+            return self
+                .termed
+                .get(&terms)
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| {
                     Maybe::Present(DeclarationOutcome::Data(index))
                 });
@@ -20359,6 +20393,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Operand::Member(_)
                 | Operand::Data(_)
                 | Operand::Words(_)
+                | Operand::Terms(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
                 | Operand::Derived
@@ -20380,6 +20415,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                 Operand::Data(_)
                 | Operand::Words(_)
+                | Operand::Terms(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
                 | Operand::Derived
@@ -20972,6 +21008,7 @@ impl Sink<'_>
                 | Insertion::Model
                 | Insertion::Relation
                 | Insertion::Words
+                | Insertion::Terms
                 | Insertion::Method
                 | Insertion::Parameter
                 | Insertion::Derived

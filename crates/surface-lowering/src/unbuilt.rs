@@ -261,12 +261,19 @@ pub enum Unbuilt
     GeneratorAttribute,
     /// A model signature the derivation cannot state.
     ModelSignature,
+    /// The terms `Terms(S)` of a theory outside one plain sort: several sorts,
+    /// an indexed one, or an operation that binds, abstracts or returns
+    /// several results.
+    TermsType,
+    /// The terms `Terms(S)` of a theory that states a law, which the initial
+    /// model carries as a cell.
+    LawTerms,
 }
 
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 79_usize] = [
+    pub const ALL: [Self; 82_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -330,6 +337,7 @@ impl Unbuilt
         Self::StatedType,
         Self::Presentation,
         Self::RecordedMove,
+        Self::DialogueMove,
         Self::CombinedSupply,
         Self::UnownedSupply,
         Self::UnownedScope,
@@ -346,6 +354,8 @@ impl Unbuilt
         Self::ConstructorBlockMember,
         Self::GeneratorAttribute,
         Self::ModelSignature,
+        Self::TermsType,
+        Self::LawTerms,
     ];
 
     /// The qualifier a fixture's `refuses` expectation names the feature by:
@@ -450,6 +460,8 @@ impl Unbuilt
             Self::ConstructorBlockMember => "constructor_block_member",
             Self::GeneratorAttribute => "attribute",
             Self::ModelSignature => "model_signature",
+            Self::TermsType => "terms_type.sorted",
+            Self::LawTerms => "terms_type.law",
         })
     }
 
@@ -543,6 +555,8 @@ impl Unbuilt
             Self::SessionProtocol => TrackingIssue::SESSION_PROTOCOL,
             Self::UaCount | Self::UaDescription => TrackingIssue::UA_RESIDENT,
             Self::ComposePasting => TrackingIssue::ITERATED_SITE,
+            Self::TermsType => TrackingIssue::SORTED_TERMS,
+            Self::LawTerms => TrackingIssue::LAW_CELL,
             Self::CellMember | Self::ConstructorBlockMember | Self::GeneratorAttribute => {
                 TrackingIssue::DATA_MEMBER
             },

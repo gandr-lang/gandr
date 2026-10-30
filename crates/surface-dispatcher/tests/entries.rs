@@ -368,8 +368,9 @@ enum Placed
     /// stopped at the refusal, which answers.
     Refused,
     /// The head of a constructor's or a primitive former's call, or of an
-    /// annotation, a constructor qualified by its family among them: the call
-    /// is the one core node, and answers.
+    /// annotation, a constructor qualified by its family among them, and a
+    /// theory's operation qualified by the theory whose terms it builds,
+    /// `Mag.mul(…)`: the call is the one core node, and answers.
     Head,
     /// A count of the stratum an annotation on a head writes, `1` and `4`
     /// in `ua[1, 4](a, b, f, g)`: the degree and the catalogue bound the
@@ -433,10 +434,10 @@ enum Placed
     /// function's instance from a row other than its result's: a region, no
     /// term, so the row answers (#2390).
     Region,
-    /// The theory a model type is written over, `T` in `Model(T)`: the name
-    /// of a presentation, neither a term the checker judges nor a type the
-    /// lowering forms, the record it derives located there and inserted, so
-    /// the model type answers.
+    /// The theory a model type or a terms type is written over, `T` in
+    /// `Model(T)` and `Terms(T)`: the name of a presentation, neither a term
+    /// the checker judges nor a type the lowering forms, the record or the
+    /// terms it derives located there and inserted, so the type answers.
     Theory,
     /// The module a pack packs and the model type it states, `M` and
     /// `Model(T)` in `pack M at Model(T)`, the module or the caller's model
@@ -483,8 +484,9 @@ enum Placed
 }
 
 /// What the lowering knows of a source's models: each model implicit a
-/// declaration's telescope writes, by the bytes the declaration covers, and
-/// every name along the path of each module the source's lowering holds.
+/// declaration's telescope writes, by the bytes the declaration covers,
+/// every name along the path of each module the source's lowering holds, and
+/// each theory whose terms it mints.
 ///
 /// # Specification
 /// trivial.
@@ -496,6 +498,8 @@ struct Models
     /// Every name along each module's path, `limits` and `hard` for
     /// `limits.hard`.
     modules: BTreeSet<String>,
+    /// Each theory whose terms the lowering mints, `Mag` for `Terms(Mag)`.
+    theories: BTreeSet<String>,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -851,9 +855,10 @@ fn gated(
             && def.label == "->"
             && def.sort == Sort::Type
             && parent.is_some_and(|(_, label, .., spine)| label == "data" || spine);
-        // The theory a model type names: every child of `Model(…)` in a type
-        // but its head.
-        let modelled = melded && def.sort == Sort::Type && spelled(opener) == "Model";
+        // The theory a model type or a terms type names: every child of
+        // `Model(…)` or `Terms(…)` in a type but its head.
+        let modelled =
+            melded && def.sort == Sort::Type && matches!(spelled(opener), "Model" | "Terms");
         // A world's requirement row: every child of a world declaration.
         let required = melded && def.label == "world" && def.sort == Sort::Item;
         // The head and the type of a derived equality or law: every child of
@@ -926,13 +931,19 @@ fn gated(
             continue;
         }
         // A constructor qualified by its family heading its call,
-        // `Term.App(…)`, stands as a bare one does.
+        // `Term.App(…)`, stands as a bare one does, and so does a theory's
+        // operation qualified by the theory whose terms it builds,
+        // `Mag.mul(…)`.
         let qualified = melded
             && def.label == "."
-            && text
+            && (text
                 .rsplit('.')
                 .next()
-                .is_some_and(|member| member.trim_start().starts_with(char::is_uppercase));
+                .is_some_and(|member| member.trim_start().starts_with(char::is_uppercase))
+                || text
+                    .split('.')
+                    .next()
+                    .is_some_and(|theory| models.theories.contains(theory.trim())));
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             headed
                 && if melded {
@@ -1090,6 +1101,7 @@ fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
     let models = Models {
         implicits: Vec::new(),
         modules: BTreeSet::from([String::from("limits"), String::from("hard")]),
+        theories: BTreeSet::new(),
     };
     let gated: Vec<(&str, Option<Placed>)> = gated(&grammar, &tree, &BTreeSet::new(), &models)
         .into_iter()
@@ -1282,6 +1294,22 @@ mod sweeps
                             .iter()
                             .flat_map(gandr_surface_lowering::LoweredStructure::path)
                             .map(|name| String::from(name.as_ref())),
+                    );
+                    models.theories.extend(
+                        module
+                            .declarations()
+                            .iter()
+                            .filter(|declaration| {
+                                declaration.role() == gandr_surface_lowering::Role::Terms
+                            })
+                            .filter_map(|declaration| {
+                                declaration
+                                    .name()
+                                    .as_ref()
+                                    .strip_prefix("Terms(")
+                                    .and_then(|named| named.strip_suffix(')'))
+                                    .map(|named| String::from(named.trim()))
+                            }),
                     );
                 }
                 let spans: BTreeSet<ByteSpan> = table.spans().collect();

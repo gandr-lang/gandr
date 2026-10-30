@@ -399,7 +399,8 @@ pub struct DataMember
 /// - requires: nothing to construct this data.
 /// - ensures: a written family names its position in the collection's data
 ///   list; `Theory` names the presentation code the collection mints; words
-///   name their position in the collection's words list.
+///   name their position in the collection's words list, and a theory's terms
+///   theirs in the terms list.
 /// - executable: none — the tag holds no list to check its position against.
 ///
 /// # Adequacy
@@ -417,6 +418,9 @@ pub enum Generators
     /// The words at this position of the collection's words list: the empty
     /// word, then each loop's letter and its inverse.
     Words(usize),
+    /// The terms at this position of the collection's terms list: one
+    /// generator per operation of the theory, in its presentation's order.
+    Terms(usize),
 }
 
 /// A constructor, as a term or a pattern naming it resolves it.

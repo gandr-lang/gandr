@@ -2817,8 +2817,12 @@ impl LoweredModule<'_>
         let _first = families.insert(Name::from("Unit"), (unit, base));
         for declaration in self.declarations() {
             // The words of a family's loops are minted under the family's
-            // name, never written: the name is the family's.
-            if declaration.role() == crate::module::Role::Words {
+            // name, and a theory's terms under the theory's, never written:
+            // the name is the family's or the theory's.
+            if matches!(
+                declaration.role(),
+                crate::module::Role::Words | crate::module::Role::Terms
+            ) {
                 continue;
             }
             let (index, signature) = match declaration.outcome() {
