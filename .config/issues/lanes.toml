@@ -1,10 +1,13 @@
 # The areas each lane claims from (#3736): `claim:next <lane>` walks the
 # defect and refactor buckets of every area its row lists, the first area's
-# first, before any other bucket. A new lane or a new area is a row here.
+# first, before any other bucket. A lane is one seat, since a lane holds one
+# claim at a time: two seats over the same areas are two rows (#4056). A new
+# lane or a new area is a row here.
 [lane]
 core = ["core", "kernel"]
 theory = ["theory", "kernel"]
 surface = ["surface", "ux"]
 triage = ["workflow", "ci"]
+triage-2 = ["workflow", "ci"]
 program-logic = ["program-logic", "runtime"]
 elaboration = ["elaboration", "storage"]

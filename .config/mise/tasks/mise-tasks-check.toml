@@ -1501,7 +1501,8 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # `unit:check` prints for it, or none (`unit.jq`, #2532); each in
 # `.config/claims/next.json` a lane's areas, the open issues and the claim
 # `claim:next` takes from them, or none, or the claim the lane holds (`next.jq`,
-# #2533, #3736, #3915); each in
+# #2533, #3736, #3915), a case naming a lane reading its row of
+# `.config/issues/lanes.toml` as the table writes it (#4056); each in
 # `.config/claims/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
 # prints for them, or none (`ledger.jq`, #2525); each in
@@ -1592,6 +1593,18 @@ cases swept swept.jq swept.json --mode c
 cases landed landed.jq landed.json --mode c
 cases slow slow.jq slow.json --mode c
 cases observed observed.jq observed.json
+# A `next.json` case that names a lane reads that lane's row of
+# `.config/issues/lanes.toml`, its areas in the table's order (#4056).
+lanes=$(yq -p toml -o json -I 0 '.lane' .config/issues/lanes.toml)
+strays=$(jq -r --argjson lanes "$lanes" '.[] | select(.input.lane != null)
+  | ($lanes[.input.lane] // null | if . == null then null else map("area:" + .) end) as $row
+  | select($row != .input.areas)
+  | "  \(.name): lane `\(.input.lane)` reads \(.input.areas | join(", ")); the table holds \($row // [] | if length == 0 then "no such row" else join(", ") end)"' .config/claims/next.json)
+if [[ -n $strays ]]; then
+  echo "claims check FAILED: a claim:next case reads a lane .config/issues/lanes.toml does not hold as written:" >&2
+  echo "$strays" >&2
+  failed=1
+fi
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
