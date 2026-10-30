@@ -333,6 +333,7 @@ digraph crates {
   "theory-dynamic-graphs" -> "theory-order-maintenance";
   "theory-graphs" -> "theory-spec-combinators";
   "theory-levitation" -> "theory-path-orders";
+  "theory-shapes" -> "theory-nominal-automata";
   "theory-sites" -> "theory-circuit-algebras";
   "theory-virtual-doctrines" -> "theory-cell-complexes";
   "theory-virtual-doctrines" -> "theory-coherent-resolutions";

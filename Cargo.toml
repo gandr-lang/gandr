@@ -903,6 +903,16 @@ default-features = false
 path = "crates/theory-levitation"
 default-features = false
 
+# Register presentations of nominal automata over caller-owned names: partial
+# injective stores and their transfers.
+# features:
+# - none: alloc-only stores and automata.
+# consumers:
+# - theory-shapes
+[workspace.dependencies.gandr-theory-nominal-automata]
+path = "crates/theory-nominal-automata"
+default-features = false
+
 # The order-maintenance structure: stable handles over a total order with
 # constant-time comparison.
 # features:
@@ -1290,6 +1300,7 @@ default-features = false
 # - theory-dynamic-graphs
 # - theory-levitation
 # - theory-nominal-automata
+# - theory-shapes
 # - theory-sites
 # - theory-virtual-doctrines
 # - workflow-coverage-guard

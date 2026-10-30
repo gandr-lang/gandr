@@ -195,12 +195,15 @@ macro_rules! wrapper {
     };
 }
 
+mod boundary;
 mod error;
 mod finite;
 mod formula;
 mod index;
 mod oracle;
 
+pub use boundary::Boundary;
+pub use boundary::BoundaryError;
 pub use error::ShapeError;
 pub use finite::Block;
 pub use finite::Cofibration;

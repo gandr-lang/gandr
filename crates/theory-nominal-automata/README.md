@@ -28,6 +28,7 @@ Finite register presentations of nominal word and tree automata over caller-owne
 
 - Lutz Schröder, Dexter Kozen, Stefan Milius and Thorsten Wißmann. _Nominal Automata with Name Binding_. Foundations of Software Science and Computation Structures, 2017. [arXiv:1603.01455](https://arxiv.org/abs/1603.01455) — allocation-only word automata.
 - Simon Prucker and Lutz Schröder. _Nominal Tree Automata with Name Allocation_. International Conference on Concurrency Theory (CONCUR), 2024. [doi:10.4230/LIPIcs.CONCUR.2024.35](https://doi.org/10.4230/LIPIcs.CONCUR.2024.35) — tree rules, partial registers and name-bearing terms.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a shape's carrier is a `Store` of its names, and `gandr-theory-shapes` reads it so.
 - Simon Prucker, Stefan Milius and Lutz Schröder. _Nominal Automata with Name Deallocation_. 2026. [arXiv:2603.24468](https://arxiv.org/abs/2603.24468) — lifecycle letters, name erasure and the session-monitor example.
 
 ## Provided features
@@ -44,7 +45,7 @@ Finite register presentations of nominal word and tree automata over caller-owne
 
 ## Expected features
 
-Names implement `Copy + Ord` with stable equality and ordering. Their identity belongs to the caller; the crate neither mints names nor assigns a unification role. Tree symbols are caller-owned values. The library is `no_std` and needs `alloc`. Optional executable specifications are selected graph-wide by `--cfg anodized_panic`.
+Names implement `Copy + Ord` with stable equality and ordering. Their identity belongs to the caller; the crate neither mints names nor assigns a unification role. Tree symbols are caller-owned values. The library is `no_std` and needs `alloc`. Optional executable specifications are selected graph-wide by `--cfg anodized_panic`. `gandr-theory-shapes` reads a shape's carrier as a `Store` of its names: a face fixed is a set of names retained, an inclusion releases names, and a leak is a name left unreleased at an accepting boundary.
 
 ## Examples
 

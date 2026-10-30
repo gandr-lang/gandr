@@ -6,6 +6,8 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod boundary;
+#[cfg(test)]
 mod carriers;
 #[cfg(test)]
 mod errors;

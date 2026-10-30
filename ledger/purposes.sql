@@ -3912,6 +3912,8 @@ INSERT INTO purpose VALUES('theory-path-orders','term::Node','struct','A node''s
 INSERT INTO purpose VALUES('theory-path-orders','term::Term','trait','One side of a comparison: a term as positioned nodes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','term::Valuation','enum','How a left side''s variable stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','term::Valued','trait','A left side whose variables are read by sort.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-shapes','boundary::Boundary','struct','Holds a carrier''s names in a nominal register store, in name order, so a problem stated in names reads as points of `Fin(m)`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-shapes','boundary::BoundaryError','enum','Names why a boundary refused a name or a map read through it: a repeated name, an unbound one, a disagreement, or the shape operations'' own refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','error::ShapeError','enum','Names a malformed input or invalid evidence, so the refusal''s cause is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','finite::Block','enum','Names the block a carrier point falls in, so the block''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','finite::Cofibration','struct','Holds an inclusion of subshapes presented with its complement, so the inclusion''s presentation is read.',NULL,'fits','sound',NULL);
