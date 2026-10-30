@@ -967,6 +967,9 @@ pub enum RefusalName
     ProjectionFromApplication,
     /// A module ascription form the fragment does not read yet.
     UnreadAscription,
+    /// A composite or a filler written over named cells, which the fragment
+    /// does not read until the pasting reading lands.
+    UnreadCells,
     /// A model signature component the derivation cannot state, qualified by
     /// the fault.
     UnstatedComponent(Tag),
@@ -1283,7 +1286,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 234_usize] = [
+    pub const VOCABULARY: [Self; 235_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1392,6 +1395,7 @@ impl RefusalName
         Self::NotATranslation,
         Self::ProjectionFromApplication,
         Self::UnreadAscription,
+        Self::UnreadCells,
         Self::UninterfacedMember,
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
@@ -1610,7 +1614,7 @@ impl RefusalName
         | (Self::NotATranslation, b"NotATranslation")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
-        b"UnreadAscription") | (Self::UnstatedComponent(_), b"UnstatedComponent") |
+        b"UnreadAscription") | (Self::UnreadCells, b"UnreadCells") | (Self::UnstatedComponent(_), b"UnstatedComponent") |
         (Self::UndescribedMember(_), b"UndescribedMember") |
         (Self::UninterfacedMember, b"UninterfacedMember") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
@@ -1983,6 +1987,7 @@ impl RefusalName
             Self::NotATranslation => "NotATranslation",
             Self::ProjectionFromApplication => "ProjectionFromApplication",
             Self::UnreadAscription => "UnreadAscription",
+            Self::UnreadCells => "UnreadCells",
             Self::UnstatedComponent(_) => "UnstatedComponent",
             Self::UndescribedMember(_) => "UndescribedMember",
             Self::UninterfacedMember => "UninterfacedMember",
@@ -2729,7 +2734,8 @@ impl Refusal<'_>
         RefusalName::NotAFunctor) | (LoweringRefusal::NotATranslation { .. },
         RefusalName::NotATranslation) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
-        RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
+        RefusalName::UnreadAscription) | (LoweringRefusal::UnreadCells { .. },
+        RefusalName::UnreadCells) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
         RefusalName::SignatureMismatch(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
@@ -2835,6 +2841,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::NotATranslation { .. } => RefusalName::NotATranslation,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
         LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
+        LoweringRefusal::UnreadCells { .. } => RefusalName::UnreadCells,
         LoweringRefusal::UnstatedComponent { fault, .. } => {
             RefusalName::UnstatedComponent(model_tag(fault))
         },

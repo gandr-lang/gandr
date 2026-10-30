@@ -185,6 +185,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::ProjectionFromApplication { .. }
         | LoweringRefusal::UnreadAscription { .. }
+        | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::UninterfacedMember { .. }
         | LoweringRefusal::UndescribedMember { .. }

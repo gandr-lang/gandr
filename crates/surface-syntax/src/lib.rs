@@ -80,6 +80,7 @@ compile_error!(
 extern crate alloc;
 
 mod build;
+mod cells;
 mod digest;
 mod error;
 mod key;
@@ -90,6 +91,9 @@ mod tree;
 
 pub use crate::build::StagedId;
 pub use crate::build::TreeBuilder;
+pub use crate::cells::Cells;
+pub use crate::cells::CellsKind;
+pub use crate::cells::NamedCell;
 pub use crate::digest::NODE_DIGEST_LEN;
 pub use crate::digest::NodeDigest;
 pub use crate::error::SyntaxError;

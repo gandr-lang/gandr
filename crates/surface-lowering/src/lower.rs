@@ -712,6 +712,10 @@ mod boundary;
 
 mod capability;
 
+mod cells;
+
+pub use cells::refuse_cells;
+
 mod closure;
 
 mod conditional;

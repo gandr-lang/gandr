@@ -30,6 +30,7 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 - `SourceText`, `SourceFragment`, `ByteSpan`, `ByteOffset` and `ByteLength`: byte-addressed source positions.
 - `SyntaxError`: every refusal, with the offset, span or staged node it names.
 - `MoldId`, `GroutSort`, `GroutShape`, `GrammarFingerprint`, `ClosingClass` and `DelimSpelling`: the references a grammar and a parser exchange — a mold's position in its grammar's table, the sort a hole stands for, the sides a piece of grout faces, the fingerprint naming the table, and the bracket family a delimiter opens or closes. Witnesses: `mold::tests::openers_and_closers_pair_by_family`, `mold::tests::a_host_index_past_the_id_width_is_refused`.
+- `Cells`, `CellsKind` and `NamedCell`: a composite or a filler written over named cells — its former, `compose` or `fill`, the motive a filler lifts, and each cell as a name or a name given a term, in the writer's order. The node holds no shape, level, stratum or arity: the cells' types state them, and the pasting reading reads them.
 
 ## Expected features
 

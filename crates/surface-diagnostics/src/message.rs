@@ -586,6 +586,9 @@ fn lowered(
         LoweringRefusal::UnreadAscription { name, form, .. } => {
             write!(f, "`{name}` {form}, which is not supported yet")
         },
+        LoweringRefusal::UnreadCells { kind, .. } => {
+            write!(f, "`{kind}` is written over named cells, which is not supported yet")
+        },
         LoweringRefusal::UnstatedComponent { name, fault, .. } => {
             write!(
                 f,
@@ -1627,6 +1630,7 @@ pub mod tests
     use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::CellsKind;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
     use gandr_theory_sites::Degree;
@@ -1817,6 +1821,10 @@ pub mod tests
                 span,
                 name,
                 form: AscriptionForm::Kinded,
+            },
+            LoweringRefusal::UnreadCells {
+                span,
+                kind: CellsKind::Fill,
             },
             LoweringRefusal::UnstatedComponent {
                 span,
