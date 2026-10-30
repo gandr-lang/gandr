@@ -2942,8 +2942,8 @@ fn agreement(
             &ContentNode::Compose {
                 composite: right, ..
             },
-        ) => left == right,
-        (
+        )
+        | (
             &ContentNode::Fill {
                 composite: left, ..
             },
