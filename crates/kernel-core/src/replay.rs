@@ -1615,8 +1615,11 @@ pub(crate) enum StuckEndpoints
 /// [`convert_values`], the kernel's one conversion; two normal forms that are
 /// both stuck endpoints, or both thunks, compared by the structural walk over
 /// their computations, whose own set-aside pairs — the endpoints the stuck
-/// heads carry, which the evaluator does not run — are read in turn (#698); a
-/// decode's code normalized to the quote it returns, and the type it quotes
+/// heads carry, which the evaluator does not run — are read in turn (#698);
+/// two that are neither, a reflexivity or a constructor each, compared by
+/// that walk over the formers, whose endpoints are read in turn the same way,
+/// and left apart when the walk sets the pair aside whole;
+/// a decode's code normalized to the quote it returns, and the type it quotes
 /// compared with the other side by the same walk; a dependent arrow's codomain
 /// compared by that walk with a plain arrow's weakened past the dependent
 /// binder (#577).
@@ -1629,15 +1632,17 @@ pub(crate) enum StuckEndpoints
 ///   when both are quotes, their quoted types converge under the walk with
 ///   every pair it sets aside read the same way, or, when both are stuck
 ///   endpoints or both thunks, their computations converge the same way, or,
-///   under [`StuckEndpoints::Unfolding`], two stuck endpoints or two thunks
-///   convert under [`convert_unfolding`] within `budget`, every quote pair it
-///   owes read the same way — and every decode's code normalizes to a quote
-///   whose quoted type converges with the other side the same way, and every
-///   dependent codomain converges the same way with its plain codomain weakened
-///   by one binder. A normalization that stops short of a value — budget, a
-///   partial fixpoint, an unreadable node — leaves its pair apart, and so does
-///   a decode whose code reads to no quote and a pair whose normal forms do not
-///   convert. `arena` holds what it held on entry.
+///   when neither is a stuck endpoint, the formers converge the same way with
+///   the pair itself not set aside, or, under [`StuckEndpoints::Unfolding`],
+///   two stuck endpoints or two thunks convert under [`convert_unfolding`]
+///   within `budget`, every quote pair it owes read the same way — and every
+///   decode's code normalizes to a quote whose quoted type converges with the
+///   other side the same way, and every dependent codomain converges the same
+///   way with its plain codomain weakened by one binder. A normalization that
+///   stops short of a value — budget, a partial fixpoint, an unreadable node —
+///   leaves its pair apart, and so does a decode whose code reads to no quote
+///   and a pair whose normal forms do not convert. `arena` holds what it held
+///   on entry.
 /// - provides: the checker's reading of a returned endpoint, and of the type a
 ///   returned code denotes, at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
@@ -1646,12 +1651,16 @@ pub(crate) enum StuckEndpoints
 /// # Termination
 /// - reason: the `while let` loop over a worklist of set-aside pairs, not
 ///   recursion.
-/// - measure: the budget left. A pair adds to the worklist only after reading a
-///   returned code, reading two returned endpoints, weakening a codomain or
-///   taking the quote pairs a conversion with definitions unfolding owes, each
-///   of which charges the budget at least one step, and the walk over one type
-///   or computation, like one such conversion, adds finitely many pairs. The
-///   conversion reads none of what it owes, so it never calls back here.
+/// - measure: the budget left, then the size of the pair popped. A pair adds to
+///   the worklist only after reading a returned code, reading two returned
+///   endpoints, weakening a codomain or taking the quote pairs a conversion
+///   with definitions unfolding owes, each of which charges the budget at least
+///   one step, or after walking two formers. That walk adds only pairs inside
+///   them, since one that would add the pair itself leaves it apart. A former
+///   that is the popped pair's own value cost no charge, and the pairs inside
+///   it are smaller than the pair. The walk over one type or computation, like
+///   one such conversion, adds finitely many pairs. The conversion reads none
+///   of what it owes, so it never calls back here.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
@@ -1670,12 +1679,15 @@ pub(crate) enum StuckEndpoints
 ///   too, and stay apart when the record's field reads to another type. A thunk
 ///   a δ-step leaves over a recursion under parameters converts with the thunk
 ///   over the call its source wrote, and stays apart from one over the
-///   parameters swapped.
+///   parameters swapped. Two reflexivities over endpoints that read alike, one
+///   through a definition and one through a β-redex, convert, and stay apart
+///   when one reads to another call.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `replay::tests::endpoints_a_stuck_endpoint_carries_are_read_in_turn_698`
+/// - witness: `replay::tests::endpoints_a_former_carries_are_read_in_turn_4186`
 /// - witness: `replay::tests::a_step_reads_a_call_a_stuck_arm_holds_by_its_unfolding_2831`
 /// - witness: `replay::tests::a_step_reads_a_record_code_a_stuck_arm_returns_3045`
 /// - witness: `replay::tests::a_recursion_under_its_parameters_reads_as_its_call_3733`
@@ -1773,9 +1785,34 @@ pub(crate) fn read_endpoints(
                     | (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) => {
                         ConversionGoal::Computation(one, other)
                     },
-                    _ => {
+                    // A stuck endpoint reads apart from any former.
+                    (Some(&Value::Returned(_)) | None, _)
+                    | (_, Some(&Value::Returned(_)) | None) => {
                         reading = EndpointReading::Apart;
                         break;
+                    },
+                    // A former each side reads to, a reflexivity or a
+                    // constructor, leaves the endpoints it carries unrun too:
+                    // compare the formers by structure and read those
+                    // endpoints in turn. A walk that sets the pair aside
+                    // whole meets a presented type's constructor, which
+                    // `convert_values` has read by the type's rules already.
+                    (Some(_), Some(_)) => {
+                        let added = worklist.len();
+                        if pending_endpoints(
+                            run.arena,
+                            run.unfoldings.presentations(),
+                            ConversionGoal::Value(left_normal, right_normal),
+                            &mut worklist,
+                        ) != Convertibility::Convertible
+                            || worklist.get(added ..).is_some_and(|set_aside| {
+                                set_aside.contains(&SetAside::Values(left_normal, right_normal))
+                            })
+                        {
+                            reading = EndpointReading::Apart;
+                            break;
+                        }
+                        continue;
                     },
                 }
             },
