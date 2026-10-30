@@ -2880,3 +2880,42 @@ fn two_ap_calls_whose_arguments_reduce_alike_convert_4005()
     }
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// #4038: a composite typed by `join` was refused against `then` over the same
+/// paths where the endpoints are stuck. `join`'s body is `p then q`, so its
+/// call converts with the native composite at variable endpoints, at a stuck
+/// composite and at an application of a variable function.
+#[test]
+fn a_composite_typed_by_join_over_stuck_endpoints_converts_with_then_4038()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> \
+             Path(A, x, z) {\n  p then q\n}\n\ndef lemj(A : Type, x : A, y : A, z : A, p : \
+             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), join(A, x, y, z, p, q), \
+             join(A, x, y, z, p, q)) {\n  here(join(A, x, y, z, p, q))\n}\n\ndef \
+             atVariables(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) \
+             -> Path(Path(A, x, z), p then q, p then q) {\n  lemj(A, x, y, z, p, q)\n}\n\ndef \
+             atComposite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z), \
+             p : Path(Path(A, x, z), f then g, f then g), q : Path(Path(A, x, z), f then g, f \
+             then g)) -> Path(Path(Path(A, x, z), f then g, f then g), p then q, p then q) {\n  \
+             lemj(Path(A, x, z), f then g, f then g, f then g, p, q)\n}\n\ndef \
+             atApplication(A : Type, F : A => A, x : A, y : A, z : A, p : Path(A, F(x), F(y)), \
+             q : Path(A, F(y), z)) -> Path(Path(A, F(x), z), p then q, p then q) {\n  lemj(A, \
+             F(x), F(y), z, p, q)\n}\n",
+        ),
+        &mut arena,
+    );
+    for name in ["atVariables", "atComposite", "atApplication"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}

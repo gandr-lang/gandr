@@ -170,6 +170,9 @@ pub enum SupportSides
     /// the support's level, against a weak head in hand on the other that
     /// mentions that variable.
     OpenedBeside(ConversionSide, CompClosureId, Glued),
+    /// A captured computation on the named side, entered without introducing
+    /// a binder, against a weak head in hand on the other.
+    EnteredBeside(ConversionSide, CompClosureId, Glued),
 }
 
 /// The whole input of a goal the machine starts fresh: its sides and the
@@ -213,7 +216,7 @@ impl GoalSupport
         let resolving = match sides {
             SupportSides::Heads(left, right) => resolves(domain, left).is_ok() && resolves(domain, right).is_ok(),
             SupportSides::Opened(left, right) | SupportSides::Closed(left, right) | SupportSides::OpenedUnder(left, right, _) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
-            SupportSides::OpenedBeside(_, closure, head) => domain.comp_closure(closure).is_some() && resolves(domain, head).is_ok(),
+            SupportSides::OpenedBeside(_, closure, head) | SupportSides::EnteredBeside(_, closure, head) => domain.comp_closure(closure).is_some() && resolves(domain, head).is_ok(),
         };
         if resolving { ret.as_ref().is_ok_and(|support| support.sides == sides && support.level == level) }
         else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) }
@@ -229,7 +232,8 @@ impl GoalSupport
                 resolves(domain, left)?;
                 resolves(domain, right)?;
             },
-            SupportSides::OpenedBeside(_, closure, head) => {
+            SupportSides::OpenedBeside(_, closure, head)
+            | SupportSides::EnteredBeside(_, closure, head) => {
                 domain
                     .comp_closure(closure)
                     .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
