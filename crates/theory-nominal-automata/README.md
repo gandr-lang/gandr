@@ -44,7 +44,7 @@ Finite register presentations of nominal word and tree automata over caller-owne
 
 ## Expected features
 
-Names implement `Copy + Ord` with stable equality and ordering. Their identity belongs to the caller; the crate neither mints names nor assigns a unification role. Tree symbols are caller-owned values. The library is `no_std` and needs `alloc`. Optional executable specifications are selected graph-wide by `--cfg anodized_panic`.
+Names implement `Copy + Ord` with stable equality and ordering. Their identity belongs to the caller; the crate neither mints names nor assigns a unification role. Tree symbols are caller-owned values. The library is `no_std` and needs `alloc`. Optional executable specifications are selected graph-wide by `--cfg anodized_panic`. `gandr-theory-shapes` reads a shape's carrier as a `Store` of its names: a face fixed is a set of names retained, an inclusion releases names, and a leak is a name left unreleased at an accepting boundary.
 
 ## Examples
 

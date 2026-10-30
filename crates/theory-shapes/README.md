@@ -27,6 +27,7 @@ Finite shapes for gandr: decidable subshapes of finite carriers, the outer pusho
 - Robert Rose and Daniel R. Licata. "Complexity of Cubical Cofibration Logics I: coNP-Complete Examples". TYPES 2024, [doi:10.4230/LIPIcs.TYPES.2024.9](https://doi.org/10.4230/LIPIcs.TYPES.2024.9) — the coNP bar the composite language meets.
 - Thorsten Altenkirch, Yorgo Chamoun, Ambrus Kaposi and Michael Shulman. "Internal Parametricity, without an Interval". POPL 2024, [doi:10.1145/3632920](https://doi.org/10.1145/3632920) — bridges as a local theory without an interval.
 - Cyril Cohen, Thierry Coquand, Simon Huber and Anders Mörtberg. "Cubical Type Theory: a constructive interpretation of the univalence axiom". TYPES 2015, [doi:10.4230/LIPIcs.TYPES.2015.5](https://doi.org/10.4230/LIPIcs.TYPES.2015.5) — the interval, its face lattice and Glue.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the shape parameter is a store of names, read from `gandr-theory-nominal-automata` at a `Boundary`.
 
 ## Provided features
 
@@ -38,10 +39,12 @@ Finite shapes for gandr: decidable subshapes of finite carriers, the outer pusho
 - `decide`, `Evidence`, `Derivation`, `Citation`, `Countermodel`: the decision with evidence either way, and the two validators.
 - `ShapeError`: every refusal of construction, admission and evidence, by the index it concerns.
 - `Point`, `PointCount`, `Variable`, `NodeId`: the indices and sizes a query crosses.
+- `Boundary`, `BoundaryError`: a carrier as a store of names from `gandr-theory-nominal-automata`, in name order; a face read by names, a point's name read back, and the mediator refusing a disagreement by its name.
 
 ## Expected features
 
 - The specification facade's `cfg(anodized_panic)` turns every `#[spec]` clause into a runtime check; `decide`'s clause then validates its own evidence on every call.
+- **Names in, `Fin(m)` out.** A `Boundary` holds a carrier's names in a register store of `gandr-theory-nominal-automata`, which refuses a name held twice. The registers run in name order, so every ordering of one list of names builds one boundary and one problem over it decides to one answer. The nominal reading is the carrier's: a face fixed is a set of names retained, an inclusion releases the names its source lacks, and a leak is a name left unreleased at an accepting boundary. The decision keeps its membership tables over `Fin(m)`: a meet over stores costs 1.8 to 17.6 times a meet over the tables.
 
 ## Examples
 
@@ -67,7 +70,7 @@ mise exec -- cargo nextest run -p gandr-theory-shapes
 
 ## Where the detail lives
 
-The decision record — finite shapes and no interval, the conjunctive band and its column disjunctions and why the composite language is refused, evidence by meets and inclusions rather than case trees — and the references are in `src/lib.rs`. Subshapes, inclusions and the union square are in `src/finite.rs`; formulas, admission and the conjuncts of a side in `src/formula.rs`; the decision and both validators in `src/oracle.rs`; the refusals in `src/error.rs`.
+The decision record — finite shapes and no interval, the conjunctive band and its column disjunctions and why the composite language is refused, evidence by meets and inclusions rather than case trees — and the references are in `src/lib.rs`. Subshapes, inclusions and the union square are in `src/finite.rs`; named carriers and their nominal reading in `src/boundary.rs`; formulas, admission and the conjuncts of a side in `src/formula.rs`; the decision and both validators in `src/oracle.rs`; the refusals in `src/error.rs`.
 
 ## License
 
