@@ -4903,11 +4903,30 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         frame: Frame::NativeCollect,
                         owner,
                     });
-                    self.frames.push(Waiting {
-                        frame: Frame::NativeNext(Goal::Value {
+                    // A cell written as a call runs, and the composite reads
+                    // the path it returns, as a scrutinee does.
+                    let goal = if let Some(&Value::Nested(call)) = self.context.arena().value(cell)
+                    {
+                        self.frames.push(Waiting {
+                            frame: Frame::Ran {
+                                at: cell,
+                                read: Read::Unsuspended,
+                            },
+                            owner,
+                        });
+                        Goal::Computation {
+                            term: call,
+                            direction: Direction::Synthesise,
+                        }
+                    }
+                    else {
+                        Goal::Value {
                             term: cell,
                             direction: Direction::Synthesise,
-                        }),
+                        }
+                    };
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(goal),
                         owner,
                     });
                 }

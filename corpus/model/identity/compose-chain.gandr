@@ -67,3 +67,17 @@ def decided(A : Type, x : A) -> Path(
 ) {
   here(here(x))
 }
+
+/// A cell written as a call runs, and the composite reads the path it returns.
+def called(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z),
+  r : Path(A, z, w)
+) -> Path(A, x, w) {
+  compose[3, 5](chain(2), (folded(A, x, y, z, w, p, q, r), here(w)))
+}
