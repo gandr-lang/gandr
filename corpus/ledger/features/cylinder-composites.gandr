@@ -1,19 +1,23 @@
 /// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them, and `fill` and suspension compose cylinders and cones at dimension 3.
 ///
-/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each stands in two readings, and the kernel replays each. The Path reading is the term Catt's built-in prints. The cells reading is its whiskers as level-two composites joined by `then`, with no associator written. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed. Along dimension 2, `cylinderSuspended3` and `coneSuspended3` state the types Catt prints for `cylcomp(3,2,3)` and `conecomp(3,2,3)`. Each is a composite at `n = 2` at a path type, beside the interchangers `j⁻` and `j⁺`.
+/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each stands in two readings, and the kernel replays each. The Path reading is the term Catt's built-in prints. The cells reading is its whiskers as level-two composites joined by `then`, with no associator written. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed. `cattCylinder3` states the type Catt answers for `cylcomp(3,1,3)` at identity verticals and inhabits it by `cylinderFill3`. Along dimension 2, `cylinderSuspended3` and `coneSuspended3` state the types Catt prints for `cylcomp(3,2,3)` and `conecomp(3,2,3)`. Each is a composite at `n = 2` at a path type, beside the interchangers `j⁻` and `j⁺`.
 ///
-/// Not implemented: #4197 owes the other composites along dimension 1 at dimension 3, with their verticals free. #4186 owes the composite at `n = 3` at reflexivities, which the kernel does not replay.
+/// Not implemented: #4240 owes the other composites along dimension 1 at dimension 3, with their verticals free.
 ///
-/// Each composite computes at reflexivities, so each declaration states a composite of reflexivities and proves it by reflexivity.
+/// Each composite at reflexivities computes, so each declaration but `cattCylinder3` states a composite of reflexivities and proves it by reflexivity. `cattCylinder3` holds its cells free.
 ///
 /// - see: library/math/src/cylinder.gandr
 /// - see: #3712 — the composites at dimension 2, written from Catt's terms
 /// - see: #3931 — the composite at `n + 1` as `fill` at the composite at `n`
+/// - see: #3833 — `cylcomp(3,1,3)` at identity verticals beside Catt's type
 /// - see: #3963 — the composites at dimension 2 in the cells reading
 /// - see: #4198 — the composites along dimension 2 by suspension
 
-// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`, `cylinderFill2`, `cylinderCompositeCells2`, `cylinderStackCells2`, `coneCompositeCells2`, `cylinderSuspended3`, `coneSuspended3`.
+// `cylinderComposite2`, `cylinderStack2`, `coneComposite2`, `cylinderFill2`, `cylinderFillAt2`, `cylinderFill3`, `liftHorizontal`, `cylinderCompositeCells2`, `cylinderStackCells2`, `coneCompositeCells2`, `cylinderSuspended3`, `coneSuspended3`.
 import "../../../library/math/src/cylinder.gandr";
+
+// `whiskerLeft` and `whiskerRight`.
+import "../../../library/math/src/path.gandr";
 
 /// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
 def cylinderCompositeAtHere(A : Type, x : A) -> Path(
@@ -245,4 +249,906 @@ def coneSuspendedAtHere(A : Type, x : A) -> Path(
   here(here(here(x)))
 ) {
   here(here(here(here(x))))
+}
+
+/// Catt's `cylcomp(2,1,2)` at identity verticals, its points fixed.
+def cattSquare(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f0 : Path(A, x, y),
+  f1 : Path(A, x, y),
+  a : Path(Path(A, x, y), f0, f1),
+  g0 : Path(A, y, z),
+  g1 : Path(A, y, z),
+  b : Path(Path(A, y, z), g0, g1)
+) -> Path(Path(A, x, z), f0 then g0, f1 then g1) {
+  cylinderComposite2(A, x, y, f0, x, y, f1, here(x), here(y), a, z, g0, z, g1, here(z), b)
+}
+
+/// Catt's horizontal composite: the right whisker of `fa`, then the left whisker of `ga`.
+def cattHorizontal(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(Path(A, x, z), fm then gm, fp then gp) {
+  whiskerRight(A, x, y, z, fm, fp, fa, gm) then whiskerLeft(A, x, y, z, fp, gm, gp, ga)
+}
+
+/// The generated square and Catt's agree at a reflexive first cell, by induction on the second.
+def squaresAgreeAtHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  g0 : Path(A, y, z),
+  g1 : Path(A, y, z),
+  b : Path(Path(A, y, z), g0, g1)
+) -> Path(
+  Path(Path(A, x, z), f then g0, f then g1),
+  cylinderFillAt2(A, x, y, z, f, f, here(f), g0, g1, b),
+  cattSquare(A, x, y, z, f, f, here(f), g0, g1, b)
+) {
+  transport(
+    (w : Path(A, y, z), m : Path(Path(A, y, z), g0, w)) => Path(
+      Path(Path(A, x, z), f then g0, f then w),
+      cylinderFillAt2(A, x, y, z, f, f, here(f), g0, w, m),
+      cattSquare(A, x, y, z, f, f, here(f), g0, w, m)
+    ),
+    b,
+    here(g0),
+    here(b),
+    here(here(f then g0))
+  )
+}
+
+/// The generated square and Catt's agree, by induction on the first cell.
+def squaresAgree(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f0 : Path(A, x, y),
+  f1 : Path(A, x, y),
+  a : Path(Path(A, x, y), f0, f1),
+  g0 : Path(A, y, z),
+  g1 : Path(A, y, z),
+  b : Path(Path(A, y, z), g0, g1)
+) -> Path(
+  Path(Path(A, x, z), f0 then g0, f1 then g1),
+  cylinderFillAt2(A, x, y, z, f0, f1, a, g0, g1, b),
+  cattSquare(A, x, y, z, f0, f1, a, g0, g1, b)
+) {
+  transport(
+    (v : Path(A, x, y), k : Path(Path(A, x, y), f0, v)) => Path(
+      Path(Path(A, x, z), f0 then g0, v then g1),
+      cylinderFillAt2(A, x, y, z, f0, v, k, g0, g1, b),
+      cattSquare(A, x, y, z, f0, v, k, g0, g1, b)
+    ),
+    a,
+    here(f0),
+    here(a),
+    squaresAgreeAtHere(A, x, y, z, f0, g0, g1, b)
+  )
+}
+
+/// Catt's horizontal composite and the generated one agree at a reflexive first cell, by induction on the second.
+def horizontalsAgreeAtHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path(A, x, y),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(
+  Path(Path(A, x, z), f then gm, f then gp),
+  cattHorizontal(A, x, y, z, f, f, here(f), gm, gp, ga),
+  liftHorizontal(A, x, y, z, f, f, here(f), gm, gp, ga)
+) {
+  transport(
+    (w : Path(A, y, z), m : Path(Path(A, y, z), gm, w)) => Path(
+      Path(Path(A, x, z), f then gm, f then w),
+      cattHorizontal(A, x, y, z, f, f, here(f), gm, w, m),
+      liftHorizontal(A, x, y, z, f, f, here(f), gm, w, m)
+    ),
+    ga,
+    here(gm),
+    here(ga),
+    here(here(f then gm))
+  )
+}
+
+/// Catt's horizontal composite and the generated one agree, by induction on the first cell.
+def horizontalsAgree(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, fp then gp),
+  cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga)
+) {
+  transport(
+    (v : Path(A, x, y), k : Path(Path(A, x, y), fm, v)) => Path(
+      Path(Path(A, x, z), fm then gm, v then gp),
+      cattHorizontal(A, x, y, z, fm, v, k, gm, gp, ga),
+      liftHorizontal(A, x, y, z, fm, v, k, gm, gp, ga)
+    ),
+    fa,
+    here(fm),
+    here(fa),
+    horizontalsAgreeAtHere(A, x, y, z, fm, gm, gp, ga)
+  )
+}
+
+/// Catt's right whisker by the identity is the unit law, by induction on the 2-path.
+def whiskerHereRight(
+  A : Type,
+  x : A,
+  z : A,
+  h0 : Path(A, x, z),
+  h1 : Path(A, x, z),
+  h : Path(Path(A, x, z), h0, h1)
+) -> Path(
+  Path(Path(A, x, z), h0, h1),
+  whiskerRight(A, x, z, z, h0, h1, h, here(z)),
+  h
+) {
+  transport(
+    (v : Path(A, x, z), k : Path(Path(A, x, z), h0, v)) => Path(
+      Path(Path(A, x, z), h0, v),
+      whiskerRight(A, x, z, z, h0, v, k, here(z)),
+      k
+    ),
+    h,
+    here(h0),
+    here(h),
+    here(here(h0))
+  )
+}
+
+/// Catt's left whisker by the identity is the unit law, by induction on the 2-path.
+def whiskerHereLeft(
+  A : Type,
+  x : A,
+  z : A,
+  h0 : Path(A, x, z),
+  h1 : Path(A, x, z),
+  h : Path(Path(A, x, z), h0, h1)
+) -> Path(
+  Path(Path(A, x, z), h0, h1),
+  whiskerLeft(A, x, x, z, here(x), h0, h1, h),
+  h
+) {
+  transport(
+    (v : Path(A, x, z), k : Path(Path(A, x, z), h0, v)) => Path(
+      Path(Path(A, x, z), h0, v),
+      whiskerLeft(A, x, x, z, here(x), h0, v, k),
+      k
+    ),
+    h,
+    here(h0),
+    here(h),
+    here(here(h0))
+  )
+}
+
+/// Catt's source without its whisker by the identity at `z`.
+def unwhiskerSource(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  whiskerRight(
+    A,
+    x,
+    z,
+    z,
+    fm then gm,
+    fp then gp,
+    cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    here(z)
+  ) then cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp),
+  cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  )
+) {
+  whiskerRight(
+    Path(A, x, z),
+    fm then gm,
+    fp then gp,
+    pp then qp,
+    whiskerRight(
+      A,
+      x,
+      z,
+      z,
+      fm then gm,
+      fp then gp,
+      cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+      here(z)
+    ),
+    cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    whiskerHereRight(
+      A,
+      x,
+      z,
+      fm then gm,
+      fp then gp,
+      cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga)
+    ),
+    cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp)
+  )
+}
+
+/// The step takes Catt's horizontal composite in the source to the generated one.
+def liftSource(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  ),
+  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  )
+) {
+  whiskerRight(
+    Path(A, x, z),
+    fm then gm,
+    fp then gp,
+    pp then qp,
+    cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    horizontalsAgree(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp)
+  )
+}
+
+/// The step takes Catt's square in the source to `fill`'s.
+def fillSource(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  ),
+  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cylinderFillAt2(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  )
+) {
+  whiskerLeft(
+    Path(A, x, z),
+    fm then gm,
+    fp then gp,
+    pp then qp,
+    liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp),
+    cylinderFillAt2(A, x, y, z, fp, pp, ap, gp, qp, kp),
+    back(squaresAgree(A, x, y, z, fp, pp, ap, gp, qp, kp))
+  )
+}
+
+/// The generated composite, `cylinderFill3`, from source to target.
+def fillComposite(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cylinderFillAt2(
+    A,
+    x,
+    y,
+    z,
+    fp,
+    pp,
+    ap,
+    gp,
+    qp,
+    kp
+  ),
+  cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  )
+) {
+  back(cylinderFill3(
+    A,
+    x,
+    y,
+    z,
+    fm,
+    fp,
+    fa,
+    pm,
+    pp,
+    pa,
+    am,
+    ap,
+    aa,
+    gm,
+    gp,
+    ga,
+    qm,
+    qp,
+    qa,
+    km,
+    kp,
+    ka
+  ))
+}
+
+/// The step takes `fill`'s square in the target to Catt's.
+def unfillTarget(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  ),
+  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  )
+) {
+  whiskerRight(
+    Path(A, x, z),
+    fm then gm,
+    pm then qm,
+    pp then qp,
+    cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km),
+    cattSquare(A, x, y, z, fm, pm, am, gm, qm, km),
+    squaresAgree(A, x, y, z, fm, pm, am, gm, qm, km),
+    liftHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
+  )
+}
+
+/// The step takes the generated horizontal composite in the target to Catt's.
+def unliftTarget(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  ),
+  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then cattHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  )
+) {
+  whiskerLeft(
+    Path(A, x, z),
+    fm then gm,
+    pm then qm,
+    pp then qp,
+    cattSquare(A, x, y, z, fm, pm, am, gm, qm, km),
+    liftHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
+    cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
+    back(horizontalsAgree(A, x, y, z, pm, pp, pa, qm, qp, qa))
+  )
+}
+
+/// Catt's target with its whisker by the identity at `x`.
+def whiskerTarget(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then cattHorizontal(
+    A,
+    x,
+    y,
+    z,
+    pm,
+    pp,
+    pa,
+    qm,
+    qp,
+    qa
+  ),
+  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then whiskerLeft(
+    A,
+    x,
+    x,
+    z,
+    here(x),
+    pm then qm,
+    pp then qp,
+    cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
+  )
+) {
+  whiskerLeft(
+    Path(A, x, z),
+    fm then gm,
+    pm then qm,
+    pp then qp,
+    cattSquare(A, x, y, z, fm, pm, am, gm, qm, km),
+    cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
+    whiskerLeft(
+      A,
+      x,
+      x,
+      z,
+      here(x),
+      pm then qm,
+      pp then qp,
+      cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
+    ),
+    back(whiskerHereLeft(
+      A,
+      x,
+      z,
+      pm then qm,
+      pp then qp,
+      cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
+    ))
+  )
+}
+
+/// Catt's `cylcomp(3,1,3)` at identity verticals, its points fixed: the generated composite `cylinderFill3` inhabits the type Catt answers.
+///
+/// Catt's source is the horizontal composite whiskered by the identity at `z`, then its 3-cylinder at the sources. Its target is its 3-cylinder at the targets, then the horizontal composite whiskered by the identity at `x`. Catt's interchangers and its unbiased composite regroup one chain, which converts, so the type writes none. The 3-paths before and after `cylinderFill3` take Catt's whiskers by identities, its horizontal composite and its square to `fill`'s.
+def cattCylinder3(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path(A, x, y),
+  fp : Path(A, x, y),
+  fa : Path(Path(A, x, y), fm, fp),
+  pm : Path(A, x, y),
+  pp : Path(A, x, y),
+  pa : Path(Path(A, x, y), pm, pp),
+  am : Path(Path(A, x, y), fm, pm),
+  ap : Path(Path(A, x, y), fp, pp),
+  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  gm : Path(A, y, z),
+  gp : Path(A, y, z),
+  ga : Path(Path(A, y, z), gm, gp),
+  qm : Path(A, y, z),
+  qp : Path(A, y, z),
+  qa : Path(Path(A, y, z), qm, qp),
+  km : Path(Path(A, y, z), gm, qm),
+  kp : Path(Path(A, y, z), gp, qp),
+  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+) -> Path(
+  Path(Path(A, x, z), fm then gm, pp then qp),
+  whiskerRight(
+    A,
+    x,
+    z,
+    z,
+    fm then gm,
+    fp then gp,
+    cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
+    here(z)
+  ) then cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp),
+  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then whiskerLeft(
+    A,
+    x,
+    x,
+    z,
+    here(x),
+    pm then qm,
+    pp then qp,
+    cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
+  )
+) {
+  unwhiskerSource(
+    A,
+    x,
+    y,
+    z,
+    fm,
+    fp,
+    fa,
+    pm,
+    pp,
+    pa,
+    am,
+    ap,
+    aa,
+    gm,
+    gp,
+    ga,
+    qm,
+    qp,
+    qa,
+    km,
+    kp,
+    ka
+  )
+    then liftSource(
+      A,
+      x,
+      y,
+      z,
+      fm,
+      fp,
+      fa,
+      pm,
+      pp,
+      pa,
+      am,
+      ap,
+      aa,
+      gm,
+      gp,
+      ga,
+      qm,
+      qp,
+      qa,
+      km,
+      kp,
+      ka
+    )
+    then fillSource(
+      A,
+      x,
+      y,
+      z,
+      fm,
+      fp,
+      fa,
+      pm,
+      pp,
+      pa,
+      am,
+      ap,
+      aa,
+      gm,
+      gp,
+      ga,
+      qm,
+      qp,
+      qa,
+      km,
+      kp,
+      ka
+    )
+    then fillComposite(
+      A,
+      x,
+      y,
+      z,
+      fm,
+      fp,
+      fa,
+      pm,
+      pp,
+      pa,
+      am,
+      ap,
+      aa,
+      gm,
+      gp,
+      ga,
+      qm,
+      qp,
+      qa,
+      km,
+      kp,
+      ka
+    )
+    then unfillTarget(
+      A,
+      x,
+      y,
+      z,
+      fm,
+      fp,
+      fa,
+      pm,
+      pp,
+      pa,
+      am,
+      ap,
+      aa,
+      gm,
+      gp,
+      ga,
+      qm,
+      qp,
+      qa,
+      km,
+      kp,
+      ka
+    )
+    then unliftTarget(
+      A,
+      x,
+      y,
+      z,
+      fm,
+      fp,
+      fa,
+      pm,
+      pp,
+      pa,
+      am,
+      ap,
+      aa,
+      gm,
+      gp,
+      ga,
+      qm,
+      qp,
+      qa,
+      km,
+      kp,
+      ka
+    )
+    then whiskerTarget(
+      A,
+      x,
+      y,
+      z,
+      fm,
+      fp,
+      fa,
+      pm,
+      pp,
+      pa,
+      am,
+      ap,
+      aa,
+      gm,
+      gp,
+      ga,
+      qm,
+      qp,
+      qa,
+      km,
+      kp,
+      ka
+    )
 }
