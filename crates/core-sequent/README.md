@@ -44,7 +44,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 ## Expected features
 
 - **Addresses from the same arena or store.** An address is a position in one arena or store; one from another resolves to an unrelated node or to nothing. Lookups fail closed on a dangling address, and nothing checks provenance beyond that.
-- **Truncation by the minting party.** `CommandArena::truncate_to` drops nodes, not references to them; the caller that takes a mark is the one that may truncate to it, after dropping every address minted since.
+- **Truncation by the minting party.** Only the party that took a mark truncates to it.
 - **Well-typed input to focusing.** Focusing translates the formers it is given and refuses only a dangling id, a code or a full arena; it does not type-check. Totality and closedness of the image are stated for closed terms the core's checker accepts that hold no code, and an ill-typed term focuses to whatever its formers say.
 - **Checked input to a run.** `gandr-runtime-emitter` lowers a command `check_command` accepts closed; an unbound variable or an ill-formed node declines at the lowering, naming its form, rather than running.
 
@@ -139,6 +139,7 @@ Running a command is `gandr-runtime-emitter`'s: `src/lower.rs` states the linear
 - `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime programme — the representation this store states.
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut whose writer performs no operation is independent, so focus records each bind's writer and the arena marks its binder.
 - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` (ch. 10) — a free variable's value and the spine it grew.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite focuses as its fold.
 
 ## License
 

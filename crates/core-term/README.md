@@ -42,7 +42,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Expected features
 
-- **One arena per run.** The caller keeps every id with the arena that minted it. The context, the chain and the environment store ids and never dereference them, and an arena lookup refuses an id it does not hold but cannot tell one minted by another arena.
+- **One arena per run.** The caller keeps every id with the arena that minted it, which [`CoreArena`](src/arena.rs) cannot check.
 - **Admission positions and subterm-table indices from the artifact.** `ConstantIndex` and `GlobalIndex` come from `gandr-kernel-term`; the chain checks their order and does not resolve them.
 - **The specification facade's `cfg`.** `#[spec(...)]` clauses are checked at runtime only when the whole build graph is compiled with `--cfg anodized_panic`.
 
@@ -131,6 +131,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
 - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
 
 ## License
 

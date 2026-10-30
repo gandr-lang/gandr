@@ -22,6 +22,11 @@
 //!   signature by signature, what one writes and the other lacks is read off
 //!   the other's tail, and a tail standing over a solved row is read through
 //!   it. Order is no part of a row, and an instance is never written twice.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is a
+//!   former whose cells and fold the solver reads as its children.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

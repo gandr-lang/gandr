@@ -52,8 +52,8 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Expected features
 
-- **The grammar the tree was molded under.** `lower_module` takes the `Pbg` whose fingerprint the tree records; a tree of another grammar is refused before any mold is read.
-- **A tree from the parser.** Any `SyntaxTree` is admissible, a repaired one included; the lowering refuses what the parser repaired rather than assuming a clean parse.
+- **The grammar the tree was molded under.** `lower_module` refuses a tree whose fingerprint is not its `Pbg`'s.
+- **A tree from the parser.** Any `SyntaxTree` is admissible, and the lowering refuses what the parser repaired.
 - **The source outlives the result.** A `LoweredModule` borrows the declared names from the source text the tree spans.
 - **One arena per lowering.** Every id in a `LoweredModule` is read against the `CoreArena` that lowering wrote into.
 - **`alloc`.** The crate is `no_std` with `alloc`.
@@ -125,6 +125,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
 - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: a decode carries no stage.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 
 ## License
 

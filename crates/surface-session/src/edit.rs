@@ -136,6 +136,11 @@
 //! touches two siblings. A linear scan of every node is its oracle. The extent
 //! step retires if the lowering's origins come to nest, when each extent equals
 //! its origin.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite keeps
+//!   its node across an edit while its stratum, pasting and cell count hold.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;

@@ -261,6 +261,11 @@
 //! (see `traced`), and readback and conversion still walk the expansion. A
 //! cache keyed on the source node inside a machine would make the sharing
 //! decision behind the parameter's back.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite
+//!   evaluates as the left-nested fold it realises.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;

@@ -22,6 +22,12 @@
 //!   cells' count, but a shape above it is not, so the former takes the shape
 //!   the wreath's levels extend. Reversal: none at dimension one.
 //!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: unbiased
+//!   composition is a term former at a certified stratum, and the node holds
+//!   the cells' left-nested fold as its realisation.
+//!
 //! [`Value::Compose`]: crate::Value::Compose
 
 use anodized::spec;

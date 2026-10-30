@@ -91,6 +91,9 @@
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
 //!   ruling (§ compilation-recipe-zero-cost) — a flow's code is demanded by a
 //!   `via` alone, and `NotATranslation` refuses one that names no flow.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's
+//!   three refusals, `ComposeUncertified`, `ComposeNotAShape` and
+//!   `ComposeDoesNotFill`, each a malformed source.
 
 use alloc::string::ToString as _;
 use alloc::vec::Vec;

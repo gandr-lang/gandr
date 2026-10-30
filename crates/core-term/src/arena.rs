@@ -320,6 +320,10 @@ struct Row<Node>
 /// the word arena holds the codes wider than a slot. Rows [`Self::freeze`]
 /// froze are shared by every clone made after, so such a clone copies, and
 /// its drop releases, only the rows minted since.
+///
+/// The context, the chain and the environment store ids and never dereference
+/// them. A lookup refuses an id the arena does not hold, but it cannot tell an
+/// id another arena minted, so the caller keeps every id with its arena.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CoreArena
 {

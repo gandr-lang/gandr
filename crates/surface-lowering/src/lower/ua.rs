@@ -45,6 +45,12 @@
 //!   condition, bound and the translators themselves are the checker's, so one
 //!   set of refusals names every defect a statement can have once it is
 //!   written.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]`
+//!   reads its stratum at the head `ua[n, k]` takes, so both formers share
+//!   `stratum_head`.
 
 use alloc::sync::Arc;
 

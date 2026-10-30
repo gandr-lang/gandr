@@ -35,6 +35,12 @@
 //! `message::tests::every_refusal_name_has_a_plain_message`, which builds one
 //! refusal of every vocabulary name and holds each message to one line with no
 //! grammar sort.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's
+//!   three refusals, each worded by what the stratum, the chain or a wire
+//!   lacks.
 
 use core::fmt;
 

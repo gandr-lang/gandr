@@ -28,6 +28,12 @@
 //!   the per-node dispatch shows in a profile. A build that prints core types
 //!   but never reads checkpoints, measured paying for the incremental tier,
 //!   moves `ContentSource` behind a feature.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is
+//!   written as the fold it realises and noted [`Elided::Composite`] until the
+//!   printer writes the former.
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
