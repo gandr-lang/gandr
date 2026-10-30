@@ -8,9 +8,13 @@
 #
 # - `## Sources`: a table with the columns Source, Role and What it gives
 #   (#3594), one row per source. The Source cell names the source in
-#   backquotes. The Role is `primary`, `secondary`, or `not read` for an owner
+#   backquotes. The Role is `primary`, `secondary`, `oracle` for the system a
+#   shallow embedding is compared with (#3964), or `not read` for an owner
 #   the term map routes to and the unit declines (#3158). A `not read` row
 #   gives its reason in What it gives. A list item is refused;
+# - `## Embedding owes`, on a unit with an `oracle` row (#3964): one
+#   `- #n — <the operation>` per operation the oracle has and gandr lacks,
+#   each its own issue, or `none — <why nothing is owed>`;
 # - `## Readings`: a table answering each of the seven axes `yes — <what it
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question;
@@ -48,10 +52,19 @@ def findings:
          then "`## Sources` holds no table: write `| Source | Role | What it gives |` and one row per source" else empty end),
         ($rows[]
           | if (.keys | length) == 0 then "`## Sources` row `\(.line)` names no source in backquotes"
-            elif IN(.role; source_roles[]) | not then "`## Sources` row `\(.line)` gives the role `\(.role)`: write `primary`, `secondary` or `not read`"
+            elif IN(.role; source_roles[]) | not then "`## Sources` row `\(.line)` gives the role `\(.role)`: write `primary`, `secondary`, `oracle` or `not read`"
             elif .role == "not read" and .text == "" then "`## Sources` row `\(.line)` declines its source with no reason in What it gives"
             else empty
             end)),
+    (if any(source_rows; .role == "oracle") then
+       owes as $owes
+       | "one `- #n — <the operation>` per operation the oracle has and gandr lacks, each its own issue, or `none — <why nothing is owed>`" as $form
+       | if $owes == null then "`## Embedding owes` is missing: the unit names an `oracle` in `## Sources`, so write \($form)"
+         elif $owes.empty then "`## Embedding owes` is empty: write \($form)"
+         else ($owes.malformed[] | "`## Embedding owes` line `\(.)` is not \($form)"),
+           (if $owes.none and ($owes.numbers | length) > 0 then "`## Embedding owes` says `none` and lists issues: keep the issues, or `none` and its reason alone" else empty end)
+         end
+     else empty end),
     (if section("Readings") == null then "`## Readings` is missing"
      else [marks] as $marks
      | (axes[] | . as $axis

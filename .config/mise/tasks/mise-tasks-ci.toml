@@ -1666,6 +1666,9 @@ wt step copy-ignored
 # open epic the body names as its own (`Advances #n`, `Part of #n` or
 # `from: #n`, #3398) is `blocked by` the issue in turn, so the epic closes
 # only once the issue does; one that is not is refused, `--fix` setting it.
+# The unit's parent epic is `blocked by` each issue its `## Embedding owes`
+# names (#3964), so an embedding epic closes on its operation set; a unit
+# owing operations under no epic is refused.
 ["unit:check"]
 description = "Refuse a unit issue missing a section work needs, or a dependency its ## After names"
 usage = '''
@@ -1721,6 +1724,26 @@ for epic in $(deps_named_epics "$repo" "$body"); do
     findings=$(printf '%s\n%s\n' "$findings" "#$epic, the epic the body names, is not set \`blocked by\` #$issue on GitHub, so it would close with #$issue open: run \`mise run unit:check --fix $issue\`" | awk 'NF')
   fi
 done
+# Each operation the unit's `## Embedding owes` names (#3964) blocks the
+# unit's epic, so the epic closes on its operation set. The owed issue keeps
+# its own parent: only the `blocked by` is set.
+owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
+if [[ -n $owed ]]; then
+  parent=$(gh api "repos/$repo/issues/$issue" --jq '.parent_issue_url // "" | sub(".*/"; "")')
+  if [[ -z $parent ]]; then
+    findings=$(printf '%s\n%s\n' "$findings" "#$issue owes operations in \`## Embedding owes\` and sits under no epic: link it under its programme's epic, so the epic closes on its operation set" | awk 'NF')
+  else
+    epic_blockers=$(deps_blocked_by "$repo" "$parent")
+    for n in $owed; do
+      jq -e --argjson n "$n" 'any(.[]; .number == $n)' <<< "$epic_blockers" > /dev/null && continue
+      if [[ ${usage_fix:-false} == true ]]; then
+        deps_set_block "$repo" "$parent" "$n"
+      else
+        findings=$(printf '%s\n%s\n' "$findings" "#$parent, the epic of #$issue, is not set \`blocked by\` #$n, an operation #$issue owes, so it would close with the operation unbuilt: run \`mise run unit:check --fix $issue\`" | awk 'NF')
+      fi
+    done
+  fi
+fi
 pages=$(vault_pages)
 shown=
 if [[ $pages != null ]]; then
