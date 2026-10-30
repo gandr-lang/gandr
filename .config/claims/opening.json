@@ -1125,7 +1125,7 @@
         }
       }
     },
-    "output": "`crates/core-sequent` cites no `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` (`core-kernel-reassessment.md`), a primary source of #2793, and the change touches its sources: add `- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or mark the page `read: <what it informed>` in `## Sources read` if it decided nothing in the code, then run `pr:open` again"
+    "output": "`crates/core-sequent` cites no `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` (`core-kernel-reassessment.md`), a primary source of #2793, and the change touches its sources: add `- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/core-sequent — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again"
   },
   {
     "name": "every touched crate citing the primary vault page by its mint opens (#2793)",
@@ -1241,6 +1241,58 @@
       "vault": null
     },
     "output": ""
+  },
+  {
+    "name": "a primary vault page taken in the crate it decides something for and read in two others opens: #3968's rule decides in one crate and adds arms in the rest (#4096)",
+    "input": {
+      "branch": "triage-2-4096-citations-per-crate",
+      "body": "Closes #4096\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `rule.rs`\n  - read in: crates/core-term, `crates/surface-session` — the `Fill` arms and codec tags\n- `bicontextual-core.md` — taken: `vault.jq`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 4096,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
+          "labels": []
+        }
+      ],
+      "vault": {
+        "pages": {
+          "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+          "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"]
+        },
+        "tree": {},
+        "touched": ["core-checker", "core-term", "surface-session"],
+        "cited": {
+          "core-checker": ["vault:01a178aa-6917-7983-b5cd-86e2af86b3ec"]
+        }
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "a touched crate neither citing a primary vault page nor read in under it is refused by name, and a crate read in under another page or with no account of the change there answers nothing (#4096)",
+    "input": {
+      "branch": "triage-2-4096-citations-per-crate",
+      "body": "Closes #4096\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `rule.rs`\n  - read in: crates/core-term — the `Fill` arms\n  - read in: crates/kernel-term\n- `bicontextual-core.md` — taken: `vault.jq`\n  - read in: crates/surface-session — the labels\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 4096,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `core-kernel-reassessment.md` § layers | primary | the layer |\n| `bicontextual-core.md` | secondary | the contexts |\n",
+          "labels": []
+        }
+      ],
+      "vault": {
+        "pages": {
+          "core-kernel-reassessment.md": ["01a178aa-6917-7983-b5cd-86e2af86b3ec"],
+          "bicontextual-core.md": ["01a12317-453f-7980-9c86-68f75917f3a6"]
+        },
+        "tree": {},
+        "touched": ["core-checker", "core-term", "kernel-term", "surface-session"],
+        "cited": {
+          "core-checker": ["vault:01a178aa-6917-7983-b5cd-86e2af86b3ec"]
+        }
+      }
+    },
+    "output": "`crates/kernel-term` cites no `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` (`core-kernel-reassessment.md`), a primary source of #4096, and the change touches its sources: add `- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/kernel-term — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again\n`crates/surface-session` cites no `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` (`core-kernel-reassessment.md`), a primary source of #4096, and the change touches its sources: add `- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/surface-session — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again"
   },
   {
     "name": "a closing keyword in prose is refused, naming the line: #2974's `closed #628` closed the std epic on merge (#2980)",
