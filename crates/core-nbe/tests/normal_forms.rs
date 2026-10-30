@@ -671,7 +671,7 @@ fn stuck() -> [Row; 14]
                     a.computation_telescope_transport(motive, held, unit, over, unit),
                 )
             },
-            copies: Settlement::Deferred(Deferral::Binder),
+            copies: Settlement::StructurallyEqual,
             normal: None,
         },
         Row {
