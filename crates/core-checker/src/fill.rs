@@ -584,9 +584,10 @@ fn classify(
 /// - requires: `side` is scoped under `count` binders, the first cell
 ///   outermost.
 /// - ensures: the tree whose leaves are the cells `side` reads and whose
-///   composites are its `then` transports and `compose` nodes, a composite of
-///   more than two cells nested to the left, when every composite joins two
-///   consecutive spans and the root spans every cell; nothing otherwise.
+///   composites are its transports, its `compose` nodes and the composite a
+///   `then` returns, a composite of more than two cells nested to the left,
+///   when every composite joins two consecutive spans and the root spans every
+///   cell; nothing otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -620,6 +621,14 @@ fn composite_of(
                 Side::Leaf(count.0.saturating_sub(1).saturating_sub(bound))
             }
             else if let Value::Returned(composite) = *node {
+                // `c₁ then c₂` returns the binary composite (#4057), read as
+                // the `compose` node it returns.
+                if let Some(&Computation::Return(returned)) = arena.computation(composite)
+                    && let Some(&Value::Compose { .. }) = arena.value(returned)
+                {
+                    values.get_mut(index)?.replace(returned);
+                    continue;
+                }
                 let &Computation::PathTransport {
                     motive,
                     path: second,

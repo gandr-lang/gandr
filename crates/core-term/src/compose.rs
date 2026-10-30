@@ -31,6 +31,8 @@
 //! [`Value::Compose`]: crate::Value::Compose
 
 use anodized::spec;
+use gandr_theory_sites::Degree;
+use gandr_theory_sites::ShapeSize;
 
 use crate::CoreArena;
 use crate::arena::ValueId;
@@ -93,6 +95,38 @@ pub struct Composite
     pub stratum: Stratum,
     /// The shape its cells fill.
     pub pasting: Pasting,
+}
+
+impl Composite
+{
+    /// The composite `p then q` is: `compose[3, 5](chain(2), (p, q))`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the 2-chain at degree 3 and bound 5, the least stratum the
+    ///   2-chain is a shape of: size `2·2 + 1` and degree `2·2 − 1`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the stratum is the 2-chain's own degree and size, the
+    ///   least a stratum reading it reaches.
+    /// - witness: `compose::tests::the_binary_composite_is_the_least_stratum_of_two_cells`
+    #[spec(ensures: |ret| matches!(ret.pasting, Pasting::Chain { cells } if usize::from(cells) == 2))]
+    #[inline]
+    #[must_use]
+    pub fn binary() -> Self
+    {
+        Self {
+            stratum: Stratum {
+                degree: Degree::from(3_usize),
+                bound: ShapeSize::from(5_usize),
+            },
+            pasting: Pasting::Chain {
+                cells: CellCount(2),
+            },
+        }
+    }
 }
 
 /// The composite of `cells` at `composite`, its realisation the left-nested

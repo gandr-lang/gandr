@@ -11,6 +11,7 @@ use anodized::spec;
 use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Reference;
+use gandr_core_term::compose::Composite;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use quenchant_shape::shape::Maybe;
@@ -808,7 +809,8 @@ impl Source for ContentSource<'_>
     }
 
     /// [`Elided::Composite`] at a composite, returned or not, which
-    /// [`Self::read`] answers as the fold it realises.
+    /// [`Self::read`] answers as the fold it realises: any but the binary
+    /// composite, which `p then q` writes.
     ///
     /// # Specification
     /// trivial.
@@ -818,11 +820,18 @@ impl Source for ContentSource<'_>
         node: NodeIndex,
     ) -> Option<Elided>
     {
-        let read = self.nodes.get(usize::from(node))?;
-        let composite = matches!(*read, ContentNode::Compose { .. })
-            || self.unreturned(node) != node
-            || matches!(*read, ContentNode::Returned(body) if self.unreturned(body) != body);
-        composite.then_some(Elided::Composite)
+        let mut read = self.nodes.get(usize::from(node))?;
+        if let ContentNode::Returned(body) = *read {
+            read = self.nodes.get(usize::from(body))?;
+        }
+        if let ContentNode::Return(returned) = *read {
+            read = self.nodes.get(usize::from(returned))?;
+        }
+        let ContentNode::Compose { composite, .. } = *read
+        else {
+            return None;
+        };
+        (composite != Composite::binary()).then_some(Elided::Composite)
     }
 
     /// The index of component `index` of the n-ary former at `node`.

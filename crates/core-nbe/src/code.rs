@@ -198,6 +198,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_computation_syntax_up_to_free;
+use gandr_core_term::folded_computation;
 use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -726,8 +727,10 @@ impl<'run> Walk<'run>
     ///   its rigidity, a quote, a lift or a static lambda at its place, a
     ///   static application — written, or the last of a held neutral's static
     ///   spine — as its operator and argument, a written pure call as its
-    ///   computation at its place, a held neutral read whole to an opaque head
-    ///   as the held value, and everything else as itself.
+    ///   computation at its place, a composite and a returned composite as the
+    ///   fold the composite realises, as the bridge erases them (#4057), a held
+    ///   neutral read whole to an opaque head as the held value, and everything
+    ///   else as itself.
     /// - provides: the one resolution both passes read codes through.
     /// - fails: [`ConversionFault::Domain`] when a closure or a held value does
     ///   not resolve, and [`ConversionFault::MachineInvariant`] when a variable
@@ -739,11 +742,13 @@ impl<'run> Walk<'run>
     ///   linear occurrence still reads its environment, and missing core,
     ///   closure and environment entries have distinct refusals. Written and
     ///   held applications compare alike; resolving through the wrong zone,
-    ///   chain or spine changes the atom or comparison.
+    ///   chain or spine changes the atom or comparison. A returned composite
+    ///   compares alike with its fold; reading it as its return changes that.
     /// - witness: `code::tests::local_binders_shadow_only_their_own_chain`
     /// - witness: `code::tests::atom_resolution_refuses_missing_sources_and_preserves_zone`
     /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    /// - witness: `code::tests::motives_reading_a_returned_composite_agree_with_its_fold_4057`
     ///
     /// # Errors
     /// As above.
@@ -778,7 +783,8 @@ Value::QuoteComputation(quoted) => ret == Ok(Atom::QuoteComputation(quoted, plac
 Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
-Value::Returned(computation) | Value::Compose { realised: computation, .. } => ret == Ok(Atom::Called(computation, place)),
+Value::Returned(computation) => ret == Ok(Atom::Called(folded_computation(self.core, computation), place)),
+Value::Compose { realised, .. } => ret == Ok(Atom::Called(realised, place)),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
 Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
 }),
@@ -859,12 +865,14 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                             Node::Code(argument, place),
                         ));
                     },
-                    Value::Returned(computation)
-                    | Value::Compose {
-                        realised: computation,
-                        ..
-                    } => {
-                        return Ok(Atom::Called(computation, place));
+                    Value::Returned(computation) => {
+                        return Ok(Atom::Called(
+                            folded_computation(self.core, computation),
+                            place,
+                        ));
+                    },
+                    Value::Compose { realised, .. } => {
+                        return Ok(Atom::Called(realised, place));
                     },
                     Value::PathRefl(_)
                     | Value::Here(_)

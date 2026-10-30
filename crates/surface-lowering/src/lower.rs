@@ -11545,7 +11545,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if label == TileName::THEN
             && let Arguments::Binary([first, second]) = arguments
         {
-            return self.derive(site, frame, identity::Derivation::Then { first, second });
+            return self.then(site, frame, first, second);
         }
         // A negated `f64`-suffixed number is the float's negation: the integer
         // row would refuse its operand, and the printers write a negative float

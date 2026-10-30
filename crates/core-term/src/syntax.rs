@@ -1383,15 +1383,19 @@ enum Reading<'signatures>
     /// As the certificate holds it: two types agree only where their syntax
     /// does, and a stage is part of its type.
     Syntax,
+    /// As the bridge erases it: the syntax, but a returned composite as the
+    /// fold it realises, which is all of it the kernel reads (#4057).
+    Folded,
     /// As a printed type reads back: the words of the signatures' presented
     /// types as the path at their point, two session types by their protocols'
     /// behaviour, a decoded static redex as its reduct, as every checker reads
     /// them, a staged type as its base, which is all of it the surface
     /// writes, a call kept unelaborated as the value it returns, which is
     /// all a printed `f(x)` says, a call of a function literal as the
-    /// value its body returns, which no surface call spells, and a forced
+    /// value its body returns, which no surface call spells, a forced
     /// returned value as the computation returning it, which a printed call
-    /// on a selection writes alike.
+    /// on a selection writes alike, and a returned composite as its fold, as
+    /// [`Self::Folded`] reads it.
     Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
 }
 
@@ -1527,6 +1531,98 @@ pub fn equal_comp_type_syntax(
     equal_syntax(
         arena,
         Reading::Syntax,
+        StructuralGoal::CompType(left, right),
+    )
+}
+
+/// Compare certificate syntax as [`equal_certificate_syntax`] does, a
+/// returned composite read as the fold it realises, as the bridge erases it.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees as [`equal_certificate_syntax`] compares it, each computation
+///   returning a composite read as its fold ([`folded_computation`]).
+/// - provides: the comparison a rewrite of a source keeps its meaning under: `p
+///   then q` lowers to the binary composite, and its explicit spelling to the
+///   transport the composite folds to (#4057).
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite returned and its fold compare equal, in
+///   either order and under a path type, where the syntax tells them apart; the
+///   fold of the cells swapped stays different.
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == CertificateEquality::Equal || equal_certificate_syntax(arena, left, right) == CertificateEquality::Different)]
+#[inline]
+#[must_use]
+pub fn equal_certificate_folded(
+    arena: &crate::CoreArena,
+    left: ValueId,
+    right: ValueId,
+) -> CertificateEquality
+{
+    equal_syntax(arena, Reading::Folded, StructuralGoal::Value(left, right))
+}
+
+/// Compare value type syntax as [`equal_type_syntax`] does, a returned
+/// composite read as its fold, as [`equal_certificate_folded`] reads it.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees as [`equal_type_syntax`] compares it, each computation returning a
+///   composite read as its fold.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_certificate_folded`].
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == CertificateEquality::Equal || equal_type_syntax(arena, left, right) == CertificateEquality::Different)]
+#[inline]
+#[must_use]
+pub fn equal_type_folded(
+    arena: &crate::CoreArena,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Folded,
+        StructuralGoal::ValueType(left, right),
+    )
+}
+
+/// Compare computation type syntax as [`equal_comp_type_syntax`] does, a
+/// returned composite read as its fold, as [`equal_certificate_folded`]
+/// reads it.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair
+///   agrees as [`equal_comp_type_syntax`] compares it, each computation
+///   returning a composite read as its fold.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_certificate_folded`].
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == CertificateEquality::Equal || equal_comp_type_syntax(arena, left, right) == CertificateEquality::Different)]
+#[inline]
+#[must_use]
+pub fn equal_comp_type_folded(
+    arena: &crate::CoreArena,
+    left: CompTypeId,
+    right: CompTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(
+        arena,
+        Reading::Folded,
         StructuralGoal::CompType(left, right),
     )
 }
@@ -1749,11 +1845,12 @@ fn read_free(
 ///   a forced thunk or nested lambda as the computation it holds; a decode of
 ///   such a call reads as the decode of what it returns (#736), the runs its
 ///   code binds calls by read as the calls first (#768); a call kept
-///   unelaborated is read as the value it returns; a dependent arrow is read as
-///   the plain arrow where its codomain reads as the arrow's codomain under the
-///   binder, which then names no binder; and a dependent pair as the product of
-///   two where its second factor reads as the product's second component under
-///   the binder (#771).
+///   unelaborated is read as the value it returns; a returned composite is read
+///   as the fold it realises (#4057); a dependent arrow is read as the plain
+///   arrow where its codomain reads as the arrow's codomain under the binder,
+///   which then names no binder; and a dependent pair as the product of two
+///   where its second factor reads as the product's second component under the
+///   binder (#771).
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
@@ -1762,7 +1859,8 @@ fn read_free(
 ///   function literal; a stage has no spelling, and a staged type is spelled as
 ///   its base; a dependent arrow ignoring its binder has no spelling, and is
 ///   spelled as the arrow; a dependent pair ignoring its binder is spelled as
-///   the product.
+///   the product; a transport the checker derives is spelled `p then q`, which
+///   reads back as the composite folding to it.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
@@ -1788,7 +1886,8 @@ fn read_free(
 ///   binder reads as the product, in either order; one naming it stays
 ///   different. A path between a function suspended reads as one between the
 ///   function's thunk, in either order, and a call's thunk stays apart from the
-///   call kept.
+///   call kept. A path between a composite returned reads as one between its
+///   fold, in either order, and not as one between the other bracketing.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
@@ -1800,6 +1899,7 @@ fn read_free(
 /// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
 /// - witness: `syntax::tests::a_dependent_pair_ignoring_its_binder_reads_as_the_product_771`
 /// - witness: `syntax::tests::a_suspended_function_reads_as_its_thunk_3947`
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -1879,6 +1979,40 @@ fn forced_computation(
         },
         Some(_) | None => id,
     }
+}
+
+/// The fold the composite `id` returns realises, `id` itself otherwise.
+///
+/// The bridge erases a returned composite to that fold, and every reader that
+/// compares terms as the kernel replays them reads it so. `p then q` lowers to
+/// the binary composite, while its explicit spelling, and the transport the
+/// checker derives where a type moves a path, lower to the fold (#4057).
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: the realisation of the composite `id` returns, followed through
+///   each composite a realisation returns in turn; `id` for any other.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_type_reading`].
+/// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+#[spec(ensures: |ret| ret == id || arena.computation(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn folded_computation(
+    arena: &crate::CoreArena,
+    id: ComputationId,
+) -> ComputationId
+{
+    let mut at = id;
+    while let Some(&Computation::Return(returned)) = arena.computation(at)
+        && let Some(&Value::Compose { realised, .. }) = arena.value(returned)
+    {
+        at = realised;
+    }
+    at
 }
 
 /// The static steps one [`equal_type_reading`] has left: a code the steps do
@@ -2961,10 +3095,11 @@ pub fn move_pair(
 ///   ([`called_reduct`]), a call kept unelaborated read as the value it
 ///   returns, as the lowering keeps it where a type after it reads it, a
 ///   function kept unelaborated read as its thunk, as the checker suspends it
-///   (#3947), a dependent arrow read as the plain arrow where its codomain
-///   reads as the arrow's codomain weakened past its binder, and a dependent
-///   pair as the product of two where its second factor reads as the product's
-///   second component weakened past its binder (#771), and two dialogues whose
+///   (#3947), a returned composite read as its fold ([`folded_computation`]), a
+///   dependent arrow read as the plain arrow where its codomain reads as the
+///   arrow's codomain weakened past its binder, and a dependent pair as the
+///   product of two where its second factor reads as the product's second
+///   component weakened past its binder (#771), and two dialogues whose
 ///   endpoints made the same moves, however the logs interleave them; under
 ///   [`Reading::Syntax`] no reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
@@ -2993,7 +3128,7 @@ fn equal_syntax(
     use StructuralGoal::ValueType as VT;
     let unread = BTreeMap::new();
     let signatures = match reading {
-        Reading::Syntax => &unread,
+        Reading::Syntax | Reading::Folded => &unread,
         Reading::Printed(signatures) => signatures,
     };
     let mut arena = alloc::borrow::Cow::Borrowed(arena);
@@ -3024,9 +3159,15 @@ fn equal_syntax(
             (Reading::Printed(_), C(a, b)) => {
                 let a = called_computation(&mut arena, &mut steps, a);
                 let b = called_computation(&mut arena, &mut steps, b);
-                C(forced_computation(&arena, a), forced_computation(&arena, b))
+                C(
+                    folded_computation(&arena, forced_computation(&arena, a)),
+                    folded_computation(&arena, forced_computation(&arena, b)),
+                )
             },
-            (Reading::Syntax, _) => goal,
+            (Reading::Folded, C(a, b)) => {
+                C(folded_computation(&arena, a), folded_computation(&arena, b))
+            },
+            (Reading::Syntax, _) | (Reading::Folded, V(..) | VT(..) | CT(..)) => goal,
         };
         if !visited.insert(goal) {
             continue;
@@ -5250,6 +5391,85 @@ mod tests
             CertificateEquality::Different,
             "a thunk of a call does not read as the call kept"
         );
+    }
+
+    /// #4057: `p then q` lowers to the binary composite, and the checker
+    /// derives the transport the composite folds to, which the printer writes
+    /// `p then q`.
+    #[test]
+    fn a_returned_composite_reads_as_its_fold_4057()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // `p then q` from `x`, with `x`, `p` and `q` the binders around the
+        // type.
+        let [start, first, second] = [2_u32, 1, 0]
+            .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+        let composite = crate::compose::compose(
+            &mut arena,
+            crate::compose::Composite::binary(),
+            (int, start),
+            &[first, second],
+        );
+        let composite = arena.computation_return(composite);
+        let composite = arena.value_returned(composite);
+        let fold = crate::identity::then(&mut arena, int, start, first, second);
+        let fold = arena.value_returned(fold);
+        let swapped = crate::identity::then(&mut arena, int, start, second, first);
+        let swapped = arena.value_returned(swapped);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, end);
+        let (composite, fold, swapped) = (
+            at(&mut arena, composite),
+            at(&mut arena, fold),
+            at(&mut arena, swapped),
+        );
+        for (left, right, what) in [
+            (composite, fold, "a composite returned against its fold"),
+            (fold, composite, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_folded(&arena, left, right),
+                CertificateEquality::Equal,
+                "{what} agree as the bridge erases them"
+            );
+            let (returns_left, returns_right) = (
+                arena.comp_type_returner(left),
+                arena.comp_type_returner(right),
+            );
+            assert_eq!(
+                equal_comp_type_folded(&arena, returns_left, returns_right),
+                CertificateEquality::Equal,
+                "{what} agree as returned types"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        let erased: fn(&crate::CoreArena, ValueTypeId, ValueTypeId) -> CertificateEquality =
+            equal_type_folded;
+        for (compare, how) in [
+            (erased, "erased"),
+            (
+                |arena: &crate::CoreArena, left, right| {
+                    equal_type_reading(arena, &BTreeMap::new(), left, right)
+                },
+                "read",
+            ),
+        ] {
+            assert_eq!(
+                compare(&arena, composite, swapped),
+                CertificateEquality::Different,
+                "a composite {how} is not the fold of its cells swapped"
+            );
+        }
     }
 
     /// #675: a type instantiated at a function literal holds its call, which

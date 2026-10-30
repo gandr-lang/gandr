@@ -346,6 +346,19 @@ use crate::unbuilt::Unbuilt;
 #[cfg(test)]
 pub(super) mod tests;
 
+quenchant_shape::reason_enum! {
+    /// Why a derived operation's position reads no identity type.
+    pub mod stated {
+        /// The position states no type the operation answers.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No answer reaches the position, so the operation synthesises
+            /// its path from its operands.
+            Unstated,
+        }
+    }
+}
+
 /// Reflexivity's spelling, which no pattern may take.
 pub(super) const HERE: &str = "here";
 
@@ -613,14 +626,6 @@ pub(super) enum Derivation
     {
         /// The path reversed.
         path: NodeIndex,
-    },
-    /// `first then second`.
-    Then
-    {
-        /// The path composed first.
-        first: NodeIndex,
-        /// The path composed second, the one transported along.
-        second: NodeIndex,
     },
     /// `cong(function, path)`.
     Cong
@@ -2632,30 +2637,83 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// Classify `first then second` at `site`, standing as a computation under
+    /// `frame`: the returned composite of two flows where a flow is answered,
+    /// and the composite of two paths at the 2-chain anywhere else.
+    ///
+    /// # Specification
+    /// - requires: `site` stands as a computation under `frame`, or as a value
+    ///   bridged to one.
+    /// - ensures: both operands are read as values under `frame`. Where the
+    ///   position answers a written flow type, the two flows are planned as
+    ///   their returned composite. Anywhere else the two paths are pushed to
+    ///   the operand store and derived as `compose[3, 5](chain(2), (first,
+    ///   second))`, as [`Self::derive`] derives it.
+    /// - fails: the unannotated refusal where the position answers a type that
+    ///   is neither a written path type nor a written flow type; the allowance
+    ///   refusal of that walk; the derivation's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The composite's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `p then q` under a path answer lowers to the
+    ///   composite of the two at the 2-chain, and under a flow answer to the
+    ///   flows' composite.
+    /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    #[spec(
+        ensures: |ret| ret.is_err()
+            || matches!(self.plans.get(site.at.node), Some(&Plan::FlowThen(left, right)) if left == first && right == second)
+            || matches!(self.plans.get(site.at.node), Some(&Plan::Derived(planned)) if matches!(planned.derivation, Derivation::Compose { .. })),
+    )]
+    pub(super) fn then(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        first: NodeIndex,
+        second: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let answered = self.answered(site)?;
+        if let Maybe::Present((_, Answered::Flow)) = answered {
+            self.read(first, Reading::Value(frame));
+            self.read(second, Reading::Value(frame));
+            self.plan(site, Plan::FlowThen(first, second));
+            return Ok(());
+        }
+        let start = self.operands.len();
+        self.operands.extend([first, second]);
+        let cells = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.derived(
+            site,
+            frame,
+            Derivation::Compose {
+                composite: Composite::binary(),
+                cells,
+            },
+            answered,
+        )
+    }
+
     /// Classify the derived operation `derivation`, standing as a computation
     /// at `site` under `frame`.
     ///
     /// # Specification
     /// - requires: `site` stands as a computation under `frame`, or as a value
     ///   bridged to one.
-    /// - ensures: every operand is read as a value under `frame`. Where the
-    ///   position answers a type, the operation is planned against that path
-    ///   type; `f then g` where it answers a written flow type is planned as
-    ///   the returned composite of the two flows, and `back(f)` there against
-    ///   the flow type, as the symmetry ride the checker refuses. Where it
-    ///   answers none, the operation is planned as synthesised from its
-    ///   operands, `cong` reading its codomain as [`Self::mapped`] reads it —
-    ///   off its function's written result, or off the body of a lambda over
-    ///   its path's points — and recorded for [`Self::refuse_unsynthesised`].
-    ///   An operation read where a value is read is the value its transport
-    ///   returns.
+    /// - ensures: as [`Self::derived`] plans it, the position's answer read
+    ///   first.
     /// - fails: [`FragmentBoundary::NotAFunction`] for `cong` at a constructor
     ///   or at a static abstraction `\q. e`; the unannotated refusal where the
-    ///   position answers a type that is not a written path type, or for `then`
-    ///   and `back` a written flow type, under at most a returner and
-    ///   parentheses, and for a synthesised `cong` whose first operand
-    ///   [`Self::mapped`] refuses; the allowance refusal from that walk; the
-    ///   function name's own refusal.
+    ///   position answers a type that is not a written path type, or for a
+    ///   composite or `cong` a written flow type, under at most a returner and
+    ///   parentheses; the refusals of [`Self::derived`]; the function name's
+    ///   own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2667,19 +2725,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
-    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829`
     #[spec(
-        ensures: |ret| {
-            ret.is_err()
-                || matches!(
-                    self.plans.get(site.at.node),
-                    Some(&Plan::Derived(planned)) if planned.derivation == derivation && planned.frame == frame
-                ) || matches!(
-                    (self.plans.get(site.at.node), derivation),
-                    (Some(&Plan::FlowThen(left, right)), Derivation::Then { first, second }) if left == first && right == second
-                )
-        },
+        ensures: |ret| ret.is_err()
+            || matches!(self.plans.get(site.at.node), Some(&Plan::Derived(planned)) if planned.derivation == derivation && planned.frame == frame),
     )]
     pub(super) fn derive(
         &mut self,
@@ -2697,51 +2746,108 @@ impl<'source> Lowerer<'_, 'source>
         if let Derivation::Cong { function, path } = derivation {
             self.cong_map(site, frame, function, path)?;
         }
-        let stance = match self.answers.get(&site.at.node) {
-            Some(&answer) => Stance::Answered(answer),
-            None => Stance::Synthesised(
+        let answered = self.answered(site)?;
+        self.derived(site, frame, derivation, answered)
+    }
+
+    /// The answer the position at `site` writes, beside the identity type it
+    /// reads as: a loop arm answers the path over its loop, whatever its case
+    /// answers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: absent where the position answers nothing, and otherwise the
+    ///   answer beside [`Self::answers_path`]'s reading of it.
+    /// - fails: as [`Self::answers_path`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The answer's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path answer, a flow answer and an answer that is
+    ///   neither.
+    /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Maybe::Absent(_))) != self.answers.contains_key(&site.at.node))]
+    fn answered(
+        &mut self,
+        site: Site,
+    ) -> Result<Maybe<(Answer, Answered), stated::Absent>, LoweringRefusal<'source>>
+    {
+        let Some(&answer) = self.answers.get(&site.at.node)
+        else {
+            return Ok(Maybe::Absent(stated::Absent::Unstated));
+        };
+        let answered = match answer.over {
+            super::native::Over::Written
+            | super::native::Over::Returning
+            | super::native::Over::Valued { .. } => self.answers_path(site, answer.node)?,
+            super::native::Over::Loop { .. } => Answered::Path,
+        };
+        Ok(Maybe::Present((answer, answered)))
+    }
+
+    /// Plan the derived operation `derivation` at `site` under `frame`, the
+    /// position's answer read as `answered`.
+    ///
+    /// # Specification
+    /// - requires: `answered` is [`Self::answered`] at `site`.
+    /// - ensures: every operand is read as a value under `frame`. Where the
+    ///   position answers a type, the operation is planned against that path
+    ///   type, and `back(f)` against a flow type, as the symmetry ride the
+    ///   checker refuses. Where it answers none, the operation is planned as
+    ///   synthesised from its operands, `cong` reading its codomain as
+    ///   [`Self::mapped`] reads it — off its function's written result, or off
+    ///   the body of a lambda over its path's points — and recorded for
+    ///   [`Self::refuse_unsynthesised`]. An operation read where a value is
+    ///   read is the value its transport returns.
+    /// - fails: the unannotated refusal for a composite or `cong` under a flow
+    ///   answer, and for a synthesised `cong` whose first operand
+    ///   [`Self::mapped`] refuses; the allowance refusal from that walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The operation's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each operation under a path answer and each
+    ///   synthesised at the words.
+    /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(
+        ensures: |ret| ret.is_err()
+            || matches!(self.plans.get(site.at.node), Some(&Plan::Derived(planned)) if planned.derivation == derivation && planned.frame == frame),
+    )]
+    fn derived(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        derivation: Derivation,
+        answered: Maybe<(Answer, Answered), stated::Absent>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let stance = match answered {
+            Maybe::Present((answer, Answered::Path)) => Stance::Answered(answer),
+            Maybe::Present((answer, Answered::Flow)) => match derivation {
+                Derivation::Back { .. } => Stance::Answered(answer),
+                Derivation::Cong { .. } | Derivation::Compose { .. } => {
+                    return Err(site.out(FragmentBoundary::Unannotated));
+                },
+            },
+            Maybe::Absent(stated::Absent::Unstated) => Stance::Synthesised(
                 match derivation {
                     Derivation::Cong { function, .. } => self.mapped(site, frame, function)?,
-                    Derivation::Back { .. }
-                    | Derivation::Then { .. }
-                    | Derivation::Compose { .. } => Synthesis::Paths,
+                    Derivation::Back { .. } | Derivation::Compose { .. } => Synthesis::Paths,
                 },
                 Typings::default(),
             ),
         };
-        if let Stance::Answered(answer) = stance {
-            // A loop arm answers the path over its loop, whatever its case
-            // answers.
-            let answered = match answer.over {
-                super::native::Over::Written
-                | super::native::Over::Returning
-                | super::native::Over::Valued { .. } => self.answers_path(site, answer.node)?,
-                super::native::Over::Loop { .. } => Answered::Path,
-            };
-            if answered == Answered::Flow {
-                match derivation {
-                    Derivation::Then { first, second } => {
-                        self.read(first, Reading::Value(frame));
-                        self.read(second, Reading::Value(frame));
-                        self.plan(site, Plan::FlowThen(first, second));
-                        return Ok(());
-                    },
-                    Derivation::Cong { .. } | Derivation::Compose { .. } => {
-                        return Err(site.out(FragmentBoundary::Unannotated));
-                    },
-                    Derivation::Back { .. } => {},
-                }
-            }
-        }
         match derivation {
             Derivation::Back { path } => self.read(path, Reading::Value(frame)),
-            Derivation::Then { first, second }
-            | Derivation::Cong {
-                function: first,
-                path: second,
-            } => {
-                self.read(first, Reading::Value(frame));
-                self.read(second, Reading::Value(frame));
+            Derivation::Cong { function, path } => {
+                self.read(function, Reading::Value(frame));
+                self.read(path, Reading::Value(frame));
             },
             Derivation::Compose { cells, .. } => {
                 for position in cells.start .. cells.end {
@@ -3210,7 +3316,6 @@ impl<'source> Lowerer<'_, 'source>
             let (path, rest, function) = match derivation {
                 Derivation::Back { path } => (path, None, None),
                 Derivation::Cong { path, function } => (path, None, Some(function)),
-                Derivation::Then { first, second } => (first, Some(second), None),
                 // A composite stands from its first cell's start to its last
                 // cell's end.
                 Derivation::Compose { cells, .. } => {
@@ -4123,8 +4228,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(path) => (path, path),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
-            Derivation::Then { first, second }
-            | Derivation::Cong {
+            Derivation::Cong {
                 function: first,
                 path: second,
             } => match (self.value_at(first), self.value_at(second)) {
@@ -4192,9 +4296,6 @@ impl<'source> Lowerer<'_, 'source>
             (Answered::Flow, Derivation::Back { .. }, Maybe::Present(right)) => {
                 gandr_core_term::identity::back_flow(sink.arena, carrier, right, first)
             },
-            (Answered::Path, Derivation::Then { .. }, _) => {
-                gandr_core_term::identity::then(sink.arena, carrier, left, first, second)
-            },
             // The composite returns the node the checker reads, its cells and
             // the fold they realise.
             (Answered::Path, Derivation::Compose { composite, .. }, _) => {
@@ -4240,11 +4341,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             (Answered::Path | Answered::Flow, Derivation::Back { .. }, Maybe::Absent(_))
-            | (
-                Answered::Flow,
-                Derivation::Then { .. } | Derivation::Cong { .. } | Derivation::Compose { .. },
-                _,
-            ) => {
+            | (Answered::Flow, Derivation::Cong { .. } | Derivation::Compose { .. }, _) => {
                 record_since(
                     sink,
                     mark,
@@ -4519,12 +4616,11 @@ impl<'source> Lowerer<'_, 'source>
     {
         let cells = match derivation {
             Derivation::Compose { cells, .. } => self.operands.get(cells.start .. cells.end),
-            Derivation::Back { .. } | Derivation::Then { .. } | Derivation::Cong { .. } => None,
+            Derivation::Back { .. } | Derivation::Cong { .. } => None,
         };
         let transported = match (derivation, cells) {
             (Derivation::Back { path } | Derivation::Cong { path, .. }, _) => path,
-            (Derivation::Then { first, .. }, _)
-            | (Derivation::Compose { .. }, Some(&[first, ..])) => first,
+            (Derivation::Compose { .. }, Some(&[first, ..])) => first,
             (Derivation::Compose { .. }, _) => return Maybe::Absent(lowered::Absent::Unminted),
         };
         let Maybe::Present(read) = self.identity_of(transported, typings.transported, frame, sink)
@@ -4537,14 +4633,6 @@ impl<'source> Lowerer<'_, 'source>
                 carrier: read.carrier,
                 left: read.right,
                 right: Maybe::Present(read.left),
-            },
-            (Derivation::Then { second, .. }, _) => Stood {
-                answered: Answered::Path,
-                carrier: read.carrier,
-                left: read.left,
-                right: self
-                    .identity_of(second, typings.onward, frame, sink)
-                    .map(|onward| onward.right),
             },
             // A composite stands from its first cell's start to its last
             // cell's end, the one cell its own path.

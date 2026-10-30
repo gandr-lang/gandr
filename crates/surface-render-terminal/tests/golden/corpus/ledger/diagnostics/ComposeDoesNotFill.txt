@@ -1,4 +1,4 @@
-error[ComposeDoesNotFill]: `compose` needs its cells to meet end to end along the chain
+error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
    ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:9:3
    │
  8 │   def apart(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, x, z)) -> Path(A, x, z) {

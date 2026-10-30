@@ -62,10 +62,9 @@ data Marked : Type {
 }
 
 /// A composite whose second path starts where the first does not end: the
-/// turn ends at `Mark`, and `here(Elsewhere)` starts at `Elsewhere`. Read off
-/// the turn, the composite's transport checks the turn at the path into
-/// `Elsewhere`, which it is not.
-@[ refuses("TypeMismatch") ]
+/// turn ends at `Mark`, and `here(Elsewhere)` starts at `Elsewhere`. `then` is
+/// the composite of the 2-chain, so its one inner wire does not fill.
+@[ refuses("ComposeDoesNotFill") ]
 def misjoined_then : Path(Marked, Mark, Elsewhere) = turn then here(Elsewhere);
 
 /// Every point to itself, by cases: no loop arm, and the motive reads no

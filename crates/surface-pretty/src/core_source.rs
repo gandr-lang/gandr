@@ -18,6 +18,8 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::compose::Composite;
+use gandr_core_term::folded_computation;
 use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
@@ -1152,25 +1154,6 @@ impl<'arena> CoreSource<'arena>
         })
     }
 
-    /// The computation a returned value reads as: the fold a returned
-    /// composite realises, and `body` itself otherwise.
-    ///
-    /// # Specification
-    /// trivial.
-    fn unreturned(
-        &self,
-        body: ComputationId,
-    ) -> ComputationId
-    {
-        match self.arena.computation(body) {
-            Some(&Computation::Return(returned)) => match self.arena.value(returned) {
-                Some(&Value::Compose { realised, .. }) => realised,
-                Some(_) | None => body,
-            },
-            Some(_) | None => body,
-        }
-    }
-
     /// The value `id` names.
     ///
     /// # Specification
@@ -1247,7 +1230,7 @@ impl<'arena> CoreSource<'arena>
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&Value::Fill { .. }), Former::Unreadable(Unreadable::Fill))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
-        | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(self.unreturned(body)),
+        | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(folded_computation(self.arena, body)),
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
         | (Some(&Value::Nested(body)), Former::Nested(actual))
         | (Some(&Value::Compose { realised: body, .. }), Former::Returned(actual))
@@ -1390,7 +1373,9 @@ impl<'arena> CoreSource<'arena>
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
             // A composite, returned or not, reads as the fold it realises until
             // the printer writes the form (#3957).
-            Value::Returned(body) => Former::Returned(CoreNode::Computation(self.unreturned(body))),
+            Value::Returned(body) => {
+                Former::Returned(CoreNode::Computation(folded_computation(self.arena, body)))
+            },
             Value::Compose { realised, .. } => Former::Returned(CoreNode::Computation(realised)),
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -1901,7 +1886,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
-    #[spec(ensures: |ret| match (self.arena.computation(self.unreturned(id)), ret) {
+    #[spec(ensures: |ret| match (self.arena.computation(folded_computation(self.arena, id)), ret) {
         | (Some(&Computation::Hole(_)), Former::Unreadable(Unreadable::Hole))
         | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
         | (None, Former::Unreadable(Unreadable::Dangling)) => true,
@@ -1981,7 +1966,7 @@ impl<'arena> CoreSource<'arena>
     {
         let value = CoreNode::Value;
         let computation = CoreNode::Computation;
-        let Some(held) = self.arena.computation(self.unreturned(id))
+        let Some(held) = self.arena.computation(folded_computation(self.arena, id))
         else {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -3136,7 +3121,8 @@ impl Source for CoreSource<'_>
     }
 
     /// [`Elided::Composite`] at a composite, returned or not, which
-    /// [`Self::read`] answers as the fold it realises.
+    /// [`Self::read`] answers as the fold it realises: any but the binary
+    /// composite, which `p then q` writes.
     ///
     /// # Specification
     /// trivial.
@@ -3146,16 +3132,30 @@ impl Source for CoreSource<'_>
         node: CoreNode,
     ) -> Option<Elided>
     {
-        let composite = match node {
+        let body = match node {
             CoreNode::Value(id) => {
                 let read = self.arena.value(id)?;
-                matches!(*read, Value::Compose { .. })
-                    || matches!(*read, Value::Returned(body) if self.unreturned(body) != body)
+                if let Value::Compose { composite, .. } = *read {
+                    return (composite != Composite::binary()).then_some(Elided::Composite);
+                }
+                let Value::Returned(body) = *read
+                else {
+                    return None;
+                };
+                body
             },
-            CoreNode::Computation(id) => self.unreturned(id) != id,
-            CoreNode::ValueType(_) | CoreNode::CompType(_) => false,
+            CoreNode::Computation(id) => id,
+            CoreNode::ValueType(_) | CoreNode::CompType(_) => return None,
         };
-        composite.then_some(Elided::Composite)
+        let &Computation::Return(returned) = self.arena.computation(body)?
+        else {
+            return None;
+        };
+        let &Value::Compose { composite, .. } = self.arena.value(returned)?
+        else {
+            return None;
+        };
+        (composite != Composite::binary()).then_some(Elided::Composite)
     }
 
     /// The telescope of the constant `head` reads as, through any

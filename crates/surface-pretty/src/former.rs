@@ -1311,7 +1311,8 @@ pub enum Elided
     /// An ascription's type: the ascription stands as its body.
     Ascription,
     /// A composite's form: the composite stands as the left-nested fold it
-    /// realises until the printer writes `compose[n, k](Γ, d)` (#3957).
+    /// realises until the printer writes `compose[n, k](Γ, d)` (#3957). The
+    /// binary composite is no elision, since `p then q` writes it.
     Composite,
 }
 
@@ -1819,8 +1820,8 @@ pub trait Source
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Elided::Composite`] when `node` is a composite, returned or
-    ///   not, that [`read`] answers as the fold it realises; none otherwise,
-    ///   and the default leaves none.
+    ///   not, that [`read`] answers as the fold it realises and that no `then`
+    ///   writes; none otherwise, and the default leaves none.
     /// - provides: the reason a printing that writes the fold is approximate.
     /// - fails: never.
     /// - panics: none.
