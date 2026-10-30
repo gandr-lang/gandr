@@ -376,7 +376,7 @@ pub struct WreathStratum<'level>
     /// The wreath.
     wreath: &'level Two,
     /// Level one's certificate over the wreath's catalogue.
-    below: SegalStratum<'level>,
+    below: SegalStratum,
     /// The degree.
     degree: Degree,
     /// The cocone of each object of degree two to the degree, in wreath
@@ -421,7 +421,7 @@ impl<'level> WreathStratum<'level>
     pub fn certify(
         wreath: &'level Two,
         degree: Degree,
-        below: SegalStratum<'level>,
+        below: SegalStratum,
     ) -> Result<Self, LevelUncertified>
     {
         if degree < Degree::from(1_usize)
@@ -479,7 +479,7 @@ impl<'level> WreathStratum<'level>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn below(&self) -> &SegalStratum<'level>
+    pub const fn below(&self) -> &SegalStratum
     {
         &self.below
     }
@@ -541,7 +541,7 @@ fn within(
 })]
 pub fn segal_two(
     wreath: &Two,
-    below: &SegalStratum<'_>,
+    below: &SegalStratum,
     degree: Degree,
 ) -> Outcome<LevelFailure>
 {
@@ -565,7 +565,7 @@ pub fn segal_two(
 }))]
 fn walk(
     wreath: &Two,
-    below: &SegalStratum<'_>,
+    below: &SegalStratum,
     degree: Degree,
 ) -> (Outcome<LevelFailure>, Vec<WreathCocone>)
 {
@@ -615,7 +615,7 @@ fn walk(
 /// # Specification
 /// trivial.
 fn level_one(
-    below: &SegalStratum<'_>,
+    below: &SegalStratum,
     shape: &Shape,
 ) -> Maybe<(Vec<Inclusion>, Vec<Graft>), ()>
 {
@@ -662,7 +662,7 @@ fn level_one(
 }))]
 fn cocone(
     wreath: &Two,
-    below: &SegalStratum<'_>,
+    below: &SegalStratum,
     (index, object): (ShapeIndex, &TwoShape),
 ) -> Result<WreathCocone, LevelDefect>
 {

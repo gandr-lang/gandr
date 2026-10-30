@@ -52,7 +52,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
 - **A file system.** `Walk::visit` lists directories and reads sources, `Formatting::step` reads them and writes a changed layout back, and `Census::step` reads them; every failure to do so is a fault step, never a panic.
-- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process. `Pool` implements `gandr-core-fork`'s `Fork`, so a session's molding and its trials fork on the same threads, and a scope's jobs spawn there too.
+- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process.
 
 ## Examples
 
@@ -119,6 +119,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures try-first.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: a thunk's captures, which the writer rule leaves unread.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — only a cache a driver installs recalls; the rest recheck.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the stored strata.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's worlds.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run is a local artifact.
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: a source its flow refuses answers at no site.

@@ -1130,7 +1130,6 @@ dependencies = [
  "gandr-theory-levitation",
  "gandr-theory-sites",
  "hotpath",
- "once_cell",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -1523,6 +1522,7 @@ dependencies = [
  "gandr-theory-circuit-algebras",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-levitation",
+ "gandr-theory-sites",
  "gandr-workflow-sweep",
  "hotpath",
  "memmap2",
@@ -1948,6 +1948,7 @@ dependencies = [
 name = "gandr-theory-sites"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "gandr-theory-circuit-algebras",
  "quenchant-anodized",
  "quenchant-shape",

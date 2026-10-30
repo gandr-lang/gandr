@@ -5,6 +5,8 @@
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 
 use Adoption::Adopted;
 use Adoption::Judged;
@@ -1212,6 +1214,206 @@ fn a_pass_hands_its_context_the_program_s_tier_2282()
             "the revision resumed after its leading item"
         );
     }
+}
+
+/// A store holding no stratum, counting the strata a pass asks it for and
+/// hands it to keep.
+#[derive(Debug, Default)]
+struct Counting
+{
+    /// The strata asked for.
+    asked: AtomicUsize,
+    /// The strata handed to keep.
+    kept: AtomicUsize,
+}
+
+impl gandr_core_checker::ua::StratumStore for Counting
+{
+    /// Count one stratum asked for, and answer none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn recall(
+        &self,
+        _at: gandr_core_checker::ua::StratumAt,
+    ) -> Maybe<gandr_theory_sites::StratumImage, gandr_core_checker::ua::recalled::Absent>
+    {
+        let _before = self.asked.fetch_add(1, Ordering::Relaxed);
+        Maybe::Absent(gandr_core_checker::ua::recalled::Absent::Unkept)
+    }
+
+    /// Count one stratum handed to keep.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &self,
+        _at: gandr_core_checker::ua::StratumAt,
+        _stratum: &gandr_theory_sites::SegalStratum,
+    )
+    {
+        let _before = self.kept.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Hear a refusal, which a store answering nothing never prompts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refuse(
+        &self,
+        _at: gandr_core_checker::ua::StratumAt,
+        _why: gandr_theory_sites::Unreplayed,
+    )
+    {
+    }
+}
+
+/// `ua[2, 4](Magma, Magma, f, f)`, `f` swapping the elements of `mul`'s
+/// corolla and keeping `one`'s.
+///
+/// # Specification
+/// trivial.
+fn magma_statement(arena: &mut CoreArena) -> gandr_core_term::ValueId
+{
+    use gandr_core_term::ua::Description;
+    use gandr_core_term::ua::Generator;
+    use gandr_core_term::ua::Sides;
+    use gandr_core_term::ua::Stratum;
+    use gandr_kernel_term::FieldLabel;
+    use gandr_theory_sites::ElementIndex;
+    use gandr_theory_sites::PortCount;
+    use gandr_theory_sites::Profile;
+    use gandr_theory_sites::Table;
+
+    let label = |text: &str| FieldLabel::from(alloc::string::String::from(text));
+    let generator = |text: &str, inputs: usize| Generator {
+        label: label(text),
+        profile: Profile {
+            inputs: PortCount::from(inputs),
+            outputs: PortCount::from(1_usize),
+        },
+    };
+    let magma = || Description {
+        name: gandr_theory_levitation::Name::from("Magma"),
+        generators: alloc::boxed::Box::from([generator("mul", 2), generator("one", 0)]),
+    };
+    let mut table = |images: &[usize]| {
+        gandr_core_checker::ua::tabulate(
+            arena,
+            &Table::new(images.iter().copied().map(ElementIndex::from).collect()),
+        )
+    };
+    let swap = table(&[1, 0]);
+    let keep = table(&[0]);
+    let record = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("mul"), swap),
+        (label("one"), keep),
+    ]));
+    arena.value_ua(
+        Stratum {
+            degree: gandr_theory_sites::Degree::from(2_usize),
+            bound: gandr_theory_sites::ShapeSize::from(4_usize),
+        },
+        Arc::new(Sides {
+            source: magma(),
+            target: magma(),
+        }),
+        record,
+        record,
+    )
+}
+
+/// #4034: a pass hands its context the stratum store its program carries,
+/// fresh and after leading items. Two statements at one stratum ask the store
+/// once and hand it the stratum certified once, because the context holds
+/// it; each statement derives its path.
+#[test]
+fn a_pass_hands_its_context_the_program_s_stratum_store_4034()
+{
+    let item = |position: usize, key: &str, body| {
+        Item::new(
+            ItemKey::from(key),
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(body),
+                OriginToken::from(position),
+            ),
+        )
+    };
+    let statements = |arena: &mut CoreArena, from: usize| {
+        [from, from + 1]
+            .map(|position| {
+                let statement = magma_statement(arena);
+                item(
+                    position,
+                    if position == from { "first" } else { "second" },
+                    statement,
+                )
+            })
+            .to_vec()
+    };
+    let stored = |arena: CoreArena, items: Vec<Item>, store: &Arc<Counting>| {
+        let mut program = Program::new(arena, items).expect("positions ascend");
+        let shared: Arc<dyn gandr_core_checker::ua::StratumStore> = Arc::<Counting>::clone(store);
+        program.keep_strata_in(shared);
+        program
+    };
+    // The statements are the last two items of every program here.
+    let derived = |resumed: &Resume| {
+        let typings: Vec<&Typing> = resumed.typings().collect();
+        typings
+            .get(typings.len().saturating_sub(2) ..)
+            .unwrap_or_default()
+            .iter()
+            .filter(|typing| matches!(typing, Typing::Synthesised { .. }))
+            .count()
+    };
+
+    let fresh_store = Arc::new(Counting::default());
+    let mut arena = CoreArena::new();
+    let items = statements(&mut arena, 0);
+    let fresh = check_program(
+        &mut stored(arena, items, &fresh_store),
+        CheckBudget::DEFAULT,
+    )
+    .expect("the order builds");
+    assert_eq!(
+        derived(&fresh),
+        2,
+        "each statement derives its path: {fresh:?}"
+    );
+    assert_eq!(
+        [&fresh_store.asked, &fresh_store.kept].map(|count| count.load(Ordering::Relaxed)),
+        [1, 1],
+        "a fresh pass asks its store once and hands it the stratum once"
+    );
+
+    let after_store = Arc::new(Counting::default());
+    let mut arena = CoreArena::new();
+    let one = arena.value_literal(integer(Natural(1)));
+    let leading_item = item(0, "lead", one);
+    let mut leading_program = stored(arena, vec![leading_item.clone()], &after_store);
+    let (_, leading) = lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+    let mut revision = leading_program.arena().clone();
+    let mut items = vec![leading_item];
+    items.extend(statements(&mut revision, 1));
+    let after = resume_after(
+        Maybe::Absent(submitted::Absent::Fresh),
+        &Arc::new(leading),
+        &mut stored(revision, items, &after_store),
+    )
+    .expect("the order builds");
+    assert_eq!(
+        derived(&after),
+        2,
+        "each statement derives its path: {after:?}"
+    );
+    assert_eq!(
+        [&after_store.asked, &after_store.kept].map(|count| count.load(Ordering::Relaxed)),
+        [1, 1],
+        "a pass after leading items asks its store once and hands it the stratum once"
+    );
 }
 
 /// What the sealed counter's abstract type stands for.

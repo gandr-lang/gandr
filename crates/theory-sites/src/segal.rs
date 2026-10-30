@@ -202,6 +202,24 @@ impl Cocone
         &self.grafts
     }
 
+    /// The cocone of the shape at `shape` with `inclusions` and `grafts`, as
+    /// a replay checked them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn replayed(
+        shape: ShapeIndex,
+        inclusions: Box<[Inclusion]>,
+        grafts: Box<[Graft]>,
+    ) -> Self
+    {
+        Self {
+            shape,
+            inclusions,
+            grafts,
+        }
+    }
+
     /// The cocone of the catalogue's shape at `index`.
     ///
     /// # Specification

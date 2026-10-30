@@ -191,9 +191,9 @@ default-features = false
 features = ["anodized"]
 
 # BLAKE3 hashing for content and node identities, the kernel's verdict keys
-# and build identity, the engine hub's socket names, the rank a sweep's
-# sample orders sources by, and the digest a prose finding's sentence is
-# keyed by.
+# and build identity, the site's build identity a stored stratum's key binds,
+# the engine hub's socket names, the rank a sweep's sample orders sources by,
+# and the digest a prose finding's sentence is keyed by.
 # consumers:
 # - core-incremental
 # - kernel-core (and its build script)
@@ -205,6 +205,7 @@ features = ["anodized"]
 # - surface-lsp
 # - surface-parser (dev)
 # - surface-syntax
+# - theory-sites (build script)
 # - workflow-prose
 # - workflow-sweep
 [workspace.dependencies.blake3]
@@ -1162,19 +1163,6 @@ features = ["std"]
 version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
-
-# Race-initialised single-assignment cells without std: the corolla strata
-# `ua_n` certifies once per process. The choice, its alternatives and its
-# reversal are in the checker's `ua` module.
-# features:
-# - alloc: `race::OnceBox`, which holds a boxed value; `std` stays off in the
-#   no_std checker
-# consumers:
-# - core-checker
-[workspace.dependencies.once_cell]
-version = "1.21.4"
-default-features = false
-features = ["alloc"]
 
 # Relative paths between two absolute ones: the address an import writes for
 # a file that moved, relative to the importer's directory.

@@ -2564,6 +2564,7 @@ where
         own: Vec::with_capacity(encoded.len()),
     };
     let tier = edited.tier();
+    let strata = edited.strata();
     let (arena, layout) = edited.parts_mut();
     let mut context = match start {
         Start::Fresh(budget) => CheckingContext::new(arena, budget),
@@ -2572,6 +2573,7 @@ where
     if let Some((make, policy)) = tier {
         context.decide_endpoints_on(make(), policy);
     }
+    context.keep_strata_in(strata);
     let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once.

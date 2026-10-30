@@ -59,6 +59,11 @@
 //! presentation reader does not read it. A table that names no policy there
 //! is, or a key that is not one, is a fault as a bad spelling is.
 //!
+//! The same key and policy sign and believe the certified strata a `ua`
+//! statement reads, kept in `gandr/verdicts/strata`. A later `check` replays
+//! a stratum it believes against its catalogue, and certifies afresh one that
+//! does not replay. `--recheck` reads and keeps no stratum.
+//!
 //! # Saves under the XDG cache directory
 //!
 //! The language server keeps the checkpoints an editor's save persists in
@@ -66,7 +71,8 @@
 //! when it names an absolute path, and `$HOME/.cache` otherwise, by the same
 //! rule. The directory is a cache: removing it costs the next open a whole
 //! judgement, and nothing else. The kernel's receipts sit beside them, in
-//! `gandr/verdicts`: removing it costs the next `check` a whole kernel pass.
+//! `gandr/verdicts`: removing it costs the next `check` a whole kernel pass
+//! and each stratum's certification.
 //!
 //! # The store under the XDG data directory
 //!

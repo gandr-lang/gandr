@@ -2,6 +2,8 @@
 //! catalogue of that family as a sub-site, its stratum, and diagrams that
 //! fill a chain.
 
+use alloc::sync::Arc;
+
 use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_circuit_algebras::Wire;
@@ -207,8 +209,8 @@ fn the_chain_catalogue_is_the_full_sub_site_on_the_chains()
 #[test]
 fn the_chain_stratum_is_certified_through_the_three_chain()
 {
-    let catalogue = Catalogue::chains(ShapeSize::from(7)).expect("the catalogue builds");
-    let shapes_of = |stratum: &SegalStratum<'_>| -> Vec<Shape> {
+    let catalogue = Arc::new(Catalogue::chains(ShapeSize::from(7)).expect("the catalogue builds"));
+    let shapes_of = |stratum: &SegalStratum| -> Vec<Shape> {
         stratum
             .cocones()
             .iter()
@@ -218,8 +220,8 @@ fn the_chain_stratum_is_certified_through_the_three_chain()
             })
             .collect()
     };
-    let four =
-        SegalStratum::certify(&catalogue, Degree::from(4)).expect("degree four is certified");
+    let four = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(4))
+        .expect("degree four is certified");
     assert_eq!(
         four.corollas()
             .iter()
@@ -232,8 +234,8 @@ fn the_chain_stratum_is_certified_through_the_three_chain()
         "the point and the 1-chain"
     );
     assert_eq!(shapes_of(&four), [chain(Length(2))], "the 2-chain alone");
-    let five =
-        SegalStratum::certify(&catalogue, Degree::from(5)).expect("degree five is certified");
+    let five = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(5))
+        .expect("degree five is certified");
     assert_eq!(
         shapes_of(&five),
         [chain(Length(2)), chain(Length(3))],
@@ -241,7 +243,7 @@ fn the_chain_stratum_is_certified_through_the_three_chain()
     );
     assert!(
         matches!(
-            SegalStratum::certify(&catalogue, Degree::from(6)),
+            SegalStratum::certify(Arc::clone(&catalogue), Degree::from(6)),
             Err(Uncertified::Degree { degree }) if degree == Degree::from(6)
         ),
         "no chain at size seven has degree six"

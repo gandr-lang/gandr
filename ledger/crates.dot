@@ -212,6 +212,7 @@ digraph crates {
   "surface-dispatcher" -> "surface-pretty";
   "surface-dispatcher" -> "surface-syntax";
   "surface-dispatcher" -> "theory-cell-complexes";
+  "surface-dispatcher" -> "theory-sites";
   "surface-driver" -> "core-incremental";
   "surface-driver" -> "core-publish";
   "surface-driver" -> "kernel-core";

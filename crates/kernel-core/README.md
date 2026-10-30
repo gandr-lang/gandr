@@ -44,7 +44,6 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Receipt scope.** A `CheckedId` names a position, not an environment identity. Use it only with the corresponding admission history.
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, and `audit` reports every declaration that rests on it.
 - **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
-- **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
 ## Examples
 
@@ -121,6 +120,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement, § codebruijn-carrier, § footprint-from-support) — the judgement returns the binders it read as its output.
 - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
 - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
 

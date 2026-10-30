@@ -500,6 +500,10 @@ pub struct CheckingContext<'arena>
     /// kernel takes, or as an evaluation it derives. A checkpoint does not
     /// keep it, as it does not keep the tier.
     admitting: gandr_kernel_core::AdmissionPolicy,
+    /// The catalogues and strata the context holds for its life, and the
+    /// store it recalls them from and keeps them to. A checkpoint does not
+    /// keep them: a resumed context takes the store it is handed.
+    strata: crate::ua::Strata,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -826,6 +830,7 @@ impl<'arena> CheckingContext<'arena>
             reducts: Vec::new(),
             tier: None,
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
+            strata: crate::ua::Strata::default(),
         }
     }
 
@@ -904,6 +909,7 @@ impl<'arena> CheckingContext<'arena>
             ref reducts,
             tier: _,
             admitting: _,
+            strata: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1097,6 +1103,7 @@ impl<'arena> CheckingContext<'arena>
             reducts,
             tier: None,
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
+            strata: crate::ua::Strata::default(),
         }
     }
 
@@ -1140,6 +1147,40 @@ impl<'arena> CheckingContext<'arena>
     pub const fn admitting(&self) -> gandr_kernel_core::AdmissionPolicy
     {
         self.admitting
+    }
+
+    /// Recall the strata `ua` statements name from `store`, and keep there
+    /// what this context certifies.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later stratum the context does not hold is asked of
+    ///   `store` first; a context holds one store, the last handed.
+    /// - provides: the driver's hand-in of its store, as it hands its tier.
+    /// - panics: none.
+    /// - executable: none — the store is a trait object no predicate compares.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a context handed a store holding a stratum's image
+    ///   replays it and certifies nothing, and one holding a damaged image
+    ///   refuses it by name and certifies afresh.
+    /// - witness: `ua::tests::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
+    #[inline]
+    pub fn keep_strata_in(
+        &mut self,
+        store: alloc::sync::Arc<dyn crate::ua::StratumStore>,
+    )
+    {
+        self.strata.keep_in(store);
+    }
+
+    /// The catalogues and strata the context holds, and its store.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn strata_mut(&mut self) -> &mut crate::ua::Strata
+    {
+        &mut self.strata
     }
 
     /// Offer `point` and `endpoint` to the context's tier.

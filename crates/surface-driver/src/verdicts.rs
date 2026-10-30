@@ -1,12 +1,17 @@
 //! The kernel verdict cache a `check` installs: this installation's key, read
 //! or minted, the store under the cache directory, and the policy the user's
-//! configuration names (`config` § The kernel's key and its verdicts).
+//! configuration names (`config` § The kernel's key and its verdicts). The
+//! stratum store beside it believes the same policy and signs with the same
+//! key, and holds its strata in a store under the cache directory's `strata`.
 //!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: §
 //!   kernel-verdict-reuse — the receipt is the kernel's signature, made with
 //!   the installation's key, and the policy is the operator's setting.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
+//!   strata persist in the store, which a `check` installs beside the verdict
+//!   cache.
 
 use core::fmt;
 use std::io;
@@ -22,7 +27,9 @@ use gandr_core_publish::Unpublished;
 use gandr_core_publish::publish_as;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::TrustPolicy;
+use gandr_surface_dispatcher::StoredStrata;
 use gandr_surface_dispatcher::VerdictCache;
+use gandr_surface_dispatcher::install_stratum_store;
 use gandr_surface_dispatcher::install_verdict_cache;
 
 use crate::config;
@@ -58,15 +65,18 @@ impl fmt::Display for Uninstalled
     }
 }
 
-/// Install the cache `kernel` asks for, unless it asks to recheck or no
-/// directory is named for the key or the store.
+/// Install the cache `kernel` asks for, and the stratum store beside it,
+/// unless it asks to recheck or no directory is named for the key or the
+/// store.
 ///
 /// # Specification
 /// - requires: called once, before the walk.
 /// - ensures: under [`config::Kernel::Trusting`], with both directories named,
 ///   the process's readmissions recall what this installation's key or a listed
-///   one signed, and keep what they check under this installation's key;
-///   otherwise nothing is installed and every declaration is checked.
+///   one signed, and keep what they check under this installation's key; its
+///   contexts recall the strata such a key signed from the store under the
+///   cache directory's `strata`, and keep there what they certify; otherwise
+///   nothing is installed and every declaration and stratum is checked.
 /// - fails: the key cannot be read or minted, or the store cannot be opened.
 /// - panics: none.
 /// - executable: none — the key, the store and the installation are external
@@ -77,8 +87,10 @@ impl fmt::Display for Uninstalled
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a second `check` over one cache recalls what the first
-///   recorded; `--recheck` and a key the policy does not list recall nothing.
+///   recorded and replays the strata it kept; `--recheck` and a key the policy
+///   does not list recall nothing.
 /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
+/// - witness: `tests::cli::a_second_check_replays_the_strata_the_first_kept_4034`
 pub fn install(kernel: config::Kernel) -> Result<(), Uninstalled>
 {
     let config::Kernel::Trusting(mut trusted) = kernel
@@ -106,15 +118,14 @@ pub fn install(kernel: config::Kernel) -> Result<(), Uninstalled>
             why: String::from("cannot be opened"),
         });
     };
-    install_verdict_cache(VerdictCache::new(
-        TrustPolicy::Trusted(trusted),
-        store,
-        signer,
-    ))
-    .map_err(|_installed| Uninstalled {
-        path: directory,
-        why: String::from("a cache is already installed"),
-    })
+    let policy = TrustPolicy::Trusted(trusted);
+    let strata = StoredStrata::new(policy.clone(), directory.join("strata"), signer.clone());
+    install_verdict_cache(VerdictCache::new(policy, store, signer))
+        .and_then(|()| install_stratum_store(strata))
+        .map_err(|_installed| Uninstalled {
+            path: directory,
+            why: String::from("a cache is already installed"),
+        })
 }
 
 /// The key at `path`, minted there when there is none.

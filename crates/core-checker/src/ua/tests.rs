@@ -3,6 +3,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
@@ -32,11 +34,15 @@ use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Species;
+use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Table;
 use gandr_theory_sites::Uncertified;
+use gandr_theory_sites::Unreplayed;
 use quenchant_shape::shape::Maybe;
 
+use super::StratumAt;
 use super::StratumDefect;
+use super::StratumStore;
 use super::Translators;
 use super::UaDefect;
 use super::UaRefusal;
@@ -44,6 +50,7 @@ use super::Universal;
 use super::Way;
 use super::code;
 use super::derive;
+use super::recalled;
 use super::tabulate;
 use crate::bridge::Outcome;
 use crate::bridge::Readmission;
@@ -137,9 +144,9 @@ fn two() -> Species
 ///
 /// # Specification
 /// trivial.
-fn catalogue() -> Catalogue
+fn catalogue() -> Arc<Catalogue>
 {
-    Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds")
+    Arc::new(Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds"))
 }
 
 /// The catalogue position of the corolla of `legs`.
@@ -147,7 +154,7 @@ fn catalogue() -> Catalogue
 /// # Specification
 /// trivial.
 fn corolla(
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     legs: Legs,
 ) -> ShapeIndex
 {
@@ -294,7 +301,7 @@ fn judged(
 /// trivial.
 fn universal(
     arena: &mut CoreArena,
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     species: (&Species, &Species),
     translators: &BTreeMap<ShapeIndex, Translators>,
 ) -> Result<Universal, UaRefusal>
@@ -332,7 +339,7 @@ fn prepared<'arena>(
 fn universal_after(
     arena: &mut CoreArena,
     prelude: &[Declaration],
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     species: (&Species, &Species),
     translators: &BTreeMap<ShapeIndex, Translators>,
 ) -> Result<Universal, UaRefusal>
@@ -370,8 +377,8 @@ fn admission(
 fn the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe()
 {
     let catalogue = catalogue();
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
     let mut arena = CoreArena::new();
@@ -473,7 +480,7 @@ fn the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe()
 /// trivial.
 fn universal_of_nothing(
     arena: &mut CoreArena,
-    stratum: &SegalStratum<'_>,
+    stratum: &SegalStratum,
     species: &Species,
 ) -> Universal
 {
@@ -485,8 +492,8 @@ fn universal_of_nothing(
 fn equivalent_equivalences_go_to_identified_paths()
 {
     let catalogue = catalogue();
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
     let mut arena = CoreArena::new();
@@ -560,8 +567,8 @@ fn equivalent_equivalences_go_to_identified_paths()
 fn the_swap_at_degree_two_is_a_path_over_its_segal_telescope()
 {
     let catalogue = catalogue();
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(2)).expect("degree two is certified");
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(2))
+        .expect("degree two is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
     let mut arena = CoreArena::new();
@@ -620,7 +627,7 @@ fn the_swap_at_degree_two_is_a_path_over_its_segal_telescope()
         readmission.readmitted()
     );
     for degree in [3_usize, 4] {
-        let higher = SegalStratum::certify(&catalogue, Degree::from(degree))
+        let higher = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(degree))
             .expect("every degree the catalogue reaches is certified");
         let path = universal(&mut arena, &higher, (&monoid, &monoid), &translators)
             .expect("the swap is a path at every certified degree");
@@ -653,8 +660,8 @@ fn the_swap_at_degree_two_is_a_path_over_its_segal_telescope()
 fn a_corolla_automorphism_acts_on_a_certificate_by_conjugation()
 {
     let catalogue = catalogue();
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(2)).expect("degree two is certified");
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(2))
+        .expect("degree two is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let mut arena = CoreArena::new();
     let [automorphism, translator, second] =
@@ -819,20 +826,20 @@ fn what_the_stratum_does_not_admit_it_refuses_by_name()
     let catalogue = catalogue();
     assert!(
         matches!(
-            SegalStratum::certify(&catalogue, Degree::from(5)),
+            SegalStratum::certify(Arc::clone(&catalogue), Degree::from(5)),
             Err(Uncertified::Degree { degree }) if degree == Degree::from(5)
         ),
         "no stratum, so no ua_n, past every shape of the catalogue"
     );
     assert!(
         matches!(
-            SegalStratum::certify(&catalogue, Degree::from(0)),
+            SegalStratum::certify(Arc::clone(&catalogue), Degree::from(0)),
             Err(Uncertified::Degree { degree }) if degree == Degree::from(0)
         ),
         "nor below the corollas"
     );
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(1)).expect("degree one is certified");
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(1))
+        .expect("degree one is certified");
     let (binary, constant) = (corolla(&stratum, Legs(2, 1)), corolla(&stratum, Legs(0, 1)));
     let monoid = monoid();
     let two = two();
@@ -1263,5 +1270,195 @@ fn a_written_statement_refuses_each_defect_by_name()
     ];
     for ((refusal, case), expected) in refusals.into_iter().zip(expected) {
         assert!(expected(refusal), "{case}: {refusal:?}");
+    }
+}
+
+/// What a test store was handed: the strata kept, the refusals heard as
+/// expected, and the others.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Counts
+{
+    /// The strata handed to keep.
+    kept: usize,
+    /// The refusals heard as expected.
+    refused: usize,
+    /// The refusals heard otherwise.
+    other: usize,
+}
+
+/// A store answering one image, or none, at every stratum, counting the
+/// strata it is handed to keep and the refusals it hears, as expected or not.
+#[derive(Debug)]
+struct Answering
+{
+    /// The image answered.
+    image: Maybe<StratumImage, recalled::Absent>,
+    /// The refusal the store expects to hear.
+    expected: Unreplayed,
+    /// The strata handed to keep.
+    kept: AtomicUsize,
+    /// The refusals heard as expected.
+    refused: AtomicUsize,
+    /// The refusals heard otherwise.
+    other: AtomicUsize,
+}
+
+impl Answering
+{
+    /// The store answering `image`, expecting `expected` when it refuses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        image: Maybe<StratumImage, recalled::Absent>,
+        expected: Unreplayed,
+    ) -> Arc<Self>
+    {
+        Arc::new(Self {
+            image,
+            expected,
+            kept: AtomicUsize::new(0),
+            refused: AtomicUsize::new(0),
+            other: AtomicUsize::new(0),
+        })
+    }
+
+    /// The strata kept, the expected refusals and the others.
+    ///
+    /// # Specification
+    /// trivial.
+    fn counts(&self) -> Counts
+    {
+        Counts {
+            kept: self.kept.load(Ordering::Relaxed),
+            refused: self.refused.load(Ordering::Relaxed),
+            other: self.other.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl StratumStore for Answering
+{
+    /// The image the store answers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn recall(
+        &self,
+        _at: StratumAt,
+    ) -> Maybe<StratumImage, recalled::Absent>
+    {
+        self.image.clone()
+    }
+
+    /// Count one stratum kept.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &self,
+        _at: StratumAt,
+        _stratum: &SegalStratum,
+    )
+    {
+        let _before = self.kept.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Count one refusal, as expected or not.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refuse(
+        &self,
+        _at: StratumAt,
+        why: Unreplayed,
+    )
+    {
+        let count = if why == self.expected {
+            &self.refused
+        }
+        else {
+            &self.other
+        };
+        let _before = count.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// #4034: two statements at one stratum, checked in one context handed a
+/// store. A store holding nothing is handed the stratum once, which the
+/// context then holds. A store holding its image replays it and is handed
+/// nothing to keep, so no certification ran. A store holding a damaged image
+/// hears it refused as malformed, and is handed the stratum certified afresh.
+/// Each statement derives its path under every store.
+#[test]
+fn a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034()
+{
+    let image = SegalStratum::certify(catalogue(), Degree::from(2))
+        .expect("degree two is certified")
+        .image();
+    let mut damaged = Vec::from(image.clone());
+    let _last = damaged.pop();
+    let stores = [
+        (
+            Answering::new(
+                Maybe::Absent(recalled::Absent::Unkept),
+                Unreplayed::Malformed,
+            ),
+            Counts {
+                kept: 1,
+                refused: 0,
+                other: 0,
+            },
+            "a store holding nothing keeps the stratum once",
+        ),
+        (
+            Answering::new(Maybe::Present(image), Unreplayed::Malformed),
+            Counts {
+                kept: 0,
+                refused: 0,
+                other: 0,
+            },
+            "a stored image replays, and nothing is certified",
+        ),
+        (
+            Answering::new(
+                Maybe::Present(StratumImage::from(damaged)),
+                Unreplayed::Malformed,
+            ),
+            Counts {
+                kept: 1,
+                refused: 1,
+                other: 0,
+            },
+            "a damaged image is refused by name and certified afresh",
+        ),
+    ];
+    for (store, counts, case) in stores {
+        let mut arena = CoreArena::new();
+        let swap = table(&mut arena, Images(&[1, 0]));
+        let keep = table(&mut arena, Images(&[0]));
+        let fields = [(Spelled("mul"), swap), (Spelled("one"), keep)];
+        let module = [0_usize, 1].map(|position| {
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Absent(crate::declaration::signature::Absent::Unsigned),
+                Maybe::Present(written(&mut arena, Head(2, 4), &fields, &fields)),
+                OriginToken::from(position),
+            )
+        });
+        let report = {
+            let shared: Arc<dyn StratumStore> = Arc::<Answering>::clone(&store);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            context.keep_strata_in(shared);
+            check_module(&mut context, &module)
+        };
+        assert!(
+            report
+                .judged()
+                .iter()
+                .all(|judged| matches!(judged.verdict(), Verdict::Synthesised { .. })),
+            "{case}: each statement derives its path: {report:?}"
+        );
+        assert_eq!(store.counts(), counts, "{case}");
     }
 }

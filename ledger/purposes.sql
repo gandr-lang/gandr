@@ -252,6 +252,9 @@ INSERT INTO purpose VALUES('core-checker','ua::Universal','struct','An equivalen
 INSERT INTO purpose VALUES('core-checker','ua::Way','enum','Which way a translator record reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::code','function','The code of a species at a corolla''s profile: one unit summand per element, in the stratum''s enumeration order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::derive','function','The certificate-universe path the equivalence the translators give is, at a certified stratum.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::NoStratumStore','struct','The stratum store that keeps nothing, for a context that certifies its strata in process alone.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::StratumAt','struct','Names a stratum by the bound of its catalogue and its degree.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::StratumStore','trait','Answers a context''s strata from a store a driver implements and keeps each one the context certifies; a recalled stratum is replayed before it is read.','oracle','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::tabulate','function','The canonical translator of a table: a thunk of a lambda casing on its argument and returning, at the i-th summand, the injection of the unit at the i-th image.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','view::FragmentRefusal','enum','Why a type node has no view.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::Bound','enum','Whether a stated entry lies within the host''s.',NULL,'fits','sound',NULL);
@@ -1160,6 +1163,7 @@ INSERT INTO purpose VALUES('kernel-core','support::NodeOutcome','enum','What one
 INSERT INTO purpose VALUES('kernel-core','support::NodeSupport','struct','The complete support of one goal expansion: its question, the binders its judgement read, and the name of its goal record over them.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportContext','struct','The state one checking session derives its memo keys against: the canonical content numbering, the buffer one goal''s read binders are gathered in, and the open goals'' accruals of the binders their judgements read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','support::SupportPlane','enum','Which of the two machines a support belongs to.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::Attestation','enum','Says whether a stratum receipt is believed: signed by a key the policy lists over the stratum''s key and bytes, or refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::EncodedVerdict','struct','Holds the canonical bytes of what one checked admission read of its declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::KernelIdentity','struct','Names a kernel installation by the public half of the key it signs receipts with.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::KernelSigner','struct','Holds an installation''s signing key, which signs only the verdicts its own kernel checked.',NULL,'fits','sound',NULL);
@@ -1168,6 +1172,8 @@ INSERT INTO purpose VALUES('kernel-core','verdict::RecallCount','struct','Counts
 INSERT INTO purpose VALUES('kernel-core','verdict::Receipt','struct','Holds a kernel''s signature over the records it checked, and the identity that signed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::ReceiptSignature','struct','Holds the Ed25519 signature a receipt carries over its records'' digest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::StoredReceipt','struct','Holds a receipt beside the records it attests, as a store keeps and answers them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::StratumBytes','struct','Holds the canonical image of a stratum the checker certified, as a stratum receipt signs it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','verdict::StratumKey','struct','Names a stored stratum by the digest of the theory build, its bound and its degree, which a stratum receipt signs.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::TrustPolicy','enum','Says whose receipts a run believes: none, rechecking every declaration, or the listed signers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::VerdictImage','struct','Holds bytes read as a recorded verdict, refused when they are not one whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','verdict::VerdictKey','struct','Names a declaration''s admission by the BLAKE3 chain over the kernel''s build and every segment admitted up to it.',NULL,'fits','sound',NULL);
@@ -2216,6 +2222,11 @@ INSERT INTO purpose VALUES('surface-dispatcher','stage::StageRun','struct','A ru
 INSERT INTO purpose VALUES('surface-dispatcher','stage::StageVerdict','enum','The verb''s verdict over its whole run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','stage::Staged','struct','One program of a run, checked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','stage::Staging','struct','The `stage` verb''s run, not yet started: its programs, in order, and the width the driver''s pool runs them at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','strata::Asking','enum','Says whether any context of a process asked its stratum store for a stratum.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','strata::StoredStrata','struct','Holds the policy, key, store and counts under which every checking context of a process recalls and keeps its strata.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','strata::StrataTally','struct','Counts what a process''s stratum store recalled, certified, refused, did not believe and could not write.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','strata::install_stratum_store','function','Installs a process''s stratum store before its walk, once.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','strata::strata_tally','function','Reads what the installed stratum store recalled, certified, refused, did not believe and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','tier::AdmittedTally','struct','Counts what a process under an admission policy took from the emitter tier, beside the policy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','tier::Admitting','struct','Names the policy and the tier a verdict that took admitted results stands on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','tier::admitted_tally','function','Reads what the installed admission policy took, when it takes admitted results.',NULL,'fits','sound',NULL);
@@ -4013,6 +4024,9 @@ INSERT INTO purpose VALUES('theory-sites','stratum::Species','struct','A graphic
 INSERT INTO purpose VALUES('theory-sites','stratum::Table','struct','A bijection''s image of each element, by position: entry `i` is the position of the image of the `i`-th element.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','stratum::Uncertified','enum','Why a stratum is not certified.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','stratum::Vacuity','struct','The degrees a certificate names as vacuous, above its catalogue''s top shape through its own degree, and the replay that checks the claim by the catalogue.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','stratum::image::SitesBuild','struct','The theory crates'' build identity: a digest of their files and the workspace lock, which a stored stratum''s key binds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','stratum::image::StratumImage','struct','A certified stratum''s canonical bytes: its catalogue''s size, its degree, its corollas and its cocones by catalogue index.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','stratum::image::Unreplayed','enum','Why stored bytes do not replay as a stratum over a catalogue, named by the part that fails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','stratum::restrict','function','The corolla restriction of the ua-desc construction: the equivalence of species a natural isomorphism of the free algebras restricts to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','units::GeneratorBound','struct','The most generators a scalar of the universe holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','units::UnitOutcomes','struct','The outcomes of the unit check.',NULL,'fits','sound',NULL);

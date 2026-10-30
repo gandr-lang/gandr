@@ -3,6 +3,7 @@
 //! stratum over it, vacuous above its top shape.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Corolla;
@@ -145,9 +146,10 @@ fn the_profile_catalogue_is_the_full_sub_site_on_its_shapes()
 #[test]
 fn the_magma_stratum_names_its_vacuous_degrees()
 {
-    let catalogue = Catalogue::profiles(ShapeSize::from(7), magma()).expect("the catalogue builds");
-    let stratum =
-        SegalStratum::certify(&catalogue, Degree::from(7)).expect("degree seven is certified");
+    let catalogue =
+        Arc::new(Catalogue::profiles(ShapeSize::from(7), magma()).expect("the catalogue builds"));
+    let stratum = SegalStratum::certify(Arc::clone(&catalogue), Degree::from(7))
+        .expect("degree seven is certified");
     assert_eq!(
         stratum
             .corollas()
@@ -196,7 +198,7 @@ fn the_magma_stratum_names_its_vacuous_degrees()
     );
     assert!(
         matches!(
-            SegalStratum::certify(&catalogue, Degree::from(8)),
+            SegalStratum::certify(Arc::clone(&catalogue), Degree::from(8)),
             Err(Uncertified::Degree { degree }) if degree == Degree::from(8)
         ),
         "no wiring at size seven has degree eight"

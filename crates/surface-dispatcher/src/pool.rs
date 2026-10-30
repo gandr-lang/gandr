@@ -13,7 +13,9 @@
 //! The `no_std` crates name no thread. `gandr-core-fork`'s
 //! [`Fork`] is their seam: [`Pooled`] runs a staged check's stages on this
 //! pool, and the walk and the formatting spawn their jobs on it directly,
-//! because each hands its steps over on the calling thread.
+//! because each hands its steps over on the calling thread. [`Pool`]
+//! implements [`Fork`] itself, so a session's molding and its trials fork on
+//! the same threads, and a scope's jobs spawn there too.
 //!
 //! **One pool, not one per verb.** Before, the walk started scoped threads for
 //! each visit and the staging built a `rayon` pool for each run. A process

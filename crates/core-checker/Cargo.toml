@@ -32,8 +32,8 @@ path = "tests/lib.rs"
 # bridge erases into the term crate's arena and admits through the kernel's
 # choke point, which re-derives every declaration the judgement accepts. The
 # certified strata's species and equivalences come from the site crate,
-# which `ua_n` reads its range and alphabet from; alloc-only `once_cell`
-# cells hold each bound's catalogue and each stratum once per process. An
+# which `ua_n` reads its range and alphabet from; a context holds its
+# catalogues and strata, and a store the driver implements carries them on. An
 # endpoint's session type is related to another through the session crate's
 # one relation engine. A hole a call nominates for an omitted implicit is a
 # metavariable of the unifier's metacontext, solved by its solver. The pinned
@@ -59,7 +59,6 @@ gandr-kernel-term.workspace = true
 gandr-theory-deep-inference.workspace = true
 gandr-theory-sites.workspace = true
 hotpath = { workspace = true, optional = true }
-once_cell.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 

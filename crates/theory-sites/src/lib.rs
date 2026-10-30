@@ -136,6 +136,12 @@
 //! chains alone, [`Family::Chains`], certifies the same way, and [`fills`]
 //! checks that a diagram's cells meet along a shape's inner wires.
 //!
+//! [`SegalStratum::image`] writes a certified stratum as bytes, and
+//! [`SegalStratum::replay`] reads them back over a catalogue, checking each
+//! corolla, inclusion and graft and refusing a damaged part as
+//! [`Unreplayed`]. A store keys the bytes by [`SitesBuild`], the digest of
+//! the build that certified them.
+//!
 //! The conditions read a site through [`Level`], its objects, maps and
 //! classes at a bound; the catalogue is level one. A [`Wreath`] over the
 //! wiring catalogue and a level is the next level: an outer shape whose
@@ -152,6 +158,17 @@
 //! (`ShapeSize`, `PointCount`, `ShapeIndex`, `CaseCount`, `Degree`,
 //! `GeneratorBound`, …) converting with `From` both ways; the carrier's `Edge`,
 //! `Wire`, `EdgeCount` and `WireCount` name vertices and wires.
+//!
+//! # Running
+//!
+//! Print every condition's outcome at its bound, then run the tests in both
+//! modes:
+//!
+//! ```sh
+//! cargo run --release -p gandr-theory-sites --example suites
+//! cargo nextest run -p gandr-theory-sites
+//! RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-theory-sites
+//! ```
 //!
 //! # References
 //!
@@ -360,9 +377,12 @@ pub use stratum::Port;
 pub use stratum::PortCount;
 pub use stratum::Profile;
 pub use stratum::SegalStratum;
+pub use stratum::SitesBuild;
 pub use stratum::Species;
+pub use stratum::StratumImage;
 pub use stratum::Table;
 pub use stratum::Uncertified;
+pub use stratum::Unreplayed;
 pub use stratum::Vacuity;
 pub use stratum::restrict;
 pub use stratum::stratum_corolla;
