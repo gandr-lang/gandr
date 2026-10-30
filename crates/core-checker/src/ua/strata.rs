@@ -251,13 +251,13 @@ impl Strata
     ///   as [`SegalStratum::certify`] refuses.
     /// - panics: none.
     /// - intension: the first call at a site and a bound builds its catalogue.
-    ///   The first at a wiring stratum asks the store, replays what it
-    ///   answers, and certifies when the store answers nothing or an image
-    ///   that does not replay; the store hears the refusal and keeps what is
-    ///   certified. A chain stratum is certified and held, and the store never
-    ///   hears of it. A refusal of the catalogue or the stratum is not held, so
-    ///   it is checked again. A catalogue built under one budget answers a
-    ///   later call under any other.
+    ///   The first at a wiring stratum asks the store, replays what it answers,
+    ///   and certifies when the store answers nothing or an image that does not
+    ///   replay; the store hears the refusal and keeps what is certified. A
+    ///   chain stratum is certified and held, and the store never hears of it.
+    ///   A refusal of the catalogue or the stratum is not held, so it is
+    ///   checked again. A catalogue built under one budget answers a later call
+    ///   under any other.
     ///
     /// # Errors
     /// [`StratumDefect`] as above.

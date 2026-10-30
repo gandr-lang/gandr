@@ -209,10 +209,10 @@
 //!   process, which leave a second process certifying again, and a fixed
 //!   allowance of bounds, which refuses a stratum that certifies in under a
 //!   second. Reversal: a stratum whose replay costs what its certification
-//!   costs. The context holds them per [`Site`]: `ua[n, k]` reads the
-//!   wirings, and `compose[n, k]` the chains ([`crate::compose`]). The store
-//!   keeps wiring strata alone, keyed by bound and degree, since a chain
-//!   catalogue holds one shape per length and certifies at once.
+//!   costs. The context holds them per [`Site`]: `ua[n, k]` reads the wirings,
+//!   and `compose[n, k]` the chains ([`crate::compose`]). The store keeps
+//!   wiring strata alone, keyed by bound and degree, since a chain catalogue
+//!   holds one shape per length and certifies at once.
 //!
 //! # References
 //!
