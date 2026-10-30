@@ -27,6 +27,10 @@
 #            the board is read for no lane, and neither rule below applies
 #   now      the reading's time, in seconds since the epoch
 #   prs      the open pull requests: [{body, head}]
+#   lanes    the keys of `.config/issues/lanes.toml`; absent reads as none
+#   branches origin's branches working a claimed issue with no claim marker:
+#            [{head, at}], at the head commit's time in seconds since the
+#            epoch; absent reads as none (#3951)
 #   focus    the programme focus (`.config/issues/focus.toml`, #3959) as
 #            `deps_focus` reads it, or absent for none: {epics: [number],
 #            members: [{number, epic, parent, state, labels}]}, members every
@@ -76,15 +80,18 @@
 # its axes' questions printed first.
 #
 # A claim is the slice in hand (`tracker.md` § tracker-claims, #3915). A lane
-# holds a claimed issue when its claim marker names the lane (`markers.jq`),
-# or, with no marker, when the issue is in the lane's areas, as a stall
-# reading places it. A lane holding a claimed issue that no open pull request
-# names (`names`, as the lifecycle reads it) claims nothing: the answer is one
-# `held: #n <title>` line per such issue and no pick, and `claim:release` is
-# the way out. An issue a lane released, or a merge on its branch advanced,
-# in the last 2 hours comes first for that lane, ahead of every bucket, the
-# latest release first, and no other lane claims it in those 2 hours: the
-# continuation stays with the lane that holds its context.
+# holds a claimed issue when its claim marker names the lane (`markers.jq`).
+# With no marker, the lane whose branch on origin works the issue holds it
+# (#3951): `<lane>-<n>-<slug>` or `<lane>-<seat>-<n>-<slug>`, the lane the
+# longest `lanes` key the branch opens with, the newest head first when two
+# lanes' branches work it. With neither, the issue's areas place it, as a
+# stall reading places it. A lane holding a claimed issue that no open pull
+# request names (`names`, as the lifecycle reads it) claims nothing: the
+# answer is one `held: #n <title>` line per such issue and no pick, and
+# `claim:release` is the way out. An issue a lane released, or a merge on its
+# branch advanced, in the last 2 hours comes first for that lane, ahead of
+# every bucket, the latest release first, and no other lane claims it in
+# those 2 hours: the continuation stays with the lane that holds its context.
 #
 # A focus narrows the order to the programme's work (#3959): the answer opens
 # with `focus: #<epic> …`, and the order offers nothing outside the focus, a
@@ -123,8 +130,25 @@ def blocked($live): $live["\(.number)"] as $read
 
 # A release within the 2 hours a lane keeps its continuation (#3915).
 def kept($now): .body | release | select(. != null and $now - .at < 7200);
-# Whether lane `$lane`, over `$areas`, holds this claimed issue.
-def held_by($lane; $areas): (.body | claim_lane) as $marked | if $marked != null then $marked == $lane else within($areas) end;
+# The lane a branch names: the longest key of `$lanes` the branch is, or
+# opens with before a `-`, or null.
+def branch_lane($lanes):
+  . as $head | [$lanes[] | select(. as $lane | $head == $lane or ($head | startswith($lane + "-")))] | max_by(length);
+# Whether a branch works issue `$n`: after its lane, `<n>-<slug>` or a numbered
+# seat's `<seat>-<n>-<slug>`, the forms `opening.jq` reads.
+def works($n; $lanes):
+  branch_lane($lanes) as $lane
+  | $lane != null and (.[($lane | length) + 1:] | test("^([0-9]+-)?\($n)(-[a-z]|$)"));
+# The lane whose branch on origin works this issue, the newest head first, or
+# null.
+def worked_by($branches; $lanes):
+  .number as $n | [$branches[] | select(.head | works($n; $lanes))] | max_by(.at) // null
+  | if . == null then null else .head | branch_lane($lanes) end;
+# Whether lane `$lane`, over `$areas`, holds this claimed issue: the lane its
+# marker names, else the lane whose branch works it, else its areas (#3951).
+def held_by($lane; $areas; $branches; $lanes):
+  ((.body | claim_lane) // worked_by($branches; $lanes)) as $placed
+  | if $placed != null then $placed == $lane else within($areas) end;
 
 # A collector's open rows (#3111), as `collector_rows` reads them.
 def open_rows: .body // "" | collector_rows | length;
@@ -144,6 +168,8 @@ def observation($refusals):
 | (.now // 0) as $now
 | (.live // {}) as $live
 | (.prs // []) as $prs
+| (.branches // []) as $branches
+| (.lanes // []) as $lanes
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
 | (.landings // []) as $landings
 | (if .focus == null or (.focus.epics | length) == 0 then null
@@ -177,7 +203,7 @@ def observation($refusals):
   (if $focus == null then empty else "focus: \($focus.epics | map("#\(.)") | join(" "))" end),
   (.
 | (if $lane == null then []
-   else [.issues[] | select(has("status:claimed") and held_by($lane; $areas))
+   else [.issues[] | select(has("status:claimed") and held_by($lane; $areas; $branches; $lanes))
      | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
    end) as $held
 | if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else

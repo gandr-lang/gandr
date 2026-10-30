@@ -1804,9 +1804,12 @@ fi
 # One claim is in hand at a time (#3915): a lane holding a claimed issue that
 # no open pull request names claims nothing, each such issue printed on
 # stderr as `held: #n <title>`, and exits 1; the seat lands it or lets it go
-# with `claim:release`. An issue the lane released, or a merge on its branch
-# advanced, in the last 2 hours heads its order, and another lane passes it
-# over for those 2 hours.
+# with `claim:release`. A claimed issue is the lane's when its claim marker
+# names the lane, else when the lane's branch on origin works it, the newest
+# head first, else when it is in the lane's areas (#3951): one `ls-remote`,
+# and one commit read per branch working a claim with no marker. An issue the
+# lane released, or a merge on its branch advanced, in the last 2 hours heads
+# its order, and another lane passes it over for those 2 hours.
 # A programme focus (`.config/issues/focus.toml`, #3959) narrows the order to
 # the focus's work: its defects and refactors, then its units, the lane's
 # areas first. The answer opens with `focus: #<epic> …` on stderr, and
@@ -1870,12 +1873,30 @@ concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id F
 refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
 gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {body: (.body // ""), head: .head.ref}]' | jq -s 'add // []' > "$board/prs.json"
+# Origin's branches working a claimed issue with no claim marker, each with
+# its head commit's time (#3951): `next.jq` places such a claim in the lane
+# its newest branch names, before the issue's areas.
+lanes=$(yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml" | jq -c .)
+unmarked=$(jq -r -L "$claims" 'include "markers";
+  .[] | select((.labels | index("status:claimed")) and (.body | claim_lane) == null) | .number' "$board/issues.json" | tr '\n' ' ')
+branches='[]'
+if [[ -n ${unmarked// /} ]]; then
+  branches=$(git ls-remote --heads origin \
+    | awk -v numbers="$unmarked" 'BEGIN { split(numbers, list, " "); for (i in list) wanted[list[i]] = 1 }
+        { head = $2; sub(/^refs\/heads\//, "", head); count = split(head, part, "-")
+          for (i = 2; i <= count; i++) if (part[i] in wanted) { print $1 "\t" head; next } }' \
+    | while IFS=$'\t' read -r sha head; do
+        jq -n -c --arg head "$head" --arg at "$(gh api "repos/$repo/commits/$sha" --jq .commit.committer.date)" \
+          '{head: $head, at: ($at | fromdateiso8601)}'
+      done | jq -s -c .)
+fi
 now=$(date +%s)
 live='{}'
 while :; do
   lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
     --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson landings "$landings" --argjson live "$live" \
-    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live}' \
+    --argjson lanes "$lanes" --argjson branches "$branches" \
+    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live, lanes: $lanes, branches: $branches}' \
     | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
   unread=$(jq -R -r --argjson live "$live" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[.] == null)' <<< "$lines")
   [[ -n $unread ]] || break
