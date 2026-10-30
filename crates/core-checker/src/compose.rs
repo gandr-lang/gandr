@@ -12,16 +12,15 @@
 //! synthesises a path type `Path(A, xᵢ₋₁, xᵢ)`, a cell written as a call
 //! running first as a scrutinee does. Its two endpoints colour the chain's
 //! legs at the cell's vertex, and [`fills`] admits the diagram when each
-//! inner wire's two colours convert. The composite then checks its
-//! realisation against
-//! `F Path(A, x₀, xₘ)`, the fold the lowering made, and synthesises
-//! `Path(A, x₀, xₘ)`. A cell of the unknown type colours its legs with no
-//! endpoint, which meets any, and a composite whose outer endpoint or carrier
-//! is unknown has the type its realisation synthesises.
+//! inner wire's two colours convert. The composite then has the type its
+//! realisation synthesises, the fold the lowering made, `Path(A, x₀, xₘ)`. A
+//! cell of the unknown type colours its legs with no endpoint, which meets
+//! any.
 //!
 //! The bridge erases a returned composite to its realisation, and any other
-//! composite to the value its realisation returns. The kernel so replays the
-//! terms the chain written with `then` gives it.
+//! composite to the value its realisation returns. The realisation is
+//! synthesised as the chain written with `then` is, so the kernel replays
+//! the terms that chain gives it.
 //!
 //! A refusal names its defect: [`CheckRefusal::ComposeUncertified`] for the
 //! stratum, [`CheckRefusal::ComposeNotAShape`] for the pasting and

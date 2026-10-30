@@ -10274,17 +10274,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Continue a composite whose cells synthesised `types`: read each cell's
-    /// type as a path, fill the pasting with their endpoints, and check the
-    /// realisation against the path from the first start to the last end.
+    /// type as a path, fill the pasting with their endpoints, and synthesise
+    /// the realisation's type.
     ///
     /// # Specification
     /// - requires: `types` are the types the cells of the composite `at`
     ///   synthesised, in vertex order.
-    /// - ensures: a composite whose carrier and outer endpoints are known waits
-    ///   on its realisation's check against `F Path(A, x₀, xₘ)` and then
-    ///   synthesises `Path(A, x₀, xₘ)`, `A` the first known cell's carrier. Any
-    ///   other waits on its realisation's synthesis as a compound endpoint's
-    ///   does.
+    /// - ensures: a composite whose cells fill its pasting waits on its
+    ///   realisation's synthesis as a compound endpoint's does. The realisation
+    ///   is the fold of those cells, so it synthesises the path from the first
+    ///   start to the last end, and the composite elaborates as the chain
+    ///   written with `then` does.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at a cell whose type is no
     ///   path; the refusals of [`crate::compose::admit`] and
     ///   [`crate::compose::fill`]; a machine invariant for a node that is no
@@ -10324,21 +10324,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::MachineInvariant);
         }
         let shape = crate::compose::admit(self.context.strata_mut(), at, composite)?;
-        let mut carriers = Vec::with_capacity(cells.len());
         let mut diagram = Vec::with_capacity(cells.len());
         for (&cell, &ty) in cells.iter().zip(types) {
             let (left, right) = match self.path_expected(TermNode::Value(cell), ty)? {
-                PathReading::Known {
-                    carrier,
-                    left,
-                    right,
-                } => {
-                    carriers.push(carrier);
-                    (
-                        crate::compose::Endpoint::Known(left),
-                        crate::compose::Endpoint::Known(right),
-                    )
-                },
+                PathReading::Known { left, right, .. } => (
+                    crate::compose::Endpoint::Known(left),
+                    crate::compose::Endpoint::Known(right),
+                ),
                 PathReading::Unknown(_) => (
                     crate::compose::Endpoint::Unknown,
                     crate::compose::Endpoint::Unknown,
@@ -10346,21 +10338,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             };
             diagram.push(crate::compose::cell(left, right));
         }
-        let ends = crate::compose::fill(self.context, at, &shape, &diagram)?;
-        if let (
-            Some(&carrier),
-            (crate::compose::Endpoint::Known(start), crate::compose::Endpoint::Known(end)),
-        ) = (carriers.first(), ends)
-        {
-            let arena = self.context.arena_mut();
-            let path = arena.value_type_path(carrier, start, end);
-            let expected = arena.comp_type_returner(path);
-            self.wait(Frame::NativeYield(Produced::ValueType(path.into())));
-            return Ok(Step::Descend(Goal::Computation {
-                term: realised,
-                direction: Direction::Check(expected),
-            }));
-        }
+        crate::compose::fill(self.context, at, &shape, &diagram)?;
         self.wait(Frame::ReturnedEndpoint { at });
         Ok(Step::Descend(Goal::Computation {
             term: realised,
