@@ -460,7 +460,7 @@ impl FreeIndices
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
             Value::Constant(_) | Value::Literal(_) =>
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
-            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Compose { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => true,
+            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => true,
         }),
         CoreTerm::Computation(id) => core.computation(id).is_some(),
     }))]
@@ -1094,11 +1094,16 @@ Err(_) => false,
                     },
                     Value::Compose {
                         ref cells,
-                        realised,
+                        realised: computed,
+                        ..
+                    }
+                    | Value::Fill {
+                        ref cells,
+                        generator: computed,
                         ..
                     } => {
                         extra = ExtraChildren::Values(cells.iter());
-                        one(computation(realised), Lowering::NONE)
+                        one(computation(computed), Lowering::NONE)
                     },
                     Value::Recorded(ref moves) => {
                         extra = ExtraChildren::Moves(moves.iter());

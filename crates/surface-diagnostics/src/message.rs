@@ -1022,6 +1022,16 @@ fn checked(
         CheckRefusal::ComposeDoesNotFill { .. } => {
             f.write_str("`compose` needs its cells to meet end to end along the chain")
         },
+        CheckRefusal::FillUncertified { .. } => {
+            f.write_str("`fill` needs a stratum the chain sub-site certifies")
+        },
+        CheckRefusal::NoFiller { .. } => f.write_str(
+            "`fill` needs a generator whose sides compose its cells, a cell that is a path between \
+             two cells, and the square that generator makes",
+        ),
+        CheckRefusal::GeneratorFamilyUnsupported { .. } => {
+            f.write_str("`fill` lifts its generator along paths only")
+        },
         CheckRefusal::UnenclosedRun { .. } => f.write_str(
             "a computation read as a value runs before the computation around it, and none \
              stands around this one",

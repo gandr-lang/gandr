@@ -624,6 +624,17 @@ pub enum ContentNode
         /// The realisation.
         realised: NodeIndex,
     },
+    /// A fill at a stratum over a chain, retaining the stratum and the
+    /// pasting in the cache identity: its generator, then its cells.
+    Fill
+    {
+        /// The stratum and the pasting.
+        composite: gandr_core_term::compose::Composite,
+        /// The generator's computation.
+        generator: NodeIndex,
+        /// The cells, in vertex order.
+        cells: Vec<NodeIndex>,
+    },
     /// An equivalence, retaining its evidence in the cache identity.
     PathEquiv
     {
@@ -1311,6 +1322,7 @@ impl ContentNode
         | Self::Univalence(..)
         | Self::Ua { .. }
         | Self::Compose { .. }
+        | Self::Fill { .. }
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
         | Self::Constant(_)
@@ -1435,6 +1447,7 @@ impl ContentNode
             | Self::Univalence(..)
             | Self::Ua { .. }
             | Self::Compose { .. }
+            | Self::Fill { .. }
             | Self::PathEquiv { .. }
             | Self::Variable { .. }
             | Self::Constant(_)
@@ -1595,6 +1608,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::Compose { ref cells, realised, .. } => ret.iter().eq(core::iter::once((realised, M)).chain(cells.iter().map(|&cell| (cell, V)))),
+            | Self::Fill { ref cells, generator, .. } => ret.iter().eq(core::iter::once((generator, M)).chain(cells.iter().map(|&cell| (cell, V)))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
             | Self::ListCase { list, on_nil, on_cons } => actual == Some(&[(list, V), (on_nil, M), (on_cons, M)][..]),
             | Self::Univalence(a, b)
@@ -1892,6 +1906,11 @@ impl ContentNode
                 realised,
                 ..
             } => Children::of(&[(realised, M)]).followed_by(cells, V),
+            Self::Fill {
+                ref cells,
+                generator,
+                ..
+            } => Children::of(&[(generator, M)]).followed_by(cells, V),
             Self::PathUniverse(first, second)
             | Self::PathProduct(first, second)
             | Self::Funext(first, second)
@@ -2023,7 +2042,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
-        Self::Compose { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
+        Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -2097,6 +2116,7 @@ impl ContentNode
             | Self::Univalence(..)
             | Self::Ua { .. }
             | Self::Compose { .. }
+            | Self::Fill { .. }
             | Self::PathEquiv { .. }
             | Self::Transport(..)
             | Self::Variable { .. }
@@ -4729,6 +4749,15 @@ fn value_content(
             cells: found.take(Sort::Value, cells)?,
             realised: found.computation()?,
         },
+        Value::Fill {
+            composite,
+            ref cells,
+            ..
+        } => ContentNode::Fill {
+            composite,
+            generator: found.computation()?,
+            cells: found.take(Sort::Value, cells)?,
+        },
         Value::Injection(summand, _) => ContentNode::Injection(summand, found.value()?),
         Value::Ascribe { .. } => ContentNode::ValueAscribe {
             value: found.value()?,
@@ -5570,6 +5599,18 @@ where
                 realised,
             }
         },
+        ContentNode::Fill {
+            composite,
+            generator,
+            ref cells,
+        } => {
+            let generator = image(generator);
+            ContentNode::Fill {
+                composite,
+                generator,
+                cells: cells.iter().map(|&cell| image(cell)).collect(),
+            }
+        },
         ContentNode::PathEquiv {
             path_type,
             forward,
@@ -6292,6 +6333,7 @@ fn mint_node(
         | ContentNode::Univalence(..)
         | ContentNode::Ua { .. }
         | ContentNode::Compose { .. }
+        | ContentNode::Fill { .. }
         | ContentNode::PathEquiv { .. }
         | ContentNode::Transport(..)
         | ContentNode::Element { .. }

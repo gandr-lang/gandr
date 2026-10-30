@@ -125,6 +125,9 @@ pub enum Nesting
     /// Run purely where a type after it reads it: it stands as the value it
     /// returns, `⟨c⟩`, rather than a bind's variable.
     Returned,
+    /// A fill: it stands as the value the induction filling its square
+    /// returns, `⟨r⟩`.
+    Filled(gandr_core_term::ComputationId),
 }
 
 /// What elaborating one declaration's body did: every decision the judgement
@@ -325,6 +328,7 @@ pub fn elaborate(
                 Nesting::Suspended => gandr_core_term::Nesting::Thunk,
                 Nesting::Ran(_) => gandr_core_term::Nesting::Run,
                 Nesting::Returned => gandr_core_term::Nesting::Returned,
+                Nesting::Filled(realised) => gandr_core_term::Nesting::Filled(realised),
             })
         })
         .collect();

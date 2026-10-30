@@ -425,6 +425,23 @@ pub enum Value
         /// The composite the cells realise: their `then` fold.
         realised: ComputationId,
     },
+    /// The filler generator at a stated stratum, `fill[n, k](Γ, t, d)`: the
+    /// square `t ↑ X` for `t` a curried function of Γ's cells and `d` the
+    /// cells in vertex order, each cell of `X` written as a path between two.
+    /// The checker certifies the stratum, reads `t`'s sides as composites of
+    /// the cells and builds the square's based path induction; the
+    /// elaboration stands the node as that induction, so evaluation and the
+    /// kernel never meet it.
+    Fill
+    {
+        /// The stratum and the shape the cells fill.
+        composite: crate::compose::Composite,
+        /// `t`: the computation returning the curried function of the cells.
+        generator: ComputationId,
+        /// The cells, in vertex order: a cell, or a path between two cells
+        /// for a cell of `X`.
+        cells: alloc::boxed::Box<[ValueId]>,
+    },
     /// A session identity statement between two session codes: `bisim(a, b)`,
     /// an element of `Path(Type, a, b)` when the protocols are bisimilar, or
     /// `sim(a, b)`, an element of `Flow(Type, a, b)` when `a` is a Gay–Hole
@@ -651,7 +668,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::Compose { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Row(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::Compose { .. } | Self::Fill { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Row(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -668,6 +685,7 @@ impl Value
             | Self::Equiv(..)
             | Self::Ua { .. }
             | Self::Compose { .. }
+            | Self::Fill { .. }
             | Self::SessionRelated { .. }
             | Self::Stay(_)
             | Self::Then(..)

@@ -54,6 +54,8 @@ fn every_role_has_its_own_name()
         FrameRole::EquivBackward,
         FrameRole::UaTranslators,
         FrameRole::ComposeCells,
+        FrameRole::FillCells,
+        FrameRole::FillAsked,
         FrameRole::UnivalenceRecord,
         FrameRole::UnivalenceChecked,
         FrameRole::ReturnedEndpoint,

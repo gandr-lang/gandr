@@ -239,6 +239,10 @@ impl Image
                 | Value::Compose {
                     realised: ref mut body,
                     ..
+                }
+                | Value::Fill {
+                    generator: ref mut body,
+                    ..
                 },
             )
             | Self::Computation(
@@ -717,6 +721,10 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Value::Compose {
                                     cells: ref components,
                                     ..
+                                }
+                                | Value::Fill {
+                                    cells: ref components,
+                                    ..
                                 } => self.pending.extend(
                                     components
                                         .iter()
@@ -1057,6 +1065,10 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         Image::Value(
                             Value::Tuple(ref mut components)
                             | Value::Compose {
+                                cells: ref mut components,
+                                ..
+                            }
+                            | Value::Fill {
                                 cells: ref mut components,
                                 ..
                             },

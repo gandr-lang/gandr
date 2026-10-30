@@ -546,6 +546,7 @@ pub mod elaboration;
 pub mod eliminator;
 mod equiv;
 mod failure;
+pub mod fill;
 #[cfg(test)]
 mod fixture;
 mod flow;

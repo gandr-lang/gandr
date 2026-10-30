@@ -428,6 +428,11 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::ComposeUncertified { .. }) => "compose-uncertified",
         Typing::Refused(Refusal::ComposeNotAShape { .. }) => "compose-not-a-shape",
         Typing::Refused(Refusal::ComposeDoesNotFill { .. }) => "compose-does-not-fill",
+        Typing::Refused(Refusal::FillUncertified { .. }) => "fill-uncertified",
+        Typing::Refused(Refusal::NoFiller { .. }) => "no-filler",
+        Typing::Refused(Refusal::GeneratorFamilyUnsupported { .. }) => {
+            "generator-family-unsupported"
+        },
         Typing::Refused(Refusal::SessionNotEquivalent(_)) => "session-not-equivalent",
         Typing::Refused(Refusal::SessionNotSubtype(_)) => "session-not-subtype",
         Typing::Refused(Refusal::SessionCodeExpected(_)) => "session-code-expected",

@@ -649,6 +649,37 @@ pub enum Refusal
         /// The first defect of the diagram.
         defect: gandr_theory_sites::Unfilled,
     },
+    /// A fill at a stratum the chain sub-site does not certify.
+    FillUncertified
+    {
+        /// The `fill`.
+        at: Site,
+        /// Why the stratum is not certified.
+        stratum: gandr_core_checker::ua::StratumDefect,
+    },
+    /// A fill no square of its generator answers.
+    NoFiller
+    {
+        /// The `fill`.
+        at: Site,
+        /// The left side the generator is asked to relate.
+        left: Site,
+        /// The right side.
+        right: Site,
+        /// The stratum the fill names.
+        stratum: gandr_core_term::ua::Stratum,
+    },
+    /// A fill whose cells of `X` are of a family with no generator instance
+    /// yet.
+    GeneratorFamilyUnsupported
+    {
+        /// The `fill`.
+        at: Site,
+        /// The first cell of the family.
+        cell: Site,
+        /// The family.
+        family: gandr_core_checker::fill::UnsupportedFamily,
+    },
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -1528,6 +1559,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::ComposeUncertified { at, stratum } = matched_left_value && let Refusal::ComposeUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
  else if let CheckRefusal::ComposeNotAShape { at, pasting } = matched_left_value && let Refusal::ComposeNotAShape { at: projected, pasting: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == pasting }
  else if let CheckRefusal::ComposeDoesNotFill { at, defect } = matched_left_value && let Refusal::ComposeDoesNotFill { at: projected, defect: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == defect }
+ else if let CheckRefusal::FillUncertified { at, stratum } = matched_left_value && let Refusal::FillUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
+ else if let CheckRefusal::NoFiller { at, left, right, stratum } = matched_left_value && let Refusal::NoFiller { at: projected, left: projected_left, right: projected_right, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) && stored == stratum }
+ else if let CheckRefusal::GeneratorFamilyUnsupported { at, cell, family } = matched_left_value && let Refusal::GeneratorFamilyUnsupported { at: projected, cell: projected_cell, family: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_cell == self.site(ArenaNode::Value(cell)) && stored == family }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -1834,6 +1868,28 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::ComposeDoesNotFill { at, defect } => Refusal::ComposeDoesNotFill {
                 at: self.site(ArenaNode::Value(at)),
                 defect,
+            },
+            CheckRefusal::FillUncertified { at, stratum } => Refusal::FillUncertified {
+                at: self.site(ArenaNode::Value(at)),
+                stratum,
+            },
+            CheckRefusal::NoFiller {
+                at,
+                left,
+                right,
+                stratum,
+            } => Refusal::NoFiller {
+                at: self.site(ArenaNode::Value(at)),
+                left: self.site(ArenaNode::Value(left)),
+                right: self.site(ArenaNode::Value(right)),
+                stratum,
+            },
+            CheckRefusal::GeneratorFamilyUnsupported { at, cell, family } => {
+                Refusal::GeneratorFamilyUnsupported {
+                    at: self.site(ArenaNode::Value(at)),
+                    cell: self.site(ArenaNode::Value(cell)),
+                    family,
+                }
             },
             CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,

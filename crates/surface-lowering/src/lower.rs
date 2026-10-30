@@ -2590,6 +2590,17 @@ enum Plan
         /// The backward translator record.
         backward: NodeIndex,
     },
+    /// The filler generator at a stratum over a chain: its generator, read
+    /// as a computation, and its cells.
+    Fill
+    {
+        /// The stratum and the chain.
+        composite: gandr_core_term::compose::Composite,
+        /// The generator `t`.
+        generator: NodeIndex,
+        /// The cells in vertex order, in the lowerer's operand store.
+        cells: Stretch,
+    },
     /// `Eq.generic(T)` as a definition's whole body: nothing here, the
     /// declaration's type and body derived whole from `T`'s signature
     /// ([`Lowerer::mint_generics`]).
@@ -11118,7 +11129,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Fill { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
@@ -11162,6 +11173,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return match former {
                 ua::Stratified::Ua => self.ua_call(site, stratum, cursor),
                 ua::Stratified::Compose => self.compose_call(site, stratum, cursor),
+                ua::Stratified::Fill => self.fill_call(site, stratum, cursor),
             };
         }
         if let Run::One(head) = cursor.clone().operands()
@@ -15701,6 +15713,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Univalence(_)
                 | Plan::PathProduct(..)
                 | Plan::Ua { .. }
+                | Plan::Fill { .. }
                 | Plan::ListNil
                 | Plan::ListCons(..)
                 | Plan::Run(_)
@@ -16110,6 +16123,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Univalence(_)
             | Plan::PathProduct(..)
             | Plan::Ua { .. }
+            | Plan::Fill { .. }
             | Plan::ListNil
             | Plan::ListCons(..)
             | Plan::Transport(..)
@@ -16939,7 +16953,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Ascribed(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Fill { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Ascribed(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -17045,6 +17059,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.value(id, origin)
                 })
             }),
+            Plan::Fill {
+                composite,
+                generator,
+                cells,
+            } => self.mint_fill((composite, generator, cells), sink, origin),
             Plan::ListNil => {
                 let id = sink.arena.value_list_nil();
                 Maybe::Present(sink.value(id, origin))

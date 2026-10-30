@@ -1176,6 +1176,7 @@ pub fn covariant(
                 | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Compose { .. }
+                | Value::Fill { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)

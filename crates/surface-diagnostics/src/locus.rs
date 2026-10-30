@@ -47,6 +47,7 @@ use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::compared;
+use gandr_core_checker::fill::UnsupportedFamily;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
@@ -121,6 +122,11 @@ pub enum Label
     /// An endpoint of the path type a reflexivity was checked against, and
     /// why its point is not shown to convert to it.
     Endpoint(EndpointMiss),
+    /// A side of the square a fill was checked against, which the square its
+    /// generator makes does not convert to.
+    Unfilled,
+    /// A cell of a fill whose family has no filler yet.
+    Unlifted,
     /// A declared name or a binder over a builtin: the primary locus of a
     /// shadowing warning.
     Shadows,
@@ -192,6 +198,8 @@ impl fmt::Display for Label
                 "an endpoint the point is not shown to convert to within the conversion's step \
                  budget",
             ),
+            Self::Unfilled => f.write_str("a side the generator's square does not make"),
+            Self::Unlifted => f.write_str("a cell of a family with no filler yet"),
             Self::Shadows => f.write_str("shadows a builtin"),
             Self::Inferred(exit) => write!(f, "exits by an inferred `{exit}`"),
             Self::Ran(Purity::Pure) => f.write_str("runs by an inferred `run`"),
@@ -806,6 +814,10 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
         role(&ret.context[0_usize], Label::Met(wanted)) && second_unnamed
     } else if let CheckRefusal::EndpointMismatch { miss, .. } = refusal {
         role(&ret.context[0_usize], Label::Endpoint(miss)) && role(&ret.context[1_usize], Label::Endpoint(miss))
+    } else if matches!(refusal, CheckRefusal::NoFiller { .. }) {
+        role(&ret.context[0_usize], Label::Unfilled) && role(&ret.context[1_usize], Label::Unfilled)
+    } else if matches!(refusal, CheckRefusal::GeneratorFamilyUnsupported { .. }) {
+        role(&ret.context[0_usize], Label::Unlifted) && second_unnamed
     } else if matches!(refusal, CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. } | LinearityDefect::Closed { .. }
                 | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. }) {
@@ -872,6 +884,18 @@ fn checked(
             annotated(spanned(origins.value(left)), Label::Endpoint(miss)),
             annotated(spanned(origins.value(right)), Label::Endpoint(miss)),
         ]),
+        CheckRefusal::NoFiller {
+            at, left, right, ..
+        } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.value(left)), Label::Unfilled),
+            annotated(spanned(origins.value(right)), Label::Unfilled),
+        ]),
+        CheckRefusal::GeneratorFamilyUnsupported { at, cell, .. } => {
+            (spanned(origins.value(at)), [
+                annotated(spanned(origins.value(cell)), Label::Unlifted),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ])
+        },
         CheckRefusal::FunextUnsupported { at, classifier }
         | CheckRefusal::EquivUnsupported { at, classifier }
         | CheckRefusal::UncertifiedStratum {
@@ -962,6 +986,7 @@ fn checked(
         | CheckRefusal::ComposeUncertified { at, .. }
         | CheckRefusal::ComposeNotAShape { at, .. }
         | CheckRefusal::ComposeDoesNotFill { at, .. }
+        | CheckRefusal::FillUncertified { at, .. }
         | CheckRefusal::UnenclosedRun { at }
         | CheckRefusal::ImplicitUnsolved { at, .. }
         | CheckRefusal::ModelUnanswered { at, .. }
@@ -1218,6 +1243,69 @@ fn annotated(
     }
 }
 
+/// A former a stratum over the chains certifies, as its refusal names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Chained
+{
+    /// `compose[n, k]`.
+    Composition,
+    /// `fill[n, k]`.
+    Fill,
+}
+
+impl fmt::Display for Chained
+{
+    /// Writes the former's name as a refusal's prose reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Composition => "composition",
+            Self::Fill => "a fill",
+        })
+    }
+}
+
+/// Writes why the chains do not certify `stratum` for `former`.
+///
+/// # Specification
+/// trivial.
+fn uncertified(
+    f: &mut fmt::Formatter<'_>,
+    former: Chained,
+    stratum: StratumDefect,
+) -> fmt::Result
+{
+    match stratum {
+        StratumDefect::Degree { degree } => write!(
+            f,
+            "{former} over a chain is certified from degree 1 to the largest degree of a chain in the catalogue, not degree {}",
+            usize::from(degree)
+        ),
+        StratumDefect::Condition { degree } => write!(
+            f,
+            "{former} needs every chain up to its degree to be the colimit of its corollas; a chain of degree {} is not",
+            usize::from(degree)
+        ),
+        StratumDefect::Allowance { bound } => write!(
+            f,
+            "{former} reads chains of size up to 64, the most vertices a shape holds, not {}",
+            usize::from(bound)
+        ),
+        StratumDefect::Budget { bound, counted } => write!(
+            f,
+            "the chains of size up to {} count {} shape classes before they stop, past the budget {former} reads within",
+            usize::from(bound),
+            usize::from(counted)
+        ),
+    }
+}
+
 /// The prose a checker refusal is titled with.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1366,35 +1454,19 @@ impl fmt::Display for Checked
                     f.write_str("a translator returns no element of its target code")
                 },
             },
-            | CheckRefusal::ComposeUncertified { stratum, .. } => match stratum {
-                | StratumDefect::Degree { degree } => write!(
-                    f,
-                    "composition over a chain is certified from degree 1 to the largest degree of a chain in the catalogue, not degree {}",
-                    usize::from(degree)
-                ),
-                | StratumDefect::Condition { degree } => write!(
-                    f,
-                    "composition needs every chain up to its degree to be the colimit of its corollas; a chain of degree {} is not",
-                    usize::from(degree)
-                ),
-                | StratumDefect::Allowance { bound } => write!(
-                    f,
-                    "composition reads chains of size up to 64, the most vertices a shape holds, not {}",
-                    usize::from(bound)
-                ),
-                | StratumDefect::Budget { bound, counted } => write!(
-                    f,
-                    "the chains of size up to {} count {} shape classes before they stop, past the budget composition reads within",
-                    usize::from(bound),
-                    usize::from(counted)
-                ),
-            },
+            | CheckRefusal::ComposeUncertified { stratum, .. } => uncertified(f, Chained::Composition, stratum),
             | CheckRefusal::ComposeNotAShape { pasting: gandr_core_term::compose::Pasting::Chain { cells }, .. } => write!(
                 f,
                 "a chain of m = {} cells has size 2m + 1 and degree 2m - 1, which must lie within the stratum's bound and degree",
                 usize::from(cells)
             ),
             | CheckRefusal::ComposeDoesNotFill { defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
+            | CheckRefusal::FillUncertified { stratum, .. } => uncertified(f, Chained::Fill, stratum),
+            | CheckRefusal::NoFiller { .. } => f.write_str("the filler generator fills only the square it makes with its cells: each side a composite of the cells, one cell or more a path between two cells, and the square asked for that one"),
+            | CheckRefusal::GeneratorFamilyUnsupported { family, .. } => match family {
+                | UnsupportedFamily::Flow => f.write_str("the filler generator lifts along paths, and a directed `Flow` cell has no filler yet"),
+                | UnsupportedFamily::Bridge => f.write_str("the filler generator lifts along paths, and a bridge has no filler yet"),
+            },
             | CheckRefusal::UnenclosedRun { .. } => f.write_str("a run where a value is read needs a computation around it to run before"),
             | CheckRefusal::ImplicitUnsolved { .. } => f.write_str("an implicit this call omits is determined by neither its arguments nor the type it is checked against"),
             | CheckRefusal::ModelUnanswered { .. } => f.write_str("no module in scope is a model this call's omitted model implicit admits"),
@@ -3019,6 +3091,26 @@ mod tests
                     wire: 1_usize.into(),
                 },
             },
+            CheckRefusal::FillUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::NoFiller {
+                at: value,
+                left: value,
+                right: value,
+                stratum: gandr_core_term::ua::Stratum {
+                    degree: gandr_theory_sites::Degree::from(5_usize),
+                    bound: gandr_theory_sites::ShapeSize::from(7_usize),
+                },
+            },
+            CheckRefusal::GeneratorFamilyUnsupported {
+                at: value,
+                cell: value,
+                family: gandr_core_checker::fill::UnsupportedFamily::Flow,
+            },
             CheckRefusal::UnenclosedRun { at: value },
             CheckRefusal::ImplicitUnsolved {
                 at: value,
@@ -3514,6 +3606,9 @@ mod tests
                         | CheckRefusal::ComposeUncertified { .. }
                         | CheckRefusal::ComposeNotAShape { .. }
                         | CheckRefusal::ComposeDoesNotFill { .. }
+                        | CheckRefusal::FillUncertified { .. }
+                        | CheckRefusal::NoFiller { .. }
+                        | CheckRefusal::GeneratorFamilyUnsupported { .. }
                         | CheckRefusal::UnenclosedRun { .. }
                         | CheckRefusal::ImplicitUnsolved { .. }
                         | CheckRefusal::ModelUnanswered { .. }
@@ -4587,6 +4682,8 @@ mod tests
             Label::Copied.to_string(),
             Label::Deprecated.to_string(),
             Label::Endpoint(EndpointMiss::Budget).to_string(),
+            Label::Unfilled.to_string(),
+            Label::Unlifted.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

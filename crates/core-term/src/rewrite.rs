@@ -1376,6 +1376,15 @@ impl<'arena> Engine<'arena>
         rewrite: Rewrite,
     ) -> Node
     {
+        // A fill stands as the induction the checker built for it. The
+        // induction reads the node's own context, so a region's splice raises
+        // it as it would raise the node.
+        if rewrite == Rewrite::Elaborate
+            && let Node::Value(held) = node
+            && let Some(&Nesting::Filled(realised)) = self.nesting.get(&held)
+        {
+            return Node::Value(self.arena.value_returned(realised));
+        }
         if rewrite == Rewrite::Elaborate
             && let (Node::Value(held), Node::Value(id)) = (node, rewritten)
             && let Some(&decided) = self.nesting.get(&held)
@@ -1384,7 +1393,7 @@ impl<'arena> Engine<'arena>
             match decided {
                 Nesting::Thunk => return Node::Value(self.arena.value_thunk(nested)),
                 Nesting::Returned => return Node::Value(self.arena.value_returned(nested)),
-                Nesting::Run => {},
+                Nesting::Run | Nesting::Filled(_) => {},
             }
         }
         // A force of a nested call the checker suspended is the call itself,
@@ -2097,7 +2106,7 @@ Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Row(ref row) => row.types().count(),
 Value::Tuple(ref components) => components.len(),
-Value::Compose { ref cells, .. } => cells.len().saturating_add(1),
+Value::Compose { ref cells, .. } | Value::Fill { ref cells, .. } => cells.len().saturating_add(1),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) | Value::Web(_) => 0_usize,
@@ -2283,6 +2292,19 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             .rev()
                             .map(|&cell| open(Node::Value(cell), depth)),
                     );
+                },
+                Some(&Value::Fill {
+                    generator,
+                    ref cells,
+                    ..
+                }) => {
+                    self.tasks.extend(
+                        cells
+                            .iter()
+                            .rev()
+                            .map(|&cell| open(Node::Value(cell), depth)),
+                    );
+                    self.tasks.push(open(Node::Computation(generator), depth));
                 },
                 Some(&Value::Recorded(ref moves)) => self.tasks.extend(
                     moves
@@ -3014,7 +3036,7 @@ Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Row(ref row) => row.types().count(),
 Value::Tuple(ref components) => components.len(),
-Value::Compose { ref cells, .. } => cells.len().saturating_add(1),
+Value::Compose { ref cells, .. } | Value::Fill { ref cells, .. } => cells.len().saturating_add(1),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) | Value::Web(_) => 0_usize,
@@ -3441,6 +3463,30 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                     let cells = changed.map_or_else(|| cells.clone(), Vec::into_boxed_slice);
                     self.arena
                         .value_compose(composite, cells, rewritten_realised)
+                }
+            },
+            Value::Fill {
+                composite,
+                generator,
+                ref cells,
+            } => {
+                let mut changed: Option<Vec<ValueId>> = None;
+                for (index, original) in cells.iter().enumerate().rev() {
+                    let rewritten = Self::value(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| cells.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                let rewritten_generator = Self::computation(&mut self.results, generator);
+                if changed.is_none() && rewritten_generator == generator {
+                    id
+                }
+                else {
+                    let cells = changed.map_or_else(|| cells.clone(), Vec::into_boxed_slice);
+                    self.arena.value_fill(composite, rewritten_generator, cells)
                 }
             },
             Value::ListCons(head, tail) => {
@@ -6245,6 +6291,9 @@ pub enum Nesting
     /// returns, `⟨c⟩`, so that type reads the computation rather than a bound
     /// variable it could not see through.
     Returned,
+    /// A fill the generator realised: it stands as the induction the
+    /// checker built for it, returned.
+    Filled(ComputationId),
 }
 
 /// A run with no computation enclosing it to run before.
@@ -6336,7 +6385,12 @@ fn survey(
                 else {
                     continue;
                 };
-                if matches!(*value, Value::Nested(_) | Value::Run(_)) {
+                // A decision stands at a nested computation, a written run or
+                // a fill; any other decided node no term reaches.
+                if matches!(
+                    *value,
+                    Value::Nested(_) | Value::Run(_) | Value::Fill { .. }
+                ) {
                     let _first = met.insert(id);
                 }
                 survey_value(value, id, region, nesting, &mut regions, &mut pending)?;
@@ -6473,7 +6527,8 @@ fn survey_value(
             );
         },
         // A composite's runs stand in its cells, which its realisation shares
-        // node for node, so the cells alone place them.
+        // node for node, so the cells alone place them. A fill's cells stand
+        // in its region, and its generator is a region of its own.
         Value::Tuple(ref components)
         | Value::Compose {
             cells: ref components,
@@ -6483,6 +6538,14 @@ fn survey_value(
                 .iter()
                 .map(|&component| Position::Value(component, region)),
         ),
+        Value::Fill {
+            generator,
+            ref cells,
+            ..
+        } => {
+            next.push(Position::Computation(generator, own));
+            next.extend(cells.iter().map(|&cell| Position::Value(cell, region)));
+        },
         Value::Constructor { ref fields, .. } => {
             next.extend(fields.iter().map(|&field| Position::Value(field, region)));
         },

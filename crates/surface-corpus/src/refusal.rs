@@ -880,6 +880,13 @@ pub enum RefusalName
     ComposeNotAShape,
     /// A composite whose cells do not fill its chain.
     ComposeDoesNotFill,
+    /// A fill at a stratum the chain sub-site does not certify.
+    FillUncertified,
+    /// A fill no square of its generator answers.
+    NoFiller,
+    /// A fill whose cells of `X` are of a family with no generator instance
+    /// yet.
+    GeneratorFamilyUnsupported,
     /// A run with no computation enclosing it to run before.
     UnenclosedRun,
     /// A term name no binder or earlier declaration answers.
@@ -1271,7 +1278,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 231_usize] = [
+    pub const VOCABULARY: [Self; 234_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1326,6 +1333,9 @@ impl RefusalName
         Self::ComposeUncertified,
         Self::ComposeNotAShape,
         Self::ComposeDoesNotFill,
+        Self::FillUncertified,
+        Self::NoFiller,
+        Self::GeneratorFamilyUnsupported,
         Self::UnenclosedRun,
         Self::CapabilityForged,
         Self::CapabilityAmplified,
@@ -1712,6 +1722,9 @@ impl RefusalName
         | (Self::ComposeUncertified, b"ComposeUncertified")
         | (Self::ComposeNotAShape, b"ComposeNotAShape")
         | (Self::ComposeDoesNotFill, b"ComposeDoesNotFill")
+        | (Self::FillUncertified, b"FillUncertified")
+        | (Self::NoFiller, b"NoFiller")
+        | (Self::GeneratorFamilyUnsupported, b"GeneratorFamilyUnsupported")
         | (Self::UnenclosedRun, b"UnenclosedRun")
         | (Self::SessionMismatch, b"SessionMismatch")
         | (Self::UnofferedLabel, b"UnofferedLabel")
@@ -1865,6 +1878,9 @@ impl RefusalName
             Self::ComposeUncertified => "ComposeUncertified",
             Self::ComposeNotAShape => "ComposeNotAShape",
             Self::ComposeDoesNotFill => "ComposeDoesNotFill",
+            Self::FillUncertified => "FillUncertified",
+            Self::NoFiller => "NoFiller",
+            Self::GeneratorFamilyUnsupported => "GeneratorFamilyUnsupported",
             Self::UnenclosedRun => "UnenclosedRun",
             Self::SessionMismatch => "SessionMismatch",
             Self::UnofferedLabel => "UnofferedLabel",
@@ -2964,6 +2980,9 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::ComposeUncertified { .. }, RefusalName::ComposeUncertified)
         | (CheckRefusal::ComposeNotAShape { .. }, RefusalName::ComposeNotAShape)
         | (CheckRefusal::ComposeDoesNotFill { .. }, RefusalName::ComposeDoesNotFill)
+        | (CheckRefusal::FillUncertified { .. }, RefusalName::FillUncertified)
+        | (CheckRefusal::NoFiller { .. }, RefusalName::NoFiller)
+        | (CheckRefusal::GeneratorFamilyUnsupported { .. }, RefusalName::GeneratorFamilyUnsupported)
         | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
         | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
         | (CheckRefusal::ModelUnanswered { .. }, RefusalName::ModelUnanswered)
@@ -3108,6 +3127,9 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::ComposeUncertified { .. } => RefusalName::ComposeUncertified,
         CheckRefusal::ComposeNotAShape { .. } => RefusalName::ComposeNotAShape,
         CheckRefusal::ComposeDoesNotFill { .. } => RefusalName::ComposeDoesNotFill,
+        CheckRefusal::FillUncertified { .. } => RefusalName::FillUncertified,
+        CheckRefusal::NoFiller { .. } => RefusalName::NoFiller,
+        CheckRefusal::GeneratorFamilyUnsupported { .. } => RefusalName::GeneratorFamilyUnsupported,
         CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
         CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
         CheckRefusal::ModelUnanswered { .. } => RefusalName::ModelUnanswered,

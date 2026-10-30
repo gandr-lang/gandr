@@ -323,7 +323,7 @@ fn ran(report: &ModuleReport) -> Vec<(ValueId, Purity)>
                 .filter_map(|(&at, &decided)| match decided {
                     Nesting::Ran(purity) => Some((at, purity)),
                     Nesting::Returned => Some((at, Purity::Pure)),
-                    Nesting::Suspended => None,
+                    Nesting::Suspended | Nesting::Filled(_) => None,
                 })
         })
         .collect()

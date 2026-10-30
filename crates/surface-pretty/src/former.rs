@@ -1176,9 +1176,10 @@ pub enum Former<'source, Node>
 /// every member the printer writes `?`.
 ///
 /// The set is closed and each member names its reason. A core former the
-/// surface writes is never here: [`crate::CoreSource`] matches every core
-/// former without a wildcard, so a former added to the core fails to compile
-/// until it is read as a [`Former`] or named here.
+/// surface writes is never here but the fill, until the printer writes its
+/// form (#4075): [`crate::CoreSource`] matches every core former without a
+/// wildcard, so a former added to the core fails to compile until it is read
+/// as a [`Former`] or named here.
 ///
 /// # Specification
 /// trivial.
@@ -1226,6 +1227,10 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
+    /// A filler generator, `fill[n, k](chain(m), t, (d₁, …, dₘ))`, whose form
+    /// the printer does not write yet (#4075). Its node holds no term the
+    /// form stands for: the checker derives the induction it elaborates to.
+    Fill,
 }
 
 /// A former the printer writes in a notation of its own, which does not read

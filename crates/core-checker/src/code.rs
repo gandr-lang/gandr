@@ -1015,6 +1015,7 @@ impl CodeDefinitions
             | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Compose { .. }
+            | Value::Fill { .. }
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)

@@ -15,14 +15,16 @@
 //!   operator and its argument — whether written in the quote or held as a
 //!   neutral's static spine — a nested code by the same walk over its own
 //!   closure, and a held thunk by its closure: its source body as syntax and
-//!   its environment entry by entry. A decode whose code reads as a quote is
-//!   the quoted type, read at the quote's place: core-term and the kernel fire
-//!   that rule when they mint a decode, and an environment holds codes no mint
-//!   saw, so the walk fires it too. Equal walks are [`CodeComparison::Equal`].
-//!   A dependent arrow against a plain one crosses the dependent binder on its
-//!   side alone, so the two agree exactly when the dependent codomain does not
-//!   name that binder: `(x : A) -> B` with `x` absent from `B` is `A -> B`
-//!   (#577).
+//!   its environment entry by entry. A written call matches by its function and
+//!   its argument, and a written path transport, such as the composite `then`
+//!   lowers to, by its path, its value and its motive under one binder crossed
+//!   alike (#3968). A decode whose code reads as a quote is the quoted type,
+//!   read at the quote's place: core-term and the kernel fire that rule when
+//!   they mint a decode, and an environment holds codes no mint saw, so the
+//!   walk fires it too. Equal walks are [`CodeComparison::Equal`]. A dependent
+//!   arrow against a plain one crosses the dependent binder on its side alone,
+//!   so the two agree exactly when the dependent codomain does not name that
+//!   binder: `(x : A) -> B` with `x` absent from `B` is `A -> B` (#577).
 //! - **Rigidity.** Two codes that are not α-equal are [`CodeComparison::Apart`]
 //!   only when neither holds anything that could still unfold: a constant with
 //!   a body, a neutral stuck on an elimination, or a value no code can be. A
@@ -778,7 +780,7 @@ Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
 Value::Returned(computation) | Value::Compose { realised: computation, .. } => ret == Ok(Atom::Called(computation, place)),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
-Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
+Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
@@ -879,6 +881,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | Value::Funext(..)
                     | Value::Equiv(..)
                     | Value::Ua { .. }
+                    | Value::Fill { .. }
                     | Value::Nested(_)
                     | Value::Run(_)
                     | Value::RecordUpdate { .. }
@@ -950,6 +953,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                         | Value::Equiv(..)
                         | Value::Ua { .. }
                         | Value::Compose { .. }
+                        | Value::Fill { .. }
                         | Value::Returned(_)
                         | Value::Nested(_)
                         | Value::Run(_)
@@ -2358,6 +2362,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 | Value::Equiv(..)
                 | Value::Ua { .. }
                 | Value::Compose { .. }
+                | Value::Fill { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
@@ -2554,6 +2559,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - requires: roots belong to the held arenas.
     /// - ensures: equal live roots compare reflexively; every queued child must
     ///   also agree. Two written pure calls agree when their functions and
+// refused_by: container_member · collision: `///   their arguments do, each read through its own side's clos…` +6 more
     ///   their arguments do, each read through its own side's closure, a call
     ///   of a stated lambda read first as its reduct ([`Walk::reduced`]). Two
     ///   written transports along element paths agree when their paths and
@@ -2575,12 +2581,15 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     ///   another body; comparing thunks by their nodes changes the first
     ///   answer. A stated lambda applied in one motive agrees with the call its
     ///   body makes in the other, and not with another call. A stated lambda
-    ///   whose body composes agrees with the composite written apart.
+    ///   whose body composes agrees with the composite written apart. Two
+    ///   motives over one composite written apart agree, and not over a
+    ///   composite along another path.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
     /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
     /// - witness: `code::tests::motives_calling_one_variable_family_are_alike_3802`
     /// - witness: `code::tests::motives_calling_thunks_written_apart_are_alike_3920`
     /// - witness: `code::tests::motives_applying_a_stated_lambda_agree_with_its_reduct_4073`
+    /// - witness: `code::tests::motives_over_composites_written_apart_are_alike_3968`
     #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
     fn equal_atoms(
         &mut self,
@@ -2693,6 +2702,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             },
                         ) = (call, other_call)
                         {
+// refused_by: container_member · collision: `///   their arguments do, each read through its own side's clos…` +6 more
                             let one = self.atom(Node::Code(path, here))?;
                             let other = self.atom(Node::Code(other_path, there))?;
                             atoms.push((one, other));

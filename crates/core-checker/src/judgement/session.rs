@@ -796,6 +796,7 @@ impl Machine<'_, '_>
                     | Value::Univalence(..)
                     | Value::Ua { .. }
                     | Value::Compose { .. }
+                    | Value::Fill { .. }
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Then(..)

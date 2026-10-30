@@ -1809,6 +1809,25 @@ enum Frame
         /// The result-stack suffix owned by its cells.
         base: usize,
     },
+    /// Await the type a fill's generator returns and the types its cells
+    /// synthesise, collected from the result-stack suffix at `base`, then
+    /// derive its square and check the induction that fills it.
+    FillCells
+    {
+        /// The `fill`.
+        at: ValueId,
+        /// The result-stack suffix owned by its generator and cells.
+        base: usize,
+    },
+    /// Await the square a fill synthesises, which must convert to the square
+    /// it is checked against.
+    FillAsked
+    {
+        /// The `fill`.
+        at: ValueId,
+        /// The square asked for.
+        expected: ValueTypeId,
+    },
     /// Await the type a compound endpoint's computation synthesises, which
     /// must be a pure returner.
     ReturnedEndpoint
@@ -2591,6 +2610,8 @@ impl Frame
             Self::EquivBackward { .. } => FrameRole::EquivBackward,
             Self::UaTranslators { .. } => FrameRole::UaTranslators,
             Self::ComposeCells { .. } => FrameRole::ComposeCells,
+            Self::FillCells { .. } => FrameRole::FillCells,
+            Self::FillAsked { .. } => FrameRole::FillAsked,
             Self::UnivalenceRecord { .. } => FrameRole::UnivalenceRecord,
             Self::UnivalenceChecked { .. } => FrameRole::UnivalenceChecked,
             Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
@@ -2753,6 +2774,8 @@ impl Frame
             | Self::EquivBackward { .. }
             | Self::UaTranslators { .. }
             | Self::ComposeCells { .. }
+            | Self::FillCells { .. }
+            | Self::FillAsked { .. }
             | Self::UnivalenceRecord { .. }
             | Self::UnivalenceChecked { .. }
             | Self::ReturnedEndpoint { .. }
@@ -3211,6 +3234,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::EquivBackward { .. }
                 | Frame::UaTranslators { .. }
                 | Frame::ComposeCells { .. }
+                | Frame::FillCells { .. }
+                | Frame::FillAsked { .. }
                 | Frame::UnivalenceRecord { .. }
                 | Frame::UnivalenceChecked { .. }
                 | Frame::ReturnedEndpoint { .. }
@@ -4933,6 +4958,46 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
                 self.resume(first.frame, Produced::Checked)
             },
+            Value::Fill { generator, .. } => {
+                let Some(&Value::Fill { ref cells, .. }) = self.context.arena().value(term)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let owner = self.owner;
+                self.frames.push(Waiting {
+                    frame: Frame::FillCells {
+                        at: term,
+                        base: self.native_types.len(),
+                    },
+                    owner,
+                });
+                for &cell in cells.iter().rev() {
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeCollect,
+                        owner,
+                    });
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(Goal::Value {
+                            term: cell,
+                            direction: Direction::Synthesise,
+                        }),
+                        owner,
+                    });
+                }
+                // The generator's type comes first: a pure returner's value
+                // type, as a compound endpoint's is read.
+                self.frames.push(Waiting {
+                    frame: Frame::NativeCollect,
+                    owner,
+                });
+                self.wait(Frame::ReturnedEndpoint { at: term });
+                self.wait(Frame::NativeNext(Goal::Computation {
+                    term: generator,
+                    direction: Direction::Synthesise,
+                }));
+                let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                self.resume(first.frame, Produced::Checked)
+            },
             Value::Returned(computation) => {
                 self.wait(Frame::ReturnedEndpoint { at: term });
                 Ok(Step::Descend(Goal::Computation {
@@ -5533,6 +5598,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            Value::Fill { .. } => {
+                self.wait(Frame::FillAsked {
+                    at: term,
+                    expected: entered,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term,
+                    direction: Direction::Synthesise,
+                }))
+            },
             Value::PathRefl(_)
             | Value::Returned(_)
             | Value::Run(_)
@@ -5833,6 +5908,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Compose { .. }
+            | Value::Fill { .. }
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
@@ -8197,7 +8273,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         },
                         Some(
                             &(Nesting::Suspended
-                            | Nesting::Ran(gandr_core_term::effect::Purity::Effectful)),
+                            | Nesting::Ran(gandr_core_term::effect::Purity::Effectful)
+                            | Nesting::Filled(_)),
                         ) => continue,
                         Some(&Nesting::Returned) => {},
                     }
@@ -8794,6 +8871,47 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.record_native(at, universal.path());
                 let identity = universal.identity(self.context.arena_mut());
                 Ok(Step::Ascend(Produced::ValueType(identity.into())))
+            },
+            (Frame::FillCells { at, base }, Produced::Checked) => {
+                let types: Vec<ValueTypeId> = self
+                    .native_types
+                    .get(base ..)
+                    .map(<[ValueTypeId]>::to_vec)
+                    .unwrap_or_default();
+                self.native_types.truncate(base);
+                self.filled(at, &types)
+            },
+            (Frame::FillAsked { at, expected }, Produced::ValueType(synthesised)) => {
+                let bridged = value_bridge(
+                    self.context,
+                    at,
+                    synthesised,
+                    expected,
+                    &mut self.conversions,
+                );
+                let Err(CheckRefusal::TypeMismatch(mismatch)) = bridged
+                else {
+                    bridged?;
+                    return Ok(Step::Ascend(Produced::Checked));
+                };
+                // The square asked for is not the generator's: the refusal
+                // names the two sides it asks to relate.
+                let head = self.context.whnf_value_type(expected)?;
+                if let (
+                    ValueTypeView::Path { left, right, .. },
+                    Some(&Value::Fill { composite, .. }),
+                ) = (
+                    value_type_view(self.context.arena(), head)?,
+                    self.context.arena().value(at),
+                ) {
+                    return Err(CheckRefusal::NoFiller {
+                        at,
+                        left,
+                        right,
+                        stratum: composite.stratum,
+                    });
+                }
+                Err(CheckRefusal::TypeMismatch(mismatch))
             },
             (Frame::ComposeCells { at, base }, Produced::Checked) => {
                 let types: Vec<ValueTypeId> = self
@@ -9895,6 +10013,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Force { .. }
                 | Frame::Decompose { .. }
                 | Frame::ValueBridge { .. }
+                | Frame::FillAsked { .. }
                 | Frame::FormElement(_)
                 | Frame::StaticSpine { .. }
                 | Frame::StaticArgument { .. }
@@ -9950,6 +10069,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::EquivBackward { .. }
                 | Frame::UaTranslators { .. }
                 | Frame::ComposeCells { .. }
+                | Frame::FillCells { .. }
                 | Frame::UnivalenceChecked { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::TelescopeMotive { .. }
@@ -10344,6 +10464,46 @@ impl<'context, 'arena> Machine<'context, 'arena>
         Ok(Step::Descend(Goal::Computation {
             term: realised,
             direction: Direction::Synthesise,
+        }))
+    }
+
+    /// Derive the square of the fill `at` from `types`, its generator's type
+    /// first and its cells' after, and check the induction that fills it.
+    ///
+    /// # Specification
+    /// - requires: `types` are the type the fill's generator returns and the
+    ///   types its cells synthesised, in that order.
+    /// - ensures: the induction is the node's decision, the elaboration stands
+    ///   the fill as the value it returns, and the fill waits on its check
+    ///   against `F square` and then synthesises the square.
+    /// - fails: the refusals of [`crate::fill::realise`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a free path between two cells' first synthesises its
+    ///   square and is decided as its induction.
+    /// - witness: `fill::tests::a_free_cell_fills_its_square_by_induction`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))) && self.frames.len() > depth,
+    )]
+    fn filled(
+        &mut self,
+        at: ValueId,
+        types: &[ValueTypeId],
+    ) -> Result<Step, CheckRefusal>
+    {
+        let crate::fill::Realisation { square, realised } =
+            crate::fill::realise(self.context, at, types)?;
+        self.context.record_nesting(at, Nesting::Filled(realised));
+        let expected = self.context.arena_mut().comp_type_returner(square);
+        self.wait(Frame::NativeYield(Produced::ValueType(square.into())));
+        Ok(Step::Descend(Goal::Computation {
+            term: realised,
+            direction: Direction::Check(expected),
         }))
     }
 

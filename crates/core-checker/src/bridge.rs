@@ -6374,12 +6374,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::Reduced { at });
                 return Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))));
             },
-            // Elaboration replaces every nested computation, written run and
-            // record update before a verdict's body is answered, so none
-            // reaches the kernel; a session statement is always recorded.
+            // Elaboration replaces every nested computation, written run,
+            // record update and fill before a verdict's body is answered, so
+            // none reaches the kernel; a session statement is always recorded.
             Value::Nested(_)
             | Value::Run(_)
             | Value::RecordUpdate { .. }
+            | Value::Fill { .. }
             | Value::SessionRelated { .. } => {
                 return Err(Refusal::MachineInvariant);
             },
@@ -6782,6 +6783,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         | Value::Univalence(..)
                         | Value::Ua { .. }
                         | Value::Compose { .. }
+                        | Value::Fill { .. }
                         | Value::SessionRelated { .. }
                         | Value::Stay(_)
                         | Value::Then(..)
@@ -7595,6 +7597,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Univalence(..)
                     | Value::Ua { .. }
                     | Value::Compose { .. }
+                    | Value::Fill { .. }
                     | Value::Nested(_)
                     | Value::Run(_)
                     | Value::RecordUpdate { .. }

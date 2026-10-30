@@ -877,6 +877,78 @@ fn motives_applying_a_stated_lambda_agree_with_its_reduct_4073()
 }
 
 #[test]
+fn motives_over_composites_written_apart_are_alike_3968()
+{
+    // #3968: `z. Path(El(c), s, ⟨tr(y. Path(El(c), s, y), g, z)⟩)`, the
+    // composite `z then g` written as the path transport `then` lowers to.
+    // Each side writes the transport in its own place, so the two composites
+    // are two nodes. The walk reads them by their paths, their values and
+    // their motives under one binder crossed alike. A composite along `s`
+    // instead of `g` stays undecided, never apart.
+    let mut core = CoreArena::new();
+    let family = |core: &mut CoreArena, along: u32| {
+        let read = |core: &mut CoreArena, index: u32| {
+            core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let (inner_carrier, inner_start, moving) = (read(core, 4), read(core, 3), read(core, 0));
+        let inner_carrier = core.value_type_element(inner_carrier, Level::zero());
+        let inner = core.value_type_path(inner_carrier, inner_start, moving);
+        let (path, endpoint) = (read(core, along), read(core, 0));
+        let composite = core.computation_path_transport(inner, path, endpoint);
+        let returned = core.value_returned(composite);
+        let (carrier, start) = (read(core, 3), read(core, 2));
+        let carrier = core.value_type_element(carrier, Level::zero());
+        core.value_type_path(carrier, start, returned)
+    };
+    let (near, again, astray) = (
+        family(&mut core, 1),
+        family(&mut core, 1),
+        family(&mut core, 2),
+    );
+
+    let mut domain = DomainArena::new();
+    let c = variable(&mut domain, BinderLevel::from(0_u32));
+    let s = variable(&mut domain, BinderLevel::from(1_u32));
+    let g = variable(&mut domain, BinderLevel::from(2_u32));
+    let endpoint = variable(&mut domain, BinderLevel::from(3_u32));
+    let motive = |domain: &mut DomainArena, body, bound: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &value in bound {
+            environment.extend(Zone::Intuitionistic, value);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+
+    let over = motive(&mut domain, near, &[c, s, g]);
+    let over_again = motive(&mut domain, again, &[c, s, g]);
+    let over_astray = motive(&mut domain, astray, &[c, s, g]);
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over, over_again).expect("both motives resolve"),
+        "two motives over one composite written apart are one family"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over, over_astray).expect("both motives resolve"),
+        "but a motive over a composite along another path is not"
+    );
+
+    let quoted = motive(&mut domain, near, &[c, s, g, endpoint]);
+    let quoted_again = motive(&mut domain, again, &[c, s, g, endpoint]);
+    let quoted_astray = motive(&mut domain, astray, &[c, s, g, endpoint]);
+    assert_eq!(
+        CodeComparison::Equal,
+        compare_rigidly(&core, &domain, quoted, quoted_again),
+        "two quotes of one composite under one endpoint are one code"
+    );
+    assert_eq!(
+        CodeComparison::Undecided,
+        compare_rigidly(&core, &domain, quoted, quoted_astray),
+        "a composite along another path stays undecided, never apart"
+    );
+}
+
+#[test]
 fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
 {
     // #4005: `El(#0)` over a path an action returned, `⟨transport along p⟩`,
