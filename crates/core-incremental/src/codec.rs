@@ -3047,18 +3047,23 @@ fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaD
     })
 }
 
-/// Write the pasting a composite names: a tag naming its shape, then its cell
-/// count, or its column count and each column's height.
+/// Write the pasting a composite names: a tag naming its level, then the
+/// tree.
+///
+/// Levels one and two keep the frames they had before the tree: a chain's
+/// cell count, and a level-two shape's column count and column heights.
 ///
 /// # Specification
-/// - ensures: the chain's tag, then its cell count; or the level-two tag, then
-///   its column count and each column's height in order.
+/// - ensures: at level one, the chain's tag, then its cell count; at level two,
+///   the level-two tag, then its column count and each column's height in
+///   order; past level two, the tree's tag, then the level, the walk's step
+///   count and each step, `0` down and `1` up.
 /// - fails: an unrepresentable count.
 /// - executable: none — a generic sink exposes no byte observer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composite and its refusal survive persistence with
-///   their pasting, a chain's and a level-two shape's.
+///   their pasting, a chain's, a level-two shape's and a level-three tree's.
 /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
 fn write_pasting<Out>(
     writer: &mut Writer<'_, Out>,
@@ -3067,53 +3072,80 @@ fn write_pasting<Out>(
 where
     Out: Sink,
 {
-    match pasting {
-        gandr_core_term::compose::Pasting::Chain { cells } => {
-            writer.tag(Tag(0));
-            writer.count(Count(usize::from(cells)))
-        },
-        gandr_core_term::compose::Pasting::Columns { heights } => {
-            writer.tag(Tag(1));
-            writer.count(Count(heights.columns().count()))?;
-            for height in heights.columns() {
-                writer.count(Count(usize::from(height)))?;
-            }
-            Ok(())
-        },
+    let tree = pasting.tree();
+    if pasting.level() == gandr_core_term::compose::Level::ONE {
+        writer.tag(Tag(0));
+        return writer.count(Count(usize::from(pasting.cells())));
     }
+    if pasting.level() == gandr_core_term::compose::Level::TWO {
+        writer.tag(Tag(1));
+        writer.count(Count(tree.columns().count()))?;
+        for height in tree.columns() {
+            writer.count(Count(usize::from(height)))?;
+        }
+        return Ok(());
+    }
+    writer.tag(Tag(2));
+    writer.count(Count(usize::from(pasting.level())))?;
+    writer.count(Count(tree.walk().count()))?;
+    for step in tree.walk() {
+        writer.tag(Tag(match step {
+            gandr_core_term::compose::Step::Down => 0,
+            gandr_core_term::compose::Step::Up => 1,
+        }));
+    }
+    Ok(())
 }
 
 /// Read a pasting [`write_pasting`] wrote.
 ///
 /// # Specification
-/// - ensures: the pasting the tag names, with its cell count or its columns'
-///   heights.
-/// - fails: an unknown tag, a truncated frame, or heights past one word.
+/// - ensures: the pasting the tag names, at its level, with its tree.
+/// - fails: an unknown tag, a truncated frame, a tree past one word, a walk
+///   that goes around no tree, or a tree taller than its level.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composite and its refusal survive persistence with
-///   their pasting, a chain's and a level-two shape's.
+///   their pasting, a chain's, a level-two shape's and a level-three tree's.
 /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_pasting(reader: &mut Reader<'_>) -> Result<gandr_core_term::compose::Pasting, CodecError>
 {
+    let corrupt = |_unpacked: gandr_core_term::compose::PastingError| CodecError::Corrupt;
     match reader.tag()?.0 {
-        0 => Ok(gandr_core_term::compose::Pasting::Chain {
-            cells: gandr_core_term::compose::CellCount::from(reader.count()?.0),
-        }),
+        0 => gandr_core_term::compose::Pasting::chain(gandr_core_term::compose::CellCount::from(
+            reader.count()?.0,
+        ))
+        .map_err(corrupt),
         1 => {
             let columns = reader.count()?.0;
             let mut heights = Vec::new();
             for _column in 0 .. columns {
                 heights.push(gandr_core_term::compose::CellCount::from(reader.count()?.0));
-                if heights.len() > 63 {
+                if heights.len() > 31 {
                     return Err(CodecError::Corrupt);
                 }
             }
-            let heights =
-                gandr_core_term::compose::Heights::new(&heights).ok_or(CodecError::Corrupt)?;
-            Ok(gandr_core_term::compose::Pasting::Columns { heights })
+            gandr_core_term::compose::Pasting::columns(&heights).map_err(corrupt)
+        },
+        2 => {
+            let level = gandr_core_term::compose::Level::try_from(reader.count()?.0)
+                .map_err(|_wide| CodecError::Corrupt)?;
+            let steps = reader.count()?.0;
+            let mut walk = Vec::new();
+            for _step in 0 .. steps {
+                walk.push(match reader.tag()?.0 {
+                    0 => gandr_core_term::compose::Step::Down,
+                    1 => gandr_core_term::compose::Step::Up,
+                    _ => return Err(CodecError::Corrupt),
+                });
+                if walk.len() > 62 {
+                    return Err(CodecError::Corrupt);
+                }
+            }
+            let tree = gandr_core_term::compose::Tree::from_walk(walk).map_err(corrupt)?;
+            gandr_core_term::compose::Pasting::new(level, tree).map_err(corrupt)
         },
         _ => Err(CodecError::Corrupt),
     }

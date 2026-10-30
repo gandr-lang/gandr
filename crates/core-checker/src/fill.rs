@@ -92,9 +92,9 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::compose::Heights;
-use gandr_core_term::compose::Pasting;
+use gandr_core_term::compose::Level;
 use gandr_core_term::compose::Seam;
+use gandr_core_term::compose::Tree;
 use gandr_core_term::identity;
 use gandr_core_term::identity::Whisker;
 use gandr_core_term::ua::Stratum;
@@ -195,9 +195,9 @@ enum Listing
     /// A level-two shape's pasting context column by column, its points
     /// fixed: each column's 1-cells and 2-cells in Catt's order, `f₀, f₁, a₁,
     /// …, fₕ, aₕ`. A column's 1-cells are the vertices of the chain its
-    /// 2-cells make, so the shape of heights `(h₁, …, hₘ)` lists it in its `Σ
+    /// 2-cells make, so the tree of columns `(h₁, …, hₘ)` lists it in its `Σ
     /// (2hᵢ + 1)` entries.
-    Columns(Heights),
+    Columns(Tree),
 }
 
 /// What an entry of the fill is: a vertex, or a cell, by its index in the
@@ -249,9 +249,9 @@ impl Listing
         match self {
             Self::Cells => Entry::Cell(position.0),
             Self::Pasting => within(position.0, 0, 0),
-            Self::Columns(heights) => {
+            Self::Columns(tree) => {
                 let (mut base, mut vertices, mut cells) = (0_usize, 0_usize, 0_usize);
-                for height in heights.columns().map(usize::from) {
+                for height in tree.columns().map(usize::from) {
                     let span = height.saturating_mul(2).saturating_add(1);
                     if position.0 < base.saturating_add(span) {
                         return within(position.0.saturating_sub(base), vertices, cells);
@@ -290,9 +290,9 @@ impl Listing
         match self {
             Self::Cells => None,
             Self::Pasting => Some(Position(within(vertex.0))),
-            Self::Columns(heights) => {
+            Self::Columns(tree) => {
                 let (mut base, mut vertices) = (0_usize, 0_usize);
-                for height in heights.columns().map(usize::from) {
+                for height in tree.columns().map(usize::from) {
                     if vertex.0 <= vertices.saturating_add(height) {
                         return Some(Position(
                             base.saturating_add(within(vertex.0.saturating_sub(vertices))),
@@ -332,9 +332,9 @@ impl Listing
             return None;
         };
         let mut start = cell;
-        if let Self::Columns(heights) = self {
+        if let Self::Columns(tree) = self {
             let (mut vertices, mut cells) = (0_usize, 0_usize);
-            for height in heights.columns().map(usize::from) {
+            for height in tree.columns().map(usize::from) {
                 if cell < cells.saturating_add(height) {
                     start = vertices.saturating_add(cell.saturating_sub(cells));
                     break;
@@ -362,13 +362,12 @@ impl Listing
     #[spec(ensures: |ret| ret.0.len() == ret.1.len())]
     fn column_ends(self) -> (Vec<Position>, Vec<Position>)
     {
-        let Self::Columns(heights) = self
+        let Self::Columns(tree) = self
         else {
             return (Vec::new(), Vec::new());
         };
         let mut base = 0_usize;
-        heights
-            .columns()
+        tree.columns()
             .map(usize::from)
             .map(|height| {
                 let ends = (
@@ -580,23 +579,27 @@ pub fn realise(
     if entry_types.len() != written.len() {
         return Err(CheckRefusal::MachineInvariant);
     }
-    let listing = match composite.pasting {
-        Pasting::Chain { cells: count }
-            if written.len() == usize::from(count).saturating_mul(2).saturating_add(1) =>
-        {
-            Listing::Pasting
-        },
-        Pasting::Columns { heights }
-            if written.len() != heights.columns().count()
-                && written.len()
-                    == heights
-                        .columns()
-                        .map(|height| usize::from(height).saturating_mul(2).saturating_add(1))
-                        .sum::<usize>() =>
-        {
-            Listing::Columns(heights)
-        },
-        Pasting::Chain { .. } | Pasting::Columns { .. } => Listing::Cells,
+    let (level, tree) = (composite.pasting.level(), composite.pasting.tree());
+    let listing = if level == Level::ONE
+        && written.len()
+            == usize::from(tree.leaves())
+                .saturating_mul(2)
+                .saturating_add(1)
+    {
+        Listing::Pasting
+    }
+    else if level == Level::TWO
+        && written.len() != tree.columns().count()
+        && written.len()
+            == tree
+                .columns()
+                .map(|height| usize::from(height).saturating_mul(2).saturating_add(1))
+                .sum::<usize>()
+    {
+        Listing::Columns(tree)
+    }
+    else {
+        Listing::Cells
     };
     let Curried {
         domains,
@@ -667,10 +670,10 @@ pub fn realise(
     };
     // The cells listed at a level-two shape name the cells of `X`: a column
     // of one 2-cell each, and an empty column each other cell.
-    if let Pasting::Columns { heights } = composite.pasting
+    if level == Level::TWO
         && listing == Listing::Cells
-        && (heights.columns().count() != read.len()
-            || !heights.columns().zip(&read).all(|(height, cell)| {
+        && (tree.columns().count() != read.len()
+            || !tree.columns().zip(&read).all(|(height, cell)| {
                 matches!(
                     (usize::from(height), cell),
                     (0, &Cell::Plain(_)) | (1, &Cell::Lifted { .. })
@@ -827,14 +830,14 @@ fn column_sides(
     (listing, inhabited): (Listing, &[ValueTypeId]),
 ) -> Result<(ValueTypeId, Vec<Boundary<Endpoint>>), CheckRefusal>
 {
-    let Listing::Columns(heights) = listing
+    let Listing::Columns(tree) = listing
     else {
         return Err(CheckRefusal::MachineInvariant);
     };
     let mut outer = None;
     let mut sides = Vec::new();
     let mut first = 0_usize;
-    for height in heights.columns().map(usize::from) {
+    for height in tree.columns().map(usize::from) {
         let &vertex_type = inhabited.get(first).ok_or(CheckRefusal::MachineInvariant)?;
         let head = context.whnf_value_type(vertex_type)?;
         let ValueTypeView::Path {

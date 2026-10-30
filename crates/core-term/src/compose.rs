@@ -21,6 +21,17 @@
 //! - **Γ is named, not read off the cells.** At dimension one the chain is the
 //!   cells' count, but a shape above it is not, so the former takes the shape
 //!   the wreath's levels extend. Reversal: none at dimension one.
+//! - **Γ is one Batanin tree.** `chain(m)` and `chain(m, (a₁, …, aₘ))` are the
+//!   tree's two smallest instances, never cases of their own, so a level past
+//!   two needs no new node. Reversal: none.
+//! - **The level is held beside the tree.** `[m](0, …, 0)` at level two is the
+//!   identities on the chain `[m]`, and the chain at level one is its
+//!   composite: one tree, two cells of different dimension. Reversal: none.
+//! - **The tree packs in one word.** Its Dyck word under a mark holds 31 nodes
+//!   past the root, so a composite stays `Copy` and no larger than the two-case
+//!   pasting it replaced. Every shape the chain budget certifies fits far
+//!   within it. Reversal: a stratum certifying a tree past 31 nodes, which then
+//!   holds its tree on the heap.
 //!
 //! # References
 //!
@@ -29,6 +40,8 @@
 //!   the cells' left-nested fold as its realisation.
 //!
 //! [`Value::Compose`]: crate::Value::Compose
+
+use core::num::NonZeroU8;
 
 use anodized::spec;
 use gandr_theory_sites::Degree;
@@ -75,83 +88,421 @@ impl From<CellCount> for usize
     }
 }
 
-/// The column heights of a level-two pasting `[m](a₁, …, aₘ)`, packed.
+/// The level of a pasting: the dimension of the cells it composes.
 ///
-/// Column by column, `aᵢ` one bits and a zero bit, the least significant
-/// first, under a leading one bit that marks the length.
-///
-/// A shape of `m` columns and `Σ aᵢ` 2-cells takes `m + Σ aᵢ` bits.
-/// [`Heights::new`] refuses a shape past the 63 bits below the mark, and the
-/// lowering refuses its spelling.
+/// A chain is at level one and a shape `[m](a₁, …, aₘ)` at level two. A
+/// pasting's level is at least its tree's height, since the empty column of
+/// a level-two shape is a leaf at height one. No pasting stands at level zero.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Heights(u64);
+pub struct Level(Rank);
 
-impl Heights
+/// A level as it packs: one and two by name, a level past two by its
+/// dimension, never below three.
+///
+/// The names leave the tag a byte of unused values, so a node holding a
+/// pasting keeps the size the two-case pasting gave it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Rank
 {
-    /// The heights of `columns`, when their marks fit in 63 bits.
+    /// Level one.
+    One,
+    /// Level two.
+    Two,
+    /// A level of three or more.
+    Past(NonZeroU8),
+}
+
+impl Level
+{
+    /// The level of a chain, whose cells are 1-cells.
+    pub const ONE: Self = Self(Rank::One);
+    /// The level of a shape `[m](a₁, …, aₘ)`, whose cells are 2-cells.
+    pub const TWO: Self = Self(Rank::Two);
+}
+
+impl TryFrom<usize> for Level
+{
+    type Error = core::num::TryFromIntError;
+
+    /// The level `dimension`, when a byte holds it and it is not zero.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn try_from(dimension: usize) -> Result<Self, Self::Error>
+    {
+        Ok(Self(match u8::try_from(dimension)? {
+            1 => Rank::One,
+            2 => Rank::Two,
+            past => Rank::Past(NonZeroU8::try_from(past)?),
+        }))
+    }
+}
+
+impl From<Level> for usize
+{
+    /// The level's dimension.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(level: Level) -> Self
+    {
+        match level.0 {
+            Rank::One => 1,
+            Rank::Two => 2,
+            Rank::Past(past) => Self::from(core::num::NonZeroUsize::from(past)),
+        }
+    }
+}
+
+/// Why a tree or a pasting does not pack.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PastingError
+{
+    /// The tree holds more than the 31 nodes past its root one word packs.
+    PastTheWord,
+    /// The walk goes around no tree: it goes up before it goes down, or ends
+    /// below the root.
+    NotATree,
+    /// The tree stands taller than the level.
+    PastItsLevel,
+}
+
+impl core::fmt::Display for PastingError
+{
+    /// Name what does not pack.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::PastTheWord => "a tree of more than 31 nodes past its root",
+            Self::NotATree => "a walk that goes around no tree",
+            Self::PastItsLevel => "a tree taller than its level",
+        })
+    }
+}
+
+impl core::error::Error for PastingError
+{
+}
+
+/// A Batanin tree: a root and the trees grafted under it, in order.
+///
+/// The globular pasting shapes are these trees. `[m]` is the root over `m`
+/// leaves, and `[m](a₁, …, aₘ)` the root over `m` children, child `i` over
+/// `aᵢ` leaves. A leaf is a cell the composite reads.
+///
+/// The tree packs as its Dyck word: child by child, a one bit, the child's
+/// own word and a zero bit, the least significant first, under a leading one
+/// bit that marks the length. A tree of `t` nodes past its root takes `2t`
+/// bits. [`Tree::graft`] refuses a tree past the 63 bits below the mark, and
+/// the lowering refuses its spelling.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Tree(u64);
+
+/// The bits a tree's word holds below its mark.
+const WORD: u32 = 63;
+
+/// A position in a tree's word, from the least significant bit, or a count of
+/// its bits.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Bit(u32);
+
+/// One step of the walk around a tree, children in order: down into a child,
+/// or back up out of it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Step
+{
+    /// Into the next child.
+    Down,
+    /// Out of the child, back to its parent.
+    Up,
+}
+
+/// A tree's word under construction: the children grafted so far.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Graft
+{
+    /// The children's words, the first least significant.
+    bits: u64,
+    /// How many bits they take.
+    length: u32,
+}
+
+impl Graft
+{
+    /// `child` grafted after the children so far.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Heights::columns`] answers `columns` back.
-    /// - fails: none for more than 63 marks, the columns and their 2-cells
-    ///   counted together.
+    /// - ensures: the word grows by `child`'s opening bit, its own word and its
+    ///   closing bit.
+    /// - fails: [`PastingError::PastTheWord`] past the 63 bits below the mark,
+    ///   the word unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the whisker's heights read back, and 64 marks do not
-    ///   pack.
-    /// - witness: `compose::tests::heights_read_back_what_they_pack`
-    #[spec(ensures: |ret| ret.is_none_or(|heights| heights.columns().eq(columns.iter().copied())))]
-    #[inline]
-    #[must_use]
-    pub fn new(columns: &[CellCount]) -> Option<Self>
+    /// - hypothesis: L3 — as [`Tree::graft`].
+    /// - witness: `compose::tests::a_tree_reads_back_what_it_grafts`
+    #[spec(captures: [before = *self], ensures: |ret| ret.is_ok() || *self == before)]
+    fn push(
+        &mut self,
+        child: Tree,
+    ) -> Result<(), PastingError>
     {
-        let mut bits = 0_u64;
-        let mut length = 0_u32;
-        for &CellCount(height) in columns {
-            for _cell in 0 .. height {
-                bits |= 1_u64.checked_shl(length)?;
-                length = length.checked_add(1)?;
-            }
-            length = length.checked_add(1)?;
-        }
-        if length > 63 {
-            return None;
-        }
-        Some(Self(bits | 1_u64.checked_shl(length)?))
+        let inner = child.length().0;
+        let end = self
+            .length
+            .checked_add(inner)
+            .and_then(|length| length.checked_add(2))
+            .filter(|&end| end <= WORD)
+            .ok_or(PastingError::PastTheWord)?;
+        let mark = 1_u64.checked_shl(inner).ok_or(PastingError::PastTheWord)?;
+        let opening = 1_u64
+            .checked_shl(self.length)
+            .ok_or(PastingError::PastTheWord)?;
+        let below = (child.0 ^ mark)
+            .checked_shl(self.length.saturating_add(1))
+            .ok_or(PastingError::PastTheWord)?;
+        self.bits |= opening | below;
+        self.length = end;
+        Ok(())
     }
 
-    /// Each column's height, the first first.
+    /// The tree of the children grafted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tree(self) -> Tree
+    {
+        Tree(self.bits | 1_u64.checked_shl(self.length).unwrap_or(0))
+    }
+}
+
+impl Tree
+{
+    /// The point: the root alone.
+    pub const POINT: Self = Self(1);
+
+    /// The length of the word below the mark.
+    ///
+    /// # Specification
+    /// trivial.
+    fn length(self) -> Bit
+    {
+        Bit(WORD.saturating_sub(self.0.leading_zeros()))
+    }
+
+    /// The step the bit at `at` packs: an opening bit goes down, a closing
+    /// one up.
+    ///
+    /// # Specification
+    /// trivial.
+    fn step(
+        self,
+        at: Bit,
+    ) -> Step
+    {
+        if self
+            .0
+            .checked_shr(at.0)
+            .is_some_and(|shifted| shifted & 1 == 1)
+        {
+            Step::Down
+        }
+        else {
+            Step::Up
+        }
+    }
+
+    /// The root over `children`, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Tree::children`] answers `children` back.
+    /// - fails: [`PastingError::PastTheWord`] for more than 31 nodes past the
+    ///   root, the children's own counted.
+    /// - panics: none.
+    /// - executable: none — the children are an iterator the call consumes.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two columns of one leaf each read back as grafted, 31
+    ///   leaves pack, and 32 do not.
+    /// - witness: `compose::tests::a_tree_reads_back_what_it_grafts`
+    #[inline]
+    pub fn graft<Children>(children: Children) -> Result<Self, PastingError>
+    where
+        Children: IntoIterator<Item = Self>,
+    {
+        let mut graft = Graft::default();
+        for child in children {
+            graft.push(child)?;
+        }
+        Ok(graft.tree())
+    }
+
+    /// `[m]`: the root over `cells` leaves.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a tree of height one over `cells` leaves, the point for none.
+    /// - fails: [`PastingError::PastTheWord`] past 31 leaves.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Tree::graft`].
+    /// - witness: `compose::tests::a_tree_reads_back_what_it_grafts`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|tree| tree.leaves() == cells))]
+    #[inline]
+    pub fn chain(cells: CellCount) -> Result<Self, PastingError>
+    {
+        let mut graft = Graft::default();
+        for _cell in 0 .. cells.0 {
+            graft.push(Self::POINT)?;
+        }
+        Ok(graft.tree())
+    }
+
+    /// The tree a walk goes around, as [`Tree::walk`] answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Tree::walk`] answers `steps` back.
+    /// - fails: [`PastingError::NotATree`] for a walk that goes up before it
+    ///   goes down, or ends below the root; [`PastingError::PastTheWord`] for
+    ///   one of more than 63 steps.
+    /// - panics: none.
+    /// - executable: none — the steps are an iterator the call consumes.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a grafted tree's walk goes around the tree again, and
+    ///   a walk going up first or ending below the root does not.
+    /// - witness: `compose::tests::a_tree_reads_back_what_it_grafts`
+    #[inline]
+    pub fn from_walk<Steps>(steps: Steps) -> Result<Self, PastingError>
+    where
+        Steps: IntoIterator<Item = Step>,
+    {
+        let (mut bits, mut length, mut depth) = (0_u64, 0_u32, 0_u32);
+        for step in steps {
+            if length >= WORD {
+                return Err(PastingError::PastTheWord);
+            }
+            match step {
+                Step::Down => {
+                    bits |= 1_u64.checked_shl(length).ok_or(PastingError::PastTheWord)?;
+                    depth = depth.saturating_add(1);
+                },
+                Step::Up => {
+                    depth = depth.checked_sub(1).ok_or(PastingError::NotATree)?;
+                },
+            }
+            length = length.saturating_add(1);
+        }
+        if depth != 0 {
+            return Err(PastingError::NotATree);
+        }
+        let mark = 1_u64.checked_shl(length).ok_or(PastingError::PastTheWord)?;
+        Ok(Self(bits | mark))
+    }
+
+    /// The trees grafted under the root, the first first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn children(self) -> impl Iterator<Item = Self>
+    {
+        let Bit(length) = self.length();
+        let mut position = 0_u32;
+        core::iter::from_fn(move || {
+            let start = position;
+            let mut depth = 0_u32;
+            while position < length {
+                let opens = self.step(Bit(position)) == Step::Down;
+                position = position.saturating_add(1);
+                if opens {
+                    depth = depth.saturating_add(1);
+                    continue;
+                }
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let inner = position.saturating_sub(start).saturating_sub(2);
+                    let mark = 1_u64.checked_shl(inner)?;
+                    let below =
+                        self.0.checked_shr(start.saturating_add(1))? & mark.saturating_sub(1);
+                    return Some(Self(below | mark));
+                }
+            }
+            None
+        })
+    }
+
+    /// Each child's own child count, the first first: the column heights of
+    /// `[m](a₁, …, aₘ)`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn columns(self) -> impl Iterator<Item = CellCount>
     {
-        let length = 63_u32.saturating_sub(self.0.leading_zeros());
-        let mut height = 0_usize;
-        (0 .. length).filter_map(move |bit| {
-            if self
-                .0
-                .checked_shr(bit)
-                .is_some_and(|shifted| shifted & 1 == 1)
-            {
-                height = height.saturating_add(1);
-                None
-            }
-            else {
-                let column = CellCount(height);
-                height = 0;
-                Some(column)
-            }
-        })
+        self.children()
+            .map(|child| CellCount(child.children().count()))
+    }
+
+    /// The walk around the tree from its root, each child entered and left
+    /// in order: a `Down` before the child's own walk, an `Up` after it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn walk(self) -> impl Iterator<Item = Step>
+    {
+        (0 .. self.length().0).map(move |position| self.step(Bit(position)))
+    }
+
+    /// The leaves past the root: the cells a composite over the tree reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn leaves(self) -> CellCount
+    {
+        let below = self.0 ^ 1_u64.checked_shl(self.length().0).unwrap_or(0);
+        let closed = below & !below.checked_shr(1).unwrap_or(0);
+        CellCount(usize::try_from(closed.count_ones()).unwrap_or(usize::MAX))
     }
 }
 
 /// The position of a column in a level-two shape, from zero.
 ///
-/// A shape packs at most 63 columns ([`Heights`]), so a byte holds every
+/// A tree packs at most 31 children ([`Tree`]), so a byte holds every
 /// position, and a refusal that names one stays as small as it was.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -199,30 +550,140 @@ pub enum Seam
     Column(Column),
 }
 
-/// Γ in `compose[n, k](Γ, d)`: a shape of the site's chain sub-site, or of
-/// its wreath over itself.
+/// Γ in `compose[n, k](Γ, d)`: a Batanin tree at the level of the cells it
+/// composes.
+///
+/// `chain(m)` is the tree `[m]` at level one, and `chain(m, (a₁, …, aₘ))` the
+/// tree `[m](a₁, …, aₘ)` at level two. Each is an instance of the one pasting,
+/// never a case of its own.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Pasting
+pub struct Pasting
 {
-    /// `chain(m)`: the chain of `m` composable 1-cells.
-    Chain
-    {
-        /// Its cell count, `m`.
-        cells: CellCount,
-    },
-    /// `chain(m, (a₁, …, aₘ))`: the level-two shape `[m](a₁, …, aₘ)`, the
-    /// outer chain of `m` columns, column `i` the chain of `aᵢ` 2-cells.
-    Columns
-    {
-        /// The columns' heights.
-        heights: Heights,
-    },
+    /// The dimension of the cells it composes.
+    level: Level,
+    /// The shape.
+    tree: Tree,
 }
 
 impl Pasting
 {
-    /// How many cells the shape's composite reads: `m` for a chain, and one
-    /// per 2-cell and per empty column for a level-two shape.
+    /// `tree` at `level`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pasting answers `level` and `tree` back.
+    /// - fails: [`PastingError::PastItsLevel`] for a level below the tree's
+    ///   height.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tree of height three stands at level three and not
+    ///   at level two.
+    /// - witness: `compose::tests::a_pasting_stands_at_its_tree_s_height_or_above`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|pasting| pasting.level() == level && pasting.tree() == tree))]
+    #[inline]
+    pub fn new(
+        level: Level,
+        tree: Tree,
+    ) -> Result<Self, PastingError>
+    {
+        let (mut depth, mut height) = (0_usize, 0_usize);
+        for step in tree.walk() {
+            match step {
+                Step::Down => {
+                    depth = depth.saturating_add(1);
+                    height = height.max(depth);
+                },
+                Step::Up => depth = depth.saturating_sub(1),
+            }
+        }
+        if usize::from(level) < height {
+            return Err(PastingError::PastItsLevel);
+        }
+        Ok(Self { level, tree })
+    }
+
+    /// `chain(m)`: the tree `[m]` at level one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a level-one pasting reading `cells` cells.
+    /// - fails: as [`Tree::chain`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Tree::graft`].
+    /// - witness: `compose::tests::a_tree_reads_back_what_it_grafts`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|pasting| pasting.level() == Level::ONE && pasting.cells() == cells))]
+    #[inline]
+    pub fn chain(cells: CellCount) -> Result<Self, PastingError>
+    {
+        Ok(Self {
+            level: Level::ONE,
+            tree: Tree::chain(cells)?,
+        })
+    }
+
+    /// `chain(m, (a₁, …, aₘ))`: the tree `[m](a₁, …, aₘ)` at level two, `m`
+    /// the count of `heights`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a level-two pasting whose tree's columns are `heights`.
+    /// - fails: [`PastingError::PastTheWord`] for more than 31 nodes past the
+    ///   root, the columns and their leaves counted together.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Tree::graft`].
+    /// - witness: `compose::tests::a_tree_reads_back_what_it_grafts`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|pasting| pasting.level() == Level::TWO && pasting.tree().columns().eq(heights.iter().copied())))]
+    #[inline]
+    pub fn columns(heights: &[CellCount]) -> Result<Self, PastingError>
+    {
+        let mut graft = Graft::default();
+        for &height in heights {
+            graft.push(Tree::chain(height)?)?;
+        }
+        Ok(Self {
+            level: Level::TWO,
+            tree: graft.tree(),
+        })
+    }
+
+    /// The dimension of the cells it composes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn level(self) -> Level
+    {
+        self.level
+    }
+
+    /// The shape.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn tree(self) -> Tree
+    {
+        self.tree
+    }
+
+    /// How many cells the shape's composite reads: its tree's leaves, so `m`
+    /// for a chain, and one per 2-cell and per empty column at level two.
     ///
     /// # Specification
     /// trivial.
@@ -230,15 +691,7 @@ impl Pasting
     #[must_use]
     pub fn cells(self) -> CellCount
     {
-        match self {
-            Self::Chain { cells } => cells,
-            Self::Columns { heights } => CellCount(
-                heights
-                    .columns()
-                    .map(|CellCount(height)| height.max(1))
-                    .fold(0_usize, usize::saturating_add),
-            ),
-        }
+        self.tree.leaves()
     }
 }
 
@@ -267,7 +720,7 @@ impl Composite
     /// - hypothesis: L3 — the stratum is the 2-chain's own degree and size, the
     ///   least a stratum reading it reaches.
     /// - witness: `compose::tests::the_binary_composite_is_the_least_stratum_of_two_cells`
-    #[spec(ensures: |ret| matches!(ret.pasting, Pasting::Chain { cells } if usize::from(cells) == 2))]
+    #[spec(ensures: |ret| ret.pasting.level() == Level::ONE && usize::from(ret.pasting.cells()) == 2)]
     #[inline]
     #[must_use]
     pub fn binary() -> Self
@@ -277,8 +730,11 @@ impl Composite
                 degree: Degree::from(3_usize),
                 bound: ShapeSize::from(5_usize),
             },
-            pasting: Pasting::Chain {
-                cells: CellCount(2),
+            // `[2]`: two leaves, each an opening bit and a closing one,
+            // under the mark.
+            pasting: Pasting {
+                level: Level::ONE,
+                tree: Tree(0b1_0101),
             },
         }
     }
@@ -405,13 +861,12 @@ pub fn compose_columns(
     cells: &[(ValueId, Ends)],
 ) -> Option<(ValueId, Ends)>
 {
-    let Pasting::Columns { heights } = composite.pasting
-    else {
+    if composite.pasting.level() != Level::TWO {
         return None;
-    };
+    }
     let mut rest = cells;
     let mut folded: Option<Folded> = None;
-    for CellCount(height) in heights.columns() {
+    for CellCount(height) in composite.pasting.tree().columns() {
         let (column, tail) = rest.split_at_checked(height.max(1))?;
         rest = tail;
         let (&(first, first_ends), _) = column.split_first()?;

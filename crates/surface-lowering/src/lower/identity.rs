@@ -292,7 +292,6 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::CellCount;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::compose::Ends;
-use gandr_core_term::compose::Heights;
 use gandr_core_term::compose::Pasting;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::identity::bi_invertible;
@@ -2533,19 +2532,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `shape` is the first argument of the composite or the fill
     ///   at `site`.
-    /// - ensures: the chain of the `m` cells `chain(m)` writes; the level-two
-    ///   shape of `m` columns `chain(m, (a₁, …, aₘ))` writes, column `i` of
-    ///   `aᵢ` 2-cells. The operands the lowering holds are those it held.
+    /// - ensures: the tree `[m]` at level one for `chain(m)`; the tree `[m](a₁,
+    ///   …, aₘ)` at level two for `chain(m, (a₁, …, aₘ))`, column `i` of `aᵢ`
+    ///   2-cells. The operands the lowering holds are those it held.
     /// - fails: a shape of any other spelling; a count or a height written
-    ///   otherwise than in digits; heights other in number than `m`; the call's
-    ///   own refusal.
+    ///   otherwise than in digits; heights other in number than `m`; a tree
+    ///   past the 31 nodes one word packs; the call's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::OutOfFragment`] at the shape, with the unadmitted
     /// boundary for a shape that is no chain, for a count or a height out of
-    /// digits and for heights that are not `m`, and the arity boundary for a
-    /// chain of other than one argument or two.
+    /// digits, for heights that are not `m` and for a tree past one word, and
+    /// the arity boundary for a chain of other than one argument or two.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `chain(3)` reads three cells and `chain(2, (1, 0))`
@@ -2603,9 +2602,7 @@ impl<'source> Lowerer<'_, 'source>
             lowering.resident::<CellCount>(at, Placed::of(argument, counted))
         };
         match *written_arguments.as_slice() {
-            [count] => Ok(Pasting::Chain {
-                cells: resident(self, count)?,
-            }),
+            [count] => Pasting::chain(resident(self, count)?).map_err(|_unpacked| unadmitted),
             [count, columns] => {
                 let count = resident(self, count)?;
                 let stretch = self.diagram(at, columns)?;
@@ -2646,8 +2643,7 @@ impl<'source> Lowerer<'_, 'source>
                 if heights.len() != usize::from(count) {
                     return Err(unadmitted);
                 }
-                let heights = Heights::new(&heights).ok_or(unadmitted)?;
-                Ok(Pasting::Columns { heights })
+                Pasting::columns(&heights).map_err(|_unpacked| unadmitted)
             },
             _ => Err(at.out(FragmentBoundary::Arity(OperandCount::from(
                 written_arguments.len(),
@@ -2954,15 +2950,10 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
         }
-        // A level-two composite reads each cell at its own path type, so the
-        // types its cells are read at are minted first, answered or not.
-        let level_two = matches!(derivation, Derivation::Compose {
-            composite: Composite {
-                pasting: Pasting::Columns { .. },
-                ..
-            },
-            ..
-        });
+        // A composite past level one reads each cell at its own path type, so
+        // the types its cells are read at are minted first, answered or not.
+        let level_two = matches!(derivation, Derivation::Compose { composite, .. }
+            if composite.pasting.level() != gandr_core_term::compose::Level::ONE);
         if level_two || matches!(stance, Stance::Synthesised(..)) {
             self.synthesised.push(site);
         }
@@ -3499,15 +3490,10 @@ impl<'source> Lowerer<'_, 'source>
                 Some(second) => self.reads_path(second, &read)?,
                 None => transported,
             };
-            // A level-two composite reads every cell at its own path type.
-            if let Derivation::Compose {
-                composite:
-                    Composite {
-                        pasting: Pasting::Columns { .. },
-                        ..
-                    },
-                cells,
-            } = derivation
+            // A composite past level one reads every cell at its own path
+            // type.
+            if let Derivation::Compose { composite, cells } = derivation
+                && composite.pasting.level() != gandr_core_term::compose::Level::ONE
             {
                 for position in cells.start .. cells.end {
                     let Some(&cell) = self.operands.get(position)
@@ -3579,14 +3565,8 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            if let Derivation::Compose {
-                composite:
-                    Composite {
-                        pasting: Pasting::Columns { .. },
-                        ..
-                    },
-                cells,
-            } = derivation
+            if let Derivation::Compose { composite, cells } = derivation
+                && composite.pasting.level() != gandr_core_term::compose::Level::ONE
             {
                 for &cell in self
                     .operands
@@ -4450,33 +4430,26 @@ impl<'source> Lowerer<'_, 'source>
             (Answered::Flow, Derivation::Back { .. }, Maybe::Present(right)) => {
                 gandr_core_term::identity::back_flow(sink.arena, carrier, right, first)
             },
-            // A level-two composite folds its columns by whiskers, each cell
-            // read at its own path type.
-            (
-                Answered::Path,
-                Derivation::Compose {
-                    composite:
-                        composite @ Composite {
-                            pasting: Pasting::Columns { .. },
-                            ..
-                        },
-                    cells,
-                },
-                _,
-            ) => match self.columns_composite(composite, (cells, &composed), derived.frame, sink) {
-                Maybe::Present((root, ends)) => {
-                    level_two = Some(ends);
-                    root
-                },
-                Maybe::Absent(reason) => {
-                    record_since(
-                        sink,
-                        mark,
-                        inserted,
-                        Maybe::Absent(rooted::Absent::Unminted),
-                    );
-                    return Maybe::Absent(reason);
-                },
+            // A composite past level one folds its columns by whiskers, each
+            // cell read at its own path type.
+            (Answered::Path, Derivation::Compose { composite, cells }, _)
+                if composite.pasting.level() != gandr_core_term::compose::Level::ONE =>
+            {
+                match self.columns_composite(composite, (cells, &composed), derived.frame, sink) {
+                    Maybe::Present((root, ends)) => {
+                        level_two = Some(ends);
+                        root
+                    },
+                    Maybe::Absent(reason) => {
+                        record_since(
+                            sink,
+                            mark,
+                            inserted,
+                            Maybe::Absent(rooted::Absent::Unminted),
+                        );
+                        return Maybe::Absent(reason);
+                    },
+                }
             },
             // The composite returns the node the checker reads, its cells and
             // the fold they realise.

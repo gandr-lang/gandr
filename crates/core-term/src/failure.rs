@@ -204,10 +204,10 @@ impl TrackingIssue
     /// A univalence resident not in digits, or a univalence description the
     /// lowering does not read.
     pub const UA_RESIDENT: Self = Self(2661);
-    /// A composite's shape that is no chain: the shapes above dimension one,
-    /// which the former at every level reads as one diagram of the wreath's
-    /// object.
-    pub const ITERATED_SITE: Self = Self(4237);
+    /// A composite's shape the lowering does not read: a tree past the chain
+    /// and the level-two shape, which the `ps` reading builds from named
+    /// cells.
+    pub const ITERATED_SITE: Self = Self(4236);
     /// A filler generator whose cells of `X` are directed, `Flow` cells.
     pub const DIRECTED_FILLER: Self = Self(4093);
     /// A filler generator whose cells of `X` are bridges.

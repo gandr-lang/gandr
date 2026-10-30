@@ -5195,27 +5195,49 @@ fn universe(
     }))
 }
 
-/// The pasting a composite names, as the source writes it: `chain(m)`, or
-/// `chain(m, (a₁, …, aₘ))` for a level-two shape.
+/// The pasting a composite names, as the source writes it: `chain(m)` at
+/// level one, or `chain(m, (a₁, …, aₘ))` at level two. Past level two the
+/// source has no spelling, so the printer writes its notation
+/// `tree(l, [[[]], [[]]])`: the level, then the tree as nested brackets.
 ///
 /// # Specification
 /// trivial.
 fn spelled(pasting: Pasting) -> Spelled
 {
-    match pasting {
-        Pasting::Chain { cells } => Spelled(alloc::format!("chain({})", usize::from(cells))),
-        Pasting::Columns { heights } => {
-            let columns: Vec<String> = heights
-                .columns()
-                .map(|height| alloc::format!("{}", usize::from(height)))
-                .collect();
-            Spelled(alloc::format!(
-                "chain({}, ({}))",
-                columns.len(),
-                columns.join(", ")
-            ))
-        },
+    let tree = pasting.tree();
+    if pasting.level() == gandr_core_term::compose::Level::ONE {
+        return Spelled(alloc::format!("chain({})", usize::from(pasting.cells())));
     }
+    if pasting.level() == gandr_core_term::compose::Level::TWO {
+        let columns: Vec<String> = tree
+            .columns()
+            .map(|height| alloc::format!("{}", usize::from(height)))
+            .collect();
+        return Spelled(alloc::format!(
+            "chain({}, ({}))",
+            columns.len(),
+            columns.join(", ")
+        ));
+    }
+    let mut text = alloc::format!("tree({}, [", usize::from(pasting.level()));
+    let mut after_sibling = false;
+    for step in tree.walk() {
+        match step {
+            gandr_core_term::compose::Step::Down => {
+                if after_sibling {
+                    text.push_str(", ");
+                }
+                text.push('[');
+                after_sibling = false;
+            },
+            gandr_core_term::compose::Step::Up => {
+                text.push(']');
+                after_sibling = true;
+            },
+        }
+    }
+    text.push_str("])");
+    Spelled(text)
 }
 
 /// The inside of a string literal holding `text`.
@@ -5809,6 +5831,30 @@ impl Walk<'_, '_>
     {
         self.fidelity = Fidelity::Approximate;
         let _fresh = self.unspelled.insert(reason);
+    }
+
+    /// The pasting a composite names, as [`spelled`] writes it, noting the
+    /// printer's notation for a pasting past level two.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a pasting past level two has no surface syntax: written in the printer's \
+                      notation"
+        )
+    )]
+    fn pasting(
+        &mut self,
+        pasting: Pasting,
+    ) -> Spelled
+    {
+        if pasting.level() > gandr_core_term::compose::Level::TWO {
+            self.note(Unspelled::Notation(Notation::Tree));
+        }
+        spelled(pasting)
     }
 
     /// Pushes a name, or `?` for a name the walk's spelling cannot write.
@@ -8530,18 +8576,24 @@ impl Walk<'_, '_>
                 format_args!("{}, {}", from.as_ref(), to.as_ref()),
                 Join::Ua,
             )?),
-            Former::Compose { composite, cells } => Some(self.at_stratum(
-                Glyphs("compose"),
-                composite.stratum,
-                format_args!("{}", spelled(composite.pasting).0),
-                |head| Join::Compose(head, Arity(usize::from(cells))),
-            )?),
-            Former::Fill { composite, cells } => Some(self.at_stratum(
-                Glyphs("fill"),
-                composite.stratum,
-                format_args!("{}", spelled(composite.pasting).0),
-                |head| Join::Fill(head, Arity(usize::from(cells))),
-            )?),
+            Former::Compose { composite, cells } => {
+                let pasting = self.pasting(composite.pasting);
+                Some(self.at_stratum(
+                    Glyphs("compose"),
+                    composite.stratum,
+                    format_args!("{}", pasting.0),
+                    |head| Join::Compose(head, Arity(usize::from(cells))),
+                )?)
+            },
+            Former::Fill { composite, cells } => {
+                let pasting = self.pasting(composite.pasting);
+                Some(self.at_stratum(
+                    Glyphs("fill"),
+                    composite.stratum,
+                    format_args!("{}", pasting.0),
+                    |head| Join::Fill(head, Arity(usize::from(cells))),
+                )?)
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(

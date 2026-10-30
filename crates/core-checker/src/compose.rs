@@ -40,6 +40,9 @@
 //! the whiskers the filler generator lifts by, so the whisker `[2](1, 0)` is
 //! the right whisker.
 //!
+//! A pasting past level two is no shape: no stratum past level two is
+//! certified, so [`admit`] refuses the tree by name.
+//!
 //! A refusal names its defect: [`CheckRefusal::ComposeUncertified`] for the
 //! stratum, [`CheckRefusal::ComposeNotAShape`] for the pasting and
 //! [`CheckRefusal::ComposeDoesNotFill`] for the cells, at the
@@ -93,9 +96,8 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::Column;
 use gandr_core_term::compose::Composite;
-use gandr_core_term::compose::Heights;
-use gandr_core_term::compose::Pasting;
 use gandr_core_term::compose::Seam;
+use gandr_core_term::compose::Tree;
 use gandr_theory_sites::Boundary;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Degree;
@@ -130,7 +132,8 @@ pub enum Endpoint
 }
 
 /// The shape `composite` names, read at its certified stratum: a chain, or a
-/// level-two shape's outer chain of columns.
+/// level-two shape's outer chain of columns, one vertex per child of the
+/// tree's root.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -142,9 +145,10 @@ pub enum Endpoint
 ///   level two certifies at the degree, and the object's degree reaches no
 ///   further.
 /// - fails: [`CheckRefusal::ComposeNotAShape`] for the chain of no cell or of
-///   more than a shape holds, a chain past the bound or the degree, or a
-///   level-two shape no object of the wreath or past the degree;
-///   [`CheckRefusal::ComposeUncertified`] for a stratum the source refuses.
+///   more than a shape holds, a chain past the bound or the degree, a level-two
+///   shape no object of the wreath or past the degree, or a pasting past level
+///   two; [`CheckRefusal::ComposeUncertified`] for a stratum the source
+///   refuses.
 /// - panics: none.
 ///
 /// # Errors
@@ -156,15 +160,13 @@ pub enum Endpoint
 ///   chain of no cell and a bound past the chain budget are each refused by
 ///   name. One cell at an uncertified stratum is admitted. The whisker at
 ///   degree 4 over bound 9 is admitted, and refused past its degree and past
-///   its bound.
+///   its bound. Two 3-cells side by side at level three are refused by name.
 /// - witness: `compose::tests::a_composite_refuses_each_defect_by_name`
 /// - witness: `compose::tests::one_cell_reads_no_stratum`
 /// - witness: `compose::tests::a_level_two_shape_is_read_at_level_two`
+/// - witness: `compose::tests::a_pasting_past_level_two_is_no_shape`
 #[spec(ensures: |ref ret| match *ret {
-    | Ok(ref shape) => match composite.pasting {
-        Pasting::Chain { cells } => usize::from(shape.vertex_count()) == usize::from(cells),
-        Pasting::Columns { heights } => usize::from(shape.vertex_count()) == heights.columns().count(),
-    },
+    | Ok(ref shape) => usize::from(shape.vertex_count()) == composite.pasting.tree().children().count(),
     | Err(CheckRefusal::ComposeNotAShape { at: site, pasting }) => site == at && pasting == composite.pasting,
     | Err(CheckRefusal::ComposeUncertified { at: site, .. }) => site == at,
     | Err(_) => false,
@@ -183,29 +185,28 @@ pub fn admit(
         bound: composite.stratum.bound,
         degree: composite.stratum.degree,
     };
-    let heights = match composite.pasting {
-        Pasting::Chain { cells } => {
-            let Ok(shape) = Shape::chain(usize::from(cells).into())
-            else {
-                return Err(not_a_shape);
-            };
-            if usize::from(shape.vertex_count()) == 1 {
-                return Ok(shape);
-            }
-            let stratum = strata
-                .certified(&Family::Chains, written, chain_budget())
-                .map_err(|stratum| CheckRefusal::ComposeUncertified { at, stratum })?;
-            if !stratum.catalogue().shapes().contains(&shape)
-                || Degree::of(&shape) > stratum.degree()
-            {
-                return Err(not_a_shape);
-            }
+    let pasting = composite.pasting;
+    if pasting.level() == gandr_core_term::compose::Level::ONE {
+        let Ok(shape) = Shape::chain(usize::from(pasting.cells()).into())
+        else {
+            return Err(not_a_shape);
+        };
+        if usize::from(shape.vertex_count()) == 1 {
             return Ok(shape);
-        },
-        Pasting::Columns { heights } => heights,
-    };
+        }
+        let stratum = strata
+            .certified(&Family::Chains, written, chain_budget())
+            .map_err(|stratum| CheckRefusal::ComposeUncertified { at, stratum })?;
+        if !stratum.catalogue().shapes().contains(&shape) || Degree::of(&shape) > stratum.degree() {
+            return Err(not_a_shape);
+        }
+        return Ok(shape);
+    }
+    if pasting.level() != gandr_core_term::compose::Level::TWO {
+        return Err(not_a_shape);
+    }
     let mut columns = Vec::new();
-    for height in heights.columns() {
+    for height in pasting.tree().columns() {
         let column = if usize::from(height) == 0 {
             Shape::default()
         }
@@ -319,9 +320,9 @@ pub enum CellReading
     Unknown,
 }
 
-/// Whether `cells` fill the level-two shape of `heights`, `outer` its chain
-/// of columns: each column's 2-cells meet along their 1-cells, and the
-/// columns along their points.
+/// Whether `cells` fill the level-two shape of `tree`, `outer` its chain of
+/// columns: each column's 2-cells meet along their 1-cells, and the columns
+/// along their points.
 ///
 /// # Specification
 /// - requires: `cells` stand under the judgement's binders, in column order,
@@ -349,7 +350,7 @@ pub enum CellReading
 pub fn fill_columns(
     context: &CheckingContext<'_>,
     at: ValueId,
-    (heights, outer): (Heights, &Shape),
+    (tree, outer): (Tree, &Shape),
     cells: &[CellReading],
 ) -> Result<(), CheckRefusal>
 {
@@ -362,7 +363,7 @@ pub fn fill_columns(
     let mut columns = Vec::new();
     let mut vertical = Vec::new();
     let mut rest = cells;
-    for (position, height) in heights.columns().enumerate() {
+    for (position, height) in tree.columns().enumerate() {
         let (held, tail) = rest
             .split_at_checked(usize::from(height).max(1))
             .ok_or(CheckRefusal::MachineInvariant)?;

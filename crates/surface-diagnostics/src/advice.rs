@@ -491,19 +491,25 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "give the abstract type an `identity` attribute that names its relation, or relate \
              points of a type that is not sealed",
         ),
-        CheckRefusal::ComposeNotAShape {
-            pasting: gandr_core_term::compose::Pasting::Chain { .. },
-            ..
-        } => String::from(
-            "write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m \
-             cells",
-        ),
-        CheckRefusal::ComposeNotAShape {
-            pasting: gandr_core_term::compose::Pasting::Columns { .. },
-            ..
-        } => String::from(
-            "write a stratum whose bound holds the level-two shape and whose degree reaches its \
-             degree",
+        CheckRefusal::ComposeNotAShape { pasting, .. }
+            if pasting.level() == gandr_core_term::compose::Level::ONE =>
+        {
+            String::from(
+                "write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain \
+                 of m cells",
+            )
+        },
+        CheckRefusal::ComposeNotAShape { pasting, .. }
+            if pasting.level() == gandr_core_term::compose::Level::TWO =>
+        {
+            String::from(
+                "write a stratum whose bound holds the level-two shape and whose degree reaches \
+                 its degree",
+            )
+        },
+        CheckRefusal::ComposeNotAShape { .. } => String::from(
+            "write the pasting as a chain or a level-two shape: no stratum past level two is \
+             certified",
         ),
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,

@@ -1306,6 +1306,10 @@ pub enum Notation
     /// written in place, `f(A, a, g)`: the surface supplies a model by a
     /// module or a model implicit, `f[s = M]`, never by its components.
     Supply,
+    /// A pasting past level two, written `tree(l, [[[]], [[]]])`: its level,
+    /// then its tree as nested brackets. The source writes a pasting only
+    /// as a chain or a level-two shape.
+    Tree,
 }
 
 /// A part of a node the presentation leaves out: the text stands for the

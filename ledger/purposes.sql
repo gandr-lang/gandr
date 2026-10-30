@@ -674,9 +674,12 @@ INSERT INTO purpose VALUES('core-term','compose::CellCount','struct','How many c
 INSERT INTO purpose VALUES('core-term','compose::Column','struct','The position of a column in a level-two shape, from zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Composite','struct','The stratum a composite is made at and the pasting shape it composes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Ends','struct','A path type as the level-two realisation reads it: its carrier and its two endpoints.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','compose::Heights','struct','The column heights of a level-two pasting, packed into one word.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','compose::Pasting','enum','The pasting shape a composite names: the chain of its cell count, or a level-two shape of the chain''s wreath over itself.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Level','struct','The level of a pasting: the dimension of the cells it composes, at least its tree''s height.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Pasting','struct','The pasting shape a composite names: one Batanin tree at the level of its cells, the chain at level one and a level-two shape its two smallest instances.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::PastingError','enum','Why a tree or a pasting does not pack: past the word, a word that is no tree, or a tree taller than its level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Seam','enum','Where a composite''s cells fail to meet: the outer chain, or the chain inside one column.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Step','enum','One step of the walk around a tree: down into a child, or back up out of it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Tree','struct','A Batanin tree, the globular pasting shape, packed as its Dyck word in one machine word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::compose','function','Builds the composite of a chain of cells beside its realisation, the left-nested then fold over the carrier from the start.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::compose_columns','function','Builds a level-two composite beside its realisation: each column folded vertically by then, the columns horizontally by whiskers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','context::BinderDepth','struct','The number of binders one zone of a context holds.',NULL,'fits','sound',NULL);

@@ -35,6 +35,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::compose::CellCount;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::compose::Pasting;
+use gandr_core_term::compose::Tree;
 use gandr_core_term::compose::compose;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::NominationIndex;
@@ -3915,9 +3916,7 @@ fn a_composite_spells_its_stratum_chain_and_cells_3957()
             degree: Degree::from(5_usize),
             bound: ShapeSize::from(7_usize),
         },
-        pasting: Pasting::Chain {
-            cells: CellCount::from(cells),
-        },
+        pasting: Pasting::chain(CellCount::from(cells)).expect("the chain packs"),
     };
     let three = compose(&mut core, composite(3), (integer, x), &[p, q, r]);
     let one = compose(&mut core, composite(1), (integer, x), &[p]);
@@ -3980,9 +3979,7 @@ fn a_fill_spells_its_stratum_chain_generator_and_cells_4075()
             degree: Degree::from(5_usize),
             bound: ShapeSize::from(7_usize),
         },
-        pasting: Pasting::Chain {
-            cells: CellCount::from(cells),
-        },
+        pasting: Pasting::chain(CellCount::from(cells)).expect("the chain packs"),
     };
     let generator = |core: &mut CoreArena| {
         let forced = core.computation_force(step);
@@ -4032,10 +4029,7 @@ fn a_level_two_pasting_spells_its_columns_3989()
                 degree: Degree::from(4_usize),
                 bound: ShapeSize::from(9_usize),
             },
-            pasting: Pasting::Columns {
-                heights: gandr_core_term::compose::Heights::new(&heights)
-                    .expect("the columns pack"),
-            },
+            pasting: Pasting::columns(&heights).expect("the columns pack"),
         }
     };
     let realised = core.computation_return(a);
@@ -4079,6 +4073,48 @@ fn a_level_two_pasting_spells_its_columns_3989()
             },
         );
     }
+}
+
+/// A pasting past level two has no source spelling: the printer writes it in
+/// its own notation, `tree(l, …)`, each node a bracket around its children,
+/// and says why (#4237).
+#[test]
+fn a_pasting_past_level_two_is_notation_4237()
+{
+    let mut core = CoreArena::new();
+    let [a, b] = [0_usize, 1].map(|index| core.value_constant(ConstantIndex::from(index)));
+    let edge = Tree::chain(CellCount::from(1_usize)).expect("[1] packs");
+    let stalk = Tree::graft([edge]).expect("a stalk packs");
+    let tree = Tree::graft([stalk, stalk]).expect("two stalks pack");
+    let composite = Composite {
+        stratum: Stratum {
+            degree: Degree::from(7_usize),
+            bound: ShapeSize::from(17_usize),
+        },
+        pasting: Pasting::new(
+            gandr_core_term::compose::Level::try_from(3_usize).expect("a byte holds three"),
+            tree,
+        )
+        .expect("two 3-cells stand at level three"),
+    };
+    let realised = core.computation_return(a);
+    let composed = core.value_compose(composite, Box::from([a, b]), realised);
+    let names = [Name::from("a"), Name::from("b")];
+    assert_eq!(
+        spelled_as(
+            &CoreSource::new(&core, &names),
+            Root::Value(CoreNode::Value(composed)),
+            Spelling::Unicode
+        ),
+        (
+            (
+                "compose[7, 17](tree(3, [[[[]]], [[[]]]]), (a, b))".to_owned(),
+                Fidelity::Approximate
+            ),
+            vec![Unspelled::Notation(Notation::Tree)]
+        ),
+        "two 3-cells side by side are written in the printer's notation"
+    );
 }
 
 /// Native introductions retain endpoint and map order but cannot claim

@@ -10407,9 +10407,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   start to the last end, and the composite elaborates as the chain
     ///   written with `then` does.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at a cell whose type is no
-    ///   path; the refusals of [`crate::compose::admit`] and
-    ///   [`crate::compose::fill`]; a machine invariant for a node that is no
-    ///   composite or types of another count than its cells.
+    ///   path; the refusals of [`crate::compose::admit`], a pasting past level
+    ///   two among them, and of [`crate::compose::fill`] at level one or
+    ///   [`crate::compose::fill_columns`] at level two; a machine invariant for
+    ///   a node that is no composite or types of another count than its cells.
     /// - panics: none.
     ///
     /// # Errors
@@ -10460,33 +10461,36 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 PathReading::Unknown(_) => crate::compose::CellReading::Unknown,
             });
         }
-        match composite.pasting {
-            gandr_core_term::compose::Pasting::Chain { .. } => {
-                let diagram: Vec<_> = readings
-                    .iter()
-                    .map(|&reading| match reading {
-                        crate::compose::CellReading::Known { left, right, .. } => {
-                            crate::compose::cell(
-                                crate::compose::Endpoint::Known(left),
-                                crate::compose::Endpoint::Known(right),
-                            )
-                        },
-                        crate::compose::CellReading::Unknown => crate::compose::cell(
-                            crate::compose::Endpoint::Unknown,
-                            crate::compose::Endpoint::Unknown,
-                        ),
-                    })
-                    .collect();
-                crate::compose::fill(
-                    self.context,
-                    (at, gandr_core_term::compose::Seam::Outer),
-                    &shape,
-                    &diagram,
-                )?;
-            },
-            gandr_core_term::compose::Pasting::Columns { heights } => {
-                crate::compose::fill_columns(self.context, at, (heights, &shape), &readings)?;
-            },
+        // `admit` refuses a pasting past level two, so one not at level one
+        // stands at level two.
+        if composite.pasting.level() == gandr_core_term::compose::Level::ONE {
+            let diagram: Vec<_> = readings
+                .iter()
+                .map(|&reading| match reading {
+                    crate::compose::CellReading::Known { left, right, .. } => crate::compose::cell(
+                        crate::compose::Endpoint::Known(left),
+                        crate::compose::Endpoint::Known(right),
+                    ),
+                    crate::compose::CellReading::Unknown => crate::compose::cell(
+                        crate::compose::Endpoint::Unknown,
+                        crate::compose::Endpoint::Unknown,
+                    ),
+                })
+                .collect();
+            crate::compose::fill(
+                self.context,
+                (at, gandr_core_term::compose::Seam::Outer),
+                &shape,
+                &diagram,
+            )?;
+        }
+        else {
+            crate::compose::fill_columns(
+                self.context,
+                at,
+                (composite.pasting.tree(), &shape),
+                &readings,
+            )?;
         }
         self.wait(Frame::ReturnedEndpoint { at });
         Ok(Step::Descend(Goal::Computation {

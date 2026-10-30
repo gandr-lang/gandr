@@ -334,7 +334,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 ///   its failure class. Other variants' wording is not pinned.
 /// - witness: `tests::diagnostics::refusals_of_one_class_label_what_their_locus_is`
 #[spec(ensures: |ret| !ret.0.is_empty())]
-const fn checked(refusal: CheckRefusal) -> Culprit
+fn checked(refusal: CheckRefusal) -> Culprit
 {
     Culprit(match refusal {
         CheckRefusal::NotADataType(_) => "not an admitted datatype",
@@ -394,14 +394,17 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::ComposeUncertified { .. } | CheckRefusal::FillUncertified { .. } => {
             "a stratum the chains do not certify"
         },
-        CheckRefusal::ComposeNotAShape {
-            pasting: gandr_core_term::compose::Pasting::Chain { .. },
-            ..
-        } => "a chain past its stratum",
-        CheckRefusal::ComposeNotAShape {
-            pasting: gandr_core_term::compose::Pasting::Columns { .. },
-            ..
-        } => "a level-two shape past its stratum",
+        CheckRefusal::ComposeNotAShape { pasting, .. }
+            if pasting.level() == gandr_core_term::compose::Level::ONE =>
+        {
+            "a chain past its stratum"
+        },
+        CheckRefusal::ComposeNotAShape { pasting, .. }
+            if pasting.level() == gandr_core_term::compose::Level::TWO =>
+        {
+            "a level-two shape past its stratum"
+        },
+        CheckRefusal::ComposeNotAShape { .. } => "a pasting past level two",
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,
             ..

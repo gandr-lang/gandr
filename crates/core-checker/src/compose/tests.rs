@@ -6,9 +6,10 @@ use gandr_core_term::ValueId;
 use gandr_core_term::compose::CellCount;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::compose::Ends;
-use gandr_core_term::compose::Heights;
+use gandr_core_term::compose::Level;
 use gandr_core_term::compose::Pasting;
 use gandr_core_term::compose::Seam;
+use gandr_core_term::compose::Tree;
 use gandr_core_term::compose::compose_columns;
 use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::BaseType;
@@ -84,9 +85,7 @@ fn chain(
             degree: Degree::from(degree),
             bound: ShapeSize::from(bound),
         },
-        pasting: Pasting::Chain {
-            cells: CellCount::from(cells),
-        },
+        pasting: Pasting::chain(CellCount::from(cells)).expect("the chain packs"),
     }
 }
 
@@ -382,9 +381,7 @@ fn columns(
             degree: Degree::from(degree),
             bound: ShapeSize::from(bound),
         },
-        pasting: Pasting::Columns {
-            heights: Heights::new(&heights).expect("the columns pack"),
-        },
+        pasting: Pasting::columns(&heights).expect("the columns pack"),
     }
 }
 
@@ -429,13 +426,8 @@ fn a_level_two_shape_is_read_at_level_two()
         .expect("the horizontal composite is a shape at 5 over 11");
     let vertical = admit(&mut strata, at, columns(Head(4, 9), Written(&[2])))
         .expect("the vertical composite is a shape at 4 over 9");
-    let horizontal_heights = columns(Head(5, 11), Written(&[1, 1]));
-    let vertical_heights = columns(Head(4, 9), Written(&[2]));
-    let (Pasting::Columns { heights: across }, Pasting::Columns { heights: down }) =
-        (horizontal_heights.pasting, vertical_heights.pasting)
-    else {
-        panic!("both are level-two pastings");
-    };
+    let across = columns(Head(5, 11), Written(&[1, 1])).pasting.tree();
+    let down = columns(Head(4, 9), Written(&[2])).pasting.tree();
     let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
         fill_columns(&context, at, (across, &horizontal), &[
@@ -469,6 +461,32 @@ fn a_level_two_shape_is_read_at_level_two()
                 if usize::from(before) == 0
         ),
         "a column's 2-cells that do not meet are refused at the column's seam"
+    );
+}
+
+#[test]
+fn a_pasting_past_level_two_is_no_shape()
+{
+    let mut arena = CoreArena::new();
+    let at = integer(&mut arena, Point(0));
+    let point = Tree::graft([]).expect("the point packs");
+    let edge = Tree::graft([point]).expect("one leaf packs");
+    let stalk = Tree::graft([edge]).expect("a stalk packs");
+    let tree = Tree::graft([stalk, stalk]).expect("two stalks pack");
+    let three = Level::try_from(3_usize).expect("a byte holds three");
+    let composite = Composite {
+        stratum: Stratum {
+            degree: Degree::from(7_usize),
+            bound: ShapeSize::from(17_usize),
+        },
+        pasting: Pasting::new(three, tree).expect("two 3-cells stand at level three"),
+    };
+    assert!(
+        matches!(
+            admit(&mut Strata::default(), at, composite),
+            Err(CheckRefusal::ComposeNotAShape { at: site, pasting }) if site == at && pasting == composite.pasting
+        ),
+        "two 3-cells side by side are refused by name, before any stratum is read"
     );
 }
 
