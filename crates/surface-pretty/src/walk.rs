@@ -12133,6 +12133,9 @@ where
                     },
                     Form::Sugared => source.implied(node).unwrap_or(node),
                 };
+                if let Some(elided) = source.elided(node) {
+                    walk.note(Unspelled::Elided(elided));
+                }
                 walk.visit(
                     source,
                     node,

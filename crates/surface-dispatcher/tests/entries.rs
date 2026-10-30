@@ -376,6 +376,10 @@ enum Placed
     /// former reads off the literal's digits, never a term, so the call
     /// the annotation heads answers (#298).
     Stratum,
+    /// The pasting shape a composite names, `chain(3)` in `compose[5, 7](
+    /// chain(3), (p, q, r))`: the former reads the shape off its syntax, never
+    /// a term, so the call the annotation heads answers.
+    Pasting,
     /// The module or the builtin namespace a path selects from, `M` in `M.x`
     /// or `M.T`, `M.N` in `M.N.x`, `limits.hard` in `limits.hard.note`, and
     /// `int` in `int.div(c, 64)`: a namespace, neither a term nor a type, so
@@ -593,6 +597,21 @@ fn gated(
         .filter_map(|(at, _)| {
             let end = source.get(at ..)?.find(';')?;
             Some((at, at.saturating_add(end)))
+        })
+        .collect();
+    // The bytes of each pasting shape a composite names, `chain(` to its `)`.
+    let pastings: Vec<(usize, usize)> = source
+        .match_indices("compose[")
+        .filter_map(|(at, _)| {
+            let after = source.get(at ..)?;
+            let open = at.saturating_add(after.find("](")?).saturating_add(2);
+            let shape = source.get(open ..)?;
+            let start = open.saturating_add(shape.len().saturating_sub(shape.trim_start().len()));
+            let close = source.get(start ..)?.find(')')?;
+            source
+                .get(start ..)?
+                .starts_with("chain(")
+                .then_some((start, start.saturating_add(close).saturating_add(1)))
         })
         .collect();
     // The bytes of each flow's body, its `{` to its `}`.
@@ -1029,10 +1048,14 @@ fn gated(
         let templated = flows.iter().any(|&(start, end)| {
             start <= usize::from(span.start()) && usize::from(span.end()) <= end
         });
+        let pasted = pastings.iter().any(|&(start, end)| {
+            start <= usize::from(span.start()) && usize::from(span.end()) <= end
+        });
         let placed = placed
             .or_else(|| templated.then_some(Placed::Template))
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
+            .or_else(|| pasted.then_some(Placed::Pasting))
             .or_else(|| qualifier.then_some(Placed::Qualifier))
             .or_else(|| moved.then_some(Placed::Move))
             .or_else(|| chained.then_some(Placed::Chained))

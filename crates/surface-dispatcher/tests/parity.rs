@@ -627,6 +627,9 @@ enum Held
     /// A printing of a constructor at a type a definition computes, which
     /// names no family the printer reads it by (#3669).
     Computed,
+    /// A printing of a composite as the left-nested fold it realises, which
+    /// lowers to that fold rather than to the composite (#3957).
+    Composite,
 }
 
 impl fmt::Display for Held
@@ -644,6 +647,7 @@ impl fmt::Display for Held
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
             Self::Computed => "#3669, a constructor at a type a definition computes",
+            Self::Composite => "#3957, a composite written as its fold",
         })
     }
 }
@@ -809,6 +813,13 @@ fn unfaithful(
         .all(|&reason| reason == Unspelled::Unreadable(Unreadable::Unclassified))
     {
         Spelt::Held(Held::Computed)
+    }
+    // A composite is written as the fold it realises.
+    else if unspelled
+        .iter()
+        .all(|&reason| reason == Unspelled::Elided(Elided::Composite))
+    {
+        Spelt::Held(Held::Composite)
     }
     // A handler written as `reset` and `shift` leaves the scope of each
     // capability it delimits unnamed, so its region is elided with it.

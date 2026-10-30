@@ -21,6 +21,7 @@ use crate::Name;
 use crate::Source;
 use crate::former::Arity;
 use crate::former::Component;
+use crate::former::Elided;
 use crate::former::Former;
 use crate::former::Unreadable;
 
@@ -68,6 +69,25 @@ impl<'nodes> ContentSource<'nodes>
             constructors: Some(constructors),
             ..self
         }
+    }
+
+    /// The computation a returned value reads as: the fold a returned
+    /// composite realises, and `body` itself otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreturned(
+        &self,
+        body: NodeIndex,
+    ) -> NodeIndex
+    {
+        if let Some(&ContentNode::Return(returned)) = self.nodes.get(usize::from(body))
+            && let Some(&ContentNode::Compose { realised, .. }) =
+                self.nodes.get(usize::from(returned))
+        {
+            return realised;
+        }
+        body
     }
 }
 
@@ -593,9 +613,9 @@ impl Source for ContentSource<'_>
                 left,
                 right,
             },
-            ContentNode::Returned(body) => Former::Returned(body),
-            // A composite reads as the fold it realises until the printer
-            // writes the form (#3957).
+            // A composite, returned or not, reads as the fold it realises until
+            // the printer writes the form (#3957).
+            ContentNode::Returned(body) => Former::Returned(self.unreturned(body)),
             ContentNode::Compose { realised, .. } => Former::Returned(realised),
             ContentNode::Variable { zone, index } => Former::Variable { zone, index },
             ContentNode::Constant(ref reference) => {
@@ -774,6 +794,23 @@ impl Source for ContentSource<'_>
                 Former::Unreadable(Unreadable::UnknownType)
             },
         }
+    }
+
+    /// [`Elided::Composite`] at a composite, returned or not, which
+    /// [`Self::read`] answers as the fold it realises.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn elided(
+        &self,
+        node: NodeIndex,
+    ) -> Option<Elided>
+    {
+        let read = self.nodes.get(usize::from(node))?;
+        let composite = matches!(*read, ContentNode::Compose { .. })
+            || matches!(*read, ContentNode::Returned(body) if self.unreturned(body) != body);
+        composite.then_some(Elided::Composite)
     }
 
     /// The index of component `index` of the n-ary former at `node`.

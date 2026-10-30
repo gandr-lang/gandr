@@ -50,8 +50,8 @@ def agrees(
   p : Path(A, x, y),
   q : Path(A, y, z),
   r : Path(A, z, w)
-) -> Path(Path(A, x, w), compose[5, 7](chain(3), (p, q, r)), (p then q) then r) {
-  here((p then q) then r)
+) -> Path(Path(A, x, w), composed(A, x, y, z, w, p, q, r), folded(A, x, y, z, w, p, q, r)) {
+  here(folded(A, x, y, z, w, p, q, r))
 }
 
 /// One cell is its own composite, and reads no stratum.
@@ -59,12 +59,13 @@ def single(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(A, x, y) {
   compose[0, 0](chain(1), p)
 }
 
+/// Three reflexivities composed unbiased.
+def reflexivities(A : Type, x : A) -> Path(A, x, x) {
+  compose[5, 7](chain(3), (here(x), here(x), here(x)))
+}
+
 /// A composite of reflexivities reduces to reflexivity.
-def decided(A : Type, x : A) -> Path(
-  Path(A, x, x),
-  compose[5, 7](chain(3), (here(x), here(x), here(x))),
-  here(x)
-) {
+def decided(A : Type, x : A) -> Path(Path(A, x, x), reflexivities(A, x), here(x)) {
   here(here(x))
 }
 

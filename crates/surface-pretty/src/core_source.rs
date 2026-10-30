@@ -33,6 +33,7 @@ use quenchant_shape::shape::Maybe;
 use crate::former::Answered;
 use crate::former::Arity;
 use crate::former::Component;
+use crate::former::Elided;
 use crate::former::ForgetCall;
 use crate::former::Forgotten;
 use crate::former::Former;
@@ -1151,14 +1152,33 @@ impl<'arena> CoreSource<'arena>
         })
     }
 
+    /// The computation a returned value reads as: the fold a returned
+    /// composite realises, and `body` itself otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreturned(
+        &self,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        match self.arena.computation(body) {
+            Some(&Computation::Return(returned)) => match self.arena.value(returned) {
+                Some(&Value::Compose { realised, .. }) => realised,
+                Some(_) | None => body,
+            },
+            Some(_) | None => body,
+        }
+    }
+
     /// The value `id` names.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each value former read as its [`Former`], a composite as the
-    ///   returned fold it realises; [`Former::Unreadable`] for an id the arena
-    ///   does not hold, and for a constructor whose classifier names no data
-    ///   family.
+    ///   returned fold it realises, and a returned composite so too;
+    ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
+    ///   constructor whose classifier names no data family.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1226,9 +1246,10 @@ impl<'arena> CoreSource<'arena>
         (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
+        | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(self.unreturned(body)),
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
         | (Some(&Value::Nested(body)), Former::Nested(actual))
-        | (Some(&(Value::Returned(body) | Value::Compose { realised: body, .. })), Former::Returned(actual))
+        | (Some(&Value::Compose { realised: body, .. }), Former::Returned(actual))
         | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
         | (Some(&Value::Record(ref fields)), Former::Unit) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
@@ -1366,9 +1387,9 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
-            Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
-            // A composite reads as the fold it realises until the printer
-            // writes the form (#3957).
+            // A composite, returned or not, reads as the fold it realises until
+            // the printer writes the form (#3957).
+            Value::Returned(body) => Former::Returned(CoreNode::Computation(self.unreturned(body))),
             Value::Compose { realised, .. } => Former::Returned(CoreNode::Computation(realised)),
             Value::Ascribe { value, ty } => Former::Annotated {
                 value: CoreNode::Value(value),
@@ -3099,6 +3120,27 @@ impl Source for CoreSource<'_>
             .binary_search(&map)
             .is_ok()
             .then_some(CoreNode::Value(argument))
+    }
+
+    /// [`Elided::Composite`] at a composite, returned or not, which
+    /// [`Self::read`] answers as the fold it realises.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn elided(
+        &self,
+        node: CoreNode,
+    ) -> Option<Elided>
+    {
+        let CoreNode::Value(id) = node
+        else {
+            return None;
+        };
+        let read = self.arena.value(id)?;
+        let composite = matches!(*read, Value::Compose { .. })
+            || matches!(*read, Value::Returned(body) if self.unreturned(body) != body);
+        composite.then_some(Elided::Composite)
     }
 
     /// The telescope of the constant `head` reads as, through any

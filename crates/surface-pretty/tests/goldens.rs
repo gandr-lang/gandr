@@ -4089,6 +4089,53 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     }
 }
 
+/// A composite of three paths, bare or returned, is written as the
+/// left-nested fold it realises, and the printing names the composite's
+/// elided form until the printer writes it (#3957).
+#[test]
+fn a_composite_is_written_as_its_fold_and_noted_3965()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let around = core.value_constant(ConstantIndex::from(2_usize));
+    let composite = gandr_core_term::compose::Composite {
+        stratum: gandr_core_term::ua::Stratum {
+            degree: gandr_theory_sites::Degree::from(5_usize),
+            bound: gandr_theory_sites::ShapeSize::from(7_usize),
+        },
+        pasting: gandr_core_term::compose::Pasting::Chain {
+            cells: gandr_core_term::compose::CellCount::from(3_usize),
+        },
+    };
+    let bare = gandr_core_term::compose::compose(&mut core, composite, (circle, base), &[
+        around, around, around,
+    ]);
+    let returned = core.computation_return(bare);
+    let returned = core.value_returned(returned);
+    let names = [Name::from("Circle"), Name::from("base"), Name::from("loop")];
+    let source = CoreSource::new(&core, &names);
+    for root in [bare, returned] {
+        agrees(&core, &names, CoreNode::Value(root));
+        let rendered = presented_in(
+            &source,
+            Root::Value(CoreNode::Value(root)),
+            wide(),
+            Form::Sugared,
+        );
+        assert_eq!(
+            (
+                rendered.as_ref(),
+                rendered.fidelity(),
+                rendered.unspelled().iter().copied().collect::<Vec<_>>()
+            ),
+            ("(loop then loop) then loop", Fidelity::Approximate, vec![
+                Unspelled::Elided(Elided::Composite)
+            ]),
+        );
+    }
+}
+
 /// A composite a transport reads as its path or as the value it moves stays
 /// the transport it derives: nothing there states the composite's type, and
 /// the lowering reads `p then q` only where something does, as a call's
