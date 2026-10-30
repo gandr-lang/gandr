@@ -128,14 +128,15 @@ trunk_lacked() {
 # commits (`own_fork`) are rebased onto the top's branch. That rebase
 # conflicts when the top forked from the trunk before a change the own
 # commits build on (`trunk_lacked`), though they apply to the trunk: the top
-# carries the change only once it merges. A top in the merge queue, or set to
-# enter it, merges soon, so the stacking waits for it every
-# `pr_stack_poll` seconds (30 by default) and reads the top again, up to 30
-# minutes. A top not queued, a wait past 30 minutes, and a conflict with the
-# top's own changes are refused, the first two naming the trunk's changes the
-# top lacks.
+# carries the change only once it merges. A top bound for the trunk
+# (`bound.jq`, #4124) merges soon: one queued, and one behind the trunk with
+# its checks pending or passed, which its watch queues. The stacking waits
+# for it every `pr_stack_poll` seconds (30 by default) and reads the top
+# again, up to 30 minutes. A top held, conflicting with the trunk or failed,
+# a wait past 30 minutes, and a conflict with the top's own changes are
+# refused, the first two naming the trunk's changes the top lacks.
 stack_on_top() {
-  local own=$1 deadline=$((SECONDS + 1800)) base number fork lacked
+  local own=$1 deadline=$((SECONDS + 1800)) base number fork lacked bound
   stacked_top=$2
   while [[ $stacked_top != null ]]; do
     base=$(jq -r .head <<< "$stacked_top")
@@ -156,17 +157,18 @@ stack_on_top() {
       echo "the rebase of $own onto $base (#$number, the top) conflicts; resolve it on $own, run the hooks, and run \`pr:open\` again" >&2
       return 1
     fi
-    if [[ $(in_queue "$number") != true ]]; then
-      printf 'the rebase of %s onto %s (#%s, the top) conflicts: the top lacks these changes of %s the branch builds on, and it is not queued; run `pr:open` again once it merges or a newer top holds them:\n%s\n' \
-        "$own" "$base" "$number" "$trunk" "$(sed 's/^/  /' <<< "$lacked")" >&2
+    bound=$(top_reading "$number" | jq -c --arg trunk "$trunk" -f "$pr_stack_dir/bound.jq")
+    if [[ $(jq -r .act <<< "$bound") != wait ]]; then
+      printf 'the rebase of %s onto %s (#%s, the top) conflicts: the top lacks these changes of %s the branch builds on, and %s; run `pr:open` again once it merges or a newer top holds them:\n%s\n' \
+        "$own" "$base" "$number" "$trunk" "$(jq -r .why <<< "$bound")" "$(sed 's/^/  /' <<< "$lacked")" >&2
       return 1
     fi
     if (( SECONDS >= deadline )); then
-      printf 'the top #%s has been queued for 30 minutes without merging and still lacks these changes of %s the branch builds on; run `pr:open` again once it merges:\n%s\n' \
+      printf 'the top #%s has been bound for %s for 30 minutes without merging and still lacks these changes of it the branch builds on; run `pr:open` again once it merges:\n%s\n' \
         "$number" "$trunk" "$(sed 's/^/  /' <<< "$lacked")" >&2
       return 1
     fi
-    echo "the top #$number lacks $(wc -l <<< "$lacked") changes of $trunk the branch builds on; waiting for it to merge from the queue" >&2
+    echo "the top #$number lacks $(wc -l <<< "$lacked") changes of $trunk the branch builds on, and $(jq -r .why <<< "$bound"); waiting for it to merge" >&2
     sleep "${pr_stack_poll:-30}"
     stacked_top=$(await_top "$own")
   done
@@ -239,6 +241,15 @@ in_queue() {
   gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
     -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } } } }' \
     --jq '.data.repository.pullRequest | .isInMergeQueue or .autoMergeRequest != null'
+}
+
+# What `bound.jq` reads of pull request `$1`: whether it is queued or set to
+# enter the queue, whether it is a draft, its merge state and its head's
+# check rollup, as one JSON object.
+top_reading() {
+  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } isDraft mergeStateStatus commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } }' \
+    --jq '.data.repository.pullRequest | {queued: (.isInMergeQueue or .autoMergeRequest != null), draft: .isDraft, merge: .mergeStateStatus, checks: (.commits.nodes[0].commit.statusCheckRollup.state // null)}'
 }
 
 # The numbers of the stack `$1`'s pull requests in the merge queue, as a JSON

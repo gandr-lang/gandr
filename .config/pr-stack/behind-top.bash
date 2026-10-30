@@ -8,7 +8,7 @@
 #   `current` forks it from the trunk after `trunk B`.
 # - `lower`: `apart` has the lower edit another file; `clashes` has it edit
 #   `f.txt` too.
-# - `queued`: what `in_queue` reads for the lower.
+# - `reading`: what `top_reading` reads for the lower (`bound.jq`'s input).
 # - `restacked` (#3877): the upper is stacked on the lower once, and the
 #   lower's own commit is then rewritten with another patch and pushed, as
 #   its seat's restack does, before the step runs.
@@ -61,13 +61,13 @@ count=$(jq length "$cases")
 for (( i = 0; i < count; i++ )); do
   name=$(jq -r ".[$i].name" "$cases")
   expected=$(jq -r ".[$i].output" "$cases")
-  queued=$(jq -r ".[$i].queued" "$cases")
+  reading=$(jq -c ".[$i].reading" "$cases")
   dir=$work/$i
   mkdir "$dir"
   ( scenario "$dir" "$(jq -r ".[$i].top" "$cases")" "$(jq -r ".[$i].lower" "$cases")" ) > /dev/null
   cd "$dir/clone"
   open_prs() { echo '[]'; }
-  in_queue() { echo "$queued"; }
+  top_reading() { echo "$reading"; }
   await_top() { echo null; }
   if [[ $(jq -r ".[$i].restacked // false" "$cases") == true ]]; then
     stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1
