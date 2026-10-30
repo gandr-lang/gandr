@@ -1466,6 +1466,74 @@ fn a_held_transport_replays_as_its_continuation_at_its_endpoint_4011()
     );
 }
 
+/// A returned endpoint holding a `cong` chain stuck on a path reads past the
+/// chain to the bind outside it (#4129). `force ⟨(tr(m, p, q) to a. tr(m, a,
+/// r)) to b. return thunk { g(b) }⟩` against the same force over `h(b)`, `m`
+/// the motive `t. Path(Unit, x, t)`, `g`, constant 1, `thunk { λz. h(z) }` for
+/// the opaque `h`, constant 0, and `x`, `p`, `q` and `r` free: the chain stays
+/// whole, and the trace unfolds `g`, the head the endpoint's reading reaches.
+#[test]
+fn an_endpoint_reads_past_a_cong_chain_to_the_bind_outside_it_4129()
+{
+    let mut arena = TermArena::new();
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let unit_type = arena.value_type_unit();
+    let motive = |arena: &mut TermArena, x: u32| {
+        let (x, point) = (variable(arena, x), variable(arena, 0));
+        arena.value_type_path(unit_type, x, point)
+    };
+    // `f(b)` for the constant `f` at `constant`, under `b`.
+    let call = |arena: &mut TermArena, constant: usize| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        let bound = variable(arena, 0);
+        arena.computation_application(forced, bound)
+    };
+    let body = call(&mut arena, 0);
+    let lambda = arena.computation_lambda(body);
+    let defined = arena.value_thunk(lambda);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(defined)]);
+    // Free: `r` at 0, `q` at 1, `p` at 2 and `x` at 3.
+    let (q, p) = (variable(&mut arena, 1), variable(&mut arena, 2));
+    let over_x = motive(&mut arena, 4);
+    let stuck = arena.computation_path_transport(over_x, p, q);
+    // Under `a`: `a` at 0, `r` at 1 and `x` at 4.
+    let (along, r) = (variable(&mut arena, 0), variable(&mut arena, 1));
+    let over_x_under = motive(&mut arena, 5);
+    let link = arena.computation_path_transport(over_x_under, along, r);
+    let chain = arena.computation_bind(stuck, link);
+    let forced = |arena: &mut TermArena, constant: usize| {
+        let continuation = call(arena, constant);
+        let suspended = arena.value_thunk(continuation);
+        let returned = arena.computation_return(suspended);
+        let bound = arena.computation_bind(chain, returned);
+        let endpoint = arena.value_returned(bound);
+        arena.computation_force(endpoint)
+    };
+    let held = forced(&mut arena, 1);
+    let run_through = forced(&mut arena, 0);
+    let unfold = [
+        ConversionDecision::Unfold {
+            constant: ReplayNode::Constant(ConstantIndex::from(1_usize)),
+        },
+        ConversionDecision::ReduceLeft {
+            redex: ReplayNode::Constant(ConstantIndex::from(1_usize)),
+        },
+        SHARED,
+    ];
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(held, run_through),
+            EngineClaim::Convertible,
+            &unfold
+        ),
+        KernelVerdict::Convertible
+    );
+}
+
 #[test]
 fn the_kernel_converts_by_the_forced_rules_alone()
 {
