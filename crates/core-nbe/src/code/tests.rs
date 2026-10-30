@@ -949,6 +949,87 @@ fn motives_over_composites_written_apart_are_alike_3968()
 }
 
 #[test]
+fn motives_reading_a_returned_composite_agree_with_its_fold_4057()
+{
+    // #4057: `p then q` lowers to the binary composite, which a value
+    // position reads as returned, `z. El(⟨return compose(F, z; tr(El(#1), z,
+    // F))⟩)`. The bridge erases it to its fold, so the walk reads it as the
+    // fold written apart, `z. El(⟨tr(El(#1), z, F)⟩)`. A stated lambda whose
+    // body returns the composite, applied to `z`, is the composite written
+    // apart, as `(λq. (q then g) then h)(fm)` meets `(fm then g) then h`. A
+    // composite of another value is not the fold.
+    use alloc::boxed::Box;
+
+    use gandr_core_term::ComputationId;
+    use gandr_core_term::compose::Composite;
+    let mut core = CoreArena::new();
+    let decoded = |core: &mut CoreArena, call| {
+        let code = core.value_returned(call);
+        core.value_type_element(code, Level::zero())
+    };
+    // `tr(El(#1), #0, #value)`, past the transport's binder its motive reading
+    // the path at index 1.
+    let transported = |core: &mut CoreArena, value: u32| {
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let along = core.value_type_element(endpoint, Level::zero());
+        let path = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let value = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(value));
+        core.computation_path_transport(along, path, value)
+    };
+    // The composite of `#value` and `#0` returned, its fold that transport.
+    let returned = |core: &mut CoreArena, value: u32| -> ComputationId {
+        let fold = transported(core, value);
+        let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(value));
+        let second = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let composite = core.value_compose(Composite::binary(), Box::from([first, second]), fold);
+        core.computation_return(composite)
+    };
+    let fold = transported(&mut core, 1);
+    let fold = decoded(&mut core, fold);
+    let written = returned(&mut core, 1);
+    let written = decoded(&mut core, written);
+    // `(λq. return compose(F, q; tr(El(#1), q, F)))(z)`: `F` stands at index 2
+    // in the lambda.
+    let body = returned(&mut core, 2);
+    let lambda = core.computation_lambda(body);
+    let thunk = core.value_thunk(lambda);
+    let unit = core.value_type_unit();
+    let ascribed = core.value_ascribe(thunk, unit);
+    let forced = core.computation_force(ascribed);
+    let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let applied = core.computation_application(forced, endpoint);
+    let applied = decoded(&mut core, applied);
+
+    let mut domain = DomainArena::new();
+    let f = variable(&mut domain, BinderLevel::from(0_u32));
+    let g = variable(&mut domain, BinderLevel::from(1_u32));
+    let motive = |domain: &mut DomainArena, body, bound: DomainValueId| {
+        let mut environment = Environment::new();
+        environment.extend(Zone::Intuitionistic, bound);
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    let over_written = motive(&mut domain, written, f);
+    let over_fold = motive(&mut domain, fold, f);
+    let over_applied = motive(&mut domain, applied, f);
+    let over_other = motive(&mut domain, fold, g);
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_written, over_fold).expect("both motives resolve"),
+        "a returned composite is its fold"
+    );
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_applied, over_written).expect("both motives resolve"),
+        "a stated lambda returning the composite, applied, is the composite written apart"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over_written, over_other).expect("both motives resolve"),
+        "but not the fold of another value"
+    );
+}
+
+#[test]
 fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
 {
     // #4005: `El(#0)` over a path an action returned, `⟨transport along p⟩`,

@@ -1981,9 +1981,11 @@ fn forced_computation(
     }
 }
 
-/// The fold the composite `id` returns realises, `id` itself otherwise: the
-/// bridge erases a returned composite to that fold. `p then q` lowers to the
-/// binary composite, while its explicit spelling, and the transport the
+/// The fold the composite `id` returns realises, `id` itself otherwise.
+///
+/// The bridge erases a returned composite to that fold, and every reader that
+/// compares terms as the kernel replays them reads it so. `p then q` lowers to
+/// the binary composite, while its explicit spelling, and the transport the
 /// checker derives where a type moves a path, lower to the fold (#4057).
 ///
 /// # Specification
@@ -1997,7 +1999,9 @@ fn forced_computation(
 /// - hypothesis: L3 — as [`equal_type_reading`].
 /// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
 #[spec(ensures: |ret| ret == id || arena.computation(ret).is_some())]
-fn folded_computation(
+#[inline]
+#[must_use]
+pub fn folded_computation(
     arena: &crate::CoreArena,
     id: ComputationId,
 ) -> ComputationId
