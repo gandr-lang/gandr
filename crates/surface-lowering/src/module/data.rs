@@ -152,18 +152,20 @@ pub struct DataParameter
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a constructor field binds no name.
+    /// Why a telescope entry binds no name.
     pub mod field_name {
-        /// The source wrote the field's type alone.
+        /// The source wrote the entry's type alone.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The field is written bare, as in `Succ : Nat --> Nat`.
+            /// The entry is written bare, as in `Succ : Nat --> Nat` or
+            /// `data Vec(a : Type) : Nat -> Type`.
             Unnamed,
         }
     }
 }
 
-/// One field of a generator: the name it binds, when written, and its type.
+/// One entry of a telescope a data declaration writes, a generator's field or
+/// an index of its kind: the name it binds, when written, and its type.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -172,15 +174,48 @@ quenchant_shape::reason_enum! {
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a named and a bare field keep their binder and type.
+/// - hypothesis: L3 — a named and a bare field keep their binder and type; a
+///   named index keeps its binder.
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FieldForm
 {
-    /// The name the field binds for the fields after it.
+    /// The name the entry binds for the entries after it.
     pub named: Maybe<Placed, field_name::Absent>,
-    /// The field's type.
+    /// The entry's type.
     pub ty: Placed,
+}
+
+/// What a generator's signature, or a data header's kind, writes after its
+/// colon: a telescope before `-->` and the type after it, or a type alone.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: an arrow's entries keep source order, and its grades the order of
+///   the entries they stand before.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a telescoped generator, a bare one and a header's named
+///   indices each read as their own case.
+/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+/// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum Signature
+{
+    /// `(x : A, …) --> T`, or `A --> T`.
+    Arrow
+    {
+        /// The entries before the arrow.
+        entries: Vec<FieldForm>,
+        /// Each grade written before an entry, `1` or `ω`.
+        grades: Vec<Placed>,
+        /// The type after the arrow.
+        result: Placed,
+    },
+    /// A type with no arrow after it.
+    Bare(Placed),
 }
 
 /// One generator of a data declaration: its name's tile, its fields and the
@@ -236,9 +271,10 @@ pub struct DataForm
     pub slot: SlotIndex,
     /// The parameters, in telescope order.
     pub parameters: Vec<DataParameter>,
-    /// The index classifiers the kind writes before its universe, `Nat` of
-    /// `Nat -> Type`, in order.
-    pub indices: Vec<Placed>,
+    /// The indices the kind writes before its universe, in order: `Nat` of
+    /// `Nat -> Type`, bare, or `gamma : Ctx` of `(gamma : Ctx, a : Ty) -->
+    /// Type`, named.
+    pub indices: Vec<FieldForm>,
     /// The universe written after the parameters and the indices.
     pub kind: Maybe<Placed, data_kind::Absent>,
     /// The generators, in tag order.
@@ -870,17 +906,18 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands past the name tile of the declaration at
     ///   `declaration`.
     /// - ensures: the parameters in order, the universe when one is written — a
-    ///   kind `A -> B -> Type` read as the index classifiers `A` and `B` before
-    ///   the universe ([`Self::telescope`]) — every generator with the indices
-    ///   its result states, and every loop, the cursor exhausted; the first
-    ///   cell member's fault, as [`cell`] and [`Self::loops`] state them, kept
+    ///   kind `A -> B -> Type` read as the bare indices `A` and `B` before the
+    ///   universe ([`Self::telescope`]), and `(x : A, y : B) --> Type` as the
+    ///   named indices `x` and `y` — every generator with the indices its
+    ///   result states, and every loop, the cursor exhausted; the first cell
+    ///   member's fault, as [`cell`] and [`Self::loops`] state them, kept
     ///   beside a form with no cell, the member passed over; a cell on an
     ///   indexed family kept as its fault the same way; every member's first
     ///   tile, with the attribute blocks written before it.
     /// - fails: a tile out of place or an operand missing or extra, an
-    ///   attribute block before the body's close among them; a generator whose
-    ///   result is not the family over its parameters and as many indices as
-    ///   the kind states.
+    ///   attribute block before the body's close and a grade on an index among
+    ///   them; a generator whose result is not the family over its parameters
+    ///   and as many indices as the kind states.
     /// - panics: none.
     ///
     /// # Errors
@@ -938,10 +975,28 @@ impl<'source> Collector<'_, 'source>
             }
         }
         let (indices, kind) = match cursor.tile(TileName::COLON) {
-            Maybe::Present(_) => {
-                let (indices, universe) =
-                    self.telescope(one_in(FormName::DATA, cursor.operands())?)?;
-                (indices, Maybe::Present(universe))
+            Maybe::Present(_) => match self.generator_signature(cursor, FormName::DATA)? {
+                Signature::Arrow {
+                    entries,
+                    grades,
+                    result,
+                } => {
+                    if let Some(graded) = grades.first() {
+                        return Err(misplaced_in(FormName::DATA, graded.span));
+                    }
+                    (entries, Maybe::Present(result))
+                },
+                Signature::Bare(kind) => {
+                    let (classifiers, universe) = self.telescope(kind)?;
+                    let indices = classifiers
+                        .into_iter()
+                        .map(|ty| FieldForm {
+                            named: Maybe::Absent(field_name::Absent::Unnamed),
+                            ty,
+                        })
+                        .collect();
+                    (indices, Maybe::Present(universe))
+                },
             },
             Maybe::Absent(_) => (Vec::new(), Maybe::Absent(data_kind::Absent::Unwritten)),
         };
@@ -1181,7 +1236,7 @@ impl<'source> Collector<'_, 'source>
         &self,
         named: Placed,
         cursor: &mut Cursor<'_>,
-        (parameters, kinds): (&[DataParameter], &[Placed]),
+        (parameters, kinds): (&[DataParameter], &[FieldForm]),
     ) -> Result<GeneratorForm, LoweringRefusal<'source>>
     {
         if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
@@ -1191,64 +1246,11 @@ impl<'source> Collector<'_, 'source>
                 Unbuilt::ConstructorBlockMember,
             ));
         }
-        let mut fields = Vec::new();
-        let result = if let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN) {
-            loop {
-                let mut named = Maybe::Absent(field_name::Absent::Unnamed);
-                if let Maybe::Present(Piece::Tile { label, at }) = cursor.peek()
-                    && (label == TileName::OMEGA || label == TileName::NUMBER)
-                {
-                    if label == TileName::NUMBER && self.name_of(at).as_ref() != "1" {
-                        return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
-                    }
-                    let _grade = cursor.tile(label);
-                }
-                if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
-                    && label == TileName::IDENTIFIER
-                {
-                    if let Maybe::Present(binder) = cursor.tile(label) {
-                        named = Maybe::Present(binder);
-                    }
-                    if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
-                        return Err(misplaced_in(FormName::DATA_GENERATOR, cursor.here()));
-                    }
-                }
-                else if let Maybe::Present(Piece::Tile { at, .. }) = cursor.peek() {
-                    return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
-                }
-                let ty = one_in(FormName::DATA_GENERATOR, cursor.operands())?;
-                fields.push(FieldForm { named, ty });
-                if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
-                    && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
-                {
-                    continue;
-                }
-                if let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE) {
-                    break;
-                }
-                return Err(misplaced_in(FormName::DATA_GENERATOR, cursor.here()));
-            }
-            if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
-                return Err(LoweringRefusal::MalformedForm {
-                    span: open.span.join(cursor.here()),
-                    form: FormName::DATA_GENERATOR,
-                    fault: FormFault::MissingOperand,
-                });
-            }
-            one_in(FormName::DATA_GENERATOR, cursor.operands())?
-        }
-        else {
-            let side = one_in(FormName::DATA_GENERATOR, cursor.operands())?;
-            if let Maybe::Present(_) = cursor.tile(TileName::GENERATOR) {
-                fields.push(FieldForm {
-                    named: Maybe::Absent(field_name::Absent::Unnamed),
-                    ty: side,
-                });
-                one_in(FormName::DATA_GENERATOR, cursor.operands())?
-            }
-            else {
-                side
-            }
+        let (fields, result) = match self.generator_signature(cursor, FormName::DATA_GENERATOR)? {
+            Signature::Arrow {
+                entries, result, ..
+            } => (entries, result),
+            Signature::Bare(side) => (Vec::new(), side),
         };
         if let Maybe::Present(attributes) = cursor.tile(TileName::ATTRIBUTES) {
             return Err(declined(
@@ -1263,6 +1265,105 @@ impl<'source> Collector<'_, 'source>
             named,
             fields,
             indices,
+        })
+    }
+
+    /// Read the signature a generator, or a data header's kind, writes after
+    /// its colon, `form` naming what a misplaced tile is out of place in.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the colon.
+    /// - ensures: a parenthesized telescope or a single side before `-->` as
+    ///   [`Signature::Arrow`], its entries named or bare in order, each past
+    ///   its grade `1` or `ω` where one is written, with the grades in order,
+    ///   and the type after the arrow; a type with no arrow as
+    ///   [`Signature::Bare`]; the cursor stands past the signature.
+    /// - fails: a grade other than `1` or `ω` by name; a telescope with no
+    ///   arrow; a tile out of place in `form`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::OutOfFragment`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nullary, single-port and telescoped generators read
+    ///   their fields, and a header reads its named indices; a missing result
+    ///   refuses.
+    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    /// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Signature::Arrow { ref entries, ref grades, .. }) if grades.len() > entries.len()))]
+    fn generator_signature(
+        &self,
+        cursor: &mut Cursor<'_>,
+        form: FormName,
+    ) -> Result<Signature, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN)
+        else {
+            let side = one_in(form, cursor.operands())?;
+            if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
+                return Ok(Signature::Bare(side));
+            }
+            return Ok(Signature::Arrow {
+                entries: alloc::vec![FieldForm {
+                    named: Maybe::Absent(field_name::Absent::Unnamed),
+                    ty: side,
+                }],
+                grades: Vec::new(),
+                result: one_in(form, cursor.operands())?,
+            });
+        };
+        let mut entries = Vec::new();
+        let mut grades = Vec::new();
+        loop {
+            let mut named = Maybe::Absent(field_name::Absent::Unnamed);
+            if let Maybe::Present(Piece::Tile { label, at }) = cursor.peek()
+                && (label == TileName::OMEGA || label == TileName::NUMBER)
+            {
+                if label == TileName::NUMBER && self.name_of(at).as_ref() != "1" {
+                    return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
+                }
+                let _grade = cursor.tile(label);
+                grades.push(at);
+            }
+            if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
+                && label == TileName::IDENTIFIER
+            {
+                if let Maybe::Present(binder) = cursor.tile(label) {
+                    named = Maybe::Present(binder);
+                }
+                if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+                    return Err(misplaced_in(form, cursor.here()));
+                }
+            }
+            else if let Maybe::Present(Piece::Tile { at, .. }) = cursor.peek() {
+                return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
+            }
+            let ty = one_in(form, cursor.operands())?;
+            entries.push(FieldForm { named, ty });
+            if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
+            {
+                continue;
+            }
+            if let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE) {
+                break;
+            }
+            return Err(misplaced_in(form, cursor.here()));
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
+            return Err(LoweringRefusal::MalformedForm {
+                span: open.span.join(cursor.here()),
+                form,
+                fault: FormFault::MissingOperand,
+            });
+        }
+
+        Ok(Signature::Arrow {
+            entries,
+            grades,
+            result: one_in(form, cursor.operands())?,
         })
     }
 
@@ -1302,7 +1403,7 @@ impl<'source> Collector<'_, 'source>
     fn uniform(
         &self,
         result: Placed,
-        (parameters, kinds): (&[DataParameter], &[Placed]),
+        (parameters, kinds): (&[DataParameter], &[FieldForm]),
     ) -> Result<Vec<Placed>, LoweringRefusal<'source>>
     {
         let refused = LoweringRefusal::OutOfFragment {

@@ -279,10 +279,11 @@ fn declarations(
     // --- `data` datatype declaration ---------
     // THE one data-declaration form is the nested generator block: the family
     // head binds its parameters once — each a typed binder `a : Type` — and
-    // declares its index arity as the head annotation `: Idx -> Type` (`:
-    // Type` when unindexed); every generator member is a judgment `Ctor :
-    // (binders) --> Result` whose result head is the family applied to the
-    // parameter variables. Members are first-token-discriminated by case
+    // declares its indices as the head annotation, the kind `: Idx -> Type`
+    // or the telescope `: (x : A, y : B(x)) --> Type` a generator's side
+    // writes (`: Type` when unindexed); every generator member is a judgment
+    // `Ctor : (binders) --> Result` whose result head is the family applied
+    // to the parameter variables. Members are first-token-discriminated by case
     // (uppercase-led constructors versus the lowercase-led reserved `oper` /
     // `rule` members) and are terminated by `;`, with a comma separator
     // admissible between members so the declined shapes still parse whole:
@@ -301,7 +302,7 @@ fn declarations(
             t(TileLabel("data")),
             t(TileLabel("type_identifier")),
             opt(head_params()),
-            opt(seq([t(TileLabel(":")), h(Sort::Type)])),
+            opt(seq([t(TileLabel(":")), generator_signature()])),
             t(TileLabel("{")),
             opt(member_list(data_member())),
             t(TileLabel("}")),

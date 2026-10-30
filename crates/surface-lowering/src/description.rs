@@ -534,6 +534,9 @@ quenchant_shape::reason_enum! {
             Signature,
             /// A top-level `oper` declares one operation by its circuit.
             Circuit,
+            /// A data header writes its indices as a telescope,
+            /// `(n : Nat) --> Type`, which no one type spells.
+            Telescope,
         }
     }
 }
@@ -1235,8 +1238,7 @@ impl Reader<'_, '_>
         if !run.eat(Spelling(":")).0 {
             return Err(run.fault(DescriptionFault::FamilyHead));
         }
-        let classifier = run.take()?;
-        let indices = self.index_arity(classifier)?;
+        let (indices, classifier) = self.kind_arity(run)?;
         if !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::FamilyHead));
         }
@@ -1366,7 +1368,7 @@ impl Reader<'_, '_>
                 ill_formed: false,
                 operation_spans,
                 parameters,
-                classifier: Maybe::Present(classifier),
+                classifier,
                 presentation: Maybe::Absent(crate::model::presentation::Absent::Family),
                 written,
                 exported: Visibility::Private,

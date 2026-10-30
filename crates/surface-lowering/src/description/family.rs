@@ -7,6 +7,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attr;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::Name;
+use quenchant_shape::shape::Maybe;
 
 use super::DescriptionDiagnostic;
 use super::DescriptionFault;
@@ -14,6 +15,7 @@ use super::FamilyParameter;
 use super::Reader;
 use super::Run;
 use super::Spelling;
+use super::family_classifier;
 use crate::form::Piece;
 use crate::form::Placed;
 
@@ -58,6 +60,63 @@ impl Reader<'_, '_>
                 _ => return Ok(IndexArity(count)),
             }
         }
+    }
+
+    /// Read a family's kind after its colon and count its indices: a named
+    /// or bare telescope before `-->`, `(n : Nat, i : Fin(n)) --> Type`, a
+    /// single side before `-->`, or a type whose arrows [`Self::index_arity`]
+    /// counts; with the type that classifies the family, which a telescope
+    /// has none of.
+    ///
+    /// # Specification
+    /// - ensures: one index per telescope entry, one for a single side before
+    ///   `-->`, and otherwise one per outer arrow of the type, which is the
+    ///   classifier; a telescope's classifier the
+    ///   [`family_classifier::Absent::Telescope`] absence; the run stands past
+    ///   the universe.
+    /// - fails: an entry followed by neither `,` nor `)`, and a telescope with
+    ///   no `-->` or no universe, as a family head the reader cannot read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `FamilyHead`, or the shared molded-reader refusal for
+    /// malformed syntax.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a named telescope, a kind and an unindexed family
+    ///   read their own arities.
+    /// - witness: `description::tests::a_named_index_telescope_counts_its_indices_4022`
+    #[spec(captures: before = run.remaining().len(), ensures: |result| result.is_err() || run.remaining().len() < before)]
+    pub(super) fn kind_arity(
+        &self,
+        run: &mut Run<'_>,
+    ) -> Result<(IndexArity, Maybe<Placed, family_classifier::Absent>), DescriptionDiagnostic>
+    {
+        let telescope = Maybe::Absent(family_classifier::Absent::Telescope);
+        if !run.eat(Spelling("(")).0 {
+            let side = run.take()?;
+            if !run.eat(Spelling("-->")).0 {
+                return Ok((self.index_arity(side)?, Maybe::Present(side)));
+            }
+            let _universe = run.take()?;
+            return Ok((IndexArity(1), telescope));
+        }
+        let mut count = 0_usize;
+        while !run.eat(Spelling(")")).0 {
+            let _entry = run.take()?;
+            if run.eat(Spelling(":")).0 {
+                let _classifier = run.take()?;
+            }
+            count = count.saturating_add(1);
+            if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                return Err(run.fault(DescriptionFault::FamilyHead));
+            }
+        }
+        if !run.eat(Spelling("-->")).0 {
+            return Err(run.fault(DescriptionFault::FamilyHead));
+        }
+        let _universe = run.take()?;
+        Ok((IndexArity(count), telescope))
     }
 
     /// Require the declared family and its parameter variables in binding

@@ -1847,6 +1847,100 @@ fn an_indexed_family_lowers_its_indices()
     );
 }
 
+/// A header's named index telescope lowers each index under the parameters
+/// and the indices before it, so the type of a later index reads an earlier
+/// one by its name; an unnamed kind reads its indices the same way. The
+/// checker admits the family and refuses a constructor stating its indices
+/// out of the telescope's order (#4022).
+#[test]
+fn a_named_index_telescope_lowers_its_dependencies_4022()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type { Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v); }\ndata Twice(a : Type) : a -> a -> Type { Both : (x : a) --> Twice(a, x, x); }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type { Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n); }\n",
+        ),
+        &mut arena,
+    );
+    let signature = |name: &str| {
+        let DeclarationOutcome::Data(index) = outcome_of(&module, SurfaceName::from(name))
+        else {
+            panic!("`{name}` lowers to its signature");
+        };
+        let Maybe::Present(signature) = module.data(index)
+        else {
+            panic!("`{name}`'s index names a signature");
+        };
+        signature
+    };
+    let sized = signature("Sized");
+    let &[length, vector] = sized.indices()
+    else {
+        panic!("the telescope reads two indices: {:?}", sized.indices());
+    };
+    assert!(
+        matches!(arena.value_type(length), Some(&ValueType::Data { declaration, ref arguments })
+            if declaration == ConstantIndex::from(0_usize) && arguments.is_empty()),
+        "the first index is a length"
+    );
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(vector)
+    else {
+        panic!("the second index is a vector");
+    };
+    assert_eq!(declaration, ConstantIndex::from(1_usize));
+    assert_eq!(
+        arguments
+            .iter()
+            .map(|&argument| arena.value(argument).cloned())
+            .collect::<Vec<_>>(),
+        [
+            Some(variable(DeBruijnIndex::from(1_u32))),
+            Some(variable(DeBruijnIndex::from(0_u32)))
+        ],
+        "`Vec(a, n)` reads the parameter past the length, and the length by its name"
+    );
+    let twice = signature("Twice");
+    let &[first, second] = twice.indices()
+    else {
+        panic!("two unnamed indices");
+    };
+    let read = |ty| match arena.value_type(ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    assert_eq!(
+        (read(first), read(second)),
+        (
+            Some(variable(DeBruijnIndex::from(0_u32))),
+            Some(variable(DeBruijnIndex::from(1_u32)))
+        ),
+        "`a -> a -> Type` reads `a` under the parameter, then past the first index"
+    );
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    let [
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Refused(ref turned),
+    ] = *verdicts
+    else {
+        panic!("the families over a telescope and a kind check: {report:?}");
+    };
+    assert!(
+        matches!(turned, gandr_core_checker::CheckRefusal::TypeMismatch(_)),
+        "a vector stated where its length stands is refused: {turned:?}"
+    );
+}
+
 /// An indexed family presenting a rule over its constructors is declined over
 /// that rule's two sides, before either checker reads it (#2865); a rule over
 /// an operation rewrites a call, not the family's terms, and the family keeps

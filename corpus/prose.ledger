@@ -140,7 +140,7 @@ corpus/ledger/features/implicit-arguments.gandr Tense 3535eec5b222f2e2
 corpus/ledger/features/implicit-arguments.gandr Tense 4ecf479cfbfe105e
 corpus/ledger/features/implicit-arguments.gandr Tense 8432207b085b122a
 corpus/ledger/features/implicit-arguments.gandr Tense 9dd4a82be3a4ae21
-corpus/ledger/features/indexed-data.gandr Tense 1e0944376320b631
+corpus/ledger/features/indexed-data.gandr Tense 8d210e27c33b4200
 corpus/ledger/features/indexed-sorts.gandr Tense 45720986ee126271
 corpus/ledger/features/indexed-sorts.gandr Tense a8801bb6141675f7
 corpus/ledger/features/inert-fields.gandr Passive 043a50d62f5e763a
@@ -371,6 +371,8 @@ corpus/model/data/descent.gandr Tense 981172ebb86bc6b6
 corpus/model/data/empty.gandr Tense d3aa28e46ef7b6ac
 corpus/model/data/empty.gandr Glossary d3aa28e46ef7b6ac
 corpus/model/data/following.gandr Tense 34e698b9e041a254
+corpus/model/data/index-telescope.gandr Tense b9c88f00301ee9d5
+corpus/model/data/index-telescope.gandr Tense f300bd6857848084
 corpus/model/data/indexed-family-operation.gandr Passive 91aff43e8e14b430
 corpus/model/data/nested-call-sugar.gandr Tense 3bce94a2736b902a
 corpus/model/data/nested-call-sugar.gandr Tense 69dd42e5d9f4b485
@@ -874,6 +876,7 @@ corpus/pathological/data/field-grade.gandr Passive 20a67e9b96904e67
 corpus/pathological/data/field-type-mismatch.gandr Passive eb047037966c57bc
 corpus/pathological/data/generic-eq-refused.gandr Tense 2fdb17b5d00062dc
 corpus/pathological/data/generic-eq-refused.gandr Tense 4d5f94812fc0258a
+corpus/pathological/data/index-telescope.gandr Passive d8e8df6f172f8f19
 corpus/pathological/data/indexed-family-rule-declined.gandr Tense fd0cf1ba3b95430d
 corpus/pathological/data/map-law-on-a-def.gandr Tense 759fbd0945ba1175
 corpus/pathological/data/nested-call-tells-apart.gandr Passive fbb92a237e627528
