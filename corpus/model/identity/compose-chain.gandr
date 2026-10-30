@@ -59,7 +59,7 @@ def single(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(A, x, y) {
   compose[0, 0](chain(1), p)
 }
 
-/// Three reflexivities composed unbiased.
+/// Three reflexivities compose unbiased to a loop at their point.
 def reflexivities(A : Type, x : A) -> Path(A, x, x) {
   compose[5, 7](chain(3), (here(x), here(x), here(x)))
 }
