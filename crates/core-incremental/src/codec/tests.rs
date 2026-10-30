@@ -2914,6 +2914,7 @@ fn every_refusal() -> Vec<Refusal>
         Refusal::SessionCodeExpected(at),
         Refusal::OpenSessionPayload(at),
         Refusal::UnassertedLaw(at),
+        Refusal::UndischargedLaw(at),
         Refusal::NonCovariantMotive(at),
         Refusal::RideUnsupported(at),
         Refusal::ForwardUnsupported(at),

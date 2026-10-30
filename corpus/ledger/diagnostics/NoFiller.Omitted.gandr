@@ -1,0 +1,14 @@
+/// `NoFiller.Omitted`: a law a model omits, whose sides do not convert, so no source discharges it.
+///
+/// The theory the model derives from.
+@[ checks ]
+theory Reflexive {
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
+}
+
+@[ refuses("NoFiller.Omitted") ]
+module Undischarged : Model(Reflexive) with sort Carrier = Integer {
+  def alike(a : Integer, b : Integer) -> Bool { false }
+}

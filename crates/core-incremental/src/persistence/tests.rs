@@ -438,6 +438,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::SessionCodeExpected(_)) => "session-code-expected",
         Typing::Refused(Refusal::OpenSessionPayload(_)) => "open-session-payload",
         Typing::Refused(Refusal::UnassertedLaw(_)) => "unasserted-law",
+        Typing::Refused(Refusal::UndischargedLaw(_)) => "undischarged-law",
         Typing::Refused(Refusal::NonCovariantMotive(_)) => "non-covariant-motive",
         Typing::Refused(Refusal::RideUnsupported(_)) => "ride-unsupported",
         Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",

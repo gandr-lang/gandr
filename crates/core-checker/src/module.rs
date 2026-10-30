@@ -1204,16 +1204,20 @@ enum Run
 /// - ensures: the declaration is admitted at its position, then: a signature
 ///   and a body give [`Verdict::Checked`] when the body checks against the
 ///   formed signature; a signature and a hole give [`Verdict::Owed`] with the
-///   hole's absence; a body alone gives [`Verdict::Synthesised`] when it
-///   synthesises; neither is refused. An accepted verdict carries the body it
-///   judged — the declaration's own; or, when its calls omit implicits, the
-///   body with each one's hole filled by the solution the judgement bound it
-///   to; or the elaboration of either when it held a computation written where
-///   a value is read; each minted after the declaration's — and defines the
-///   constant as that body. A call's omitted implicit no conversion determines
-///   is refused as [`CheckRefusal::ImplicitUnsolved`]. A value declaration
-///   whose judgement, accepted otherwise, left a bare flex–rigid equation on a
-///   hole the context holds owed, or read the type of a declaration it holds
+///   hole's absence; a signature and a model's omitted law
+///   ([`crate::body::Absent::Discharged`]) give [`Verdict::Checked`] over the
+///   `here` [`crate::discharge::here`] mints when it checks, and
+///   [`CheckRefusal::UndischargedLaw`] at the declared type otherwise; a body
+///   alone gives [`Verdict::Synthesised`] when it synthesises; neither is
+///   refused. An accepted verdict carries the body it judged — the
+///   declaration's own; or, when its calls omit implicits, the body with each
+///   one's hole filled by the solution the judgement bound it to; or the
+///   elaboration of either when it held a computation written where a value is
+///   read; each minted after the declaration's — and defines the constant as
+///   that body. A call's omitted implicit no conversion determines is refused
+///   as [`CheckRefusal::ImplicitUnsolved`]. A value declaration whose
+///   judgement, accepted otherwise, left a bare flex–rigid equation on a hole
+///   the context holds owed, or read the type of a declaration it holds
 ///   suspended, is [`Verdict::Suspended`] at the type it supplies instead,
 ///   defines nothing, and is held suspended; a refusal wins over any residual.
 ///   An owed hole is held owed. A formed signature enters the signature table
@@ -1254,7 +1258,8 @@ enum Run
             | crate::DeclarationContent::Abstract(_) | crate::DeclarationContent::World => true,
             | crate::DeclarationContent::Value { .. } => false,
         },
-        | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(_), body: Maybe::Present(value) } if *value <= body)
+        | Verdict::Checked { declared, body, .. } => (matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(_), body: Maybe::Present(value) } if *value <= body)
+                || matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(_), body: Maybe::Absent(crate::body::Absent::Discharged) }))
             && (context.signature(declaration.constant()) == Maybe::Present(declared) || !declaration.stages().is_empty()),
         | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value <= body)
             && context.signature(declaration.constant()) == Maybe::Present(synthesised.produced()),
@@ -1308,13 +1313,15 @@ struct Decision
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
 ///   `context`; beside it, when a run of the body or a step of a data signature
 ///   refused, the failure of that run or step under the binders it stood under,
-///   whose refusal is the verdict's; when the body's calls omit implicits, the
-///   verdict of the run over the body and the declared type both filled with
-///   their solutions ([`implicits`]), and the declared type so filled beside
-///   the verdict when the fill changed it; when the first run accepted a body
-///   holding a computation written where a value is read, a value the bridge
-///   carried by a reduct, or a record update, what elaborating it did, the
-///   verdict then being the second run's over the elaborated body at the
+///   whose refusal is the verdict's, save that a law the module omits keeps a
+///   bare failure at its declared type refused
+///   [`CheckRefusal::UndischargedLaw`]; when the body's calls omit implicits,
+///   the verdict of the run over the body and the declared type both filled
+///   with their solutions ([`implicits`]), and the declared type so filled
+///   beside the verdict when the fill changed it; when the first run accepted a
+///   body holding a computation written where a value is read, a value the
+///   bridge carried by a reduct, or a record update, what elaborating it did,
+///   the verdict then being the second run's over the elaborated body at the
 ///   declared type so filled; and, when `run` is [`Run::Typed`] and the body
 ///   was run, what [`type_value`] keeps for the body as written, each type read
 ///   with the solutions of the holes its calls nominated, read before the
@@ -1536,6 +1543,24 @@ fn decide(
     // The type the table takes: the declared one, filled with the solutions
     // of the implicits the body's calls omit, as the verdict carries it.
     let mut entered = direction;
+    // A model's omitted law is answered by the first source of a filler that
+    // checks, `here` at its left side ([`crate::discharge`]), and its body is
+    // judged as a written one.
+    let discharging = match (body, direction) {
+        (Maybe::Absent(body::Absent::Discharged), Direction::Check(declared)) => Some(declared),
+        (Maybe::Present(_) | Maybe::Absent(_), Direction::Check(_) | Direction::Synthesise) => None,
+    };
+    let body = match discharging.map(|declared| crate::discharge::here(context, declared)) {
+        Some(Ok(minted)) => Maybe::Present(minted),
+        Some(Err(refusal)) => {
+            let _home = context.binders().relocate(World::Host);
+            return Decision {
+                typings: kept(signed),
+                ..unrun(refusal)
+            };
+        },
+        None => body,
+    };
     let (verdict, failure) = match body {
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
@@ -1598,6 +1623,19 @@ fn decide(
                     first
                 },
             };
+            // An omitted law no source fills is refused naming the law,
+            // whichever rule refused its `here`.
+            let judged = match (judged, discharging) {
+                (Err(_), Some(declared)) => Err(Failure::bare(
+                    CheckRefusal::UndischargedLaw { at: declared.id() },
+                    Pursuit::new(
+                        CoreNode::Type(TypeNode::Value(declared.id())),
+                        Maybe::Absent(judged::Absent::Formed),
+                        Stage::Starting,
+                    ),
+                )),
+                (judged, _) => judged,
+            };
             relating = context.take_relating();
             restating = context.take_restating();
             residue = context.deferrals_mut().take();
@@ -1627,7 +1665,9 @@ fn decide(
                 Err(failure) => (Verdict::Refused(failure.refusal()), Maybe::Present(failure)),
             }
         },
-        Maybe::Absent(absent @ (body::Absent::Hole | body::Absent::Hosted)) => {
+        // A discharged body is minted above, so one reaching here is unsigned,
+        // and the hole's rule refuses it as a hole's.
+        Maybe::Absent(absent) => {
             let owed = hole(direction, constant, declaration.origin()).and_then(|absence| {
                 crate::capability::held(context, constant, absence.declared())?;
                 if absent == body::Absent::Hosted {

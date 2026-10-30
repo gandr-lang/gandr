@@ -1177,18 +1177,6 @@ pub enum LoweringRefusal<'source>
         member: SurfaceName<'source>,
     },
 
-    /// A law of a module's model the module does not prove: no member answers
-    /// it.
-    UnprovenLaw
-    {
-        /// The bytes of the law's name.
-        span: ByteSpan,
-        /// The module, as the declaration spelled it.
-        module: SurfaceName<'source>,
-        /// The law's name.
-        law: SurfaceName<'source>,
-    },
-
     /// A field read off a data value by its name, `e.l`, where a constructor
     /// of the value's family declares no field of that name: the value it
     /// builds has none to read.
@@ -2092,10 +2080,6 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
-            Self::UnprovenLaw { module, law, .. } => write!(
-                f,
-                "the module `{module}` neither proves nor admits its model's law `{law}`"
-            ),
             Self::PartialField {
                 field, constructor, ..
             } => write!(
@@ -2540,7 +2524,6 @@ impl LoweringRefusal<'_>
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }
             | Self::UnknownMember { span, .. }
-            | Self::UnprovenLaw { span, .. }
             | Self::PartialField { span, .. }
             | Self::NotAFunctor { span, .. }
             | Self::NotATranslation { span, .. }

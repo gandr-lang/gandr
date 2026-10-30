@@ -489,6 +489,7 @@ INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surfa
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','core-term','syntax::shared','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','surface-dispatcher','tier','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','compose','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','discharge','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','fill','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','ua::strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-incremental','region','lineage',NULL,NULL,NULL);

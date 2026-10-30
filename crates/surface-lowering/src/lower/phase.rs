@@ -64,8 +64,8 @@ impl Phase
     /// - requires: nothing.
     /// - ensures: a held slot of a module — the owner of a type member's type
     ///   or of a type a signature states — is static; a declared member of a
-    ///   module, an admitted law and a parameter's component are dynamic; every
-    ///   other slot is outside the order.
+    ///   module, an admitted or a discharged law and a parameter's component
+    ///   are dynamic; every other slot is outside the order.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -77,18 +77,19 @@ impl Phase
     /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
     #[spec(ensures: |ret| match (slot.role, slot.container) {
         | (Role::Held, Container::Module(_)) => ret == Maybe::Present(Self::Static),
-        | (Role::Declared | Role::Parameter | Role::Admitted, Container::Module(_)) => ret == Maybe::Present(Self::Dynamic),
+        | (Role::Declared | Role::Parameter | Role::Admitted | Role::Discharged, Container::Module(_)) => ret == Maybe::Present(Self::Dynamic),
         | _ => matches!(ret, Maybe::Absent(_)),
     })]
     fn of(slot: &DeclarationSlot<'_>) -> Maybe<Self, phased::Absent>
     {
         match (slot.role, slot.container) {
             (Role::Held, Container::Module(_)) => Maybe::Present(Self::Static),
-            (Role::Declared | Role::Parameter | Role::Admitted, Container::Module(_)) => {
-                Maybe::Present(Self::Dynamic)
-            },
             (
-                Role::Held | Role::Declared | Role::Parameter | Role::Admitted,
+                Role::Declared | Role::Parameter | Role::Admitted | Role::Discharged,
+                Container::Module(_),
+            ) => Maybe::Present(Self::Dynamic),
+            (
+                Role::Held | Role::Declared | Role::Parameter | Role::Admitted | Role::Discharged,
                 Container::TopLevel(_),
             )
             | (

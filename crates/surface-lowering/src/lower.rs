@@ -5723,7 +5723,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     self.collected
                         .slots
                         .get(usize::from(*slot))
-                        .is_some_and(|entry| matches!(entry.role, Role::Declared | Role::Witness | Role::Derived | Role::Generic | Role::Admitted))
+                        .is_some_and(|entry| matches!(entry.role, Role::Declared | Role::Witness | Role::Derived | Role::Generic | Role::Admitted | Role::Discharged))
                 })
         },
     )]

@@ -252,7 +252,8 @@ impl<'source> Lowerer<'_, 'source>
                 | Role::Words
                 | Role::Parameter
                 | Role::Generic
-                | Role::Admitted => {},
+                | Role::Admitted
+                | Role::Discharged => {},
             }
         }
     }

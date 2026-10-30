@@ -82,6 +82,10 @@ quenchant_shape::reason_enum! {
             /// primitives: no definition supplies it, and it is owed only
             /// when it converts with a statement the host's law table holds.
             Hosted,
+            /// A model's law its module omits: no definition supplies it, and
+            /// the checker answers it from the sources of a filler in order,
+            /// `here` at the law's left side first (`crate::discharge`).
+            Discharged,
         }
     }
 }

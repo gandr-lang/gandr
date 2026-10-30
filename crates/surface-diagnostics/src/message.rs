@@ -563,10 +563,6 @@ fn lowered(
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
-        LoweringRefusal::UnprovenLaw { module, law, .. } => write!(
-            f,
-            "the module `{module}` neither proves nor admits its model's law `{law}`"
-        ),
         LoweringRefusal::PartialField {
             field, constructor, ..
         } => write!(
@@ -1103,6 +1099,9 @@ fn checked(
         CheckRefusal::UnassertedLaw { .. } => f.write_str(
             "the host asserts no law with this statement: a law is admitted only as one the host \
              asserts of its primitive, and any other is proved",
+        ),
+        CheckRefusal::UndischargedLaw { .. } => f.write_str(
+            "the module omits this law, and its sides do not convert, so nothing discharges it",
         ),
         CheckRefusal::NonCovariantMotive { .. } => f.write_str(
             "a flow runs one way: `ride` may use the moving endpoint only where a run of it \
@@ -1783,11 +1782,6 @@ pub mod tests
                 span,
                 module: name,
                 member: name,
-            },
-            LoweringRefusal::UnprovenLaw {
-                span,
-                module: name,
-                law: name,
             },
             LoweringRefusal::PartialField {
                 span,
@@ -2499,6 +2493,7 @@ pub mod tests
             CheckRefusal::SessionCodeExpected { at: value },
             CheckRefusal::OpenSessionPayload { at: value_type },
             CheckRefusal::UnassertedLaw { at: value_type },
+            CheckRefusal::UndischargedLaw { at: value_type },
             CheckRefusal::NonCovariantMotive { at: computation },
             CheckRefusal::RideUnsupported { at: computation },
             CheckRefusal::RunNotAdmitted {

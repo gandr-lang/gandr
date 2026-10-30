@@ -1,21 +1,27 @@
-error[UnprovenLaw]: the module `Unwitnessed` neither proves nor admits its model's law `assoc`
-   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:46:28
+error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:47:1
    │
-46 │ module Unwitnessed : Model(Glob) {
-   │                            ━━━━ a law this module does not prove
+47 │ ┏ module Unwitnessed : Model(Glob) {
+48 │ ┃   /// The circle's points.
+49 │ ┃   type Ob = Circle;
+50 │ ┃   /// The paths between two points.
+   ‡ ┃
+70 │ ┃ }
+   │ ┗━┛ a law whose sides do not convert
    │
-   ╰ note: `assoc` is refused with UnprovenLaw, as its expectation states
+   ├ note: `assoc` is refused with NoFiller.Omitted, as its expectation states
+   ╰ help: prove the law by a definition at its type, or admit it where the host asserts it
 
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` of the theory it handles
-   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:89:3
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:90:3
    │
-89 │ ┏   handle st : Skipping with sort S = Integer {
-90 │ ┃     st.put(1);
-91 │ ┃     run a <- st.get();
-92 │ ┃     pure a
+90 │ ┏   handle st : Skipping with sort S = Integer {
+91 │ ┃     st.put(1);
+92 │ ┃     run a <- st.get();
+93 │ ┃     pure a
    ‡ ┃
-96 │ ┃     oper put(s, k) => pure 9
-97 │ ┃   }
+97 │ ┃     oper put(s, k) => pure 9
+98 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
    │
    ╰ note: `discarding` is refused with HandlerUnlawful, as its expectation states

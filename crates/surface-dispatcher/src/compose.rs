@@ -4360,7 +4360,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 DeclarationOutcome::Completed { declared_type, body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Present(body)},
                 DeclarationOutcome::Uncompleted { declared_type } =>
-                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(if lowered.role() == Role::Admitted { body::Absent::Hosted } else { body::Absent::Hole })},
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(if lowered.role() == Role::Admitted { body::Absent::Hosted } else if lowered.role() == Role::Discharged { body::Absent::Discharged } else { body::Absent::Hole })},
                 DeclarationOutcome::Bodied { body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
                 DeclarationOutcome::Data(index) =>
@@ -4388,6 +4388,9 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 Maybe::Present(declared_type),
                 Maybe::Absent(if lowered.role() == Role::Admitted {
                     body::Absent::Hosted
+                }
+                else if lowered.role() == Role::Discharged {
+                    body::Absent::Discharged
                 }
                 else {
                     body::Absent::Hole

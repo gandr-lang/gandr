@@ -1415,16 +1415,18 @@ impl<'source> Collector<'_, 'source>
     ///   type, the member yielded; a nested model is answered by the nested
     ///   module of its name ascribed the model signature its theory derives,
     ///   the module yielded; a law is answered as well by the admission of its
-    ///   name, `law name admitted ;`, stated as a definition member is; a
-    ///   component the derivation cannot state, a value component a nested
-    ///   module answers, a component other than a law an admission answers, a
-    ///   nested model anything else answers, and a name nothing answers each
-    ///   refuse a held slot under the component's name, introduced by the
-    ///   module's form, whose attributes state its expectation, and nothing is
-    ///   yielded — save a name whose member was repaired, whose parse error
-    ///   already answers for it. A law nothing answers is
-    ///   [`LoweringRefusal::UnprovenLaw`]; a law an admission answers is judged
-    ///   against the host's laws by the checker.
+    ///   name, `law name admitted ;`, stated as a definition member is; a law
+    ///   no member answers takes a slot of [`Role::Discharged`] under its name
+    ///   in the module, introduced by the module's form, whose attributes state
+    ///   its expectation, stated as a definition member is, the member yielded,
+    ///   so the checker discharges it; a component the derivation cannot state,
+    ///   a value component a nested module answers, a component other than a
+    ///   law an admission answers, a nested model anything else answers, and
+    ///   any other name nothing answers each refuse a held slot under the
+    ///   component's name, introduced by the module's form, whose attributes
+    ///   state its expectation, and nothing is yielded — save a name whose
+    ///   member was repaired, whose parse error already answers for it. A law
+    ///   an admission answers is judged against the host's laws by the checker.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -1436,10 +1438,13 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::models::a_model_missing_an_operation_is_refused_naming_it`
     /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
     /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+    /// - witness: `tests::modules::models::an_omitted_law_is_discharged_by_the_checker_4112`
     #[spec(
         captures: before = self.member_named(Container::Module(structure), component.name),
         ensures: |ret| match ret {
-            | Maybe::Present(found) => before == Maybe::Present(found),
+            | Maybe::Present(found) => before == Maybe::Present(found)
+                || (matches!(before, Maybe::Absent(_))
+                    && self.member_named(Container::Module(structure), component.name) == Maybe::Present(found)),
             | Maybe::Absent(_) => true,
         },
     )]
@@ -1531,10 +1536,25 @@ impl<'source> Collector<'_, 'source>
             (None, _, Maybe::Absent(_)) if self.repaired_member(container, component.name).0 => {
                 return undeclared;
             },
-            (None, _, Maybe::Absent(_)) if law => LoweringRefusal::UnprovenLaw {
-                span: component.named.span,
-                module,
-                law: component.name,
+            // An omitted law asks for a filler without naming its source: the
+            // checker discharges it at the law's type, stated at the module's
+            // form, whose attributes state its expectation.
+            (None, _, Maybe::Absent(_)) if law => {
+                let slot = self.admit(container, component.name, declared_by, component.named);
+                if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+                    entry.role = Role::Discharged;
+                }
+                let part = ModelPart {
+                    model,
+                    component: place,
+                };
+                self.state(
+                    slot,
+                    Operand::Model(part),
+                    declared_by,
+                    Maybe::Present(scope),
+                );
+                return Maybe::Present(Member::Slot(slot));
             },
             (None, _, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
                 span: component.named.span,

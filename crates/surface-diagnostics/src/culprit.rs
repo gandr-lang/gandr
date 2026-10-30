@@ -249,7 +249,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::InertRead { .. } => "an inert field read",
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
-        LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
         LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
         LoweringRefusal::NotATranslation { .. } => "no flow of this name",
@@ -555,6 +554,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::CapabilityConsumable(_) => "a consumable capability",
         CheckRefusal::OpenSessionPayload { .. } => "a session payload open over a binder",
         CheckRefusal::UnassertedLaw { .. } => "a law the host does not assert",
+        CheckRefusal::UndischargedLaw { .. } => "a law whose sides do not convert",
         CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
         CheckRefusal::FootprintsOverlap { .. } => {
             "authority both halves of a fork hold, one to change"
@@ -767,7 +767,6 @@ mod tests
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::InertRead { .. } => "an inert field read",
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
-            LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
             LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
             LoweringRefusal::NotATranslation { .. } => "no flow of this name",

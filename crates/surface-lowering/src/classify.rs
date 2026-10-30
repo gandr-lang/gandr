@@ -253,7 +253,6 @@ impl LoweringRefusal<'_>
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }
             | Self::UnknownMember { .. }
-            | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::NotATranslation { .. }
@@ -328,7 +327,6 @@ impl LoweringRefusal<'_>
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }
             | Self::UnknownMember { .. }
-            | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::NotATranslation { .. }

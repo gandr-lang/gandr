@@ -574,32 +574,32 @@ impl fmt::Display for RefusalSpelling
     }
 }
 
-/// Why a law of a module's model stands unproven, the qualifier of
-/// [`RefusalName::UnprovenLaw`].
+/// What asked for a filler no source gives, the qualifier of
+/// [`RefusalName::NoFiller`].
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a law no member answers is missing, the lowering's
-///   [`LoweringRefusal::UnprovenLaw`]; a law admitted on the host's word that
-///   the host does not assert is admitted where a proof was owed, the checker's
-///   [`CheckRefusal::UnassertedLaw`].
-/// - provides: one family for both, since both say the model has not proven the
-///   law; the qualifier says why.
+/// - ensures: a `fill` asking for a square its generator does not make is the
+///   written ask, the checker's [`CheckRefusal::NoFiller`]; a model's law its
+///   module omits, which no source discharges, is the omitted one, the
+///   checker's [`CheckRefusal::UndischargedLaw`].
+/// - provides: one family for both, since both ask for a filler none of its
+///   sources gives; the qualifier says who asked.
 /// - panics: none.
-/// - executable: none — the reason holds neither the law nor its statement.
+/// - executable: none — the ask holds neither the cell nor its sides.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a model without a law and a model admitting a law the
-///   host does not assert settle the fixtures naming each.
+/// - hypothesis: L3 — a fill of a square its generator does not make and a
+///   model omitting a law whose sides part settle the fixtures naming each.
 /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LawProof
+pub enum FillerAsk
 {
-    /// No member of the module answers the law.
-    Missing,
-    /// A member admits the law, and the host asserts no law its statement
-    /// converts with: the law is the author's to prove.
-    Admitted,
+    /// A `fill` names its generator and the square it asks for.
+    Written,
+    /// A model's law its module omits asks for a filler without naming its
+    /// source.
+    Omitted,
 }
 
 /// What a derivation `Eq.generic` writes does not cover, the qualifier of
@@ -882,8 +882,10 @@ pub enum RefusalName
     ComposeDoesNotFill,
     /// A fill at a stratum the chain sub-site does not certify.
     FillUncertified,
-    /// A fill no square of its generator answers.
-    NoFiller,
+    /// A filler none of its sources gives: a fill no square of its generator
+    /// answers, bare; a model's omitted law no source discharges, qualified
+    /// `Omitted`.
+    NoFiller(FillerAsk),
     /// A fill whose cells of `X` are of a family with no generator instance
     /// yet.
     GeneratorFamilyUnsupported,
@@ -952,9 +954,9 @@ pub enum RefusalName
     InertRead,
     /// A selection or a signature component a module does not supply.
     UnknownMember,
-    /// A law of a module's model the module does not prove: missing, bare;
-    /// admitted where the host asserts no such law, qualified `Admitted`.
-    UnprovenLaw(LawProof),
+    /// A law of a module's model admitted where the host asserts no such law,
+    /// qualified `Admitted`: the law is the author's to prove.
+    UnprovenLaw,
     /// A field read by name off a data value some constructor declares none of.
     PartialField,
     /// A module binding applying a name that is not a functor.
@@ -1278,7 +1280,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 234_usize] = [
+    pub const VOCABULARY: [Self; 233_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1334,7 +1336,7 @@ impl RefusalName
         Self::ComposeNotAShape,
         Self::ComposeDoesNotFill,
         Self::FillUncertified,
-        Self::NoFiller,
+        Self::NoFiller(FillerAsk::Written),
         Self::GeneratorFamilyUnsupported,
         Self::UnenclosedRun,
         Self::CapabilityForged,
@@ -1382,7 +1384,6 @@ impl RefusalName
         Self::PhaseDependence,
         Self::InertRead,
         Self::UnknownMember,
-        Self::UnprovenLaw(LawProof::Missing),
         Self::PartialField,
         Self::NotAFunctor,
         Self::NotATranslation,
@@ -1549,7 +1550,8 @@ impl RefusalName
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
             .chain([
-                Self::UnprovenLaw(LawProof::Admitted),
+                Self::UnprovenLaw,
+                Self::NoFiller(FillerAsk::Omitted),
                 Self::GenericUncovered(GenericCoverage::Dependent),
                 Self::Immobile(CrossingRead::Capture),
                 Self::Immobile(CrossingRead::Homed),
@@ -1599,7 +1601,7 @@ impl RefusalName
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
         (Self::PhaseDependence, b"PhaseDependence") | (Self::InertRead, b"InertRead") |
-        (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw(_), b"UnprovenLaw") | (Self::PartialField, b"PartialField")
+        (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw, b"UnprovenLaw") | (Self::PartialField, b"PartialField")
         | (Self::NotAFunctor, b"NotAFunctor")
         | (Self::NotATranslation, b"NotATranslation")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
@@ -1723,7 +1725,7 @@ impl RefusalName
         | (Self::ComposeNotAShape, b"ComposeNotAShape")
         | (Self::ComposeDoesNotFill, b"ComposeDoesNotFill")
         | (Self::FillUncertified, b"FillUncertified")
-        | (Self::NoFiller, b"NoFiller")
+        | (Self::NoFiller(_), b"NoFiller")
         | (Self::GeneratorFamilyUnsupported, b"GeneratorFamilyUnsupported")
         | (Self::UnenclosedRun, b"UnenclosedRun")
         | (Self::SessionMismatch, b"SessionMismatch")
@@ -1797,7 +1799,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1879,7 +1881,7 @@ impl RefusalName
             Self::ComposeNotAShape => "ComposeNotAShape",
             Self::ComposeDoesNotFill => "ComposeDoesNotFill",
             Self::FillUncertified => "FillUncertified",
-            Self::NoFiller => "NoFiller",
+            Self::NoFiller(_) => "NoFiller",
             Self::GeneratorFamilyUnsupported => "GeneratorFamilyUnsupported",
             Self::UnenclosedRun => "UnenclosedRun",
             Self::SessionMismatch => "SessionMismatch",
@@ -1970,7 +1972,7 @@ impl RefusalName
             Self::PhaseDependence => "PhaseDependence",
             Self::InertRead => "InertRead",
             Self::UnknownMember => "UnknownMember",
-            Self::UnprovenLaw(_) => "UnprovenLaw",
+            Self::UnprovenLaw => "UnprovenLaw",
             Self::PartialField => "PartialField",
             Self::NotAFunctor => "NotAFunctor",
             Self::NotATranslation => "NotATranslation",
@@ -2056,8 +2058,11 @@ impl RefusalName
         {
             Some(Qualifier::Named(fault))
         }
-        else if matches!(self, Self::UnprovenLaw(LawProof::Admitted)) {
+        else if matches!(self, Self::UnprovenLaw) {
             Some(Qualifier::Named(ADMITTED))
+        }
+        else if matches!(self, Self::NoFiller(FillerAsk::Omitted)) {
+            Some(Qualifier::Named(OMITTED))
         }
         else if matches!(self, Self::GenericUncovered(GenericCoverage::Dependent)) {
             Some(Qualifier::Named(DEPENDENT))
@@ -2144,9 +2149,8 @@ impl RefusalName
                 "SignatureMismatch" => {
                     tagged(&SIGNATURE_FAULTS.map(signature_tag)).map(Self::SignatureMismatch)
                 },
-                "UnprovenLaw" => {
-                    (rest == ADMITTED.0).then_some(Self::UnprovenLaw(LawProof::Admitted))
-                },
+                "UnprovenLaw" => (rest == ADMITTED.0).then_some(Self::UnprovenLaw),
+                "NoFiller" => (rest == OMITTED.0).then_some(Self::NoFiller(FillerAsk::Omitted)),
                 "GenericUncovered" => (rest == DEPENDENT.0)
                     .then_some(Self::GenericUncovered(GenericCoverage::Dependent)),
                 "Immobile" => crossing().map(Self::Immobile),
@@ -2174,6 +2178,9 @@ const ADMITTED: Tag = Tag("Admitted");
 
 /// The tag a law whose proof cases on a field under a motive is qualified by.
 const DEPENDENT: Tag = Tag("Dependent");
+
+/// The tag a model's omitted law no source discharges is qualified by.
+const OMITTED: Tag = Tag("Omitted");
 
 /// The tag a refused crossing of a thunk's capture is qualified by.
 const CAPTURE: Tag = Tag("Capture");
@@ -2711,8 +2718,7 @@ impl Refusal<'_>
         RefusalName::ForwardMemberReference) | (LoweringRefusal::PhaseDependence { .. },
         RefusalName::PhaseDependence) | (LoweringRefusal::InertRead { .. },
         RefusalName::InertRead) | (LoweringRefusal::UnknownMember { .. },
-        RefusalName::UnknownMember) | (LoweringRefusal::UnprovenLaw { .. },
-        RefusalName::UnprovenLaw(_)) | (LoweringRefusal::PartialField { .. },
+        RefusalName::UnknownMember) | (LoweringRefusal::PartialField { .. },
         RefusalName::PartialField) | (LoweringRefusal::NotAFunctor { .. },
         RefusalName::NotAFunctor) | (LoweringRefusal::NotATranslation { .. },
         RefusalName::NotATranslation) | (LoweringRefusal::ProjectionFromApplication { .. },
@@ -2774,8 +2780,6 @@ impl Refusal<'_>
         ret == RefusalName::UndescribedMember(member_tag(fault))
     } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
-    } else if let LoweringRefusal::UnprovenLaw { .. } = refusal {
-        ret == RefusalName::UnprovenLaw(LawProof::Missing)
     } else if let LoweringRefusal::GenericUncovered { fault, .. } = refusal {
         ret == RefusalName::GenericUncovered(GenericCoverage::of(fault))
     } else {
@@ -2819,7 +2823,6 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
         LoweringRefusal::InertRead { .. } => RefusalName::InertRead,
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
-        LoweringRefusal::UnprovenLaw { .. } => RefusalName::UnprovenLaw(LawProof::Missing),
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
         LoweringRefusal::NotATranslation { .. } => RefusalName::NotATranslation,
@@ -2981,7 +2984,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::ComposeNotAShape { .. }, RefusalName::ComposeNotAShape)
         | (CheckRefusal::ComposeDoesNotFill { .. }, RefusalName::ComposeDoesNotFill)
         | (CheckRefusal::FillUncertified { .. }, RefusalName::FillUncertified)
-        | (CheckRefusal::NoFiller { .. }, RefusalName::NoFiller)
+        | (CheckRefusal::NoFiller { .. }, RefusalName::NoFiller(FillerAsk::Written))
+        | (CheckRefusal::UndischargedLaw { .. }, RefusalName::NoFiller(FillerAsk::Omitted))
         | (CheckRefusal::GeneratorFamilyUnsupported { .. }, RefusalName::GeneratorFamilyUnsupported)
         | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
         | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
@@ -3052,7 +3056,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
         | (CheckRefusal::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
         | (CheckRefusal::OpenSessionPayload { .. }, RefusalName::OpenSessionPayload)
-        | (CheckRefusal::UnassertedLaw { .. }, RefusalName::UnprovenLaw(LawProof::Admitted))
+        | (CheckRefusal::UnassertedLaw { .. }, RefusalName::UnprovenLaw)
         | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
         | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
@@ -3128,7 +3132,8 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::ComposeNotAShape { .. } => RefusalName::ComposeNotAShape,
         CheckRefusal::ComposeDoesNotFill { .. } => RefusalName::ComposeDoesNotFill,
         CheckRefusal::FillUncertified { .. } => RefusalName::FillUncertified,
-        CheckRefusal::NoFiller { .. } => RefusalName::NoFiller,
+        CheckRefusal::NoFiller { .. } => RefusalName::NoFiller(FillerAsk::Written),
+        CheckRefusal::UndischargedLaw { .. } => RefusalName::NoFiller(FillerAsk::Omitted),
         CheckRefusal::GeneratorFamilyUnsupported { .. } => RefusalName::GeneratorFamilyUnsupported,
         CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
         CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
@@ -3217,7 +3222,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
         CheckRefusal::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,
         CheckRefusal::OpenSessionPayload { .. } => RefusalName::OpenSessionPayload,
-        CheckRefusal::UnassertedLaw { .. } => RefusalName::UnprovenLaw(LawProof::Admitted),
+        CheckRefusal::UnassertedLaw { .. } => RefusalName::UnprovenLaw,
         CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
         CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
         CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,

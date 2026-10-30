@@ -30,7 +30,7 @@ The expectation language over a lowered module and its verdicts — the eight cl
 - `normalized_call`, `normalized_call::Absent` and `NORMAL_FORM_ARROW`: the call a `normalizes` line reads, why a line reads none, and what separates a call from its normal form.
 - `Stated`, `Outcome`, `ExpectationFault`, `Membership` and `Expectations`: what a declaration states, and why an expectation states nothing; `expected`: one lowered declaration's expectations, read without settling.
 - `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary and producer refusal views; `RefusalName::closed`: every name no form qualifies.
-- `settle`, `SettleFault`, `Produced`, `produced_refusal::Absent`, `DeclarationReport`, `Settlement` and `Surviving`: the settle comparison; `settle_after`: a module settled after its leading declarations' reports.
+- `settle`, `SettleFault`, `Produced`, `produced_refusal::Absent`, `DeclarationReport`, `Filler`, `Settlement` and `Surviving`: the settle comparison; `settle_after`: a module settled after its leading declarations' reports.
 - `SettleReport`, `Tally`, `SettleCounts`, `ClassCounts` and `Seal`: the report and its counts.
 
 ## Expected features

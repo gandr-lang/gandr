@@ -84,6 +84,14 @@
 //! it. A primitive whose laws the host comes to assert takes a row of the
 //! table, and nothing else changes.
 //!
+//! **A law a model leaves out is discharged, not owed.** A declaration whose
+//! body is [`body::Absent::Discharged`] has a body minted for it:
+//! the `discharge` module reads `here` at the left side of the law's path,
+//! under the law's binders, and the checker judges it as a written body. The
+//! kernel replays the minted body as it replays a written one. A body that
+//! does not check is refused [`CheckRefusal::UndischargedLaw`], whichever rule
+//! refused it, since the law's sides do not convert.
+//!
 //! **A judgement waiting on a hole is suspended, not refused.** A comparison
 //! between the decode of an owed code and a constructor-headed type waits on
 //! that code: the declaration that made it is [`Verdict::Suspended`], typed
@@ -552,6 +560,7 @@ mod context;
 mod conversion;
 mod coverage;
 mod declaration;
+mod discharge;
 mod divergence;
 pub mod elaboration;
 pub mod eliminator;

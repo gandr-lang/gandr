@@ -28,6 +28,7 @@
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared, <goals> expanded, <goals> recalled, <goals> kept, <n> ns`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work, then the goals the kernel's check of it expanded, recalled from its memo and answered by an earlier admission's kept outcome, and the time the kernel took to admit it (`gandr-surface-dispatcher`'s `measure` module); a declaration a recorded verdict admitted spells `admitted on a recorded verdict` in place of the counts | as `check`: a measure settles nothing |
+//! | `gandr check --report cells <paths>` | as `check`, plus one line per cell a source discharged, `cell: <path>: <module>.<law>: <source>`: each law a model omits that the checker discharged, and the source that discharged it, `here` where the law's sides convert | as `check`: a cell settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 //! | `gandr run <file>` | the value, alone, on standard output; every report `check --goals` would print, and why a run stopped or never started, on standard error | a run blamed or stuck, or a source that never reached the machine |
@@ -516,6 +517,10 @@ enum Command
         /// the segment adds and its roots' expanded work.
         #[arg(long)]
         measure: bool,
+        /// Print the named report for each source, after its diagnostics:
+        /// `cells` lists each law a model omits that a source discharged.
+        #[arg(long, value_enum)]
+        report: Option<ReportName>,
         /// How much of each report to print.
         #[arg(long, value_enum, default_value_t = Level::User)]
         verbosity: Level,
@@ -1157,6 +1162,16 @@ enum AdmitPolicy
     NativeConversion,
 }
 
+/// A report `check --report` prints for each source, spelled as the flag
+/// names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum ReportName
+{
+    /// `cells`: each law a model omits that a source discharged, with the
+    /// source.
+    Cells,
+}
+
 /// A spelling `fmt --form` asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 enum FormName
@@ -1242,6 +1257,8 @@ struct Printing
     spelling: Spelling,
     /// Whether a check prints each declaration's sizes.
     measuring: Measuring,
+    /// Whether a check lists each cell a source discharged.
+    listing: Listing,
 }
 
 /// Whether a check prints each declaration's sizes in its kernel artifact.
@@ -1252,6 +1269,17 @@ enum Measuring
     Measured,
     /// No size prints.
     Unmeasured,
+}
+
+/// Whether a check lists each cell a source discharged, and the source that
+/// discharged it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Listing
+{
+    /// Each discharged cell of a settled source prints its `cell:` line.
+    Listed,
+    /// No cell prints.
+    Unlisted,
 }
 
 /// What a walk is run as: its verb, the lints it reports, the packages whose
@@ -1641,6 +1669,7 @@ fn main() -> ExitCode
     let mut hosting = Hosting::default();
     let mut store: Option<Store> = None;
     let mut measuring = Measuring::Unmeasured;
+    let mut listing = Listing::Unlisted;
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
         Some(Command::Check {
@@ -1651,12 +1680,16 @@ fn main() -> ExitCode
             recheck,
             admit,
             measure,
+            report,
             verbosity,
             jobs,
             paths,
         }) => {
             if measure {
                 measuring = Measuring::Measured;
+            }
+            if report == Some(ReportName::Cells) {
+                listing = Listing::Listed;
             }
             let grant = match grant {
                 None => HostGrant::UNBOUNDED,
@@ -1955,6 +1988,7 @@ fn main() -> ExitCode
             verbosity,
             spelling,
             measuring,
+            listing,
         },
         &packages,
         hosting,
@@ -3090,18 +3124,19 @@ fn stage(
 ///   entry as one line of JSON — and each fault as one `gandr: <path>: <fault>`
 ///   line to standard error. Under `check` measuring, each source step's
 ///   diagnostics are followed by its declarations' measures, as [`measured`]
-///   states. Under `check`, each package of the pass first prints what locking
-///   its dependencies before the walk came to, as [`locked`] states; then each
-///   whose library settled with no refusal has its manifest read from the
-///   library's program and reconciled: each written, rewritten or unchanged is
-///   the line `manifest: <path>: <what>` on standard output, at the JSON level
-///   an object whose `level` is `manifest`; a library that states no manifest,
-///   and a manifest refused as drift, are each `gandr: <path>: <why>` on
-///   standard error and unsettle the run, and one that cannot be read or
-///   written faults it. Each package whose lock is held and whose sources all
-///   settled then commits its export, the artifacts the walk admitted for its
-///   sources as [`Exporting`] keeps them, into the pass's store under its
-///   address's root, as
+///   states, and under `check --report cells` by its discharged cells, as
+///   [`discharged_cells`] states. Under `check`, each package of the pass first
+///   prints what locking its dependencies before the walk came to, as
+///   [`locked`] states; then each whose library settled with no refusal has its
+///   manifest read from the library's program and reconciled: each written,
+///   rewritten or unchanged is the line `manifest: <path>: <what>` on standard
+///   output, at the JSON level an object whose `level` is `manifest`; a library
+///   that states no manifest, and a manifest refused as drift, are each `gandr:
+///   <path>: <why>` on standard error and unsettle the run, and one that cannot
+///   be read or written faults it. Each package whose lock is held and whose
+///   sources all settled then commits its export, the artifacts the walk
+///   admitted for its sources as [`Exporting`] keeps them, into the pass's
+///   store under its address's root, as
 ///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) states,
 ///   printing nothing; a store that refuses the commit is `gandr: <root>:
 ///   <why>` on standard error and faults the run, and so is an artifact that
@@ -3151,6 +3186,7 @@ fn stage(
 /// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
 /// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
 /// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
+/// - witness: `tests::cli::check_reports_each_cell_a_source_discharges_4112`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -3172,9 +3208,11 @@ fn run(
         verbosity,
         spelling,
         measuring,
+        listing,
     } = printing;
     let checking = matches!(verb, Verb::Check(_));
     let measured_walk = checking && measuring == Measuring::Measured;
+    let listed_walk = checking && listing == Listing::Listed;
     let walk = if measured_walk {
         walk.measuring()
     }
@@ -3228,6 +3266,9 @@ fn run(
                     }
                 }
                 if measured_walk && let Err(error) = measured(&step, stdout, stderr) {
+                    return ControlFlow::Break(error);
+                }
+                if listed_walk && let Err(error) = discharged_cells(&step, stdout) {
                     return ControlFlow::Break(error);
                 }
                 if checking {
@@ -3409,6 +3450,53 @@ fn measured(
         Ok(Maybe::Absent(_)) => Ok(()),
         Err(fault) => writeln!(stderr, "gandr: {}: {fault}", path.display()),
     }
+}
+
+/// Print each cell a settled source discharged, and the source that
+/// discharged it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a source step whose module settled prints one line to standard
+///   output per law its models omit that the checker discharged, in its
+///   report's order: `cell: <path>: <module>.<law>: <source>`. A law no source
+///   discharged, and any other step, prints nothing.
+/// - fails: the first write error, without writing anything after it.
+/// - panics: none.
+/// - executable: none — this writes to an external sink and returns no
+///   comparable state.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source whose model omits a law whose sides convert
+///   prints its cell `here`, and the cell of a law whose sides part prints
+///   nothing. A check without the flag prints no cell.
+/// - witness: `tests::cli::check_reports_each_cell_a_source_discharges_4112`
+fn discharged_cells(
+    step: &Step<'_>,
+    stdout: &mut dyn std::io::Write,
+) -> std::io::Result<()>
+{
+    let Step::Source {
+        path,
+        composed: Composed::Settled { ref report, .. },
+        ..
+    } = *step
+    else {
+        return Ok(());
+    };
+    for declaration in report.declarations() {
+        if let Maybe::Present((ref cell, filler)) = *declaration.discharged() {
+            write!(stdout, "cell: {}: ", path.display())?;
+            for (position, segment) in cell.iter().enumerate() {
+                if position > 0 {
+                    write!(stdout, ".")?;
+                }
+                write!(stdout, "{segment}")?;
+            }
+            writeln!(stdout, ": {filler}")?;
+        }
+    }
+    Ok(())
 }
 
 /// Print what locking `packaged`'s dependencies came to, and the verdict it

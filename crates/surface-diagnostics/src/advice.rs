@@ -178,7 +178,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::ForwardMemberReference { .. }
         | LoweringRefusal::PhaseDependence { .. }
         | LoweringRefusal::InertRead { .. }
-        | LoweringRefusal::UnprovenLaw { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::ProjectionFromApplication { .. }
@@ -511,6 +510,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "ask for the square the generator makes, with its sides composites of the cells and \
              at least one cell a path of paths",
         ),
+        CheckRefusal::UndischargedLaw { .. } => String::from(
+            "prove the law by a definition at its type, or admit it where the host asserts it",
+        ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
@@ -615,7 +617,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 33] = [
+    const WORDED: [&str; 34] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -649,6 +651,7 @@ mod tests
         "ComposeNotAShape",
         "ComposeDoesNotFill",
         "NoFiller",
+        "NoFiller.Omitted",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

@@ -50,6 +50,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
 - `Verdict::Suspended` and `ModuleReport::suspensions`: a judgement held on an owed code hole ([`elaboration`](src/elaboration.rs)).
 - `CheckRefusal::TacticRefused`, `TacticFault`: a splice's tactic run at its goal ([`tactic`](src/tactic.rs)).
+- `body::Absent::Discharged` and `CheckRefusal::UndischargedLaw`: a law a model leaves out, discharged by `here` at its left side where its sides convert, and refused naming it where they part ([`discharge`](src/discharge.rs)).
 - `staging::check`, `staging::Program`, `staging::Allowance`, `staging::Checked`, `staging::Readmission`, `staging::Stages`, `staging::ProgramError` and `staging::SourceIndex`: a staged program checked end to end on the caller's fork.
 - `stage::compile`, `stage::Program::admit` and `stage::Program::execute`: certified first-order residual readmission for the experimental stage universe.
 - `template`: guarded families of staging equations with ordinary replay as authority, the `template::Memo` that drafts a family from its key's last template, and the adapter into the kernel's guarded admission.
@@ -84,6 +85,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | The context, resolution by admission position, adoption | [`context`](src/context.rs) |
 | Declaration input | [`declaration`](src/declaration.rs) |
 | Verdicts, holes at the declaration grain, definitions, refused-body failures | [`module`](src/module.rs) |
+| A model's omitted law, discharged | [`discharge`](src/discharge.rs) |
 | The machine's failure and its frame roles | [`failure`](src/failure.rs) |
 | The ledger | [`ledger`](src/ledger.rs) |
 | Refusal classes | [`refusal`](src/refusal.rs) |

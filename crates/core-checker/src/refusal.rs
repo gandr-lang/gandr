@@ -1444,6 +1444,14 @@ pub enum CheckRefusal
         /// The law's declared type.
         at: ValueTypeId,
     },
+    /// A model's law its module omits that no source of a filler answers:
+    /// its sides do not convert, so `here` does not fill it. Named
+    /// `NoFiller.Omitted`.
+    UndischargedLaw
+    {
+        /// The law's declared type.
+        at: ValueTypeId,
+    },
     /// A ride whose motive reads its code variable anywhere but a covariant
     /// position: a flow moves forward only, so no ride derives its reverse.
     NonCovariantMotive
@@ -1591,7 +1599,7 @@ impl CheckRefusal
         | Self::TacticRefused { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } | Self::FootprintsOverlap { .. }
-        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::UndischargedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -1678,6 +1686,7 @@ impl CheckRefusal
             | Self::SessionCodeExpected { .. }
             | Self::OpenSessionPayload { .. }
             | Self::UnassertedLaw { .. }
+            | Self::UndischargedLaw { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
             | Self::DialogueUnmatched { .. }
@@ -1760,7 +1769,7 @@ impl CheckRefusal
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
         | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. } | Self::FootprintsOverlap { shared: found, .. }
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. } | Self::OutsideFold { code: found, .. } | Self::BridgeAtSealedType { at: found, .. }
-        | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found }
+        | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found } | Self::UndischargedLaw { at: found }
         | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. }
         | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. }
         | Self::ModelUnanswered { forced: Forced::Type(found), .. } =>
@@ -1849,6 +1858,7 @@ impl CheckRefusal
             | Self::BridgeAtSealedType { at: found, .. }
             | Self::SessionMismatch { state: found, .. }
             | Self::UnassertedLaw { at: found }
+            | Self::UndischargedLaw { at: found }
             | Self::Linearity {
                 defect: crate::session::LinearityDefect::Residue { state: found, .. },
                 ..

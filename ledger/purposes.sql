@@ -1970,8 +1970,8 @@ INSERT INTO purpose VALUES('surface-corpus','expectation::reads_spelled','functi
 INSERT INTO purpose VALUES('surface-corpus','refusal::BoundaryClause','enum','The clause a boundary check''s run names when its block''s members do not realise their rows, the qualifier of RefusalName::BoundaryUnrealised.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::CorpusRefusal','enum','The refusal this crate raises.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::CrossingRead','enum','What a refused world crossing reads: the value crossing, a thunk''s capture or a declaration homed where the thunk is formed, the qualifier of RefusalName::Immobile and RefusalName::NotOpen.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','refusal::FillerAsk','enum','What asked for a filler no source gives, the qualifier of RefusalName::NoFiller: a written fill, bare, or a model''s omitted law, `Omitted`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::GenericCoverage','enum','What a derivation `Eq.generic` writes does not cover, the qualifier of RefusalName::GenericUncovered.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-corpus','refusal::LawProof','enum','Why a law of a module''s model stands unproven, the qualifier of RefusalName::UnprovenLaw.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::Qualifier','enum','What a refusal named by the feature it refuses is qualified by, after its variant and a dot: the key its producer classifies the refusal by, so the name covers one feature.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::Refusal','enum','A refusal, whichever producer raised it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::RefusalName','enum','One name of the closed refusal vocabulary: every refusal the lowering, the checker and this crate raise, named by its variant.',NULL,'fits','sound',NULL);
@@ -1989,11 +1989,13 @@ INSERT INTO purpose VALUES('surface-corpus','run::RunSpelling','struct','A run o
 INSERT INTO purpose VALUES('surface-corpus','run::Runner','trait','What settling a `runs` expectation asks of the caller: run one declaration and spell its outcome.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','run::TracedRun','struct','What settling a `traces` expectation asks a run to produce: its outcome and each named channel it forked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::DeclarationReport','struct','One declared name, settled: what it states beside what it produced.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','settle::Filler','enum','The source that discharged a law its module omits, as `gandr check --report cells` names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Produced','enum','What a declaration produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::SettleFault','enum','Why verdicts cannot be settled against a module.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Settlement','enum','Whether what was stated was produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Surviving','struct','The obligations one declaration leaves unsettled.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::admitted::Absent','enum','Why a declaration names no admission.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','settle::discharged::Absent','enum','Why a declaration names no discharged cell.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::expected','function','What the declaration `lowered` of `module` states under `root`: the expectations among the attributes filed on its signature and its definition, their payloads read out of `arena`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::refused_expected','function','What the declaration `lowered` of `module` states under `root` once it is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::settle','function','Settle `verdicts` against `module` under `root`, reading expectation payloads out of `arena`, asking `runner` for each run outcome stated, and reading each normal form stated under its block''s rules.',NULL,'fits','sound',NULL);
