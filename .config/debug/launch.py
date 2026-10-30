@@ -28,8 +28,10 @@ A host may run the check itself inside a bounded scope. The stub's cgroup is
 then the caller's, and its `memory.max` is the host's bound, not one
 `lldb.bash` set: the case reads `memory.max` only from a cgroup of the
 debugger's own (#4040). A case with `within` true runs the launch inside such
-a scope of the host's, bounded to 8 GiB, and is skipped where the host runs
-no systemd scope.
+a scope of the host's, bounded to 8 GiB, and is skipped where the host has no
+`systemd-run` or runs no systemd scope; one with `systemd` false stands for a
+host with no `systemd-run` (#4156). A case recording `skipped` wants the skip
+whose reason holds it.
 """
 
 import json
@@ -110,8 +112,13 @@ def launched(case: dict, scratch: pathlib.Path) -> tuple[str, str] | None:
     # The caller's `ulimit -v` and cgroup, read where `lldb.bash` starts.
     launch = ["bash", "-c", 'ulimit -v; cut -d: -f3 /proc/self/cgroup 2> /dev/null || echo; exec "$@"', "bash"]
     if case.get("within"):
+        # A case with `systemd` false stands for a host with no `systemd-run`.
+        host_path = os.environ["PATH"] if case.get("systemd", True) else ""
+        systemd_run = shutil.which("systemd-run", path=host_path)
+        if systemd_run is None:
+            return "SKIPPED", "this host has no systemd-run to hold the check"
         host_scope = [
-            shutil.which("systemd-run") or "systemd-run",
+            systemd_run,
             "--user",
             "--scope",
             "--quiet",
@@ -151,6 +158,10 @@ def main(path: str) -> int:
     for case in loaded:
         with tempfile.TemporaryDirectory() as scratch:
             why = launched(case, pathlib.Path(scratch))
+        # A case recording `skipped` wants the skip that names it, and nothing else.
+        if "skipped" in case:
+            skipped = why is not None and why[0] == "SKIPPED" and case["skipped"] in why[1]
+            why = None if skipped else ("FAILED", f"{why!r}, wanted a skip naming {case['skipped']!r}")
         if why is not None:
             verdict, reason = why
             print(f"launch case {verdict}: {case['name']}\n  {reason}", file=sys.stderr)

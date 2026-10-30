@@ -22,6 +22,16 @@
     "bound": "none"
   },
   {
+    "name": "#4156: a host with no systemd-run skips the scoped launch by name, as macOS has none",
+    "system": "Darwin",
+    "within": true,
+    "systemd": false,
+    "lldb": true,
+    "exit": 0,
+    "bound": "none",
+    "skipped": "this host has no systemd-run"
+  },
+  {
     "name": "#3823: Linux runs its lldb on its arguments bounded to 8 GiB",
     "system": "Linux",
     "lldb": true,
