@@ -7317,6 +7317,47 @@ pub fn instantiate_computation_traced(
     }
 }
 
+/// Instantiate the binder of the type `subject` at `argument`, reporting
+/// every node it rewrote beside the node it rewrote it from.
+///
+/// # Specification
+/// - requires: `subject` is a value type of `arena` scoped beneath one binder
+///   in some context `Γ`, and `argument` a value of `arena` in `Γ`.
+/// - ensures: as [`instantiate_value_type`]; `carried` gains one pair per node
+///   the substitution changed, as [`instantiate_computation_traced`] reports
+///   them.
+/// - provides: a dependent pair's second component's type at its first, for a
+///   caller that names the copies as their sources.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dependent pair under the binder, instantiated, is
+///   reported beside its image, and its closed first component is not.
+/// - witness: `rewrite::tests::a_traced_type_instantiation_reports_each_rewritten_node`
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == subject || arena.value_type(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn instantiate_value_type_traced(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    argument: ValueId,
+    carried: &mut Vec<Carried>,
+) -> ValueTypeId
+{
+    let mut engine = Engine::new(arena);
+    let instantiated = engine.run(
+        Node::ValueType(subject),
+        Binders::NONE,
+        Rewrite::Substitute(argument),
+    );
+    report(&engine.memo, carried);
+    match instantiated {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
 /// Read a handler clause's resumptions through the continuation they resume.
 ///
 /// The clause's stack binder is instantiated at the function `λx.

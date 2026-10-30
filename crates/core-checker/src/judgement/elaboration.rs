@@ -85,6 +85,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::Carried;
 use gandr_core_term::ComputationId;
 use gandr_core_term::FailureClass;
 use gandr_core_term::ValueId;
@@ -200,8 +201,8 @@ pub struct Formed
 }
 
 /// What a recording context kept: the term judgements, the type formations,
-/// the endpoints' standings and the world register's moves finished, each in
-/// the order finished.
+/// the endpoints' standings, the world register's moves, and the nodes the
+/// kept types were copied to, each in the order finished.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Kept
 {
@@ -213,6 +214,9 @@ pub struct Kept
     pub endpoints: Vec<Typing>,
     /// The world register's moves, in the order made.
     pub moves: Vec<crate::worlds::WorldMove>,
+    /// Each node a kept type was copied to when it was settled, beside the
+    /// node it copies, in the order minted.
+    pub copies: Vec<Carried>,
 }
 
 /// A typed run's record of what it judged.
@@ -241,6 +245,10 @@ pub struct Typings
     /// theory's reduct to one it includes, or a theory's forgetting map — by
     /// the value, with the map.
     crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
+    /// Each node a kept type was copied to when it was settled, beside the
+    /// node it copies, in the order minted: a variable's type read past the
+    /// binders between it and its slot, among them.
+    copies: Vec<Carried>,
 }
 
 impl Typings
@@ -318,6 +326,20 @@ impl Typings
         &self.crossings
     }
 
+    /// Each node a kept type was copied to when it was settled, beside the
+    /// node it copies, in the order minted: a variable's type read past the
+    /// binders between it and its slot, among them. A reader that names nodes
+    /// by where the source writes them names each copy as its source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn copies(&self) -> &[Carried]
+    {
+        &self.copies
+    }
+
     /// This record with `crossings`, the crossings the run that typed it
     /// recorded.
     ///
@@ -338,9 +360,9 @@ impl Typings
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the typings, the formations, the endpoints and the moves are
-    ///   `signature`'s then `body`'s, in order; the marks and the crossings are
-    ///   `body`'s.
+    /// - ensures: the typings, the formations, the endpoints, the moves and the
+    ///   copies are `signature`'s then `body`'s, in order; the marks and the
+    ///   crossings are `body`'s.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -361,11 +383,13 @@ impl Typings
             mut formed,
             mut endpoints,
             mut moves,
+            mut copies,
         } = signature;
         typings.extend(body.judged);
         formed.extend(body.formed);
         endpoints.extend(body.endpoints);
         moves.extend(body.moves);
+        copies.extend(body.copies);
         Self {
             judged: typings,
             formed,
@@ -373,6 +397,7 @@ impl Typings
             moves,
             marks: body.marks,
             crossings: body.crossings,
+            copies,
         }
     }
 
@@ -695,6 +720,7 @@ pub fn type_value(
         formed,
         endpoints,
         moves,
+        copies,
     } = context.finish_typings(outer);
     Typings {
         judged: typings,
@@ -703,6 +729,7 @@ pub fn type_value(
         moves,
         marks,
         crossings: BTreeMap::new(),
+        copies,
     }
 }
 
@@ -835,12 +862,12 @@ impl Machine<'_, '_>
     /// check — and the binder depth its goal began at.
     ///
     /// # Specification
-    /// - requires: `produced` is what `anchor`'s judgement finished with.
     /// - ensures: while the context records, a value or computation goal
     ///   checked against a type is kept with that type, and one synthesised is
     ///   kept with the type it produced in its own family, each at the depth
-    ///   the goal began at; nothing is kept for any other goal or result, or
-    ///   while the context does not record.
+    ///   the goal began at, every node settling the produced type mints kept
+    ///   beside the node it copies; nothing is kept for any other goal or
+    ///   result, or while the context does not record.
     /// - panics: none.
     /// - executable: none — the context's log has no observer short of the
     ///   typed run's result, which the witness reads.
@@ -892,7 +919,7 @@ impl Machine<'_, '_>
                 Produced::ValueType(found),
             ) => Typing {
                 term: TermNode::Value(term),
-                ty: TypeNode::Value(found.settle(self.context.arena_mut())),
+                ty: TypeNode::Value(self.context.settle_value_type(found)),
                 depth,
             },
             (

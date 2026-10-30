@@ -160,6 +160,8 @@ use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::PATHLESS;
 use gandr_surface_diagnostics::Subject as DiagnosedSubject;
+use gandr_surface_diagnostics::WrittenLabels;
+use gandr_surface_diagnostics::carry_labels;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::written_names;
@@ -2663,6 +2665,15 @@ impl TypeTable
                 (!held.is_empty()).then_some((constant, held))
             })
             .collect();
+        // A variable's type is its slot's read past the binders between
+        // them, copied to fresh nodes: each copy is named as its source.
+        let mut naming = Naming::of(&module, source);
+        naming.carrying(
+            typed
+                .typings()
+                .values()
+                .flat_map(|typings| typings.copies().iter().copied()),
+        );
         let documented = module
             .source_documentations()
             .iter()
@@ -2673,7 +2684,7 @@ impl TypeTable
             declared,
             arena,
             names,
-            naming: Naming::of(&module, source),
+            naming,
             unit: unit.clone(),
             base,
             families: Families::of(&module),
@@ -4530,93 +4541,14 @@ impl TypeTable
         // type, a pair it recorded labels for, or a dependent arrow it
         // recorded its binder's name for, stands at each copy a shift made of
         // it, so a type read under a dropped binder reprints as written (#674,
-        // #1655, #1751, #2254). The copies are taken in the order the shifts
-        // made them, so a copy of a copy finds its source's; a type recorded
-        // twice keeps its first. A shift copies a model type's carriers before
-        // the type, so each carrier stands at its latest copy.
-        let mut related: BTreeMap<ValueTypeId, Relation> = BTreeMap::new();
-        for &(ty, relation) in &read_back.relations {
-            related.entry(ty).or_insert(relation);
-        }
-        let mut modelled: BTreeMap<ValueTypeId, WrittenModel> = BTreeMap::new();
-        for &(ty, ref model) in &read_back.models {
-            modelled.entry(ty).or_insert_with(|| model.clone());
-        }
-        let mut latest: BTreeMap<ValueTypeId, ValueTypeId> = BTreeMap::new();
-        let mut named: BTreeMap<CompTypeId, String> = BTreeMap::new();
-        for &(arrow, ref name) in &read_back.arrows {
-            named.entry(arrow).or_insert_with(|| name.clone());
-        }
-        // Each pair's first recorded label, by its place among the kept ones;
-        // a copy stands at its source's place, so a copy of a copy reaches
-        // the label recorded for the first.
-        let first = |kept: &[(ValueTypeId, String)]| -> BTreeMap<ValueTypeId, usize> {
-            let mut first = BTreeMap::new();
-            for (at, &(pair, _)) in kept.iter().enumerate() {
-                first.entry(pair).or_insert(at);
-            }
-            first
-        };
-        let mut binders = first(&read_back.pairs);
-        let mut seconds = first(&read_back.seconds);
-        let mut copied_binders: Vec<(ValueTypeId, usize)> = Vec::new();
-        let mut copied_seconds: Vec<(ValueTypeId, usize)> = Vec::new();
-        for copy in carried {
-            let (source, image) = match copy {
-                Carried::ValueType(source, image) => (source, image),
-                Carried::CompType(source, image) => {
-                    if let Some(name) = named.get(&source).cloned() {
-                        read_back.arrows.push((image, name.clone()));
-                        named.entry(image).or_insert(name);
-                    }
-                    continue;
-                },
-                Carried::Value(..) | Carried::Computation(..) => continue,
-            };
-            if let Some(&relation) = related.get(&source) {
-                read_back.relations.push((image, relation));
-                related.entry(image).or_insert(relation);
-            }
-            if let Some(model) = modelled.get(&source) {
-                let copied = WrittenModel {
-                    theory: model.theory.clone(),
-                    sorts: model
-                        .sorts
-                        .iter()
-                        .map(|&(ref sort, carrier)| {
-                            (
-                                sort.clone(),
-                                latest.get(&carrier).copied().unwrap_or(carrier),
-                            )
-                        })
-                        .collect(),
-                };
-                read_back.models.push((image, copied.clone()));
-                modelled.entry(image).or_insert(copied);
-            }
-            let _previous = latest.insert(source, image);
-            for (labels, copied) in [
-                (&mut binders, &mut copied_binders),
-                (&mut seconds, &mut copied_seconds),
-            ] {
-                if let Some(&at) = labels.get(&source) {
-                    let _first = labels.entry(image).or_insert(at);
-                    copied.push((image, at));
-                }
-            }
-        }
-        for (copied, kept) in [
-            (copied_binders, &mut read_back.pairs),
-            (copied_seconds, &mut read_back.seconds),
-        ] {
-            let labelled: Vec<(ValueTypeId, String)> = copied
-                .into_iter()
-                .filter_map(|(image, at)| {
-                    kept.get(at).map(|&(_, ref label)| (image, label.clone()))
-                })
-                .collect();
-            kept.extend(labelled);
-        }
+        // #1655, #1751, #2254).
+        carry_labels(carried, &mut WrittenLabels {
+            arrows: &mut read_back.arrows,
+            pairs: &mut read_back.pairs,
+            seconds: &mut read_back.seconds,
+            relations: &mut read_back.relations,
+            models: &mut read_back.models,
+        });
         printed
             .into_iter()
             .zip(held)
@@ -8866,6 +8798,62 @@ mod tests
                 spelling.iter().all(|back| back.trip == RoundTrip::Equal
                     && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
                 "each selection reads back and reprints as itself: {spelling:?}"
+            );
+        }
+    }
+
+    /// #4042: a dependent record keeps its labels at every site the table
+    /// reads, never the nested pair the checker builds it as. At each
+    /// parameter's own site, a later one's among them, the type spells its
+    /// record as written, reads back to its certificate and reprints as
+    /// itself.
+    #[test]
+    fn a_dependent_record_keeps_its_labels_at_a_later_parameter_s_site_4042()
+    {
+        let source = SourceText::from(
+            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path(A, x, y), g : \
+             Path(A, y, z)}) => Path(A, r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path(A, x, \
+             y)}) => Path(Path(A, r.x, r.y), r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<super::ReadBack> =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        let nested: Vec<&super::ReadBack> = reads
+            .iter()
+            .filter(|back| back.spelled.contains("#{a : A, b : #{"))
+            .collect();
+        assert!(
+            nested.is_empty(),
+            "no site spells a dependent record as its nested pair: {nested:?}"
+        );
+        let text = <&str>::from(source);
+        for (parameter, record) in [
+            (
+                "\n  h : ",
+                "#{x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)}",
+            ),
+            ("\n  k : ", "#{x : A, y : A, g : Path(A, x, y)}"),
+        ] {
+            let at = text
+                .find(parameter)
+                .map(|line| line.saturating_add(3_usize))
+                .expect("the parameter is written");
+            // The site's reads that spell a record: its type, and the
+            // declaration's remainder past it; not the kind it forms at.
+            let own: Vec<&super::ReadBack> = reads
+                .iter()
+                .filter(|back| {
+                    matches!(back.site, ReadSite::Own(span) if usize::from(span.start()) == at)
+                        && back.spelled.contains("#{")
+                })
+                .collect();
+            assert!(
+                !own.is_empty()
+                    && own.iter().all(|back| back.spelled.contains(record)
+                        && back.trip == RoundTrip::Equal
+                        && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
+                "the parameter's own site spells its record as written, reads back and \
+                 reprints as itself: {own:?}"
             );
         }
     }

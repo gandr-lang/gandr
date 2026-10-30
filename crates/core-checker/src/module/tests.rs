@@ -807,6 +807,64 @@ fn a_typed_module_keeps_each_judged_body_s_term_types()
     );
 }
 
+/// A variable read past the binders between it and its slot is typed at a
+/// copy of its slot's type: the record keeps the copy beside the type it
+/// copies, so a reader that names the slot's type names the copy alike.
+#[test]
+fn a_variable_s_type_keeps_the_copies_its_reading_mints()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    // `(n : Integer) -> (r : (x : Integer) * Path(Integer, n, x)) -> F Integer`.
+    let [own, outer] = [0_u32, 1].map(|index| {
+        arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(index),
+        )
+    });
+    let path = arena.value_type_path(integer, outer, own);
+    let sigma = arena.value_type_sigma(integer, path);
+    let returns = arena.comp_type_returner(integer);
+    let inner = arena.comp_type_pi(sigma, returns);
+    let outer_pi = arena.comp_type_pi(integer, inner);
+    let declared = arena.value_type_thunk(outer_pi);
+    // `λn. λr. r.0`.
+    let projected =
+        arena.computation_tuple_projection(own, gandr_kernel_term::Component::from(0_usize));
+    let inner_lambda = arena.computation_lambda(projected);
+    let outer_lambda = arena.computation_lambda(inner_lambda);
+    let defined = arena.value_thunk(outer_lambda);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let module = [declaration(
+        At(0),
+        Maybe::Present(declared),
+        Maybe::Present(defined),
+    )];
+    let run = type_module(&mut context, &module);
+    assert!(
+        run.refused().is_empty(),
+        "the declaration checks: {:?}",
+        run.refused()
+    );
+    let typed = &run.typings()[&ConstantIndex::from(0_usize)];
+    let copies: alloc::collections::BTreeSet<gandr_core_term::Carried> =
+        typed.copies().iter().copied().collect();
+    let copied = typed
+        .typings()
+        .iter()
+        .filter(|typing| typing.term == TermNode::Value(own))
+        .find_map(|typing| match typing.ty {
+            TypeNode::Value(copy) => copies
+                .contains(&gandr_core_term::Carried::ValueType(sigma, copy))
+                .then_some(copy),
+            TypeNode::Computation(_) => None,
+        });
+    assert!(
+        copied.is_some_and(|copy| copy != sigma),
+        "the variable is typed at a copy of its slot's type, kept beside it: {typed:?}"
+    );
+}
+
 /// A typed run keys a declaration exactly when it formed or judged something,
 /// refused or not: a formed data declaration and one refused at a field keep
 /// the kind they formed, a signature refused at its second component keeps
