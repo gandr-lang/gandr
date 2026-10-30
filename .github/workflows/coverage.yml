@@ -82,8 +82,11 @@ jobs:
         if: ${{ needs.ci-image-ref.outputs.ref == '' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
       # The instrumented builds live in their own target directories and
-      # nothing else writes them, so this job is their one cache writer. The
-      # key is the dependency fingerprint: the dependencies' instrumented
+      # nothing else writes them. Each part restores the state of the
+      # directory it builds, `COVERAGE_STATE` (`coverage` for the enforcing
+      # slices, `coverage-plain` for the plain witness), and the part that
+      # sets `COVERAGE_STATE_SAVE` is that state's one cache writer. The key
+      # is the dependency fingerprint: the dependencies' instrumented
       # artifacts are what a run reuses (cargo-llvm-cov rebuilds the
       # workspace's own crates so coverage data is never stale), so one entry
       # per fingerprint is exact, and a partial match restores the newest
@@ -98,22 +101,18 @@ jobs:
         id: coverage-state-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            target/coverage
-            target/coverage-plain
-          key: gandr-v1-coverage-state-${{ runner.os }}-${{ runner.arch }}-${{ env.COVERAGE_STATE_FINGERPRINT }}
-          restore-keys: gandr-v1-coverage-state-${{ runner.os }}-${{ runner.arch }}-
+          path: target/${{ env.COVERAGE_STATE }}
+          key: gandr-v2-${{ env.COVERAGE_STATE }}-state-${{ runner.os }}-${{ runner.arch }}-${{ env.COVERAGE_STATE_FINGERPRINT }}
+          restore-keys: gandr-v2-${{ env.COVERAGE_STATE }}-state-${{ runner.os }}-${{ runner.arch }}-
       - &measure-coverage
-        name: measure enforcing coverage
-        run: mise run ci:coverage
+        name: measure this part's coverage
+        run: mise run ci:coverage "$COVERAGE_PART"
       - &save-coverage-state
         name: cache instrumented build state
-        if: ${{ !cancelled() && steps.coverage-state-restore.outputs.cache-hit != 'true' && hashFiles('target/coverage/**/.rustc_info.json') != '' }}
+        if: ${{ !cancelled() && env.COVERAGE_STATE_SAVE == 'true' && steps.coverage-state-restore.outputs.cache-hit != 'true' && hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)) != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            target/coverage
-            target/coverage-plain
+          path: target/${{ env.COVERAGE_STATE }}
           key: ${{ steps.coverage-state-restore.outputs.cache-primary-key }}
       # The upload runs only after the measure succeeds, so a failed measure
       # uploads nothing, and the last processed upload stays main's (#3978).
@@ -166,8 +165,14 @@ jobs:
             echo "stale=true" >> "$GITHUB_OUTPUT"
           fi
 
-  coverage:
-    name: measure and upload coverage
+  # The measure in parts, so no job reaches its limit (#4020): the whole
+  # instrumented run took 40 minutes against its 45, its tests 12 to more
+  # than 30 of them. Each enforcing part builds the workspace and runs one of
+  # nextest's four hash slices of the suite; the plain part runs the
+  # plain-only parser witness. Each part exports its own report, and `join`
+  # merges them.
+  coverage-part:
+    name: measure coverage (${{ matrix.part }})
     needs: [ci-image-ref, freshness]
     if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
     # The one CI job on x86-64 Linux: the emitter's x86-64 patcher and memory
@@ -176,6 +181,31 @@ jobs:
     permissions: *image-read-permissions
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: enforcing-1
+            slice: hash:1/4
+            state: coverage
+            save: true
+          - part: enforcing-2
+            slice: hash:2/4
+            state: coverage
+          - part: enforcing-3
+            slice: hash:3/4
+            state: coverage
+          - part: enforcing-4
+            slice: hash:4/4
+            state: coverage
+          - part: plain
+            slice: plain
+            state: coverage-plain
+            save: true
+    env:
+      COVERAGE_PART: ${{ matrix.slice }}
+      COVERAGE_STATE: ${{ matrix.state }}
+      COVERAGE_STATE_SAVE: ${{ matrix.save }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -185,18 +215,49 @@ jobs:
       - *restore-coverage-state
       - *measure-coverage
       - *save-coverage-state
-      - *upload-coverage
+      - name: keep this part's report
+        uses: &upload-artifact actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ matrix.part }}
+          path: coverage.lcov
+          retention-days: 1
+          if-no-files-found: error
       # A sweep that reaches the coverage limit ends and passes, so the
-      # upload above still runs (#3975); `guard` files it from this report.
+      # upload still runs (#3975); `guard` files it from this report.
       - name: upload the test report
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: *upload-artifact
         with:
-          name: junit-coverage
+          name: junit-coverage-${{ matrix.part }}
           path: target/nextest/coverage/junit.xml
           retention-days: 7
           if-no-files-found: ignore
+
+  # The parts' reports as one (`mise run ci:coverage-merge`), uploaded only
+  # when every part measured, so a failed part uploads nothing and the last
+  # processed upload stays main's (#3978).
+  coverage:
+    name: join and upload coverage
+    needs: [ci-image-ref, coverage-part]
+    if: ${{ !cancelled() && needs.coverage-part.result == 'success' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 15
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the parts' reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-*
+          path: target/coverage-parts
+      - name: join the parts' reports
+        shell: bash
+        run: mise run ci:coverage-merge target/coverage-parts/*/coverage.lcov
+      - *upload-coverage
 
   # Main's upload against the upload before it (`mise run
   # ci:coverage-guard`): a fall of more than codecov.yml's project threshold
@@ -239,14 +300,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: mise run ci:coverage-badge coverage-badge.json >> "$GITHUB_STEP_SUMMARY"
-      - name: download the coverage run's test report
+      - name: download the coverage parts' test reports
         id: tested
         if: ${{ !cancelled() }}
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: junit-coverage
-          path: target/test-timing/${{ github.run_id }}/junit-coverage
+          pattern: junit-coverage-*
+          path: target/test-timing/${{ github.run_id }}
       - name: file the sweeps that reached their limit
         if: ${{ !cancelled() && steps.tested.outcome == 'success' }}
         env:

@@ -342,8 +342,17 @@ echo "night $night, crate $((night % nights + 1)) of $nights: ${packages[*]}"
 # paths are cargo-llvm-cov's own; its merged report is discarded.
 # llvm-tools supplies llvm-cov; the CI image leaves it out, so the task adds
 # it (a no-op where it is installed).
+#
+# The coverage workflow runs the measure in parts, so no job reaches its
+# limit (#4020): the part `hash:<k>/<n>` runs one of nextest's slices of the
+# enforcing suite, the part `plain` the plain-only witness alone, and each
+# part writes its own coverage.lcov; `ci:coverage-merge` joins them. Without
+# a part the task runs both whole, as a local run wants.
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
+usage = '''
+arg "[part]" help="one part alone: plain, the plain-only parser witness, or a slice of the enforcing suite as nextest's --partition reads it, hash:1/4"
+'''
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -379,53 +388,40 @@ exports() {
   rm -f "$scratch/$prefix.discarded"
   echo "$prefix: $count objects exported"
 }
-RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
-  "$root/.config/mise/scope" cargo llvm-cov nextest --workspace --locked --no-report
-exports "$root/target/coverage" enforcing
-CARGO_TARGET_DIR="$root/target/coverage-plain" \
-  cargo llvm-cov clean --workspace
-CARGO_TARGET_DIR="$root/target/coverage-plain" \
-  "$root/.config/mise/scope" cargo llvm-cov nextest --locked --no-report \
-  -p gandr-surface-parser --test tests \
-  -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
-exports "$root/target/coverage-plain" plain
-awk '
-  /^SF:/ {
-    file = substr($0, 4)
-    if (!(file in seen)) { seen[file] = ++nfiles; files[nfiles] = file }
-  }
-  /^DA:/ {
-    split(substr($0, 4), parts, ",")
-    key = file SUBSEP parts[1]
-    if (!(key in hits) || parts[2]+0 > hits[key]) hits[key] = parts[2]+0
-    if (!(key in listed)) { listed[key] = 1; seq[file] = seq[file] parts[1] "\n" }
-  }
-  END {
-    for (i = 1; i <= nfiles; i++) {
-      file = files[i]
-      print "SF:" file
-      n = split(seq[file], nums, "\n")
-      for (a = 1; a < n; a++)
-        for (b = a + 1; b <= n; b++)
-          if (nums[a] != "" && nums[b] != "" && nums[b]+0 < nums[a]+0) {
-            tmp = nums[a]; nums[a] = nums[b]; nums[b] = tmp
-          }
-      covered = 0
-      total = 0
-      for (a = 1; a <= n; a++) {
-        if (nums[a] == "") continue
-        hit = hits[file SUBSEP nums[a]]
-        print "DA:" nums[a] "," hit
-        total++
-        if (hit+0 > 0) covered++
-      }
-      print "LH:" covered
-      print "LF:" total
-      print "end_of_record"
-    }
-  }
-' "$scratch"/*.lcov > "$root/coverage.lcov"
+part=${usage_part:-}
+if [[ $part != plain ]]; then
+  RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
+    "$root/.config/mise/scope" cargo llvm-cov nextest --workspace --locked --no-report ${part:+--partition "$part"}
+  exports "$root/target/coverage" enforcing
+fi
+if [[ -z $part || $part == plain ]]; then
+  CARGO_TARGET_DIR="$root/target/coverage-plain" \
+    cargo llvm-cov clean --workspace
+  CARGO_TARGET_DIR="$root/target/coverage-plain" \
+    "$root/.config/mise/scope" cargo llvm-cov nextest --locked --no-report \
+    -p gandr-surface-parser --test tests \
+    -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
+  exports "$root/target/coverage-plain" plain
+fi
+awk -f "$root/.config/coverage/merge.awk" "$scratch"/*.lcov > "$root/coverage.lcov"
 '''
+
+# The coverage workflow's parts, each a `ci:coverage` coverage.lcov, joined
+# as one coverage.lcov: each line keeps its highest count across the parts
+# (`.config/coverage/merge.awk`).
+["ci:coverage-merge"]
+description = "Join the coverage parts' reports as coverage.lcov"
+usage = '''
+arg "<part>..." help="the parts' LCOV reports, none of them coverage.lcov itself" var=#true
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+read -ra parts <<< "${usage_part:?}"
+awk -f "$root/.config/coverage/merge.awk" "${parts[@]}" > "$root/coverage.lcov"
+echo "ci:coverage-merge: ${#parts[@]} parts joined as coverage.lcov"
+{% endraw %}'''
 
 # Main's coverage upload against the one before it, as Markdown; with
 # `--file-issue`, a drop over the threshold or fewer files opens or updates
