@@ -5036,7 +5036,7 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
 /// the fixpoint takes after the argument it descends on. A call passing any
 /// such parameter otherwise writes every argument in place.
 #[test]
-fn a_recursive_call_omits_the_instance_it_passes_as_itself()
+fn a_recursive_call_omits_the_instance_it_passes_as_itself_4102()
 {
     let names = [Name::from("Nat")];
     let mut core = CoreArena::new();

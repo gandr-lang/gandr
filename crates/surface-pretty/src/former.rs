@@ -1656,7 +1656,7 @@ pub trait Source
     /// - hypothesis: L3 — a descent under a row that labels its instance passes
     ///   the instance as itself, and its call writes the explicit argument
     ///   alone.
-    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself`
+    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself_4102`
     #[inline]
     fn recursive_telescope(&self) -> &[Option<Name<'_>>]
     {

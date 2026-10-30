@@ -6467,7 +6467,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::uniform`].
     /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
-    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself`
+    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself_4102`
     #[spec(ensures: |ret| ret.is_none_or(|at| at.0 < self.context.len()))]
     fn binder_of<S>(
         &self,
