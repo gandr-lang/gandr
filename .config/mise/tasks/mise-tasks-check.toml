@@ -1906,24 +1906,26 @@ set -euo pipefail
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
-# The Catt harness's readings (#3930). A run past the host's bound is recorded
+# The bench harness's readings (#3930). A run past the host's bound is recorded
 # `past bound` and never retried larger, and Catt runs only at n = 2 and 3
 # (#3855): a run misread as a time, or an example past n = 3 let through,
-# would send a seat to rerun larger on a host it could exhaust. `row.jq`
-# writes a finished run's row and `dimension.jq` names an example's built-ins
-# past n = 3. Each case in `.config/bench/cases.json` holds a recorded run or
-# an example's text, and the row or the built-ins it must give. Each case in
+# would send a seat to rerun larger on a host it could exhaust. `bound.jq`
+# decides a run past either bound. `row.jq` writes Catt's finished run's row,
+# `stress.jq` what `bench:stress` prints for gandr's bounded check, and
+# `dimension.jq` names an example's built-ins past n = 3. Each case in
+# `.config/bench/cases.json` holds a recorded run or an example's text, and
+# the row, the outcome or the built-ins it must give. Each case in
 # `.config/bench/timed.json` runs a command under `timed.py`, the timer
 # `bench:stress` reads its wall time and peak resident set from on Linux and
 # macOS alike (#4191), and holds the status and the least peak it must give.
 ["check:bench"]
-description = "The Catt harness writes each recorded run's row, past bound where a bound was met, and names each recorded example's built-ins past n = 3, and the stress timer reports each recorded command's status and peak"
+description = "The bench harness writes each recorded run's row or outcome, past bound where a bound was met, and names each recorded example's built-ins past n = 3, and the stress timer reports each recorded command's status and peak"
 tools.jq = "1.8.1"
 tools.python = "3.14.9"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq
+.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq --raw stress.jq
 python .config/bench/timed.py --cases .config/bench/timed.json
 echo "bench check OK: $(jq length .config/bench/cases.json) cases read as recorded, and $(jq length .config/bench/timed.json) commands timed as recorded"
 '''

@@ -2,8 +2,10 @@
 
 `python3 timed.py <report> <command>...` runs the command with this process's
 standard streams, then writes two lines to `<report>`: `wall <seconds> s` and
-`peak <bytes>`. It exits with the command's status, 127 when the command is
-not found. The peak is the largest resident set of any child the command ran
+`peak <bytes>`. It exits with the command's status as a shell gives it: 127
+when the command is not found, and 128 plus the signal when a signal kills it,
+so a scope's kill at its memory bound exits 137 (#3855). The peak is the
+largest resident set of any child the command ran
 as, read from `getrusage`, which Linux reports in KiB and macOS in bytes. It
 replaces `/usr/bin/time`, which a Linux host may lack and whose flags and
 output differ between the two systems.
@@ -30,6 +32,8 @@ def timed(report: pathlib.Path, command: list[str]) -> int:
     start = time.monotonic()
     try:
         status = subprocess.run(command, check=False).returncode
+        if status < 0:
+            status = 128 - status
     except FileNotFoundError:
         print(f"timed: no command {command[0]}", file=sys.stderr)
         status = 127
