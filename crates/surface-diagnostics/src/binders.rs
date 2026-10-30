@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -364,6 +365,45 @@ impl Naming
         &self.models
     }
 
+    /// This record with each node in `carried` named as the node it copies:
+    /// the copies a typed run's settling minted, which no origin records.
+    ///
+    /// # Specification
+    /// - requires: `carried` is in the order its copies were minted.
+    /// - ensures: every list stays ascending by its key; each copy whose source
+    ///   is a written arrow, pair, relation or model type is kept as that
+    ///   source, as [`carry_labels`] reads it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`carry_labels`]: a copy, a copy of a copy and a
+    ///   copy already labelled separate the first source's label from its own.
+    /// - witness: `binders::tests::a_copy_takes_its_source_s_first_label`
+    #[spec(
+        captures: [arrows = self.arrows.len(), pairs = self.pairs.len(), seconds = self.seconds.len()],
+        ensures: self.arrows.len() >= arrows && self.pairs.len() >= pairs && self.seconds.len() >= seconds,
+    )]
+    #[inline]
+    pub fn carrying<Copies>(
+        &mut self,
+        carried: Copies,
+    ) where
+        Copies: IntoIterator<Item = Carried>,
+    {
+        carry_labels(carried, &mut WrittenLabels {
+            arrows: &mut self.arrows,
+            pairs: &mut self.pairs,
+            seconds: &mut self.seconds,
+            relations: &mut self.relations,
+            models: &mut self.models,
+        });
+        self.arrows.sort_by_key(|&(arrow, _)| arrow);
+        self.pairs.sort_by_key(|&(pair, _)| pair);
+        self.seconds.sort_by_key(|&(pair, _)| pair);
+        self.relations.sort_by_key(|&(related, _)| related);
+        self.models.sort_by_key(|&(modelled, _)| modelled);
+    }
+
     /// The binders of one declaration, whose declared type and body are
     /// `roots`, each named by what the record keeps for it.
     ///
@@ -625,6 +665,142 @@ where
         let fragment = text.fragment(span).ok()?;
         Some((id, Name::from(<&str>::from(fragment))))
     })
+}
+
+/// The lists a reader names written arrows, record pairs, relations and
+/// model types by, each beside its id: an arrow's binder name as `Arrow`,
+/// and a pair's label and its second component's as `Label`.
+#[derive(Debug)]
+pub struct WrittenLabels<'lists, Arrow, Label>
+{
+    /// Each dependent arrow with the name it binds.
+    pub arrows: &'lists mut Vec<(CompTypeId, Arrow)>,
+    /// Each dependent record pair with its field's label.
+    pub pairs: &'lists mut Vec<(ValueTypeId, Label)>,
+    /// Each such pair with the label of its second component.
+    pub seconds: &'lists mut Vec<(ValueTypeId, Label)>,
+    /// Each type written as a relation between types, with the relation.
+    pub relations: &'lists mut Vec<(ValueTypeId, Relation)>,
+    /// Each type written as a model type, with the theory and sorts written.
+    pub models: &'lists mut Vec<(ValueTypeId, WrittenModel)>,
+}
+
+/// Give each node `carried` copied the name its source has in `labelled`.
+///
+/// A shift or a settle copies a written type to fresh nodes, which no origin
+/// records. Each copy is appended to every list holding its source, with the
+/// source's first entry. The copies are taken in the order minted, so a copy
+/// of a copy reaches its first source's. A shift copies a model type's
+/// carriers before the type, so each carrier stands at its latest copy.
+///
+/// # Specification
+/// - requires: `carried` is in the order its copies were minted.
+/// - ensures: every list keeps its entries in order and grows only at its end,
+///   by a copy whose source it holds and which it held no entry for.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a copy, a copy of a copy, a copy already labelled and a
+///   copy of an unlabelled node separate the first source's first label, the
+///   copy's own, and none.
+/// - witness: `binders::tests::a_copy_takes_its_source_s_first_label`
+#[spec(
+    captures: [arrows = labelled.arrows.len(), pairs = labelled.pairs.len()],
+    ensures: labelled.arrows.len() >= arrows && labelled.pairs.len() >= pairs,
+)]
+#[inline]
+pub fn carry_labels<Copies, Arrow, Label>(
+    carried: Copies,
+    labelled: &mut WrittenLabels<'_, Arrow, Label>,
+) where
+    Copies: IntoIterator<Item = Carried>,
+    Arrow: Clone,
+    Label: Clone,
+{
+    let WrittenLabels {
+        ref mut arrows,
+        ref mut pairs,
+        ref mut seconds,
+        ref mut relations,
+        ref mut models,
+    } = *labelled;
+    let mut named = firsts(arrows);
+    let mut binders = firsts(pairs);
+    let mut labels = firsts(seconds);
+    let mut related = firsts(relations);
+    let mut modelled = firsts(models);
+    let mut latest: BTreeMap<ValueTypeId, ValueTypeId> = BTreeMap::new();
+    for copy in carried {
+        match copy {
+            Carried::CompType(source, image) => {
+                copied(arrows, &mut named, (source, image), Clone::clone);
+            },
+            Carried::ValueType(source, image) => {
+                copied(pairs, &mut binders, (source, image), Clone::clone);
+                copied(seconds, &mut labels, (source, image), Clone::clone);
+                copied(relations, &mut related, (source, image), Clone::clone);
+                copied(models, &mut modelled, (source, image), |model| {
+                    WrittenModel {
+                        theory: model.theory.clone(),
+                        sorts: model
+                            .sorts
+                            .iter()
+                            .map(|&(ref sort, carrier)| {
+                                (
+                                    sort.clone(),
+                                    latest.get(&carrier).copied().unwrap_or(carrier),
+                                )
+                            })
+                            .collect(),
+                    }
+                });
+                let _previous = latest.insert(source, image);
+            },
+            Carried::Value(..) | Carried::Computation(..) => {},
+        }
+    }
+}
+
+/// Each id of `kept` with its first entry.
+///
+/// # Specification
+/// trivial.
+fn firsts<Id, Held>(kept: &[(Id, Held)]) -> BTreeMap<Id, Held>
+where
+    Id: Copy + Ord,
+    Held: Clone,
+{
+    let mut first = BTreeMap::new();
+    for &(id, ref held) in kept {
+        let _first = first.entry(id).or_insert_with(|| held.clone());
+    }
+    first
+}
+
+/// Append `image` to `kept` with what `copy` makes of its source's first
+/// entry, when `first` holds the source and no entry for `image`.
+///
+/// # Specification
+/// trivial.
+fn copied<Id, Held, Make>(
+    kept: &mut Vec<(Id, Held)>,
+    first: &mut BTreeMap<Id, Held>,
+    (source, image): (Id, Id),
+    copy: Make,
+) where
+    Id: Copy + Ord,
+    Held: Clone,
+    Make: FnOnce(&Held) -> Held,
+{
+    if first.contains_key(&image) {
+        return;
+    }
+    let Some(held) = first.get(&source).map(copy)
+    else {
+        return;
+    };
+    let _first = first.insert(image, held.clone());
+    kept.push((image, held));
 }
 
 /// One binder a node stands under: the intuitionistic binder around it, the
@@ -902,4 +1078,90 @@ fn intuitionistic(
         at = binder.parent().filter(|&parent| parent < index);
     }
     None
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_core_term::Carried;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::ValueTypeId;
+    use gandr_kernel_term::BaseType;
+
+    use super::WrittenLabels;
+    use super::carry_labels;
+
+    /// A copy takes its source's first label, and a copy of a copy its first
+    /// source's. A copy already labelled keeps its own, and a copy of a node
+    /// no list holds gains nothing.
+    #[test]
+    fn a_copy_takes_its_source_s_first_label()
+    {
+        let mut arena = CoreArena::new();
+        let mut types: Vec<ValueTypeId> = Vec::new();
+        let mut at = arena.value_type_base(BaseType::Integer);
+        for _ in 0_usize .. 6 {
+            at = arena.value_type_list(at);
+            types.push(at);
+        }
+        let &[written, copy, copy_of_copy, labelled, unwritten, image] = types.as_slice()
+        else {
+            panic!("six distinct types");
+        };
+        let arrow = arena.comp_type_returner(written);
+        let arrow_copy = arena.comp_type_returner(copy);
+        let mut arrows = Vec::from([(arrow, "r")]);
+        let mut pairs = Vec::from([(written, "x"), (written, "later"), (labelled, "own")]);
+        let mut seconds = Vec::from([(written, "y")]);
+        let mut relations = Vec::new();
+        let mut models = Vec::new();
+        carry_labels(
+            [
+                Carried::ValueType(written, copy),
+                Carried::ValueType(copy, copy_of_copy),
+                Carried::ValueType(written, labelled),
+                Carried::ValueType(unwritten, image),
+                Carried::CompType(arrow, arrow_copy),
+            ],
+            &mut WrittenLabels {
+                arrows: &mut arrows,
+                pairs: &mut pairs,
+                seconds: &mut seconds,
+                relations: &mut relations,
+                models: &mut models,
+            },
+        );
+        assert_eq!(
+            pairs,
+            [
+                (written, "x"),
+                (written, "later"),
+                (labelled, "own"),
+                (copy, "x"),
+                (copy_of_copy, "x"),
+            ],
+            "each copy takes its first source's first label; a labelled one keeps its own"
+        );
+        assert_eq!(
+            seconds,
+            [
+                (written, "y"),
+                (copy, "y"),
+                (copy_of_copy, "y"),
+                (labelled, "y")
+            ],
+            "a list without the copy gives it its source's label"
+        );
+        assert_eq!(
+            arrows,
+            [(arrow, "r"), (arrow_copy, "r")],
+            "an arrow's copy binds its source's name"
+        );
+        assert!(
+            relations.is_empty() && models.is_empty(),
+            "a copy of a node no list holds gains nothing"
+        );
+    }
 }

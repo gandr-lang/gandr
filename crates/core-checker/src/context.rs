@@ -1386,6 +1386,102 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
+    /// `relocated` settled to plain nodes. While a typed run records, each
+    /// node the settling mints is kept beside the node it copies, so a reader
+    /// of the record names the copy as its source.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `relocated` settled, as [`Relocated::settle`] settles it; a
+    ///   recording log's copies grow at their end only.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a variable whose type is read past binders keeps each
+    ///   node its type was copied to beside the node it copies.
+    /// - witness: `module::tests::a_variable_s_type_keeps_the_copies_its_reading_mints`
+    ///
+    /// [`Relocated::settle`]: gandr_core_term::Relocated::settle
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.copies.len()),
+        ensures: self.typings.as_ref().map(|log| log.copies.len()) >= before,
+    )]
+    pub(crate) fn settle_value_type(
+        &mut self,
+        relocated: gandr_core_term::Relocated<ValueTypeId>,
+    ) -> ValueTypeId
+    {
+        match self.typings {
+            Some(ref mut log) => relocated.settle_traced(self.arena, &mut log.copies),
+            None => relocated.settle(self.arena),
+        }
+    }
+
+    /// `relocated` settled to plain nodes, each node it mints kept as
+    /// [`Self::settle_value_type`] keeps it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `relocated` settled, as [`Relocated::settle`] settles it; a
+    ///   recording log's copies grow at their end only.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda checked against a non-dependent arrow reads
+    ///   the arrow's codomain past its binder, a copy kept beside it.
+    /// - witness: `module::tests::a_variable_s_type_keeps_the_copies_its_reading_mints`
+    ///
+    /// [`Relocated::settle`]: gandr_core_term::Relocated::settle
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.copies.len()),
+        ensures: self.typings.as_ref().map(|log| log.copies.len()) >= before,
+    )]
+    pub(crate) fn settle_comp_type(
+        &mut self,
+        relocated: gandr_core_term::Relocated<CompTypeId>,
+    ) -> CompTypeId
+    {
+        match self.typings {
+            Some(ref mut log) => relocated.settle_traced(self.arena, &mut log.copies),
+            None => relocated.settle(self.arena),
+        }
+    }
+
+    /// The binder of the type `subject` instantiated at `argument`, each node
+    /// it rewrites kept as [`Self::settle_value_type`] keeps it.
+    ///
+    /// # Specification
+    /// - requires: `subject` is scoped beneath one binder of the context
+    ///   `argument` stands in.
+    /// - ensures: as [`gandr_core_term::instantiate_value_type`]; a recording
+    ///   log's copies grow at their end only.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent record's second component, projected,
+    ///   reads its type at the first, a copy kept beside it.
+    /// - witness: `module::tests::a_variable_s_type_keeps_the_copies_its_reading_mints`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.copies.len()),
+        ensures: self.typings.as_ref().map(|log| log.copies.len()) >= before,
+    )]
+    pub(crate) fn instantiate_value_type(
+        &mut self,
+        subject: ValueTypeId,
+        argument: gandr_core_term::ValueId,
+    ) -> ValueTypeId
+    {
+        match self.typings {
+            Some(ref mut log) => gandr_core_term::instantiate_value_type_traced(
+                self.arena,
+                subject,
+                argument,
+                &mut log.copies,
+            ),
+            None => gandr_core_term::instantiate_value_type(self.arena, subject, argument),
+        }
+    }
+
     /// Keep the formation of `ty`, when a typed run is recording, at the
     /// level it forms at under the binders it was formed under: the one point
     /// every finished formation passes, as [`Self::keep_typing`] is for

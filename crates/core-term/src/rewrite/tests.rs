@@ -4154,6 +4154,47 @@ fn a_traced_instantiation_replaces_its_binder()
     );
 }
 
+#[test]
+fn a_traced_type_instantiation_reports_each_rewritten_node()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let argument = variable(&mut arena, DeBruijnIndex::from(3_u32));
+    // `(x : Integer) * Path(Integer, b, x)`, `b` the binder instantiated.
+    let [own, binder] = [0_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+    let path = arena.value_type_path(integer, binder, own);
+    let sigma = arena.value_type_sigma(integer, path);
+    let mut carried = Vec::new();
+    let instantiated =
+        super::instantiate_value_type_traced(&mut arena, sigma, argument, &mut carried);
+    let Some(&ValueType::Sigma { first, second }) = arena.value_type(instantiated)
+    else {
+        panic!("an instantiated pair");
+    };
+    let Some(&ValueType::Path { left, right, .. }) = arena.value_type(second)
+    else {
+        panic!("an instantiated path");
+    };
+    assert_eq!(first, integer, "the closed first component stands");
+    assert_eq!(right, own, "the pair's own binder stands");
+    assert_eq!(
+        arena.value(left),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(4_u32),
+        }),
+        "the binder is the argument, carried under the pair"
+    );
+    assert!(
+        carried.contains(&Carried::ValueType(sigma, instantiated))
+            && carried.contains(&Carried::ValueType(path, second))
+            && !carried
+                .iter()
+                .any(|&copy| matches!(copy, Carried::ValueType(source, _) if source == integer)),
+        "each rewritten type is reported beside its source: {carried:?}"
+    );
+}
+
 /// A clause read through the continuation it resumes (#2272): beneath its
 /// stack binder `k`, `resume(k, return ())` runs as `x ← return (); N`,
 /// `abandon(k)` returns the unit, `return k` returns the function `λx. N`,

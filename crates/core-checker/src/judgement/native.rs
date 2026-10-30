@@ -1359,7 +1359,7 @@ impl Machine<'_, '_>
                     let at_first =
                         arena.computation_tuple_projection(tuple, Component::from(0_usize));
                     let point = arena.value_returned(at_first);
-                    gandr_core_term::instantiate_value_type(arena, second, point)
+                    self.context.instantiate_value_type(second, point)
                 },
                 _ => return Err(CheckRefusal::AbsentTupleComponent(term)),
             },
