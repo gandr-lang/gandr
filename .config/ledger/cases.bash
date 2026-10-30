@@ -2,9 +2,11 @@
 # The cases of `check:ledger`'s issue reads (#4018). A scratch repository
 # holds a ledger of two rows: `gap`, implemented with no witness and resting
 # on #1, and `owing`, partial with its own exemplar owing on #2. For each
-# case in `.config/ledger/cases.json` a stub `gh` answers the issues the case
-# lists and fails every other read as a rate limit does. `check.bash` runs
-# there, and its exit status and standard error are the case's.
+# case in `.config/ledger/cases.json` a stub `gh` answers the one GraphQL
+# query of aliases the check sends: every issue it names answered from the
+# case, or the whole read failed as a rate limit does when any is missing
+# (#4263). `check.bash` runs there, and its exit status and standard error
+# are the case's.
 set -euo pipefail
 root=$PWD
 scratch=$(mktemp -d)
@@ -21,9 +23,28 @@ sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
 printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest, #2.' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
 git -C "$repo" add .
-printf '%s\n' '#!/usr/bin/env bash' \
-  'if [[ "$1 $2" == "issue view" && -f $STUB_GH/$3 ]]; then cat "$STUB_GH/$3"; exit 0; fi' \
-  'echo "HTTP 403: API rate limit exceeded" >&2' 'exit 1' > "$scratch/gh/gh"
+cat > "$scratch/gh/gh" <<'STUB'
+#!/usr/bin/env bash
+# `gh api graphql -f query=<q> --jq <filter>`: answer each `nN: issue(number: N)`
+# alias from $STUB_GH/N (`<state>\t<gap>`), the gap a `kind:gap` label; any
+# alias without an answer fails the read as a rate limit does.
+query= filter=
+while (( $# )); do
+  case $1 in
+    query=*) query=${1#query=} ;;
+    --jq) filter=$2; shift ;;
+  esac
+  shift
+done
+entries=()
+for n in $(grep -oE 'number: [0-9]+' <<< "$query" | tr -dc '0-9\n'); do
+  [[ -f $STUB_GH/$n ]] || { echo "HTTP 403: API rate limit exceeded" >&2; exit 1; }
+  IFS=$'\t' read -r state gap < "$STUB_GH/$n"
+  labels='[]'; [[ $gap == true ]] && labels='[{"name":"kind:gap"}]'
+  entries+=("\"n$n\": {\"state\": \"$state\", \"labels\": {\"nodes\": $labels}}")
+done
+printf '{"data":{"repository":{%s}}}' "$(IFS=,; printf '%s' "${entries[*]}")" | jq -r "$filter"
+STUB
 chmod +x "$scratch/gh/gh"
 failed=0
 while IFS= read -r case; do

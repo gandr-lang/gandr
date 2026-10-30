@@ -1,15 +1,15 @@
 [
   {
-    "name": "#4018: a failed read of a row's gap issue stops the check with the call and its error, judging no row",
+    "name": "#4018: a failed read of the issues the rows rest on stops the check with the call and its error, judging no row",
     "answers": {},
     "exit": 1,
-    "stderr": "`gh issue view 1 --json state,labels` failed, so no row resting on #1 is judged: HTTP 403: API rate limit exceeded\nledger check FAILED"
+    "stderr": "`gh api graphql` over #1 #2 failed, so no row is judged: HTTP 403: API rate limit exceeded\nledger check FAILED"
   },
   {
-    "name": "#4018: a failed read of the issue a partial row's head owes on stops the check with the call and its error",
+    "name": "#4263: one issue missing from the batched read fails the whole read, so no row is judged on the others",
     "answers": { "1": "OPEN\ttrue" },
     "exit": 1,
-    "stderr": "`gh issue view 2 --json state,labels` failed, so no row resting on #2 is judged: HTTP 403: API rate limit exceeded\nledger check FAILED"
+    "stderr": "`gh api graphql` over #1 #2 failed, so no row is judged: HTTP 403: API rate limit exceeded\nledger check FAILED"
   },
   {
     "name": "both issues read open, the gap a kind:gap, and the ledger holds",
