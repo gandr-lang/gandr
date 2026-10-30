@@ -36,11 +36,15 @@
 # refused (#3594).
 #
 # A primary source that is a vault page is cited where the change decides
-# something by it (#2793): when an issue's `## Sources` marks a vault page
-# primary and the change touches a crate's sources, each such crate carries a
-# `# References` line `` - `vault:<mint>` — <role>: <what it decides> ``, the
-# key rule of #2542. A page that decided nothing in the code is marked
-# `read: <what it informed>` in `## Sources read`, which answers it.
+# something by it (#2793), and only there (#4096): when an issue's
+# `## Sources` marks a vault page primary and the change touches a crate's
+# sources, the crate carries a `# References` line
+# `` - `vault:<mint>` — <role>: <what it decides> ``, the key rule of #2542,
+# or the body names it under the page's `## Sources read` item as
+# `  - read in: crates/<a>, crates/<b> — <what the change does there>`, where
+# the change touches the crate and the page decides nothing in it. A page that
+# decided nothing in the code is marked `read: <what it informed>` in
+# `## Sources read`, which answers it for every crate.
 #
 # The body answers every reading axis (#2522, #2955): when an issue it works
 # carries a `## Readings`, or the body has one, its `## Readings` table,
@@ -154,12 +158,27 @@ def sources:
           end
         end);
 
+# The crates each `## Sources read` item names `read in:` under it, as
+# {under, crates}: `under` the item's keys, `crates` each `crates/<name>` the
+# nested line names. A nested line with no account after its `—` names none.
+def read_in:
+  (section("Sources read") // [])
+  | reduce .[] as $line ({under: [], found: []};
+      if $line | test("^[-*] ") then .under = (($line | keyed) // {keys: []} | .keys)
+      else ($line | capture("^\\s+[-*] read in:\\s*(?<crates>.+?)\\s+—\\s*(?<what>\\S.*)$") // null) as $named
+      | if $named == null then .
+        else .found += [{under, crates: [$named.crates | match("crates/([A-Za-z0-9_-]+)"; "g") | .captures[0].string]}]
+        end
+      end)
+  | .found;
+
 # The refusals of a primary vault page the crates the change touches leave
-# uncited.
+# uncited and name nowhere under the page.
 def citations:
   .vault as $vault
   | select($vault != null)
   | [(.body | section("Sources read") // []) | items | keyed | select(. != null and (.text | test("^read:\\s*\\S"))) | .keys[]] as $read
+  | (.body | read_in) as $read_in
   | [(.issues // [])[] | .number as $n | .body | [source_rows] | vault_sources($vault.pages; $vault.tree)
       | select(.primary and .verdict == "resolved") | . + {n: $n}]
   | unique_by(.mint)[]
@@ -168,7 +187,8 @@ def citations:
   | $vault.touched[]
   | . as $crate
   | select(any(($vault.cited[$crate] // [])[]; . == "vault:\($page.mint)") | not)
-  | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or mark the page `read: <what it informed>` in `## Sources read` if it decided nothing in the code, then run `pr:open` again";
+  | select(any($read_in[]; any(.under[]; . == $page.name or . == "vault:\($page.mint)") and any(.crates[]; . == $crate)) | not)
+  | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/\($crate) — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again";
 
 # The refusals of `## Readings`: every axis answered in one of the four forms
 # once a unit is worked, and a selected axis left unanswered departed from.
