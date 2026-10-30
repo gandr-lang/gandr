@@ -1759,6 +1759,12 @@ git = "https://github.com/gandr-lang/quenchant"
 rev = "8855df3b4c669cfe11e903c3c9076c0792d15134"
 pattern = "crates/quenchant-dylints"
 
+# The everyday unoptimized build keeps full debuginfo, which lldb reads. It
+# stays in each object file and is never copied into each binary that links
+# it (#4221). macOS splits it so by default.
+[profile.dev]
+split-debuginfo = "unpacked"
+
 # The everyday optimized build. Size-optimized and nothing else, so each crate
 # compiles independently in parallel; the whole-program work lives in `dist`.
 [profile.release]

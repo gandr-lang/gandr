@@ -1399,7 +1399,10 @@ done < "$scratch/actions"
 # the branch lands, and removes the tree itself after them. A
 # scratch worktree (`restack`'s and the mutation lanes', named
 # `gandr-scratch-<pid>.`) goes once its process is gone, and an unnamed
-# detached one under a temporary directory once unchanged for 4 hours. Then
+# detached one under a temporary directory once unchanged for 4 hours. A
+# kept worktree no build touched within the 4-hour claim window loses its
+# `incremental` directories, the caches its next build writes again, and the
+# sweep prints its `target/` size before and after (#4221). Then
 # `git worktree prune`, and Worktrunk's trash (`.git/wt/trash`), whose
 # background deletes die with the shell that started them, is emptied.
 #
@@ -1456,7 +1459,7 @@ facts=()
 kept=()
 pruned=()
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null gitdir key mark
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null idle=false gitdir key mark
   local -a listed=()
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
@@ -1493,11 +1496,35 @@ tree() {
     if [[ -n "$gitdir" && -n $(find "$gitdir" -maxdepth 1 -name index -mmin -240 2> /dev/null) ]]; then young=true; fi
     scratch=$(jq -nc --argjson holder "$holder" --argjson alive "$alive" --argjson young "$young" '{holder: $holder, alive: $alive, young: $young}')
   fi
+  # Idle: the tree holds `incremental` caches and no build wrote one within
+  # the claim window.
+  if [[ -d "$path/target" && -n $(find "$path/target" -mindepth 2 -maxdepth 3 -type d -name incremental -print -quit 2> /dev/null) \
+    && -z $(find "$path/target" -mindepth 3 -maxdepth 4 -path '*/incremental/*' -mmin -240 -print -quit 2> /dev/null) ]]; then
+    idle=true
+  fi
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    --argjson commits "$commits" --argjson pulls "${pulls:-null}" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, pulls: $pulls}')")
+    --argjson commits "$commits" --argjson pulls "${pulls:-null}" --argjson idle "$idle" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, pulls: $pulls, idle: $idle}')")
+}
+# Delete an idle worktree's `incremental` caches, its `target/` measured
+# before and after. A clone shares its blocks with the primary worktree's
+# (`wt:warm`), so the apparent size overstates the disk freed, which the
+# free space before and after gives once the filesystem commits the delete.
+clear_incremental() {
+  local tree=$1 label=$2 before after free_before free_after
+  local -a caches=()
+  mapfile -t caches < <(find "$tree/target" -mindepth 2 -maxdepth 3 -type d -name incremental 2> /dev/null)
+  (( ${#caches[@]} > 0 )) || return 0
+  before=$(du -sk "$tree/target" | awk '{ print $1 }')
+  free_before=$(df -Pk "$tree" | awk 'NR == 2 { print $4 }')
+  rm -rf "${caches[@]}"
+  after=$(du -sk "$tree/target" | awk '{ print $1 }')
+  sync -f "$tree" 2> /dev/null || sync
+  free_after=$(df -Pk "$tree" | awk 'NR == 2 { print $4 }')
+  printf 'cleared %s: idle for 4 hours; target/ %d GB, %d GB after its incremental caches; %d GB of disk freed\n' \
+    "$label" $((before / 1048576)) $((after / 1048576)) $(((free_after - free_before) / 1048576))
 }
 path= head= branch= flag= primary=true
 while IFS= read -r line; do
@@ -1517,10 +1544,14 @@ done < <(git worktree list --porcelain; echo)
 removed=0
 dry_run=${usage_dry_run:-false}
 # A detached worktree's branch reads `-`: a tab field cannot be empty.
-while IFS=$'\t' read -r action path branch reason; do
+while IFS=$'\t' read -r action path branch reason clear; do
   if [[ "$branch" == - ]]; then branch=; fi
   label="$path${branch:+ ($branch)}"
-  if [[ "$dry_run" == true ]]; then printf '%s %s: %s\n' "$action" "$label" "$reason"; continue; fi
+  if [[ "$dry_run" == true ]]; then
+    printf '%s %s: %s\n' "$action" "$label" "$reason"
+    if [[ "$clear" == true ]]; then printf 'clear %s: idle for 4 hours, its incremental caches\n' "$label"; fi
+    continue
+  fi
   case "$action" in
     remove | delete)
       judged_head=${judged[$(realpath "$path")]:-}
@@ -1544,9 +1575,12 @@ while IFS=$'\t' read -r action path branch reason; do
         kept+=("kept $label: $reason, but git worktree remove failed")
       fi
       ;;
-    *) kept+=("kept $label: $reason") ;;
+    *)
+      kept+=("kept $label: $reason")
+      if [[ "$clear" == true ]]; then clear_incremental "$path" "$label"; fi
+      ;;
   esac
-done < <(printf '%s\n' "${facts[@]}" | jq -s -f .config/pr-stack/sweep.jq | jq -r '.[] | [.action, .path, (.branch // "-"), .reason] | @tsv')
+done < <(printf '%s\n' "${facts[@]}" | jq -s -f .config/pr-stack/sweep.jq | jq -r '.[] | [.action, .path, (.branch // "-"), .reason, (.clear // false)] | @tsv')
 if (( ${#kept[@]} > 0 )); then printf '%s\n' "${kept[@]}"; fi
 [[ "$dry_run" != true ]] || exit 0
 git worktree prune

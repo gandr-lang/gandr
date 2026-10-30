@@ -31,7 +31,9 @@
 #             subject, a queue merge's ` (#n)` suffix dropped;
 #   pulls     null, or the merged pull requests whose head is the branch,
 #             each `{number, subjects}`, read only when some commit is not
-#             on main.
+#             on main;
+#   idle      no `incremental` directory under its `target/` changed within
+#             the 4-hour claim window (#4221); absent reads as not idle.
 #
 # The queue lands a branch rebased onto a moved main, and a rebase that
 # resolves a conflict changes the patch, so Worktrunk's readings all miss it
@@ -46,6 +48,9 @@
 #            its merged pull request, which Worktrunk reads unmerged;
 #   force    `git worktree remove --force`, a scratch tree nothing holds;
 #   keep     left as it is.
+# A kept worktree that is idle, and no primary, caller's, watched or scratch
+# tree, carries `clear: true`: the sweep deletes its `incremental`
+# directories, caches its next build writes again (#4221).
 
 # Why the branch has landed though Worktrunk reads it unmerged, or null.
 def landing:
@@ -61,7 +66,8 @@ def landing:
     end;
 
 map(
-  landing as $landing
+  . as $tree
+  | landing as $landing
   | {path, branch} + (
     if .primary then {action: "keep", reason: "the primary worktree"}
     elif .cwd then {action: "keep", reason: "the caller's own worktree"}
@@ -82,4 +88,9 @@ map(
     else {action: "keep", reason: "not landed"}
     end
   )
+  | if .action == "keep" and $tree.idle == true and ($tree.primary | not) and ($tree.cwd | not)
+      and $tree.watched == null and $tree.scratch == null
+    then . + {clear: true}
+    else .
+    end
 )
