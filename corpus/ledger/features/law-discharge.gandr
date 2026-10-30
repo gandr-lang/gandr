@@ -1,0 +1,37 @@
+/// `law-discharge`: a law a model leaves out, discharged by the checker.
+///
+/// Implemented: the lowering states a law the model leaves out at the law's type with no body. The checker mints `here` at the law's left side under its binders and judges it as a written body, and the kernel replays it. A law whose sides part is refused `NoFiller.Omitted` by its name. `gandr check --report cells` prints `Omitting.refl: here` and the other two cells.
+///
+/// Not implemented: the derived source, a law completion's derivation proves inside the module (#4141), and the generated source at the stratum the theory certifies (#4142).
+///
+/// - see: corpus/ledger/diagnostics/NoFiller.Omitted.gandr
+/// - see: corpus/model/modules/model-laws.gandr
+
+/// A decision and the laws that make it an equivalence.
+theory Equivalence {
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
+  law sym : (a : Carrier, b : Carrier) => Path(Bool, alike(a, b), alike(b, a));
+  law trans : (
+    a : Carrier,
+    b : Carrier,
+    c : Carrier,
+    p : Path(Bool, alike(a, b), true),
+    q : Path(Bool, alike(b, c), true)
+  ) => Path(Bool, alike(a, c), true);
+}
+
+/// One value.
+data Single : Type {
+  Only : Single;
+}
+
+/// Every two values are alike, so each law's sides convert, and the checker discharges all three.
+module Omitting : Model(Equivalence) with sort Carrier = Single {
+  /// Every two values are alike.
+  def alike(a : Single, b : Single) -> Bool { true }
+}
+
+/// The discharged law is a component as a written one is: `Omitting.refl` reads at a value.
+def reflexive(a : Single) -> Path(Bool, Omitting.alike(a, a), true) { Omitting.refl(a) }

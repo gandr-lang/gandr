@@ -5384,6 +5384,7 @@ where
                 },
                 Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
                 Maybe::Absent(body::Absent::Hosted) => writer.tag(Tag(2)),
+                Maybe::Absent(body::Absent::Discharged) => writer.tag(Tag(3)),
             }
             let supplied = !supplies.is_empty() || !models.is_empty();
             let staged = !stages.is_empty() || supplied;
@@ -5659,6 +5660,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 0 => Maybe::Absent(body::Absent::Hole),
                 1 => Maybe::Present(read_index(reader)?),
                 2 => Maybe::Absent(body::Absent::Hosted),
+                3 => Maybe::Absent(body::Absent::Discharged),
                 _ => return Err(CodecError::Corrupt),
             };
             let mut laws = Vec::new();
@@ -7531,6 +7533,10 @@ where
             writer.tag(Tag(92));
             write_site(writer, at)?;
         },
+        Refusal::UndischargedLaw(at) => {
+            writer.tag(Tag(105));
+            write_site(writer, at)?;
+        },
         Refusal::NonCovariantMotive(at) => {
             writer.tag(Tag(67));
             write_site(writer, at)?;
@@ -8084,6 +8090,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         66 => Refusal::SessionCodeExpected(read_site(reader)?),
         84 => Refusal::OpenSessionPayload(read_site(reader)?),
         92 => Refusal::UnassertedLaw(read_site(reader)?),
+        105 => Refusal::UndischargedLaw(read_site(reader)?),
         67 => Refusal::NonCovariantMotive(read_site(reader)?),
         68 => Refusal::RideUnsupported(read_site(reader)?),
         70 => Refusal::ForwardUnsupported(read_site(reader)?),
@@ -8843,6 +8850,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::SessionCodeExpected(_)
             | Refusal::OpenSessionPayload(_)
             | Refusal::UnassertedLaw(_)
+            | Refusal::UndischargedLaw(_)
             | Refusal::NonCovariantMotive(_)
             | Refusal::RideUnsupported(_)
             | Refusal::RunNotAdmitted { .. }

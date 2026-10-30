@@ -697,8 +697,8 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 /// #2356: a theory's stated laws are components a model proves by a
 /// definition at their path type or admits by `law name admitted ;`, which
 /// the checker owes as the axiom it is only where the host asserts the law of
-/// its primitive (#2302); a model that neither proves nor admits one is
-/// refused `UnprovenLaw` by the lowering, and one admitting a law at its own
+/// its primitive (#2302); a model that neither proves nor admits one leaves it
+/// to the checker to discharge (#4112), and one admitting a law at its own
 /// data type is refused by the checker.
 #[test]
 fn a_stated_law_is_a_component_a_model_proves_2356()
@@ -712,15 +712,7 @@ fn a_stated_law_is_a_component_a_model_proves_2356()
         ("Admitted.refl", Role::Admitted, Amounts::Uncompleted),
         ("Admitted.trans", Role::Admitted, Amounts::Uncompleted),
         ("Short.refl", Role::Admitted, Amounts::Uncompleted),
-        (
-            "Short.trans",
-            Role::Held,
-            Amounts::Refused(LoweringRefusal::UnprovenLaw {
-                span: span_of(source, "Same", 3_usize),
-                module: name("Short"),
-                law: name("trans"),
-            }),
-        ),
+        ("Short.trans", Role::Discharged, Amounts::Uncompleted),
     ] {
         assert!(
             found.contains(&row(path, role, amounts)),
@@ -743,6 +735,30 @@ fn a_stated_law_is_a_component_a_model_proves_2356()
             && judgements.contains(&(unasserted, Judgement::Refused)),
         "each proof checks at the law's path, each admission the host asserts is owed as the \
          axiom it is, and one it does not is refused: {judgements:?}"
+    );
+}
+
+/// #4112: a law a model omits is stated at its derived type with no body, and
+/// the checker discharges it by `here` at its left side where its sides
+/// convert; where they part, the law is refused naming it.
+#[test]
+fn an_omitted_law_is_discharged_by_the_checker_4112()
+{
+    let source = "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
+                  true);\n}\ndata One : Type {\n  Only : One;\n}\nmodule Converts : Model(Same) \
+                  with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true \
+                  }\n}\nmodule Parts : Model(Same) with sort Carrier = One {\n  def same(a : \
+                  One, b : One) -> Bool { false }\n}\n";
+    let mut lowered = lower(source);
+    let [converts, parts] = ["Converts.refl", "Parts.refl"]
+        .map(|path| super::declaration(&lowered, path, Role::Discharged).constant());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.contains(&(converts, Judgement::Checked))
+            && judgements.contains(&(parts, Judgement::Refused)),
+        "the law whose sides convert is discharged, and the one whose sides part is refused: \
+         {judgements:?}"
     );
 }
 

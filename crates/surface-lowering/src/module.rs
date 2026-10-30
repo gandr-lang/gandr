@@ -759,7 +759,8 @@ pub enum Container
 ///   without declaring a name, held slots own components or refusals without
 ///   becoming exports, abstract slots declare the atom an opaque ascription
 ///   mints without entering a name table, the generic program is named without
-///   declaring anything, and an admitted law declares its type with no body.
+///   declaring anything, and an admitted or a discharged law declares its type
+///   with no body.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -819,6 +820,11 @@ pub enum Role
     /// the law's derived type with no definition, and crossing as the axiom
     /// the report's audit lists.
     Admitted,
+    /// A law of a module's model the module omits: entered in the module's
+    /// name table under the law's name, introduced by the module's form,
+    /// declared at the law's derived type with no definition, and discharged
+    /// by the checker, `here` at the law's left side where its sides convert.
+    Discharged,
 }
 
 /// Whether a declaration is a model's inert component: a field only the

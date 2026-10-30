@@ -3739,8 +3739,6 @@ pathological/modules/model-laws.gandr:Lone.Alone:e8e5cb4e53dc0c57 uncommented
 pathological/modules/model-laws.gandr:Overadmitted.alike:258d3769a9931998 uncommented
 pathological/modules/model-laws.gandr:Overadmitted.refl:881d7e9cc966274f uncommented
 pathological/modules/model-laws.gandr:Overadmitted.sym:bd09500ca61c16d8 uncommented
-pathological/modules/model-laws.gandr:Unproven.alike:258d3769a9931998 uncommented
-pathological/modules/model-laws.gandr:Unproven.refl:c487d067b58f8f3a uncommented
 pathological/modules/model-manifest-type.gandr:<file> unshaped:HeadParagraphs
 pathological/modules/model-manifest-type.gandr:<file> unshaped:ReferenceOutsideReferences
 pathological/modules/model-manifest-type.gandr:<file> unshaped:SentenceLength

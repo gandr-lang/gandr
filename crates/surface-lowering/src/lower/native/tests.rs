@@ -177,6 +177,9 @@ pub(in crate::lower) fn judged(
                     Maybe::Absent(if declaration.role() == crate::module::Role::Admitted {
                         body::Absent::Hosted
                     }
+                    else if declaration.role() == crate::module::Role::Discharged {
+                        body::Absent::Discharged
+                    }
                     else {
                         body::Absent::Hole
                     }),

@@ -342,6 +342,7 @@ pub use crate::run::RunSpelling;
 pub use crate::run::Runner;
 pub use crate::run::TracedRun;
 pub use crate::settle::DeclarationReport;
+pub use crate::settle::Filler;
 pub use crate::settle::Produced;
 pub use crate::settle::SettleFault;
 pub use crate::settle::Settlement;

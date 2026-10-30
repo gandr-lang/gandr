@@ -1,33 +1,29 @@
-error[UnprovenLaw]: the module `Unproven` neither proves nor admits its model's law `sym`
-   ╭▸ corpus/pathological/modules/model-laws.gandr:25:25
-   │
-25 │ module Unproven : Model(Decided) with sort Carrier = Lone {
-   │                         ━━━━━━━ a law this module does not prove
-   │
-   ╰ note: `sym` is refused with UnprovenLaw, as its expectation states
-
 error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
-   ╭▸ corpus/pathological/modules/model-laws.gandr:34:3
+   ╭▸ corpus/pathological/modules/model-laws.gandr:27:3
    │
-34 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
-35 │ ┃   law refl admitted;
+27 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+28 │ ┃   law refl admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path(Bool, Overadmitted.alike(a, a), true)`
    │
    ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
 
 error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
-   ╭▸ corpus/pathological/modules/model-laws.gandr:43:3
+   ╭▸ corpus/pathological/modules/model-laws.gandr:36:3
    │
-43 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
-44 │ ┃   law refl admitted;
+36 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+37 │ ┃   law refl admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : f64) => Path(Bool, FloatEqAdmitted.eq(a, a), true)`
    │
    ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
 
-error[UnprovenLaw]: the module `FloatEqMissing` neither proves nor admits its model's law `refl`
-   ╭▸ corpus/pathological/modules/model-laws.gandr:50:31
+error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
+   ╭▸ corpus/pathological/modules/model-laws.gandr:43:1
    │
-50 │ module FloatEqMissing : Model(Eq) with sort Carrier = f64 {
-   │                               ━━ a law this module does not prove
+43 │ ┏ module FloatEqMissing : Model(Eq) with sort Carrier = f64 {
+44 │ ┃   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
+45 │ ┃   law sym admitted;
+46 │ ┃ }
+   │ ┗━┛ a law whose sides do not convert: found `(a : f64) => Path(Bool, FloatEqMissing.eq(a, a), true)`
    │
-   ╰ note: `refl` is refused with UnprovenLaw, as its expectation states
+   ├ note: `refl` is refused with NoFiller.Omitted, as its expectation states
+   ╰ help: prove the law by a definition at its type, or admit it where the host asserts it

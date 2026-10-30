@@ -3,7 +3,8 @@
 // A model owes the cell's component with no default. A capability scope owes
 // the cell too, read through its clauses.
 //
-// A model leaving the associator out is refused `UnprovenLaw` by its name. A
+// A model leaving the associator out is refused `NoFiller.Omitted` by its
+// name: the composites' sides do not convert, so `here` does not fill it. A
 // scope whose clauses tell a stated law's sides apart is refused
 // `HandlerUnlawful` naming the law.
 //
@@ -42,7 +43,7 @@ data Circle : Type {
 }
 
 /// The circle's paths, with no associator written.
-@[ refuses("UnprovenLaw") ]
+@[ refuses("NoFiller.Omitted") ]
 module Unwitnessed : Model(Glob) {
   /// The circle's points.
   type Ob = Circle;

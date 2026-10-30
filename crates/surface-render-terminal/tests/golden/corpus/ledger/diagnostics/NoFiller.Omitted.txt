@@ -1,0 +1,10 @@
+error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
+   ╭▸ corpus/ledger/diagnostics/NoFiller.Omitted.gandr:12:1
+   │
+12 │ ┏ module Undischarged : Model(Reflexive) with sort Carrier = Integer {
+13 │ ┃   def alike(a : Integer, b : Integer) -> Bool { false }
+14 │ ┃ }
+   │ ┗━┛ a law whose sides do not convert: found `(a : Integer) => Path(Bool, Undischarged.alike(a, a), true)`
+   │
+   ├ note: `refl` is refused with NoFiller.Omitted, as its expectation states
+   ╰ help: prove the law by a definition at its type, or admit it where the host asserts it

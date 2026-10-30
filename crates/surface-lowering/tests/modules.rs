@@ -993,6 +993,9 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
                     Maybe::Absent(if declaration.role() == Role::Admitted {
                         body::Absent::Hosted
                     }
+                    else if declaration.role() == Role::Discharged {
+                        body::Absent::Discharged
+                    }
                     else {
                         body::Absent::Hole
                     }),
@@ -1071,11 +1074,13 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
 /// - panics: none for a coherent fixture.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a correct component, a mismatched component and an
-///   uncompleted signature distinguish checked, mismatched and owed results.
+/// - hypothesis: L3 — a correct component, a mismatched component, an
+///   uncompleted signature and an omitted law distinguish checked, mismatched,
+///   owed and discharged results.
 /// - witness: `tests::modules::a_nonempty_ascription_checks_each_component_at_its_member`
 /// - witness: `tests::modules::a_dangling_member_signature_is_an_obligation`
 /// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::models::an_omitted_law_is_discharged_by_the_checker_4112`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1096,10 +1101,13 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
                 .all(|declaration| match actual.next() {
                     | Some(&(constant, judgement)) if constant == declaration.constant() => {
                         match judgement {
-                            | Judgement::Checked => matches!(
-                                declaration.outcome(),
-                                DeclarationOutcome::Completed { .. }
-                            ),
+                            | Judgement::Checked => {
+                                matches!(declaration.outcome(), DeclarationOutcome::Completed { .. })
+                                    || matches!(
+                                        declaration.outcome(),
+                                        DeclarationOutcome::Uncompleted { .. }
+                                    ) && declaration.role() == Role::Discharged
+                            },
                             | Judgement::Synthesised => {
                                 matches!(declaration.outcome(), DeclarationOutcome::Bodied { .. })
                             },

@@ -1,5 +1,5 @@
 // The refusals beside `../../model/modules/model-laws.gandr`: a model that
-// neither proves nor admits a law of its theory is refused `UnprovenLaw` by
+// leaves out a law whose sides do not convert is refused `NoFiller.Omitted` by
 // the law's name, at the module, whose attributes state the expectation; an
 // admission at a carrier the host does not provide is refused
 // `UnprovenLaw.Admitted` at the admission, the law the author's to prove.
@@ -18,13 +18,6 @@ theory Decided {
 /// One value.
 data Lone : Type {
   Alone : Lone;
-}
-
-/// `sym` is neither proved nor admitted.
-@[ refuses("UnprovenLaw") ]
-module Unproven : Model(Decided) with sort Carrier = Lone {
-  def alike(a : Lone, b : Lone) -> Bool { true }
-  def refl(a : Lone) -> Path(Bool, alike(a, a), true) { here(true) }
 }
 
 /// `Lone` is no carrier the host provides, so its laws are the author's to
@@ -46,7 +39,7 @@ module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 {
 }
 
 /// Float equality as an `Eq` stating no reflexivity at all.
-@[ refuses("UnprovenLaw") ]
+@[ refuses("NoFiller.Omitted") ]
 module FloatEqMissing : Model(Eq) with sort Carrier = f64 {
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
   law sym admitted;

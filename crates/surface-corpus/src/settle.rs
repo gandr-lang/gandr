@@ -158,6 +158,57 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a declaration names no discharged cell.
+    pub mod discharged {
+        /// The declaration is no cell a source discharged.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// It is no law its module omits, or no source discharged it.
+            Undischarged,
+        }
+    }
+}
+
+/// The source that discharged a law its module omits, as
+/// `gandr check --report cells` names it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Filler
+{
+    /// `here` at the law's left side, its sides converting.
+    Here,
+}
+
+impl fmt::Display for Filler
+{
+    /// Writes the word the cells report spells the source with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes `here` for [`Filler::Here`].
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; the witness observes the line.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a discharged law's cell spells its source `here`.
+    /// - witness: `settle::tests::a_discharged_law_lists_its_cell_and_its_source_4112`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Here => "here",
+        })
+    }
+}
+
 /// Whether what was stated was produced.
 ///
 /// # Specification
@@ -423,7 +474,8 @@ impl fmt::Display for Surviving
 ///   counts represented.
 /// - ensures: A settlement-produced report retains source identity, admission
 ///   position, stated and produced outcomes, owed obligations, the requested
-///   run outcome and the path of a law the host admits.
+///   run outcome, the path of a law the host admits, and the path and source of
+///   a law its module omits that a source discharged.
 /// - panics: none.
 /// - executable: none — The record has no module, original attributes or
 ///   checker report; `settle` and the report’s comparison methods carry the
@@ -431,13 +483,15 @@ impl fmt::Display for Surviving
 ///
 /// # Adequacy
 /// - hypothesis: L3 — matched and mismatched source expectations, missing or
-///   shifted verdicts, guarded and run-producing declarations, and an admitted
-///   law. Exact classifications, identities, counts and fault positions
-///   distinguish lost or swapped fields at their consuming boundaries.
+///   shifted verdicts, guarded and run-producing declarations, an admitted law
+///   and a discharged one. Exact classifications, identities, counts and fault
+///   positions distinguish lost or swapped fields at their consuming
+///   boundaries.
 /// - witness: `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`
 /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 /// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
+/// - witness: `settle::tests::a_discharged_law_lists_its_cell_and_its_source_4112`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DeclarationReport<'source>
 {
@@ -469,6 +523,10 @@ pub struct DeclarationReport<'source>
     /// admits at a primitive carrier and it crossed as the axiom it is: the
     /// audit row the report lists in place of an obligation.
     admitted: Maybe<Vec<SurfaceName<'source>>, admitted::Absent>,
+    /// The structured name of the law and the source that discharged it,
+    /// when the declaration is one its module omits and it checked: the row
+    /// the cells report lists.
+    discharged: Maybe<(Vec<SurfaceName<'source>>, Filler), discharged::Absent>,
 }
 
 impl<'source> DeclarationReport<'source>
@@ -521,6 +579,19 @@ impl<'source> DeclarationReport<'source>
     pub const fn admitted(&self) -> &Maybe<Vec<SurfaceName<'source>>, admitted::Absent>
     {
         &self.admitted
+    }
+
+    /// The structured name of the law the declaration discharges, and the
+    /// source that discharged it, when it is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn discharged(
+        &self
+    ) -> &Maybe<(Vec<SurfaceName<'source>>, Filler), discharged::Absent>
+    {
+        &self.discharged
     }
 
     /// The name's admission position.
@@ -1504,6 +1575,23 @@ where
             | Produced::Unlowered(_)
             | Produced::Guarded(_) => (owed, Maybe::Absent(admitted::Absent::Unadmitted)),
         };
+        // A law its module omits, checked at the body the checker minted, is a
+        // cell the cells report lists beside its source.
+        let discharged = match produced {
+            Produced::Judged(Verdict::Checked { .. }) if lowered.role() == Role::Discharged => {
+                Maybe::Present((module.path_of(lowered), Filler::Here))
+            },
+            Produced::Judged(
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_)
+                | Verdict::Refused(_),
+            )
+            | Produced::Unlowered(_)
+            | Produced::Guarded(_) => Maybe::Absent(discharged::Absent::Undischarged),
+        };
         declarations.push(DeclarationReport {
             name: lowered.name(),
             span: lowered.span(),
@@ -1516,6 +1604,7 @@ where
             ran,
             traced,
             admitted,
+            discharged,
         });
     }
     if let Some(surplus) = judged.next() {
@@ -2185,10 +2274,12 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::DeclarationReport;
+    use super::Filler;
     use super::Produced;
     use super::SettleFault;
     use super::Settlement;
     use super::Surviving;
+    use super::discharged;
     use super::settle;
     use super::settle_after;
     use super::stating_reads;
@@ -2683,6 +2774,49 @@ mod tests
             usize::from(report.ledger()),
             1_usize,
             "the ledger holds the axiom the kernel takes"
+        );
+    }
+
+    /// #4112: a law its module omits checks at the `here` the checker mints
+    /// where its sides convert, and the report lists it as a cell `here`
+    /// discharged; one whose sides part is refused and lists no cell.
+    #[test]
+    fn a_discharged_law_lists_its_cell_and_its_source_4112()
+    {
+        let report = settled(
+            CorpusRoot::Strict,
+            SourceText::from(
+                "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : Type {\n  Only : One;\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+            ),
+        );
+        let cells = report
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name() == SurfaceName::from("refl"))
+            .map(|declaration| (declaration.produced(), declaration.discharged()))
+            .collect::<Vec<_>>();
+        let [
+            (
+                Produced::Judged(Verdict::Checked { .. }),
+                &Maybe::Present((ref converts, Filler::Here)),
+            ),
+            (
+                Produced::Judged(Verdict::Refused(_)),
+                &Maybe::Absent(discharged::Absent::Undischarged),
+            ),
+        ] = *cells
+        else {
+            panic!("one law discharged `here` and one refused: {cells:?}");
+        };
+        assert_eq!(
+            *converts,
+            [SurfaceName::from("Converts"), SurfaceName::from("refl")],
+            "the cell is named by its module and its law"
+        );
+        assert_eq!(
+            Filler::Here.to_string(),
+            "here",
+            "the cells report spells the source as the law's body is written"
         );
     }
 

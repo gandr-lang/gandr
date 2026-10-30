@@ -557,7 +557,7 @@ impl Annotations
                 LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } |
                 LoweringRefusal::NoUniverseAbove { .. } | LoweringRefusal::HostConflict { .. } |
                 LoweringRefusal::InertRead { .. } | LoweringRefusal::UnlockedDependency { .. } |
-                LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::UnresolvedTypeHead { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnprovenLaw { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::UninterfacedMember { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::UnlabelledRequirement { .. } | LoweringRefusal::ImplicitTelescope { .. } | LoweringRefusal::TelescopeCycle { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::ImplicitInParentheses { .. } | LoweringRefusal::ModelImplicitValue { .. } | LoweringRefusal::RegionAsValue { .. } | LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::AmbiguousMethod { .. } | LoweringRefusal::ViewNotPlace { .. } | LoweringRefusal::ViewOfNoPlace { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+                LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::UnresolvedTypeHead { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::UninterfacedMember { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::UnlabelledRequirement { .. } | LoweringRefusal::ImplicitTelescope { .. } | LoweringRefusal::TelescopeCycle { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::ImplicitInParentheses { .. } | LoweringRefusal::ModelImplicitValue { .. } | LoweringRefusal::RegionAsValue { .. } | LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::AmbiguousMethod { .. } | LoweringRefusal::ViewNotPlace { .. } | LoweringRefusal::ViewOfNoPlace { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
             }
     })]
     pub fn lowering(refusal: LoweringRefusal<'_>) -> Self
@@ -634,7 +634,6 @@ impl Annotations
             | LoweringRefusal::InertRead { .. }
             | LoweringRefusal::UnlockedDependency { .. }
             | LoweringRefusal::UnknownMember { .. }
-            | LoweringRefusal::UnprovenLaw { .. }
             | LoweringRefusal::PartialField { .. }
             | LoweringRefusal::NotAFunctor { .. }
             | LoweringRefusal::ProjectionFromApplication { .. }
@@ -851,6 +850,7 @@ fn checked(
         | CheckRefusal::CapabilityConsumable(at)
         | CheckRefusal::OpenSessionPayload { at }
         | CheckRefusal::UnassertedLaw { at }
+        | CheckRefusal::UndischargedLaw { at }
         | CheckRefusal::RuleNotPresentable { kind: at, .. } => {
             (spanned(origins.value_type(at)), UNNAMED)
         },
@@ -1828,6 +1828,9 @@ impl fmt::Display for Checked
             ),
             | CheckRefusal::UnassertedLaw { .. } => f.write_str(
                 "a law is admitted only where the host asserts it of a primitive, and any other is proved",
+            ),
+            | CheckRefusal::UndischargedLaw { .. } => f.write_str(
+                "an omitted law is discharged by `here` where its sides convert, and any other is proved or admitted",
             ),
             | CheckRefusal::CapabilityUngranted { constant, .. } => write!(
                 f,
@@ -2864,6 +2867,7 @@ mod tests
                 atom: 6_usize.into(),
             },
             CheckRefusal::UnassertedLaw { at: value_type },
+            CheckRefusal::UndischargedLaw { at: value_type },
             CheckRefusal::RuleNotPresentable {
                 kind: value_type,
                 refusal: RuleRefusal {
@@ -3608,6 +3612,7 @@ mod tests
                         | CheckRefusal::OpenSessionPayload { .. }
                         | CheckRefusal::BridgeAtSealedType { .. }
                         | CheckRefusal::UnassertedLaw { .. }
+                        | CheckRefusal::UndischargedLaw { .. }
                         | CheckRefusal::RuleNotPresentable { .. }
                         | CheckRefusal::DataFieldLevel { .. }
                         | CheckRefusal::RepresentationAboveKind { .. }

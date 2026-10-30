@@ -75,7 +75,6 @@ corpus/ledger/diagnostics/TelescopeCycle.gandr IngMain bf23b62f5019edb8
 corpus/ledger/diagnostics/TranslatorStuck.gandr Tense 29151adbcb1f5811
 corpus/ledger/diagnostics/UndescribedMember.NativeDecode.gandr Glossary f9e43e0ccca38ae8
 corpus/ledger/diagnostics/UnprovenLaw.Admitted.gandr Tense 79881bb6145a644d
-corpus/ledger/diagnostics/UnprovenLaw.gandr Glossary 475daecb621ba4ce
 corpus/ledger/diagnostics/UnstatedComponent.Binding.gandr Passive a8548cb0ca52a70c
 corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.gandr Passive b7c483b226799979
 corpus/ledger/diagnostics/UsedAfterClose.gandr Passive 48fdba9b30261fbb
@@ -994,7 +993,6 @@ corpus/pathological/modules/model-implicit-supply.gandr Tense 598ace4c6999c61a
 corpus/pathological/modules/model-implicit-supply.gandr IngMain 101713f5d16861c0
 corpus/pathological/modules/model-include.gandr Passive f56000fee10791be
 corpus/pathological/modules/model-include.gandr Tense 2cbc14dd3d9e2332
-corpus/pathological/modules/model-laws.gandr Passive 3225be1469ec49db
 corpus/pathological/modules/model-manifest-type.gandr Passive 0a5d3dd0602d344b
 corpus/pathological/modules/model-manifest-type.gandr Tense 35241c9734d30660
 corpus/pathological/modules/model-manifest.gandr Tense ee27179875750d04
@@ -1314,7 +1312,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnlockedDe
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnmarkedSelfReference.txt Procedure 4db31bd807aaf1cf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnofferedLabel.txt Procedure b4dcad7d404f7cf3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnprovenLaw.Admitted.txt Procedure 6dd4420754dc5df4
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnprovenLaw.txt Procedure 1bf741a2fd2000e3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Unreachable.txt Procedure d89b6f71c1bbc9cf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnresolvedDocLink.txt Procedure 521f75ffad0e2fc0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnresolvedTypeHead.txt Procedure f6dbd902dd5022be
@@ -1439,7 +1436,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.tx
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure b13d83b535eb81d0
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure b8715358ac806eba
 crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/path-cells.txt Procedure 07f0db2f3b7cdd63
-crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/path-cells.txt Procedure dfc3f6c77cc4eeed
 crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/ua-by-hand-unnatural.txt Procedure 4797678d36947fb9
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/atom-identity.txt Procedure 02a6dd8aa9cfc435
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt Procedure 921d4bf9ff1bfecc
@@ -1482,8 +1478,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-im
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-implicit-supply.txt Procedure ef1d0c6a1228362b
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-include.txt Procedure 625f34805e9ea304
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-laws.txt Procedure 6dd4420754dc5df4
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-laws.txt Procedure 7a5e6ecd6d2bfb4a
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/model-laws.txt Procedure a2cc3e51bab33503
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/module-reordered-signature.txt Procedure ef9fcfac765635b4
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/phase.txt Procedure 2721fb4351d4b6b9
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/phase.txt Procedure 926e753776d45a06

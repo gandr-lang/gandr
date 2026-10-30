@@ -898,6 +898,51 @@ fn check_measures_each_declaration_a_source_writes()
     }
 }
 
+/// #4112: `gandr check --report cells` prints one line per law a model omits
+/// that the checker discharged, with its source. A law whose sides part is
+/// refused and lists no cell, and a check without the flag lists none.
+#[test]
+fn check_reports_each_cell_a_source_discharges_4112()
+{
+    let scratch = Scratch::new(Path::new("cells"));
+    let source = scratch.file(
+        Path::new("laws.gandr"),
+        Text::from(
+            "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
+             Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : \
+             Type {\n  Only : One;\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  \
+             def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
+             Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+        ),
+    );
+    let cells = |output: &Output| -> Vec<String> {
+        stdout(output)
+            .lines()
+            .filter_map(|line| line.strip_prefix("cell: "))
+            .map(str::to_owned)
+            .collect()
+    };
+    let reported = ran(gandr(&[
+        Path::new("check"),
+        Path::new("--report"),
+        Path::new("cells"),
+        &source,
+    ]));
+    assert_eq!(
+        code(&reported),
+        Code(1_i32),
+        "the law whose sides part is refused: {}",
+        stdout(&reported)
+    );
+    assert_eq!(
+        cells(&reported),
+        [format!("{}: Converts.refl: here", source.display())],
+        "the law whose sides convert is the one cell, discharged `here`"
+    );
+    let plain = ran(gandr(&[Path::new("check"), &source]));
+    assert!(cells(&plain).is_empty(), "a check lists no cell unasked");
+}
+
 #[test]
 fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
 {
