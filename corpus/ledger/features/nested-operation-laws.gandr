@@ -1,6 +1,6 @@
 /// `nested-operation-laws`: Operations nested in a law or a call.
-/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused; a law nesting an operation over an indexed sort is read, completed and decided with those indices, an index at a sort the laws rewrite left off, so a whisker's laws read over objects.
-/// Not implemented: a family's rule nesting an operation, a law whose carried indices apply an operation with indices of its own, and a law whose sides sort only modulo the block's rules, are refused `UndescribedMember.NestedOperation`; #1510 and #522 owe them.
+/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused; a law nesting an operation over an indexed sort is read, completed and decided with those indices, an index at a sort the laws rewrite left off, so a whisker's laws read over objects; a family's rule nesting an operation is a law of the family, its operation running by its other rules and the kernel deciding the whole system converges.
+/// Not implemented: a law instantiating a variable beside an indexed sort, a law whose carried indices apply an operation with indices of its own, and a law whose sides sort only modulo the block's rules, are refused `UndescribedMember.NestedOperation`; #4128 and #522 owe them.
 // A choice that commits to its left branch once a cut stands there, over a
 // sort graded by how a computation may end (#2792): `orBot(cut, fail)` nests
 // two operations where the cell layer reads values, so it normalizes over
@@ -72,3 +72,19 @@ theory EditedViews {
   rule fuse : view(edit(f)) ==> fresh(f);
   rule step : edit(f) ==> patch(f);
 }
+
+/// Addition with its associativity: the law nests `add` in a call, so `add`
+/// runs by its two other rules, and the kernel decides the three converge.
+@[ normalizes("add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
+data NatAssoc : Type {
+  Zero : NatAssoc;
+  Succ : (n : NatAssoc) --> NatAssoc;
+  oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
+  rule add(Zero, n) ==> n;
+  rule add(Succ(m), n) ==> Succ(add(m, n));
+  rule add(add(m, n), k) ==> add(m, add(n, k));
+}
+
+/// One plus one, plus one, runs to three.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def three() -> NatAssoc { add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) }

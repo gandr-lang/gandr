@@ -490,3 +490,72 @@ fn a_declined_rule_withholds_only_its_own_operation()
         "`and`'s nonlinear rule is declined and held, and `not` still runs"
     );
 }
+
+#[test]
+fn an_operation_with_a_law_runs_by_its_other_rules_1510()
+{
+    use gandr_kernel_term::FieldCount;
+    use gandr_kernel_term::OperationNode;
+    use gandr_kernel_term::RuleVariable;
+    let source = "data NatAssoc : Type {
+    Zero : NatAssoc;
+    Succ : (n : NatAssoc) --> NatAssoc;
+    oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
+    rule add(Zero, n) ==> n;
+    rule add(Succ(m), n) ==> Succ(add(m, n));
+    rule add(add(m, n), k) ==> add(m, add(n, k));
+}
+def three : +U (-F NatAssoc) ;
+def three = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_eq!(
+        rows(&module),
+        ["NatAssoc Declared", "add Operation", "three Declared"],
+        "the law withholds no operation"
+    );
+    let Some(add) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "add")
+    else {
+        panic!("add is declared");
+    };
+    let call = OperationNode::Operation {
+        constant: add.constant(),
+        arity: FieldCount::from(2_usize),
+    };
+    let variable = |ordinal: u32| OperationNode::Variable(RuleVariable::from(ordinal));
+    let rules = module.operation_rules(add);
+    assert_eq!(
+        rules
+            .rules()
+            .iter()
+            .map(|rule| rule.left().to_vec())
+            .collect::<Vec<_>>()
+            .get(2),
+        Some(&alloc::vec![
+            call,
+            call,
+            variable(0),
+            variable(1),
+            variable(2)
+        ]),
+        "the law crosses to the kernel after the rules the tree runs"
+    );
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<_> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Data,
+            Verdict::Checked { .. },
+            Verdict::Checked { .. }
+        ]),
+        "the kernel admits add with its law, and a call of it checks: {verdicts:?}"
+    );
+}

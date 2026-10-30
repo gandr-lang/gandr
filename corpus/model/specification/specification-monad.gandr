@@ -3,7 +3,7 @@
 // "Dijkstra Monads for All", ICFP 2019, § 3.3). An operation lands in a sort,
 // not in `Type`, so the order is a sort indexed by two computations, and
 // evidence of it is a term its operations build. The monad's laws beside the
-// indexed sort are refused in the twin (#1510).
+// indexed sort are refused in the twin (#4128).
 
 /// Values `V`, computations `C` and the order between two computations:
 /// reflexive, transitive, and an extension below another where its

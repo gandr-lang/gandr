@@ -6,7 +6,7 @@ import "../../model/desc/relative-monad.gandr";
 
 /// The monad's laws beside the order: right unit rewrites an extension whose
 /// continuation returns, an operation nested in producer position, which the
-/// description does not read beside an indexed sort yet (#1510).
+/// description does not read beside an indexed sort yet (#4128).
 @[ refuses("UndescribedMember.NestedOperation") ]
 theory LawfulSpecificationMonad {
   sort V : Type+;

@@ -8,7 +8,7 @@
 182..183 Other ";"
 185..262 Comment "/// The monad\'s laws beside the order: right unit rewrites an extension whose"
 263..340 Comment "/// continuation returns, an operation nested in producer position, which the"
-341..406 Comment "/// description does not read beside an indexed sort yet (#1510)."
+341..406 Comment "/// description does not read beside an indexed sort yet (#4128)."
 407..409 Other "@["
 410..417 Other "refuses"
 417..418 Other "("

@@ -8,7 +8,7 @@ error[UndescribedMember.NestedOperation]: this member rewrites a term with an op
    │ ┗━━━┛ a member the description does not read
    │
    ├ note: `T` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #1510 <https://github.com/gandr-lang/gandr/issues/1510>
+   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
 
 error[UnstatedComponent.Circuit]: the model signature cannot state `twice`, which is a circuit rule, whose sphere a model does not read yet
    ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Circuit.gandr:15:19

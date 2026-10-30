@@ -37,6 +37,13 @@
 //! alternative, a refusal at every call, is reversible later; an operation
 //! that never runs refuses nothing today.
 //!
+//! **A law is no arm.** A rule whose left side holds a call, `add(add(m, n), k)
+//! ==> add(m, add(n, k))`, matches no input the tree sees, since a call's
+//! inputs are constructor terms. The tree takes the other rules, and the law
+//! crosses to the kernel with them, which admits the operation only when the
+//! whole system converges. Then every closed call reaches the constructor term
+//! the law's two sides agree on.
+//!
 //! **Recursion is partial.** The function closes one fixpoint over its
 //! operation's whole parameter list with [`FixpointEvidence::Partial`], so the
 //! machine unfolds it and conversion never does. Structural evidence stages
@@ -318,9 +325,10 @@ struct Work<'face>
 /// - requires: `faces` are the operation's rules in source order; `derived` are
 ///   rules completion derived from the block's rules, each headed by
 ///   `operation`.
-/// - ensures: a plan whose tree decides every input by the first rule of
-///   `faces` that matches it, with a port family per port, carrying the rules
-///   of `faces` and then of `derived` read over module positions: the
+/// - ensures: a plan whose tree decides every input by the first arm of `faces`
+///   that matches it — every rule but a law, whose left side holds a call below
+///   its root — with a port family per port, carrying the rules of `faces`,
+///   laws included, and then of `derived` read over module positions: the
 ///   operation's own call at `own`, every callee at its constant, every
 ///   constructor at its family and tag.
 /// - panics: none.
@@ -332,12 +340,14 @@ struct Work<'face>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-output operation over a helper runs to its results
-///   in order, an operation missing a constructor has no route, and a call to a
-///   later operation has no route.
+///   in order, an operation missing a constructor has no route, a call to a
+///   later operation has no route, and an operation with a law runs by its
+///   other rules and carries the law.
 /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
 /// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
 /// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
 /// - witness: `operation::tests::a_rule_of_another_arity_than_its_operation_routes_nothing`
+/// - witness: `operation::tests::an_operation_with_a_law_runs_by_its_other_rules_1510`
 pub fn plan_operation(
     operation: &OperDesc,
     faces: &[&RuleFace],
@@ -347,11 +357,9 @@ pub fn plan_operation(
 {
     let inputs = families(&operation.arity.inputs, table)?;
     let outputs = families(&operation.arity.outputs, table)?;
-    if faces.is_empty() {
-        return Err(RouteFault::Unruled);
-    }
+    let mut arms = Vec::with_capacity(faces.len());
     let mut rows = Vec::with_capacity(faces.len());
-    for (rule, face) in faces.iter().enumerate() {
+    for &face in faces {
         let TermView::Op { name, args } = face.lhs.view()
         else {
             return Err(RouteFault::Head);
@@ -359,11 +367,18 @@ pub fn plan_operation(
         if *name != operation.name || args.len() != inputs.len() {
             return Err(RouteFault::Head);
         }
+        if role(face) == RuleRole::Law {
+            continue;
+        }
         rows.push(Row {
             columns: args.map(Some).collect(),
             bindings: Vec::new(),
-            rule,
+            rule: arms.len(),
         });
+        arms.push(face);
+    }
+    if arms.is_empty() {
+        return Err(RouteFault::Unruled);
     }
     let mut nodes: Vec<Option<PlanNode>> = vec![None];
     let mut work = vec![Work {
@@ -383,7 +398,7 @@ pub fn plan_operation(
             .position(|column| matches!(column.map(TermNode::view), Some(TermView::Ctor { .. })));
         let node = match tested {
             None => {
-                let Some(face) = faces.get(first.rule)
+                let Some(&face) = arms.get(first.rule)
                 else {
                     return Err(RouteFault::Uncovered);
                 };
@@ -413,6 +428,49 @@ pub fn plan_operation(
         nodes,
         rules,
     })
+}
+
+/// What a rule is to its operation's decision tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuleRole
+{
+    /// An arm: its left side's arguments are constructors and variables.
+    Arm,
+    /// A law: its left side holds a call below the root, which no arm of the
+    /// tree matches, since the tree's inputs are constructor terms.
+    Law,
+}
+
+/// What `face` is to its operation's decision tree.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`RuleRole::Law`] exactly when some subterm of the left side
+///   below its root is an operation application.
+/// - panics: none.
+/// - executable: none — the walk is the body's own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`plan_operation`].
+/// - witness: `operation::tests::an_operation_with_a_law_runs_by_its_other_rules_1510`
+fn role(face: &RuleFace) -> RuleRole
+{
+    let mut pending: Vec<TermNode<'_>> = Vec::new();
+    if let TermView::Op { args, .. } = face.lhs.view() {
+        pending.extend(args);
+    }
+    while let Some(node) = pending.pop() {
+        match node.view() {
+            TermView::Op { .. } => return RuleRole::Law,
+            TermView::Ctor { args, .. }
+            | TermView::Results { args }
+            | TermView::Inst { args, .. }
+            | TermView::Abs { args, .. }
+            | TermView::Lam { args, .. } => pending.extend(args),
+            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
+        }
+    }
+    RuleRole::Arm
 }
 
 /// One rule of the operation as the kernel reads it: both sides in pre-order

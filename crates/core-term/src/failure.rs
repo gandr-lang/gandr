@@ -133,7 +133,7 @@ impl TrackingIssue
     /// A reversible map, `<->`.
     pub const REVERSIBLE: Self = Self(1509);
     /// A theory law with an operation nested in producer position.
-    pub const NESTED_OPERATION: Self = Self(1510);
+    pub const NESTED_OPERATION: Self = Self(4128);
     /// A circuit rule rewriting two redexes at once.
     pub const PARALLEL_REDEXES: Self = Self(1511);
     /// A declaration with effects or control past a deep handler, which the

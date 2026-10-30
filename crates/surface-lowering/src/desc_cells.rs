@@ -11,16 +11,15 @@
 //! operation elaborates to one frame with a return continuation per output
 //! port, and its rules elaborate over that frame; a rule returning a different
 //! number of results is refused at its own span. A face reads its left-hand
-//! side as a cut of a value against an operation frame, so a family's rule
-//! whose left-hand side applies an operation where that value stands,
-//! `add(add(m, n), k)`, has no cell: it is refused at its span as a shape the
-//! elaboration does not read. A `theory` block's law of that shape over
-//! unindexed sorts, `turn(unturn(x)) ==> x`, compiles to no operation body, and
-//! is read over terms (`elaborate_theory_desc`): a presentation's laws are
-//! elaborated under the shape reading, a family's rules under the generative
-//! one. Over an indexed sort, `comp(id(a), f) ==> f`, the law stays refused at
-//! its span: its indices are fixed by types a term does not carry. A face whose
-//! left-hand side is a constructor application — a presented type's rule,
+//! side as a cut of a value against an operation frame, so a rule whose
+//! left-hand side applies an operation where that value stands has no sequent
+//! cell. It is read over terms instead: a `theory` block's law,
+//! `turn(unturn(x)) ==> x`, under the shape reading (`elaborate_theory_desc`),
+//! and a `data` family's rule, `add(add(m, n), k) ==> add(m, add(n, k))`, under
+//! the generative one, as a law of the family that no arm of its operation's
+//! body runs. A law over an indexed sort is read with the indices its sorting
+//! fixes; one the block gives no sorting stays refused at its span. A face
+//! whose left-hand side is a constructor application — a presented type's rule,
 //! `Loop(Unloop(x)) ==> x` — is no operation redex and has no sequent cell
 //! either; it is read over terms too (`DeclarationCells::presented`), where it
 //! rewrites a value wherever the value stands. A `data` operation whose rules
@@ -32,6 +31,7 @@
 //! `desc_cells::tests::a_single_redex_block_reaches_the_cell_layer_behind_the_gate`,
 //! `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`,
 //! `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`,
+//! `operation::tests::an_operation_with_a_law_runs_by_its_other_rules_1510`,
 //! `description::theory::tests::the_cat_shape_laws_are_written_faces`.
 //!
 //! `circuit::embed` reads literal port wiring into the circuit-algebra matcher.

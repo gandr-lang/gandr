@@ -3,7 +3,7 @@
 152..231 Comment "// \"Dijkstra Monads for All\", ICFP 2019, § 3.3). An operation lands in a sort,"
 232..305 Comment "// not in `Type`, so the order is a sort indexed by two computations, and"
 306..383 Comment "// evidence of it is a term its operations build. The monad\'s laws beside the"
-384..432 Comment "// indexed sort are refused in the twin (#1510)."
+384..432 Comment "// indexed sort are refused in the twin (#4128)."
 434..506 Comment "/// Values `V`, computations `C` and the order between two computations:"
 507..574 Comment "/// reflexive, transitive, and an extension below another where its"
 575..625 Comment "/// computation and each of its continuations are."
