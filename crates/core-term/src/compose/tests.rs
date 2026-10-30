@@ -1,6 +1,7 @@
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_sites::Degree;
+use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeSize;
 
 use super::CellCount;
@@ -117,4 +118,22 @@ fn three_cells_realise_as_the_left_nested_fold()
         CertificateEquality::Equal,
         "one cell realises as itself returned"
     );
+}
+
+#[test]
+fn the_binary_composite_is_the_least_stratum_of_two_cells()
+{
+    let two = Shape::chain(2_usize.into()).expect("the 2-chain is a shape");
+    let Composite { stratum, pasting } = Composite::binary();
+    assert_eq!(
+        stratum,
+        Stratum {
+            degree: Degree::of(&two),
+            bound: two.size(),
+        },
+        "the stratum is the 2-chain's own degree and size, so `then` reads the least one"
+    );
+    assert_eq!(pasting, Pasting::Chain {
+        cells: CellCount::from(usize::from(two.vertex_count())),
+    });
 }
