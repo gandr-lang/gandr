@@ -32,6 +32,10 @@ use gandr_core_term::SortParameter;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::compose::CellCount;
+use gandr_core_term::compose::Composite;
+use gandr_core_term::compose::Pasting;
+use gandr_core_term::compose::compose;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::NominationIndex;
 use gandr_core_term::identity::Relation;
@@ -3895,6 +3899,73 @@ fn univalence_spells_its_stratum_and_descriptions()
     );
 }
 
+/// Unbiased composition spells its stratum, its chain and its cells as the
+/// surface writes them, `compose[n, k](chain(m), (c, …))`, one cell bare.
+/// The fold it carries is not spelled, a returned composite is written as the
+/// composite, and the content source reads the node as the core does (#3957).
+#[test]
+fn a_composite_spells_its_stratum_chain_and_cells_3957()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let [p, q, r, x] =
+        [0_usize, 1, 2, 3].map(|index| core.value_constant(ConstantIndex::from(index)));
+    let composite = |cells: usize| Composite {
+        stratum: Stratum {
+            degree: Degree::from(5_usize),
+            bound: ShapeSize::from(7_usize),
+        },
+        pasting: Pasting::Chain {
+            cells: CellCount::from(cells),
+        },
+    };
+    let three = compose(&mut core, composite(3), (integer, x), &[p, q, r]);
+    let one = compose(&mut core, composite(1), (integer, x), &[p]);
+    let body = core.computation_return(three);
+    let returned = core.value_returned(body);
+    let names = [
+        Name::from("p"),
+        Name::from("q"),
+        Name::from("r"),
+        Name::from("x"),
+    ];
+    for (node, name, flat) in [
+        (three, "compose_chain", "compose[5, 7](chain(3), (p, q, r))"),
+        (one, "compose_cell", "compose[5, 7](chain(1), p)"),
+        (
+            returned,
+            "compose_returned",
+            "compose[5, 7](chain(3), (p, q, r))",
+        ),
+    ] {
+        agrees(&core, &names, CoreNode::Value(node));
+        pin(
+            &CoreSource::new(&core, &names),
+            Root::Value(CoreNode::Value(node)),
+            Pinned {
+                name,
+                flat,
+                fidelity: Fidelity::Faithful,
+            },
+        );
+    }
+    // A composite run as a body is written as the composite too.
+    agrees(&core, &names, CoreNode::Computation(body));
+    for form in [Form::Sugared, Form::Explicit] {
+        let rendered = presented_in(
+            &CoreSource::new(&core, &names),
+            Root::Computation(CoreNode::Computation(body)),
+            wide(),
+            form,
+        );
+        assert_eq!(
+            (rendered.as_ref(), rendered.fidelity()),
+            ("compose[5, 7](chain(3), (p, q, r))", Fidelity::Faithful),
+            "{form:?}"
+        );
+    }
+}
+
 /// Native introductions retain endpoint and map order but cannot claim
 /// surface round-trip fidelity, because the parser has no syntax for them;
 /// a product over them is as approximate as its components.
@@ -4086,62 +4157,6 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
         assert_eq!(rendered.as_ref(), expected, "{form:?}");
-    }
-}
-
-/// A composite of three paths, bare, returned or run as a body, is written as
-/// the left-nested fold it realises, and the printing names the composite's
-/// elided form until the printer writes it (#3957).
-#[test]
-fn a_composite_is_written_as_its_fold_and_noted_3965()
-{
-    let mut core = CoreArena::new();
-    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
-    let base = core.value_constant(ConstantIndex::from(1_usize));
-    let around = core.value_constant(ConstantIndex::from(2_usize));
-    let composite = gandr_core_term::compose::Composite {
-        stratum: gandr_core_term::ua::Stratum {
-            degree: gandr_theory_sites::Degree::from(5_usize),
-            bound: gandr_theory_sites::ShapeSize::from(7_usize),
-        },
-        pasting: gandr_core_term::compose::Pasting::Chain {
-            cells: gandr_core_term::compose::CellCount::from(3_usize),
-        },
-    };
-    let bare = gandr_core_term::compose::compose(&mut core, composite, (circle, base), &[
-        around, around, around,
-    ]);
-    let body = core.computation_return(bare);
-    let returned = core.value_returned(body);
-    let names = [Name::from("Circle"), Name::from("base"), Name::from("loop")];
-    let source = CoreSource::new(&core, &names);
-    // A body states no type of its own, so its fold is written as the
-    // transports it derives, as `then` written there is (#815).
-    let explicit = "transport(\\a. Path(Circle, base, a), loop, transport(\\a. Path(Circle, base, \
-                    a), loop, loop))";
-    for (root, expected) in [
-        (CoreNode::Value(bare), "(loop then loop) then loop"),
-        (CoreNode::Value(returned), "(loop then loop) then loop"),
-        (CoreNode::Computation(body), explicit),
-    ] {
-        agrees(&core, &names, root);
-        let root = match root {
-            CoreNode::Computation(_) => Root::Computation(root),
-            CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => {
-                Root::Value(root)
-            },
-        };
-        let rendered = presented_in(&source, root, wide(), Form::Sugared);
-        assert_eq!(
-            (
-                rendered.as_ref(),
-                rendered.fidelity(),
-                rendered.unspelled().iter().copied().collect::<Vec<_>>()
-            ),
-            (expected, Fidelity::Approximate, vec![Unspelled::Elided(
-                Elided::Composite
-            )]),
-        );
     }
 }
 

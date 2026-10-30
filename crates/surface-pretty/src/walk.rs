@@ -193,6 +193,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
+use gandr_core_term::compose::Pasting;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::identity::Relation;
@@ -438,7 +439,7 @@ enum Kind
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::Row { .. } | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
-        | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
+        | Former::Ua { .. } | Former::Compose { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
         | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_) | Former::Decompose(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
@@ -523,6 +524,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Forward(_)
         | Former::FunctionFlow(..)
         | Former::Ua { .. }
+        | Former::Compose { .. }
         | Former::Nested(_)
         | Former::Run(_)
         | Former::Constructor { .. }
@@ -1286,6 +1288,7 @@ where
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second)
         | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
+        Former::Compose { cells, .. } => components(cells, Admits::Value, Binds::NONE, None),
         Former::Path {
             carrier,
             left,
@@ -2752,6 +2755,10 @@ enum Join
     /// Univalence at a stratum over its two translator records, after the
     /// head spelling its stratum and its descriptions, `ua[n, k](a, b,`.
     Ua(Doc),
+    /// Unbiased composition at a stratum over its cells, after the head
+    /// spelling its stratum and its shape, `compose[n, k](chain(m),`: one cell
+    /// bare, more as a tuple.
+    Compose(Doc, Arity),
     /// A session type over its payloads, spelled by the template the visit
     /// pushed, binding as the template's head does.
     Session
@@ -6839,6 +6846,7 @@ impl Walk<'_, '_>
                 | Former::Nested(_)
                 | Former::Run(_)
                 | Former::Ua { .. }
+                | Former::Compose { .. }
                 | Former::Path { .. }
                 | Former::Bridge { .. }
                 | Former::Data { .. }
@@ -8391,6 +8399,31 @@ impl Walk<'_, '_>
                     ),
                 ))
             },
+            Former::Compose { composite, cells } => {
+                let Pasting::Chain { cells: count } = composite.pasting;
+                let head = alloc::format!(
+                    "compose[{}, {}](chain({}),",
+                    usize::from(composite.stratum.degree),
+                    usize::from(composite.stratum.bound),
+                    usize::from(count),
+                );
+                let head = self.leaf(Glyphs(&head))?;
+                // The stratum's two numerals are the instantiation's type
+                // residents, as `ua[n, k]`'s are.
+                Some(writes(
+                    Production("instantiation_expression"),
+                    writes(
+                        Production("instantiation.type"),
+                        writes(
+                            Production("number.type"),
+                            writes(
+                                Production("call_expression"),
+                                Join::Compose(head, Arity(usize::from(cells))),
+                            ),
+                        ),
+                    ),
+                ))
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -8718,6 +8751,16 @@ impl Walk<'_, '_>
                 return writes(Production("lambda_expression"), Ok(()));
             },
             Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
+            // A composite read where a value is read is the return of its
+            // node, the shape `compose[n, k](…)` lowers to there: it is
+            // written as the form, under no `pure`.
+            Former::Returned(body)
+                if let Former::Return(composite) = source.read(body)
+                    && matches!(source.read(composite), Former::Compose { .. }) =>
+            {
+                shaped = Some(Vec::from([Slot::of(composite, admits, Binds::NONE)]));
+                None
+            },
             // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
             // spells as the call it was written as, `g(f(a))`: a type has no
             // run to read back (#676).
@@ -11252,6 +11295,7 @@ impl Walk<'_, '_>
             | Former::Lambda(_)
             | Former::Run(_)
             | Former::Ua { .. }
+            | Former::Compose { .. }
             | Former::Unreadable(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(Unspelled::Misplaced);
@@ -11424,7 +11468,7 @@ impl Walk<'_, '_>
             Join::Prefix(_) | Join::EffectReturner { close: None, .. } | Join::OpenRow { .. } | Join::StaticLambda | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
-                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
+                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Update(Arity(count)) => {
@@ -11449,7 +11493,7 @@ impl Walk<'_, '_>
                     Join::RecordProduct => Infix::Product.binding(),
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Compose(..) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -11939,6 +11983,22 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
+            Join::Compose(head, cells) => {
+                let mut taken = self.take(cells)?;
+                let diagram = if taken.len() == 1_usize
+                    && let Some(cell) = taken.pop()
+                {
+                    self.bare_up_to(cell, Binding::ARGUMENT)?
+                }
+                else {
+                    self.listed(&taken)?
+                };
+                let head = self.space_or_break(head)?;
+                let inner = self.builder.concat(head, diagram)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs(")"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
             Join::Form {
                 pieces: Arity(count),
                 binding,
@@ -12201,19 +12261,6 @@ where
                     },
                     Form::Sugared => source.implied(node).unwrap_or(node),
                 };
-                // A node the source reads with a part left out is written
-                // without it, and the printing says which part.
-                if let Some(elided) = source.elided(node) {
-                    #[cfg_attr(
-                        dylint_lib = "quenchant_dylints",
-                        expect(
-                            answer_totality,
-                            reason = "the printer writes no composite's form until #3957: the \
-                                      composite stands as the fold it realises"
-                        )
-                    )]
-                    walk.note(Unspelled::Elided(elided));
-                }
                 walk.visit(
                     source,
                     node,

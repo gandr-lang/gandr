@@ -1,0 +1,1 @@
+compose[5, 7](chain(3), (p, q, r))

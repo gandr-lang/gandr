@@ -938,6 +938,9 @@ enum Context
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
     Outputs,
+    /// After an unbiased composite's shape, `compose[n, k](Γ, (c₁, …, cₘ))`:
+    /// a parenthesised list there is the composite's cells, never a tuple.
+    Cells,
     /// An operation's judgment in a theory, after its `:`: a parenthesised
     /// list there opens the judgment's own port group, so only the
     /// value-function alias over one bare domain reads as a type (#1329).
@@ -1198,6 +1201,7 @@ impl<'source> Respelling<'_, 'source>
         }
         match (rule, preceding.map(<&str>::from)) {
             (_, Some("<=>")) => Context::Outputs,
+            (Some("call_expression"), Some(",")) => self.call_operand(parent, at),
             (Some("theory_declaration"), Some(":")) if law => Context::Law,
             (Some("theory_declaration"), Some(":")) => Context::Judgment,
             // After a `:`, or at a definition's result, its returner left
@@ -1211,6 +1215,68 @@ impl<'source> Respelling<'_, 'source>
                 Context::Type
             },
             _ => Context::Value,
+        }
+    }
+
+    /// Where the operand `at` of the call at `parent` stands, after a comma:
+    /// [`Context::Cells`] for the cells of an unbiased composite, its third
+    /// operand after the head `compose[n, k]` and the shape, and
+    /// [`Context::Value`] otherwise. It reads the source as written, since a
+    /// parent is respelled only after its children.
+    ///
+    /// # Specification
+    /// trivial.
+    fn call_operand(
+        &self,
+        parent: NodeIndex,
+        at: NodeIndex,
+    ) -> Context
+    {
+        let rule = self.rule(parent);
+        let operands: Vec<NodeIndex> = self
+            .tree
+            .children(parent)
+            .filter(|&child| {
+                self.tree
+                    .node(child)
+                    .is_some_and(|node| match node.label() {
+                        NodeLabel::Space | NodeLabel::Doc => false,
+                        NodeLabel::Tile(_) => self.rule(child) != rule,
+                        NodeLabel::Wald
+                        | NodeLabel::Meld(_)
+                        | NodeLabel::Grout { .. }
+                        | NodeLabel::GhostClose { .. } => true,
+                    })
+            })
+            .collect();
+        let &[head, _, cells] = operands.as_slice()
+        else {
+            return Context::Value;
+        };
+        let Some(node) = self.tree.node(head)
+        else {
+            return Context::Value;
+        };
+        let span = node.span();
+        let start = self
+            .leaves
+            .partition_point(|leaf| leaf.span.start() < span.start());
+        let mut written = self
+            .leaves
+            .get(start ..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|leaf| leaf.span.end() <= span.end())
+            .filter(|leaf| leaf.material == Material::Token)
+            .map(|leaf| <&str>::from(leaf.text));
+        if cells == at
+            && written.next() == Some(COMPOSE.0)
+            && written.next() == Some(OPEN_BRACKET.0)
+        {
+            Context::Cells
+        }
+        else {
+            Context::Value
         }
     }
 
@@ -2101,7 +2167,7 @@ impl<'source> Respelling<'_, 'source>
                 Band::Atom
             },
             (RewriteName::Tuple, Direction::Desugar) => {
-                if self.context(at) == Context::Outputs {
+                if matches!(self.context(at), Context::Outputs | Context::Cells) {
                     return None;
                 }
                 let listed = listed(parts, &[OPEN_PAREN], CLOSE_PAREN)?;
@@ -3278,6 +3344,12 @@ const BACK: Spelling = Spelling("back");
 
 /// `cong`.
 const CONG: Spelling = Spelling("cong");
+
+/// `[`.
+const OPEN_BRACKET: Spelling = Spelling("[");
+
+/// `compose`, the head of an unbiased composite.
+const COMPOSE: Spelling = Spelling("compose");
 
 /// `+`.
 const PLUS: Spelling = Spelling("+");

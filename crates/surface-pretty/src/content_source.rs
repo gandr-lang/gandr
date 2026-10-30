@@ -22,7 +22,6 @@ use crate::Name;
 use crate::Source;
 use crate::former::Arity;
 use crate::former::Component;
-use crate::former::Elided;
 use crate::former::Former;
 use crate::former::Unreadable;
 
@@ -72,19 +71,23 @@ impl<'nodes> ContentSource<'nodes>
         }
     }
 
-    /// The computation a returned value reads as: the fold a returned
-    /// composite realises, and `body` itself otherwise.
+    /// The node `body` is written as: the fold a returned binary composite
+    /// realises, since `p then q` writes it, and `body` otherwise.
     ///
     /// # Specification
     /// trivial.
-    fn unreturned(
+    fn written(
         &self,
         body: NodeIndex,
     ) -> NodeIndex
     {
         if let Some(&ContentNode::Return(returned)) = self.nodes.get(usize::from(body))
-            && let Some(&ContentNode::Compose { realised, .. }) =
-                self.nodes.get(usize::from(returned))
+            && let Some(&ContentNode::Compose {
+                composite,
+                realised,
+                ..
+            }) = self.nodes.get(usize::from(returned))
+            && composite == Composite::binary()
         {
             return realised;
         }
@@ -129,11 +132,12 @@ impl Source for ContentSource<'_>
     /// - requires: nothing; any index is admissible.
     /// - ensures: each core former read as its [`Former`], over the same
     ///   indices; a family by its key, a constructor by the name the
-    ///   constructor table gives its family's tag, a composite, returned or
-    ///   not, as the fold it realises; the honest set's members — a hole, a
-    ///   mark, the unknown type, a lift, a fill — as unreadable, an unresolved
-    ///   node and an index past the table as dangling, and a name the table
-    ///   cannot spell as unnamed.
+    ///   constructor table gives its family's tag, the binary composite,
+    ///   returned or not, as the fold `p then q` writes, any other composite as
+    ///   [`Former::Compose`]; the honest set's members — a hole, a mark, the
+    ///   unknown type, a lift, a fill — as unreadable, an unresolved node and
+    ///   an index past the table as dangling, and a name the table cannot spell
+    ///   as unnamed.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -148,7 +152,7 @@ impl Source for ContentSource<'_>
     /// - witness: `content_source::tests::ty_dispatches_on_polarity`
     /// - witness: `content_source::tests::a_malformed_table_spells_unknown`
     /// - witness: `content_source::tests::an_empty_tuple_or_record_reads_as_the_unit_and_a_full_one_by_its_arity`
-    #[spec(ensures: |ret| match (self.nodes.get(usize::from(self.unreturned(node))), ret) {
+    #[spec(ensures: |ret| match (self.nodes.get(usize::from(self.written(node))), ret) {
         (None, Former::Unreadable(reason)) => reason == Unreadable::Dangling,
         (None, _) => false,
         (Some(content), Former::Unreadable(reason)) => match *content {
@@ -173,7 +177,7 @@ impl Source for ContentSource<'_>
         node: NodeIndex,
     ) -> Former<'_, NodeIndex>
     {
-        let Some(content) = self.nodes.get(usize::from(self.unreturned(node)))
+        let Some(content) = self.nodes.get(usize::from(self.written(node)))
         else {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -616,10 +620,21 @@ impl Source for ContentSource<'_>
                 left,
                 right,
             },
-            // A composite, returned or not, reads as the fold it realises until
-            // the printer writes the form (#3957).
-            ContentNode::Returned(body) => Former::Returned(self.unreturned(body)),
-            ContentNode::Compose { realised, .. } => Former::Returned(realised),
+            ContentNode::Returned(body) => Former::Returned(self.written(body)),
+            // The binary composite is written `p then q`, the fold it realises.
+            ContentNode::Compose {
+                composite,
+                realised,
+                ..
+            } if composite == Composite::binary() => Former::Returned(realised),
+            ContentNode::Compose {
+                composite,
+                ref cells,
+                ..
+            } => Former::Compose {
+                composite,
+                cells: Arity::from(cells.len()),
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -808,32 +823,6 @@ impl Source for ContentSource<'_>
         }
     }
 
-    /// [`Elided::Composite`] at a composite, returned or not, which
-    /// [`Self::read`] answers as the fold it realises: any but the binary
-    /// composite, which `p then q` writes.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn elided(
-        &self,
-        node: NodeIndex,
-    ) -> Option<Elided>
-    {
-        let mut read = self.nodes.get(usize::from(node))?;
-        if let ContentNode::Returned(body) = *read {
-            read = self.nodes.get(usize::from(body))?;
-        }
-        if let ContentNode::Return(returned) = *read {
-            read = self.nodes.get(usize::from(returned))?;
-        }
-        let ContentNode::Compose { composite, .. } = *read
-        else {
-            return None;
-        };
-        (composite != Composite::binary()).then_some(Elided::Composite)
-    }
-
     /// The index of component `index` of the n-ary former at `node`.
     ///
     /// # Specification
@@ -843,8 +832,9 @@ impl Source for ContentSource<'_>
     ///   the fields a record update writes in label order, a session type's
     ///   payloads in slot order, a family's arguments, a constructor's fields,
     ///   a primitive's arguments, a case's or a data case's branches, a
-    ///   handler's clauses, an offer's arms or a recorded run's payloads in
-    ///   move order; none past them, for another node, or past the table.
+    ///   handler's clauses, an offer's arms, a composite's cells in vertex
+    ///   order or a recorded run's payloads in move order; none past them, for
+    ///   another node, or past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -871,6 +861,9 @@ impl Source for ContentSource<'_>
             ContentNode::Product(ref parts)
             | ContentNode::Sum(ref parts)
             | ContentNode::Tuple(ref parts)
+            | ContentNode::Compose {
+                cells: ref parts, ..
+            }
             | ContentNode::WithType(ref parts)
             | ContentNode::With(ref parts)
             | ContentNode::Data {
@@ -955,7 +948,6 @@ impl Source for ContentSource<'_>
             | ContentNode::BridgeType { .. }
             | ContentNode::Here(_)
             | ContentNode::Returned(_)
-            | ContentNode::Compose { .. }
             | ContentNode::Fill { .. }
             | ContentNode::Nested(_)
             | ContentNode::Run(_)

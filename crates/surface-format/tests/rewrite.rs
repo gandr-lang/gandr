@@ -796,6 +796,38 @@ fn a_rule_s_outputs_are_not_a_tuple()
     );
 }
 
+/// A parenthesised list after an unbiased composite's shape is its cells, not
+/// a tuple: the explicit form keeps it, and withdraws nothing, while a tuple
+/// read as a value beside it is written `#{…}` (#3957).
+#[test]
+fn a_composite_s_cells_are_not_a_tuple_3957()
+{
+    let grammar = grammar();
+    let source = "def cells(a : Type, x : a, y : a, z : a, w : a, p : Path(a, x, y), q : Path(a, \
+                  y, z), r : Path(a, z, w)) -> Path(a, x, w) {\n  compose[5, 7](chain(3), (p, \
+                  q, r))\n}\n\ndef pair = (1, 2) ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(
+        formatted.withdrawn(),
+        &[],
+        "no declaration keeps its spelling"
+    );
+    let text = formatted.into_text();
+    assert!(
+        text.contains("compose[5, 7](chain(3), (p, q, r))"),
+        "the cells stay a list: {text}"
+    );
+    assert!(
+        text.contains("def pair = #{1, 2};"),
+        "a tuple is braced: {text}"
+    );
+}
+
 /// A composite of two flows is no path composite: it has no transport to
 /// write, so the explicit form keeps its `then`.
 #[test]
