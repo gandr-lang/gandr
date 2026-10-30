@@ -187,6 +187,46 @@ pub struct Profile
     pub outputs: PortCount,
 }
 
+impl Profile
+{
+    /// The profile of `vertex` in `shape`: the wires it consumes and the
+    /// wires it produces, counted without listing them.
+    ///
+    /// # Specification
+    /// - ensures: the counts of the wires whose consumer is `vertex` and of
+    ///   those whose producer is, as [`Legs::of`] lists them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the magma's two corollas read as the binary and the
+    ///   nullary profile, and a vertex of a third profile keeps its shape out.
+    /// - witness: `tests::profiles::the_profiles_hold_the_shapes_their_corollas_fill`
+    #[spec(ensures: |profile| profile == Legs::of(shape, vertex).profile())]
+    #[must_use]
+    #[inline]
+    pub fn at(
+        shape: &Shape,
+        vertex: Edge,
+    ) -> Self
+    {
+        let at = End::Vertex(vertex);
+        let (inputs, outputs) =
+            shape
+                .ends()
+                .iter()
+                .fold((0_usize, 0_usize), |(inputs, outputs), ends| {
+                    (
+                        inputs.saturating_add(usize::from(ends.consumer() == at)),
+                        outputs.saturating_add(usize::from(ends.producer() == at)),
+                    )
+                });
+        Self {
+            inputs: PortCount::from(inputs),
+            outputs: PortCount::from(outputs),
+        }
+    }
+}
+
 /// The wires a vertex consumes and the wires it produces, each in the shape's
 /// wire order.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -594,7 +634,7 @@ impl Species
     {
         let mut partial: Vec<Vec<Element>> = vec![Vec::new()];
         for vertex in shape.vertices() {
-            let elements = self.elements(Legs::of(shape, vertex).profile());
+            let elements = self.elements(Profile::at(shape, vertex));
             let mut longer = Vec::with_capacity(partial.len().saturating_mul(elements.len()));
             for prefix in &partial {
                 for element in &elements {
@@ -1341,7 +1381,7 @@ impl Equivalence
             let mut labels = Vec::with_capacity(labelling.0.len());
             for (vertex, label) in shape.vertices().zip(labelling.0.iter()) {
                 let &(ref source, ref target, bijection) =
-                    corollas.get(&Legs::of(shape, vertex).profile())?;
+                    corollas.get(&Profile::at(shape, vertex))?;
                 let (from, to, table) = if forward {
                     (source, target, &bijection.forward)
                 }
