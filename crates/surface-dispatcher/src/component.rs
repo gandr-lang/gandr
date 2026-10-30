@@ -144,6 +144,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::memo::Memo;
 use crate::package::Package;
 use crate::package::lock;
 use crate::package::lock::Alias;
@@ -1441,14 +1442,16 @@ impl Graph
         let found = classify(named);
         if let Some(stamp) = stamp {
             let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
-            let used = files.clock;
-            files.keep(target.as_os_str().to_os_string(), HeldFile {
-                stamp,
-                named: named.to_path_buf(),
-                found,
-                text: text.clone(),
-                used,
-            });
+            files.keep(
+                target.as_os_str().to_os_string(),
+                HeldFile {
+                    stamp,
+                    named: named.to_path_buf(),
+                    found,
+                    text: text.clone(),
+                },
+                |_, _| true,
+            );
         }
         Some((found, text))
     }
@@ -2102,8 +2105,7 @@ pub fn imports_named(
 /// documents an editor has open.
 const READINGS_HELD: usize = 512;
 
-/// What reading one source whole found, for each grammar it was read under,
-/// and when it was last asked for.
+/// What reading one source whole under one grammar found.
 #[derive(Debug)]
 struct Held
 {
@@ -2111,84 +2113,11 @@ struct Held
     grammar: GrammarFingerprint,
     /// The path imports its parse writes, or that it does not parse.
     written: Maybe<Vec<ImportPath>, laid::Absent>,
-    /// The tick of the store's clock it was last asked for at.
-    used: u64,
 }
 
-/// Every source this process has read whole, by its text.
-#[derive(Debug)]
-struct Readings
-{
-    /// What each text's reading found, under each grammar it was read under.
-    held: BTreeMap<String, Vec<Held>>,
-    /// How many readings the store holds.
-    count: usize,
-    /// Ticks once per question.
-    clock: u64,
-}
-
-impl Readings
-{
-    /// Keep `fresh`, what reading `text` found, unless the store holds a
-    /// reading of `text` under its grammar already, then let the readings
-    /// asked for longest ago go until at most [`READINGS_HELD`] remain.
-    ///
-    /// # Specification
-    /// - requires: `count` is the number of readings `held` holds.
-    /// - ensures: `count` is still that number, and at most [`READINGS_HELD`];
-    ///   `fresh` is held unless it was the one asked for longest ago.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a closure laid out twice parses its sources once, and
-    ///   a sibling whose text changed is read again and laid out as it now
-    ///   reads.
-    /// - witness: `component::tests::a_source_read_whole_is_parsed_once_per_text_776`
-    /// - witness: `component::tests::the_readings_store_keeps_each_reading_once_and_lets_the_oldest_go`
-    #[spec(ensures: self.count <= READINGS_HELD)]
-    fn keep(
-        &mut self,
-        text: String,
-        fresh: Held,
-    )
-    {
-        let held = self.held.entry(text).or_default();
-        if held.iter().all(|held| held.grammar != fresh.grammar) {
-            held.push(fresh);
-            self.count = self.count.saturating_add(1);
-        }
-        while self.count > READINGS_HELD {
-            let oldest = self
-                .held
-                .iter()
-                .flat_map(|(text, held)| held.iter().map(move |held| (held.used, text)))
-                .min()
-                .map(|(_, text)| text.clone());
-            let Some(oldest) = oldest
-            else {
-                break;
-            };
-            if let Some(held) = self.held.get_mut(&oldest) {
-                let before = held.len();
-                let least = held.iter().map(|held| held.used).min();
-                held.retain(|held| Some(held.used) != least);
-                let gone = before.saturating_sub(held.len());
-                if held.is_empty() {
-                    let _gone = self.held.remove(&oldest);
-                }
-                self.count = self.count.saturating_sub(gone);
-            }
-        }
-    }
-}
-
-/// The process's readings, shared by every lay-out and every grouping that
-/// reads its sources whole.
-static READINGS: Mutex<Readings> = Mutex::new(Readings {
-    held: BTreeMap::new(),
-    count: 0_usize,
-    clock: 0_u64,
-});
+/// The process's readings by text, shared by every lay-out and every grouping
+/// that reads its sources whole.
+static READINGS: Mutex<Memo<String, Held, READINGS_HELD>> = Mutex::new(Memo::new());
 
 /// How long after a file last changed a read of it is held: within it, a
 /// clock of coarse resolution may give a later change the same time.
@@ -2293,65 +2222,11 @@ struct HeldFile
     found: SourceRoot,
     /// Its text.
     text: String,
-    /// The tick of the store's clock it was last asked for at.
-    used: u64,
 }
 
-/// Every file this process holds a read of, by the path an import named it
-/// at, compared as bytes.
-#[derive(Debug)]
-struct Files
-{
-    /// The reads.
-    held: BTreeMap<OsString, HeldFile>,
-    /// Ticks once per question.
-    clock: u64,
-}
-
-impl Files
-{
-    /// Hold `fresh`, the read of the file at `target`, in place of any held
-    /// there, then let the reads asked for longest ago go until at most
-    /// [`FILES_HELD`] remain.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: at most [`FILES_HELD`] reads are held; `fresh` is held unless
-    ///   it was the one asked for longest ago.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`locate`].
-    /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
-    /// - witness: `component::tests::the_file_store_lets_the_oldest_read_go_past_its_bound`
-    #[spec(ensures: self.held.len() <= FILES_HELD)]
-    fn keep(
-        &mut self,
-        target: OsString,
-        fresh: HeldFile,
-    )
-    {
-        let _replaced = self.held.insert(target, fresh);
-        while self.held.len() > FILES_HELD {
-            let oldest = self
-                .held
-                .iter()
-                .min_by_key(|&(_, held)| held.used)
-                .map(|(target, _)| target.clone());
-            let Some(oldest) = oldest
-            else {
-                break;
-            };
-            let _gone = self.held.remove(&oldest);
-        }
-    }
-}
-
-/// The process's file reads, shared by every lay-out and every grouping.
-static FILES: Mutex<Files> = Mutex::new(Files {
-    held: BTreeMap::new(),
-    clock: 0_u64,
-});
+/// The process's file reads by the path an import named each at, compared as
+/// bytes, shared by every lay-out and every grouping.
+static FILES: Mutex<Memo<OsString, HeldFile, FILES_HELD>> = Mutex::new(Memo::new());
 
 /// Where the path `target` an import names leads: the path the graph names
 /// it by, and the read [`FILES`] holds of the file there while it is current.
@@ -2385,12 +2260,9 @@ fn locate(
 {
     {
         let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
-        files.clock = files.clock.saturating_add(1);
-        let now = files.clock;
-        if let Some(held) = files.held.get_mut(target.as_os_str())
-            && shadows.freshness(&held.named) == Freshness::Reported
-        {
-            held.used = now;
+        if let Some(held) = files.find(target.as_os_str(), |held| {
+            (shadows.freshness(&held.named) == Freshness::Reported).then_some(())
+        }) {
             return Located {
                 named: held.named.clone(),
                 disk: OnDisk::Held(held.found, held.text.clone()),
@@ -2401,12 +2273,9 @@ fn locate(
     let stamp = Stamp::of(metadata.as_ref());
     if let Some(stamp) = stamp {
         let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
-        files.clock = files.clock.saturating_add(1);
-        let now = files.clock;
-        if let Some(held) = files.held.get_mut(target.as_os_str())
-            && held.stamp == stamp
-        {
-            held.used = now;
+        if let Some(held) = files.find(target.as_os_str(), |held| {
+            (held.stamp == stamp).then_some(())
+        }) {
             return Located {
                 named: held.named.clone(),
                 disk: OnDisk::Held(held.found, held.text.clone()),
@@ -2458,8 +2327,8 @@ pub fn forget(changed: &[PathBuf])
         return;
     }
     let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
-    files.held.retain(|target, held| {
-        !changed
+    files.forget(|target, held| {
+        changed
             .iter()
             .any(|path| held.named.starts_with(path) || Path::new(target).starts_with(path))
     });
@@ -2497,26 +2366,23 @@ fn read_whole(
     let fingerprint = grammar.fingerprint();
     {
         let mut readings = READINGS.lock().unwrap_or_else(PoisonError::into_inner);
-        readings.clock = readings.clock.saturating_add(1);
-        let now = readings.clock;
-        if let Some(held) = readings
-            .held
-            .get_mut(text.as_ref())
-            .and_then(|held| held.iter_mut().find(|held| held.grammar == fingerprint))
-        {
-            held.used = now;
+        if let Some(held) = readings.find(text.as_ref(), |held| {
+            (held.grammar == fingerprint).then_some(())
+        }) {
             return held.written.clone();
         }
     }
     parsed.absorb(ParsedBytes::from(text.as_ref().len()));
     let written = paths_written(grammar, text);
     let mut readings = READINGS.lock().unwrap_or_else(PoisonError::into_inner);
-    let used = readings.clock;
-    readings.keep(String::from(text.as_ref()), Held {
-        grammar: fingerprint,
-        written: written.clone(),
-        used,
-    });
+    readings.keep(
+        String::from(text.as_ref()),
+        Held {
+            grammar: fingerprint,
+            written: written.clone(),
+        },
+        |held, kept| held.grammar == kept.grammar,
+    );
     drop(readings);
     written
 }
@@ -3604,113 +3470,6 @@ mod tests
             ),
             [loose.0.join("greet.gandr")],
             "a source in no package roots its own modules"
-        );
-    }
-
-    /// The readings store keeps one reading per text and grammar, and past
-    /// its bound lets the reading asked for longest ago go: the fresh reading
-    /// stays, and a text read under two grammars loses only the older one.
-    #[test]
-    fn the_readings_store_keeps_each_reading_once_and_lets_the_oldest_go()
-    {
-        use gandr_surface_syntax::GrammarFingerprint;
-
-        use super::Held;
-        use super::READINGS_HELD;
-        use super::Readings;
-
-        let held = |grammar: u64, used: u64| Held {
-            grammar: GrammarFingerprint::from(grammar),
-            written: Maybe::Present(Vec::new()),
-            used,
-        };
-        let grammars = |readings: &Readings, text: &str| -> Vec<u64> {
-            readings.held.get(text).map_or_else(Vec::new, |held| {
-                held.iter().map(|held| u64::from(held.grammar)).collect()
-            })
-        };
-        let mut readings = Readings {
-            held: BTreeMap::new(),
-            count: 0_usize,
-            clock: 0_u64,
-        };
-        readings.keep(String::from("twice"), held(1, 0));
-        readings.keep(String::from("twice"), held(1, 1));
-        assert_eq!(
-            (readings.count, grammars(&readings, "twice")),
-            (1_usize, Vec::from([1_u64])),
-            "a second reading under one grammar is not kept again"
-        );
-        readings.keep(String::from("twice"), held(2, u64::MAX));
-        let mut used = 1_u64;
-        while readings.count < READINGS_HELD {
-            used = used.saturating_add(1);
-            readings.keep(format!("text {used}"), held(1, used));
-        }
-        assert_eq!(
-            readings.count, READINGS_HELD,
-            "nothing goes while the store is within its bound"
-        );
-        readings.keep(String::from("fresh"), held(1, used.saturating_add(1)));
-        assert_eq!(
-            (
-                readings.count,
-                grammars(&readings, "twice"),
-                grammars(&readings, "fresh")
-            ),
-            (READINGS_HELD, Vec::from([2_u64]), Vec::from([1_u64])),
-            "past the bound only the reading asked for longest ago goes"
-        );
-    }
-
-    /// The file store holds one read per path, and past its bound lets the
-    /// read asked for longest ago go, keeping the fresh one.
-    #[test]
-    fn the_file_store_lets_the_oldest_read_go_past_its_bound()
-    {
-        use std::ffi::OsString;
-
-        use super::FILES_HELD;
-        use super::Files;
-        use super::HeldFile;
-        use super::Stamp;
-
-        let read = |used: u64| HeldFile {
-            stamp: Stamp {
-                device: 0,
-                inode: used,
-                length: 0,
-                modified: (0, 0),
-                changed: (0, 0),
-            },
-            named: PathBuf::from("held.gandr"),
-            found: SourceRoot::Strict,
-            text: String::new(),
-            used,
-        };
-        let mut files = Files {
-            held: BTreeMap::new(),
-            clock: 0_u64,
-        };
-        let mut used = 0_u64;
-        while files.held.len() < FILES_HELD {
-            files.keep(OsString::from(format!("{used}.gandr")), read(used));
-            used = used.saturating_add(1);
-        }
-        assert_eq!(
-            files.held.len(),
-            FILES_HELD,
-            "nothing goes while the store is within its bound"
-        );
-        files.keep(OsString::from("fresh.gandr"), read(used));
-        assert_eq!(
-            (
-                files.held.len(),
-                files.held.contains_key(&OsString::from("0.gandr")),
-                files.held.contains_key(&OsString::from("fresh.gandr"))
-            ),
-            (FILES_HELD, false, true),
-            "past the bound only the read asked for longest ago goes"
         );
     }
 

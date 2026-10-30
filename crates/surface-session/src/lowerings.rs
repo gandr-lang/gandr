@@ -37,6 +37,7 @@ use gandr_core_term::CoreArena;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::JudgedClosure;
+use gandr_surface_dispatcher::Memo;
 use gandr_surface_dispatcher::item_program;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::UnitSource;
@@ -44,7 +45,6 @@ use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
 
 use crate::edit::Snapshot;
-use crate::memo::Memo;
 
 /// The most closures [`LOWERINGS`] holds before it lets the one asked for
 /// longest ago go: the closures of the few documents an editor has open.
@@ -319,16 +319,13 @@ impl Closure
     }
 }
 
-/// One closure's lowering, under the text, sources and grammar that select
-/// it.
+/// One closure's lowering, under the sources and grammar that select it.
 ///
 /// # Specification
 /// trivial.
 #[derive(Debug)]
 struct Entry
 {
-    /// The closure's text: the laid-out revision before the document's own.
-    text: String,
     /// The closure's sources, in the order the unit admits them.
     sources: Vec<UnitSource>,
     /// The grammar the closure was parsed under.
@@ -337,11 +334,12 @@ struct Entry
     held: Held,
 }
 
-/// The process's closure lowerings, shared by every session.
+/// The process's closure lowerings by the closure's text, the laid-out
+/// revision before the document's own, shared by every session.
 // economy: no byte form, the codec is #4084. A lowering's suspended state
 // borrows its own syntax tree and holds a core arena, so the process holds it
 // until the codec gives it an image the store keeps.
-static LOWERINGS: Mutex<Memo<Entry, LOWERINGS_HELD>> = Mutex::new(Memo::new());
+static LOWERINGS: Mutex<Memo<String, Entry, LOWERINGS_HELD>> = Mutex::new(Memo::new());
 
 /// What the process holds for the closure laid out as `text`, whose sources
 /// are `sources`, under the grammar `grammar`.
@@ -370,11 +368,8 @@ pub fn find(
 {
     let mut lowerings = LOWERINGS.lock().unwrap_or_else(PoisonError::into_inner);
     let found = lowerings
-        .find(|entry| {
-            (entry.grammar == grammar
-                && entry.sources == sources
-                && entry.text == <&str>::from(text))
-            .then_some(())
+        .find(<&str>::from(text), |entry| {
+            (entry.grammar == grammar && entry.sources == sources).then_some(())
         })
         .map(|entry| entry.held.clone());
     drop(lowerings);
@@ -413,17 +408,13 @@ pub fn keep(
 {
     let mut lowerings = LOWERINGS.lock().unwrap_or_else(PoisonError::into_inner);
     lowerings.keep(
+        text,
         Entry {
-            text,
             sources,
             grammar,
             held,
         },
-        |entry, kept| {
-            entry.grammar == kept.grammar
-                && entry.sources == kept.sources
-                && entry.text == kept.text
-        },
+        |entry, kept| entry.grammar == kept.grammar && entry.sources == kept.sources,
     );
     drop(lowerings);
 }
