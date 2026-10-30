@@ -5,6 +5,10 @@ error[FamilyArgumentClassifier]: argument 0 of the type operator has the wrong k
   │             ──── the type it is checked against
   ‡
 7 │ def wrong(p : twice(1)) -> -F Integer {
-  │                     ━ outside its parameter's domain: expected `Type`, found `Integer`
+  │           ┬   ┬─────┯─
+  │           │   │     │
+  │           │   │     outside its parameter's domain: expected `Type`, found `Integer`
+  │           │   formed; while synthesising an argument of this type operator application
+  │           formed; while forming the parts of this type
   │
   ╰ note: `wrong` is refused with FamilyArgumentClassifier, as its expectation states

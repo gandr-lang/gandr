@@ -33,11 +33,12 @@
 //! # A binder is named where the source wrote it
 //!
 //! The checker's hypotheses are types by position; the lowering's origin table
-//! records, per lambda a parameter lowered to and per bind a named statement
-//! lowered to, where the bound name was written. A context's binders and the
-//! diagnostic's hypotheses pair each type with that name when the table holds
-//! it, and leave the name absent otherwise: a split, a discarded statement, a
-//! lambda the lowering inserted.
+//! records, per lambda a parameter lowered to, per bind a named statement
+//! lowered to and per dependent arrow or pair a binder in a type lowered to,
+//! where the bound name was written. A context's binders and the diagnostic's
+//! hypotheses pair each type with that name when the table holds it, and leave
+//! the name absent otherwise: a split, a discarded statement, a lambda the
+//! lowering inserted.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -54,6 +55,7 @@ use gandr_core_checker::TypeNode;
 use gandr_core_checker::judged;
 use gandr_core_term::ValueTypeId;
 use gandr_surface_lowering::ComponentName;
+use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::SplitComponent;
 use gandr_surface_syntax::ByteSpan;
@@ -560,13 +562,15 @@ fn split_binder(
 
 /// The name the source writes for the first binder the former at `at` opens,
 /// read through `origins` and `text`: a `run`'s binder, a function's first
-/// parameter, a scope's capability, a hold's slot.
+/// parameter, a scope's capability, a hold's slot, a dependent arrow's binder
+/// or a dependent record's first label.
 ///
 /// # Specification
 /// - requires: as [`opened`].
-/// - ensures: for a computation opener the table records a binder for, the
-///   bytes the table locates; [`binding::Absent::Unnamed`] for every other
-///   node.
+/// - ensures: for a computation opener the table records a binder for, a
+///   dependent arrow it records a name for, or a dependent pair it records a
+///   label for, the bytes the table locates; [`binding::Absent::Unnamed`] for
+///   every other node.
 /// - provides: the name of a binder [`opened`] reads and of a region a failure
 ///   stood in ([`crate::TypeSpellings::of`]), whether the binder is among the
 ///   hypotheses or, a hold's slot, linear.
@@ -575,28 +579,52 @@ fn split_binder(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`]; a type kept at a hold spells the hold's
-///   slot.
+///   slot; a type formed under a dependent arrow inside a type names the
+///   arrow's binder.
 /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
 /// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
+/// - witness: `tests::diagnostics::a_signature_s_refusal_spells_its_binders_by_name_4043`
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_))
-    || matches!(at, CoreNode::Term(TermNode::Computation(_))))]
+    || !matches!(at, CoreNode::Term(TermNode::Value(_))))]
 pub fn written_binder(
     at: CoreNode,
     origins: &OriginTable,
     text: SourceText<'_>,
 ) -> Maybe<String, binding::Absent>
 {
-    match at {
+    let origin = match at {
         CoreNode::Term(TermNode::Computation(opener)) => match origins.binder(opener) {
-            Maybe::Present(origin) => text
-                .fragment(origin.span())
-                .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
-                    Maybe::Present(String::from(fragment.as_ref()))
-                }),
-            Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
+            Maybe::Present(origin) => Some(origin),
+            Maybe::Absent(_) => None,
         },
-        CoreNode::Term(_) | CoreNode::Type(_) => Maybe::Absent(binding::Absent::Unnamed),
-    }
+        CoreNode::Type(TypeNode::Computation(arrow)) => recorded(origins.arrows(), arrow),
+        CoreNode::Type(TypeNode::Value(pair)) => recorded(origins.pairs(), pair),
+        CoreNode::Term(TermNode::Value(_)) => None,
+    };
+    origin.map_or(Maybe::Absent(binding::Absent::Unnamed), |origin| {
+        text.fragment(origin.span())
+            .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
+                Maybe::Present(String::from(fragment.as_ref()))
+            })
+    })
+}
+
+/// The origin `table`, ascending by node, records for `node`.
+///
+/// # Specification
+/// trivial.
+fn recorded<Node>(
+    table: &[(Node, Origin)],
+    node: Node,
+) -> Option<Origin>
+where
+    Node: Copy + Ord,
+{
+    table
+        .binary_search_by(|&(ref held, _)| held.cmp(&node))
+        .ok()
+        .and_then(|at| table.get(at))
+        .map(|&(_, origin)| origin)
 }
 
 /// The spelling of the value type `ty`.

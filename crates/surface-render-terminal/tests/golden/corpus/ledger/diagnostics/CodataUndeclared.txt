@@ -10,6 +10,8 @@ error[CodataUndeclared]: this names no codata declaration
   ╭▸ corpus/ledger/diagnostics/CodataUndeclared.gandr:8:17
   │
 8 │ def read(s : +U Scaled) -> -F Integer {
-  │                 ━━━━━━ no codata declaration here
+  │          ┬      ━━━━━━ no codata declaration here
+  │          │
+  │          formed; while forming the parts of this type
   │
   ╰ note: `read` is refused with CodataUndeclared, as its expectation states

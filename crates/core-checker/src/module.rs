@@ -73,9 +73,11 @@
 //! refused rather than from a second one. A refused data signature keeps the
 //! failure of the step that refused: its hypotheses are the parameters, then
 //! the indices or the fields the signature had opened there, and then any
-//! binder the step's own run opened. A declaration refused before its body
-//! was run — out of order, a signature that did not form, a hole in synthesis
-//! position — keeps none: no rule of the judgement was pending.
+//! binder the step's own run opened. A value's declared type that did not form
+//! keeps the failure forming it, under the binders the formation had opened
+//! (#4043). A declaration refused before its body was run otherwise — out of
+//! order, a hole in synthesis position — keeps none: no rule of the judgement
+//! was pending.
 //! [`check_declaration`] runs the same judgement and hands back the verdict
 //! alone. Witness:
 //! `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`.
@@ -162,6 +164,7 @@ use crate::failure::Stage;
 use crate::failure::judged;
 use crate::formation::FormedValueType;
 use crate::formation::form_value_type;
+use crate::formation::form_value_type_with_failure;
 use crate::funext::Funext;
 use crate::judgement::Checked;
 use crate::judgement::Direction;
@@ -558,8 +561,8 @@ pub struct ModuleReport
     /// The sealed abstract types that formed, by position, for kernel
     /// readmission.
     abstract_types: BTreeMap<ConstantIndex, AbstractType>,
-    /// The failure of each body and each data signature the judgement refused,
-    /// by position.
+    /// The failure of each body, each data signature and each value's declared
+    /// type the judgement refused, by position.
     failures: BTreeMap<ConstantIndex, Failure>,
     /// What elaborating each body that held a computation written where a
     /// value is read did, by position.
@@ -896,9 +899,9 @@ impl ModuleReport
         &self.definitions
     }
 
-    /// The failure of each body and each data signature the judgement refused,
-    /// by position; a declaration refused before its body was run, or
-    /// accepted, has no entry.
+    /// The failure of each body, each data signature and each value's declared
+    /// type the judgement refused, by position; a declaration refused otherwise
+    /// before its body was run, or accepted, has no entry.
     ///
     /// # Specification
     /// trivial.
@@ -1311,20 +1314,20 @@ struct Decision
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
-///   `context`; beside it, when a run of the body or a step of a data signature
-///   refused, the failure of that run or step under the binders it stood under,
-///   whose refusal is the verdict's, save that a law the module omits keeps a
-///   bare failure at its declared type refused
-///   [`CheckRefusal::UndischargedLaw`]; when the body's calls omit implicits,
-///   the verdict of the run over the body and the declared type both filled
-///   with their solutions ([`implicits`]), and the declared type so filled
-///   beside the verdict when the fill changed it; when the first run accepted a
-///   body holding a computation written where a value is read, a value the
-///   bridge carried by a reduct, or a record update, what elaborating it did,
-///   the verdict then being the second run's over the elaborated body at the
-///   declared type so filled; and, when `run` is [`Run::Typed`] and the body
-///   was run, what [`type_value`] keeps for the body as written, each type read
-///   with the solutions of the holes its calls nominated, read before the
+///   `context`; beside it, when a run of the body, a step of a data signature
+///   or a step forming a value's declared type refused, the failure of that run
+///   or step under the binders it stood under, whose refusal is the verdict's,
+///   save that a law the module omits keeps a bare failure at its declared type
+///   refused [`CheckRefusal::UndischargedLaw`]; when the body's calls omit
+///   implicits, the verdict of the run over the body and the declared type both
+///   filled with their solutions ([`implicits`]), and the declared type so
+///   filled beside the verdict when the fill changed it; when the first run
+///   accepted a body holding a computation written where a value is read, a
+///   value the bridge carried by a reduct, or a record update, what elaborating
+///   it did, the verdict then being the second run's over the elaborated body
+///   at the declared type so filled; and, when `run` is [`Run::Typed`] and the
+///   body was run, what [`type_value`] keeps for the body as written, each type
+///   read with the solutions of the holes its calls nominated, read before the
 ///   declaration's own type entered the table. An accepted value keeps, under
 ///   its position, the path endpoint pairs the run its verdict is from related,
 ///   and nothing an earlier declaration or another run related. A suspended
@@ -1505,29 +1508,51 @@ fn decide(
     // first, so a stage the kernel could not place refuses the signature.
     let mut quantified = None;
     let direction = match signature {
-        Maybe::Present(declared) => crate::quantified::bounded(declaration.stages(), declared)
-            .and_then(|()| {
-                if !declaration.stages().is_empty() {
-                    let (erased, marks) = crate::quantified::split(
-                        context.arena_mut(),
-                        declared,
-                        declaration.stages(),
-                    )?;
-                    quantified = Some((form_built(context, erased)?, marks));
-                }
-                crate::quantified::mint(context.stages_mut(), declaration.stages());
-                form_built(context, declared)
-            })
-            .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
-            .map(Direction::Check),
+        Maybe::Present(declared) => {
+            // A step that runs no machine pursues the declared type.
+            let bare = move |refusal| {
+                Failure::bare(
+                    refusal,
+                    Pursuit::new(
+                        CoreNode::Type(TypeNode::Value(declared)),
+                        Maybe::Absent(judged::Absent::Formed),
+                        Stage::Starting,
+                    ),
+                )
+            };
+            crate::quantified::bounded(declaration.stages(), declared)
+                .map_err(bare)
+                .and_then(|()| {
+                    if !declaration.stages().is_empty() {
+                        let (erased, marks) = crate::quantified::split(
+                            context.arena_mut(),
+                            declared,
+                            declaration.stages(),
+                        )
+                        .map_err(bare)?;
+                        quantified = Some((form_built(context, erased)?, marks));
+                    }
+                    crate::quantified::mint(context.stages_mut(), declaration.stages());
+                    form_built(context, declared)
+                })
+                .and_then(|formed| {
+                    crate::session::unrestricted(context, formed.id())
+                        .map(|()| formed)
+                        .map_err(bare)
+                })
+                .map(Direction::Check)
+        },
         Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
     };
     let mut signed = finish(context, outer);
     let direction = match direction {
         Ok(direction) => direction,
-        Err(refusal) => {
+        // The signature's refusal keeps the binders it stood under.
+        Err(failure) => {
             let _home = context.binders().relocate(World::Host);
+            let refusal = failure.refusal();
             return Decision {
+                failure: Maybe::Present(failure),
                 typings: kept(signed),
                 ..unrun(refusal)
             };
@@ -1797,7 +1822,8 @@ fn decide(
 ///   update; otherwise the formation of `declared` with every update it checked
 ///   standing as the record of its overlay's fields beside its base's kept
 ///   ones. No update the formation recorded stays recorded.
-/// - fails: the refusal forming `declared`, or forming the built type.
+/// - fails: the failure forming `declared`, or forming the built type, under
+///   the binders the formation had opened where it refused.
 /// - panics: none.
 /// - executable: none — the build is a walk of the type, which a predicate
 ///   would repeat.
@@ -1810,10 +1836,10 @@ fn decide(
 fn form_built(
     context: &mut CheckingContext<'_>,
     declared: gandr_core_term::ValueTypeId,
-) -> Result<FormedValueType, CheckRefusal>
+) -> Result<FormedValueType, Failure>
 {
     let _earlier = context.take_updates();
-    let formed = form_value_type(context, declared)?;
+    let formed = form_value_type_with_failure(context, declared)?;
     let updates = context.take_updates();
     if updates.is_empty() {
         return Ok(formed);
@@ -1825,7 +1851,7 @@ fn form_built(
         &updates,
         &mut carried,
     );
-    form_value_type(context, built)
+    form_value_type_with_failure(context, built)
 }
 
 /// Judge an accepted structural definition once more with its own fixpoint's
@@ -2352,10 +2378,10 @@ pub fn check_declaration_supported(
 ///   run's end, the function extensionalities every one it decided, the
 ///   endpoint relations every pair an accepted declaration's conversions
 ///   related, and the definitions every body the context defines a constant as;
-///   each body run and refused keeps its failure under its position, and no
-///   other declaration has one; each body the first run accepted holding a
-///   computation written where a value is read keeps its elaboration under its
-///   position.
+///   each body run and refused, and each declared type that did not form, keeps
+///   its failure under its position, and no other declaration has one; each
+///   body the first run accepted holding a computation written where a value is
+///   read keeps its elaboration under its position.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -2471,7 +2497,8 @@ pub struct ModuleRun
     judged: Vec<Judged>,
     /// The holes owed, in the order met.
     ledger: ObligationLedger,
-    /// The failure of each body refused, by position.
+    /// The failure of each body refused, and each declared type that did not
+    /// form, by position.
     failures: BTreeMap<ConstantIndex, Failure>,
     /// What elaborating each body with a nested computation did, by position.
     nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,

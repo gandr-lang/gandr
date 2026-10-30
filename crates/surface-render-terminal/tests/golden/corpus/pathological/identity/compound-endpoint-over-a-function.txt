@@ -5,6 +5,10 @@ error[CompoundEndpoint]: a path endpoint must compute a value without effects
   │                                ───────────────────── the type it synthesises
   ‡
 6 │ def refuted(x : Integer) -> Path(Integer, constantly(x), x) {
-  │                                           ━━━━━━━━━━━━━ an endpoint that returns no pure value: found `Integer -> -F Integer`
+  │             ┬               ┬─────────────┯━━━━━━━━━━━━────
+  │             │               │             │
+  │             │               │             an endpoint that returns no pure value: found `Integer -> -F Integer`
+  │             │               formed; while checking the remaining parts of this
+  │             formed; while forming this type under its binder; binds x : Integer
   │
   ╰ note: `refuted` is refused with CompoundEndpoint, as its expectation states

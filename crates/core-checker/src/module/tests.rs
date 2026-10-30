@@ -667,9 +667,21 @@ fn a_refused_body_keeps_the_rules_it_was_refused_inside()
     let report = check_module(&mut context, &module);
     assert_eq!(
         report.failures().keys().copied().collect::<Vec<_>>(),
-        [ConstantIndex::from(0_usize), ConstantIndex::from(3_usize)],
-        "the two refused bodies keep their failures; the accepted body and \
-             the body under an unformed signature, never run, keep none"
+        [
+            ConstantIndex::from(0_usize),
+            ConstantIndex::from(2_usize),
+            ConstantIndex::from(3_usize)
+        ],
+        "the two refused bodies and the unformed signature keep their failures; \
+             the accepted body keeps none"
+    );
+    assert_eq!(
+        report.failures()[&ConstantIndex::from(2_usize)].refusal(),
+        CheckRefusal::OutOfFragment {
+            at: CoreNode::Type(TypeNode::Value(unformed)),
+            former: UnadmittedFormer::NumericAtom,
+        },
+        "the unformed signature keeps the failure forming it (#4043)"
     );
     let reference = &report.failures()[&ConstantIndex::from(0_usize)];
     assert_eq!(
