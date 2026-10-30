@@ -7,7 +7,9 @@
 //! stratum table builds the chain catalogue and the wiring catalogue at size
 //! seven and times each one's build and stratum certification. The last table
 //! runs the conditions over a level on `W ≀ W`, the wreath of the wiring site
-//! over itself, at the same total sizes.
+//! over itself, at the same total sizes. The chain restriction's table counts
+//! its objects, maps and pasting schemes at total sizes nine to fifteen, the
+//! counts `tests::theta` pins against Θ₂.
 //!
 //! Run it with `cargo run --release -p gandr-theory-sites --example suites`.
 
@@ -26,6 +28,7 @@ use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Part;
 use gandr_theory_sites::Scope;
 use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
@@ -184,23 +187,33 @@ fn stratum_row(
     Ok(())
 }
 
-/// How many maps a wreath holds.
+/// How many maps run between the objects of a wreath at `among`.
 ///
 /// # Specification
 /// trivial.
-fn wreath_maps(wreath: &Wreath<Catalogue>) -> CaseCount
+fn maps_among(
+    wreath: &Wreath<Catalogue>,
+    among: &[ShapeIndex],
+) -> CaseCount
 {
-    let count = wreath.objects().len();
     CaseCount::from(
-        (0 .. count)
-            .flat_map(|source| (0 .. count).map(move |target| (source, target)))
-            .map(|(source, target)| {
-                wreath
-                    .hom(ShapeIndex::from(source), ShapeIndex::from(target))
-                    .len()
-            })
+        among
+            .iter()
+            .flat_map(|source| among.iter().map(move |target| (*source, *target)))
+            .map(|(source, target)| wreath.hom(source, target).len())
             .sum::<usize>(),
     )
+}
+
+/// Every index of a wreath's objects.
+///
+/// # Specification
+/// trivial.
+fn every(wreath: &Wreath<Catalogue>) -> Vec<ShapeIndex>
+{
+    (0 .. wreath.objects().len())
+        .map(ShapeIndex::from)
+        .collect()
 }
 
 /// The wreath's table: `W ≀ W`'s object and map counts, then each condition
@@ -224,10 +237,10 @@ fn wreath_rows(
         out,
         "W ≀ W: {} objects and {} maps at total size ≤ {}, {} and {} at ≤ {}, built in {} ms",
         wide.objects().len(),
-        usize::from(wreath_maps(&wide)),
+        usize::from(maps_among(&wide, &every(&wide))),
         usize::from(one),
         narrow.objects().len(),
-        usize::from(wreath_maps(&narrow)),
+        usize::from(maps_among(&narrow, &every(&narrow))),
         usize::from(two),
         built.as_millis(),
     )?;
@@ -278,6 +291,55 @@ fn wreath_rows(
     )?;
     row(out, &"pushed-out map is raising", two, &pushed.stability)?;
     writeln!(out, "conditions run in {} ms", start.elapsed().as_millis())
+}
+
+/// The chain restriction's table: at each total size, its objects and maps,
+/// and its pasting schemes, the objects with an outer vertex and no point,
+/// with the maps between them.
+///
+/// # Specification
+/// trivial.
+fn restriction_rows(out: &mut impl Write) -> Result<(), RunError>
+{
+    writeln!(out)?;
+    writeln!(
+        out,
+        "| Total size | Objects | Maps | Pasting schemes | Their maps | Build |"
+    )?;
+    writeln!(
+        out,
+        "| ---------- | ------- | ---- | --------------- | ---------- | ----- |"
+    )?;
+    let pointless = |shape: &Shape| usize::from(shape.point_count()) == 0;
+    for total in [9_usize, 11, 13, 15] {
+        let bound = ShapeSize::from(total);
+        let start = Instant::now();
+        let chains = Catalogue::chains(bound)?;
+        let restriction = Wreath::build(&chains, &chains, bound);
+        let built = start.elapsed();
+        let all = every(&restriction);
+        let schemes: Vec<ShapeIndex> = restriction
+            .objects()
+            .iter()
+            .zip(&all)
+            .filter(|&(object, _)| {
+                usize::from(object.outer().vertex_count()) > 0
+                    && pointless(object.outer())
+                    && object.columns().iter().all(pointless)
+            })
+            .map(|(_, index)| *index)
+            .collect();
+        writeln!(
+            out,
+            "| ≤ {total} | {} | {} | {} | {} | {} ms |",
+            all.len(),
+            usize::from(maps_among(&restriction, &all)),
+            schemes.len(),
+            usize::from(maps_among(&restriction, &schemes)),
+            built.as_millis(),
+        )?;
+    }
+    Ok(())
 }
 
 /// Runs every condition and prints its row.
@@ -467,5 +529,6 @@ fn main() -> Result<(), RunError>
         Catalogue::build,
     )?;
     wreath_rows(&mut out, (&single, &paired), (one, two))?;
+    restriction_rows(&mut out)?;
     Ok(())
 }

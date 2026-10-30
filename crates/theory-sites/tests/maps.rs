@@ -7,6 +7,7 @@ use gandr_theory_circuit_algebras::Wire;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::ImageForm;
 use gandr_theory_sites::Invertibility;
+use gandr_theory_sites::Level as _;
 use gandr_theory_sites::MapForm;
 use gandr_theory_sites::Membership;
 use gandr_theory_sites::Part;

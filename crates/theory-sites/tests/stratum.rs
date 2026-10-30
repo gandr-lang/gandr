@@ -17,6 +17,7 @@ use gandr_theory_sites::GeneratorCount;
 use gandr_theory_sites::GeneratorIndex;
 use gandr_theory_sites::Graft;
 use gandr_theory_sites::Leg;
+use gandr_theory_sites::Level as _;
 use gandr_theory_sites::Natural;
 use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Port;

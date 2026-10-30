@@ -17,18 +17,32 @@
 //! are. A [`Wreath`] is a [`Level`], so the conditions run over it and a wreath
 //! may carry another.
 //!
+//! An object keys by its class: the least, over the orders of its outer
+//! vertices, of the relabelled outer ends with the columns' keys in that order.
+//! [`Level::find`] reads the key, so it finds an object written in any vertex
+//! order. It names an object it does not hold as outside the family when some
+//! level's shape lies outside that level's family, and as past the bound
+//! otherwise.
+//!
+//! The chain restriction wreathes the chain catalogue over the chain
+//! restriction one level down; at level one it is the chain catalogue. Its
+//! objects are Θₙ's: `[n](m_1, …, m_n)` is the outer chain of `n` vertices
+//! carrying the chain of `m_i` vertices at vertex `i`, or the empty shape when
+//! `m_i` is zero, and the 0-cell is an outer wire. Its maps are the site's,
+//! fewer than Θₙ's: faces only, with the empty column initial.
+//!
 //! # References
 //!
-//! - Clemens Berger. "Iterated Wreath Product of the Simplex Category and
-//!   Iterated Loop Spaces." _Advances in Mathematics_ 213 (2007), pages
-//!   230–270. `doi:10.1016/j.aim.2006.12.006`; preprint `arXiv:math/0512575` —
-//!   the wreath over a category over Γ (Definition 3.1, Remark 3.4), with the
-//!   dimension `m + Σ dim A_i` and the two classes (Proposition 3.14).
+//! - `Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces`
+//!   — lineage: the wreath over a category over Γ (Definition 3.1, Remark
+//!   3.4), Θₙ as the iterated wreath of Δ (Definition 3.3), with the dimension
+//!   `m + Σ dim A_i` and the two classes (Proposition 3.14).
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design, the
 //!   iterated site — one site under the wreath product, the stick refused at
 //!   each level and the empty inner shape kept.
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -39,6 +53,7 @@ use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_circuit_algebras::EdgeCount;
 
 use crate::catalogue::Catalogue;
+use crate::catalogue::Family;
 use crate::catalogue::ShapeIndex;
 use crate::degree::Degree;
 use crate::level::Level;
@@ -47,8 +62,10 @@ use crate::map::Invertibility;
 use crate::map::Membership;
 use crate::map::SiteMap;
 use crate::map::VertexSet;
+use crate::shape::Ends;
 use crate::shape::Shape;
 use crate::shape::ShapeSize;
+use crate::shape::VertexOrders;
 
 /// An object of a wreath: an outer shape, and one inner object per outer
 /// vertex, in vertex order; the default is the empty outer shape.
@@ -63,6 +80,47 @@ pub struct WreathShape<Object>
 
 impl<Object> WreathShape<Object>
 {
+    /// The object over `outer` carrying `columns`, one per outer vertex, in
+    /// vertex order.
+    ///
+    /// # Specification
+    /// - ensures: the object holds `outer` and `columns`, in order.
+    /// - fails: [`WreathShapeObstruction::Columns`] when the columns are not
+    ///   one per outer vertex.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`WreathShapeObstruction::Columns`]: the column count differs from the
+    ///   outer vertex count.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — Θ₂'s objects built here are found at their classes,
+    ///   and a column short is refused with both counts.
+    /// - witness: `tests::theta::the_chain_restriction_holds_theta_two_at_the_bound`
+    /// - witness: `tests::theta::a_cycle_at_the_outer_level_is_refused_by_name`
+    #[inline]
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref object) => object.columns.len() == usize::from(object.outer.vertex_count()),
+        Err(WreathShapeObstruction::Columns { vertices, columns }) => vertices != columns,
+    })]
+    pub fn new(
+        outer: Shape,
+        columns: Vec<Object>,
+    ) -> Result<Self, WreathShapeObstruction>
+    {
+        let vertices = outer.vertex_count();
+        if columns.len() != usize::from(vertices) {
+            return Err(WreathShapeObstruction::Columns {
+                vertices,
+                columns: EdgeCount::from(columns.len()),
+            });
+        }
+        Ok(Self {
+            outer,
+            columns: columns.into_boxed_slice(),
+        })
+    }
+
     /// The outer shape.
     ///
     /// # Specification
@@ -108,6 +166,81 @@ where
         }
         f.write_str("⟩")
     }
+}
+
+/// Why no wreath object stands over an outer shape and its columns.
+///
+/// # Specification
+/// - provides: the refusal [`WreathShape::new`] names, with both counts.
+/// - executable: none — a type-level block has no body and no call boundary to
+///   check.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a column short is refused with both counts.
+/// - witness: `tests::theta::a_cycle_at_the_outer_level_is_refused_by_name`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WreathShapeObstruction
+{
+    /// The columns are not one per outer vertex.
+    Columns
+    {
+        /// The outer vertex count.
+        vertices: EdgeCount,
+        /// The column count given.
+        columns: EdgeCount,
+    },
+}
+
+impl fmt::Display for WreathShapeObstruction
+{
+    /// Names the refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Columns { vertices, columns } => write!(
+                f,
+                "{} columns over {} outer vertices",
+                usize::from(columns),
+                usize::from(vertices)
+            ),
+        }
+    }
+}
+
+impl core::error::Error for WreathShapeObstruction
+{
+}
+
+/// A wreath object's isomorphism class: the least, over the orders of its
+/// outer vertices, of the relabelled outer ends with the columns' keys in that
+/// order.
+///
+/// # Specification
+/// - provides: the class [`Level::find`] looks an object up by, so two objects
+///   share a key exactly when an outer automorphism with inner isomorphisms
+///   carries one to the other.
+/// - executable: none — a type-level block has no body and no call boundary to
+///   check.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both column orders over a pair of points share one key.
+/// - witness: `tests::wreath::the_wreath_holds_one_object_per_class`
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct WreathKey<Key>
+{
+    /// How many outer vertices the class's objects have.
+    vertices: EdgeCount,
+    /// The sorted outer wire ends under the least vertex order.
+    ends: Box<[Ends]>,
+    /// The columns' keys under that order.
+    columns: Box<[Key]>,
 }
 
 /// One source vertex's inner maps, each with the image vertex it maps to.
@@ -197,9 +330,10 @@ where
 /// - ensures: the objects are the classes whose outer shape the outer catalogue
 ///   holds and whose inner objects the inner level holds, two objects one class
 ///   when an outer automorphism carries one's inner objects onto the other's;
-///   ordered by total size, then by outer index and inner indices. The hom set
-///   of a pair is every outer map with every choice of inner maps, ascending.
-/// - provides: the level above the inner one, which the conditions read.
+///   ordered by total size, then by outer index and inner indices, each keyed
+///   by its class. The hom set of a pair is every outer map with every choice
+///   of inner maps, ascending. The families are the outer catalogue's, then the
+///   inner level's.
 /// - panics: none.
 /// - executable: none — a type carries no runtime predicate; the constructor's
 ///   postcondition checks its counts and bound.
@@ -213,6 +347,10 @@ pub struct Wreath<Inner: Level>
 {
     /// The objects, one per class.
     objects: Box<[WreathShape<Inner::Object>]>,
+    /// Each class's index, by its key.
+    classes: BTreeMap<WreathKey<Inner::Key>, ShapeIndex>,
+    /// The families the objects lie in, one per level, outermost first.
+    families: Box<[Family]>,
     /// The hom sets, row-major: source index times count plus target index.
     homs: Box<[HomSet<Inner::Map>]>,
 }
@@ -230,7 +368,8 @@ impl<Inner: Level> Wreath<Inner>
     ///
     /// # Specification
     /// - ensures: every object's total size is at most `bound`, the sizes
-    ///   ascend, and there is one hom set per ordered pair of objects.
+    ///   ascend, each object keys apart from the others, and there is one hom
+    ///   set per ordered pair of objects.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -242,6 +381,7 @@ impl<Inner: Level> Wreath<Inner>
     #[spec(ensures: |ref wreath| [
         wreath.objects.iter().all(|object| Self::size(object) <= bound),
         wreath.objects.windows(2).all(|pair| pair.first().map(Self::size) <= pair.get(1).map(Self::size)),
+        wreath.classes.len() == wreath.objects.len(),
         wreath.homs.len() == wreath.objects.len().saturating_mul(wreath.objects.len()),
     ])]
     pub fn build(
@@ -273,8 +413,18 @@ impl<Inner: Level> Wreath<Inner>
                 homs.push(Self::maps_between(outer, inner, source, target));
             }
         }
+        let keys = objects
+            .iter()
+            .enumerate()
+            .map(|(index, object)| (<Self as Level>::key(object), ShapeIndex::from(index)))
+            .collect();
+        let families = core::iter::once(outer.family())
+            .chain(inner.families().iter().copied())
+            .collect();
         Self {
             objects,
+            classes: keys,
+            families,
             homs: homs.into_boxed_slice(),
         }
     }
@@ -465,8 +615,32 @@ fn advance<Choice>(
     Membership::Outside
 }
 
+/// Into `out`, the columns' keys with the key at vertex `v` moved to the
+/// position `order` labels `v` with.
+///
+/// # Specification
+/// trivial.
+fn placed<'key, Key>(
+    order: &[Edge],
+    columns: &'key [Key],
+    out: &mut Vec<&'key Key>,
+)
+{
+    out.clear();
+    out.extend(columns);
+    for (vertex, column) in columns.iter().enumerate() {
+        if let Some(slot) = order
+            .get(vertex)
+            .and_then(|label| out.get_mut(usize::from(*label)))
+        {
+            *slot = column;
+        }
+    }
+}
+
 impl<Inner: Level> Level for Wreath<Inner>
 {
+    type Key = WreathKey<Inner::Key>;
     type Map = WreathMap<Inner::Map>;
     type Object = WreathShape<Inner::Object>;
 
@@ -743,5 +917,106 @@ impl<Inner: Level> Level for Wreath<Inner>
                     sum.saturating_add(usize::from(Inner::size(column)))
                 }),
         )
+    }
+
+    /// The wreath's families, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn families(&self) -> &[Family]
+    {
+        &self.families
+    }
+
+    /// The wreath's class index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn class_index(&self) -> &BTreeMap<WreathKey<Inner::Key>, ShapeIndex>
+    {
+        &self.classes
+    }
+
+    /// Whether the first of `families` holds the outer shape and the rest hold
+    /// every column; outside when there is no first.
+    ///
+    /// # Specification
+    /// - ensures: inside exactly when `families` has a first family holding the
+    ///   outer shape and the inner level places every column in the rest.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an outer bigon and a bigon column each lie outside
+    ///   the chains, and Θ₂'s objects lie in them.
+    /// - witness: `tests::theta::a_cycle_at_the_outer_level_is_refused_by_name`
+    #[inline]
+    #[spec(ensures: |answer| (answer == Membership::Inside) == families.split_first().is_some_and(|(first, rest)| {
+        first.holds(&object.outer) == Membership::Inside
+            && object.columns.iter().all(|column| Inner::lies_in(rest, column) == Membership::Inside)
+    }))]
+    fn lies_in(
+        families: &[Family],
+        object: &Self::Object,
+    ) -> Membership
+    {
+        let Some((first, rest)) = families.split_first()
+        else {
+            return Membership::Outside;
+        };
+        if first.holds(&object.outer) == Membership::Inside
+            && object
+                .columns
+                .iter()
+                .all(|column| Inner::lies_in(rest, column) == Membership::Inside)
+        {
+            Membership::Inside
+        }
+        else {
+            Membership::Outside
+        }
+    }
+
+    /// The least, over the orders of the outer vertices, of the relabelled
+    /// outer ends with the columns' keys in that order.
+    ///
+    /// # Specification
+    /// - ensures: the key keeps the outer vertex count and one column key per
+    ///   outer vertex; two objects key alike exactly when an outer isomorphism
+    ///   carries one's columns onto columns keyed alike in the other.
+    /// - panics: none.
+    /// - intension: tries every order of the outer vertices, so the cost is the
+    ///   outer vertex count's factorial times the wires' sorting cost.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every wreath built at the pinned bounds keys each
+    ///   object apart, and a relabelled object is found at its class; a key
+    ///   that missed an order would split a class or merge two.
+    /// - witness: `tests::wreath::the_wreath_holds_one_object_per_class`
+    /// - witness: `tests::theta::the_chain_restriction_is_the_full_sub_site_of_the_wreath`
+    #[inline]
+    #[spec(ensures: |ref key| key.vertices == object.outer.vertex_count() && key.columns.len() == object.columns.len())]
+    fn key(object: &Self::Object) -> Self::Key
+    {
+        let columns: Vec<Inner::Key> = object.columns.iter().map(Inner::key).collect();
+        let mut orders = VertexOrders::new(object.outer.vertex_count());
+        let mut ends = object.outer.relabelled(orders.order());
+        let mut least: Vec<&Inner::Key> = Vec::with_capacity(columns.len());
+        placed(orders.order(), &columns, &mut least);
+        let mut candidate: Vec<&Inner::Key> = Vec::with_capacity(columns.len());
+        while orders.advance() == Membership::Inside {
+            let relabelled = object.outer.relabelled(orders.order());
+            placed(orders.order(), &columns, &mut candidate);
+            if (&relabelled, &candidate) < (&ends, &least) {
+                ends = relabelled;
+                core::mem::swap(&mut least, &mut candidate);
+            }
+        }
+        WreathKey {
+            vertices: object.outer.vertex_count(),
+            ends,
+            columns: least.into_iter().cloned().collect(),
+        }
     }
 }

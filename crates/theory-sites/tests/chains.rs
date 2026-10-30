@@ -10,6 +10,7 @@ use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Corolla;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
+use gandr_theory_sites::Level as _;
 use gandr_theory_sites::Membership;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
