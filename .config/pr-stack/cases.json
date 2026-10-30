@@ -1831,6 +1831,73 @@
     "output": "[{\"path\":\"/w/bisect\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, not a scratch\"}]"
   },
   {
+    "name": "#4221: an idle kept worktree clears its incremental caches; a busy, primary, caller's or watched one keeps them, and a removed one goes whole",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/idle",
+        "branch": "idle",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      },
+      {
+        "path": "/w/busy",
+        "branch": "busy",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "idle": false
+      },
+      {
+        "path": "/w/clone",
+        "branch": "main",
+        "primary": true,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      },
+      {
+        "path": "/w/own",
+        "branch": "own",
+        "primary": false,
+        "cwd": true,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      },
+      {
+        "path": "/w/watched",
+        "branch": "watched",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": 4242,
+        "idle": true
+      },
+      {
+        "path": "/w/landed",
+        "branch": "landed",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      }
+    ],
+    "output": "[{\"path\":\"/w/idle\",\"branch\":\"idle\",\"action\":\"keep\",\"reason\":\"not landed\",\"clear\":true},{\"path\":\"/w/busy\",\"branch\":\"busy\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/clone\",\"branch\":\"main\",\"action\":\"keep\",\"reason\":\"the primary worktree\"},{\"path\":\"/w/own\",\"branch\":\"own\",\"action\":\"keep\",\"reason\":\"the caller's own worktree\"},{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/landed\",\"branch\":\"landed\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
     "name": "#2531: a push to a queued pull request's branch is refused, naming it",
     "program": "queued.jq",
     "args": {
