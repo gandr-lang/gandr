@@ -61,14 +61,31 @@ use crate::segal::Inclusion;
 use crate::segal::Leg;
 use crate::shape::End;
 
-/// The version byte every image leads with.
-const IMAGE_VERSION: u8 = 1;
+wrapper! {
+    /// The byte an image leads with, which names its level and its version.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct Lead(u8);
+}
+
+impl Lead
+{
+    /// The lead of a level-one image.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const ONE: Self = Self(1);
+    /// The lead of a level-two image.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const TWO: Self = Self(2);
+}
 
 wrapper! {
     /// One word of an image: a count, a catalogue index, a hom-set position,
     /// a vertex or a wire.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    struct Word(usize);
+    pub struct Word(usize);
 }
 
 /// The theory crates' build identity, which `build.rs` writes.
@@ -160,11 +177,20 @@ impl AsRef<[u8]> for StratumImage
 
 impl StratumImage
 {
+    /// An image holding `lead` alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn led(lead: Lead) -> Self
+    {
+        Self(Vec::from([lead.0]))
+    }
+
     /// Append `word`.
     ///
     /// # Specification
     /// trivial.
-    fn word(
+    pub(crate) fn word(
         &mut self,
         word: Word,
     )
@@ -187,21 +213,23 @@ pub enum Unreplayed
     /// The bytes do not read as an image: another version, a stream that
     /// ends early or runs on, or a number past the host's addresses.
     Malformed,
-    /// The image counts another number of shapes than the catalogue holds.
+    /// The image counts another number of shapes than the catalogue holds,
+    /// or of objects than the wreath holds.
     Catalogue,
-    /// The degree is zero, or past the catalogue's reach.
+    /// The degree is zero, or past the catalogue's or the wreath's reach.
     Degree,
     /// The corollas are not the catalogue's shapes of degree one, in
     /// catalogue order.
     Corollas,
-    /// The cocones do not stand at the catalogue's shapes of degree two to
-    /// the image's degree, in catalogue order.
+    /// The cocones do not stand at the catalogue's shapes, or the wreath's
+    /// objects, of degree two to the image's degree, in their order.
     Cocones,
     /// An inclusion or a graft of the shape's cocone does not stand in the
-    /// catalogue.
+    /// catalogue, or a cell or a graft of the object's cocone is not the one
+    /// level one gives.
     Cocone
     {
-        /// The shape.
+        /// The shape, or the wreath's object.
         shape: ShapeIndex,
     },
 }
@@ -235,15 +263,50 @@ impl fmt::Display for Unreplayed
 
 /// A cursor over an image's bytes.
 #[repr(transparent)]
-struct Reader<'bytes>(&'bytes [u8]);
+pub struct Reader<'bytes>(&'bytes [u8]);
+
+impl<'bytes> Reader<'bytes>
+{
+    /// A cursor past `image`'s lead, when it is `lead`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Unreplayed::Malformed`] for an empty image or another lead.
+    pub fn opened(
+        image: &'bytes StratumImage,
+        lead: Lead,
+    ) -> Result<Self, Unreplayed>
+    {
+        match image.0.split_first() {
+            Some((&first, rest)) if first == lead.0 => Ok(Self(rest)),
+            Some(_) | None => Err(Unreplayed::Malformed),
+        }
+    }
+}
 
 impl Reader<'_>
 {
+    /// Whether every byte is read.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn finished(&self) -> Membership
+    {
+        if self.0.is_empty() {
+            Membership::Inside
+        }
+        else {
+            Membership::Outside
+        }
+    }
+
     /// The next word.
     ///
     /// # Specification
     /// trivial.
-    fn word(&mut self) -> Result<Word, Unreplayed>
+    pub fn word(&mut self) -> Result<Word, Unreplayed>
     {
         let (word, rest) = self
             .0
@@ -286,7 +349,7 @@ impl SegalStratum
     #[must_use]
     pub fn image(&self) -> StratumImage
     {
-        let mut image = StratumImage(Vec::from([IMAGE_VERSION]));
+        let mut image = StratumImage::led(Lead::ONE);
         image.word(Word::from(self.catalogue.shapes().len()));
         image.word(Word::from(usize::from(self.degree)));
         image.word(Word::from(self.corollas.len()));
@@ -352,11 +415,7 @@ impl SegalStratum
         image: &StratumImage,
     ) -> Result<Self, Unreplayed>
     {
-        let (&version, rest) = image.0.split_first().ok_or(Unreplayed::Malformed)?;
-        if version != IMAGE_VERSION {
-            return Err(Unreplayed::Malformed);
-        }
-        let mut reader = Reader(rest);
+        let mut reader = Reader::opened(image, Lead::ONE)?;
         if usize::from(reader.word()?) != catalogue.shapes().len() {
             return Err(Unreplayed::Catalogue);
         }

@@ -761,14 +761,14 @@ fn the_wedge_and_the_cover_give_one_verdict()
     let bound = ShapeSize::from(13_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
-    let wreath = Wreath::build(level, level, bound);
+    let wreath = Arc::new(Wreath::build(level, level, bound));
     let below = level_one(&chains);
-    let cover = WreathStratum::certify(&wreath, Degree::from(11_usize), below)
+    let cover = WreathStratum::certify(Arc::clone(&wreath), Degree::from(11_usize), below)
         .expect("level two is certified at the bound's top");
     let colimits: BTreeSet<ShapeIndex> = cover.cocones().iter().map(WreathCocone::object).collect();
     let class = |lengths: &[usize]| {
         let columns: Vec<Length> = lengths.iter().copied().map(Length).collect();
-        index(&wreath, &theta(&columns))
+        index(&*wreath, &theta(&columns))
     };
     let as_membership = |holds: bool| {
         if holds {

@@ -18,9 +18,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review.
 
-**How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states its shape, and each module the boundary it owns.
-
-**Cells.** A rule `a <=> b` is a cell its theory decides by conversion, and a `Path` is a cell a program carries. A model witnesses each rule as a `Path` in its carrier: `here` where the carrier converts, a written path otherwise. The presented type is the initial model, where every witness is `here`. Three sites read this: a model's law component (`gandr-surface-lowering`'s `model`), a fold's respect obligation ([`respect`](src/respect.rs)) and a handler's lawfulness ([`handler`](src/handler.rs)). The corpus source `model/modules/model-rule-witnesses.gandr` pairs both witnesses of one law.
+**How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states its shape, how a rule and a `Path` are both cells, and each module the boundary it owns.
 
 ## Provided features
 
@@ -36,7 +34,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
 - `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
 - `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` and `ModuleReport::natives`: `ua_n` at every certified stratum, and the native paths it and `pathProduct` cross as.
-- `CheckingContext::keep_strata_in`, `ua::StratumStore`, `ua::StratumAt`, `ua::NoStratumStore` and `ua::recalled`: the strata a context holds for its life, recalled from a store the driver implements and replayed before use.
+- `CheckingContext::keep_strata_in`, `CheckingContext::level_two`, `ua::StratumStore`, `ua::StratumAt`, `ua::StratumLevel`, `ua::NoStratumStore` and `ua::recalled`: the strata a context holds for its life, recalled from a store the driver implements and replayed before use.
 - `CheckRefusal::ComposeUncertified`, `ComposeNotAShape` and `ComposeDoesNotFill`: a chain's unbiased composite.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.

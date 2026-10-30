@@ -5,11 +5,10 @@
 //! context a composition makes is then handed the store
 //! ([`gandr_core_checker::CheckingContext::keep_strata_in`]). A stratum a
 //! context certifies is committed by content and named by a root keyed by
-//! its bound, its catalogue family with a sub-site's profiles, its degree and
-//! the site's build.
-//! Its record carries a receipt
-//! the installation's key signs. A later read believes the record only under
-//! the policy, and the checker replays the image's structure before it uses
+//! its bound, its catalogue family with a sub-site's profiles, its degree,
+//! its level and the site's build. Its record carries a receipt the
+//! installation's key signs. A later read believes the record only under the
+//! policy, and the checker replays the image's structure before it uses
 //! it. A process that installs none, `check --recheck` among them, certifies
 //! each stratum in each context that names it.
 //!
@@ -36,6 +35,7 @@ use std::sync::OnceLock;
 
 use gandr_core_checker::ua::NoStratumStore;
 use gandr_core_checker::ua::StratumAt;
+use gandr_core_checker::ua::StratumLevel;
 use gandr_core_checker::ua::StratumStore;
 use gandr_core_checker::ua::recalled;
 use gandr_kernel_core::verdict::Attestation;
@@ -60,7 +60,6 @@ use gandr_storage_values::TokenReader;
 use gandr_storage_values::TokenSink;
 use gandr_storage_values::ValueError;
 use gandr_theory_sites::Family;
-use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::SitesBuild;
 use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Unreplayed;
@@ -81,13 +80,14 @@ const KEY_CONTEXT: &str = "gandr checker stratum key 2026-10-30";
 static INSTALLED: OnceLock<Arc<StoredStrata>> = OnceLock::new();
 
 /// A stratum's key: the site's build, the bound, the catalogue family with a
-/// sub-site's profiles in order, and the degree, digested.
+/// sub-site's profiles in order, the degree and the level, digested.
 ///
 /// # Specification
 /// trivial.
 fn key_of(
     family: &Family,
     at: StratumAt,
+    level: StratumLevel,
 ) -> StratumKey
 {
     let word = |count: usize| u64::try_from(count).unwrap_or(u64::MAX).to_le_bytes();
@@ -114,23 +114,25 @@ fn key_of(
     StratumKey::from(
         *hasher
             .update(&word(usize::from(at.degree)))
+            .update(level.to_string().as_bytes())
             .finalize()
             .as_bytes(),
     )
 }
 
-/// The root a stratum is named by: its bound, its degree and its key, which
-/// digests its catalogue family.
+/// The root a stratum is named by: its level, its bound, its degree and its
+/// key, which digests its catalogue family.
 ///
 /// # Specification
 /// trivial.
 fn root_of(
     at: StratumAt,
+    level: StratumLevel,
     key: StratumKey,
 ) -> RootName
 {
     RootName::new(format!(
-        "stratum/{}/{}/{key}",
+        "stratum/{level}/{}/{}/{key}",
         usize::from(at.bound),
         usize::from(at.degree)
     ))
@@ -248,7 +250,7 @@ pub struct StoredStrata
     /// Strata the store could not keep.
     unwritten: AtomicUsize,
     /// Each answered image that did not replay, and why.
-    refused: Mutex<Vec<(StratumAt, Unreplayed)>>,
+    refused: Mutex<Vec<(StratumAt, StratumLevel, Unreplayed)>>,
 }
 
 impl StoredStrata
@@ -328,12 +330,13 @@ impl StratumStore for StoredStrata
         &self,
         family: &Family,
         at: StratumAt,
+        level: StratumLevel,
     ) -> Maybe<StratumImage, recalled::Absent>
     {
-        let key = key_of(family, at);
+        let key = key_of(family, at, level);
         let kept = self.store().and_then(|store| {
             let store = store.lock().ok()?;
-            let Maybe::Present(pointer) = store.roots().root(&root_of(at, key))
+            let Maybe::Present(pointer) = store.roots().root(&root_of(at, level, key))
             else {
                 return None;
             };
@@ -369,23 +372,23 @@ impl StratumStore for StoredStrata
         &self,
         family: &Family,
         at: StratumAt,
-        stratum: &SegalStratum,
+        level: StratumLevel,
+        image: &StratumImage,
     )
     {
         let _before = self.certified.fetch_add(1, Ordering::Relaxed);
-        let key = key_of(family, at);
-        let image = stratum.image();
+        let key = key_of(family, at, level);
         let kept = Kept {
             receipt: self
                 .signer
                 .sign_stratum(key, StratumBytes::from(image.as_ref())),
-            image,
+            image: image.clone(),
         };
         let written = self.store().is_some_and(|store| {
             store.lock().is_ok_and(|mut store| {
                 store
                     .commit(&kept)
-                    .and_then(|pointer| store.set_root(root_of(at, key), pointer))
+                    .and_then(|pointer| store.set_root(root_of(at, level, key), pointer))
                     .is_ok()
             })
         });
@@ -403,12 +406,13 @@ impl StratumStore for StoredStrata
         &self,
         _family: &Family,
         at: StratumAt,
+        level: StratumLevel,
         why: Unreplayed,
     )
     {
         match self.refused.lock() {
-            Ok(mut refused) => refused.push((at, why)),
-            Err(poisoned) => poisoned.into_inner().push((at, why)),
+            Ok(mut refused) => refused.push((at, level, why)),
+            Err(poisoned) => poisoned.into_inner().push((at, level, why)),
         }
     }
 }
@@ -459,7 +463,7 @@ pub struct StrataTally
     /// Strata the store could not keep.
     unwritten: usize,
     /// Each answered image that did not replay, and why.
-    refused: Vec<(StratumAt, Unreplayed)>,
+    refused: Vec<(StratumAt, StratumLevel, Unreplayed)>,
     /// The public half of this installation's key.
     signer: KernelIdentity,
 }
@@ -494,9 +498,9 @@ impl StrataTally
     #[inline]
     pub fn refusals(&self) -> impl Iterator<Item = String>
     {
-        self.refused.iter().map(|&(ref at, why)| {
+        self.refused.iter().map(|&(ref at, level, why)| {
             format!(
-                "refused the stored stratum at bound {}, degree {}: {why}",
+                "refused the stored stratum of level {level} at bound {}, degree {}: {why}",
                 usize::from(at.bound),
                 usize::from(at.degree)
             )
@@ -565,6 +569,7 @@ mod tests
     use std::path::Path;
 
     use gandr_core_checker::ua::StratumAt;
+    use gandr_core_checker::ua::StratumLevel;
     use gandr_core_checker::ua::StratumStore as _;
     use gandr_core_checker::ua::recalled;
     use gandr_kernel_core::verdict::KernelSigner;
@@ -577,6 +582,7 @@ mod tests
     use gandr_theory_sites::SegalStratum;
     use gandr_theory_sites::ShapeBudget;
     use gandr_theory_sites::ShapeSize;
+    use gandr_theory_sites::StratumImage;
     use quenchant_shape::shape::Maybe;
 
     use super::StoredStrata;
@@ -605,7 +611,8 @@ mod tests
     /// #4034: a stratum kept under one key is recalled by a second store over
     /// the same directory that believes the key, as the image the first kept.
     /// A store believing another key recalls nothing, and so does one asked
-    /// for another degree or, #4035, another sub-site.
+    /// for another degree or, #4035, another sub-site. #4123: the store keeps
+    /// level one and level two at one stratum under two keys.
     #[test]
     fn a_second_store_recalls_what_the_first_kept_4034()
     {
@@ -633,24 +640,36 @@ mod tests
         let stratum = SegalStratum::certify(catalogue, at.degree).expect("degree two is certified");
 
         let first = StoredStrata::new(trusting(&signer), root.clone(), signer.clone());
+        let one = StratumLevel::One;
         assert!(matches!(
-            first.recall(&family, at),
+            first.recall(&family, at, one),
             Maybe::Absent(recalled::Absent::Unkept)
         ));
-        first.keep(&family, at, &stratum);
+        first.keep(&family, at, one, &stratum.image());
+        let two = StratumImage::from(Vec::from([2_u8]));
+        first.keep(&family, at, StratumLevel::Two, &two);
 
         let second = StoredStrata::new(trusting(&signer), root.clone(), signer.clone());
         assert_eq!(
-            second.recall(&family, at),
+            second.recall(&family, at, one),
             Maybe::Present(stratum.image()),
             "the second store recalls the image the first kept"
         );
+        assert_eq!(
+            second.recall(&family, at, StratumLevel::Two),
+            Maybe::Present(two),
+            "level two is another root"
+        );
         assert!(
             matches!(
-                second.recall(&family, StratumAt {
-                    degree: Degree::from(3_usize),
-                    ..at
-                }),
+                second.recall(
+                    &family,
+                    StratumAt {
+                        degree: Degree::from(3_usize),
+                        ..at
+                    },
+                    one
+                ),
                 Maybe::Absent(recalled::Absent::Unkept)
             ),
             "another degree is another root"
@@ -659,7 +678,8 @@ mod tests
             matches!(
                 second.recall(
                     &Family::Profiles(BTreeSet::from([operation(PortCount::from(2_usize))])),
-                    at
+                    at,
+                    one
                 ),
                 Maybe::Absent(recalled::Absent::Unkept)
             ),
@@ -667,7 +687,7 @@ mod tests
         );
         assert!(
             matches!(
-                second.recall(&Family::Wirings, at),
+                second.recall(&Family::Wirings, at, one),
                 Maybe::Absent(recalled::Absent::Unkept)
             ),
             "the whole catalogue is another root"
@@ -677,7 +697,7 @@ mod tests
         let foreign = StoredStrata::new(trusting(&other), root, other.clone());
         assert!(
             matches!(
-                foreign.recall(&family, at),
+                foreign.recall(&family, at, one),
                 Maybe::Absent(recalled::Absent::Unattested)
             ),
             "a store believing another key recalls nothing"

@@ -41,10 +41,13 @@ use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Table;
 use gandr_theory_sites::Uncertified;
 use gandr_theory_sites::Unreplayed;
+use gandr_theory_sites::Wreath;
+use gandr_theory_sites::WreathStratum;
 use quenchant_shape::shape::Maybe;
 
 use super::StratumAt;
 use super::StratumDefect;
+use super::StratumLevel;
 use super::StratumStore;
 use super::Translators;
 use super::UaDefect;
@@ -1350,6 +1353,7 @@ impl StratumStore for Answering
         &self,
         _family: &Family,
         _at: StratumAt,
+        _level: StratumLevel,
     ) -> Maybe<StratumImage, recalled::Absent>
     {
         self.image.clone()
@@ -1363,7 +1367,8 @@ impl StratumStore for Answering
         &self,
         _family: &Family,
         _at: StratumAt,
-        _stratum: &SegalStratum,
+        _level: StratumLevel,
+        _image: &StratumImage,
     )
     {
         let _before = self.kept.fetch_add(1, Ordering::Relaxed);
@@ -1377,6 +1382,7 @@ impl StratumStore for Answering
         &self,
         _family: &Family,
         _at: StratumAt,
+        _level: StratumLevel,
         why: Unreplayed,
     )
     {
@@ -1469,6 +1475,86 @@ fn a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034()
         );
         assert_eq!(store.counts(), counts, "{case}");
     }
+}
+
+/// #4123: level two over the chains at total size nine and degree four,
+/// asked for twice of one context handed a store. A store holding nothing is
+/// handed level two once, and never level one's chain stratum. A store
+/// holding its image replays it and is handed nothing to keep. A store
+/// holding a damaged image hears it refused as malformed, and is handed level
+/// two certified afresh. A degree past every object is refused by the degree.
+#[test]
+fn level_two_is_kept_recalled_and_refused_by_the_store_4123()
+{
+    let at = StratumAt {
+        bound: ShapeSize::from(9),
+        degree: Degree::from(4),
+    };
+    let chains = Arc::new(Catalogue::chains(at.bound).expect("the chains build"));
+    let below = SegalStratum::certify(Arc::clone(&chains), chains.reach())
+        .expect("level one is certified at the chains' reach");
+    let level: &Catalogue = &chains;
+    let wreath = Arc::new(Wreath::build(level, level, at.bound));
+    let image = WreathStratum::certify(wreath, at.degree, below)
+        .expect("level two is certified at degree four")
+        .image();
+    let mut damaged = Vec::from(image.clone());
+    let _last = damaged.pop();
+    let stores = [
+        (
+            Answering::new(
+                Maybe::Absent(recalled::Absent::Unkept),
+                Unreplayed::Malformed,
+            ),
+            Counts {
+                kept: 1,
+                refused: 0,
+                other: 0,
+            },
+            "a store holding nothing keeps level two once",
+        ),
+        (
+            Answering::new(Maybe::Present(image.clone()), Unreplayed::Malformed),
+            Counts {
+                kept: 0,
+                refused: 0,
+                other: 0,
+            },
+            "a stored image replays, and nothing is certified",
+        ),
+        (
+            Answering::new(
+                Maybe::Present(StratumImage::from(damaged)),
+                Unreplayed::Malformed,
+            ),
+            Counts {
+                kept: 1,
+                refused: 1,
+                other: 0,
+            },
+            "a damaged image is refused by name and certified afresh",
+        ),
+    ];
+    for (store, counts, case) in stores {
+        let mut arena = CoreArena::new();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_strata_in(Arc::<Answering>::clone(&store));
+        for _asked in 0_usize .. 2_usize {
+            let stratum = context.level_two(at).expect("level two is answered");
+            assert_eq!(stratum.image(), image, "{case}: level two's own image");
+        }
+        assert_eq!(store.counts(), counts, "{case}");
+    }
+    let past = Degree::from(100);
+    let mut arena = CoreArena::new();
+    assert!(
+        matches!(
+            CheckingContext::new(&mut arena, CheckBudget::DEFAULT)
+                .level_two(StratumAt { degree: past, ..at }),
+            Err(StratumDefect::Degree { degree }) if degree == past
+        ),
+        "a degree past every object"
+    );
 }
 
 /// The profiles of the magma's corollas: its binary operation and its

@@ -76,7 +76,10 @@
 #[cfg(test)]
 mod tests;
 
+mod image;
+
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -383,10 +386,10 @@ impl core::error::Error for LevelUncertified
 /// category with automorphisms and whose objects of degree two to the degree
 /// are each the colimit of their cells.
 #[derive(Clone, Debug)]
-pub struct WreathStratum<'level>
+pub struct WreathStratum
 {
     /// The wreath.
-    wreath: &'level Two,
+    wreath: Arc<Two>,
     /// Level one's certificate over the wreath's catalogue.
     below: SegalStratum,
     /// The degree.
@@ -396,7 +399,7 @@ pub struct WreathStratum<'level>
     cocones: Vec<WreathCocone>,
 }
 
-impl<'level> WreathStratum<'level>
+impl WreathStratum
 {
     /// Certifies `wreath`, built over `below`'s catalogue as both its outer and
     /// its inner level, at `degree`, consuming `below`.
@@ -425,13 +428,13 @@ impl<'level> WreathStratum<'level>
     #[inline]
     #[spec(ensures: |ref result| match *result {
         Ok(ref stratum) => stratum.cocones.iter().all(|cocone| {
-            wreath.objects().get(usize::from(cocone.object)).is_some_and(|object| within(object, degree) == Membership::Inside)
+            stratum.wreath.objects().get(usize::from(cocone.object)).is_some_and(|object| within(object, degree) == Membership::Inside)
         }),
         Err(LevelUncertified::Condition { ref failure }) => within(&failure.object, degree) == Membership::Inside,
         Err(_) => true,
     })]
     pub fn certify(
-        wreath: &'level Two,
+        wreath: Arc<Two>,
         degree: Degree,
         below: SegalStratum,
     ) -> Result<Self, LevelUncertified>
@@ -444,12 +447,12 @@ impl<'level> WreathStratum<'level>
         {
             return Err(LevelUncertified::Degree { degree });
         }
-        if let Outcome::Fails { witness, .. } = direct_core(&Site::new(wreath)) {
+        if let Outcome::Fails { witness, .. } = direct_core(&Site::new(&*wreath)) {
             return Err(LevelUncertified::Direct {
                 case: Box::new(witness),
             });
         }
-        let (outcome, cocones) = walk(wreath, &below, degree);
+        let (outcome, cocones) = walk(&wreath, &below, degree);
         if let Outcome::Fails { witness, .. } = outcome {
             return Err(LevelUncertified::Condition {
                 failure: Box::new(witness),
@@ -480,9 +483,9 @@ impl<'level> WreathStratum<'level>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn wreath(&self) -> &'level Two
+    pub fn wreath(&self) -> &Two
     {
-        self.wreath
+        &self.wreath
     }
 
     /// Level one's certificate, which this one is built from.

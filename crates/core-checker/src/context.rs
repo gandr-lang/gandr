@@ -1174,6 +1174,35 @@ impl<'arena> CheckingContext<'arena>
         self.strata.keep_in(store);
     }
 
+    /// Level two at `at` over the wreath of the chains over themselves, from
+    /// the strata this context holds: recalled from its store and replayed,
+    /// or certified and kept.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`crate::ua::Strata::level_two`].
+    /// - fails: as [`crate::ua::Strata::level_two`].
+    /// - panics: none.
+    /// - executable: none — the stratum source's own contract.
+    ///
+    /// # Errors
+    /// [`crate::ua::StratumDefect`] as [`crate::ua::Strata::level_two`]
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a context handed a store holding level two's image
+    ///   replays it and certifies nothing, and one holding a damaged image
+    ///   refuses it by name and certifies afresh.
+    /// - witness: `ua::tests::level_two_is_kept_recalled_and_refused_by_the_store_4123`
+    #[inline]
+    pub fn level_two(
+        &mut self,
+        at: crate::ua::StratumAt,
+    ) -> Result<alloc::sync::Arc<gandr_theory_sites::WreathStratum>, crate::ua::StratumDefect>
+    {
+        self.strata.level_two(at)
+    }
+
     /// The catalogues and strata the context holds, and its store.
     ///
     /// # Specification
