@@ -2447,6 +2447,62 @@ fn a_dependent_record_spells_its_written_labels_1613()
     }
 }
 
+/// A positional selection of one field off a binder whose type is a
+/// dependent record spells that field's label, the first, a middle and the
+/// last among them: the surface reads no position off a dependent record
+/// (#3971).
+#[test]
+fn a_selection_off_a_dependent_record_spells_its_label_3971()
+{
+    let names = [Name::from("t")];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    // `#{x : Integer, y : Integer, z : Path(Integer, x, y)}`.
+    let x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let y = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let between = core.value_type_path(integer, x, y);
+    let inner = core.value_type_sigma(integer, between);
+    let record = core.value_type_sigma(integer, inner);
+    // `r.x`, `r.y` and `r.z` as the lowering lowers them: `r.0`, `(r.1).0`
+    // and `(r.1).1`.
+    let select = |core: &mut CoreArena, path: &[usize]| {
+        let mut selected = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        for &component in path {
+            let projected = core.computation_tuple_projection(
+                selected,
+                gandr_kernel_term::Component::from(component),
+            );
+            selected = core.value_returned(projected);
+        }
+        selected
+    };
+    let (first, middle, last) = (
+        select(&mut core, &[0]),
+        select(&mut core, &[1, 0]),
+        select(&mut core, &[1, 1]),
+    );
+    let along = core.value_type_path(integer, first, middle);
+    let around = core.value_type_path(along, last, last);
+    let returns_around = core.comp_type_returner(around);
+    let arrow = core.comp_type_pi(record, returns_around);
+    let mut pairs = [(record, Name::from("x")), (inner, Name::from("y"))];
+    pairs.sort_by_key(|&(pair, _)| pair);
+    let seconds = [(inner, Name::from("z"))];
+    let arrows = [(arrow, Name::from("r"))];
+    assert_eq!(
+        spelled(
+            &CoreSource::new(&core, &names)
+                .naming_pairs(&pairs, &seconds)
+                .naming_arrows(&arrows),
+            Root::Type(CoreNode::CompType(arrow))
+        ),
+        faithful(Written(
+            "(r : #{x : Integer, y : Integer, z : Path(Integer, x, y)}) -> -F \
+             Path(Path(Integer, r.x, r.y), r.z,\n  r.z)"
+        )),
+    );
+}
+
 /// A dependent record's second field the source records no label for is
 /// labelled by the first generated name no binder around it holds, never by
 /// what a binder inside the record left at the position past the record's
