@@ -4,7 +4,7 @@
 ///
 /// Every nesting of a chain converts with that fold. A transport along a stuck composite moves its operand along each of the composite's paths in turn, in evaluation and in the kernel. So `f then (g then h)` is the composite of `(f, g, h)`.
 ///
-/// Level two: `compose[n, k](chain(m, (a₁, …, aₘ)), cells)` composes the level-two shape `[m](a₁, …, aₘ)`, an object of the wreath of the chains over themselves. Column `i` holds `aᵢ` 2-cells, or one 1-cell when `aᵢ` is zero. Level two certifies at the stratum, and each column's 2-cells meet along their 1-cells, the columns along their points. The node holds the cells beside their fold: each column vertically by `then`, the columns horizontally by the whiskers the filler generator lifts by. The whisker `[2](1, 0)` is the right whisker itself, and `[2](1, 1)` the horizontal composite.
+/// Level two: `compose[n, k](chain(m, (a₁, …, aₘ)), cells)` composes the level-two shape `[m](a₁, …, aₘ)`, an object of the wreath of the chains over themselves. Column `i` holds `aᵢ` 2-cells, or one 1-cell when `aᵢ` is zero. Level two certifies at the stratum, and each column's 2-cells meet along their 1-cells, the columns along their points. The node holds the cells beside their fold: each column vertically by `then`, the columns horizontally by the whiskers the filler generator lifts by. The whisker `[2](1, 0)` is the right whisker itself, and `[2](1, 1)` the horizontal composite. At reflexivities a whisker runs to reflexivity before a composite reads it, in evaluation and in the kernel.
 ///
 /// A composite of reflexivities reduces to reflexivity, so the declaration states it and proves it by reflexivity.
 ///
@@ -47,6 +47,16 @@ def whiskeredIsRight(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Pat
   rightWhisker(A, x, y, z, fm, fp, fa, g)
 ) {
   here(rightWhisker(A, x, y, z, fm, fp, fa, g))
+}
+
+/// The whisker at reflexivities runs to reflexivity, so its composite with the inverse of a right whisker is reflexivity.
+def whiskeredThenBackAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  whiskered(A, x, x, x, here(x), here(x), here(here(x)), here(x))
+    then back(rightWhisker(A, x, x, x, here(x), here(x), here(here(x)), here(x))),
+  here(here(x))
+) {
+  here(here(here(x)))
 }
 
 /// The horizontal composite `[2](1, 1)` of two 2-cells side by side.
