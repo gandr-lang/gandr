@@ -3459,6 +3459,12 @@
     "output": "{\"event\":\"top-stale\",\"exit\":0}"
   },
   {
+    "name": "#4268: the REST reading of a top, `mergeable_state` dirty read as `DIRTY` and the head commit's age past the window, stacks past it",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": false, "age": 14401 },
+    "output": "{\"event\":\"top-stale\",\"exit\":0}"
+  },
+  {
     "name": "a bottom queued on a merged branch no open pull request heads stands off the trunk, and the landing retargets it (#4168)",
     "program": "bottom.jq",
     "args": { "n": 4158, "trunk": "main" },
