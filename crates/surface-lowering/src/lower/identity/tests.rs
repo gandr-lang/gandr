@@ -223,6 +223,46 @@ fn tail_of(
     computation
 }
 
+/// The fold `then` stands for: `p then q` at paths returns the binary
+/// composite, whose realisation is the transport.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the realisation when `id` returns a composite of the 2-chain at
+///   its least stratum.
+/// - fails: never.
+/// - panics: if `id` returns no binary composite.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses read `then`'s transport here.
+/// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+#[spec(ensures: |ret| matches!(arena.computation(id), Some(&Computation::Return(returned))
+    if matches!(arena.value(returned), Some(&Value::Compose { realised, .. }) if realised == ret)))]
+fn folded(
+    arena: &CoreArena,
+    id: ComputationId,
+) -> ComputationId
+{
+    let Some(&Computation::Return(returned)) = arena.computation(id)
+    else {
+        panic!("`then` returns its composite: {:?}", arena.computation(id));
+    };
+    let Some(&Value::Compose {
+        composite,
+        realised,
+        ..
+    }) = arena.value(returned)
+    else {
+        panic!("`then` is a composite: {:?}", arena.value(returned));
+    };
+    assert_eq!(
+        composite,
+        gandr_core_term::compose::Composite::binary(),
+        "`then` composes the 2-chain at its least stratum"
+    );
+    realised
+}
+
 /// The intuitionistic variable at `index`.
 ///
 /// # Specification
@@ -1040,13 +1080,22 @@ fn back_then_and_cong_unfold_to_transports()
         )),
         &mut arena,
     );
-    let transport = |name: &str| match arena.computation(tail_of(&module, &arena, name.into())) {
-        Some(&Computation::PathTransport {
-            motive,
-            path,
-            value,
-        }) => (motive, path, value),
-        other => panic!("`{name}` unfolds to a transport: {other:?}"),
+    let transport = |name: &str| {
+        let tail = tail_of(&module, &arena, name.into());
+        let tail = if name == "join" {
+            folded(&arena, tail)
+        }
+        else {
+            tail
+        };
+        match arena.computation(tail) {
+            Some(&Computation::PathTransport {
+                motive,
+                path,
+                value,
+            }) => (motive, path, value),
+            other => panic!("`{name}` unfolds to a transport: {other:?}"),
+        }
     };
 
     let (motive, path, value) = transport("flip");
@@ -1257,7 +1306,7 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
         );
     }
     let Some(&Computation::PathTransport { value, .. }) =
-        arena.computation(tail_of(&module, &arena, "underThen".into()))
+        arena.computation(folded(&arena, tail_of(&module, &arena, "underThen".into())))
     else {
         panic!("`then` unfolds to a transport");
     };
@@ -1477,8 +1526,8 @@ fn a_derived_operation_needs_a_written_path_answer()
 }
 
 /// #985: a written transport read as a value is the value it returns, as the
-/// derived composite's transport is, so `loop then loop` and its explicit
-/// spelling lower alike; before, the written one nested a run that no
+/// derived composite's fold is, so `loop then loop` and its explicit spelling
+/// lower to one transport; before, the written one nested a run that no
 /// computation encloses.
 #[test]
 fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
@@ -1503,14 +1552,23 @@ fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
             | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers both halves: {other:?}"),
         };
+        let Some(&Value::Returned(computation)) = arena.value(body)
+        else {
+            panic!("`{name}` is a returned value: {:?}", arena.value(body));
+        };
+        let computation = if name == "derived" {
+            folded(&arena, computation)
+        }
+        else {
+            computation
+        };
         assert!(
             matches!(
-                arena.value(body),
-                Some(&Value::Returned(computation))
-                    if matches!(arena.computation(computation), Some(&Computation::PathTransport { .. }))
+                arena.computation(computation),
+                Some(&Computation::PathTransport { .. })
             ),
             "`{name}` is the value its transport returns: {:?}",
-            arena.value(body)
+            arena.computation(computation)
         );
     }
 }
@@ -1592,6 +1650,16 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
         let Some(&Value::Returned(computation)) = arena.value(value)
         else {
             panic!("`{name}` is the value its transport returns");
+        };
+        // `then` returns its composite, whose fold is the transport.
+        let computation = if matches!(
+            arena.computation(computation),
+            Some(&Computation::Return(_))
+        ) {
+            folded(&arena, computation)
+        }
+        else {
+            computation
         };
         match arena.computation(computation) {
             Some(&Computation::PathTransport {
