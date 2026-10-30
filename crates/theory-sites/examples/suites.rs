@@ -34,6 +34,7 @@ use gandr_theory_sites::Profile;
 use gandr_theory_sites::Scope;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
@@ -538,7 +539,7 @@ fn main() -> Result<(), RunError>
         &"magma profiles",
         seven,
         Degree::from(7_usize),
-        |bound| Catalogue::profiles(bound, magma),
+        |bound| Catalogue::profiles(bound, magma, ShapeBudget::EVERY),
     )?;
     stratum_row(
         &mut out,

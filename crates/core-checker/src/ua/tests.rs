@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -27,10 +28,12 @@ use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::ElementIndex;
+use gandr_theory_sites::Family;
 use gandr_theory_sites::GeneratorCount;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Species;
@@ -1345,6 +1348,7 @@ impl StratumStore for Answering
     /// trivial.
     fn recall(
         &self,
+        _family: &Family,
         _at: StratumAt,
     ) -> Maybe<StratumImage, recalled::Absent>
     {
@@ -1357,6 +1361,7 @@ impl StratumStore for Answering
     /// trivial.
     fn keep(
         &self,
+        _family: &Family,
         _at: StratumAt,
         _stratum: &SegalStratum,
     )
@@ -1370,6 +1375,7 @@ impl StratumStore for Answering
     /// trivial.
     fn refuse(
         &self,
+        _family: &Family,
         _at: StratumAt,
         why: Unreplayed,
     )
@@ -1393,7 +1399,9 @@ impl StratumStore for Answering
 #[test]
 fn a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034()
 {
-    let image = SegalStratum::certify(catalogue(), Degree::from(2))
+    let sub_site = Catalogue::profiles(ShapeSize::from(4), magma_profiles(), ShapeBudget::EVERY)
+        .expect("the magma's sub-site builds");
+    let image = SegalStratum::certify(Arc::new(sub_site), Degree::from(2))
         .expect("degree two is certified")
         .image();
     let mut damaged = Vec::from(image.clone());
@@ -1461,4 +1469,109 @@ fn a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034()
         );
         assert_eq!(store.counts(), counts, "{case}");
     }
+}
+
+/// The profiles of the magma's corollas: its binary operation and its
+/// constant.
+///
+/// # Specification
+/// trivial.
+fn magma_profiles() -> BTreeSet<Profile>
+{
+    BTreeSet::from([profile(Legs(2, 1)), profile(Legs(0, 1))])
+}
+
+/// #4035: a statement's sub-site, the shapes whose every vertex is a corolla
+/// its species inhabit, derives the path the whole catalogue gives. The swap
+/// of a binary generator beside a constant at degrees one, two and four, and
+/// the exchange of two binary generators, give equal certificates over both;
+/// the crossed exchange is refused as not natural over both. The written
+/// statement at bound seven and degree seven derives its path over the
+/// magma's eleven classes, and the kernel admits it.
+#[test]
+fn a_statement_derives_over_its_sub_site_the_path_the_wirings_give_4035()
+{
+    let mut arena = CoreArena::new();
+    let swap = table(&mut arena, Images(&[1, 0]));
+    let keep = table(&mut arena, Images(&[0]));
+    let exchange = table(&mut arena, Images(&[2, 3, 0, 1]));
+    let crossed = table(&mut arena, Images(&[2, 1, 0, 3]));
+    let monoid = monoid();
+    let two = two();
+    let magma: &[(Legs, ValueId)] = &[(Legs(2, 1), swap), (Legs(0, 1), keep)];
+    let cases = [
+        (&monoid, magma, Head(1, 4), "the swap at degree one"),
+        (&monoid, magma, Head(2, 4), "the swap at degree two"),
+        (&monoid, magma, Head(4, 5), "the swap at degree four"),
+        (
+            &two,
+            &[(Legs(2, 1), exchange)][..],
+            Head(1, 4),
+            "the exchange",
+        ),
+        (
+            &two,
+            &[(Legs(2, 1), crossed)][..],
+            Head(1, 4),
+            "the crossed exchange",
+        ),
+    ];
+    for (species, given, Head(degree, bound), case) in cases {
+        let profiles: BTreeSet<Profile> = species.profiles().map(|(held, _count)| held).collect();
+        let answers = [
+            Catalogue::build(ShapeSize::from(bound)),
+            Catalogue::profiles(ShapeSize::from(bound), profiles, ShapeBudget::EVERY),
+        ]
+        .map(|built| {
+            let catalogue = Arc::new(built.expect("the catalogue builds"));
+            let stratum = SegalStratum::certify(catalogue, Degree::from(degree))
+                .expect("the stratum is certified");
+            let translators = given
+                .iter()
+                .map(|&(legs, translator)| {
+                    (corolla(&stratum, legs), Translators {
+                        forward: translator,
+                        backward: translator,
+                    })
+                })
+                .collect();
+            universal(&mut arena, &stratum, (species, species), &translators)
+        });
+        match answers {
+            [Ok(ref whole), Ok(ref sub)] => assert_eq!(
+                equal_certificate_syntax(&arena, whole.path(), sub.path()),
+                CertificateEquality::Equal,
+                "{case}: the sub-site derives the whole catalogue's path"
+            ),
+            [
+                Err(UaRefusal::Species(Defect::NotNatural { .. })),
+                Err(UaRefusal::Species(Defect::NotNatural { .. })),
+            ] => assert_eq!(
+                case, "the crossed exchange",
+                "only the crossed exchange is refused"
+            ),
+            ref other => panic!("{case}: both catalogues answer alike: {other:?}"),
+        }
+    }
+    let fields = [(Spelled("mul"), swap), (Spelled("one"), keep)];
+    let statement = written(&mut arena, Head(7, 7), &fields, &fields);
+    let unsigned = Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Absent(crate::declaration::signature::Absent::Unsigned),
+        Maybe::Present(statement),
+        OriginToken::from(0_usize),
+    );
+    let (report, readmission) = judged(&mut arena, &[unsigned]);
+    assert!(
+        report.natives().contains_key(&statement),
+        "the statement at bound seven derives its path: {report:?}"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "the kernel admits it: {:?}",
+        readmission.readmitted()
+    );
 }

@@ -1235,6 +1235,7 @@ impl gandr_core_checker::ua::StratumStore for Counting
     /// trivial.
     fn recall(
         &self,
+        _family: &gandr_theory_sites::Family,
         _at: gandr_core_checker::ua::StratumAt,
     ) -> Maybe<gandr_theory_sites::StratumImage, gandr_core_checker::ua::recalled::Absent>
     {
@@ -1248,6 +1249,7 @@ impl gandr_core_checker::ua::StratumStore for Counting
     /// trivial.
     fn keep(
         &self,
+        _family: &gandr_theory_sites::Family,
         _at: gandr_core_checker::ua::StratumAt,
         _stratum: &gandr_theory_sites::SegalStratum,
     )
@@ -1261,6 +1263,7 @@ impl gandr_core_checker::ua::StratumStore for Counting
     /// trivial.
     fn refuse(
         &self,
+        _family: &gandr_theory_sites::Family,
         _at: gandr_core_checker::ua::StratumAt,
         _why: gandr_theory_sites::Unreplayed,
     )

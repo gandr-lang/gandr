@@ -31,7 +31,7 @@
 //! - **The chain sub-site, not the wirings.** The chains at bound 7 certify in
 //!   a tenth of a millisecond over five shapes, and the wirings take seven
 //!   seconds over 631 classes. Composition at dimension one reads only chains,
-//!   so the rule names [`Site::Chains`]. Reversal: a pasting past the chains,
+//!   so the rule names [`Family::Chains`]. Reversal: a pasting past the chains,
 //!   the wreath's levels, names the catalogue that holds it.
 //! - **Endpoints meet by conversion.** [`fills`] leaves the colour comparison
 //!   to its caller, and the checker compares two endpoints as a stay compares
@@ -59,13 +59,13 @@ use gandr_core_term::compose::Composite;
 use gandr_core_term::compose::Pasting;
 use gandr_theory_sites::Boundary;
 use gandr_theory_sites::Degree;
+use gandr_theory_sites::Family;
 use gandr_theory_sites::Shape;
 use gandr_theory_sites::fills;
 
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
 use crate::refusal::CheckRefusal;
-use crate::ua::Site;
 use crate::ua::Strata;
 use crate::ua::StratumAt;
 
@@ -132,7 +132,7 @@ pub fn admit(
     }
     let stratum = strata
         .certified(
-            Site::Chains,
+            &Family::Chains,
             StratumAt {
                 bound: composite.stratum.bound,
                 degree: composite.stratum.degree,
