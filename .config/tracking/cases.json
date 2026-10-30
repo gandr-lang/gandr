@@ -59,6 +59,21 @@
     "output": "crates/core-term/src/failure.rs: `TrackingIssue::TYPED_NUMBER` names #1109, which is closed as completed: name the open issue whose landing builds the feature, or the decision closed as not planned"
   },
   {
+    "name": "#4248: an epic its workflow ends as completed refuses the constant naming it, and an open issue beside it holds",
+    "input": {
+      "constants": [
+        { "name": "ITERATED_SITE", "number": 3987 },
+        { "name": "DIRECTED_FILLER", "number": 4093 }
+      ],
+      "rows": [],
+      "states": {
+        "3987": { "kind": "issue", "state": "CLOSED", "reason": "COMPLETED" },
+        "4093": { "kind": "issue", "state": "OPEN", "reason": null }
+      }
+    },
+    "output": "crates/core-term/src/failure.rs: `TrackingIssue::ITERATED_SITE` names #3987, which is closed as completed: name the open issue whose landing builds the feature, or the decision closed as not planned"
+  },
+  {
     "name": "a constant naming no issue, or a pull request, is refused",
     "input": {
       "constants": [
