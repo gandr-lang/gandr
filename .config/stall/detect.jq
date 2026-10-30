@@ -25,6 +25,12 @@
 #                  any more (merged, and the member not rebased), at the same
 #                  head, for `base_blocked` minutes since the detector first
 #                  saw it so (#2972): the member's own stall, though no root.
+#   queued-off-trunk
+#                  in the merge queue on a base that is neither the trunk nor
+#                  an open pull request's head (#4168): that branch's queue
+#                  merges nothing into the trunk, and every stack carrying
+#                  its commits waits on it. It is paged at once, its age
+#                  counted from the reading that first saw it so.
 #   verdict-unfiled
 #                  a merged pull request whose `## Refactoring` verdict is
 #                  `yes` or `maybe` with rows, and no `kind:refactor` issue
@@ -81,7 +87,8 @@
 #               no seat owns, not epics, not deferred or discarded; absent or
 #               null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
-#               `<number>:base-blocked:<head>` and `<lane>:seat-idle` was
+#               `<number>:base-blocked:<head>`,
+#               `<number>:queued-off-trunk:<base>` and `<lane>:seat-idle` was
 #               first read so, from the last reading; absent reads as none;
 #   paged       each `<number>:<kind>` finding's `{first, last}`, or
 #               `<lane>:<kind>` for one with no pull request: when it was
@@ -136,6 +143,10 @@
       elif $below.mergeable == "CONFLICTING" then "its base #\($below.number) conflicts with its own base"
       else empty
       end;
+  # In the merge queue on a base no open pull request heads, other than the
+  # trunk: a queue that never merges into the trunk.
+  def off_trunk: . as $pr
+    | $pr.queued and $pr.base != $in.trunk and all($in.prs[]; .head != $pr.base);
   # The lanes that hold a seat and nothing in hand: no open pull request on
   # a branch of the lane, and no claimed issue in one of its areas.
   [($in.seats // [])[] | . as $lane
@@ -145,6 +156,7 @@
     | $lane] as $idle
 | ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
     + [$prs[] | select([blocker] != []) | "\(.number):base-blocked:\(.oid)"]
+    + [$prs[] | select(off_trunk) | "\(.number):queued-off-trunk:\(.base)"]
     + [$idle[] | "\(.):seat-idle"]
     | map({key: ., value: ($seen[.] // $in.now)}) | from_entries) as $seen_now
 | [
@@ -180,6 +192,9 @@
       | $seen_now["\(.number):base-blocked:\(.oid)"] as $since
       | select($in.now - $since >= $t.base_blocked * 60)
       | finding("base-blocked"; $since; $what)),
+    ($prs[] | select(off_trunk)
+      | finding("queued-off-trunk"; $seen_now["\(.number):queued-off-trunk:\(.base)"];
+          "in the merge queue of `\(.base)`, which heads no open pull request and merges nothing into \($in.trunk)")),
     (($in.merged // [])[]
       | select(IN(.verdict; "yes", "maybe") and .rows > 0 and .merged != null)
       | select(.number | IN(($in.filed // [])[]) | not)
@@ -203,7 +218,7 @@
 | [$findings[] | select((.kind | IN("verdict-unfiled", "seat-idle") | not) and escalated and $stalled["\(.number)"] == null)] as $stalling
 | [$stalled | keys[] | tonumber as $n
     | ([$in.prs[] | select(.number == $n)] | first) as $pr
-    | select($pr == null or $pr.queued or $pr.draft)
+    | select($pr == null or ($pr.queued and ($pr | off_trunk | not)) or $pr.draft)
     | $n] as $release
 | ($stalling | group_by(.number) | map({
     number: .[0].number,

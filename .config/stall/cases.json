@@ -1957,5 +1957,184 @@
       }
     },
     "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next triage`\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claimed issue in its areas; run `mise run claim:next triage`\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+  },
+  {
+    "name": "a pull request in the merge queue of a branch no open pull request heads is queued-off-trunk at once, and a queued member above an open head is not (#4168)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 10,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "lanes": ["triage", "triage-2", "program"],
+      "areas": { "triage": ["workflow"], "triage-2": ["workflow"], "program": ["core"] },
+      "prs": [
+        {
+          "number": 4158,
+          "draft": false,
+          "bot": false,
+          "head": "triage-2-4156-debug-macos",
+          "base": "triage-4058-stall-lane",
+          "oid": "o4158",
+          "created": 90000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 4160,
+          "draft": false,
+          "bot": false,
+          "head": "program-4160",
+          "base": "main",
+          "oid": "o4160",
+          "created": 91000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 4161,
+          "draft": false,
+          "bot": false,
+          "head": "program-4161",
+          "base": "program-4160",
+          "oid": "o4161",
+          "created": 92000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":0,\"line\":\"STALL queued-off-trunk #4158 triage-2 0m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"pages\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":0,\"line\":\"STALL queued-off-trunk #4158 triage-2 0m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"4158:base-blocked:o4158\":100000,\"4158:queued-off-trunk:triage-4058-stall-lane\":100000},\"paged\":{\"4158:queued-off-trunk\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
+  },
+  {
+    "name": "a stalled pull request queued off the trunk stays stalled, not released as queued (#4168)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 10,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "lanes": ["triage", "triage-2", "program"],
+      "areas": { "triage": ["workflow"], "triage-2": ["workflow"], "program": ["core"] },
+      "prs": [
+        {
+          "number": 4158,
+          "draft": false,
+          "bot": false,
+          "head": "triage-2-4156-debug-macos",
+          "base": "triage-4058-stall-lane",
+          "oid": "o4158",
+          "created": 90000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 4160,
+          "draft": false,
+          "bot": false,
+          "head": "program-4160",
+          "base": "main",
+          "oid": "o4160",
+          "created": 91000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 4161,
+          "draft": false,
+          "bot": false,
+          "head": "program-4161",
+          "base": "program-4160",
+          "oid": "o4161",
+          "created": 92000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "seen": { "4158:queued-off-trunk:triage-4058-stall-lane": 99400 },
+      "paged": { "4158:queued-off-trunk": { "first": 99400, "last": 99400 } },
+      "stalled": { "4158": 99400 }
+    },
+    "output": "{\"findings\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"pages\":[],\"repages\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"stall\":[],\"release\":[],\"seen\":{\"4158:base-blocked:o4158\":100000,\"4158:queued-off-trunk:triage-4058-stall-lane\":99400},\"paged\":{\"4158:queued-off-trunk\":{\"first\":99400,\"last\":100000}},\"stalled\":{\"4158\":99400}}"
   }
 ]

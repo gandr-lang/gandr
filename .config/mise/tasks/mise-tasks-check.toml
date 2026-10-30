@@ -1349,7 +1349,9 @@ FROM reference;"); keys read $resolved"
 # `DIRTY` reading is a conflict (#2854), `heal.jq` whether its heal restacks
 # or waits on a queued member (#3615), `superseded.jq` whether a cancelled
 # check's run was superseded on its head (#2829), `prefix.jq` what a landing
-# queues (#1988), `sweep.jq` which worktrees `wt:sweep` removes, `moved.jq`
+# queues (#1988), `bottom.jq` whether a stack's bottom stands off the trunk
+# and `carried.jq` which carried pull requests a landing waits on (#4168),
+# `sweep.jq` which worktrees `wt:sweep` removes, `moved.jq`
 # whether `pr:open` restacks onto a top that moved while it measured (#3849),
 # `awaited.jq` the event `pr:await` wakes a seat on (#4164), and
 # `triggers.jq` whether the landing watcher reads on the events that change

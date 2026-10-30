@@ -645,17 +645,49 @@ release_landing() {
 # or set to enter it, and whose branch the stack's top holds, as a JSON array
 # of numbers. A pull request retargeted off a branch that lands on its own
 # (`retarget_landing`) still carries that branch's commits, so its stack
-# lands only once they have merged.
+# lands only once they have merged. One queued off the trunk, on a base no
+# open pull request heads, never merges, so the stack lands past it, and it
+# is named on stderr (`carried.jq`, #4168).
 carried_queued() {
-  local top number head members=()
+  local top number head held=() open carried
   top=$(jq -r '.[-1].head' <<< "$1")
   git fetch --quiet origin "$top"
+  open=$(open_prs)
   while IFS=$'\t' read -r number head; do
     [[ -n "$number" && $(in_queue "$number") == true ]] || continue
     git fetch --quiet origin "$head" || continue
-    if git merge-base --is-ancestor "origin/$head" "origin/$top"; then members+=("$number"); fi
-  done < <(open_prs | jq -r --argjson stack "$1" '.[] | select(.number | IN($stack[].number) | not) | [.number, .head] | @tsv')
-  jq -cn '$ARGS.positional | map(tonumber)' --args "${members[@]}"
+    if git merge-base --is-ancestor "origin/$head" "origin/$top"; then held+=("$number"); fi
+  done < <(jq -r --argjson stack "$1" '.[] | select(.number | IN($stack[].number) | not) | [.number, .head] | @tsv' <<< "$open")
+  carried=$(jq -cn --argjson open "$open" --arg trunk "$trunk" '{open: $open, trunk: $trunk, held: ($ARGS.positional | map(tonumber))}' --args "${held[@]}" \
+    | jq -c -f "$pr_stack_dir/carried.jq")
+  jq -r '.off[] | "queued-off-trunk #\(.number) on \(.base): its queue merges nothing into the trunk, so the stack lands past it"' <<< "$carried" >&2
+  jq -c .wait <<< "$carried"
+}
+
+# Bring the stack bottom `$1`, standing off the trunk as `bottom.jq` reads it
+# (#4168), back to the trunk: a base that merged or is gone is retargeted.
+# A queued bottom leaves the queue first by being closed and reopened, the
+# only way out of a queue on a base other than the trunk, and a bottom a
+# server stack holds is unstacked, since GitHub refuses a stacked member's
+# base change (#1520). A base that still stands unmerged is refused by name,
+# returning 2. Prints one line on stderr.
+retarget_bottom() {
+  local number base stack
+  IFS=$'\t' read -r number base stack < <(jq -r '[.number, .base, (.stack // "")] | @tsv' <<< "$1")
+  if git ls-remote --exit-code --heads origin "$base" > /dev/null; then
+    git fetch --quiet origin "$trunk" "$base"
+    if ! git merge-base --is-ancestor "origin/$base" "origin/$trunk"; then
+      echo "#$number stands on $base, which is not $trunk, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto $trunk" >&2
+      return 2
+    fi
+  fi
+  if [[ $(jq -r .landing <<< "$1") == true ]]; then
+    gh pr close "$number" -R "$repo" > /dev/null
+    gh pr reopen "$number" -R "$repo" > /dev/null
+  fi
+  if [[ -n "$stack" ]]; then gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :; fi
+  gh pr edit "$number" -R "$repo" --base "$trunk" > /dev/null
+  echo "#$number retargeted from $base to $trunk: its base merged or is gone, and no landing reaches $trunk from it" >&2
 }
 
 # Queue the stack `$1`, bottom to top, up to and including pull request `$3`
@@ -751,9 +783,11 @@ cut_reason() {
 # or when the open members take no link above the queued ones;
 # `queue_stack`'s failure otherwise. A pull request held on purpose, or
 # stacked above one, is refused with 2 and one line naming the hold
-# (`rests.jq`, #3253): nothing of it is queued.
+# (`rests.jq`, #3253): nothing of it is queued. Before the queue is read, a
+# bottom standing off the trunk (`bottom.jq`, #4168) is brought back to it
+# (`retarget_bottom`), or refused with 2 naming its base.
 land_prefix() {
-  local server queued carried required cap room number state states=() decision verdict upto stop status=0 rests
+  local server queued carried required cap room number state states=() decision verdict upto stop status=0 rests off
   rests=$(open_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/rests.jq")
   if [[ "$rests" != null ]]; then
     case $(jq -r .hold <<< "$rests") in
@@ -764,6 +798,11 @@ land_prefix() {
   fi
   server=$(server_stack "$1")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$1 is not open" >&2; return 2; }
+  off=$(open_prs | jq -c --argjson n "$(jq '.[0].number' <<< "$server")" --arg trunk "$trunk" -f "$pr_stack_dir/bottom.jq")
+  if [[ "$off" != null ]]; then
+    retarget_bottom "$off" || return 2
+    server=$(server_stack "$1")
+  fi
   queued=$(queued_of "$server")
   carried=$(carried_queued "$server")
   required=$(required_contexts)

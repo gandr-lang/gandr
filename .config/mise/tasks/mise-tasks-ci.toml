@@ -3412,10 +3412,15 @@ fi
 # the unit's top, and the task waits on the caller's pull request when it is
 # in the queue. A stack whose top holds the branch of a pull request queued on
 # its own outside it (`carried_queued`) waits for that one to merge and reads
-# the stack again.
+# the stack again, unless that one is queued off the trunk, on a base no open
+# pull request heads: its queue merges nothing, so the stack lands past it
+# and names it (`carried.jq`, #4168).
 # Before any queueing, every open pull request on a branch the landing
 # deletes, outside it, is retargeted to main (`retarget_landing`, #1420); one
-# linked into the landing's stack is left alone (#1520).
+# linked into the landing's stack is left alone (#1520). A bottom standing
+# off the trunk, on a base that merged or is gone, leaves the queue and its
+# server stack and is retargeted to main; one on an unmerged branch is
+# refused by name (`bottom.jq`, `retarget_bottom`, #4168).
 #
 # Nothing is restacked before the queue: a restack moves every head and
 # reruns every check, so a ready prefix would wait a checks cycle for a
