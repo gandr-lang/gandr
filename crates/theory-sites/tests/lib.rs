@@ -47,6 +47,8 @@ macro_rules! site_map {
 #[cfg(test)]
 mod chains;
 #[cfg(test)]
+mod fixture;
+#[cfg(test)]
 mod maps;
 #[cfg(test)]
 mod oracle;

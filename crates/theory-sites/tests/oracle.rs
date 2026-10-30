@@ -25,13 +25,11 @@ use alloc::sync::Arc;
 use core::fmt;
 
 use gandr_theory_circuit_algebras::Edge;
-use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_circuit_algebras::Wire;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Level;
 use gandr_theory_sites::Membership;
-use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
@@ -42,18 +40,19 @@ use gandr_theory_sites::WreathCocone;
 use gandr_theory_sites::WreathMap;
 use gandr_theory_sites::WreathShape;
 use gandr_theory_sites::WreathStratum;
-use quenchant_shape::shape::Maybe;
+
+use crate::fixture::Length;
+use crate::fixture::column;
+use crate::fixture::index;
+use crate::fixture::level_one;
+use crate::fixture::restriction;
+use crate::fixture::theta;
 
 /// Level two over the chains.
 type Two = Wreath<Catalogue>;
 
 /// A map of level two.
 type TwoMap = WreathMap<SiteMap>;
-
-/// A chain's vertex count, a column's, or a shift by that many vertices.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Length(usize);
 
 /// A monotone map of points: each source point's image, in order.
 #[repr(transparent)]
@@ -349,48 +348,6 @@ fn named(
             inner,
         })
         .collect()
-}
-
-/// The chain of `length` vertices, or the empty shape at length zero.
-///
-/// # Specification
-/// trivial.
-fn column(Length(length): Length) -> Shape
-{
-    if length == 0 {
-        Shape::default()
-    }
-    else {
-        Shape::chain(EdgeCount::from(length)).expect("the chain is admitted")
-    }
-}
-
-/// The chain restriction at level two, every object of total size at most
-/// `bound`.
-///
-/// # Specification
-/// trivial.
-fn restriction(bound: ShapeSize) -> Two
-{
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
-    Wreath::build(&chains, &chains, bound)
-}
-
-/// The index of `object`'s class in `level`, which holds it.
-///
-/// # Specification
-/// trivial.
-fn index<L>(
-    level: &L,
-    object: &L::Object,
-) -> ShapeIndex
-where
-    L: Level,
-{
-    match level.find(object) {
-        Maybe::Present(index) => index,
-        Maybe::Absent(reason) => panic!("{object} is held: {reason:?}"),
-    }
 }
 
 /// The restriction's pasting schemes as Θ₂ objects, in index order. Each
@@ -805,27 +762,13 @@ fn the_wedge_and_the_cover_give_one_verdict()
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
     let wreath = Wreath::build(level, level, bound);
-    let top = level
-        .shapes()
-        .iter()
-        .map(Degree::of)
-        .max()
-        .expect("the catalogue holds shapes");
-    let below = SegalStratum::certify(Arc::clone(&chains), top).expect("level one is certified");
+    let below = level_one(&chains);
     let cover = WreathStratum::certify(&wreath, Degree::from(11_usize), below)
         .expect("level two is certified at the bound's top");
     let colimits: BTreeSet<ShapeIndex> = cover.cocones().iter().map(WreathCocone::object).collect();
-    let theta = |lengths: &[usize]| {
-        let object = WreathShape::new(
-            column(Length(lengths.len())),
-            lengths
-                .iter()
-                .copied()
-                .map(|length| column(Length(length)))
-                .collect(),
-        )
-        .expect("one column per outer vertex");
-        index(&wreath, &object)
+    let class = |lengths: &[usize]| {
+        let columns: Vec<Length> = lengths.iter().copied().map(Length).collect();
+        index(&wreath, &theta(&columns))
     };
     let as_membership = |holds: bool| {
         if holds {
@@ -840,7 +783,7 @@ fn the_wedge_and_the_cover_give_one_verdict()
         let lengths = &scheme.0;
         let covered = as_membership(colimits.contains(&at));
         for cut in 1 .. lengths.len() {
-            let (left, right) = (theta(&lengths[.. cut]), theta(&lengths[cut ..]));
+            let (left, right) = (class(&lengths[.. cut]), class(&lengths[cut ..]));
             let legs = [
                 (left, inclusion(&wreath, (left, at), (Length(0), Length(0)))),
                 (
@@ -857,9 +800,9 @@ fn the_wedge_and_the_cover_give_one_verdict()
             }
         }
         if let [length] = **lengths {
-            let cell = theta(&[0]);
+            let cell = class(&[0]);
             for cut in 1 .. length {
-                let (left, right) = (theta(&[cut]), theta(&[length - cut]));
+                let (left, right) = (class(&[cut]), class(&[length - cut]));
                 let legs = [
                     (left, inclusion(&wreath, (left, at), (Length(0), Length(0)))),
                     (
