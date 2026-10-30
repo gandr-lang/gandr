@@ -49,23 +49,47 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 # follow, with the load average they were taken under. The check runs over
 # scratch configuration, cache and data directories, so it reads no verdict
 # and commits nothing to the user's store.
+#
+# The library holds rows at n = 3, so the check carries the host's memory
+# bound (`.config/mise/bounded`) and a wall-clock limit, 1800 s unless
+# `--limit` names another (#3855). Where no bound takes, as on macOS, the task
+# refuses before the check runs. A check past either bound prints `past bound`
+# in place of its rows and is never retried larger: the seat asks for a
+# window instead. `.config/bench/stress.jq` decides the outcome, held to
+# `check:bench`'s cases.
 ["bench:stress"]
-description = "Check library/math measured and timed, its cylinder composites beside Catt's artifact sizes"
+description = "Check library/math measured and timed under the host's memory bound, its cylinder composites beside Catt's artifact sizes"
+usage = 'flag "--limit <seconds>" help="the wall-clock limit" default="1800"'
+tools.jq = "1.8.1"
 tools.python = "3.14.9"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+limit=${usage_limit:?}
+# The bound refuses here, before the driver is built, where no bound takes.
+.config/mise/bounded bench:stress true
 .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 status=0
 XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data" \
-  python .config/bench/timed.py "$scratch/time" target/release/gandr check --recheck --measure library/math \
+  .config/mise/bounded bench:stress python .config/bench/timed.py "$scratch/time" \
+  timeout "$limit" target/release/gandr check --recheck --measure library/math \
   > "$scratch/check" 2> "$scratch/errors" || status=$?
-if [ "$status" -ne 0 ]; then
-  printf 'bench:stress: the check exits %s\n' "$status" >&2
+out_of_memory=false
+if [[ $(< "$scratch/errors") == *'memory allocation of'* ]]; then
+  out_of_memory=true
+fi
+if ! outcome=$(jq -n -c --argjson status "$status" --argjson out_of_memory "$out_of_memory" \
+  '{status: $status, out_of_memory: $out_of_memory}' \
+  | jq -r -L .config/bench -f .config/bench/stress.jq 2> "$scratch/refusal"); then
+  awk '{ sub(/^jq: error \(at [^)]*\): /, "bench:stress: "); print }' "$scratch/refusal" >&2
   awk '!/^measure: /' "$scratch/check" "$scratch/errors" >&2
-  exit "$status"
+  exit 1
+fi
+if [[ $outcome == 'past bound' ]]; then
+  printf 'bench:stress: past bound, the 8 GiB scope or the %s s limit; never retried larger (#3855)\n' "$limit"
+  exit 0
 fi
 awk '
 function catt(declaration, construction, size) {
@@ -198,7 +222,7 @@ if ! row=$(jq -n \
   --arg example "${example##*/}" --argjson status "$status" --argjson out_of_memory "$out_of_memory" \
   --argjson seconds "$(awk -v start="$start" -v end="$end" 'BEGIN { printf "%.6f", (end - start) / 1e9 }')" \
   '{example: $example, status: $status, seconds: $seconds, out_of_memory: $out_of_memory}' \
-  | jq -r -f "$bench/row.jq" 2> "$scratch/refusal"); then
+  | jq -r -L "$bench" -f "$bench/row.jq" 2> "$scratch/refusal"); then
   awk '{ sub(/^jq: error \(at [^)]*\): /, "bench:catt: "); print }' "$scratch/refusal" >&2
   cat "$scratch/out" "$scratch/err" >&2
   exit 1

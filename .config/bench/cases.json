@@ -56,5 +56,35 @@
     "program": "dimension.jq",
     "input": "check cylcomp(2,1,4)\ncheck conecomp(3,1,3)\nlet t = cylstack(5)\ncheck conecomp(6,1,6)\n",
     "output": ["cylcomp(2,1,4)", "cylstack(5)", "conecomp(6,1,6)"]
+  },
+  {
+    "name": "#3855: a bounded check of the library that passes prints its rows",
+    "program": "stress.jq",
+    "input": { "status": 0, "out_of_memory": false },
+    "output": "rows"
+  },
+  {
+    "name": "#3855: a bounded check past the wall-clock limit prints past bound",
+    "program": "stress.jq",
+    "input": { "status": 124, "out_of_memory": false },
+    "output": "past bound"
+  },
+  {
+    "name": "#3855: a bounded check the scope kills at 8 GiB prints past bound",
+    "program": "stress.jq",
+    "input": { "status": 137, "out_of_memory": false },
+    "output": "past bound"
+  },
+  {
+    "name": "#3855: a bounded check whose allocation fails under ulimit prints past bound",
+    "program": "stress.jq",
+    "input": { "status": 134, "out_of_memory": true },
+    "output": "past bound"
+  },
+  {
+    "name": "#3855: a check that refuses the library prints no rows",
+    "program": "stress.jq",
+    "input": { "status": 1, "out_of_memory": false },
+    "fails": true
   }
 ]

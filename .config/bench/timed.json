@@ -14,5 +14,10 @@
     "name": "a command that does not exist exits 127, as a shell's would",
     "command": ["no-such-command-4191"],
     "status": 127
+  },
+  {
+    "name": "#3855: a command a scope kills at its memory bound exits 137, as a shell gives it",
+    "script": "import os, signal\nos.kill(os.getpid(), signal.SIGKILL)",
+    "status": 137
   }
 ]
