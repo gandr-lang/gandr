@@ -20,9 +20,12 @@
 # was drawn from stay in `corpus`. Every finding is printed before the gate
 # fails.
 #
-# An issue's state is read through `gh` once. A failed read stops the check
-# with the call and its error, never a verdict on a row (#4018): a rate limit
-# or a network fault says nothing about the issue.
+# The issues the rows rest on are read through `gh` in one GraphQL query of
+# aliases, a hundred issues a request (#4263): a check that read each issue
+# on its own made eighty-six requests, which with every seat's gates running
+# tripped GitHub's per-minute limit. A failed read stops the check with the
+# call and its error, never a verdict on a row (#4018): a rate limit or a
+# network fault says nothing about the issue.
 set -euo pipefail
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -78,18 +81,58 @@ if [ -s "$tmp/unshown" ]; then
   failed=1
 fi
 # Each issue's `<state>\t<gap>` once, `<gap>` whether it is a `kind:gap` or a
-# `kind:epic`. A failed read prints the call and its error and stops the
-# check: no row is judged on a state the check did not read.
+# `kind:epic`. Every number the rows name is gathered first and read in one
+# query of aliases per hundred. A failed read prints the call and its error
+# and stops the check: no row is judged on a state the check did not read.
 declare -A issue=()
-read_issue() {
-  [[ -n ${issue[$1]:-} ]] && return
-  local call=(gh issue view "$1" --json state,labels --jq '[.state, ([.labels[].name] | any(. == "kind:gap" or . == "kind:epic"))] | @tsv')
-  if ! issue[$1]=$("${call[@]}" 2> "$tmp/gh-error"); then
-    printf '`gh issue view %s --json state,labels` failed, so no row resting on #%s is judged: %s\n' "$1" "$1" "$(paste -sd ' ' "$tmp/gh-error")" >&2
+origin=$(git remote get-url origin 2> /dev/null || true)
+repo=$(sed -nE 's#^(https://github\.com/|git@github\.com:)([^/]+/[^/.]+)(\.git)?$#\2#p' <<< "$origin")
+repo=${repo:-gandr-lang/gandr}
+read_issues() {
+  local chunk=() n
+  for n in "$@"; do
+    chunk+=("$n")
+    if (( ${#chunk[@]} == 100 )); then read_chunk "${chunk[@]}"; chunk=(); fi
+  done
+  (( ${#chunk[@]} == 0 )) || read_chunk "${chunk[@]}"
+}
+read_chunk() {
+  local n query="{ repository(owner: \"${repo%/*}\", name: \"${repo#*/}\") { " out
+  for n in "$@"; do query+="n$n: issue(number: $n) { state labels(first: 100) { nodes { name } } } "; done
+  query+="} }"
+  if ! out=$(gh api graphql -f query="$query" --jq '.data.repository | to_entries[] | [(.key | ltrimstr("n")), (.value.state // "MISSING"), ((.value.labels.nodes // []) | map(.name) | any(. == "kind:gap" or . == "kind:epic"))] | @tsv' 2> "$tmp/gh-error"); then
+    printf '`gh api graphql` over %s failed, so no row is judged: %s\n' "$(printf '#%s ' "$@" | sed 's/ $//')" "$(paste -sd ' ' "$tmp/gh-error")" >&2
     echo 'ledger check FAILED' >&2
     exit 1
   fi
+  while IFS=$'\t' read -r n state gap; do
+    [[ -n $n ]] || continue
+    issue[$n]="$state"$'\t'"$gap"
+  done <<< "$out"
 }
+read_issue() {
+  [[ -n ${issue[$1]:-} ]] && return
+  printf '#%s was not among the issues read, so no row resting on it is judged\n' "$1" >&2
+  echo 'ledger check FAILED' >&2
+  exit 1
+}
+numbers=$({
+  sqlite3 -separator '|' "$db" "
+    SELECT coalesce(issue, '') FROM feature
+    WHERE status IN ('implemented', 'partial') AND coalesce(corpus, '') = '' AND exemplar IS NULL;" \
+    | grep -oE '(^| )#[0-9]+' || true
+  while IFS='|' read -r id exemplar; do
+    own=corpus/ledger/features/$id.gandr
+    [[ $exemplar == "$own" && -f $own ]] || continue
+    awk '/^\/\/\// { print; next } { exit }' "$own" \
+      | grep -m1 -E '^/// (Not implemented: |- see: #[0-9]+ — not implemented: )' \
+      | grep -oE '#[0-9]+' || true
+  done < <(sqlite3 -separator '|' "$db" "
+    SELECT id, exemplar FROM feature
+    WHERE status = 'partial' AND exemplar IS NOT NULL;")
+} | tr -d ' #' | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')
+# shellcheck disable=SC2086
+[[ -z $numbers ]] || read_issues $numbers
 # A row with no witness rests on an open issue that builds it: a `kind:gap`,
 # or a `kind:epic` of the steps, an epic being `kind:epic` alone (#2902).
 while IFS='|' read -r id issues; do
