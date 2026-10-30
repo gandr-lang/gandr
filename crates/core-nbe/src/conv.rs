@@ -1662,8 +1662,13 @@ impl<'run> Walk<'run>
                         motive: right_motive,
                         flow: right_value,
                     },
-                ) => match crate::identity::motives(self.domain, left_motive, right_motive)
-                    .map_err(ConversionFault::Domain)?
+                ) => match crate::identity::motives(
+                    self.core,
+                    self.domain,
+                    left_motive,
+                    right_motive,
+                )
+                .map_err(ConversionFault::Domain)?
                 {
                     // One body over captures the body does not read apart —
                     // a definition's family at two of its calls — is one
@@ -1715,8 +1720,13 @@ impl<'run> Walk<'run>
                         over: right_over,
                         value: right_value,
                     },
-                ) => match crate::identity::motives(self.domain, left_motive, right_motive)
-                    .map_err(ConversionFault::Domain)?
+                ) => match crate::identity::motives(
+                    self.core,
+                    self.domain,
+                    left_motive,
+                    right_motive,
+                )
+                .map_err(ConversionFault::Domain)?
                 {
                     crate::identity::Motives::Alike(bindings) => {
                         let flexible = Context::Flexible(Deferral::Binder);

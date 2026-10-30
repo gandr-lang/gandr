@@ -3359,3 +3359,20 @@ fn a_fill_lowers_to_its_generator_and_cells()
         "a fill without its generator is refused by its count"
     );
 }
+
+#[test]
+fn two_sites_of_one_fill_convert_at_the_same_entries_4180()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
+            "def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {\n  thunk { fn (f) { thunk { fn (g) { composite(A, x, y, z, f, g) } } } }\n}\n",
+            "def cellsTwo(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), f then g, p then q) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
+            "def cellsAgain(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), f then g, p then q) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
+            "def sitesConvert(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(Path(A, x, z), f then g, p then q), cellsTwo(A, x, y, z, f, p, a, g, q, b), cellsAgain(A, x, y, z, f, p, a, g, q, b)) {\n  here(cellsTwo(A, x, y, z, f, p, a, g, q, b))\n}\n",
+        )),
+        &mut arena,
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
