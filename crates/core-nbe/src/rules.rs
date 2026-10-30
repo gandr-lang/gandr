@@ -2077,7 +2077,7 @@ fn held_eliminations(
 /// - requires: nothing.
 /// - ensures: `Some` exactly when one side is a held elimination by
 ///   [`held_elimination`] and the other is not, the other is a neutral over the
-///   held call's head whose spine continues past the call's length with a bind,
+///   held call's head whose spine [`bound_call`] reads as a bind over a call,
 ///   and the calls' spines and the eliminations past each side's first bind
 ///   agree by [`eliminations_subgoals`]; the subgoals are the calls', then
 ///   [`Subgoal::Bound`], then the eliminations past the binds.
@@ -2128,11 +2128,7 @@ fn held_against_bind(
     if bound.head() != call.head() {
         return Ok(None);
     }
-    let Some((prefix, rest)) = bound.spine().split_at_checked(call.spine().len())
-    else {
-        return Ok(None);
-    };
-    let Some((&Elimination::Bind(continuation), after)) = rest.split_first()
+    let Some((prefix, continuation, after)) = bound_call(bound.spine())
     else {
         return Ok(None);
     };
@@ -2188,6 +2184,42 @@ pub fn absorbed_eliminations(spine: &[Elimination]) -> (&[Elimination], &[Elimin
             .position(|elimination| matches!(*elimination, Elimination::Bind(_)))
             .unwrap_or(spine.len()),
     )
+}
+
+/// A spine read as a bind over a call, as the kernel's replay reads one: the
+/// eliminations before its first bind, that bind's continuation, and the
+/// eliminations past it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some((call, continuation, after))` exactly when `spine` holds a
+///   bind, with `call` the eliminations [`absorbed_eliminations`] leaves before
+///   it and `after` the rest past it.
+/// - provides: the bind side [`held_against_bind`], [`passed_call`] and
+///   [`unread_call`] read.
+/// - fails: none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`held_against_bind`], [`passed_call`] and
+///   [`unread_call`]: a bind over a call compares with an elimination of the
+///   call's endpoint, a bind over a returning call holds against a call at its
+///   endpoint, and an unread one is discarded.
+/// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
+/// - witness: `machine::tests::a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_4011`
+/// - witness: `machine::tests::an_unread_call_is_discarded_only_where_it_returns`
+#[spec(ensures: |ret| ret.is_none_or(|(call, continuation, after)| {
+    let (before, rest) = absorbed_eliminations(spine);
+    call == before && rest.split_first() == Some((&Elimination::Bind(continuation), after))
+}))]
+fn bound_call(spine: &[Elimination]) -> Option<(&[Elimination], CompClosureId, &[Elimination])>
+{
+    let (call, rest) = absorbed_eliminations(spine);
+    let Some((&Elimination::Bind(continuation), after)) = rest.split_first()
+    else {
+        return None;
+    };
+    Some((call, continuation, after))
 }
 
 /// A computation that eliminates a held endpoint: its neutral, and the call
@@ -2985,10 +3017,11 @@ fn projected(
 /// - requires: nothing — dangling ids are admissible input and refused.
 /// - ensures: `Some(continuation)` exactly when `comp` is a neutral headed by
 ///   an intuitionistic variable whose calls [`Definitions::calls`] answers
-///   [`Calls::Return`] for, whose spine forces, applies and projects it and
-///   then, last, binds it into `continuation`, and whose continuation never
-///   reads the value it binds: a source body whose support omits the binder, or
-///   two binds in a row whose inner one omits it. `None` otherwise.
+///   [`Calls::Return`] for, whose spine [`bound_call`] reads as a bind over a
+///   call that forces, applies and projects it, with nothing past the bind into
+///   `continuation`, and whose continuation never reads the value it binds: a
+///   source body whose support omits the binder, or two binds in a row whose
+///   inner one omits it. `None` otherwise.
 /// - provides: the planning half of [`Step::Discard`], and the continuation the
 ///   machine runs when it takes the step.
 /// - fails: [`ConversionFault::Domain`] for a neutral or a closure that does
@@ -3038,7 +3071,7 @@ pub fn unread_call(
     if definitions.calls(level) == Calls::Unknown {
         return Ok(None);
     }
-    let Some((&Elimination::Bind(continuation), prefix)) = held.spine().split_last()
+    let Some((prefix, continuation, &[])) = bound_call(held.spine())
     else {
         return Ok(None);
     };
@@ -3082,11 +3115,12 @@ pub fn unread_call(
 /// # Specification
 /// - requires: nothing — dangling ids are admissible input and refused.
 /// - ensures: `Some(continuation)` exactly when `comp` is a neutral headed by
-///   an intuitionistic variable whose spine, last, binds into `continuation`,
-///   whose continuation is a source body reading the value it binds, and whose
-///   spine before the bind returns: it forces, applies and projects a variable
-///   whose calls [`Definitions::calls`] answers [`Calls::Return`] for, or it is
-///   one transport along the variable as a path (#4011). `None` otherwise.
+///   an intuitionistic variable whose spine [`bound_call`] reads as a bind over
+///   a call, with nothing past the bind into `continuation`, whose continuation
+///   is a source body reading the value it binds, and whose call returns: it
+///   forces, applies and projects a variable whose calls [`Definitions::calls`]
+///   answers [`Calls::Return`] for, or it is one transport along the variable
+///   as a path (#4011). `None` otherwise.
 /// - provides: the planning half of [`Step::Hold`], and the continuation the
 ///   machine runs at the computation's returned endpoint when it takes the
 ///   step.
@@ -3128,7 +3162,7 @@ pub fn passed_call(
     else {
         return Ok(None);
     };
-    let Some((&Elimination::Bind(continuation), prefix)) = held.spine().split_last()
+    let Some((prefix, continuation, &[])) = bound_call(held.spine())
     else {
         return Ok(None);
     };
