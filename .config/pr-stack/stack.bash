@@ -128,16 +128,20 @@ trunk_lacked() {
 # commits (`own_fork`) are rebased onto the top's branch. That rebase
 # conflicts when the top forked from the trunk before a change the own
 # commits build on (`trunk_lacked`), though they apply to the trunk: the top
-# carries the change only once it merges. A top bound for the trunk
-# (`bound.jq`, #4124) merges soon: one queued, and one behind the trunk with
-# its checks pending or passed, which its watch queues. The stacking waits
-# for it every `pr_stack_poll` seconds (30 by default) and reads the top
-# again, up to 30 minutes. A top held, conflicting with the trunk or failed,
-# a wait past 30 minutes, and a conflict with the top's own changes are
-# refused, the first two naming the trunk's changes the top lacks.
+# carries the change only once it merges or its seat rebases it. A top bound
+# for the trunk (`bound.jq`, #4124) is a future event, never a refusal
+# (#4164): the stacking prints what it waits on and the line arming
+# `pr:await` on the top (`arm_await`), and returns 3, so the seat's turn ends
+# and the job wakes it. A top conflicting with the trunk past its seat's
+# claim window is stacked past: the branch stacks on the highest pull request
+# below it that does not conflict (`below_clean`), or on the trunk, and
+# `stacked_past` names the top it went past. A top held or failed, and a
+# conflict with the top's own changes, are refused, the first two naming the
+# trunk's changes the top lacks.
 stack_on_top() {
-  local own=$1 deadline=$((SECONDS + 1800)) base number fork lacked bound
+  local own=$1 base number fork lacked bound
   stacked_top=$2
+  stacked_past=
   while [[ $stacked_top != null ]]; do
     base=$(jq -r .head <<< "$stacked_top")
     number=$(jq -r .number <<< "$stacked_top")
@@ -158,20 +162,35 @@ stack_on_top() {
       return 1
     fi
     bound=$(top_reading "$number" | jq -c --arg trunk "$trunk" -f "$pr_stack_dir/bound.jq")
-    if [[ $(jq -r .act <<< "$bound") != wait ]]; then
-      printf 'the rebase of %s onto %s (#%s, the top) conflicts: the top lacks these changes of %s the branch builds on, and %s; run `pr:open` again once it merges or a newer top holds them:\n%s\n' \
-        "$own" "$base" "$number" "$trunk" "$(jq -r .why <<< "$bound")" "$(sed 's/^/  /' <<< "$lacked")" >&2
-      return 1
-    fi
-    if (( SECONDS >= deadline )); then
-      printf 'the top #%s has been bound for %s for 30 minutes without merging and still lacks these changes of it the branch builds on; run `pr:open` again once it merges:\n%s\n' \
-        "$number" "$trunk" "$(sed 's/^/  /' <<< "$lacked")" >&2
-      return 1
-    fi
-    echo "the top #$number lacks $(wc -l <<< "$lacked") changes of $trunk the branch builds on, and $(jq -r .why <<< "$bound"); waiting for it to merge" >&2
-    sleep "${pr_stack_poll:-30}"
-    stacked_top=$(await_top "$own")
+    case $(jq -r .act <<< "$bound") in
+      arm)
+        printf 'the top #%s lacks these changes of %s the branch builds on, and %s; `pr:await %s` wakes the seat once it merges or holds them, and `pr:open` runs again then:\n%s\n' \
+          "$number" "$trunk" "$(jq -r .why <<< "$bound")" "$number" "$(sed 's/^/  /' <<< "$lacked")"
+        arm_await "$number"
+        return 3
+        ;;
+      past)
+        echo "the top #$number lacks $(wc -l <<< "$lacked") changes of $trunk the branch builds on, and $(jq -r .why <<< "$bound"); $own stacks past it"
+        stacked_past=$number
+        stacked_top=$(below_clean "$number")
+        ;;
+      *)
+        printf 'the rebase of %s onto %s (#%s, the top) conflicts: the top lacks these changes of %s the branch builds on, and %s; run `pr:open` again once it merges or a newer top holds them:\n%s\n' \
+          "$own" "$base" "$number" "$trunk" "$(jq -r .why <<< "$bound")" "$(sed 's/^/  /' <<< "$lacked")" >&2
+        return 1
+        ;;
+    esac
   done
+  # Past a top onto the trunk, the branch's own commits leave the top's.
+  if [[ -n $stacked_past ]]; then
+    fork=$(own_fork "$own" "$trunk")
+    if ! git rebase --quiet --update-refs --onto "origin/$trunk" "$fork" > /dev/null 2>&1; then
+      git rebase --abort
+      echo "the rebase of $own onto $trunk, past #$stacked_past, conflicts; resolve it on $own, run the hooks, and run \`pr:open\` again" >&2
+      return 1
+    fi
+    record_stack_base "origin/$trunk"
+  fi
 }
 
 # Read the top again once the change is measured on the top `$2` from the
@@ -244,12 +263,31 @@ in_queue() {
 }
 
 # What `bound.jq` reads of pull request `$1`: whether it is queued or set to
-# enter the queue, whether it is a draft, its merge state and its head's
-# check rollup, as one JSON object.
+# enter the queue, whether it is a draft, its merge state, its head's check
+# rollup and the seconds since its head commit was made, as one JSON object.
 top_reading() {
   gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
-    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } isDraft mergeStateStatus commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } }' \
-    --jq '.data.repository.pullRequest | {queued: (.isInMergeQueue or .autoMergeRequest != null), draft: .isDraft, merge: .mergeStateStatus, checks: (.commits.nodes[0].commit.statusCheckRollup.state // null)}'
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } isDraft mergeStateStatus commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } } } } }' \
+    --jq '.data.repository.pullRequest | {queued: (.isInMergeQueue or .autoMergeRequest != null), draft: .isDraft, merge: .mergeStateStatus, checks: (.commits.nodes[0].commit.statusCheckRollup.state // null), age: (now - (.commits.nodes[0].commit.committedDate | fromdateiso8601) | floor)}'
+}
+
+# The line a seat's harness arms `pr:await $1` on (#4164, `await.jq`).
+arm_await() {
+  jq -nr --argjson n "$1" -L "$pr_stack_dir" 'include "await"; arm($n)'
+}
+
+# The highest pull request below `$1` in its stack that does not conflict
+# with the trunk, `{number, head}`, or `null` (#4164): where a branch stacks
+# past a top no seat rebases.
+below_clean() {
+  local member
+  for member in $(server_stack "$1" | jq -c --argjson n "$1" '(map(.number) | index($n)) as $at | .[: $at] | reverse[]'); do
+    if [[ $(top_reading "$(jq -r .number <<< "$member")" | jq -r .merge) != DIRTY ]]; then
+      printf '%s\n' "$member"
+      return
+    fi
+  done
+  echo null
 }
 
 # The numbers of the stack `$1`'s pull requests in the merge queue, as a JSON

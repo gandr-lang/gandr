@@ -13,7 +13,7 @@
     "output": ""
   },
   {
-    "name": "#3134: a sectioned issue without `shape:signed` is refused until the coordinator signs it",
+    "name": "#4164: a sectioned issue without `shape:signed` waits on the coordinator's sign-off, arming `pr:await` on the issue",
     "input": {
       "issues": [
         {
@@ -23,7 +23,7 @@
         }
       ]
     },
-    "output": "#4's sections wait for the coordinator's `shape:signed`: page `sections #4: <the shape's first line>` if not yet paged, then run `pr:open` again once the label stands"
+    "output": "wait: #4's sections wait for the coordinator's `shape:signed`: page `sections #4: <the shape's first line>` if not yet paged; `pr:await 4` wakes the seat once the label stands, and `pr:open` runs again then\narm: /bin/bash -c 'mise run pr:await 4' timer-await-4"
   },
   {
     "name": "#3134: a new-territory body missing `## Try first` is refused with the finding named, signed or not",
@@ -72,6 +72,6 @@
         }
       ]
     },
-    "output": "#3's sections wait for the coordinator's `shape:signed`: page `sections #3: <the shape's first line>` if not yet paged, then run `pr:open` again once the label stands"
+    "output": "wait: #3's sections wait for the coordinator's `shape:signed`: page `sections #3: <the shape's first line>` if not yet paged; `pr:await 3` wakes the seat once the label stands, and `pr:open` runs again then\narm: /bin/bash -c 'mise run pr:await 3' timer-await-3"
   }
 ]

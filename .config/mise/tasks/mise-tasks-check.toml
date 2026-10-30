@@ -1351,8 +1351,9 @@ FROM reference;"); keys read $resolved"
 # check's run was superseded on its head (#2829), `prefix.jq` what a landing
 # queues (#1988), `sweep.jq` which worktrees `wt:sweep` removes, `moved.jq`
 # whether `pr:open` restacks onto a top that moved while it measured (#3849),
-# and `triggers.jq` whether the landing watcher reads on the events that
-# change what lands, never a schedule (#2984). Each case in
+# `awaited.jq` the event `pr:await` wakes a seat on (#4164), and
+# `triggers.jq` whether the landing watcher reads on the events that change
+# what lands, never a schedule (#2984). Each case in
 # `.config/pr-stack/cases.json` names its program, its arguments and input,
 # and the output it must give; `prefix.jq`'s and `state.jq`'s output is its
 # raw line, the others' compact JSON. `triggers.jq` also reads
@@ -1368,15 +1369,16 @@ FROM reference;"); keys read $resolved"
 # lower that restacked after `pr:open` recorded the upper on it (#4064).
 # `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
 # repository, once per case in `.config/pr-stack/behind.json`: a lower that
-# lacks the trunk change the upper builds on is waited out while it is bound
-# for the trunk, queued or behind with its checks pending or passed, and
-# refused naming the change while it is held, conflicting or failed
-# (#4124, `bound.jq`); a conflict with the lower's own change is refused at
-# once (#3654, `stack_on_top`). A branch stacked once,
+# lacks the trunk change the upper builds on arms `pr:await` while it is
+# bound for the trunk, queued, behind with its checks pending or passed, or
+# conflicting within its seat's claim window; it is stacked past once it has
+# conflicted past the window, and refused naming the change while it is held
+# or failed (#4124, #4164, `bound.jq`); a conflict with the lower's own
+# change is refused at once (#3654, `stack_on_top`). A branch stacked once,
 # over a lower restacked since, replays its own commit alone (#3877,
 # `stack_base`).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a change is measured from a fetched trunk, and a top behind the trunk is waited out or refused"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a change is measured from a fetched trunk, and a top behind the trunk arms pr:await, is stacked past or is refused"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1393,7 +1395,7 @@ fi
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk; a top behind the trunk is waited out or refused"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused"
 '''
 
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):
