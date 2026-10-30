@@ -8,5 +8,11 @@
     "name": "#3148: a lower still open leaves the upper measured from the trunk it forked from",
     "merged": false,
     "output": "base"
+  },
+  {
+    "name": "#4064: an upper stacked on a lower that restacked since is measured from the lower's head it carries, not the trunk",
+    "merged": false,
+    "restacked": true,
+    "output": "lower"
   }
 ]

@@ -214,10 +214,18 @@ restack_moved() {
 
 # The revision the checked-out change is measured from (#3148), on a trunk
 # fetched first: a pull request below that merged since the seat last
-# fetched is the trunk's, never read as this change's own paths.
+# fetched is the trunk's, never read as this change's own paths. A branch an
+# earlier run stacked carries its old top's commits, and the top's head may
+# have moved since, so `evidence:base` no longer names it. The recorded stack
+# base (`stack_base`, #3877) still does, and it measures from there when it
+# lies past what `evidence:base` names (#4064).
 measured_from() {
+  local base stacked
   git fetch --quiet origin "$trunk"
-  evidence_base
+  base=$(evidence_base)
+  stacked=$(stack_base)
+  if [[ -n $stacked ]] && git merge-base --is-ancestor "$base" "$stacked"; then base=$stacked; fi
+  printf '%s\n' "$base"
 }
 
 # `evidence:base`, the measurement `measured_from` takes once the trunk is
