@@ -2615,6 +2615,7 @@ INSERT INTO purpose VALUES('surface-lowering','import::unread::Absent','enum','N
 INSERT INTO purpose VALUES('surface-lowering','import::unsigned::Absent','enum','Names why an import is written at no signature, so it binds its source''s whole interface.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::Fuel','struct','Names the fuel a lowering''s budget spends, so the budget''s fuel is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::LoweringBudget','struct','Holds the budget that bounds a lowering, so the lowering''s fuel is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','lower::cells::refuse_cells','function','Refuses a `cells` node until the pasting reading lands, so the node''s one diagnostic names the reading''s tracking issue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::CarriedOrigins','struct','Holds the origins a closure''s lowering carries, so the closure''s origins are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::ClosureLowering','struct','Holds a closure''s lowering, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::Onto','enum','Names the target a closure''s lowering lowers onto, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
@@ -3212,6 +3213,9 @@ INSERT INTO purpose VALUES('surface-session','session::evaluate','function','Run
 INSERT INTO purpose VALUES('surface-session','typed::type_of','function','Spells the type the latest resume gives a declaration, so the type''s spelling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','build::StagedId','struct','The identity of a node staged inside one TreeBuilder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','build::TreeBuilder','struct','Stages the nodes of one tree and lays them out in level order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','cells::Cells','struct','A composite or a filler written over named cells: its former, the motive it lifts, and the cells in the writer''s order, with no shape of its own.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','cells::CellsKind','enum','The former a cells node writes, `compose` or `fill`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','cells::NamedCell','struct','One cell of a cells node: the name the writer gives it, and the term a named substitution sends that name to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','digest::NODE_DIGEST_LEN','constant','Byte width of a node identity, fixed by the hash family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','digest::NodeDigest','struct','The content identity of one top-level form or one whole tree: a digest of its labels and its content.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','error::SyntaxError','enum','Every way this crate refuses an input.',NULL,'fits','sound',NULL);

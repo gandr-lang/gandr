@@ -208,6 +208,9 @@ impl TrackingIssue
     /// and the level-two shape, which the `ps` reading builds from named
     /// cells.
     pub const ITERATED_SITE: Self = Self(4236);
+    /// A composite or a filler written over named cells, which the pasting
+    /// reading lowers.
+    pub const PASTING_READING: Self = Self(4236);
     /// A filler generator whose cells of `X` are directed, `Flow` cells.
     pub const DIRECTED_FILLER: Self = Self(4093);
     /// A filler generator whose cells of `X` are bridges.

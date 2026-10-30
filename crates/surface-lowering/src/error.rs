@@ -107,6 +107,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::CellsKind;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::MoldId;
@@ -1245,6 +1246,16 @@ pub enum LoweringRefusal<'source>
         form: AscriptionForm,
     },
 
+    /// A composite or a filler written over named cells, which the fragment
+    /// does not read until the pasting reading lands.
+    UnreadCells
+    {
+        /// The bytes the node covers.
+        span: ByteSpan,
+        /// The former the node writes.
+        kind: CellsKind,
+    },
+
     /// A component of a derived model signature the derivation cannot state,
     /// kept on the component of its name rather than dropped from the
     /// signature.
@@ -2135,6 +2146,10 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::UnreadAscription { name, form, .. } => {
                 write!(f, "`{name}` {form}; the fragment does not read it yet")
             },
+            Self::UnreadCells { kind, .. } => write!(
+                f,
+                "`{kind}` is written over named cells; the fragment does not read it yet"
+            ),
             Self::UnstatedComponent { name, fault, .. } => write!(
                 f,
                 "the model signature cannot state `{name}`, which {fault}"
@@ -2564,6 +2579,7 @@ impl LoweringRefusal<'_>
             | Self::NotATranslation { span, .. }
             | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
+            | Self::UnreadCells { span, .. }
             | Self::UnstatedComponent { span, .. }
             | Self::UninterfacedMember { span, .. }
             | Self::UndescribedMember { span, .. }
@@ -2623,6 +2639,7 @@ mod tests
     use anodized::spec;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::CellsKind;
     use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
@@ -2677,7 +2694,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 76_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 77_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3022,6 +3039,10 @@ mod tests
                 fault: MatchFault::Missing,
                 refused: s(141_usize, 142_usize),
             },
+            LoweringRefusal::UnreadCells {
+                span: s(143_usize, 144_usize),
+                kind: CellsKind::Compose,
+            },
         ]
     }
 
@@ -3109,6 +3130,7 @@ mod tests
             s(135_usize, 136_usize),
             s(137_usize, 138_usize),
             s(139_usize, 140_usize),
+            s(143_usize, 144_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

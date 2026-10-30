@@ -198,6 +198,7 @@ impl LoweringRefusal<'_>
             }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
+            | Self::UnreadCells { .. }
             | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
             | Self::UndescribedMember {
                 fault: MemberFault::OffBoundary,
@@ -383,6 +384,7 @@ impl LoweringRefusal<'_>
             Self::UndescribedMember { fault, .. } => undescribed(fault),
             Self::GradedBridge { .. } => FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             Self::UnreadAscription { .. } => FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
+            Self::UnreadCells { .. } => FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
             Self::ImplicitTelescope { .. } => {
                 FailureClass::Unimplemented(TrackingIssue::IMPLICIT_TELESCOPE)
             },
@@ -746,6 +748,7 @@ mod tests
     use gandr_core_term::generic::Uncovered;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::CellsKind;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
     use quenchant_shape::shape::Maybe;
@@ -796,7 +799,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 79_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 80_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1123,6 +1126,10 @@ mod tests
                 theory: SurfaceName::from("Monoid"),
                 derivation: empty,
             },
+            LoweringRefusal::UnreadCells {
+                span: empty,
+                kind: CellsKind::Fill,
+            },
         ]
     }
 
@@ -1209,6 +1216,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

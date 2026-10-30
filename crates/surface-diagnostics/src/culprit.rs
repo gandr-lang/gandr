@@ -257,6 +257,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             "an application read before it is bound"
         },
         LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
+        LoweringRefusal::UnreadCells { .. } => "cells the fragment does not read yet",
         LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
         LoweringRefusal::UndescribedMember { .. } => "a member the description does not read",
         LoweringRefusal::FamilyTelescope {
@@ -616,6 +617,7 @@ mod tests
     use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::CellsKind;
     use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::GroutShape;
@@ -780,6 +782,7 @@ mod tests
                 "an application read before it is bound"
             },
             LoweringRefusal::UnreadAscription { .. } => "not read by the fragment yet",
+            LoweringRefusal::UnreadCells { .. } => "cells the fragment does not read yet",
             LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
             LoweringRefusal::UndescribedMember { .. } => "a member the description does not read",
             LoweringRefusal::FamilyTelescope {
@@ -1076,6 +1079,10 @@ mod tests
                 span: at,
                 name,
                 form: AscriptionForm::Kinded,
+            },
+            LoweringRefusal::UnreadCells {
+                span: at,
+                kind: CellsKind::Compose,
             },
             LoweringRefusal::UnstatedComponent {
                 span: at,

@@ -459,6 +459,7 @@ pub use crate::lower::decode_escapes;
 pub use crate::lower::entry_shape;
 pub use crate::lower::lower_module;
 pub use crate::lower::lower_unit;
+pub use crate::lower::refuse_cells;
 pub use crate::module::Address;
 pub use crate::module::CodataIndex;
 pub use crate::module::Coerced;

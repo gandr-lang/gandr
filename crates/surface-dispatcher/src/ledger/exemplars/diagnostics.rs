@@ -79,6 +79,10 @@ const LOWERING: Issue = Issue(1788);
 /// ascription: the form a type family member's telescope is checked against.
 const ASCRIPTION: Issue = Issue(1321);
 
+/// The issue whose molds build a `cells` node from a source, and so write the
+/// exemplar of its refusal.
+const CELLS: Issue = Issue(4235);
+
 /// Why no source reaches an effectful former's refusal: only the kernel's
 /// readmission refuses it, and there the declaration stays on the checker's
 /// side instead of being refused.
@@ -121,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 64_usize] = [
+const OWED: [(&str, Owed); 65_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -181,6 +185,7 @@ const OWED: [(&str, Owed); 64_usize] = [
         )),
     ),
     ("UnreadAscription", Owed::Unwritten(ASCRIPTION)),
+    ("UnreadCells", Owed::Unwritten(CELLS)),
     ("FamilyTelescope", Owed::Unwritten(ASCRIPTION)),
     ("RulesUndecided", Owed::Unwritten(LOWERING)),
     (
