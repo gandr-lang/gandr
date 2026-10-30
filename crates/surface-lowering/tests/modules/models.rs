@@ -1921,6 +1921,64 @@ fn a_rule_the_theory_does_not_derive_is_refused()
     );
 }
 
+/// #4106: the associator of four is a filler the monoid derives, so a model
+/// writing a component of its name is refused there, naming the derivation,
+/// whether the model stands before the `derive` or after it; a model writing
+/// only its rules' witnesses holds no such refusal.
+#[test]
+fn a_model_writing_a_derived_rule_is_refused_naming_it_4106()
+{
+    let theory = "theory Mon {\n  sort M : Type;\n  oper e : M;\n  oper mul : (x : M, y : M) --> \
+                  M;\n  rule unitL : mul(e(), x) <=> x;\n  rule unitR : mul(x, e()) <=> x;\n  rule \
+                  assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n}\n";
+    let derivation =
+        "derive assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d))) in Mon";
+    let model = |module: &str, extra: &str| {
+        format!(
+            "module {module} : Model(Mon) with sort M = Integer {{\n  def e = 0;\n  def mul(x : \
+             Integer, y : Integer) -> Integer {{ x }}\n{extra}}}\n"
+        )
+    };
+    let written = "  def assoc4(a : Integer) -> Integer { a }\n";
+    let source = format!(
+        "{theory}{}{derivation}\n{}{}",
+        model("Before", written),
+        model("After", written),
+        model("Only", "")
+    );
+    let found = rows(&lower(source.as_str()));
+    let refused = |occurrence: usize| {
+        Amounts::Refused(LoweringRefusal::DerivedComponent {
+            span: span_of(source.as_str(), "assoc4", occurrence),
+            member: name("assoc4"),
+            theory: name("Mon"),
+            derivation: span_of(source.as_str(), derivation, 0_usize),
+        })
+    };
+    let amounts = |path: &str| {
+        found
+            .iter()
+            .filter(|&&(ref at, ..)| at == path)
+            .map(|&(_, _, amounts)| amounts)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        (amounts("Before.assoc4"), amounts("After.assoc4")),
+        (Vec::from([refused(0_usize)]), Vec::from([refused(2_usize)])),
+        "each written associator is refused at its name, naming the derivation: {found:?}"
+    );
+    assert!(
+        !found
+            .iter()
+            .any(|&(ref path, _, amounts)| path.starts_with("Only.")
+                && matches!(
+                    amounts,
+                    Amounts::Refused(LoweringRefusal::DerivedComponent { .. })
+                )),
+        "a model writing only its rules' witnesses owes the derivation nothing: {found:?}"
+    );
+}
+
 /// #2333: `include Seven` in a model of a theory including `Pointed` takes
 /// `Seven`'s members as the module's own, so the model's reduct at `Pointed`
 /// is `Seven` itself: `Pair` exports `Seven`'s `point`, the one constant,

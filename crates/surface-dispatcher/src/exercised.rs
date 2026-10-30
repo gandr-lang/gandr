@@ -626,6 +626,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::EntryType { .. } |
             LoweringRefusal::IllFormedDescription { .. } |
             LoweringRefusal::UnderivedRule { .. } |
+            LoweringRefusal::DerivedComponent { .. } |
             LoweringRefusal::GenericMisplaced { .. } |
             LoweringRefusal::UnknownTactic { .. } |
             LoweringRefusal::GenericUncovered { .. } |
@@ -748,6 +749,7 @@ fn lowering_row(
         | LoweringRefusal::RulesNeverComplete { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
+        | LoweringRefusal::DerivedComponent { .. }
         | LoweringRefusal::GenericMisplaced { .. }
         | LoweringRefusal::UnknownTactic { .. }
         | LoweringRefusal::GenericUncovered { .. }

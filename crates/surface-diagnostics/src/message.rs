@@ -801,6 +801,11 @@ fn lowered(
             f,
             "the theory `{theory}` does not derive `{rule}`: {fault}"
         ),
+        LoweringRefusal::DerivedComponent { member, theory, .. } => write!(
+            f,
+            "the theory `{theory}` derives `{member}`, so a model of it writes no component of \
+             that name"
+        ),
         LoweringRefusal::GenericMisplaced { .. }
         | LoweringRefusal::GenericUncovered { .. }
         | LoweringRefusal::UnknownTactic { .. } => {
@@ -1907,6 +1912,12 @@ pub mod tests
                 rule: name,
                 theory: name,
                 fault: gandr_surface_lowering::derive::DeriveFault::Apart,
+            },
+            LoweringRefusal::DerivedComponent {
+                span,
+                member: name,
+                theory: name,
+                derivation: span,
             },
             LoweringRefusal::RulesOverlapSecondOrder { span, first: span },
             LoweringRefusal::RulesOverlapCondition { span, first: span },

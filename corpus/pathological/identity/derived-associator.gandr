@@ -1,0 +1,56 @@
+/// A model that writes a derived filler is refused, naming the derivation.
+///
+/// The associator of four is the monoid's derived filler, so a model owes
+/// nothing for it. A component written for it would stand beside the
+/// derivation's own.
+///
+/// The model writes its rules' witnesses and the associator too. The lowering
+/// refuses the associator at its name.
+///
+/// - see: #4106 — a component a model writes for a derived filler is refused
+/// - see: `model/identity/derived-associator.gandr` — the model that writes
+///   only its rules' witnesses
+
+// The monoid, its derived associator of four, and the signs.
+import "../../model/identity/derived-associator.gandr";
+
+/// The signs under their product, writing the derived associator too.
+module Written : Model(Monoid) {
+  /// The carrier is the signs.
+  type M = Sign;
+  /// Plus is the unit.
+  def e = Plus;
+  /// The product is the signs' product.
+  def mul(x : Sign, y : Sign) -> Sign { times(x, y) }
+  /// The left unit law, by conversion.
+  def unitL(x : Sign) -> Path(Sign, mul(e, x), x) { here(x) }
+  /// The right unit law, case by case.
+  def unitR(x : Sign) -> Path(Sign, mul(x, e), x) {
+    case x {
+      Plus => here(Plus),
+      Minus => here(Minus),
+    }
+  }
+  /// Binary associativity, case by case.
+  def assoc(x : Sign, y : Sign, z : Sign) -> Path(Sign, mul(mul(x, y), z), mul(x, mul(y, z))) {
+    case x {
+      Plus => here(times(y, z)),
+      Minus => case y {
+        Plus => here(times(Minus, z)),
+        Minus => case z {
+          Plus => here(Plus),
+          Minus => here(Minus),
+        },
+      },
+    }
+  }
+  /// The associator of four, refused: the derivation fills it.
+  @[ refuses("DerivedComponent") ]
+  def assoc4(a : Sign, b : Sign, c : Sign, d : Sign) -> Path(
+    Sign,
+    mul(mul(mul(a, b), c), d),
+    mul(a, mul(b, mul(c, d)))
+  ) {
+    here(times(times(times(a, b), c), d))
+  }
+}

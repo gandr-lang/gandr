@@ -18,6 +18,16 @@
 //! applied to `m`. A step below the root is carried up its context as `cong`
 //! is, a transport of reflexivity whose family's right endpoint is the context
 //! with the motive's binder in its hole.
+//!
+//! A model owes nothing for a derived rule: a member a model of the theory
+//! writes under the rule's name is refused
+//! [`LoweringRefusal::DerivedComponent`], naming the derivation.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — background: the model-side
+//!   row — a model owes a component per generator, and none for a filler its
+//!   theory derives.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -31,6 +41,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::identity::back;
 use gandr_core_term::identity::then;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
@@ -61,10 +72,13 @@ use crate::model::ModelForm;
 use crate::model::ModelSignature;
 use crate::model::SortTerm;
 use crate::module::DerivedSlot;
+use crate::module::Member;
+use crate::module::Role;
 use crate::module::SlotIndex;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::resolve::SurfaceName;
 
 /// What a proof is minted under: the law's telescope, every binder binding,
 /// the model's fields, and the type of the terms its legs rewrite.
@@ -143,6 +157,92 @@ impl<'source> Lowerer<'_, 'source>
             if let Some(run) = run {
                 let _first = refused.insert(run, refusal);
             }
+        }
+    }
+
+    /// Refuse each member a model of the current source writes under the name
+    /// of a rule its theory derives: completion's derivation fills that rule,
+    /// so the model owes it nothing.
+    ///
+    /// # Specification
+    /// - requires: the collection of the current source has run, so every
+    ///   `derive` declaration of it and of the sources it imports is collected.
+    /// - ensures: each definition member of a module of the current source
+    ///   ascribed `Model(T)`, named as a rule a `derive` declaration derives in
+    ///   `T`, holds [`LoweringRefusal::DerivedComponent`] at its name, naming
+    ///   the declaration, unless it already holds a refusal or a fault.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model writing the derived associator is refused at
+    ///   it by name, and a model writing only its rules' witnesses holds no
+    ///   such refusal.
+    /// - witness: `tests::modules::models::a_model_writing_a_derived_rule_is_refused_naming_it_4106`
+    #[spec(
+        captures: [slots = self.collected.slots.len(), faults = self.faults.len()],
+        ensures: self.collected.slots.len() == slots && self.faults.len() >= faults,
+    )]
+    pub(in crate::lower) fn refuse_derived_components(&mut self)
+    {
+        // Each rule a theory derives, by the theory's slot and the rule's name,
+        // beside the bytes of its declaration.
+        let mut derived: BTreeMap<(SlotIndex, SurfaceName<'source>), ByteSpan> = BTreeMap::new();
+        for (&slot, rule) in &self.collected.derived {
+            if let Some(entry) = self.collected.slots.get(usize::from(slot)) {
+                let _first = derived
+                    .entry((rule.presented, entry.name))
+                    .or_insert(entry.introduced_by.span);
+            }
+        }
+        if derived.is_empty() {
+            return;
+        }
+        let source = self.current.source;
+        let mut refusals = Vec::new();
+        for structure in &self.collected.structures {
+            let Maybe::Present(model) = structure.model
+            else {
+                continue;
+            };
+            let Some(&theory) = self.collected.model_theories.get(&model)
+            else {
+                continue;
+            };
+            let Some(theory_name) = self
+                .collected
+                .slots
+                .get(usize::from(theory))
+                .map(|entry| entry.name)
+            else {
+                continue;
+            };
+            for &member in &structure.members {
+                let Member::Slot(slot) = member
+                else {
+                    continue;
+                };
+                let Some(entry) = self.collected.slots.get(usize::from(slot))
+                else {
+                    continue;
+                };
+                if entry.role != Role::Declared
+                    || matches!(entry.refusal, Maybe::Present(_))
+                    || self.collected.unit.source_at(entry.named.span.start()) != source
+                {
+                    continue;
+                }
+                if let Some(&derivation) = derived.get(&(theory, entry.name)) {
+                    refusals.push((slot, LoweringRefusal::DerivedComponent {
+                        span: entry.named.span,
+                        member: entry.name,
+                        theory: theory_name,
+                        derivation,
+                    }));
+                }
+            }
+        }
+        for (slot, refusal) in refusals {
+            let _first = self.faults.entry(slot).or_insert(refusal);
         }
     }
 

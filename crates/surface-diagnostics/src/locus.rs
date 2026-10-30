@@ -150,6 +150,9 @@ pub enum Label
     Overlaps,
     /// A variable's second occurrence on a rule's left side.
     Copied,
+    /// The `derive` declaration whose derivation fills a component a model
+    /// writes.
+    Derivation,
     /// A use of a declaration a `deprecated` attribute marks: the primary
     /// locus of a `deprecated` finding.
     Deprecated,
@@ -212,6 +215,7 @@ impl fmt::Display for Label
             Self::FirstArm => f.write_str("the arm it disagrees with"),
             Self::Overlaps => f.write_str("the rule it overlaps"),
             Self::Copied => f.write_str("the variable matched again"),
+            Self::Derivation => f.write_str("the derivation that fills it"),
             Self::Deprecated => f.write_str("names a deprecated declaration"),
         }
     }
@@ -500,7 +504,8 @@ impl Annotations
     ///   the run rather than a position; a duplicate declaration, import alias
     ///   or attribute marks its first occurrence as context, a member named
     ///   before its declaration marks that declaration, a pair of rules that
-    ///   part, or whose joining went undecided, marks the earlier rule, and an
+    ///   part, or whose joining went undecided, marks the earlier rule, a
+    ///   component a derivation fills marks the `derive` declaration, and an
     ///   import's unmatched signature marks the theory it names.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
@@ -544,6 +549,8 @@ impl Annotations
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::Overlaps }),
                 LoweringRefusal::RulesNonLinear { copy, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: copy, label: Label::Copied }),
+                LoweringRefusal::DerivedComponent { derivation, .. } =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: derivation, label: Label::Derivation }),
                 LoweringRefusal::MismatchedPattern { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::FirstArm }),
                 LoweringRefusal::UndescribedMember { .. } |
@@ -615,6 +622,10 @@ impl Annotations
             LoweringRefusal::RulesNonLinear { copy, .. } => Maybe::Present(Annotation {
                 span: copy,
                 label: Label::Copied,
+            }),
+            LoweringRefusal::DerivedComponent { derivation, .. } => Maybe::Present(Annotation {
+                span: derivation,
+                label: Label::Derivation,
             }),
             LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::IllFormedDescription { .. }
@@ -4722,6 +4733,7 @@ mod tests
             Label::Ran(gandr_core_term::effect::Purity::Pure).to_string(),
             Label::Ran(gandr_core_term::effect::Purity::Effectful).to_string(),
             Label::Copied.to_string(),
+            Label::Derivation.to_string(),
             Label::Deprecated.to_string(),
             Label::Endpoint(EndpointMiss::Budget).to_string(),
             Label::Unfilled.to_string(),

@@ -1,0 +1,8 @@
+error[DerivedComponent]: the theory `Monoid` derives `assoc4`, so a model of it writes no component of that name
+   ╭▸ corpus/pathological/identity/derived-associator.gandr:49:7
+   │
+49 │   def assoc4(a : Sign, b : Sign, c : Sign, d : Sign) -> Path(
+   │       ━━━━━━ a component its theory's derivation fills
+   │
+   ├ note: `assoc4` is refused with DerivedComponent, as its expectation states
+   ╰ help: delete `assoc4`: the model reads it as `Monoid.assoc4`, which the derivation fills

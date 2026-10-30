@@ -1077,6 +1077,9 @@ pub enum RefusalName
     /// A `derive` declaration whose statement its theory's completed rules
     /// do not prove.
     UnderivedRule,
+    /// A model writing a component under the name of a rule its theory
+    /// derives.
+    DerivedComponent,
     /// `Eq.generic` read anywhere but as a definition's whole body, applied
     /// to one data type.
     GenericMisplaced,
@@ -1280,7 +1283,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 233_usize] = [
+    pub const VOCABULARY: [Self; 234_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1430,6 +1433,7 @@ impl RefusalName
         Self::RulesNeverComplete,
         Self::RulesUndecided,
         Self::UnderivedRule,
+        Self::DerivedComponent,
         Self::GenericMisplaced,
         Self::UnknownTactic,
         Self::GenericUncovered(GenericCoverage::Declaration),
@@ -1649,6 +1653,7 @@ impl RefusalName
         (Self::RulesNeverComplete, b"RulesNeverComplete") |
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::UnderivedRule, b"UnderivedRule") |
+        (Self::DerivedComponent, b"DerivedComponent") |
         (Self::GenericMisplaced, b"GenericMisplaced") |
         (Self::UnknownTactic, b"UnknownTactic") |
         (Self::GenericUncovered(_), b"GenericUncovered") |
@@ -2021,6 +2026,7 @@ impl RefusalName
             Self::RulesNeverComplete => "RulesNeverComplete",
             Self::RulesUndecided => "RulesUndecided",
             Self::UnderivedRule => "UnderivedRule",
+            Self::DerivedComponent => "DerivedComponent",
             Self::GenericMisplaced => "GenericMisplaced",
             Self::UnknownTactic => "UnknownTactic",
             Self::GenericUncovered(_) => "GenericUncovered",
@@ -2763,7 +2769,8 @@ impl Refusal<'_>
         RefusalName::RulesUncompleted) | (LoweringRefusal::RulesNeverComplete { .. },
         RefusalName::RulesNeverComplete) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::UnderivedRule { .. },
-        RefusalName::UnderivedRule) | (LoweringRefusal::GenericMisplaced { .. },
+        RefusalName::UnderivedRule) | (LoweringRefusal::DerivedComponent { .. },
+        RefusalName::DerivedComponent) | (LoweringRefusal::GenericMisplaced { .. },
         RefusalName::GenericMisplaced) | (LoweringRefusal::UnknownTactic { .. },
         RefusalName::UnknownTactic) | (LoweringRefusal::GenericUncovered { .. },
         RefusalName::GenericUncovered(_)) | (LoweringRefusal::BudgetExceeded { .. },
@@ -2876,6 +2883,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesNeverComplete { .. } => RefusalName::RulesNeverComplete,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::UnderivedRule { .. } => RefusalName::UnderivedRule,
+        LoweringRefusal::DerivedComponent { .. } => RefusalName::DerivedComponent,
         LoweringRefusal::GenericMisplaced { .. } => RefusalName::GenericMisplaced,
         LoweringRefusal::UnknownTactic { .. } => RefusalName::UnknownTactic,
         LoweringRefusal::GenericUncovered { fault, .. } => {

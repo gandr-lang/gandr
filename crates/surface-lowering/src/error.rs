@@ -1697,6 +1697,21 @@ pub enum LoweringRefusal<'source>
         fault: crate::derive::DeriveFault,
     },
 
+    /// A model of a theory writing a component under the name of a rule the
+    /// theory derives: completion's derivation fills it, so the model owes
+    /// nothing for it.
+    DerivedComponent
+    {
+        /// The bytes of the component's name.
+        span: ByteSpan,
+        /// The component's name, the derived rule's.
+        member: SurfaceName<'source>,
+        /// The theory's name.
+        theory: SurfaceName<'source>,
+        /// The bytes of the `derive` declaration.
+        derivation: ByteSpan,
+    },
+
     /// `Eq.generic` read anywhere but as the whole body of a definition,
     /// `def m = Eq.generic(T)`, applied to one data type.
     GenericMisplaced
@@ -2339,6 +2354,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 fault,
                 ..
             } => write!(f, "the theory `{theory}` does not derive `{rule}`: {fault}"),
+            Self::DerivedComponent { member, theory, .. } => write!(
+                f,
+                "the theory `{theory}` derives `{member}`, so a model of it writes no component \
+                 of that name"
+            ),
             Self::UnknownTactic { .. } => f.write_str(
                 "a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under \
                  fewer than 32 introductions",
@@ -2583,6 +2603,7 @@ impl LoweringRefusal<'_>
             | Self::RulesNeverComplete { span, .. }
             | Self::RulesUndecided { span, .. }
             | Self::UnderivedRule { span, .. }
+            | Self::DerivedComponent { span, .. }
             | Self::GenericMisplaced { span }
             | Self::UnknownTactic { span }
             | Self::GenericUncovered { span, .. }
