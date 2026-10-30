@@ -1601,6 +1601,107 @@
     "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
   },
   {
+    "name": "#4227: a branch whose commits stand on main by subject, though a conflicted rebase changed their patches, is removed and its branch deleted",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/rebased",
+        "branch": "rebased",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [
+          {
+            "subject": "fix(core): a family's argument written as a call converts with its value",
+            "on_main": true
+          },
+          {
+            "subject": "perf(kernel): keep content outcomes across an environment's admissions",
+            "on_main": true
+          }
+        ],
+        "pulls": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/rebased\",\"branch\":\"rebased\",\"action\":\"delete\",\"reason\":\"landed: its commits stand on origin/main\"}]"
+  },
+  {
+    "name": "#4227: a branch whose merged pull request holds each subject main lacks is removed, and one with a commit past it is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/squashed",
+        "branch": "squashed",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [
+          { "subject": "test(core): observe the staged fold", "on_main": false },
+          { "subject": "perf(core): stage the fold", "on_main": true }
+        ],
+        "pulls": [
+          {
+            "number": 4100,
+            "subjects": ["test(core): observe the staged fold", "perf(core): stage the fold"]
+          }
+        ]
+      },
+      {
+        "path": "/w/reused",
+        "branch": "reused",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [
+          { "subject": "perf(core): stage the fold", "on_main": true },
+          { "subject": "fix(core): a commit after the merge", "on_main": false }
+        ],
+        "pulls": [{ "number": 4100, "subjects": ["perf(core): stage the fold"] }]
+      }
+    ],
+    "output": "[{\"path\":\"/w/squashed\",\"branch\":\"squashed\",\"action\":\"delete\",\"reason\":\"landed: pull request #4100 merged\"},{\"path\":\"/w/reused\",\"branch\":\"reused\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
+  },
+  {
+    "name": "#4227: a branch listing no commit of its own is left to Worktrunk's reading, and one landed by subject whose head moved is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/fresh",
+        "branch": "fresh",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [],
+        "pulls": null
+      },
+      {
+        "path": "/w/moving",
+        "branch": "moving",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": true,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "perf(core): stage the fold", "on_main": true }],
+        "pulls": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/moving\",\"branch\":\"moving\",\"action\":\"keep\",\"reason\":\"its head moved after it was judged landed\"}]"
+  },
+  {
     "name": "a landed wip/ branch keeps its worktree",
     "program": "sweep.jq",
     "input": [

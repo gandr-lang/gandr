@@ -24,15 +24,45 @@
 #             `alive` whether that process runs, `young` whether its index
 #             changed within 4 hours;
 #   watched   null, or the pid of a live `pr:watch` whose mark
-#             (`gandr-watch-<pid>`) the worktree's git directory holds.
+#             (`gandr-watch-<pid>`) the worktree's git directory holds;
+#   commits   null, or for a branch Worktrunk does not read merged, the
+#             commits `git cherry origin/main` lists, each `{subject,
+#             on_main}`: `on_main` when a commit origin/main holds has the
+#             subject, a queue merge's ` (#n)` suffix dropped;
+#   pulls     null, or the merged pull requests whose head is the branch,
+#             each `{number, subjects}`, read only when some commit is not
+#             on main.
+#
+# The queue lands a branch rebased onto a moved main, and a rebase that
+# resolves a conflict changes the patch, so Worktrunk's readings all miss it
+# (#4227). Such a branch has landed when each commit it lists stands on main
+# by subject, or when one merged pull request of the branch holds each
+# commit's subject that main lacks. A branch listing no commit is left to
+# Worktrunk's reading: it may be one cut from main and not yet committed to.
 #
 # Output: an array of `{path, branch, action, reason}`, one per worktree:
 #   remove   `wt remove --foreground`, the branch deleted as merged;
+#   delete   `wt remove -D --foreground`, a branch landed by subject or by
+#            its merged pull request, which Worktrunk reads unmerged;
 #   force    `git worktree remove --force`, a scratch tree nothing holds;
 #   keep     left as it is.
 
+# Why the branch has landed though Worktrunk reads it unmerged, or null.
+def landing:
+  (.commits // []) as $commits
+  | if ($commits | length) == 0 then null
+    elif all($commits[]; .on_main) then "its commits stand on origin/main"
+    else
+      first(
+        (.pulls // [])[] as $pull
+        | select(all($commits[]; .on_main or (.subject as $subject | $pull.subjects | index([$subject]) != null)))
+        | "pull request #\($pull.number) merged"
+      ) // null
+    end;
+
 map(
-  {path, branch} + (
+  landing as $landing
+  | {path, branch} + (
     if .primary then {action: "keep", reason: "the primary worktree"}
     elif .cwd then {action: "keep", reason: "the caller's own worktree"}
     elif .watched != null then {action: "keep", reason: "held by live pr:watch \(.watched)"}
@@ -46,8 +76,9 @@ map(
       end
     elif .branch == null then {action: "keep", reason: "detached, not a scratch"}
     elif (.branch | startswith("wip/")) then {action: "keep", reason: "a wip/ branch"}
-    elif .merged and .moved then {action: "keep", reason: "its head moved after it was judged landed"}
+    elif (.merged or $landing != null) and .moved then {action: "keep", reason: "its head moved after it was judged landed"}
     elif .merged then {action: "remove", reason: "landed in origin/main"}
+    elif $landing != null then {action: "delete", reason: "landed: \($landing)"}
     else {action: "keep", reason: "not landed"}
     end
   )

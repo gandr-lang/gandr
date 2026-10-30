@@ -1383,7 +1383,12 @@ done < "$scratch/actions"
 # committed to sits on that line. Both halves come from the one `wt list`
 # snapshot (#2299): judged across two reads, a branch whose first commit fell
 # between them read integrated at main's tip and off the line at its commit,
-# and its live worktree went. A worktree whose head is no longer the judged
+# and its live worktree went. Worktrunk misses a branch the queue landed
+# through a rebase that resolved a conflict, since its patches changed. Such
+# a branch has landed when each commit `git cherry` lists has its subject on
+# origin/main, or when one merged pull request of the branch holds each
+# subject main lacks; its worktree goes by `wt remove -D` (#4227). A
+# worktree whose head is no longer the judged
 # one is kept, and the head is read once more just before `wt remove`. A
 # landed branch's worktree goes by `wt remove --foreground`, which deletes the
 # branch as merged and refuses a dirty or otherwise unsafe tree; the sweep
@@ -1418,6 +1423,14 @@ trunk_ref=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || trunk_
 git fetch --quiet origin "${trunk_ref#origin/}" || echo "wt:sweep: fetching $trunk_ref failed; sweeping against the last fetch" >&2
 declare -A first_parent=()
 while IFS= read -r commit; do first_parent[$commit]=1; done < <(git rev-list --first-parent "$trunk_ref")
+# The subjects of the commits the trunk holds, a queue merge's ` (#n)`
+# dropped, which a branch Worktrunk reads unmerged is judged landed by
+# (#4227): the queue's merge carries the pull request's title, and its second
+# parent the branch's commits as the queue rebased them.
+subjects=$(mktemp)
+trap 'rm -f "$subjects"' EXIT
+git log --format=%s "$trunk_ref" | sed -E 's/ \(#[0-9]+\)$//' \
+  | jq -R . | jq -s 'map({key: ., value: true}) | from_entries' > "$subjects"
 # The integration reason and the head it was judged at, from one snapshot; the
 # head leads its line, as it is never empty and a tab-separated read
 # collapses an empty field in the middle.
@@ -1443,13 +1456,25 @@ facts=()
 kept=()
 pruned=()
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null gitdir key mark
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null gitdir key mark
+  local -a listed=()
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
   key=$(realpath "$path")
   if [[ -n "$branch" && -n "${integrated[$key]:-}" && -z "${first_parent[${judged[$key]:-none}]:-}" ]]; then merged=true; fi
   if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
+  # A branch Worktrunk reads unmerged: the commits `git cherry` lists, by
+  # subject, and the merged pull requests of the branch when main lacks one.
+  if [[ -n "$branch" && $merged == false && $primary == false && $branch != wip/* ]]; then
+    mapfile -t listed < <(git cherry "$trunk_ref" "$head" | awk '/^\+/ { print $2 }')
+    commits=$(if ((${#listed[@]} > 0)); then git log --no-walk=unsorted --format=%s "${listed[@]}"; fi \
+      | jq -R . | jq -sc --slurpfile main "$subjects" 'map({subject: ., on_main: ($main[0][.] // false)})')
+    if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null; then
+      pulls=$(gh pr list --state merged --head "$branch" --json number,commits \
+        --jq 'map({number, subjects: [.commits[].messageHeadline]})' 2> /dev/null) || pulls=null
+    fi
+  fi
   gitdir=$(sed -n 's/^gitdir: //p' "$path/.git" 2> /dev/null) || gitdir=
   # A live `pr:watch` marks the worktree it runs in (#3798).
   if [[ -n "$gitdir" ]]; then
@@ -1471,7 +1496,8 @@ tree() {
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched}')")
+    --argjson commits "$commits" --argjson pulls "${pulls:-null}" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, pulls: $pulls}')")
 }
 path= head= branch= flag= primary=true
 while IFS= read -r line; do
@@ -1496,11 +1522,13 @@ while IFS=$'\t' read -r action path branch reason; do
   label="$path${branch:+ ($branch)}"
   if [[ "$dry_run" == true ]]; then printf '%s %s: %s\n' "$action" "$label" "$reason"; continue; fi
   case "$action" in
-    remove)
+    remove | delete)
       judged_head=${judged[$(realpath "$path")]:-}
+      delete=()
+      if [[ $action == delete ]]; then delete=(--force-delete); fi
       if now=$(git -C "$path" rev-parse HEAD 2> /dev/null) && [[ "$now" != "$judged_head" ]]; then
         kept+=("kept $label: $reason, but its head moved to ${now:0:9} after it was judged at ${judged_head:0:9}")
-      elif out=$(wt remove --foreground --yes "$path" 2>&1); then
+      elif out=$(wt remove --foreground --yes "${delete[@]}" "$path" 2>&1); then
         echo "removed $label: $reason"
         removed=$((removed + 1))
       else
