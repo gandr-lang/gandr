@@ -1,0 +1,26 @@
+[
+  {
+    "name": "#4018: a failed read of a row's gap issue stops the check with the call and its error, judging no row",
+    "answers": {},
+    "exit": 1,
+    "stderr": "`gh issue view 1 --json state,labels` failed, so no row resting on #1 is judged: HTTP 403: API rate limit exceeded\nledger check FAILED"
+  },
+  {
+    "name": "#4018: a failed read of the issue a partial row's head owes on stops the check with the call and its error",
+    "answers": { "1": "OPEN\ttrue" },
+    "exit": 1,
+    "stderr": "`gh issue view 2 --json state,labels` failed, so no row resting on #2 is judged: HTTP 403: API rate limit exceeded\nledger check FAILED"
+  },
+  {
+    "name": "both issues read open, the gap a kind:gap, and the ledger holds",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse" },
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "name": "issues read closed are verdicts on their rows",
+    "answers": { "1": "CLOSED\ttrue", "2": "CLOSED\tfalse" },
+    "exit": 1,
+    "stderr": "gap: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap or kind:epic issue (issue: #1); name a witness, or file the gap stating what it needs\nowing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on its not-implemented line that owes the rest (#2635)\nledger check FAILED"
+  }
+]
