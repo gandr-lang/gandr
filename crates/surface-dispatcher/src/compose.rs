@@ -5783,6 +5783,80 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
         );
     }
 
+    /// A fill whose generator's body is itself a fill, read at reflexivities:
+    /// the outer fill reaches its base, the generator at the source face, and
+    /// the inner fill there reaches its own. The kernel re-derives the
+    /// definition comparing them, as the checker accepts it.
+    #[test]
+    fn a_fill_whose_generator_holds_a_fill_replays_at_reflexivities_4186()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(
+                r"/// The composite of two paths, whose type states its endpoints.
+def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+  p then q
+}
+/// Two cells' composite, curried over the cells.
+def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {
+  thunk { fn (f) { thunk { fn (g) { join(A, x, y, z, f, g) } } } }
+}
+/// The composite's reflexivity by `fill`, at its sides.
+def selfFill(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(Path(A, x, z), f then g, f then g) {
+  fill[5, 7](chain(2), composedCells(A, x, y, z), (here(f), g))
+}
+/// That reflexivity, curried: a generator whose body is a fill.
+def selfFillOver(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {
+  thunk { fn (f) { thunk { fn (g) { selfFill(A, x, y, z, f, g) } } } }
+}
+/// The right whisker the outer fill lifts by.
+def liftRight(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
+  transport(\c. Path(Path(A, x, z), fm then g, c then g), fa, here(fm then g))
+}
+/// The outer fill, its generator's body a fill.
+def nestedFill(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), fm then g, fp then g),
+  selfFill(A, x, y, z, fm, g) then liftRight(A, x, y, z, fm, fp, fa, g),
+  liftRight(A, x, y, z, fm, fp, fa, g) then selfFill(A, x, y, z, fp, g)
+) {
+  fill[5, 7](chain(2), selfFillOver(A, x, y, z), (fa, g))
+}
+/// The nested fill at reflexivities.
+def nestedAtHere(A : Type, x : A) -> Path(
+  Path(Path(Path(A, x, x), here(x) then here(x), here(x) then here(x)), here(here(x) then here(x)), here(here(x) then here(x))),
+  nestedFill(A, x, x, x, here(x), here(x), here(here(x)), here(x)),
+  here(here(here(x) then here(x)))
+) {
+  here(here(here(here(x) then here(x))))
+}
+",
+            ),
+        );
+        let outcomes: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        let checks = Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            outcomes,
+            [
+                "join",
+                "composedCells",
+                "selfFill",
+                "selfFillOver",
+                "liftRight",
+                "nestedFill",
+                "nestedAtHere"
+            ]
+            .map(|name| (name.to_owned(), checks.clone()))
+            .to_vec(),
+            "every definition checks, and the kernel re-derives each"
+        );
+    }
+
     /// A fork whose ends only close reaches the kernel as what it computes,
     /// and one whose parent receives as the same, the received value read from
     /// an assumption of its type.

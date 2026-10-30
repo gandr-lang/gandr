@@ -4188,6 +4188,61 @@ fn endpoints_a_stuck_endpoint_carries_are_read_in_turn_698()
     );
 }
 
+/// Two reflexivities read alike when the endpoints they carry do: one
+/// through a definition's δ-step, one through a β-redex (#4186). A carried
+/// endpoint that reads to another call keeps the pair apart.
+#[test]
+fn endpoints_a_former_carries_are_read_in_turn_4186()
+{
+    let mut arena = TermArena::new();
+    let y = arena.value_variable(DeBruijnIndex::from(0_u32));
+    // `h(y)` for the opaque `h`, constant 0, or `k`, constant 2.
+    let call = |arena: &mut TermArena, constant: usize, argument| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    // `g`, constant 1, is `thunk { λz. h(z) }`.
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let body = call(&mut arena, 0, bound);
+    let lambda = arena.computation_lambda(body);
+    let defined = arena.value_thunk(lambda);
+    let unfoldings = Unfoldings::new(alloc::vec![
+        Unfoldable::Opaque,
+        Unfoldable::Body(defined),
+        Unfoldable::Opaque,
+    ]);
+    let carried = |arena: &mut TermArena, endpoint| {
+        let endpoint = arena.value_returned(endpoint);
+        arena.value_here(endpoint)
+    };
+    let through_definition = call(&mut arena, 1, y);
+    let through_definition = carried(&mut arena, through_definition);
+    let redex = arena.computation_application(lambda, y);
+    let through_redex = carried(&mut arena, redex);
+    let elsewhere = call(&mut arena, 2, y);
+    let elsewhere = carried(&mut arena, elsewhere);
+    let read = |arena: &mut TermArena, left, right| {
+        super::read_endpoints(
+            arena,
+            &unfoldings,
+            &[crate::conv::SetAside::Values(left, right)],
+            ReplayBudget::DEFAULT,
+            super::StuckEndpoints::Structural,
+        )
+    };
+    assert_eq!(
+        read(&mut arena, through_definition, through_redex),
+        super::EndpointReading::Converts,
+        "the carried endpoints read alike"
+    );
+    assert_eq!(
+        read(&mut arena, through_definition, elsewhere),
+        super::EndpointReading::Apart,
+        "a carried endpoint reading to another call stays apart"
+    );
+}
+
 /// A step's own reading converts two endpoints stuck on a variable whose arms
 /// differ by a definition one side holds and the other runs, and the
 /// structural reading a relation takes keeps them apart (#2831). An arm
