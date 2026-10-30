@@ -1,0 +1,25 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/modules/law-collapsed.gandr:52:63
+   │
+52 │   law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, here(a));
+   │                                                               ━━━━━━━ out of place
+   │
+   ├ note: `WithK` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value
+
+error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
+   ╭▸ corpus/pathological/modules/law-collapsed.gandr:31:3
+   │
+31 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+32 │ ┃   law one admitted;
+   │ ┗━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Integer, b : Integer) => Path(Integer, a, b)`
+   │
+   ╰ note: `one` is refused with UnprovenLaw.Admitted, as its expectation states
+
+error[UndescribedMember.LhsNotOperation]: this member rewrites from something other than an operation application
+   ╭▸ corpus/pathological/modules/law-collapsed.gandr:43:3
+   │
+43 │   rule k : p ==> loop(p);
+   │   ━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+   │
+   ╰ note: `RuledK` is refused with UndescribedMember.LhsNotOperation, as its expectation states

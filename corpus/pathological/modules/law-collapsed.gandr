@@ -1,0 +1,53 @@
+// Three routes by which a theory could smuggle axiom K past the identity,
+// each refused by name.
+//
+// A theory's law is a hypothesis its models prove, so no law makes K true.
+// A model may admit a law only when its host asserts the law of a
+// primitive. No host asserts K. So a model that admits the collapsing law at
+// a carrier whose loops differ is refused `UnprovenLaw.Admitted`. A rule's
+// left side is an operation application. A rule whose left side is a bare
+// variable is refused `UndescribedMember.LhsNotOperation`. So no rule
+// matches a path by its mere existence. The law form carries a path at a sort
+// or a host type, not a path of paths. So a law about the native identity is
+// refused `MalformedForm`. When the form grows, the first wall still holds:
+// each model proves the law, and no host admits it.
+//
+// `CollapsedInteger` admits the law at `Integer`. `RuledK` writes the rule
+// from a variable. `WithK` states K for the native identity as a law.
+//
+// - see: `../../model/modules/law-collapsed.gandr` — the accepted model
+
+/// A sort whose loops are one.
+theory Collapsed {
+  /// The loops.
+  sort Loop : Type;
+  /// Any two loops are one path.
+  law one : (p : Loop, q : Loop) => Path(Loop, p, q);
+}
+
+/// Two integers differ, so no proof exists and no host asserts one.
+module CollapsedInteger : Model(Collapsed) with sort Loop = Integer {
+  /// The admission names a law the host does not assert.
+  @[ refuses("UnprovenLaw.Admitted") ]
+  law one admitted;
+}
+
+/// A rule from a variable would identify every loop with the trivial one.
+@[ refuses("UndescribedMember.LhsNotOperation") ]
+theory RuledK {
+  /// The carrier.
+  sort Carrier : Type;
+  /// The trivial loop at a point.
+  oper loop : (a : Carrier) --> Carrier;
+  /// The rule's left side is a bare variable.
+  rule k : p ==> loop(p);
+}
+
+/// K for the native identity at the carrier, as a law.
+@[ refuses("MalformedForm") ]
+theory WithK {
+  /// The carrier.
+  sort Carrier : Type;
+  /// Every loop at a point is reflexivity: a path between paths.
+  law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, here(a));
+}
