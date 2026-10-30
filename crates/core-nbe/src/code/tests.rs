@@ -749,6 +749,134 @@ fn motives_calling_thunks_written_apart_are_alike_3920()
 }
 
 #[test]
+fn motives_applying_a_stated_lambda_agree_with_its_reduct_4073()
+{
+    // #4073: `z. El(⟨(λq. F q : U)(z)⟩)`, a stated lambda applied, as the
+    // lowering instantiates a type written `F(x)` at the lambda. The type
+    // written with the reduct reads `z. El(⟨F z⟩)`. The walk steps into the
+    // lambda's body, its binder bound to `z`, so the two motives are one
+    // family. So does the checker's elaboration: a nested lambda whose body
+    // binds its stated binder, `y ← (return q : F A); F q`. A stated identity
+    // applied to `z` reads as `z` itself. The redex is not a call of another
+    // family. A lambda whose body transports, `λq. tr(El(#1), q, F)`, applied
+    // to `z` is the transport written apart, and not one of another value.
+    let mut core = CoreArena::new();
+    let decoded = |core: &mut CoreArena, call| {
+        let code = core.value_returned(call);
+        core.value_type_element(code, Level::zero())
+    };
+    let call = |core: &mut CoreArena, function: u32, argument: u32| {
+        let head = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(function));
+        let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(argument));
+        let forced = core.computation_force(head);
+        core.computation_application(forced, read)
+    };
+    let stated = |core: &mut CoreArena, body, suspend: fn(&mut CoreArena, _) -> ValueId| {
+        let lambda = core.computation_lambda(body);
+        let thunk = suspend(core, lambda);
+        let unit = core.value_type_unit();
+        let ascribed = core.value_ascribe(thunk, unit);
+        let forced = core.computation_force(ascribed);
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        core.computation_application(forced, endpoint)
+    };
+    // `F z`, `F` at index 1 past the motive's binder.
+    let reduct = call(&mut core, 1, 0);
+    let reduct = decoded(&mut core, reduct);
+    // `(λq. F q)(z)`: under the lambda's binder `F` stands at index 2.
+    let body = call(&mut core, 2, 0);
+    let redex = stated(&mut core, body, CoreArena::value_thunk);
+    let redex = decoded(&mut core, redex);
+    // `(λq. y ← (return q : F U); F q)(z)`, the lambda nested: past the bind
+    // `q` stands at index 1 and `F` at index 3.
+    let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(read);
+    let unit = core.value_type_unit();
+    let returner = core.comp_type_returner(unit);
+    let checked = core.computation_ascribe(returned, returner);
+    let applied = call(&mut core, 3, 1);
+    let body = core.computation_bind(checked, applied);
+    let elaborated = stated(&mut core, body, CoreArena::value_nested);
+    let elaborated = decoded(&mut core, elaborated);
+    // `(λq. return q)(z)`, against `El z`.
+    let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(read);
+    let identity = stated(&mut core, returned, CoreArena::value_thunk);
+    let identity = decoded(&mut core, identity);
+    let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let bare = core.value_type_element(endpoint, Level::zero());
+    // `(λq. tr(El(#1), q, F))(z)` against `tr(El(#1), z, F)`: past the
+    // transport's binder its motive reads the endpoint at index 1, and `F`
+    // stands at index 2 in the lambda, at index 1 outside it.
+    let transported = |core: &mut CoreArena, value: u32| {
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let along = core.value_type_element(endpoint, Level::zero());
+        let path = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let value = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(value));
+        core.computation_path_transport(along, path, value)
+    };
+    let composite = transported(&mut core, 1);
+    let composite = decoded(&mut core, composite);
+    let body = transported(&mut core, 2);
+    let composed = stated(&mut core, body, CoreArena::value_thunk);
+    let composed = decoded(&mut core, composed);
+
+    let mut domain = DomainArena::new();
+    let f = variable(&mut domain, BinderLevel::from(0_u32));
+    let g = variable(&mut domain, BinderLevel::from(1_u32));
+    let motive = |domain: &mut DomainArena, body, bound: DomainValueId| {
+        let mut environment = Environment::new();
+        environment.extend(Zone::Intuitionistic, bound);
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    let over_redex = motive(&mut domain, redex, f);
+    let over_elaborated = motive(&mut domain, elaborated, f);
+    let over_reduct = motive(&mut domain, reduct, f);
+    let over_other = motive(&mut domain, reduct, g);
+    let over_identity = motive(&mut domain, identity, f);
+    let over_bare = motive(&mut domain, bare, f);
+    let over_composed = motive(&mut domain, composed, f);
+    let over_composite = motive(&mut domain, composite, f);
+    let over_composite_other = motive(&mut domain, composite, g);
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_redex, over_reduct).expect("both motives resolve"),
+        "a stated lambda applied is the call its body makes"
+    );
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_reduct, over_redex).expect("both motives resolve"),
+        "on either side"
+    );
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_elaborated, over_reduct).expect("both motives resolve"),
+        "and so is the lambda as the checker elaborates it"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over_redex, over_other).expect("both motives resolve"),
+        "but not a call of another family"
+    );
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_identity, over_bare).expect("both motives resolve"),
+        "a stated identity applied is its argument"
+    );
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_composed, over_composite).expect("both motives resolve"),
+        "a lambda whose body transports is the transport written apart"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over_composed, over_composite_other)
+            .expect("both motives resolve"),
+        "but not one of another value"
+    );
+}
+
+#[test]
 fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
 {
     // #4005: `El(#0)` over a path an action returned, `⟨transport along p⟩`,
