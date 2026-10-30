@@ -3,20 +3,22 @@
 //! A `ua[n, k]` statement names the stratum of degree `n` over the sub-site
 //! of the wiring catalogue at bound `k` on the corollas its two species
 //! inhabit, and a `compose[n, k]` composite the one over the chain catalogue
-//! ([`Family`]). A context builds each catalogue it needs once and holds each
-//! stratum it certifies or recalls for its own life. No static outlives the
-//! context, so a stratum crosses contexts and processes only through a store,
-//! which keeps no chain stratum.
+//! ([`Family`]). A composite of a level-two shape names level two of degree
+//! `n` over the wreath of the chains at total size `k` over themselves
+//! ([`StratumLevel`]). A context builds each catalogue and wreath it needs
+//! once and holds each stratum it certifies or recalls for its own life. No
+//! static outlives the context, so a stratum crosses contexts and processes
+//! only through a store, which keeps no level-one chain stratum.
 //!
 //! A run that keeps strata hands each context a [`StratumStore`]. Before it
-//! certifies, the context asks the store for the stratum's image and replays
-//! it over its own catalogue ([`SegalStratum::replay`]). An image that does
-//! not replay is refused to the store by name, and the context certifies
-//! afresh. What the context certifies, it hands the store to keep. The store
-//! answers integrity and attestation, and the replay checks the structure. A
-//! context handed no store keeps [`NoStratumStore`], which recalls and keeps
-//! nothing. The checker depends on no storage crate, so the driver implements
-//! the store.
+//! certifies, the context asks the store for the stratum's image at its level
+//! and replays it over its own catalogue ([`SegalStratum::replay`]) or wreath
+//! ([`WreathStratum::replay`]). An image that does not replay is refused to
+//! the store by name, and the context certifies afresh. What the context
+//! certifies, it hands the store to keep. The store answers integrity and
+//! attestation, and the replay checks the structure. A context handed no
+//! store keeps [`NoStratumStore`], which recalls and keeps nothing. The
+//! checker depends on no storage crate, so the driver implements the store.
 //!
 //! # References
 //!
@@ -34,6 +36,8 @@ use anodized::spec;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
+use gandr_theory_sites::Level as _;
+use gandr_theory_sites::LevelUncertified;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeObstruction;
@@ -41,6 +45,8 @@ use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Uncertified;
 use gandr_theory_sites::Unreplayed;
+use gandr_theory_sites::Wreath;
+use gandr_theory_sites::WreathStratum;
 use quenchant_shape::shape::Maybe;
 
 use super::StratumDefect;
@@ -56,6 +62,38 @@ pub struct StratumAt
     pub bound: ShapeSize,
     /// The degree.
     pub degree: Degree,
+}
+
+/// Which level of the site a stratum certifies, which a store's key adds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StratumLevel
+{
+    /// The catalogue's shapes: a [`SegalStratum`].
+    One,
+    /// The wreath of the catalogue over itself: a [`WreathStratum`].
+    Two,
+}
+
+impl core::fmt::Display for StratumLevel
+{
+    /// `1` or `2`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::One => "1",
+            Self::Two => "2",
+        })
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -90,8 +128,8 @@ quenchant_shape::reason_enum! {
 /// - witness: `ua::tests::a_stored_stratum_replays_and_a_damaged_one_is_certified_afresh_4034`
 pub trait StratumStore: core::fmt::Debug + Send + Sync
 {
-    /// The image of the stratum at `at` over `family`'s catalogue, when the
-    /// store holds one it believes.
+    /// The image of the stratum at `at` and `level` over `family`'s
+    /// catalogue, when the store holds one it believes.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -107,14 +145,15 @@ pub trait StratumStore: core::fmt::Debug + Send + Sync
         &self,
         family: &Family,
         at: StratumAt,
+        level: StratumLevel,
     ) -> Maybe<StratumImage, recalled::Absent>;
 
-    /// Keep the stratum at `at` over `family`'s catalogue, which this process
-    /// certified.
+    /// Keep `image`, the stratum at `at` and `level` over `family`'s
+    /// catalogue, which this process certified.
     ///
     /// # Specification
-    /// - requires: `stratum` was certified at `at` over `family`'s catalogue in
-    ///   this process.
+    /// - requires: `image` is the image of a stratum certified at `at` and
+    ///   `level` over `family`'s catalogue in this process.
     /// - ensures: as the trait.
     /// - panics: none.
     /// - executable: none — a required method.
@@ -127,11 +166,12 @@ pub trait StratumStore: core::fmt::Debug + Send + Sync
         &self,
         family: &Family,
         at: StratumAt,
-        stratum: &SegalStratum,
+        level: StratumLevel,
+        image: &StratumImage,
     );
 
-    /// Hear that the image recalled at `at` over `family`'s catalogue does not
-    /// replay, and why.
+    /// Hear that the image recalled at `at` and `level` over `family`'s
+    /// catalogue does not replay, and why.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -147,6 +187,7 @@ pub trait StratumStore: core::fmt::Debug + Send + Sync
         &self,
         family: &Family,
         at: StratumAt,
+        level: StratumLevel,
         why: Unreplayed,
     );
 }
@@ -169,6 +210,7 @@ impl StratumStore for NoStratumStore
         &self,
         _family: &Family,
         _at: StratumAt,
+        _level: StratumLevel,
     ) -> Maybe<StratumImage, recalled::Absent>
     {
         Maybe::Absent(recalled::Absent::Unkept)
@@ -183,7 +225,8 @@ impl StratumStore for NoStratumStore
         &self,
         _family: &Family,
         _at: StratumAt,
-        _stratum: &SegalStratum,
+        _level: StratumLevel,
+        _image: &StratumImage,
     )
     {
     }
@@ -197,6 +240,7 @@ impl StratumStore for NoStratumStore
         &self,
         _family: &Family,
         _at: StratumAt,
+        _level: StratumLevel,
         _why: Unreplayed,
     )
     {
@@ -214,6 +258,10 @@ pub struct Strata
     catalogues: BTreeMap<Family, BTreeMap<ShapeSize, Arc<Catalogue>>>,
     /// Each stratum of each family certified or recalled so far.
     held: BTreeMap<Family, BTreeMap<StratumAt, Arc<SegalStratum>>>,
+    /// The wreath of the chains over themselves at each bound built so far.
+    wreaths: BTreeMap<ShapeSize, Arc<Wreath<Catalogue>>>,
+    /// Each level-two stratum over the chains certified or recalled so far.
+    held_two: BTreeMap<StratumAt, Arc<WreathStratum>>,
 }
 
 impl Default for Strata
@@ -228,6 +276,8 @@ impl Default for Strata
             store: Arc::new(NoStratumStore),
             catalogues: BTreeMap::new(),
             held: BTreeMap::new(),
+            wreaths: BTreeMap::new(),
+            held_two: BTreeMap::new(),
         }
     }
 }
@@ -314,51 +364,17 @@ impl Strata
         {
             return Ok(Arc::clone(held));
         }
-        let catalogue = if let Some(catalogue) = self
-            .catalogues
-            .get(family)
-            .and_then(|by_bound| by_bound.get(&bound))
-        {
-            Arc::clone(catalogue)
-        }
-        else {
-            let built = match *family {
-                Family::Profiles(ref profiles) => {
-                    Catalogue::profiles(bound, profiles.clone(), budget)
-                },
-                Family::Wirings => Catalogue::within(bound, budget),
-                Family::Chains => Catalogue::chains(bound),
-            }
-            .map_err(|obstruction| match obstruction {
-                ShapeObstruction::PastTheBudget { counted } => {
-                    StratumDefect::Budget { bound, counted }
-                },
-                ShapeObstruction::TooManyVertices { .. }
-                | ShapeObstruction::UnknownVertex { .. }
-                | ShapeObstruction::Stick { .. }
-                | ShapeObstruction::UnknownWire { .. }
-                | ShapeObstruction::Carrier(_) => StratumDefect::Allowance { bound },
-            })?;
-            let built = Arc::new(built);
-            if let Some(by_bound) = self.catalogues.get_mut(family) {
-                let _first = by_bound.insert(bound, Arc::clone(&built));
-            }
-            else {
-                let _first = self.catalogues.insert(
-                    family.clone(),
-                    BTreeMap::from([(bound, Arc::clone(&built))]),
-                );
-            }
-            built
-        };
+        let catalogue = self.catalogue(family, bound, budget)?;
         let kept = *family != Family::Chains;
-        if kept && let Maybe::Present(image) = self.store.recall(family, at) {
+        if kept && let Maybe::Present(image) = self.store.recall(family, at, StratumLevel::One) {
             match SegalStratum::replay(Arc::clone(&catalogue), &image) {
                 Ok(stratum) if stratum.degree() == at.degree => {
                     return Ok(self.hold(family, at, stratum));
                 },
-                Ok(_) => self.store.refuse(family, at, Unreplayed::Degree),
-                Err(why) => self.store.refuse(family, at, why),
+                Ok(_) => self
+                    .store
+                    .refuse(family, at, StratumLevel::One, Unreplayed::Degree),
+                Err(why) => self.store.refuse(family, at, StratumLevel::One, why),
             }
         }
         let stratum =
@@ -371,9 +387,186 @@ impl Strata
                 } => StratumDefect::Condition { degree: failing },
             })?;
         if kept {
-            self.store.keep(family, at, &stratum);
+            self.store
+                .keep(family, at, StratumLevel::One, &stratum.image());
         }
         Ok(self.hold(family, at, stratum))
+    }
+
+    /// Level two at `at` over the wreath of the chains at `at`'s bound over
+    /// themselves, built from level one's chain stratum at the catalogue's
+    /// reach: recalled from the store and replayed when it holds one,
+    /// certified and kept otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stratum [`WreathStratum::certify`] gives at `at`'s
+    ///   degree, or one the store's image replays to at that degree; every call
+    ///   at one stratum answers the stratum the first answered.
+    /// - fails: [`StratumDefect::Allowance`] for a bound past
+    ///   [`ShapeSize::LARGEST`]; [`StratumDefect::Degree`] for a degree zero or
+    ///   past every object of the wreath; [`StratumDefect::Condition`] at the
+    ///   degree of the source of the first map out of order, or of the first
+    ///   object that is not the colimit of its cells; level one's refusals as
+    ///   [`Strata::certified`] gives them.
+    /// - panics: none.
+    /// - intension: the first call at a bound builds the chains and their
+    ///   wreath, and certifies level one at the catalogue's reach. The first at
+    ///   a stratum asks the store at level two, replays what it answers, and
+    ///   certifies when the store answers nothing or an image that does not
+    ///   replay; the store hears the refusal and keeps what is certified. A
+    ///   refusal is not held, so it is checked again.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second context recalls the level-two stratum a
+    ///   first kept and certifies nothing, a damaged image is refused and
+    ///   certified afresh, and a degree past every object is refused by the
+    ///   degree.
+    /// - witness: `ua::tests::level_two_is_kept_recalled_and_refused_by_the_store_4123`
+    #[spec(ensures: |ref ret| match *ret {
+        | Ok(ref stratum) => at.bound <= ShapeSize::LARGEST && stratum.degree() == at.degree,
+        | Err(StratumDefect::Allowance { bound: refused }) => refused == at.bound,
+        | Err(StratumDefect::Budget { .. }) => false,
+        | Err(StratumDefect::Degree { .. } | StratumDefect::Condition { .. }) => true,
+    })]
+    pub fn level_two(
+        &mut self,
+        at: StratumAt,
+    ) -> Result<Arc<WreathStratum>, StratumDefect>
+    {
+        if at.bound > ShapeSize::LARGEST {
+            return Err(StratumDefect::Allowance { bound: at.bound });
+        }
+        if let Some(held) = self.held_two.get(&at) {
+            return Ok(Arc::clone(held));
+        }
+        let chains = Family::Chains;
+        let catalogue = self.catalogue(&chains, at.bound, ShapeBudget::EVERY)?;
+        let below = self.certified(
+            &chains,
+            StratumAt {
+                bound: at.bound,
+                degree: catalogue.reach(),
+            },
+            ShapeBudget::EVERY,
+        )?;
+        let below = SegalStratum::clone(&below);
+        let wreath = if let Some(wreath) = self.wreaths.get(&at.bound) {
+            Arc::clone(wreath)
+        }
+        else {
+            let level: &Catalogue = &catalogue;
+            let built = Arc::new(Wreath::build(level, level, at.bound));
+            let _first = self.wreaths.insert(at.bound, Arc::clone(&built));
+            built
+        };
+        if let Maybe::Present(image) = self.store.recall(&chains, at, StratumLevel::Two) {
+            match WreathStratum::replay(Arc::clone(&wreath), below.clone(), &image) {
+                Ok(stratum) if stratum.degree() == at.degree => {
+                    return Ok(self.hold_two(at, stratum));
+                },
+                Ok(_) => self
+                    .store
+                    .refuse(&chains, at, StratumLevel::Two, Unreplayed::Degree),
+                Err(why) => self.store.refuse(&chains, at, StratumLevel::Two, why),
+            }
+        }
+        let stratum =
+            WreathStratum::certify(wreath, at.degree, below).map_err(|refused| match refused {
+                LevelUncertified::Degree { degree: refused } => {
+                    StratumDefect::Degree { degree: refused }
+                },
+                LevelUncertified::Direct { case } => StratumDefect::Condition {
+                    degree: Wreath::<Catalogue>::degree(case.source()),
+                },
+                LevelUncertified::Condition { failure } => StratumDefect::Condition {
+                    degree: Wreath::<Catalogue>::degree(&failure.object),
+                },
+            })?;
+        self.store
+            .keep(&chains, at, StratumLevel::Two, &stratum.image());
+        Ok(self.hold_two(at, stratum))
+    }
+
+    /// The catalogue of `family` at `bound`, built under `budget` on the first
+    /// call and held for the context's life.
+    ///
+    /// # Specification
+    /// - ensures: [`Catalogue::profiles`] under `budget` for
+    ///   [`Family::Profiles`], [`Catalogue::within`] for [`Family::Wirings`]
+    ///   and [`Catalogue::chains`] for [`Family::Chains`], at `bound`; a
+    ///   catalogue built under one budget answers a later call under any other.
+    /// - fails: [`StratumDefect::Budget`] for a catalogue past `budget`, and
+    ///   [`StratumDefect::Allowance`] for one the site refuses otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Strata::certified`].
+    /// - witness: `ua::tests::a_written_statement_refuses_each_defect_by_name`
+    #[spec(ensures: |ref ret| match *ret {
+        | Ok(ref catalogue) => catalogue.family() == family,
+        | Err(StratumDefect::Allowance { bound: refused } | StratumDefect::Budget { bound: refused, .. }) => refused == bound,
+        | Err(StratumDefect::Degree { .. } | StratumDefect::Condition { .. }) => false,
+    })]
+    fn catalogue(
+        &mut self,
+        family: &Family,
+        bound: ShapeSize,
+        budget: ShapeBudget,
+    ) -> Result<Arc<Catalogue>, StratumDefect>
+    {
+        if let Some(catalogue) = self
+            .catalogues
+            .get(family)
+            .and_then(|by_bound| by_bound.get(&bound))
+        {
+            return Ok(Arc::clone(catalogue));
+        }
+        let built = match *family {
+            Family::Profiles(ref profiles) => Catalogue::profiles(bound, profiles.clone(), budget),
+            Family::Wirings => Catalogue::within(bound, budget),
+            Family::Chains => Catalogue::chains(bound),
+        }
+        .map_err(|obstruction| match obstruction {
+            ShapeObstruction::PastTheBudget { counted } => StratumDefect::Budget { bound, counted },
+            ShapeObstruction::TooManyVertices { .. }
+            | ShapeObstruction::UnknownVertex { .. }
+            | ShapeObstruction::Stick { .. }
+            | ShapeObstruction::UnknownWire { .. }
+            | ShapeObstruction::Carrier(_) => StratumDefect::Allowance { bound },
+        })?;
+        let built = Arc::new(built);
+        if let Some(by_bound) = self.catalogues.get_mut(family) {
+            let _first = by_bound.insert(bound, Arc::clone(&built));
+        }
+        else {
+            let _first = self.catalogues.insert(
+                family.clone(),
+                BTreeMap::from([(bound, Arc::clone(&built))]),
+            );
+        }
+        Ok(built)
+    }
+
+    /// Hold level two `stratum` at `at` for the context's life, and answer it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold_two(
+        &mut self,
+        at: StratumAt,
+        stratum: WreathStratum,
+    ) -> Arc<WreathStratum>
+    {
+        let held = Arc::new(stratum);
+        let _first = self.held_two.insert(at, Arc::clone(&held));
+        held
     }
 
     /// Hold `stratum` at `at` over `family`'s catalogue for the context's life,

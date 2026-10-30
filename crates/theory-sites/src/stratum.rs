@@ -135,7 +135,7 @@ use crate::segal::walk;
 use crate::shape::End;
 use crate::shape::Shape;
 
-mod image;
+pub mod image;
 
 pub use image::SitesBuild;
 pub use image::StratumImage;

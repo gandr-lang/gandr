@@ -325,6 +325,17 @@
 //! the symmetry ride, refused by its motive. The rules, the decisions and
 //! what a consumer may assume are in the `forward` and `flow` modules.
 //!
+//! # Cells
+//!
+//! A rule `a <=> b` is a cell its theory decides by conversion, and a `Path`
+//! is a cell a program carries. A model witnesses each rule as a `Path` in
+//! its carrier: `here` where the carrier converts, a written path otherwise.
+//! The presented type is the initial model, where every witness is `here`.
+//! Three sites read this: a model's law component (`gandr-surface-lowering`'s
+//! `model`), a fold's respect obligation (the `respect` module) and a
+//! handler's lawfulness (the `handler` module). The corpus source
+//! `model/modules/model-rule-witnesses.gandr` pairs both witnesses of one law.
+//!
 //! # Example
 //!
 //! ```

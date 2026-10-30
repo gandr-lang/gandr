@@ -613,10 +613,10 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
     let bound = ShapeSize::from(13_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
-    let wreath = Wreath::build(level, level, bound);
+    let wreath = Arc::new(Wreath::build(level, level, bound));
     let below = level_one(&chains);
     assert_eq!(below.cocones().len(), 5);
-    let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
+    let stratum = WreathStratum::certify(Arc::clone(&wreath), Degree::from(5_usize), below)
         .expect("level two is certified at degree five");
     let [zero, one, two] = [0_usize, 1, 2].map(Length);
     let cases = [
@@ -662,7 +662,7 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
     }
     assert_eq!(stratum.cocones().len(), 16);
     let below = level_one(&chains);
-    let whole = WreathStratum::certify(&wreath, Degree::from(11_usize), below)
+    let whole = WreathStratum::certify(wreath, Degree::from(11_usize), below)
         .expect("level two is certified at the bound's top");
     assert_eq!(whole.cocones().len(), 111);
     let cells: usize = whole
@@ -743,7 +743,7 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
     let small = ShapeSize::from(5_usize);
     let wirings = Arc::new(Catalogue::build(small).expect("the catalogue builds"));
     let level: &Catalogue = &wirings;
-    let wreath = Wreath::build(level, level, small);
+    let wreath = Arc::new(Wreath::build(level, level, small));
     let below = level_one(&wirings);
     assert_eq!(
         segal_two(&wreath, &below, Degree::from(5_usize)),
@@ -751,7 +751,7 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
             cases: 46592.into()
         }
     );
-    let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
+    let stratum = WreathStratum::certify(wreath, Degree::from(5_usize), below)
         .expect("level two over the wirings is certified at five");
     assert_eq!(stratum.cocones().len(), 208);
 }
@@ -867,5 +867,114 @@ fn a_stratum_replays_its_image_and_refuses_a_damaged_one_4034()
         damaged(graft, wire + 1),
         Some(Unreplayed::Cocone { shape: grafted }),
         "a producer's leg its inclusion does not send onto the wire"
+    );
+}
+
+/// #4123: level two over the chains at total size nine, certified at degree
+/// four, replays from its image to its own cocones. Level one's image is no
+/// level-two image. An image damaged at its length, its object count, its
+/// degree, its cocones' objects, a cell's map and a graft is refused under
+/// each name.
+#[test]
+fn level_two_replays_its_image_and_refuses_a_damaged_one_4123()
+{
+    let bound = ShapeSize::from(9_usize);
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let level: &Catalogue = &chains;
+    let wreath = Arc::new(Wreath::build(level, level, bound));
+    let degree = Degree::from(4_usize);
+    let stratum = WreathStratum::certify(Arc::clone(&wreath), degree, level_one(&chains))
+        .expect("level two is certified at degree four");
+    let image = stratum.image();
+    let replay = |image: &StratumImage| {
+        WreathStratum::replay(Arc::clone(&wreath), level_one(&chains), image)
+    };
+    let replayed = replay(&image).expect("level two's image replays");
+    assert_eq!(replayed.degree(), degree);
+    assert_eq!(replayed.cocones(), stratum.cocones());
+    assert_eq!(replayed.image(), image, "the image is canonical");
+
+    let refused = |image: &StratumImage| replay(image).err();
+    assert_eq!(
+        refused(&level_one(&chains).image()),
+        Some(Unreplayed::Malformed),
+        "level one's image"
+    );
+    let mut bytes = Vec::from(image.clone());
+    let _last = bytes.pop();
+    assert_eq!(
+        refused(&StratumImage::from(bytes)),
+        Some(Unreplayed::Malformed)
+    );
+
+    let words: Vec<u64> = image
+        .as_ref()
+        .get(1 ..)
+        .expect("an image leads with its level")
+        .chunks_exact(8)
+        .map(|word| u64::from_le_bytes(word.try_into().expect("eight bytes")))
+        .collect();
+    let damaged = |position: usize, word: u64| {
+        let mut words = words.clone();
+        *words.get_mut(position).expect("the word is in the image") = word;
+        let mut bytes = vec![2_u8];
+        bytes.extend(words.iter().flat_map(|word| word.to_le_bytes()));
+        refused(&StratumImage::from(bytes))
+    };
+    let at = |position: usize| {
+        usize::try_from(*words.get(position).expect("the word is in the image"))
+            .expect("the word counts")
+    };
+    let objects = *words.first().expect("the object count");
+    assert_eq!(damaged(0, objects + 1), Some(Unreplayed::Catalogue));
+    assert_eq!(damaged(1, 0), Some(Unreplayed::Degree), "degree zero");
+    assert_eq!(
+        damaged(1, 1000),
+        Some(Unreplayed::Degree),
+        "past every object"
+    );
+    assert_eq!(
+        damaged(1, 3),
+        Some(Unreplayed::Cocones),
+        "the cocones of degree four stand past degree three"
+    );
+    let first = stratum.cocones().first().expect("a cocone").object();
+    assert_eq!(
+        damaged(3, objects),
+        Some(Unreplayed::Cocones),
+        "the first cocone at no object"
+    );
+    // The first cocone's first cell's hom-set position: after the object
+    // count, the degree, the cocone count, the object, the cell count, the
+    // column, the spot and the cell's object.
+    assert_eq!(
+        damaged(8, u64::MAX >> 1_u32),
+        Some(Unreplayed::Cocone { shape: first }),
+        "a position past the hom set"
+    );
+    // The first outer graft's wire, and the object whose cocone holds it.
+    let past = |cursor: usize, by: usize| cursor.checked_add(by).expect("the image is short");
+    let times = |count: usize, by: usize| count.checked_mul(by).expect("the image is short");
+    let mut cursor = 3;
+    let mut graft = None;
+    for _cocone in 0 .. at(2) {
+        let object = at(cursor);
+        cursor = past(cursor, past(2, times(4, at(past(cursor, 1)))));
+        let outer = at(cursor);
+        if outer > 0 {
+            let _first = graft.get_or_insert_with(|| (past(cursor, 1), object));
+        }
+        cursor = past(cursor, past(1, times(5, outer)));
+        cursor = past(cursor, past(1, times(6, at(cursor))));
+    }
+    assert_eq!(cursor, words.len(), "the walk reads the whole image");
+    let (wire, grafted) = graft.expect("a cocone grafts two columns");
+    let read = *words.get(wire).expect("the graft's wire");
+    assert_eq!(
+        damaged(wire, read + 1),
+        Some(Unreplayed::Cocone {
+            shape: ShapeIndex::from(grafted)
+        }),
+        "an outer graft level one does not give"
     );
 }

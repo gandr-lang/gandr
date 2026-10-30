@@ -433,6 +433,7 @@ INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surfa
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-dispatcher','strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-dispatcher','verdicts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','surface-driver','verdicts','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','theory-sites','ascent::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','kernel-term','decode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package','background','789bc36ba84f20d6634372c6b1f1a66e5c430e92','2026-10-27','20e46b8104c5c27d7eafb30d517d4929d769231e');
@@ -506,6 +507,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','surfa
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-circuit-algebras','interface','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-nominal-automata','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-shapes','boundary','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','ascent::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
 COMMIT;

@@ -1237,6 +1237,7 @@ impl gandr_core_checker::ua::StratumStore for Counting
         &self,
         _family: &gandr_theory_sites::Family,
         _at: gandr_core_checker::ua::StratumAt,
+        _level: gandr_core_checker::ua::StratumLevel,
     ) -> Maybe<gandr_theory_sites::StratumImage, gandr_core_checker::ua::recalled::Absent>
     {
         let _before = self.asked.fetch_add(1, Ordering::Relaxed);
@@ -1251,7 +1252,8 @@ impl gandr_core_checker::ua::StratumStore for Counting
         &self,
         _family: &gandr_theory_sites::Family,
         _at: gandr_core_checker::ua::StratumAt,
-        _stratum: &gandr_theory_sites::SegalStratum,
+        _level: gandr_core_checker::ua::StratumLevel,
+        _image: &gandr_theory_sites::StratumImage,
     )
     {
         let _before = self.kept.fetch_add(1, Ordering::Relaxed);
@@ -1265,6 +1267,7 @@ impl gandr_core_checker::ua::StratumStore for Counting
         &self,
         _family: &gandr_theory_sites::Family,
         _at: gandr_core_checker::ua::StratumAt,
+        _level: gandr_core_checker::ua::StratumLevel,
         _why: gandr_theory_sites::Unreplayed,
     )
     {
