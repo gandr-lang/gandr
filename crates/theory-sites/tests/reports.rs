@@ -15,6 +15,7 @@ use gandr_theory_circuit_algebras::Wire;
 use gandr_theory_circuit_algebras::WireCount;
 use gandr_theory_circuit_algebras::WiringObstruction;
 use gandr_theory_sites::Chain;
+use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::FactorizationDefect;
 use gandr_theory_sites::FactorizationFailure;
 use gandr_theory_sites::MapCase;
@@ -141,10 +142,14 @@ fn every_defect_reads_apart_and_names_what_it_carries()
         },
         ShapeObstruction::UnknownWire { wire },
         ShapeObstruction::Carrier(WiringObstruction::DirectedCycle { through: vertex }),
+        ShapeObstruction::PastTheBudget {
+            counted: ClassCount::from(31_usize),
+        },
     ]
     .map(|refusal| refusal.to_string());
     distinct(&shapes);
     assert!(shapes[2].contains('3'), "{}", shapes[2]);
+    assert!(shapes[5].contains("31"), "{}", shapes[5]);
     let (first, second) = (site_map!([{ 0 }], []), site_map!([{ 1 }], [0]));
     let family = || Box::from([first.clone(), second.clone()]);
     let defects = [

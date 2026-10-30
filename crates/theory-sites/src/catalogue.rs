@@ -57,6 +57,7 @@ use crate::map::VertexSet;
 use crate::map::homs;
 use crate::shape::End;
 use crate::shape::Shape;
+use crate::shape::ShapeBudget;
 use crate::shape::ShapeKey;
 use crate::shape::ShapeObstruction;
 use crate::shape::ShapeSize;
@@ -236,7 +237,7 @@ impl Catalogue
     ///
     /// # Specification
     /// - ensures: as the type states, one class index per shape.
-    /// - fails: as [`shapes_up_to`].
+    /// - fails: as [`shapes_up_to`] under [`ShapeBudget::EVERY`].
     /// - panics: none.
     /// - intension: one [`homs`] call per ordered pair of classes.
     ///
@@ -256,7 +257,40 @@ impl Catalogue
     }))]
     pub fn build(bound: ShapeSize) -> Result<Self, ShapeObstruction>
     {
-        Ok(Self::of(Family::Wirings, shapes_up_to(bound)?))
+        Self::within(bound, ShapeBudget::EVERY)
+    }
+
+    /// The catalogue of the wirings at `bound`, if it holds no more classes
+    /// than `budget`.
+    ///
+    /// # Specification
+    /// - ensures: as [`Catalogue::build`], and no more classes than `budget`.
+    /// - fails: as [`shapes_up_to`], before any hom set is built.
+    /// - panics: none.
+    /// - intension: a bound past the budget costs the enumeration up to its
+    ///   first class past the budget, and builds no hom set.
+    ///
+    /// # Errors
+    /// Any [`ShapeObstruction`] [`shapes_up_to`] returns, and
+    /// [`ShapeObstruction::PastTheBudget`] above all.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the 31 classes at bound four build under a budget of
+    ///   31 and are refused under 30, naming 31 counted.
+    /// - witness: `tests::shapes::the_enumeration_stops_at_the_first_class_past_its_budget`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |catalogue| {
+        catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+            && catalogue.classes.len() == catalogue.shapes.len()
+            && catalogue.shapes.len() <= usize::from(budget)
+            && catalogue.shapes.iter().all(|shape| shape.size() <= bound)
+    }))]
+    pub fn within(
+        bound: ShapeSize,
+        budget: ShapeBudget,
+    ) -> Result<Self, ShapeObstruction>
+    {
+        Ok(Self::of(Family::Wirings, shapes_up_to(bound, budget)?))
     }
 
     /// The catalogue of the chains at `bound`: the empty shape, the point and
