@@ -32,8 +32,8 @@
 //! # References
 //!
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is
-//!   written as the fold it realises and noted [`Elided::Composite`] until the
-//!   printer writes the former.
+//!   written as its former, `compose[n, k](Γ, d)`, never as the fold it
+//!   realises.
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
@@ -709,6 +709,16 @@ pub enum Former<'source, Node>
         /// The backward translator record.
         backward: Node,
     },
+    /// Unbiased composition at a stratum, `compose[n, k](chain(m), (c, …))`,
+    /// over its cells, which the source answers in vertex order by
+    /// [`Source::component`]; one cell is written bare.
+    Compose
+    {
+        /// The degree and the catalogue bound, and the shape the cells fill.
+        composite: gandr_core_term::compose::Composite,
+        /// How many cells the source answers.
+        cells: Arity,
+    },
     /// Element identity `Path(A, x, y)`: the carrier and the two endpoints.
     Path
     {
@@ -1312,10 +1322,6 @@ pub enum Elided
     Region,
     /// An ascription's type: the ascription stands as its body.
     Ascription,
-    /// A composite's form: the composite stands as the left-nested fold it
-    /// realises until the printer writes `compose[n, k](Γ, d)` (#3957). The
-    /// binary composite is no elision, since `p then q` writes it.
-    Composite,
 }
 
 /// Why a presentation is approximate.
@@ -1840,35 +1846,6 @@ pub trait Source
         &self,
         node: Self::Node,
     ) -> Option<Self::Node>
-    {
-        let _ = node;
-        None
-    }
-
-    /// The part of `node`'s former the source leaves out of what [`read`]
-    /// answers.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`Elided::Composite`] when `node` is a composite, returned or
-    ///   not, that [`read`] answers as the fold it realises and that no `then`
-    ///   writes; none otherwise, and the default leaves none.
-    /// - provides: the reason a printing that writes the fold is approximate.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — as for [`read`].
-    ///
-    /// [`read`]: Self::read
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a composite in a body is written as its fold and
-    ///   noted approximate.
-    /// - witness: `tests::goldens::a_composite_is_written_as_its_fold_and_noted_3965`
-    #[inline]
-    fn elided(
-        &self,
-        node: Self::Node,
-    ) -> Option<Elided>
     {
         let _ = node;
         None

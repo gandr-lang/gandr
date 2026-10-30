@@ -8867,6 +8867,43 @@ mod tests
         }
     }
 
+    /// #3957: a composite in a type prints as it is written, a chain of three
+    /// cells as a tuple and one cell bare, never as the fold it carries. Each
+    /// type spelling a composite reads back to its certificate and reprints
+    /// as itself.
+    #[test]
+    fn a_composite_prints_as_it_is_written_3957()
+    {
+        let source = SourceText::from(
+            "def agrees(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  w : A,\n  p : Path(A, x, \
+             y),\n  q : Path(A, y, z),\n  r : Path(A, z, w)\n) -> Path(Path(A, x, w), compose[5, \
+             7](chain(3), (p, q, r)), (p then q) then r) {\n  here((p then q) then r)\n}\n\ndef \
+             alone(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(Path(A, x, y), compose[0, \
+             0](chain(1), p), p) {\n  here(p)\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<super::ReadBack> =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        for composite in [
+            "Path(Path(A, x, w), compose[5, 7](chain(3), (p, q, r)), (p then q) then r)",
+            "Path(Path(A, x, y), compose[0, 0](chain(1), p), p)",
+        ] {
+            let spelling: Vec<&super::ReadBack> = reads
+                .iter()
+                .filter(|back| back.spelled.contains(composite))
+                .collect();
+            assert!(
+                !spelling.is_empty(),
+                "the composite prints as written: {reads:?}"
+            );
+            assert!(
+                spelling.iter().all(|back| back.trip == RoundTrip::Equal
+                    && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
+                "each type spelling the composite reads back and reprints as itself: {spelling:?}"
+            );
+        }
+    }
+
     /// #3801: a `cong` over an annotated thunk prints a type whose lambda
     /// states its parameter's written type, `fn (b : Path(A, x, y)) { … }`
     /// (#3943). Read back under a parameter the type does not name, each

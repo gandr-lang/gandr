@@ -19,7 +19,6 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::Composite;
-use gandr_core_term::folded_computation;
 use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
@@ -35,7 +34,6 @@ use quenchant_shape::shape::Maybe;
 use crate::former::Answered;
 use crate::former::Arity;
 use crate::former::Component;
-use crate::former::Elided;
 use crate::former::ForgetCall;
 use crate::former::Forgotten;
 use crate::former::Former;
@@ -1075,6 +1073,31 @@ impl<'arena> CoreSource<'arena>
         }
     }
 
+    /// The computation `id` is written as: the fold a returned binary
+    /// composite realises, since `p then q` writes it, and `id` otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        id: ComputationId,
+    ) -> ComputationId
+    {
+        if let Some(&Computation::Return(returned)) = self.arena.computation(id)
+            && let Some(&Value::Compose {
+                composite,
+                realised,
+                ..
+            }) = self.arena.value(returned)
+            && composite == Composite::binary()
+        {
+            realised
+        }
+        else {
+            id
+        }
+    }
+
     /// The relation the type `id` was written as, when the source records
     /// one, its operands read off the record or the flow it abbreviates.
     ///
@@ -1165,10 +1188,11 @@ impl<'arena> CoreSource<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each value former read as its [`Former`], a composite as the
-    ///   returned fold it realises, and a returned composite so too;
-    ///   [`Former::Unreadable`] for an id the arena does not hold, for a
-    ///   constructor whose classifier names no data family, and for a fill.
+    /// - ensures: each value former read as its [`Former`], the binary
+    ///   composite, returned or not, as the fold `p then q` writes, any other
+    ///   composite as [`Former::Compose`]; [`Former::Unreadable`] for an id the
+    ///   arena does not hold, for a constructor whose classifier names no data
+    ///   family, and for a fill.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1211,6 +1235,10 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
             stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
                 && actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
+        | (Some(&Value::Compose { composite, realised, .. }), Former::Returned(actual)) if composite == Composite::binary() =>
+            actual == CoreNode::Computation(realised),
+        | (Some(&Value::Compose { composite, ref cells, .. }), Former::Compose { composite: actual, cells: arity }) if composite != Composite::binary() =>
+            composite == actual && usize::from(arity) == cells.len(),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
@@ -1237,11 +1265,11 @@ impl<'arena> CoreSource<'arena>
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&Value::Fill { .. }), Former::Unreadable(Unreadable::Fill))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
-        | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(folded_computation(self.arena, body)),
+
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
         | (Some(&Value::Nested(body)), Former::Nested(actual))
-        | (Some(&Value::Compose { realised: body, .. }), Former::Returned(actual))
         | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
+        | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(self.written(body)),
         | (Some(&Value::Record(ref fields)), Former::Unit) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&Value::RecordUpdate { base, overlay }), Former::RecordUpdate(actual, arity)) => actual == CoreNode::Value(base)
@@ -1378,12 +1406,23 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
-            // A composite, returned or not, reads as the fold it realises until
-            // the printer writes the form (#3957).
-            Value::Returned(body) => {
-                Former::Returned(CoreNode::Computation(folded_computation(self.arena, body)))
+            Value::Returned(body) => Former::Returned(CoreNode::Computation(self.written(body))),
+            // The binary composite is written `p then q`, the fold it realises.
+            Value::Compose {
+                composite,
+                realised,
+                ..
+            } if composite == Composite::binary() => {
+                Former::Returned(CoreNode::Computation(realised))
             },
-            Value::Compose { realised, .. } => Former::Returned(CoreNode::Computation(realised)),
+            Value::Compose {
+                composite,
+                ref cells,
+                ..
+            } => Former::Compose {
+                composite,
+                cells: Arity::from(cells.len()),
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -1880,9 +1919,9 @@ impl<'arena> CoreSource<'arena>
     /// - ensures: each computation former read as its [`Former`], its children
     ///   as nodes of their families and its names spelled: a primitive by its
     ///   prelude function's name, an operation and a record field by their own,
-    ///   a scope by its interface's; a returned composite as the fold it
-    ///   realises; a hole and a mark as the honest set's, and an id the arena
-    ///   does not hold as dangling.
+    ///   a scope by its interface's; the binary composite returned as the fold
+    ///   `p then q` writes; a hole and a mark as the honest set's, and an id
+    ///   the arena does not hold as dangling.
     /// - provides: the computation half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1893,7 +1932,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
-    #[spec(ensures: |ret| match (self.arena.computation(folded_computation(self.arena, id)), ret) {
+    #[spec(ensures: |ret| match (self.arena.computation(self.written(id)), ret) {
         | (Some(&Computation::Hole(_)), Former::Unreadable(Unreadable::Hole))
         | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
         | (None, Former::Unreadable(Unreadable::Dangling)) => true,
@@ -1973,7 +2012,7 @@ impl<'arena> CoreSource<'arena>
     {
         let value = CoreNode::Value;
         let computation = CoreNode::Computation;
-        let Some(held) = self.arena.computation(folded_computation(self.arena, id))
+        let Some(held) = self.arena.computation(self.written(id))
         else {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -2408,7 +2447,7 @@ impl Source for CoreSource<'_>
             | Some(_) | None => ret,
         },
         | CoreNode::Value(id) => ret == match self.arena.value(id) {
-            | Some(&Value::Tuple(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
+            | Some(&(Value::Tuple(ref components) | Value::Compose { cells: ref components, .. })) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
             | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
             | Some(&Value::RecordUpdate { overlay, .. }) => match self.arena.value(overlay) {
                 | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
@@ -2482,7 +2521,11 @@ impl Source for CoreSource<'_>
                 | ValueType::World(_) => None,
             },
             CoreNode::Value(id) => match *self.arena.value(id)? {
-                Value::Tuple(ref components) => components
+                Value::Tuple(ref components)
+                | Value::Compose {
+                    cells: ref components,
+                    ..
+                } => components
                     .get(at)
                     .map(|&component| CoreNode::Value(component)),
                 Value::Record(ref fields) => {
@@ -2530,7 +2573,6 @@ impl Source for CoreSource<'_>
                 | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
-                | Value::Compose { .. }
                 | Value::Fill { .. }
                 | Value::Nested(_)
                 | Value::Run(_)
@@ -3135,44 +3177,6 @@ impl Source for CoreSource<'_>
             .binary_search(&map)
             .is_ok()
             .then_some(CoreNode::Value(argument))
-    }
-
-    /// [`Elided::Composite`] at a composite, returned or not, which
-    /// [`Self::read`] answers as the fold it realises: any but the binary
-    /// composite, which `p then q` writes.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn elided(
-        &self,
-        node: CoreNode,
-    ) -> Option<Elided>
-    {
-        let body = match node {
-            CoreNode::Value(id) => {
-                let read = self.arena.value(id)?;
-                if let Value::Compose { composite, .. } = *read {
-                    return (composite != Composite::binary()).then_some(Elided::Composite);
-                }
-                let Value::Returned(body) = *read
-                else {
-                    return None;
-                };
-                body
-            },
-            CoreNode::Computation(id) => id,
-            CoreNode::ValueType(_) | CoreNode::CompType(_) => return None,
-        };
-        let &Computation::Return(returned) = self.arena.computation(body)?
-        else {
-            return None;
-        };
-        let &Value::Compose { composite, .. } = self.arena.value(returned)?
-        else {
-            return None;
-        };
-        (composite != Composite::binary()).then_some(Elided::Composite)
     }
 
     /// The telescope of the constant `head` reads as, through any
