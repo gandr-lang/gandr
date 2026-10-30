@@ -1941,6 +1941,56 @@ fn a_named_index_telescope_lowers_its_dependencies_4022()
     );
 }
 
+/// A constructor written at a family's index takes the index's type as its
+/// classifier: in a definition's signature, under the arguments before it,
+/// and in a generator's result, under the indices the result states before it
+/// and the family's own parameters past the generator's fields. The checker
+/// admits each family and refuses the two whose stated index is not of the
+/// index's type (#4027).
+#[test]
+fn a_constructor_at_a_family_s_index_takes_the_index_s_type_4027()
+{
+    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\ndata Fin : Nat -> Type \
+                  { FZ : (n : Nat) --> Fin(Succ(n)); }\ndata Ring : Fin(Succ(Zero)) -> Type { D : \
+                  (i : Fin(Succ(Zero))) --> Ring(i); }\ndef r() -> Ring(FZ(Zero)) { \
+                  D(FZ(Zero)) }\ndata Q : Fin(Succ(Zero)) -> Type { C : Fin(Succ(Zero)) --> \
+                  Q(FZ(Zero)); }\ndata Pt : (n : Nat, i : Fin(n)) --> Type { P : (n : Nat) --> \
+                  Pt(Succ(n), FZ(n)); }\ndata PtBad : (n : Nat, i : Fin(n)) --> Type { B : (n : \
+                  Nat) --> PtBad(n, FZ(n)); }\ndata At(m : Nat) : Fin(Succ(m)) -> Type { A : (k \
+                  : Nat) --> At(m, FZ(m)); }\ndata AtBad(m : Nat) : Fin(Succ(m)) -> Type { E : \
+                  (k : Nat) --> AtBad(m, FZ(k)); }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    let [
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Checked { .. },
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Refused(ref past),
+        Verdict::Data,
+        Verdict::Refused(ref field),
+    ] = *verdicts
+    else {
+        panic!("each family and `r` check, the two misstated indices refuse: {report:?}");
+    };
+    assert!(
+        matches!(past, gandr_core_checker::CheckRefusal::TypeMismatch(_)),
+        "`FZ(n)` is no index below `n`: {past:?}"
+    );
+    assert!(
+        matches!(field, gandr_core_checker::CheckRefusal::TypeMismatch(_)),
+        "`FZ(k)` is no index below the parameter's successor: {field:?}"
+    );
+}
+
 /// An indexed family presenting a rule over its constructors is declined over
 /// that rule's two sides, before either checker reads it (#2865); a rule over
 /// an operation rewrites a call, not the family's terms, and the family keeps

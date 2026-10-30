@@ -14914,14 +14914,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .map(|parameter| parameter.classifier)
                     .chain(core::iter::once(family.defined))
             }))
-            // A data family's parameter types classify the constructors
-            // written as its arguments, wherever those stand in the tree.
+            // A data family's parameter and index types classify the
+            // constructors written as its arguments, wherever those stand in
+            // the tree (#4027).
             .chain(
                 self.argued
                     .iter()
                     .filter(|&(argument, _)| owns(argument))
                     .filter_map(|(_, argued)| self.collected.data.get(argued.form))
-                    .flat_map(|form| form.parameters.iter().map(|parameter| parameter.classifier)),
+                    .flat_map(|form| {
+                        form.parameters
+                            .iter()
+                            .map(|parameter| parameter.classifier)
+                            .chain(form.indices.iter().map(|index| index.ty))
+                    }),
             )
             // A declaration's parameter types classify the constructors
             // written as the arguments of a call naming it.
@@ -14976,8 +14982,43 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | native::Classifier::Answered { .. }
                     | native::Classifier::Slot(_)
                     | native::Classifier::Parameter(_)
+                    | native::Classifier::Stated(_)
                     | native::Classifier::Inserted => None,
                 }),
+        );
+        // A constructor written as an index a generator's result states reads
+        // the family's index types and the indices stated before it, which
+        // the sweep below reaches after it: those mint first, left to right
+        // (#4027).
+        manifests.extend(
+            self.inherited
+                .keys()
+                .filter(|&position| owns(position))
+                .filter_map(|position| match self.plans.get(*position) {
+                    Some(&Plan::Constructor(native::Constructed {
+                        classifier: native::Classifier::Stated(stated),
+                        ..
+                    })) => Some(stated),
+                    Some(_) | None => None,
+                })
+                .filter_map(|stated| {
+                    let form = self.collected.data.get(stated.form)?;
+                    let generator = form.generators.get(stated.generator)?;
+                    Some(
+                        form.indices
+                            .iter()
+                            .take(stated.place.saturating_add(1))
+                            .map(|index| index.ty.node)
+                            .chain(
+                                generator
+                                    .indices
+                                    .iter()
+                                    .take(stated.place.saturating_add(1))
+                                    .map(|index| index.node),
+                            ),
+                    )
+                })
+                .flatten(),
         );
         // A field read off a data value by its name, where its position
         // states no answer, reads its type off the value's stated type and the

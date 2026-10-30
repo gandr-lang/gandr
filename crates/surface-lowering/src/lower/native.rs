@@ -1137,6 +1137,11 @@ pub(super) enum Classifier
     /// those replaced by the arguments of the other's classifier and the fields
     /// it is written with.
     Field(FieldOf),
+    /// The constructor is written as an index a generator's result states:
+    /// the family's index type at its place, read under the family's
+    /// parameters and the indices before it, with those replaced by the
+    /// generator's own parameters and the indices it states before it (#4027).
+    Stated(StatedIndex),
     /// The family's one classifier, which the lowering inserts: the family
     /// has no parameters.
     Inserted,
@@ -1165,6 +1170,29 @@ pub(super) struct FieldOf
     pub parameters: usize,
     /// The field's place among its constructor's fields.
     pub index: usize,
+}
+
+/// An index a generator's result states, as [`Classifier::Stated`] reads it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `form` is the family's position in the collection's data list,
+///   `generator` the generator's among its generators, and `place` the index's
+///   among the indices the generator states.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Classifier::Stated`].
+/// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct StatedIndex
+{
+    /// The family's position in the collection's data list.
+    pub form: usize,
+    /// The generator's place among the family's generators.
+    pub generator: usize,
+    /// The index's place among the indices the generator states.
+    pub place: usize,
 }
 
 /// A form with its parentheses stripped, as [`Lowerer::unwrapped`] reads it.
@@ -2183,6 +2211,55 @@ impl Compiling
     }
 }
 
+/// `declared` with the binders it is read under replaced by `environment`,
+/// the innermost first: the type a constructor's classifier reads where it
+/// stands.
+///
+/// # Specification
+/// - requires: `environment` holds one value per binder `declared` reads, the
+///   innermost first.
+/// - ensures: the substituted type, every node the substitution mints recorded
+///   at `origin`; nothing when the substitution leaves no quoted type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a slot's, a call parameter's, a field's and a stated
+///   index's classifier, each over the arguments written before it.
+/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+/// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+/// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+/// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+fn instantiated(
+    declared: ValueTypeId,
+    environment: &[ValueId],
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<ValueTypeId, lowered::Absent>
+{
+    let mark = sink.arena.watermark();
+    let code = sink.arena.value_quote(declared);
+    let mut carried = Vec::new();
+    let substituted = gandr_core_term::substitute_environment_traced(
+        sink.arena,
+        TermId::Value(code),
+        environment,
+        &mut carried,
+    );
+    exits::record_copies(sink, mark, &carried, origin);
+    let TermId::Value(substituted) = substituted
+    else {
+        return Maybe::Absent(lowered::Absent::Unminted);
+    };
+    let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+    else {
+        return Maybe::Absent(lowered::Absent::Unminted);
+    };
+
+    Maybe::Present(ty)
+}
+
 impl<'source> Lowerer<'_, 'source>
 {
     /// Seed every data declaration's types: each parameter's type under the
@@ -2200,8 +2277,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   field but its constructor's last, and the last too where the
     ///   constructor states an index, bound to the field's written name or to
     ///   none; one seed per type and stated index the declarations write,
-    ///   appended to `seeds`; and each stated index kept with the frame it is
-    ///   read under, for the names an editor spells its type in.
+    ///   appended to `seeds`; each stated index kept with the frame it is read
+    ///   under, for the names an editor spells its type in, and handed the
+    ///   [`Classifier::Stated`] of its place.
     /// - provides: the data half of [`Self::seed`].
     /// - fails: never.
     /// - panics: none.
@@ -2213,6 +2291,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   its first field.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
     #[spec(
         captures: before = seeds.len(),
         ensures: seeds.len() >= before,
@@ -2222,7 +2301,8 @@ impl<'source> Lowerer<'_, 'source>
         seeds: &mut Vec<(NodeIndex, Reading)>,
     )
     {
-        for form in self.collected.data.iter().skip(self.current.data) {
+        let first = self.current.data;
+        for (listed, form) in self.collected.data.iter().enumerate().skip(first) {
             let mut frame = Frame::Outermost;
             for parameter in &form.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
@@ -2265,7 +2345,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 indexed = Frame::Inner(bound);
             }
-            for generator in &form.generators {
+            for (tag, generator) in form.generators.iter().enumerate() {
                 let last = generator.fields.len().checked_sub(1);
                 let mut inner = frame;
                 for (position, field) in generator.fields.iter().enumerate() {
@@ -2295,9 +2375,19 @@ impl<'source> Lowerer<'_, 'source>
                     };
                     inner = Frame::Inner(bound);
                 }
-                for index in &generator.indices {
+                for (place, index) in generator.indices.iter().enumerate() {
                     seeds.push((index.node, Reading::Value(inner)));
                     self.index_frames.push((index.node, inner));
+                    // A constructor written there is classified by the
+                    // family's index type at its place.
+                    let _first = self.inherited.insert(
+                        index.node,
+                        Classifier::Stated(StatedIndex {
+                            form: listed,
+                            generator: tag,
+                            place,
+                        }),
+                    );
                 }
             }
         }
@@ -2607,19 +2697,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   writes for the parameter at its place, under the parameters before it
     ///   replaced by the arguments written for them, the constructor then
     ///   awaiting the call's mint; else the one the constructor around it gives
-    ///   the field it stands in; else, for a family without, the one the
-    ///   lowering inserts. A field typed by the family over its own parameters
-    ///   takes the constructor's classifier, and one typed by a parameter the
-    ///   argument a written classifier gives it.
+    ///   the field it stands in, or the family's index type at its place where
+    ///   it is an index a generator's result states; else, for a family
+    ///   without, the one the lowering inserts. A field typed by the family
+    ///   over its own parameters takes the constructor's classifier, and one
+    ///   typed by a parameter the argument a written classifier gives it.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
     ///   unannotated refusal for a constructor of a family with parameters
     ///   whose position states no type, that stands at no data family's
-    ///   argument place, and that is passed at no parameter whose stated type
-    ///   names no entry of an implicit telescope, and for one whose answer
-    ///   decodes a binder or a constant no top-level definition writes a body
-    ///   for.
+    ///   argument place and at no index a generator's result states, and that
+    ///   is passed at no parameter whose stated type names no entry of an
+    ///   implicit telescope, and for one whose answer decodes a binder or a
+    ///   constant no top-level definition writes a body for.
     /// - panics: none.
     ///
     /// # Errors
@@ -2642,6 +2733,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
     /// - witness: `lower::native::tests::a_constructor_answers_a_function_tail_s_application_3665`
+    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -8176,9 +8268,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   it replaced by the call's arguments for them; for a field, its
     ///   declared type with the family's parameters replaced by the arguments
     ///   of its constructor's classifier and the fields before it by the values
-    ///   written for them; or the family over no arguments; every node minted
-    ///   recorded at the classifier's inserted origin; nothing when a type or a
-    ///   value it reads did not lower, or the answer is no returner.
+    ///   written for them; for a stated index, the family's index type at its
+    ///   place with the earlier indices replaced by those the generator states
+    ///   and the parameters by the generator's own; or the family over no
+    ///   arguments; every node minted recorded at the classifier's inserted
+    ///   origin; nothing when a type or a value it reads did not lower, or the
+    ///   answer is no returner.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -8188,6 +8283,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
     /// - witness: `lower::native::tests::an_annotation_inside_a_signature_type_counts_its_binders_there_3744`
+    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn classifier_type(
         &self,
@@ -8241,6 +8337,10 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Classifier::Stated(stated) => match self.stated_index_type(stated, sink, classified) {
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
@@ -8367,26 +8467,12 @@ impl<'source> Lowerer<'_, 'source>
         };
         // The innermost binder is the last field before this one.
         environment.reverse();
-        let mark = sink.arena.watermark();
-        let code = sink.arena.value_quote(declared);
-        let mut carried = Vec::new();
-        let substituted = gandr_core_term::substitute_environment_traced(
-            sink.arena,
-            TermId::Value(code),
+        instantiated(
+            declared,
             &environment,
-            &mut carried,
-        );
-        exits::record_copies(sink, mark, &carried, origin.inserted(Insertion::Classifier));
-        let TermId::Value(substituted) = substituted
-        else {
-            return unminted;
-        };
-        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
-        else {
-            return unminted;
-        };
-
-        Maybe::Present(ty)
+            sink,
+            origin.inserted(Insertion::Classifier),
+        )
     }
 
     /// The type a data family's application gives the argument at `argued`'s
@@ -8452,26 +8538,80 @@ impl<'source> Lowerer<'_, 'source>
         }
         // The innermost parameter is the last before the place.
         environment.reverse();
-        let mark = sink.arena.watermark();
-        let code = sink.arena.value_quote(declared);
-        let mut carried = Vec::new();
-        let substituted = gandr_core_term::substitute_environment_traced(
-            sink.arena,
-            TermId::Value(code),
-            &environment,
-            &mut carried,
-        );
-        exits::record_copies(sink, mark, &carried, origin);
-        let TermId::Value(substituted) = substituted
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
+        instantiated(declared, &environment, sink, origin)
+    }
 
-        Maybe::Present(ty)
+    /// The type a generator's result gives the index it states at `stated`'s
+    /// place.
+    ///
+    /// # Specification
+    /// - requires: the family's index types and the indices the generator
+    ///   states before the place are minted or absent.
+    /// - ensures: the family's index at the place, read under the family's
+    ///   parameters and the indices before it, with each earlier index replaced
+    ///   by the index the generator states for it and each parameter by the
+    ///   generator's own, read past its fields; every node the substitution
+    ///   mints recorded at `origin`; nothing when the index type or an earlier
+    ///   stated index did not lower.
+    /// - provides: the classifier of a constructor written as an index a
+    ///   generator's result states (#4027).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `FZ(Zero)` stated for an index of type
+    ///   `Fin(Succ(Zero))` is classified so, and `FZ(n)` stated after `n` for
+    ///   an index of type `Fin(Succ(m))` reads the `n` stated before it.
+    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn stated_index_type(
+        &self,
+        stated: StatedIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(form) = self.collected.data.get(stated.form)
+        else {
+            return unminted;
+        };
+        let (Some(generator), Some(index)) = (
+            form.generators.get(stated.generator),
+            form.indices.get(stated.place),
+        )
+        else {
+            return unminted;
+        };
+        let declared = match self.value_type_at(index.ty.node) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let parameters = form.parameters.len();
+        let mut environment = Vec::with_capacity(parameters.saturating_add(stated.place));
+        for earlier in generator.indices.iter().take(stated.place) {
+            match self.value_at(earlier.node) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        // The innermost binder is the last index stated before the place.
+        environment.reverse();
+        // The parameters stand past the generator's fields, each of which
+        // binds where the result states an index; the last is innermost.
+        let fields = generator.fields.len();
+        for parameter in 0 .. parameters {
+            let Ok(at) = u32::try_from(fields.saturating_add(parameter))
+            else {
+                return unminted;
+            };
+            let variable = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at));
+            sink.origins.record_value(variable, origin);
+            environment.push(variable);
+        }
+        instantiated(declared, &environment, sink, origin)
     }
 
     /// The type a declaration's parameter gives the argument a call writes for
@@ -8515,26 +8655,7 @@ impl<'source> Lowerer<'_, 'source>
         if environment.is_empty() {
             return Maybe::Present(written);
         }
-        let mark = sink.arena.watermark();
-        let code = sink.arena.value_quote(written);
-        let mut carried = Vec::new();
-        let substituted = gandr_core_term::substitute_environment_traced(
-            sink.arena,
-            TermId::Value(code),
-            &environment,
-            &mut carried,
-        );
-        exits::record_copies(sink, mark, &carried, origin);
-        let TermId::Value(substituted) = substituted
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-
-        Maybe::Present(ty)
+        instantiated(written, &environment, sink, origin)
     }
 
     /// The type written at `written`, read under the parameters before the
