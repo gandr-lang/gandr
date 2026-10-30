@@ -8828,6 +8828,43 @@ mod tests
         }
     }
 
+    /// #3971: a selection off a dependent record prints by the label of the
+    /// field it reads, the first, a middle and the last among them, not by
+    /// its position, which the surface reads off no dependent record. Each
+    /// type spelling such a selection reads back to its certificate and
+    /// reprints as itself.
+    #[test]
+    fn a_selection_off_a_dependent_record_prints_its_label_3971()
+    {
+        let source = SourceText::from(
+            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path(A, x, y), g : \
+             Path(A, y, z)}) => Path(A, r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path(A, x, \
+             y)}) => Path(Path(A, r.x, r.y), r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<super::ReadBack> =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        for selected in [
+            "(r : #{x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)}) => Path(A, r.x, \
+             r.z)",
+            "(r : #{x : A, y : A, g : Path(A, x, y)}) => Path(Path(A, r.x, r.y), r.g, r.g)",
+        ] {
+            let spelling: Vec<&super::ReadBack> = reads
+                .iter()
+                .filter(|back| back.spelled.contains(selected))
+                .collect();
+            assert!(
+                !spelling.is_empty(),
+                "the selections print by their labels: {reads:?}"
+            );
+            assert!(
+                spelling.iter().all(|back| back.trip == RoundTrip::Equal
+                    && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
+                "each selection reads back and reprints as itself: {spelling:?}"
+            );
+        }
+    }
+
     /// #3801: a `cong` over an annotated thunk prints a type whose lambda
     /// states its parameter's written type, `fn (b : Path(A, x, y)) { … }`
     /// (#3943). Read back under a parameter the type does not name, each

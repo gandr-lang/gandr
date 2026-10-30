@@ -2327,6 +2327,63 @@ where
     }
 }
 
+/// The labels of the dependent record the binder `opener` opens over, in
+/// field order: a dependent arrow's domain, or a dependent pair's first
+/// component.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: one label per field, when the type is a chain of dependent pairs
+///   or products each naming its first field ([`record_link`]) and ending at a
+///   link that names its last; none otherwise.
+/// - provides: the record a positional selection off the binder reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binder over a record of three fields keeps their
+///   labels, and a selection off it is written by them.
+/// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|labels| labels.len() >= 2_usize))]
+fn record_labels<S>(
+    source: &S,
+    opener: S::Node,
+) -> Option<Vec<BinderName>>
+where
+    S: Source + ?Sized,
+{
+    let mut link = if let Former::Pi { domain, .. } = source.read(opener) {
+        domain
+    }
+    else if let Former::Sigma { first, .. } = source.read(opener) {
+        first
+    }
+    else {
+        return None;
+    };
+    let mut labels = Vec::new();
+    loop {
+        let next = if let Former::Sigma { second, .. } = source.read(link) {
+            second
+        }
+        else if let Former::Product(arity) = source.read(link)
+            && usize::from(arity) == 2_usize
+        {
+            source.component(link, Component::from(1_usize))?
+        }
+        else {
+            return None;
+        };
+        let RecordLink { first, second } = record_link(source, link);
+        labels.push(first?);
+        if let Some(last) = second {
+            labels.push(last);
+            return Some(labels);
+        }
+        link = next;
+    }
+}
+
 /// The former `node` reads as, past the return a computation stands in where
 /// a value is read.
 ///
@@ -5442,6 +5499,10 @@ struct Walk<'walk, 'names>
     /// The labels each link of a dependent record whose children are being
     /// walked is written with, innermost last; each join takes its own.
     links: Vec<RecordLink>,
+    /// The labels of each open binder whose type is a dependent record, in
+    /// field order, by the binder's position: a positional selection off it
+    /// is written by the label of the field it reads (#3971).
+    records: BTreeMap<OpenBinders, Vec<BinderName>>,
     /// The fields the join being closed spells, which its piece takes.
     fields: Option<Fields>,
     /// The parts of the formers spelled by parts whose children are being
@@ -6019,6 +6080,68 @@ impl Walk<'_, '_>
             .copied()
             .flatten()
             .map(|name| String::from(name.as_ref()))
+    }
+
+    /// The binder and the label a positional selection `node` reads by, when
+    /// it selects one field of a dependent record an open binder holds:
+    /// `((r.1).1).0` reads the third field, `z` of `#{x, y, z, f, g}`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the variable's node and the field's label when `node`
+    ///   projects an open binder that keeps a record's labels and no argument
+    ///   stands for, along `.1` to a field before the last and then `.0`, or
+    ///   along `.1` to the last; none for any other projection, a link of the
+    ///   record among them.
+    /// - provides: the label a selection off a dependent record is written by,
+    ///   which the surface reads back where a position would not.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a selection of the first, a middle and the last field
+    ///   each spell by their label.
+    /// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|selected| matches!(source.read(node), Former::TupleProjection(..)) && !selected.1.is_empty()))]
+    fn selected<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<(S::Node, String)>
+    where
+        S: Source + ?Sized,
+    {
+        // The projections, the outermost first.
+        let mut components = Vec::new();
+        let mut at = node;
+        let (zone, index) = loop {
+            if let Former::TupleProjection(target, component) = past_return(source, at) {
+                components.push(usize::from(component));
+                at = target;
+            }
+            else if let Former::Variable { zone, index } = past_return(source, at) {
+                break (zone, index);
+            }
+            else {
+                return None;
+            }
+        };
+        let position = self.opened_at(zone, index)?;
+        if self.substituted.contains_key(&position) {
+            return None;
+        }
+        let labels = self.records.get(&position)?;
+        let last = labels.len().checked_sub(1_usize)?;
+        let (&outer, inner) = components.split_first()?;
+        if inner.iter().any(|&component| component != 1_usize) {
+            return None;
+        }
+        let field = match outer {
+            0_usize if inner.len() < last => inner.len(),
+            1_usize if inner.len().saturating_add(1_usize) == last => last,
+            _ => return None,
+        };
+        labels.get(field).map(|label| (at, label.0.clone()))
     }
 
     /// The path a call supplies the model implicit `slot` by, given the
@@ -7915,6 +8038,16 @@ impl Walk<'_, '_>
                 tasks.push(Task::Context(position));
                 return Ok(());
             },
+            // A positional selection of one field of a dependent record a
+            // binder holds is written by the field's label, `r.z`: the
+            // surface reads no position off a dependent record (#3971).
+            Former::TupleProjection(..)
+                if let Some((root, label)) = self.selected(source, node) =>
+            {
+                shaped = Some(Vec::from([Slot::of(root, Admits::Value, Binds::NONE)]));
+                let labelled = Former::RecordProjection(root, Name::from(label.as_str()));
+                Some(self.form(source, node, &labelled, admits))
+            },
             // A clause minting a buffer opens by splitting its payload binder
             // into the payload and the mint and placing the mint: the clause
             // writes both names, `oper alloc(n, b, k)`, so the split has no
@@ -9688,9 +9821,10 @@ impl Walk<'_, '_>
     ///   no open binder holds, else the first generated name
     ///   ([`Binders::name_at`]) no open binder holds, else none. With no
     ///   written names, the binder at position `p` takes the `p`-th generated
-    ///   name, as it always did.
+    ///   name, as it always did. A binder whose type is a dependent record
+    ///   keeps its fields' labels ([`record_labels`]) at its position.
     /// - provides: the name each occurrence of the binder and its former's join
-    ///   read.
+    ///   read, and the labels a selection off it is written by.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -9731,6 +9865,9 @@ impl Walk<'_, '_>
         self.names.resize(position, None);
         self.names.push(name);
         let _named = self.occurring.remove(&OpenBinders(position));
+        if let Some(labels) = opener.and_then(|node| record_labels(source, node)) {
+            let _fresh = self.records.insert(OpenBinders(position), labels);
+        }
         self.opened.push(zone);
     }
 
@@ -11890,6 +12027,7 @@ where
         bodies,
         protocols: Vec::new(),
         links: Vec::new(),
+        records: BTreeMap::new(),
         fields: None,
         forms: Vec::new(),
         form: style.form,
@@ -12080,6 +12218,7 @@ where
                 }
                 let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
                 let _shown = walk.hidden.remove(&OpenBinders(walk.opened.len()));
+                let _record = walk.records.remove(&OpenBinders(walk.opened.len()));
                 if walk
                     .loops
                     .last()
@@ -12364,6 +12503,7 @@ mod tests
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
             links: super::Vec::new(),
+            records: super::BTreeMap::new(),
             fields: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
@@ -12460,6 +12600,7 @@ mod tests
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
             links: super::Vec::new(),
+            records: super::BTreeMap::new(),
             fields: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
