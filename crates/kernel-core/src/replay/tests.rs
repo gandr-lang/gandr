@@ -3609,6 +3609,127 @@ fn two_stuck_path_transports_compare_by_motive_and_value()
 }
 
 #[test]
+fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
+{
+    // Variable paths `a`…`e` composed in the link `y. Path(Unit, (), y)`,
+    // each nested composite standing as the value it returns: every nesting
+    // of one chain converts with its left-nested fold, and a transport along a
+    // nesting in a family that is no link with the transports along each path.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let link = arena.value_type_path(unit_type, unit, endpoint);
+    let diagonal = arena.value_type_path(unit_type, endpoint, endpoint);
+    // The paths a to e, then the operand.
+    let [pa, pb, pc, pd, pe, operand] =
+        [0_u32, 1, 2, 3, 4, 5].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
+    let then = |arena: &mut TermArena, first: ValueId, second: ValueId| {
+        arena.computation_path_transport(link, second, first)
+    };
+    let composed = |arena: &mut TermArena, first: ValueId, second: ValueId| {
+        let composite = then(arena, first, second);
+        arena.value_returned(composite)
+    };
+    // a then (b then c) against (a then b) then c, and (b then a) then c.
+    let bc = composed(&mut arena, pb, pc);
+    let right = then(&mut arena, pa, bc);
+    let ab = composed(&mut arena, pa, pb);
+    let left = then(&mut arena, ab, pc);
+    let turned = composed(&mut arena, pb, pa);
+    let swapped = then(&mut arena, turned, pc);
+    // a then ((b then c) then d) against ((a then b) then c) then d.
+    let bcd = composed(&mut arena, bc, pd);
+    let later = then(&mut arena, pa, bcd);
+    let abc = composed(&mut arena, ab, pc);
+    let fold = then(&mut arena, abc, pd);
+    // (a then b) then (c then d): a returned operand along a returned composite.
+    let cd = composed(&mut arena, pc, pd);
+    let pairs = then(&mut arena, ab, cd);
+    // (a then b) then ((c then d) then e) against a then (b then (c then (d
+    // then e))): a run of links the moved transport passes inward.
+    let cde = composed(&mut arena, cd, pe);
+    let mixed = then(&mut arena, ab, cde);
+    let de = composed(&mut arena, pd, pe);
+    let cde_right = composed(&mut arena, pc, de);
+    let bcde = composed(&mut arena, pb, cde_right);
+    let combed = then(&mut arena, pa, bcde);
+    // Along a then (b then c) in the diagonal, against along each path.
+    let nested = arena.value_returned(right);
+    let moved = arena.computation_path_transport(diagonal, nested, operand);
+    let along = |arena: &mut TermArena, path: ValueId, value: ValueId| {
+        let transport = arena.computation_path_transport(diagonal, path, value);
+        arena.value_returned(transport)
+    };
+    let along_a = along(&mut arena, pa, operand);
+    let along_b = along(&mut arena, pb, along_a);
+    let folded = arena.computation_path_transport(diagonal, pc, along_b);
+    // Along b in the diagonal from a: no composite, so no path splits.
+    let carried = along(&mut arena, pb, pa);
+    let unsplit = arena.computation_path_transport(diagonal, carried, operand);
+    let split = arena.computation_path_transport(diagonal, pb, along_a);
+    let none = Unfoldings::default();
+    let mut verdict = |one, other| {
+        convert(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(one, other),
+            ReplayBudget::default(),
+        )
+    };
+    for (one, other, what) in [
+        (right, left, "the two nestings of a 3-chain"),
+        (later, fold, "a composite standing as the later path"),
+        (
+            pairs,
+            fold,
+            "a returned operand moved along a returned composite",
+        ),
+        (mixed, combed, "a moved transport passing a run of links"),
+        (
+            moved,
+            folded,
+            "a family that is no link moves along each path in turn",
+        ),
+    ] {
+        assert_eq!(verdict(one, other), KernelVerdict::Convertible, "{what}");
+    }
+    for (one, other, what) in [
+        (right, swapped, "the paths in another order"),
+        (
+            unsplit,
+            split,
+            "a transport in a family that is no link composes nothing",
+        ),
+    ] {
+        assert!(
+            matches!(verdict(one, other), KernelVerdict::Declined(_)),
+            "{what}"
+        );
+    }
+    // A bind into `w. tr(y. Path(Unit, w, y), w, v)`, whose family reads the
+    // bound path, keeps its weak head: the path stands in the family too.
+    let read = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let reading = arena.value_type_path(unit_type, read, endpoint);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let lifted = arena.value_variable(DeBruijnIndex::from(6_u32));
+    let onward = arena.computation_path_transport(reading, bound, lifted);
+    let link_ab = then(&mut arena, pa, pb);
+    let kept = arena.computation_bind(link_ab, onward);
+    assert_eq!(
+        reduced(
+            &mut arena,
+            kept,
+            super::Reduction::Plain,
+            super::Unloading::AtTheHead
+        )
+        .reached,
+        Ok(content_digest(&arena, AnyNode::Computation(kept))),
+        "a family reading the bound path leaves the bind as it is"
+    );
+}
+
+#[test]
 fn two_stuck_telescope_transports_compare_by_motive_start_over_and_value()
 {
     // `transport((y : N, z : N) => Path(N, y, z), p, s, o, v)` along one

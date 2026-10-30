@@ -360,8 +360,12 @@
 //!   re-assessment's design (§ kernel-reassessment-design item 6) — a step
 //!   enters the trusted base on a property test against its reference and a
 //!   simulation argument.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a chain has one
+//!   composite up to its nestings, so every nesting reads as the left-nested
+//!   fold a composite realises.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 use core::fmt;
@@ -2156,6 +2160,64 @@ struct HeldRun
     reduction: Reduction,
 }
 
+/// A frame of a stuck run that moves its value along a returned path, `y.
+/// tr(R↑, ⟨c⟩↑, y)`, read outside every binder of its environment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ReturnedLeg
+{
+    /// The frame's position among the frames, innermost last.
+    at: usize,
+    /// The frame's continuation.
+    frame: ComputationId,
+    /// Its family `R`.
+    family: ValueTypeId,
+    /// The path's computation `c`.
+    path: ComputationId,
+}
+
+/// A returned path [`Replay::whnf`] runs in place of the reading stuck under
+/// the frame that moves along it, as the evaluator evaluates a path before it
+/// reads it as a composite.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PathRun
+{
+    /// The frame whose path runs.
+    leg: ReturnedLeg,
+    /// The stuck focus.
+    focus: ComputationId,
+    /// The frames outside it, innermost last.
+    frames: Vec<Frame>,
+    /// The binds the waiting reading was trying.
+    attempts: Vec<Attempt>,
+    /// How the waiting reading reduces.
+    reduction: Reduction,
+    /// What the waiting reading had come to.
+    progress: Progress,
+}
+
+/// A computation [`Replay::whnf`] runs in place of a waiting reading.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Run
+{
+    /// A held operand, which an append runs before it reads its word.
+    Held(HeldRun),
+    /// A returned path, which a stuck composite's transport reads.
+    Path(PathRun),
+}
+
+/// What [`Replay::along_composite`] reads at a stuck weak head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AlongComposite
+{
+    /// The transport moves along each path: the new focus, the frames
+    /// rewritten.
+    Moved(Closure<ComputationId>),
+    /// A frame of the run moves along a returned path, which runs first.
+    Runs(ReturnedLeg),
+    /// No transport along a stuck composite stands here.
+    Stays,
+}
+
 /// What a held operand's run does at the weak head it stopped at.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RunStep
@@ -3350,6 +3412,417 @@ where
             Composite::Bound => Ok(Term::Computation(self.arena.computation_return(path))),
             Composite::Other => Ok(term),
         }
+    }
+
+    /// A stuck composite's transport read as the transport along each of its
+    /// paths in order: transport's functoriality, `tr(P, ⟨p then q⟩, v) ≡
+    /// tr(P, q, ⟨tr(P, p, v)⟩)`.
+    ///
+    /// `p then q` is the transport of `p` along `q` in a **link**, a family `y.
+    /// Path(D, l, y)` whose carrier and left endpoint ignore the binder. A
+    /// transport runs a returned operand first, then a returned path, so the
+    /// transport along a stuck composite stands at one of three weak heads.
+    /// The frames outside the focus that move its result, each a bind into `y.
+    /// tr(R↑, r↑, y)` whose family and path ignore `y`, form a **run**:
+    ///
+    /// - the focus is the stuck link `tr(Q, q, p)`, and the innermost frame
+    ///   binds into `w. tr(P↑, w, v↑)`, whose family and operand ignore `w`:
+    ///   the focus becomes `tr(P, p, v)` under a bind into `u. tr(P↑, q↑, u)`;
+    /// - a frame of the run binds into `y. tr(R↑, ⟨c⟩↑, y)`: `c` runs first, in
+    ///   [`Self::reduce`], and where it sticks at a composite ([`Self::legs`])
+    ///   the frame becomes a bind into `y. tr(R↑, p↑, y)` inside one into `u.
+    ///   tr(R↑, q↑, u)`;
+    /// - the run is links `y. tr(Q↑, q↑, y)`, which build a composite on the
+    ///   focus's result, and the frame just outside it binds into `w. tr(P↑, w,
+    ///   v↑)`: that frame moves inside the run, and each link becomes a bind
+    ///   into `u. tr(P↑, q↑, u)`.
+    ///
+    /// Each way the operand moves along `p`, then along `q`. That is the
+    /// left-nested fold a composite's realisation is, so every nesting of one
+    /// chain reaches one weak head. The run is read innermost first, as the
+    /// evaluator reads it.
+    ///
+    /// **Termination.** The first and second rewrites replace the transport
+    /// along a composite by transports along its two paths, each a proper
+    /// part of it, so the multiset of the paths transported along decreases in
+    /// the multiset order of their sizes. A returned path runs once: `whole`
+    /// names each continuation whose path ran to no composite, and the reading
+    /// passes over it after. The third rewrite moves one frame inward past
+    /// links, which it turns into frames no link reads, so it fires at most
+    /// once for each frame. Every step of a path's run is charged to the budget
+    /// too.
+    ///
+    /// **Confluence.** The rewrite reads a weak head no other row moves:
+    /// [`crate::element_identity::transport_beta`]'s rows, the word rows and a
+    /// held operand's run each declined before the focus stuck, so no row
+    /// overlaps it at its root. A row a motive or an operand directs fires at
+    /// the outer transport before its path runs, and moves each part of the
+    /// operand along the composite. Each part then meets this rewrite, which
+    /// reaches the parts the rewrite-first order reaches. A link along `here`
+    /// or along a word computes before it sticks, so it meets no other row
+    /// here. The evaluator's `AlongThen` row reads the same shapes, so the two
+    /// conversions reach one weak head.
+    ///
+    /// # Specification
+    /// - requires: `focus` and `frames` are [`Self::reduce`]'s state at a stuck
+    ///   weak head, `cells` the environments they close over, and `whole` the
+    ///   continuations whose returned path ran to no composite.
+    /// - ensures: [`AlongComposite::Moved`], `frames` rewritten, at the first
+    ///   and third weak heads; [`AlongComposite::Runs`] of the innermost frame
+    ///   of the run whose returned path has not run, `frames` unchanged;
+    ///   [`AlongComposite::Stays`], `frames` unchanged, at any other.
+    /// - provides: transport's functoriality along a stuck composite, the
+    ///   reading that decides two nestings of one chain.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f then (g then h)`, `k then ((f then g) then h)`,
+    ///   `(k then f) then (g then h)` and `(a then b) then ((c then d) then e)`
+    ///   reach the weak heads of their left nestings, and a bind whose family
+    ///   reads the bound path stays as it is.
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    #[spec(captures: before = frames.len(), ensures: |ret| match ret {
+        AlongComposite::Moved(_) => true,
+        AlongComposite::Runs(leg) => frames.len() == before && leg.at < before && !whole.contains(&leg.frame),
+        AlongComposite::Stays => frames.len() == before,
+    })]
+    fn along_composite(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+        frames: &mut Vec<Closure<Frame>>,
+        whole: &BTreeSet<ComputationId>,
+    ) -> AlongComposite
+    {
+        let Some(&innermost) = frames.last()
+        else {
+            return AlongComposite::Stays;
+        };
+        let bound = DeBruijnIndex::from(0_u32);
+        if let Frame::Bind(body) = innermost.node
+            && self.along_bound(body).is_some()
+        {
+            // Stuck on a path: the focus is the link.
+            let Some(&Computation::PathTransport { motive, .. }) =
+                self.arena.computation(focus.node)
+            else {
+                return AlongComposite::Stays;
+            };
+            if self.then_link(motive) == Linked::Other {
+                return AlongComposite::Stays;
+            }
+            let link = self.unload(cells, focus);
+            let Frame::Bind(onward) = self.unload_frame(cells, innermost)
+            else {
+                return AlongComposite::Stays;
+            };
+            let (
+                Some(&Computation::PathTransport {
+                    path: second,
+                    value: first,
+                    ..
+                }),
+                Some(&Computation::PathTransport { motive: family, .. }),
+            ) = (self.arena.computation(link), self.arena.computation(onward))
+            else {
+                return AlongComposite::Stays;
+            };
+            if self.bound_use(family) == BinderUse::Read {
+                return AlongComposite::Stays;
+            }
+            let moved = self.instantiate(onward, first);
+            let then = self.along_lifted(family, second);
+            frames.pop();
+            frames.push(Closure::closed(Frame::Bind(then)));
+            return AlongComposite::Moved(Closure::closed(moved));
+        }
+        // The run, innermost first. Its frames' fields are read in place: a
+        // frame's own binders are the indices its environment never reads.
+        let mut linked = true;
+        let mut outside = None;
+        for (at, &frame) in frames.iter().enumerate().rev() {
+            let Frame::Bind(body) = frame.node
+            else {
+                break;
+            };
+            if self.along_bound(body).is_some() {
+                if linked && at.saturating_add(1) < frames.len() {
+                    outside = Some(at);
+                }
+                break;
+            }
+            let Some(&Computation::PathTransport {
+                motive,
+                path,
+                value,
+            }) = self.arena.computation(body)
+            else {
+                break;
+            };
+            if !matches!(self.arena.value(value), Some(&Value::Variable(index)) if index == bound)
+                || crate::element_identity::binder_use(
+                    self.arena,
+                    crate::element_identity::Family::Value(path),
+                ) != BinderUse::Ignored
+                || self.bound_use(motive) == BinderUse::Read
+            {
+                break;
+            }
+            if matches!(self.arena.value(path), Some(&Value::Returned(_)))
+                && let Some((continuation, family, computation)) = self.returned_path(cells, frame)
+                && !whole.contains(&continuation)
+            {
+                return AlongComposite::Runs(ReturnedLeg {
+                    at,
+                    frame: continuation,
+                    family,
+                    path: computation,
+                });
+            }
+            linked &= self.then_link(motive) != Linked::Other;
+        }
+        let Some(at) = outside
+        else {
+            return AlongComposite::Stays;
+        };
+        let Some(&outer) = frames.get(at)
+        else {
+            return AlongComposite::Stays;
+        };
+        let Frame::Bind(onward) = self.unload_frame(cells, outer)
+        else {
+            return AlongComposite::Stays;
+        };
+        let Some(&Computation::PathTransport { motive: family, .. }) =
+            self.arena.computation(onward)
+        else {
+            return AlongComposite::Stays;
+        };
+        if self.bound_use(family) == BinderUse::Read {
+            return AlongComposite::Stays;
+        }
+        let links = frames.get(at.saturating_add(1) ..).unwrap_or_default();
+        let mut moved = Vec::with_capacity(links.len().saturating_add(1));
+        for &link in links {
+            let Frame::Bind(link) = self.unload_frame(cells, link)
+            else {
+                return AlongComposite::Stays;
+            };
+            let Some(&Computation::PathTransport { path, .. }) = self.arena.computation(link)
+            else {
+                return AlongComposite::Stays;
+            };
+            let variable = self.arena.value_variable(bound);
+            let along = self
+                .arena
+                .computation_path_transport(family, path, variable);
+            moved.push(Closure::closed(Frame::Bind(along)));
+        }
+        moved.push(Closure::closed(Frame::Bind(onward)));
+        frames.truncate(at);
+        frames.extend(moved);
+        AlongComposite::Moved(focus)
+    }
+
+    /// The continuation, family and path computation of `frame`, a bind into
+    /// `y. tr(R↑, ⟨c⟩↑, y)` that moves the bound value along a returned path,
+    /// read outside the bind: `(y. tr(R↑, ⟨c⟩↑, y), R, c)`.
+    ///
+    /// # Specification
+    /// - requires: `frame` binds into a transport along a path that ignores the
+    ///   bound value, `cells` the environments it closes over.
+    /// - ensures: `Some` when that path, closed off at the bind, is a returned
+    ///   computation, the continuation a transport in the family named; `None`
+    ///   otherwise.
+    /// - provides: the frame whose path the second weak head of
+    ///   [`Self::along_composite`] runs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::along_composite`].
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    #[spec(ensures: |ret| ret.is_none_or(|(continuation, family, _)| matches!(
+        self.arena.computation(continuation),
+        Some(&Computation::PathTransport { motive, .. }) if motive == family
+    )))]
+    fn returned_path(
+        &mut self,
+        cells: &mut Environments,
+        frame: Closure<Frame>,
+    ) -> Option<(ComputationId, ValueTypeId, ComputationId)>
+    {
+        let Frame::Bind(continuation) = self.unload_frame(cells, frame)
+        else {
+            return None;
+        };
+        let Some(&Computation::PathTransport {
+            motive: family,
+            path,
+            ..
+        }) = self.arena.computation(continuation)
+        else {
+            return None;
+        };
+        let unit = self.arena.value_unit();
+        let outside = substitute_value(self.arena, &mut self.table, &mut self.memo, path, unit);
+        let Some(&Value::Returned(computation)) = self.arena.value(outside)
+        else {
+            return None;
+        };
+        Some((continuation, family, computation))
+    }
+
+    /// The two paths of the composite `computation` is stuck at, `(p, q)` for
+    /// `p then q`, read outside every binder.
+    ///
+    /// # Specification
+    /// - requires: `computation` is closed and at its weak head.
+    /// - ensures: `Some((p, q))` when it is the link `tr(Q, q, p)`, or the bind
+    ///   `y ← c; tr(Q↑, q↑, y)` of a link that ran its returned operand first,
+    ///   `p` then standing as `⟨c⟩`; `None` for any other weak head.
+    /// - provides: the legs of a returned path the second weak head of
+    ///   [`Self::along_composite`] moves an operand along, read as the
+    ///   evaluator reads the evaluated path.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::along_composite`].
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+    #[spec(ensures: |ret| ret.is_none() || matches!(
+        self.arena.computation(computation),
+        Some(&(Computation::PathTransport { .. } | Computation::Bind(..)))
+    ))]
+    fn legs(
+        &mut self,
+        computation: ComputationId,
+    ) -> Option<(ValueId, ValueId)>
+    {
+        match self.arena.computation(computation) {
+            Some(&Computation::PathTransport {
+                motive,
+                path,
+                value,
+            }) => (self.then_link(motive) != Linked::Other).then_some((value, path)),
+            Some(&Computation::Bind(ran, body)) => {
+                let Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) = self.arena.computation(body)
+                else {
+                    return None;
+                };
+                if !matches!(self.arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+                    || crate::element_identity::binder_use(
+                        self.arena,
+                        crate::element_identity::Family::Value(path),
+                    ) != BinderUse::Ignored
+                    || self.then_link(motive) == Linked::Other
+                    || self.bound_use(motive) == BinderUse::Read
+                {
+                    return None;
+                }
+                let unit = self.arena.value_unit();
+                let second =
+                    substitute_value(self.arena, &mut self.table, &mut self.memo, path, unit);
+                Some((self.arena.value_returned(ran), second))
+            },
+            Some(_) | None => None,
+        }
+    }
+
+    /// The transport of a bind's value along `path` in `family`, both read
+    /// outside the bind: `u. tr(family, path↑, u)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn along_lifted(
+        &mut self,
+        family: ValueTypeId,
+        path: ValueId,
+    ) -> ComputationId
+    {
+        let lifted = shift_value(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            path,
+            BinderDepth::NONE,
+            BinderDepth::NONE.deeper(),
+        );
+        let variable = self.arena.value_variable(DeBruijnIndex::from(0_u32));
+        self.arena
+            .computation_path_transport(family, lifted, variable)
+    }
+
+    /// `motive` read as a link whose right endpoint is its binder, `y.
+    /// Path(D, l, y)`, the family `then` transports in; [`Linked::Other`] for
+    /// any other family.
+    ///
+    /// # Specification
+    /// trivial.
+    fn then_link(
+        &mut self,
+        motive: ValueTypeId,
+    ) -> Linked
+    {
+        match self.link(motive) {
+            Linked::Right(right) if matches!(self.arena.value(right), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32)) => {
+                Linked::Right(right)
+            },
+            Linked::Right(_) | Linked::Other => Linked::Other,
+        }
+    }
+
+    /// The operand `v` of `body` when it transports an operand ignoring its
+    /// binder along the path it binds, `w. tr(P, w, v)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn along_bound(
+        &self,
+        body: ComputationId,
+    ) -> Option<ValueId>
+    {
+        match self.arena.computation(body) {
+            Some(&Computation::PathTransport { path, value, .. })
+                if matches!(self.arena.value(path), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+                    && crate::element_identity::binder_use(
+                        self.arena,
+                        crate::element_identity::Family::Value(value),
+                    ) == BinderUse::Ignored =>
+            {
+                Some(value)
+            },
+            Some(_) | None => None,
+        }
+    }
+
+    /// How `motive`, a family under a bind's binder, uses the bound value:
+    /// closed off at its own binder, how it uses its innermost index.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bound_use(
+        &mut self,
+        motive: ValueTypeId,
+    ) -> BinderUse
+    {
+        let closed = self.arena.value_unit();
+        let probe = crate::rewrite::substitute_value_type(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            motive,
+            closed,
+        );
+        crate::element_identity::binder_use(
+            self.arena,
+            crate::element_identity::Family::Type(probe),
+        )
     }
 
     /// What `image`, a cong chain's composite right endpoint under the
@@ -6582,15 +7055,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   and after each reading; the `loop` choosing the next bind, which pops
     ///   one attempt per failed turn, passes one bind frame per bind passed
     ///   over, and ends at a push or at the last pop; the `'endpoints` loop,
-    ///   which resumes a plain reading once its met endpoint is read, and a
-    ///   reading once its held operand's run ends, re-entering a run after each
-    ///   δ-step it takes, and an endpoint reading suspends none; the `for`
-    ///   loops over a data case's fields and equations; and the `while let`
-    ///   loop rebuilding the head path.
+    ///   which resumes a plain reading once its met endpoint is read, a reading
+    ///   once its held operand's run ends, re-entering a run after each δ-step
+    ///   it takes, and a reading once a returned path's run ends, and an
+    ///   endpoint reading suspends none; the `for` loops over a data case's
+    ///   fields and equations; and the `while let` loop rebuilding the head
+    ///   path.
     /// - measure: the budget left, which every inner iteration charges and
     ///   every `'reading` iteration enters; then the attempts and the runs
-    ///   held, finite because each was pushed by a charged iteration; then the
-    ///   frames left; then the one suspended reading.
+    ///   held, finite because each was pushed by a charged iteration, and a
+    ///   returned path run at most once for each continuation that moves along
+    ///   it; then the frames left; then the one suspended reading.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over generated terms reaching every instantiation
@@ -6602,6 +7077,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::a_chain_of_beta_steps_walks_its_reduct_once`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     /// - witness: `replay::tests::an_endpoint_reads_past_a_cong_chain_to_the_bind_outside_it_4129`
+    /// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
     fn reduce(
         &mut self,
         term: Term,
@@ -6631,10 +7107,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // suspends, so one is held at most.
         let mut reduction = reduction;
         let mut suspended: Option<Suspended> = None;
-        // The held operands running in place of the readings that met them,
+        // The computations running in place of the readings that met them,
         // innermost last: an append runs its held operand before it reads the
-        // operand's word, and the reading waits on what the run comes to.
-        let mut runs: Vec<HeldRun> = Vec::new();
+        // operand's word, a stuck composite's transport runs a returned path
+        // before it reads the path's legs, and the reading waits on what the
+        // run comes to.
+        let mut runs: Vec<Run> = Vec::new();
+        // The continuations whose returned path ran to no composite: each
+        // runs once.
+        let mut whole: BTreeSet<ComputationId> = BTreeSet::new();
         // The arguments a data case's branch applies to, refilled at each case.
         let mut arguments: Vec<ValueId> = Vec::new();
         'endpoints: loop {
@@ -6924,13 +7405,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                         crate::words::held_operand(self.arena, self.evaluator, term)
                                     {
                                         let outer = self.unload_frames(&mut cells, &mut frames);
-                                        runs.push(HeldRun {
+                                        runs.push(Run::Held(HeldRun {
                                             transport: term,
                                             operand,
                                             frames: outer,
                                             attempts: core::mem::take(&mut attempts),
                                             reduction,
-                                        });
+                                        }));
                                         reduction = Reduction::Endpoint;
                                         focus = Closure::closed(operand);
                                         progress = Progress::Unchanged;
@@ -7315,6 +7796,36 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         None => return Err(unreadable()),
                     }
                 }
+                // A transport along a stuck composite moves its operand along
+                // each of the composite's paths in order, as the evaluator's
+                // `AlongThen` row moves it. A returned path runs first, as the
+                // evaluator evaluates a path before it reads it: the run reads
+                // as an endpoint in place of this reading, which waits on what
+                // it comes to.
+                match self.along_composite(&mut cells, focus, &mut frames, &whole) {
+                    AlongComposite::Moved(moved) => {
+                        focus = moved;
+                        progress = Progress::Reduced;
+                        continue;
+                    },
+                    AlongComposite::Runs(leg) => {
+                        let stuck = self.unload(&mut cells, focus);
+                        let outer = self.unload_frames(&mut cells, &mut frames);
+                        runs.push(Run::Path(PathRun {
+                            leg,
+                            focus: stuck,
+                            frames: outer,
+                            attempts: core::mem::take(&mut attempts),
+                            reduction,
+                            progress,
+                        }));
+                        reduction = Reduction::Endpoint;
+                        focus = Closure::closed(leg.path);
+                        progress = Progress::Unchanged;
+                        continue;
+                    },
+                    AlongComposite::Stays => {},
+                }
                 let mut next = match attempts.last() {
                     Some(_)
                         if frames.is_empty()
@@ -7455,6 +7966,41 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     }
                 }
             }
+            let held = match runs.pop() {
+                // A returned path's run is read. Where it sticks at a
+                // composite, the frame moving along it moves along each of the
+                // composite's paths in order; anywhere else the frame stays,
+                // and its path runs no more.
+                Some(Run::Path(run)) => {
+                    let read = if progress == Progress::Unchanged {
+                        run.leg.path
+                    }
+                    else {
+                        self.rebuild(&mut cells, focus, &mut frames)
+                    };
+                    let mut outer = run.frames;
+                    if let Some((first, second)) = self.legs(read) {
+                        let then = self.along_lifted(run.leg.family, second);
+                        let moved = self.along_lifted(run.leg.family, first);
+                        outer.splice(run.leg.at ..= run.leg.at, [
+                            Frame::Bind(then),
+                            Frame::Bind(moved),
+                        ]);
+                        progress = Progress::Reduced;
+                    }
+                    else {
+                        whole.insert(run.leg.frame);
+                        progress = run.progress;
+                    }
+                    focus = Closure::closed(run.focus);
+                    frames = outer.into_iter().map(Closure::closed).collect();
+                    attempts = run.attempts;
+                    reduction = run.reduction;
+                    continue 'endpoints;
+                },
+                Some(Run::Held(run)) => Some(run),
+                None => None,
+            };
             // A held operand's run is read. A definition heading it unfolds and
             // the run goes on, as the evaluator's run unfolds what it meets and
             // records no decision for it. A value it returns moves along the
@@ -7462,7 +8008,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // transport runs its returned path first, or its operand; the
             // conversion unfolds what the operand holds later, by a recorded
             // step.
-            if let Some(run) = runs.pop() {
+            if let Some(run) = held {
                 let read = if progress == Progress::Unchanged {
                     run.operand
                 }
@@ -7479,7 +8025,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         focus = Closure::closed(unfolded);
                         frames.clear();
                         progress = Progress::Reduced;
-                        runs.push(run);
+                        runs.push(Run::Held(run));
                         continue 'endpoints;
                     },
                     RunStep::Returns(value) => self.arena.computation_path_transport(

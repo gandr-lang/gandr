@@ -1,6 +1,6 @@
 /// `math-path`: `math.path` states composition and a function's action with endpoints, and proves composition's groupoid laws.
 ///
-/// Implemented: the module holds composition `join`, the actions `ap` and `apd`, the associator `assoc`, the unitors `leftUnit` and `rightUnit`, `ap`'s functoriality `apComp` and a homotopy's naturality `natural`. Each law holds by based path induction or by conversion, and the kernel replays each.
+/// Implemented: the module holds composition `join`, the actions `ap` and `apd`, the associator `assoc`, the unitors `leftUnit` and `rightUnit`, `ap`'s functoriality `apComp` and a homotopy's naturality `natural`. Each law holds by based path induction or by conversion, and the kernel replays each. The associator holds by conversion, since both nestings of a chain move along each path in turn.
 ///
 /// Each law computes at a reflexivity, so each declaration states a law there and proves it by reflexivity.
 ///

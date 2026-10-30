@@ -195,8 +195,8 @@
 //! value binder. Transport's input checks at the motive instantiated at the
 //! source endpoint and its result is a returner of the motive at the target;
 //! instantiation is the rewrite machine's capture-avoiding substitution, so the
-//! substitution law holds of every motive. Its last row below is the
-//! singleton's computation, transport in `x ↦ Path(A, a, x)` carrying
+//! substitution law holds of every motive. Its `Path(D, l, x)` row below is
+//! the singleton's computation, transport in `x ↦ Path(A, a, x)` carrying
 //! `here(a)` to the path. The replay reduces:
 //!
 //! | path or motive                      | reduct                                     |
@@ -209,6 +209,11 @@
 //! | a List motive at a cell             | the head transported, then the tail        |
 //! | `El(x)` at level zero               | native universe transport                  |
 //! | `Path(D, l, x)` at a `here` value   | `return p`                                 |
+//! | a stuck composite `p then q`        | along `p`, bound into along `q`            |
+//!
+//! The last row reads a composite where it sticks, at the replay's weak head,
+//! so a composite still computing meets the rows above first. Every nesting of
+//! one chain then reaches the left-nested fold.
 //!
 //! A cell's tail is transported by a computation the reduct binds after the
 //! head, so one replay step unfolds one cell and a list costs the budget its

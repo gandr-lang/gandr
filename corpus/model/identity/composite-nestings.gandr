@@ -1,0 +1,123 @@
+// Two nestings of one chain of paths are one composite.
+//
+// A proof then writes `here` where it would cite an associator, and the theory
+// adjoins no cell for one.
+//
+// A transport along a stuck composite moves its operand along each of the
+// composite's paths in turn, in evaluation and in the kernel. Every nesting of
+// a chain so reaches the left-nested `then` fold the unbiased composite carries.
+//
+// - see: `compose-chain.gandr` — the unbiased composite and its fold
+// - see: `then.gandr` — the composite of two paths
+
+// The circle, its point and its loop.
+import "./circle-base.gandr";
+
+/// The right nesting of three paths is their unbiased composite.
+def rightNested(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(Path(A, x, w), f then (g then h), compose[5, 7](chain(3), (f, g, h))) {
+  here(f then (g then h))
+}
+
+/// A composite standing as the later path: the first path moves along it.
+def laterNested(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  u : A,
+  k : Path(A, x, y),
+  f : Path(A, y, z),
+  g : Path(A, z, w),
+  h : Path(A, w, u)
+) -> Path(Path(A, x, u), k then ((f then g) then h), ((k then f) then g) then h) {
+  here(k then ((f then g) then h))
+}
+
+/// The composite of two composites: the first moves along the second.
+def pairs(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  u : A,
+  k : Path(A, x, y),
+  f : Path(A, y, z),
+  g : Path(A, z, w),
+  h : Path(A, w, u)
+) -> Path(Path(A, x, u), (k then f) then (g then h), k then (f then (g then h))) {
+  here((k then f) then (g then h))
+}
+
+/// Two paths composed by a definition.
+def tailComposite(A : Type, y : A, z : A, w : A, g : Path(A, y, z), h : Path(A, z, w)) -> Path(
+  A,
+  y,
+  w
+) {
+  g then h
+}
+
+/// A nesting written through a definition: the composite it returns stands as the later path.
+def throughCall(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) -> Path(Path(A, x, w), f then tailComposite(A, y, z, w, g, h), (f then g) then h) {
+  here((f then g) then h)
+}
+
+/// A transport along a nesting moves along each path in turn, in any family.
+def transported(
+  A : Type,
+  M : A => Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path(A, x, y),
+  g : Path(A, y, z),
+  h : Path(A, z, w),
+  v : M(x)
+) -> Path(
+  M(w),
+  transport(\a. M(a), f then (g then h), v),
+  transport(\a. M(a), h, transport(\a. M(a), g, transport(\a. M(a), f, v)))
+) {
+  here(transport(\a. M(a), f then (g then h), v))
+}
+
+/// A loop between two paths at the circle's point nests as any path does.
+def aroundTheLoop(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> Path(Path(Circle, Base, Base), p then (loop then q), (p then loop) then q) {
+  here(p then (loop then q))
+}
+
+/// Paths in another order are another composite.
+@[ refuses("EndpointMismatch") ]
+def reordered(
+  A : Type,
+  x : A,
+  f : Path(A, x, x),
+  g : Path(A, x, x),
+  h : Path(A, x, x)
+) -> Path(Path(A, x, x), f then (g then h), (g then f) then h) {
+  here(f then (g then h))
+}
