@@ -1912,15 +1912,20 @@ echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as re
 # would send a seat to rerun larger on a host it could exhaust. `row.jq`
 # writes a finished run's row and `dimension.jq` names an example's built-ins
 # past n = 3. Each case in `.config/bench/cases.json` holds a recorded run or
-# an example's text, and the row or the built-ins it must give.
+# an example's text, and the row or the built-ins it must give. Each case in
+# `.config/bench/timed.json` runs a command under `timed.py`, the timer
+# `bench:stress` reads its wall time and peak resident set from on Linux and
+# macOS alike (#4191), and holds the status and the least peak it must give.
 ["check:bench"]
-description = "The Catt harness writes each recorded run's row, past bound where a bound was met, and names each recorded example's built-ins past n = 3"
+description = "The Catt harness writes each recorded run's row, past bound where a bound was met, and names each recorded example's built-ins past n = 3, and the stress timer reports each recorded command's status and peak"
 tools.jq = "1.8.1"
+tools.python = "3.14.9"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq
-echo "bench check OK: $(jq length .config/bench/cases.json) cases read as recorded"
+python .config/bench/timed.py --cases .config/bench/timed.json
+echo "bench check OK: $(jq length .config/bench/cases.json) cases read as recorded, and $(jq length .config/bench/timed.json) commands timed as recorded"
 '''
 
 # The stall detector's readings (#2785): `facts.jq` reads the open pull
