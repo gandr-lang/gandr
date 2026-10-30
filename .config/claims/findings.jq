@@ -15,7 +15,7 @@
 # - `## Embedding owes`, on a unit with an `oracle` row (#3964): one
 #   `- #n — <the operation>` per operation the oracle has and gandr lacks,
 #   each its own issue, or `none — <why nothing is owed>`;
-# - `## Readings`: a table answering each of the seven axes `yes — <what it
+# - `## Readings`: a table answering each of the eight axes `yes — <what it
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question;
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`

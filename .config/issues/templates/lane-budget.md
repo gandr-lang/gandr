@@ -29,6 +29,7 @@ Time the parts of `{{job}}` in its last run's log. Split them into shares by cos
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — a budget report adds nothing at run time |
+| Names | `nominal` | no — a budget report binds, allocates and releases no name |
 
 ## Concerns
 
@@ -37,6 +38,7 @@ Time the parts of `{{job}}` in its last run's log. Split them into shares by cos
 | `fork` | yes — the job's set is split across runs; the PR says within |
 | `oracle` | no |
 | `sharing` | no |
+| `nominal` | no |
 
 ## Ledger
 

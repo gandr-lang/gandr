@@ -112,8 +112,8 @@ def rows:
   | select(all(test("^:?-+:?$")) | not)
   | {line: $line, cells: .};
 
-# The seven reading axes (`units.md` § units-readings).
-def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting", "zero-cost"];
+# The eight reading axes (`units.md` § units-readings).
+def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting", "zero-cost", "nominal"];
 
 # The question each axis asks of a unit (`units.md` § units-readings), quoted
 # where a reading is refused so the writer has it in front of them (#2955).
@@ -124,7 +124,8 @@ def questions:
    located: "at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)",
    resident: "representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides",
    rewriting: "rules and normal forms; rewrites between rewrites; which coherence tier settles them",
-   "zero-cost": "what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it"};
+   "zero-cost": "what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it",
+   nominal: "what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization"};
 
 # The marks of an issue's `## Readings` table, read before its subsections:
 # per row naming an axis, {axis, mark, reason}, the mark `yes` or `no` from
@@ -151,8 +152,9 @@ def selected:
 
 # The concern ids of `ledger/concerns.sql` (#2795): the tasks that read the
 # ledger pass them as `--argjson concerns`; without the argument, the ids as
-# of that landing, which the `check:claims` cases are written against.
-def concerns: $ARGS.named.concerns // ["fork", "oracle", "sharing"];
+# of the landing of `nominal` (#4181), which the `check:claims` cases are
+# written against.
+def concerns: $ARGS.named.concerns // ["fork", "nominal", "oracle", "sharing"];
 
 # The marks of an issue's `## Concerns` table: per row naming a concern,
 # {concern, mark}, the mark `yes` or `no` from a cell reading it alone or

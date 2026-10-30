@@ -19,6 +19,7 @@ Closes #n
 | Place | `resident` | representation, sharing, persistence; where integrity stops and replay decides | |
 | Dimension | `rewriting` | rules and normal forms; rewrites between rewrites; which coherence tier settles them | |
 | Cost | `zero-cost` | what the change adds at run time and what demands it: a grade above zero, a located crossing or a session branch (the program), or a recipe policy off by default (none of its bytes in an artifact built without it); what the grade erases; what a hand-written form would cost | |
+| Names | `nominal` | what names, freshness, support and renaming give the change, in `theory-nominal-automata`'s terms; its behaviour as a word or tree automaton over allocations, uses and releases; the decision it needs: membership, inclusion, emptiness or determinization | |
 
 ## Concerns
 

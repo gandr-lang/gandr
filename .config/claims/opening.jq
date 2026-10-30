@@ -48,7 +48,7 @@
 #
 # The body answers every reading axis (#2522, #2955): when an issue it works
 # carries a `## Readings`, or the body has one, its `## Readings` table,
-# `Family · Axis · Status`, gives each of the seven axes one of four forms,
+# `Family · Axis · Status`, gives each of the eight axes one of four forms,
 # each with its clause: `answered: <exemplar or site>`, `trivial: <what it
 # reduces to>`, `not applicable: <what the change lacks that the axis asks
 # about>` or `deferred: #n`. `not selected`, a blank and a bare form are
