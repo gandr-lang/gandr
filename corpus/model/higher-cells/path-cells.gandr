@@ -6,10 +6,11 @@
 // reading, so `math.path`'s associator writes the cell.
 //
 // The model writes the right unit law by conversion and the associator by the
-// theorem. Leaving the associator out is refused by its name.
+// theorem. A model leaving the associator out has it discharged by `here`: the
+// two nestings of a chain of paths convert.
 //
-// - see: `pathological/higher-cells/path-cells.gandr` — the model leaving the
-//   cell out, and a scope breaking a stated law
+// - see: `pathological/higher-cells/path-cells.gandr` — a model of the naturals
+//   leaving the cell out, and a scope breaking a stated law
 // - see: `cat-shape.gandr` — the same theory with its associator a rule
 
 // `assoc`, the associator of path composition.
@@ -112,5 +113,40 @@ module PathCells : Model(Glob) {
     comp(a, b, d, f, comp(b, c, d, g, h))
   ) {
     associator(a, b, c, d, f, g, h)
+  }
+}
+
+/// The circle's paths with the associator left out, which `here` discharges.
+module Discharged : Model(Glob) {
+  /// The circle's points.
+  type Ob = Circle;
+  /// The paths between two points.
+  type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
+
+  /// The reflexivity.
+  def id(a : Circle) -> Path(Circle, a, a) { here(a) }
+
+  /// The composite.
+  def comp(
+    a : Circle,
+    b : Circle,
+    c : Circle,
+    f : Path(Circle, a, b),
+    g : Path(Circle, b, c)
+  ) -> Path(
+    Circle,
+    a,
+    c
+  ) {
+    f then g
+  }
+
+  /// The right unit law, by conversion.
+  def unitR(a : Circle, b : Circle, f : Path(Circle, a, b)) -> Path(
+    Path(Circle, a, b),
+    comp(a, b, b, f, id(b)),
+    f
+  ) {
+    here(f)
   }
 }

@@ -1383,13 +1383,16 @@ pub(super) fn appended(
 /// - requires: `read` is what the run of `operand`'s held computation returned;
 ///   `path` and `operand` are the transport's in `motive`.
 /// - ensures: the transport of `read` along `path` in `motive` queued when
-///   `read` is no held endpoint. Otherwise the run stuck, and the transport
-///   sticks as the kernel reads a stuck run: on the spine of a `path` that is a
-///   held endpoint, which the kernel runs first, and else over `operand` as
-///   [`super::stuck_transport`] places it. The stuck transport is left on the
-///   computation stack.
-/// - fails: as [`super::held_endpoint`], [`super::stuck_transport`] and the
-///   spine's growth.
+///   `read` is no held endpoint. Otherwise the run stuck: along a stuck
+///   composite `p then q`, the transport of `operand` along `p` is queued,
+///   bound into the transport along `q` ([`super::composite_legs`]), as the
+///   kernel splits the bind of a run moved along a composite. Along any other
+///   path the transport sticks as the kernel reads a stuck run: on the spine of
+///   a `path` that is a held endpoint, which the kernel runs first, and else
+///   over `operand` as [`super::stuck_transport`] places it. The stuck
+///   transport is left on the computation stack.
+/// - fails: as [`super::held_endpoint`], [`super::composite_legs`],
+///   [`super::stuck_transport`] and the spine's growth.
 /// - panics: none.
 ///
 /// # Errors
@@ -1402,15 +1405,18 @@ pub(super) fn appended(
 ///   transports along different paths over one stuck call refute at the
 ///   continuations the kernel binds the call into. Holding the transport on
 ///   such a path compares the paths before the call, which the kernel cannot
-///   replay.
+///   replay. `(k then f) then (g then h)` reads as `((k then f) then g) then
+///   h`.
 /// - witness: `eval::words::tests::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 /// - witness: `machine::tests::a_held_transport_compares_with_a_bind_over_its_call_3800`
 /// - witness: `machine::tests::a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025`
+/// - witness: `identity::tests::transport_along_a_stuck_composite_moves_along_each_path_in_order`
 #[spec(
     captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
     ensures: |ret| ret.is_err() || machine.tasks.len() > tasks || machine.comps.len() > comps,
 )]
 pub(super) fn ran(
+    core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     (motive, path, operand): (ValueClosureId, DomainValueId, DomainValueId),
@@ -1423,6 +1429,13 @@ pub(super) fn ran(
     {
         machine.tasks.push(Task::PathTransport(motive));
         machine.values.extend([path, read]);
+        return Ok(());
+    }
+    if let Some((first, second)) = super::composite_legs(core, domain, path)? {
+        let onward = domain.native_continuation(CompBody::AlongThen { motive, second });
+        machine.tasks.push(Task::BindClosure(onward));
+        machine.tasks.push(Task::PathTransport(motive));
+        machine.values.extend([first, operand]);
         return Ok(());
     }
     // The kernel reads a stuck run by its returned path first, then by its

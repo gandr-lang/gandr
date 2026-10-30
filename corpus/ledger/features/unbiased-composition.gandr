@@ -2,11 +2,14 @@
 ///
 /// Implemented: `compose[n, k](chain(m), (c₁, …, cₘ))` checks its cells against the chain of `m` cells at the stratum `n` over `k`. The node holds its cells beside their left-nested `then` fold. Evaluation runs the fold, and the kernel replays it. `p then q` at paths is the composite of its 2-chain, `compose[3, 5](chain(2), (p, q))`. The printer and the formatter write the form back as it is written, and that composite as `p then q`.
 ///
+/// Every nesting of a chain converts with that fold. A transport along a stuck composite moves its operand along each of the composite's paths in turn, in evaluation and in the kernel. So `f then (g then h)` is the composite of `(f, g, h)`.
+///
 /// Level two: `compose[n, k](chain(m, (a₁, …, aₘ)), cells)` composes the level-two shape `[m](a₁, …, aₘ)`, an object of the wreath of the chains over themselves. Column `i` holds `aᵢ` 2-cells, or one 1-cell when `aᵢ` is zero. Level two certifies at the stratum, and each column's 2-cells meet along their 1-cells, the columns along their points. The node holds the cells beside their fold: each column vertically by `then`, the columns horizontally by the whiskers the filler generator lifts by. The whisker `[2](1, 0)` is the right whisker itself, and `[2](1, 1)` the horizontal composite.
 ///
 /// A composite of reflexivities reduces to reflexivity, so the declaration states it and proves it by reflexivity.
 ///
 /// - see: corpus/model/identity/compose-chain.gandr
+/// - see: corpus/model/identity/composite-nestings.gandr
 /// - see: corpus/ledger/features/filler-generator.gandr
 
 /// Three reflexivities composed unbiased are reflexivity.
@@ -16,6 +19,15 @@ def composedAtHere(A : Type, x : A) -> Path(
   here(x)
 ) {
   here(here(x))
+}
+
+/// The right nesting of three paths is their unbiased composite, so reflexivity relates the two.
+def nestedIsComposite(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(
+  Path(A, x, w),
+  f then (g then h),
+  compose[5, 7](chain(3), (f, g, h))
+) {
+  here(f then (g then h))
 }
 
 /// The right whisker of `fa` by `g`: the transport along `fa` of the composite's first half.

@@ -3,12 +3,15 @@
 // A model owes the cell's component with no default. A capability scope owes
 // the cell too, read through its clauses.
 //
-// A model leaving the associator out is refused `NoFiller.Omitted` by its
-// name: the composites' sides do not convert, so `here` does not fill it. A
-// scope whose clauses tell a stated law's sides apart is refused
-// `HandlerUnlawful` naming the law.
+// A model of the naturals under addition, one object and its numbers as the
+// cells, leaving the associator out is refused `NoFiller.Omitted` by its name.
+// Addition recurses on its second argument, so the two nestings of three
+// variables do not convert and `here` does not fill the cell. A scope whose
+// clauses tell a stated law's sides apart is refused `HandlerUnlawful` naming
+// the law.
 //
-// - see: `model/higher-cells/path-cells.gandr` — the model writing the cell
+// - see: `model/higher-cells/path-cells.gandr` — the model writing the cell,
+//   and the circle's paths, whose associator `here` fills
 
 /// The globular theory at dimension one, its associator a cell.
 theory Glob {
@@ -34,39 +37,42 @@ theory Glob {
   ) => Path(Hom(a, d), comp(comp(f, g), h), comp(f, comp(g, h)));
 }
 
-/// The circle: one point and a loop at it.
-data Circle : Type {
-  /// The point.
-  Base : Circle;
-  /// The loop at the point.
-  loop : Base <-> Base;
+/// The one object.
+data One : Type {
+  /// The object.
+  Star : One;
 }
 
-/// The circle's paths, with no associator written.
+/// The naturals.
+data Nat : Type {
+  /// Zero.
+  Zero : Nat;
+  /// The natural after `n`.
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition, by recursion on its second argument.
+def rec plus(n : Nat, m : Nat) -> Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+
+/// The naturals under addition as cells at one object, with no associator
+/// written.
 @[ refuses("NoFiller.Omitted") ]
 module Unwitnessed : Model(Glob) {
-  /// The circle's points.
-  type Ob = Circle;
-  /// The paths between two points.
-  type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
+  /// The one object.
+  type Ob = One;
+  /// The numbers, each a cell from the object to itself.
+  type Hom(a : Ob, b : Ob) = Nat;
 
-  /// The reflexivity.
-  def id(a : Circle) -> Path(Circle, a, a) { here(a) }
+  /// Zero, the identity cell.
+  def id(a : One) -> Nat { Zero }
 
-  /// The composite.
-  def comp(
-    a : Circle,
-    b : Circle,
-    c : Circle,
-    f : Path(Circle, a, b),
-    g : Path(Circle, b, c)
-  ) -> Path(
-    Circle,
-    a,
-    c
-  ) {
-    f then g
-  }
+  /// Addition, the composite.
+  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus(f, g) }
 }
 
 /// A store whose write leaves the rest as it is, by a cell of the theory.

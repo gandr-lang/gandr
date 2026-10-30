@@ -230,8 +230,9 @@
 //! kernel decides with no engine's trace, `here(c)` against `Path(A, a, b)`
 //! first of all, is `conv::convert_values`: α-equality, then
 //! [`replay::convert`], the replay's own loop run with no trace. That loop
-//! fires only the rules the shapes force — weak head reduction, forcing, the η
-//! laws, the two commuting conversions of `F`, a returned endpoint taken as its
+//! fires only the rules the shapes force — weak head reduction, transport
+//! along a stuck composite read along each of its paths, forcing, the η laws,
+//! the two commuting conversions of `F`, a returned endpoint taken as its
 //! computation, and decomposition — unfolds no constant and certifies no
 //! refutation, so `EndpointsDiffer` is reported only after it fails to relate
 //! the endpoints and the endpoint's dialogue does not replay. A judgement that
