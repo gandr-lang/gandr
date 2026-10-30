@@ -6601,6 +6601,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::the_environment_reduction_agrees_with_the_substituting_one`
     /// - witness: `replay::tests::a_chain_of_beta_steps_walks_its_reduct_once`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
+    /// - witness: `replay::tests::an_endpoint_reads_past_a_cong_chain_to_the_bind_outside_it_4129`
     fn reduce(
         &mut self,
         term: Term,
@@ -7347,7 +7348,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // A stuck transport chained into another transport is a
                         // `cong` chain, left whole for `fuse` to compose: reading
                         // through it rebuilds the chain over its own returned leaf
-                        // without end.
+                        // without end. A link transporting along or of the
+                        // chain's endpoint stays over the chain below, and the
+                        // next bind out is read over both.
                         Some(body)
                             if !first
                                 || matches!(
@@ -7363,7 +7366,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                         && matches!(
                                             self.arena.computation(body),
                                             Some(&Computation::PathTransport { .. })
-                                        ))
+                                        )
+                                        && self.continuation_of(body) != Continuation::Eliminates)
                                 )
                                 || self.reading == Reading::Forced
                                     && self.shut_recursion(call).is_some() =>
