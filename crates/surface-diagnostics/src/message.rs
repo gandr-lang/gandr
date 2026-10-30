@@ -977,8 +977,11 @@ fn checked(
             StratumDefect::Condition { .. } => f.write_str(
                 "`ua` needs a catalogue whose site meets the corolla and Segal conditions",
             ),
-            StratumDefect::Allowance { .. } => {
-                f.write_str("`ua` enumerates catalogues of bound 5 at most")
+            StratumDefect::Allowance { .. } => f.write_str(
+                "`ua` enumerates catalogues of bound 64 at most, the most vertices a shape holds",
+            ),
+            StratumDefect::Budget { .. } => {
+                f.write_str("`ua` enumerates catalogues within its budget of shape classes")
             },
         },
         CheckRefusal::UaInequivalent { defect, .. } => match defect {
@@ -2116,7 +2119,14 @@ pub mod tests
             CheckRefusal::UaUncertified {
                 at: value,
                 stratum: StratumDefect::Allowance {
-                    bound: ShapeSize::from(6_usize),
+                    bound: ShapeSize::from(65_usize),
+                },
+            },
+            CheckRefusal::UaUncertified {
+                at: value,
+                stratum: StratumDefect::Budget {
+                    bound: ShapeSize::from(8_usize),
+                    counted: gandr_theory_sites::ClassCount::from(1001_usize),
                 },
             },
             CheckRefusal::UaInequivalent {

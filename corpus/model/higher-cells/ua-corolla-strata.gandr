@@ -4,7 +4,8 @@
 // _Univalence for Inverse Diagrams and Homotopy Canonicity_,
 // doi:10.1017/S0960129514000565). From degree two the Segal condition
 // certifies the stages above the corollas; a degree, a bound or a table the
-// stratum does not certify is refused by name.
+// stratum does not certify is refused by name, and so is a catalogue of more
+// shape classes than the stratum budget.
 
 // The magma, the swap, the identity on the booleans and the unit's identity.
 import "./magma-base.gandr";
@@ -23,6 +24,13 @@ def lifts : Path(
   (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
 ) = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));
 
+/// The magma to itself by the swap at bound six and degree six, a catalogue
+/// of 223 shape classes.
+def six = ua[
+  6,
+  6
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
+
 /// A degree no shape of the catalogue reaches is not certified.
 @[ refuses("UncertifiedDegree") ]
 def above = ua[
@@ -37,11 +45,18 @@ def empty = ua[
   0
 ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
-/// A catalogue past the one the checker enumerates is not certified.
+/// A bound past the largest a catalogue builds at is refused.
 @[ refuses("UncertifiedAllowance") ]
 def wide = ua[
   1,
-  6
+  65
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
+
+/// Bound eight holds more shape classes than the stratum budget.
+@[ refuses("UncertifiedBudget") ]
+def crowded = ua[
+  1,
+  8
 ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// The binary generator's corolla is larger than a bound of three.
