@@ -45,7 +45,7 @@ The level-two evidence stands in [`ascent`](src/ascent.rs). The carrier refuses 
 
 - `Shape`, `End`, `Ends`, `WireKind`, `VertexKind`, `ShapeKey`, `ShapeObstruction`, `ShapeBudget`, `shapes_up_to`: stick-free shapes through the carrier, the stick refused by name, their statistics, isomorphism classes, and the enumeration of every class up to a size, stopped at a budget.
 - `SiteMap`, `VertexSet`, `MapObstruction`, `CompositionMismatch`, `MapForm`, `homs`: the morphism class, its one validator, composition, the two classes, invertibility, and the enumeration of a hom set.
-- `Catalogue`, `Family`: every class of a family and every hom set at a bound, the wirings, the chains or a profile set's shapes, each the full sub-site on its shapes; a class outside the family is named as such.
+- `Catalogue`, `Family`: every class of a family and every hom set at a bound, the wirings, the chains or a profile set's shapes, each the full sub-site on its shapes and each under a budget of shapes; a class outside the family is named as such.
 - `Shape::chain`, `Boundary`, `Unfilled`, `fills`: the chain of `n` composable vertices, and the check that a diagram's cells have their vertices' profiles and meet along the inner wires, answering the diagram's boundary and naming the first defect.
 - `Degree`: vertices plus inner wires.
 - `Site`, `identities`, `closure`, `intersection`, `invertibility`, `degree_order`, `direct_core`, `latching`, `factorization`, `rigidity`, `dual_rigidity`, `split_lowering`, `pushouts`, `Outcome`: the generalized Reedy conditions, each answering with its case count and its smallest counter-example; all but latching run at any level, the direct core over each level's grounded objects.

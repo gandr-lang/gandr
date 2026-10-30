@@ -2718,7 +2718,8 @@ struct Source<'source>
     /// position.
     stage_signatures: &'source BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// The native path each univalence statement the judgement decided
-    /// derives, and each path product it judged elaborates to, by node.
+    /// derives, each path product it judged elaborates to, and the value each
+    /// fill's induction returns, by node.
     natives: &'source BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at.
@@ -6365,7 +6366,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) => {
                 return Err(unadmitted(UnadmittedFormer::Run));
             },
-            Value::Ua { .. } => {
+            // A univalence statement crosses as the native path it derives,
+            // and a fill as the value its induction returns: elaboration
+            // stands a fill in a body as that induction, and a fill a type
+            // holds crosses as it here.
+            Value::Ua { .. } | Value::Fill { .. } => {
                 let Some(&path) = self.source.natives.get(&at)
                 else {
                     return Err(Refusal::MachineInvariant);
@@ -6374,13 +6379,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::Reduced { at });
                 return Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))));
             },
-            // Elaboration replaces every nested computation, written run,
-            // record update and fill before a verdict's body is answered, so
-            // none reaches the kernel; a session statement is always recorded.
+            // Elaboration replaces every nested computation, written run and
+            // record update before a verdict's body is answered, so none
+            // reaches the kernel; a session statement is always recorded.
             Value::Nested(_)
             | Value::Run(_)
             | Value::RecordUpdate { .. }
-            | Value::Fill { .. }
             | Value::SessionRelated { .. } => {
                 return Err(Refusal::MachineInvariant);
             },

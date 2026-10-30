@@ -415,8 +415,8 @@ pub struct CheckingContext<'arena>
     /// type holds each binder's stage at.
     stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// The native universe path each univalence statement the judgement
-    /// decided derives, and each path product it judged elaborates to, by
-    /// node.
+    /// decided derives, each path product it judged elaborates to, and the
+    /// value each fill's induction returns, by node.
     natives: BTreeMap<ValueId, ValueId>,
     /// The abstract types admitted, by position.
     sealed: BTreeMap<ConstantIndex, Sealed>,
@@ -3997,8 +3997,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// The native universe path each univalence statement the judgement
-    /// decided derives, and each path product it judged elaborates to, by
-    /// node.
+    /// decided derives, each path product it judged elaborates to, and the
+    /// value each fill's induction returns, by node.
     ///
     /// # Specification
     /// trivial.
@@ -4031,6 +4031,38 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.natives.insert(at, path);
+    }
+
+    /// Record the induction `realised` the judgement built for the fill at
+    /// `at`: the elaboration stands the fill as it, evaluation reads the fill
+    /// as what it returns, and the bridge carries the fill across as it.
+    ///
+    /// # Specification
+    /// - requires: `realised` is the induction [`crate::fill::realise`] built
+    ///   at `at`, under `at`'s binders.
+    /// - ensures: the written value `at` stands for has
+    ///   [`crate::nested::Nesting::Filled`] of `realised` as its decision; the
+    ///   code definitions read `realised` at `at`; the natives hold, at `at`,
+    ///   the value `realised` returns. Each replaces an earlier record.
+    /// - provides: the one place a fill's induction is recorded, so the three
+    ///   readings of it never disagree.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill over a `here` cell in a type converts with
+    ///   `here`, and the kernel replays the declaration holding it.
+    /// - witness: `fill::tests::a_realised_fill_converts_with_here_in_a_type`
+    #[spec(ensures: self.natives.contains_key(&at))]
+    pub(crate) fn record_fill(
+        &mut self,
+        at: ValueId,
+        realised: gandr_core_term::ComputationId,
+    )
+    {
+        self.record_nesting(at, crate::nested::Nesting::Filled(realised));
+        self.definitions.realise(at, realised);
+        let returned = self.arena.value_returned(realised);
+        self.natives.insert(at, returned);
     }
 
     /// Trace the conversion of two computations as

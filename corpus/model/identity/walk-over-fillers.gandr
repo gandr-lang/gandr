@@ -1,0 +1,62 @@
+// `transport` computes on every filler that resolves, and stays stuck on a carried cell.
+//
+// Nothing about a filler is primitive. A filler comes from completion's
+// derivation, from the filler generator or from a composite of cells.
+//
+// `transport` over a generated filler and over a composite of `here` cells
+// reduces to its motive's base. The circle's `loop` stays stuck by name. The
+// row over completion's filler stands beside its derivation.
+//
+// - see: `derived-rule.gandr` — the row over completion's filler
+// - see: `compose-chain.gandr` — unbiased composition of a chain
+
+// The circle, its point and its loop.
+import "./circle-base.gandr";
+
+/// One cell, its own reflexivity: the generator over the 1-chain.
+def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
+  thunk { fn (f) { here(f) } }
+}
+
+/// The generator's filler over a `here` cell is `here` of its side, where a
+/// type holds it.
+def generatedIsHere(A : Type, x : A) -> Path(
+  Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
+  fill[1, 3](chain(1), selfLoop(A, x, x), (here(here(x)))),
+  here(here(here(x)))
+) {
+  here(here(here(here(x))))
+}
+
+/// The generator's filler: `transport` over it, with a `here` input, reduces
+/// to its base.
+def overGenerated(
+  A : Type,
+  x : A,
+  v : Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x)))
+) -> Path(
+  Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
+  transport(
+    \s. Path(Path(Path(A, x, x), here(x), here(x)), s, s),
+    fill[1, 3](chain(1), selfLoop(A, x, x), (here(here(x)))),
+    v
+  ),
+  v
+) {
+  here(v)
+}
+
+/// A composite of `here` cells: `transport` over it reduces to its base.
+def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path(
+  M(x),
+  transport(\a. M(a), compose[3, 5](chain(2), (here(x), here(x))), v),
+  v
+) {
+  here(v)
+}
+
+/// A carried cell: `transport` over the circle's `loop` stays stuck by name.
+@[ refuses("EndpointMismatch") ]
+def overCarried(M : Circle => Type, v : M(Base)) -> Path(M(Base), transport(\c. M(c), loop, v), v) {
+  here(v)
+}

@@ -565,6 +565,53 @@ fn a_bind_passes_the_returned_value_on()
 }
 
 #[test]
+fn a_realised_fill_evaluates_as_its_induction()
+{
+    let mut core = CoreArena::new();
+    let cell = core.value_unit();
+    let generator = core.computation_return(cell);
+    let fill = core.value_fill(
+        gandr_core_term::compose::Composite::binary(),
+        generator,
+        alloc::boxed::Box::from([cell]),
+    );
+    let induced = core.value_unit();
+    let induction = core.computation_return(induced);
+
+    let (mut chain, environment) = nothing_unfolds();
+    let scope = environment.root();
+    let mut domain = DomainArena::new();
+    let inert = eval_value(
+        &core,
+        &mut domain,
+        Definitions::new(&chain, &environment, scope),
+        ample(),
+        fill,
+    )
+    .expect("an unrealised fill evaluates");
+    assert_eq!(
+        Some(TermFace::Source(fill)),
+        face_of(&domain, inert),
+        "a fill no checker realised is inert, its own source"
+    );
+
+    chain.realise(fill, induction);
+    let realised = eval_value(
+        &core,
+        &mut domain,
+        Definitions::new(&chain, &environment, scope),
+        ample(),
+        fill,
+    )
+    .expect("a realised fill evaluates");
+    assert_eq!(
+        Some(TermFace::Source(induced)),
+        face_of(&domain, realised),
+        "a realised fill is what its induction returns"
+    );
+}
+
+#[test]
 fn native_certificate_conversion_retains_map_syntax()
 {
     let mut core = CoreArena::new();

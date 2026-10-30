@@ -376,9 +376,10 @@ enum Placed
     /// former reads off the literal's digits, never a term, so the call
     /// the annotation heads answers (#298).
     Stratum,
-    /// The pasting shape a composite names, `chain(3)` in `compose[5, 7](
-    /// chain(3), (p, q, r))`: the former reads the shape off its syntax, never
-    /// a term, so the call the annotation heads answers.
+    /// The pasting shape a composite or a fill names, `chain(3)` in
+    /// `compose[5, 7](chain(3), (p, q, r))` and `chain(1)` in `fill[1, 3](
+    /// chain(1), t, (a))`: the former reads the shape off its syntax, never a
+    /// term, so the call the annotation heads answers.
     Pasting,
     /// The module or the builtin namespace a path selects from, `M` in `M.x`
     /// or `M.T`, `M.N` in `M.N.x`, `limits.hard` in `limits.hard.note`, and
@@ -599,9 +600,11 @@ fn gated(
             Some((at, at.saturating_add(end)))
         })
         .collect();
-    // The bytes of each pasting shape a composite names, `chain(` to its `)`.
-    let pastings: Vec<(usize, usize)> = source
-        .match_indices("compose[")
+    // The bytes of each pasting shape a composite or a fill names, `chain(` to
+    // its `)`.
+    let pastings: Vec<(usize, usize)> = ["compose[", "fill["]
+        .into_iter()
+        .flat_map(|head| source.match_indices(head))
         .filter_map(|(at, _)| {
             let after = source.get(at ..)?;
             let open = at.saturating_add(after.find("](")?).saturating_add(2);

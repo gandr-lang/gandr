@@ -205,6 +205,52 @@ fn a_free_cell_fills_its_square_by_induction()
     );
 }
 
+/// A fill the rule decides computes to its induction wherever it stands. Over
+/// the reflexive cell `here(here(1))` the induction is its base, `here` of the
+/// square's side, the generator's `here` at the reflexive cells. So a type
+/// mentioning the fill converts with one mentioning that `here`. Before the
+/// rule decides it, the fill is inert and converts with nothing but itself.
+#[test]
+fn a_realised_fill_converts_with_here_in_a_type()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    let still = arena.value_here(integers.reflexive);
+    let generator = generator(&mut arena, integers, Sides::Composite);
+    let fill = arena.value_fill(
+        chain(Head(5, 7)),
+        generator,
+        Box::from([still, integers.reflexive]),
+    );
+    let side = identity::then(
+        &mut arena,
+        integers.carrier,
+        integers.one,
+        integers.reflexive,
+        integers.reflexive,
+    );
+    let side = arena.value_returned(side);
+    let generated = arena.value_here(side);
+    let induced = arena.value_here(generated);
+    let square = arena.value_type_path(integers.cell, side, side);
+    let solid = arena.value_type_path(square, generated, generated);
+    let at_fill = arena.value_type_path(solid, fill, fill);
+    let at_here = arena.value_type_path(solid, induced, induced);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        equivalent(&mut context, at_fill, at_here),
+        Ok(Agreement::Apart),
+        "an undecided fill is inert"
+    );
+    let _square =
+        synthesise_value(&mut context, fill).expect("the induction on here(here(1)) checks");
+    assert_eq!(
+        equivalent(&mut context, at_fill, at_here),
+        Ok(Agreement::Convertible),
+        "the decided fill computes to the generator's `here` at the reflexive cells"
+    );
+}
+
 #[test]
 fn a_fill_refuses_each_defect_by_name()
 {

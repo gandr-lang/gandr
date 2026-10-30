@@ -24,10 +24,13 @@
 //! The filler is the family's own induction: based path induction on each
 //! path of `X` in vertex order, the outermost first, with base `here(t[X⁻])`
 //! once every path is `here`. The rule checks the induction against the
-//! square and records it as the node's decision ([`crate::nested::Nesting::
-//! Filled`]); the elaboration stands the node as that induction, so the
-//! second judgement, evaluation and the kernel read an ordinary term. A
-//! filler over `here` cells reduces to `here`.
+//! square and records it three ways (`CheckingContext::record_fill`): as
+//! the node's decision ([`crate::nested::Nesting::Filled`]), so the
+//! elaboration stands the node as that induction; in the lowered chain
+//! evaluation reads, so the fill computes to its induction wherever it
+//! stands; and in the natives, so a fill in a type crosses to the kernel as
+//! the value its induction returns. A filler over `here` cells reduces to
+//! `here`, in a type as in a term.
 //!
 //! A refusal names its defect: [`CheckRefusal::FillUncertified`] for the
 //! stratum, `compose`'s own refusals for a pasting or cells that do not fill
@@ -43,6 +46,9 @@
 //!   induction.
 //! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X` as the
 //!   dependent action of `t` on the paths of `X`.
+//! - `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban —
+//!   the machine adjoins no cell, so a fill computes to its induction wherever
+//!   it stands.
 //! - Thibaut Benjamin, Ioannis Markakis, Wilfred Offord, Chiara Sarti and Jamie
 //!   Vicary. "Naturality for Higher-Dimensional Path Types." (2025).
 //!   `arXiv:2501.11620` — `t ↑ X` and its square; Example 1.3, the associator's

@@ -496,6 +496,8 @@ pub struct LoweredChain
     /// The relation each lawful atom reads its identity as, by admission
     /// position.
     identities: BTreeMap<ConstantIndex, ValueId>,
+    /// The induction each fill the checker realised stands for, by node.
+    fills: BTreeMap<ValueId, ComputationId>,
 }
 
 impl LoweredChain
@@ -571,6 +573,7 @@ impl LoweredChain
             presentations: BTreeMap::new(),
             constructors: BTreeMap::new(),
             identities: BTreeMap::new(),
+            fills: BTreeMap::new(),
         })
     }
 
@@ -713,6 +716,35 @@ impl LoweredChain
     )
     {
         let _replaced = self.identities.insert(atom, relation);
+    }
+
+    /// Record that the fill at `fill` stands for the induction `realised`:
+    /// evaluation reads the fill as the value the induction returns.
+    ///
+    /// # Specification
+    /// - requires: `realised` is the induction the checker built for the fill
+    ///   at `fill` and checked against its square, in the arena the run
+    ///   evaluates against, under the fill's own binders.
+    /// - ensures: [`Definitions::realisation`] answers `realised` at `fill` for
+    ///   every run over this chain; an earlier record at `fill` is replaced.
+    /// - provides: where a fill a type holds computes before elaboration stands
+    ///   it as its induction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill over a `here` cell evaluates to `here` once
+    ///   its induction is recorded, and stays inert before.
+    /// - witness: `eval::tests::a_realised_fill_evaluates_as_its_induction`
+    #[inline]
+    #[spec(ensures: self.fills.get(&fill) == Some(&realised))]
+    pub fn realise(
+        &mut self,
+        fill: ValueId,
+        realised: ComputationId,
+    )
+    {
+        let _replaced = self.fills.insert(fill, realised);
     }
 
     /// The definitions, in admission order.
@@ -1200,6 +1232,20 @@ impl<'run> Definitions<'run>
     ) -> Option<ValueId>
     {
         self.chain.identities.get(&atom).copied()
+    }
+
+    /// The induction the fill at `fill` stands for, when the chain recorded
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn realisation(
+        &self,
+        fill: ValueId,
+    ) -> Option<ComputationId>
+    {
+        self.chain.fills.get(&fill).copied()
     }
 
     /// The types of words whose cells loop in the sort admitted at `sort`, by
@@ -4537,17 +4583,34 @@ fn step_value(
             machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
+        // A fill the checker realised stands for what its induction returns,
+        // as a composite stands for its fold, so a fill over `here` cells is
+        // `here` wherever it stands. A fill is inert until the checker
+        // realises it.
+        Value::Fill { .. } => {
+            match machine.definitions.realisation(term) {
+                Some(realised) => {
+                    machine.tasks.push(Task::Returned);
+                    machine.tasks.push(Task::Comp {
+                        term: realised,
+                        env,
+                    });
+                },
+                None => machine
+                    .values
+                    .push(domain.value_path_certificate(term, TermFace::Source(term))),
+            }
+            Ok(())
+        },
         // A closed native path, a closed funext, a closed equivalence, a
         // univalence statement and a session statement are inert
         // certificates: nothing reduces them, and transport reads their
-        // syntax. A fill is inert too: only the checker meets one, before
-        // elaboration stands it as its induction.
+        // syntax.
         Value::PathRefl(_)
         | Value::PathEquiv { .. }
         | Value::Funext(..)
         | Value::Equiv(..)
         | Value::Ua { .. }
-        | Value::Fill { .. }
         | Value::SessionRelated { .. } => {
             machine
                 .values
