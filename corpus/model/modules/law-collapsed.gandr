@@ -1,0 +1,45 @@
+// A theory states a law that collapses its own sort: every two loops are one
+// path.
+//
+// The law has the shape of axiom K, and it is sound where K on the native
+// identity is not. A law is a hypothesis, not a rule. A model owes a proof of
+// it at its carrier, and only a carrier whose loops are one can pay. The
+// native `Path` admits no such law. `here` is not a pattern, and a law over a
+// path of paths has no form today. So K reaches a theory's sort only as an
+// obligation on its models, never as a fact about `Path` or `Flow`. A cell
+// of the theory is a path in its models, not a path in `Type`.
+//
+// `Collapsed` declares the sort and the law. `CollapsedDot` proves the law at
+// `Dot` by cases, and `one_loop` reads the proof at the law's path.
+//
+// - see: `../../pathological/modules/law-collapsed.gandr` — the three refused routes
+// - see: `../../pathological/identity/k-derivation.gandr` — `here` is not a pattern
+
+/// A sort whose loops are one.
+theory Collapsed {
+  /// The loops.
+  sort Loop : Type;
+  /// Any two loops are one path.
+  law one : (p : Loop, q : Loop) => Path(Loop, p, q);
+}
+
+/// One value.
+data Dot : Type {
+  /// The value.
+  Spot : Dot;
+}
+
+/// The model proves the law at `Dot` by cases: the one loop is the one loop.
+module CollapsedDot : Model(Collapsed) with sort Loop = Dot {
+  /// Both loops are `Spot`, so reflexivity proves the law.
+  def one(p : Dot, q : Dot) -> Path(Dot, p, q) {
+    case p { Spot => case q { Spot => here(Spot) } }
+  }
+}
+
+/// The program reads the model's law at its carrier as a path from the one loop to itself.
+def one_loop() -> Path(Dot, Spot, Spot) { CollapsedDot.one(Spot, Spot) }
+
+/// The entry returns the unit.
+@[ runs("unit") ]
+def main() -> Unit { unit }
