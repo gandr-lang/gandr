@@ -33,9 +33,8 @@ use anodized::spec;
 use gandr_core_checker::bridge::Crossed;
 use gandr_core_incremental::ItemCheckpoint;
 use gandr_kernel_term::DecodedPrefix;
+use gandr_surface_dispatcher::Memo;
 use gandr_surface_syntax::SourceText;
-
-use crate::memo::Memo;
 
 /// The most closure runs the process's store holds before it lets the one
 /// asked for longest ago go: those of the few documents an editor has open.
@@ -118,13 +117,10 @@ impl ClosureAdmission
     }
 }
 
-/// One leading run's readmission, under the closure's text and the run's
-/// checkpoints that select and admit it.
+/// One leading run's readmission, under the run's checkpoints that admit it.
 #[derive(Debug)]
 struct Held
 {
-    /// The closure's text: the laid-out revision before the document's own.
-    text: String,
     /// The checkpoints of the run's declarations, in order.
     checkpoints: Vec<ItemCheckpoint>,
     /// What readmitting them built.
@@ -149,8 +145,9 @@ struct Held
 #[derive(Debug)]
 pub struct Runs<const HELD: usize>
 {
-    /// The runs.
-    held: Memo<Held, HELD>,
+    /// The runs, by the closure's text: the laid-out revision before the
+    /// document's own.
+    held: Memo<String, Held, HELD>,
 }
 
 impl<const HELD: usize> Runs<HELD>
@@ -191,8 +188,9 @@ impl<const HELD: usize> Runs<HELD>
     ) -> Option<Arc<ClosureAdmission>>
     {
         self.held
-            .find(|held| {
-                (held.text == <&str>::from(text) && checkpoints.starts_with(&held.checkpoints))
+            .find(<&str>::from(text), |held| {
+                checkpoints
+                    .starts_with(&held.checkpoints)
                     .then_some(held.checkpoints.len())
             })
             .map(|held| Arc::clone(&held.admission))
@@ -232,12 +230,12 @@ impl<const HELD: usize> Runs<HELD>
             decoded: OnceLock::new(),
         });
         self.held.keep(
+            text,
             Held {
-                text,
                 checkpoints,
                 admission: Arc::clone(&admission),
             },
-            |held, kept| held.text == kept.text && held.checkpoints == kept.checkpoints,
+            |held, kept| held.checkpoints == kept.checkpoints,
         );
         admission
     }
