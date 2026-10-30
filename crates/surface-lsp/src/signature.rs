@@ -423,6 +423,9 @@ type Head = ((SourceIndex, ByteSpan), Signature);
 /// The heads each closure lowering's part of a tree writes, by the lowering's
 /// key: read the first time a text is laid after the lowering, and let go
 /// once nothing holds the lowering.
+// economy: no byte form, the codec is #4084. The heads are keyed by the
+// lowering they come from, so they cross the store under the lowering's
+// content key once the lowering has an image.
 static CLOSURE_HEADS: Mutex<Vec<(ClosureKey, Arc<[Head]>)>> = Mutex::new(Vec::new());
 
 /// The heads an import closure writes, by the source and the name tile of

@@ -186,6 +186,7 @@ mod forms;
 mod item_source;
 mod live_match;
 mod lowerings;
+mod memo;
 mod session;
 mod typed;
 

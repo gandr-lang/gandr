@@ -44,6 +44,7 @@ use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
 
 use crate::edit::Snapshot;
+use crate::memo::Memo;
 
 /// The most closures [`LOWERINGS`] holds before it lets the one asked for
 /// longest ago go: the closures of the few documents an editor has open.
@@ -334,28 +335,13 @@ struct Entry
     grammar: GrammarFingerprint,
     /// What the store holds for it.
     held: Held,
-    /// The tick of the store's clock it was last asked for at.
-    used: u64,
-}
-
-/// Every closure lowering the process holds.
-///
-/// # Specification
-/// trivial.
-#[derive(Debug)]
-struct Lowerings
-{
-    /// The closures, in no order.
-    held: Vec<Entry>,
-    /// Ticks once per question.
-    clock: u64,
 }
 
 /// The process's closure lowerings, shared by every session.
-static LOWERINGS: Mutex<Lowerings> = Mutex::new(Lowerings {
-    held: Vec::new(),
-    clock: 0_u64,
-});
+// economy: no byte form, the codec is #4084. A lowering's suspended state
+// borrows its own syntax tree and holds a core arena, so the process holds it
+// until the codec gives it an image the store keeps.
+static LOWERINGS: Mutex<Memo<Entry, LOWERINGS_HELD>> = Mutex::new(Memo::new());
 
 /// What the process holds for the closure laid out as `text`, whose sources
 /// are `sources`, under the grammar `grammar`.
@@ -383,18 +369,14 @@ pub fn find(
 ) -> Option<Held>
 {
     let mut lowerings = LOWERINGS.lock().unwrap_or_else(PoisonError::into_inner);
-    lowerings.clock = lowerings.clock.saturating_add(1);
-    let now = lowerings.clock;
     let found = lowerings
-        .held
-        .iter_mut()
         .find(|entry| {
-            entry.grammar == grammar && entry.sources == sources && entry.text == <&str>::from(text)
+            (entry.grammar == grammar
+                && entry.sources == sources
+                && entry.text == <&str>::from(text))
+            .then_some(())
         })
-        .map(|entry| {
-            entry.used = now;
-            entry.held.clone()
-        });
+        .map(|entry| entry.held.clone());
     drop(lowerings);
     found
 }
@@ -430,30 +412,18 @@ pub fn keep(
 )
 {
     let mut lowerings = LOWERINGS.lock().unwrap_or_else(PoisonError::into_inner);
-    lowerings.clock = lowerings.clock.saturating_add(1);
-    let now = lowerings.clock;
-    lowerings
-        .held
-        .retain(|entry| entry.grammar != grammar || entry.sources != sources || entry.text != text);
-    lowerings.held.push(Entry {
-        text,
-        sources,
-        grammar,
-        held,
-        used: now,
-    });
-    while lowerings.held.len() > LOWERINGS_HELD {
-        let oldest = lowerings
-            .held
-            .iter()
-            .enumerate()
-            .min_by_key(|&(_, entry)| entry.used)
-            .map(|(index, _)| index);
-        let Some(oldest) = oldest
-        else {
-            break;
-        };
-        let _gone = lowerings.held.swap_remove(oldest);
-    }
+    lowerings.keep(
+        Entry {
+            text,
+            sources,
+            grammar,
+            held,
+        },
+        |entry, kept| {
+            entry.grammar == kept.grammar
+                && entry.sources == kept.sources
+                && entry.text == kept.text
+        },
+    );
     drop(lowerings);
 }
