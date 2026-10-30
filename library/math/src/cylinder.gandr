@@ -6,10 +6,15 @@
 // triangles over one apex compose, as higher categories compose cylinders
 // and cones.
 //
-// Each composite at dimension 2 is the term Catt's built-in prints, written
-// over `math.path`. The associator regroups a composite, and a whisker
-// carries a filler along a fixed path. A stacking is the side-by-side
-// composite of its transposed squares, read back.
+// Each composite at dimension 2 stands in two readings. The Path reading is
+// the term Catt's built-in prints, written over `math.path`. The associator
+// regroups a composite, and a whisker carries a filler along a fixed path. A
+// stacking is the side-by-side composite of its transposed squares, read back.
+//
+// The cells reading writes a composite as its whiskers, each a level-two
+// composite over the globular theory, joined by `then`. Every nesting of one
+// chain converts with every other, so it writes no associator. Its sides are
+// each one composite over the 3-chain.
 //
 // The composite at `n + 1` is `fill` at the composite at `n`, as the
 // paper's induction states. At `n = 2` the step is Example 1.2: `fill` at
@@ -20,6 +25,7 @@
 // - see: #3712 — the composites at dimension 2, written from Catt's terms
 // - see: #3931 — the composite at `n + 1` as `fill` at the composite at `n`
 // - see: #3833 — the composites at dimension 3 compared with Catt's
+// - see: #3963 — the composites at dimension 2 in the cells reading
 
 // `assoc`, `join`, `whiskerLeft`, `whiskerRight`.
 import "path.gandr";
@@ -284,4 +290,74 @@ pub def cylinderFill3(
   )
 ) {
   fill[5, 11](chain(2, (1, 1)), cylinderFillOver2(A, x, y, z), (fa, pa, aa, ga, qa, ka))
+}
+
+/// Two squares side by side compose to a square in the cells reading: Catt's `cylcomp(2,1,2)` as `f ◁ b` then `a ▷ g2`.
+pub def cylinderCompositeCells2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  x2 : A,
+  y2 : A,
+  f2 : Path(A, x2, y2),
+  xs : Path(A, x, x2),
+  ys : Path(A, y, y2),
+  a : Path(Path(A, x, y2), f then ys, xs then f2),
+  z : A,
+  g : Path(A, y, z),
+  z2 : A,
+  g2 : Path(A, y2, z2),
+  zs : Path(A, z, z2),
+  b : Path(Path(A, y, z2), g then zs, ys then g2)
+) -> Path(
+  Path(A, x, z2),
+  compose[5, 7](chain(3), (f, g, zs)),
+  compose[5, 7](chain(3), (xs, f2, g2))
+) {
+  compose[4, 9](chain(2, (0, 1)), (f, b)) then compose[4, 9](chain(2, (1, 0)), (a, g2))
+}
+
+/// A stack of two squares composes to a square in the cells reading: Catt's `cylstack(2)` as `a ▷ ys2` then `xs ◁ b`.
+pub def cylinderStackCells2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  x2 : A,
+  y2 : A,
+  f2 : Path(A, x2, y2),
+  xs : Path(A, x, x2),
+  ys : Path(A, y, y2),
+  a : Path(Path(A, x, y2), f then ys, xs then f2),
+  x3 : A,
+  y3 : A,
+  f3 : Path(A, x3, y3),
+  xs2 : Path(A, x2, x3),
+  ys2 : Path(A, y2, y3),
+  b : Path(Path(A, x2, y3), f2 then ys2, xs2 then f3)
+) -> Path(
+  Path(A, x, y3),
+  compose[5, 7](chain(3), (f, ys, ys2)),
+  compose[5, 7](chain(3), (xs, xs2, f3))
+) {
+  compose[4, 9](chain(2, (1, 0)), (a, ys2)) then compose[4, 9](chain(2, (0, 1)), (xs, b))
+}
+
+/// Two triangles over one apex compose to a triangle in the cells reading: Catt's `conecomp(2,1,2)` as `a` then `f ◁ b`.
+pub def coneCompositeCells2(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path(A, x, y),
+  c : A,
+  p : Path(A, x, c),
+  q : Path(A, y, c),
+  a : Path(Path(A, x, c), p, f then q),
+  w : A,
+  g : Path(A, y, w),
+  r : Path(A, w, c),
+  b : Path(Path(A, y, c), q, g then r)
+) -> Path(Path(A, x, c), p, compose[5, 7](chain(3), (f, g, r))) {
+  a then compose[4, 9](chain(2, (0, 1)), (f, b))
 }
