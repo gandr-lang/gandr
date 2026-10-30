@@ -2435,7 +2435,8 @@ impl<'source> Lowerer<'_, 'source>
             let _fixed = fixed.insert(key, ty);
         }
         let read = theory::operations(&members, &fixed).and_then(|read| {
-            theory::laws(&members, &read.effects, &read.values).map(|laws| (read, laws))
+            theory::laws(&members, &presentation.laws, &read.effects, &read.values)
+                .map(|laws| (read, laws))
         });
         // A law the order turned rewrites from its written right side; a
         // presentation coding no certificate turns none.
@@ -3258,21 +3259,23 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `scope` is the scope [`Self::mint_scope`] minted for
     ///   `scoped`.
     /// - ensures: for a scope over a theory whose clauses it writes, its owner
-    ///   and one law per law of the theory whose operations each have a clause,
-    ///   in the theory's order, both sides read by [`handler::obligation`] and
-    ///   every node they mint at `origin`; nothing for a scope over a host
-    ///   interface, nor for one a model answers, whose module's ascription
-    ///   states the laws. A law naming an operation the scope has no clause for
-    ///   is left to the coverage refusal the scope meets first.
+    ///   and one law per rule, then per stated law, of the theory whose
+    ///   operations each have a clause, in the theory's order, both sides read
+    ///   by [`handler::obligation`] and every node they mint at `origin`, each
+    ///   law's name recorded at the scope and its place; nothing for a scope
+    ///   over a host interface, nor for one a model answers, whose module's
+    ///   ascription states the laws. A law naming an operation the scope has no
+    ///   clause for is left to the coverage refusal the scope meets first.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a scope over a theory with two laws owes both, a
-    ///   scope over one with none owes nothing, and a scope naming a model owes
-    ///   nothing.
+    ///   scope over one with none owes nothing, a scope naming a model owes
+    ///   nothing, and a stated law is owed after the rules under its name.
     /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref laws)| laws.iter().all(|law| law.scope == scope)))]
     pub(super) fn scope_laws(
         scoped: &Scoped,
@@ -3301,6 +3304,8 @@ impl<'source> Lowerer<'_, 'source>
             .filter_map(|law| {
                 let left = handler::obligation(sink.arena, (&law.read, &law.read.left), &bodies)?;
                 let right = handler::obligation(sink.arena, (&law.read, &law.read.right), &bodies)?;
+                sink.origins
+                    .record_scope_law(scope, law.rule, law.name.clone());
                 Some(HandlerLaw {
                     scope,
                     rule: law.rule,

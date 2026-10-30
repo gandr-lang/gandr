@@ -110,6 +110,7 @@ use gandr_core_term::identity::Relation;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -755,6 +756,11 @@ pub struct OriginTable
     /// `with`, with what answers it as written, in the order lowered. The
     /// scope's clauses are the ones the lowering derives from the model.
     scope_answers: Vec<(ComputationId, ScopeAnswer)>,
+    /// The name of each law a capability scope owes, by the scope and the
+    /// law's place among its theory's rules, then its stated laws. The core's
+    /// refusal carries the place alone; a message naming the law reads it
+    /// here.
+    scope_laws: BTreeMap<(ComputationId, RuleIndex), gandr_theory_levitation::Name>,
     /// The implicit each hole a call nominated stands for, by the hole,
     /// ascending by id. The core carries no name; a refusal of the hole
     /// reads it here.
@@ -2489,6 +2495,60 @@ impl OriginTable
     pub fn scope_answers(&self) -> &[(ComputationId, ScopeAnswer)]
     {
         &self.scope_answers
+    }
+
+    /// Record that the capability scope `scope` owes the law at `rule`, its
+    /// place among its theory's rules, then its stated laws, named `name`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::scope_law`] answers `name` at `scope` and `rule`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope owing a rule and a stated law answers each
+    ///   name at its place.
+    /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+    #[spec(ensures: self.scope_laws.contains_key(&(scope, rule)))]
+    #[inline]
+    pub fn record_scope_law(
+        &mut self,
+        scope: ComputationId,
+        rule: RuleIndex,
+        name: gandr_theory_levitation::Name,
+    )
+    {
+        let _replaced = self.scope_laws.insert((scope, rule), name);
+    }
+
+    /// The name of the law at `rule` the capability scope `scope` owes.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unrecorded pair is admissible input.
+    /// - ensures: the name recorded for the pair, or the unrecorded absence.
+    /// - provides: the name a diagnostic writes for a law a scope's clauses are
+    ///   not shown to satisfy.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::record_scope_law`].
+    /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+    #[spec(ensures: |ret| match self.scope_laws.get(&(scope, rule)) {
+        | Some(held) => ret == Maybe::Present(held),
+        | None => ret == Maybe::Absent(origin::Absent::Unrecorded),
+    })]
+    #[inline]
+    pub fn scope_law(
+        &self,
+        scope: ComputationId,
+        rule: RuleIndex,
+    ) -> Maybe<&gandr_theory_levitation::Name, origin::Absent>
+    {
+        self.scope_laws
+            .get(&(scope, rule))
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
     }
 }
 

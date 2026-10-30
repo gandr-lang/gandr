@@ -1694,6 +1694,71 @@ fn a_scope_owes_its_theory_s_laws_2272()
     );
 }
 
+/// The theory `StatePutSkip`: `State` with put-put a rule and put-skip a
+/// stated law, an equation no rule orients.
+const PUT_SKIP: &str = concat!(
+    "theory StatePutSkip {\n",
+    "  sort S : Type+;\n",
+    "  sort C : Type;\n",
+    "  oper get : (k : pi+ (s : S) . C) --> C;\n",
+    "  oper put : (s : S, k : C) --> C;\n",
+    "  rule putPut : put(s, put(u, k)) <=> put(u, k);\n",
+    "  law putSkip : (s : S, k : C) => Path(C, put(s, k), k);\n",
+    "}\n",
+);
+
+/// A scope owes its theory's stated laws after its rules, each recorded under
+/// its name at the scope. A handler whose store answers nine satisfies put-put
+/// but not put-skip, and is refused at put-skip's place (#3966).
+#[test]
+fn a_scope_owes_its_theory_s_stated_laws_3966()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{PUT_SKIP}def discarding() -> -F Integer {{ handle st : StatePutSkip with sort S = Integer {{ st.put(1); st.get() }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => pure 9 }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("discarding"))
+    else {
+        panic!("`discarding` is declared");
+    };
+    let scope = tail_of(&module, &arena, "discarding".into());
+    let owed: Vec<(ComputationId, RuleIndex)> = module
+        .handler_laws(declaration)
+        .iter()
+        .map(|law| (law.scope, law.rule))
+        .collect();
+    assert_eq!(
+        owed,
+        [
+            (scope, RuleIndex::from(0_usize)),
+            (scope, RuleIndex::from(1_usize))
+        ],
+        "put-put, then put-skip, both at the scope"
+    );
+    assert_eq!(
+        module
+            .origins()
+            .scope_law(scope, RuleIndex::from(1_usize))
+            .map(|name| String::from(name.as_ref())),
+        Maybe::Present(String::from("putSkip")),
+        "the stated law's place names it"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "discarding".into()),
+            Verdict::Refused(CheckRefusal::HandlerUnlawful { at, rule, .. })
+                if at == scope && rule == RuleIndex::from(1_usize)
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "discarding".into())
+    );
+}
+
 /// The theory `StateGetGet`: `State`'s read with get-get stated.
 const GET_GET: &str = concat!(
     "theory StateGetGet {\n",

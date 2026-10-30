@@ -1,0 +1,98 @@
+// The refusals of a stated law, the generator cell no conversion fills.
+//
+// A model owes the cell's component with no default. A capability scope owes
+// the cell too, read through its clauses.
+//
+// A model leaving the associator out is refused `UnprovenLaw` by its name. A
+// scope whose clauses tell a stated law's sides apart is refused
+// `HandlerUnlawful` naming the law.
+//
+// - see: `model/higher-cells/path-cells.gandr` — the model writing the cell
+
+/// The globular theory at dimension one, its associator a cell.
+theory Glob {
+  /// The objects.
+  sort Ob : Type;
+  /// The cells from one object to another.
+  sort Hom(dom : Ob, cod : Ob) : Type;
+
+  /// The identity cell at an object.
+  oper id : (a : Ob) --> Hom(a, a);
+  /// The composite of two cells end to end.
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+
+  /// The associator, a cell between the two composites of three cells.
+  law assoc : (
+    a : Ob,
+    b : Ob,
+    c : Ob,
+    d : Ob,
+    f : Hom(a, b),
+    g : Hom(b, c),
+    h : Hom(c, d)
+  ) => Path(Hom(a, d), comp(comp(f, g), h), comp(f, comp(g, h)));
+}
+
+/// The circle: one point and a loop at it.
+data Circle : Type {
+  /// The point.
+  Base : Circle;
+  /// The loop at the point.
+  loop : Base <-> Base;
+}
+
+/// The circle's paths, with no associator written.
+@[ refuses("UnprovenLaw") ]
+module Unwitnessed : Model(Glob) {
+  /// The circle's points.
+  type Ob = Circle;
+  /// The paths between two points.
+  type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
+
+  /// The reflexivity.
+  def id(a : Circle) -> Path(Circle, a, a) { here(a) }
+
+  /// The composite.
+  def comp(
+    a : Circle,
+    b : Circle,
+    c : Circle,
+    f : Path(Circle, a, b),
+    g : Path(Circle, b, c)
+  ) -> Path(
+    Circle,
+    a,
+    c
+  ) {
+    f then g
+  }
+}
+
+/// A store whose write leaves the rest as it is, by a cell of the theory.
+theory Skipping {
+  /// The stored value.
+  sort S : Type+;
+  /// The computation the store runs in.
+  sort C : Type;
+  /// Read the stored value.
+  oper get : (k : pi+ (s : S). C) --> C;
+  /// Store a value.
+  oper put : (s : S, k : C) --> C;
+  /// A write leaves what follows it as it is.
+  law putSkip : (s : S, k : C) => Path(C, put(s, k), k);
+}
+
+/// Every write answers nine and drops what follows it. The cell's left side is
+/// then nine, and its right side what follows.
+@[ refuses("HandlerUnlawful") ]
+def discarding() -> Integer {
+  handle st : Skipping with sort S = Integer {
+    st.put(1);
+    run a <- st.get();
+    pure a
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => pure 9
+  }
+}

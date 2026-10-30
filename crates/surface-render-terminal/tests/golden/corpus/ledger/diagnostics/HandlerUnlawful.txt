@@ -1,4 +1,4 @@
-error[HandlerUnlawful]: this handler is not shown to satisfy law 0 of the theory it handles
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/ledger/diagnostics/HandlerUnlawful.gandr:13:3
    │
 13 │ ┏   handle st : Stored with sort S = Integer {

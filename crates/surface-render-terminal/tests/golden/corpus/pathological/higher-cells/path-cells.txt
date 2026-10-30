@@ -1,0 +1,21 @@
+error[UnprovenLaw]: the module `Unwitnessed` neither proves nor admits its model's law `assoc`
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:46:28
+   │
+46 │ module Unwitnessed : Model(Glob) {
+   │                            ━━━━ a law this module does not prove
+   │
+   ╰ note: `assoc` is refused with UnprovenLaw, as its expectation states
+
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` of the theory it handles
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:89:3
+   │
+89 │ ┏   handle st : Skipping with sort S = Integer {
+90 │ ┃     st.put(1);
+91 │ ┃     run a <- st.get();
+92 │ ┃     pure a
+   ‡ ┃
+96 │ ┃     oper put(s, k) => pure 9
+97 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ╰ note: `discarding` is refused with HandlerUnlawful, as its expectation states

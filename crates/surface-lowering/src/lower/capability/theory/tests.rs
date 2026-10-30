@@ -131,7 +131,7 @@ fn a_value_operation_is_read_apart_from_the_effects_2288()
         "the unit and the sum, in the theory's order"
     );
     assert!(
-        laws(&members_of, &read.effects, &read.values)
+        laws(&members_of, &[], &read.effects, &read.values)
             .unwrap()
             .is_empty(),
         "each law applies a value operation, which no clause answers"
@@ -140,7 +140,7 @@ fn a_value_operation_is_read_apart_from_the_effects_2288()
     let state = members(SourceText::from(PUT_LAWS));
     let state_read = operations(&state, &state_fixed).unwrap();
     assert_eq!(
-        laws(&state, &state_read.effects, &read.values)
+        laws(&state, &[], &state_read.effects, &read.values)
             .unwrap()
             .len(),
         2,
@@ -233,7 +233,7 @@ fn a_theory_s_laws_read_for_its_handler_2272()
     let fixed = fixing([Name::from("S")]);
     let members_of = members(SourceText::from(PUT_LAWS));
     let read_of = operations(&members_of, &fixed).unwrap();
-    let read = laws(&members_of, &read_of.effects, &read_of.values).unwrap();
+    let read = laws(&members_of, &[], &read_of.effects, &read_of.values).unwrap();
     let placed: Vec<(RuleIndex, Binders)> = read
         .iter()
         .map(|law| (law.rule, law.read.metavariables))
@@ -255,7 +255,7 @@ fn a_theory_s_laws_read_for_its_handler_2272()
 }";
     let members_of = members(SourceText::from(odd));
     let read_of = operations(&members_of, &fixed).unwrap();
-    let Err((named, fault)) = laws(&members_of, &read_of.effects, &read_of.values)
+    let Err((named, fault)) = laws(&members_of, &[], &read_of.effects, &read_of.values)
     else {
         panic!("a law storing `f(s)` is no term a clause reads");
     };

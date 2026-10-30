@@ -1,0 +1,116 @@
+// The globular theory at dimension one, its associator a stated law, modelled
+// by the circle's paths.
+//
+// A stated law is the theory's generator cell: no rule orients it, and no
+// default fills its component. The Path reading is a model of the cells
+// reading, so `math.path`'s associator writes the cell.
+//
+// The model writes the right unit law by conversion and the associator by the
+// theorem. Leaving the associator out is refused by its name.
+//
+// - see: `pathological/higher-cells/path-cells.gandr` — the model leaving the
+//   cell out, and a scope breaking a stated law
+// - see: `cat-shape.gandr` — the same theory with its associator a rule
+
+// `assoc`, the associator of path composition.
+import "../../../library/math/src/path.gandr";
+
+/// The circle: one point and a loop at it.
+data Circle : Type {
+  /// The point.
+  Base : Circle;
+  /// The loop at the point.
+  loop : Base <-> Base;
+}
+
+/// `math.path`'s associator over the circle.
+def associator(
+  a : Circle,
+  b : Circle,
+  c : Circle,
+  d : Circle,
+  f : Path(Circle, a, b),
+  g : Path(Circle, b, c),
+  h : Path(Circle, c, d)
+) -> Path(Path(Circle, a, d), (f then g) then h, f then (g then h)) {
+  assoc(Circle, a, b, c, d, f, g, h)
+}
+
+/// The globular theory at dimension one. The right unit law is a rule, and the
+/// associator a cell between two composites.
+theory Glob {
+  /// The objects.
+  sort Ob : Type;
+  /// The cells from one object to another.
+  sort Hom(dom : Ob, cod : Ob) : Type;
+
+  /// The identity cell at an object.
+  oper id : (a : Ob) --> Hom(a, a);
+  /// The composite of two cells end to end.
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+
+  /// The identity is a right unit.
+  rule unitR : comp(f, id(b)) <=> f;
+  /// The associator, a cell between the two composites of three cells.
+  law assoc : (
+    a : Ob,
+    b : Ob,
+    c : Ob,
+    d : Ob,
+    f : Hom(a, b),
+    g : Hom(b, c),
+    h : Hom(c, d)
+  ) => Path(Hom(a, d), comp(comp(f, g), h), comp(f, comp(g, h)));
+}
+
+/// The circle's points, and the paths between them as the cells.
+module PathCells : Model(Glob) {
+  /// The circle's points.
+  type Ob = Circle;
+  /// The paths between two points.
+  type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
+
+  /// The reflexivity.
+  def id(a : Circle) -> Path(Circle, a, a) { here(a) }
+
+  /// The composite.
+  def comp(
+    a : Circle,
+    b : Circle,
+    c : Circle,
+    f : Path(Circle, a, b),
+    g : Path(Circle, b, c)
+  ) -> Path(
+    Circle,
+    a,
+    c
+  ) {
+    f then g
+  }
+
+  /// The right unit law, by conversion.
+  def unitR(a : Circle, b : Circle, f : Path(Circle, a, b)) -> Path(
+    Path(Circle, a, b),
+    comp(a, b, b, f, id(b)),
+    f
+  ) {
+    here(f)
+  }
+
+  /// The associator cell, by `math.path`'s theorem.
+  def assoc(
+    a : Circle,
+    b : Circle,
+    c : Circle,
+    d : Circle,
+    f : Path(Circle, a, b),
+    g : Path(Circle, b, c),
+    h : Path(Circle, c, d)
+  ) -> Path(
+    Path(Circle, a, d),
+    comp(a, c, d, comp(a, b, c, f, g), h),
+    comp(a, b, d, f, comp(b, c, d, g, h))
+  ) {
+    associator(a, b, c, d, f, g, h)
+  }
+}
