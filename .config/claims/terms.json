@@ -3,7 +3,7 @@
     "name": "#3158: a unit naming a store and a heap with no storage source is refused once for the row, naming what it met",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `futures-are-cuts.md` | primary | the writer |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `futures-are-cuts.md` | primary | the writer |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -25,7 +25,7 @@
     "name": "#3158: the same unit citing the row's page in `## Sources` passes",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the tier | primary | the store |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `storage-metatheory-programme.md` § the tier | primary | the store |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -47,7 +47,7 @@
     "name": "#3158: a `- <owner> — not read: <why>` line names the owner, so a declined page passes",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `crates/storage-values` | not read | the writer's store is the emitter's heap, not the value plane |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `crates/storage-values` | not read | the writer's store is the emitter's heap, not the value plane |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",
@@ -69,7 +69,7 @@
     "name": "#3158: an issue key matches whole, so `#3170` does not name `#317`",
     "input": {
       "title": "runtime: run a cut's writer",
-      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `#3170` | primary | a later rung |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n",
+      "body": "Run the writer over values in a store.\n\n## The shape\n\nThe heap stays per thread.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `#3170` | primary | a later rung |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | no — nothing is attested |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n",
       "terms": [
         {
           "name": "storage",

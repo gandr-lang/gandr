@@ -98,6 +98,7 @@ body:
         | Place | `resident` | representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides | |
         | Dimension | `rewriting` | rules and normal forms; rewrites between rewrites; which coherence tier settles them | |
         | Cost | `zero-cost` | what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it | |
+        | Names | `nominal` | what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization | |
     validations:
       required: true
   - type: textarea
@@ -111,6 +112,7 @@ body:
         | `fork` | |
         | `oracle` | |
         | `sharing` | |
+        | `nominal` | |
     validations:
       required: true
   - type: textarea

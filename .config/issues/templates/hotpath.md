@@ -31,6 +31,7 @@ Bisect the series' hotpath reports over `main`, from the last passing report to 
 | Place | `resident` | no — no representation changes |
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — the toolchain's own time against a budget; nothing is added to a gandr artifact at run time |
+| Names | `nominal` | no — a timing report binds, allocates and releases no name |
 
 ## Concerns
 
@@ -39,6 +40,7 @@ Bisect the series' hotpath reports over `main`, from the last passing report to 
 | `fork` | no |
 | `oracle` | no |
 | `sharing` | {{sharing}} |
+| `nominal` | no |
 
 ## Ledger
 

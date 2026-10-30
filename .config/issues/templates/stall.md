@@ -28,6 +28,7 @@
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — a routing event adds nothing at run time |
+| Names | `nominal` | no — a routing event binds, allocates and releases no name |
 
 ## Concerns
 
@@ -36,6 +37,7 @@
 | `fork` | no |
 | `oracle` | no |
 | `sharing` | no |
+| `nominal` | no |
 
 ## Ledger
 

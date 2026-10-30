@@ -5,6 +5,7 @@ Finite register presentations of nominal word and tree automata over caller-owne
 <!-- toc -->
 
 - [Synopsis](#synopsis)
+- [Nominal reading](#nominal-reading)
 - [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
@@ -23,6 +24,10 @@ Finite register presentations of nominal word and tree automata over caller-owne
 **Why.** Resource-lifecycle traces need to distinguish a remembered name from a fresh allocation and to reject unmatched release or a live resource at an accepting boundary. Symbolic register rules express those conditions independently of any compiler name supply.
 
 **How.** Constructors validate controls, arities, reads and injective transfers. Literal word membership follows a deduplicated frontier with iterative epsilon closure. Allocation-only word and tree handles share transfer validation; a flat term arena computes free names under lexical scope.
+
+## Nominal reading
+
+A unit answers the `nominal` reading axis and the `nominal` concern in this crate's terms (#4181). Its names are a `Store`'s, each held at most once, and a name is `Fresh` or `Remembered` against the store's support. Its lifecycle is a word of `Letter`s, each a free use, an allocation, a release or an immediate release, or a tree that an `Rnta` reads. A `Transfer` states what each step retains, allocates or erases. The crate decides literal `Membership` of a word in an `Nda`'s language, and `name_dropping` closes that language under renaming. Emptiness, inclusion and determinization belong to the classical back end, deferred here. A unit that needs one of them names that back end's issue.
 
 ## References
 
