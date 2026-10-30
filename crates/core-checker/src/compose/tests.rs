@@ -13,6 +13,7 @@ use gandr_core_term::compose::compose_columns;
 use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::BaseType;
 use gandr_theory_sites::Boundary;
+use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Unfilled;
@@ -272,6 +273,16 @@ fn a_composite_refuses_each_defect_by_name()
                 at,
                 stratum: StratumDefect::Allowance {
                     bound: ShapeSize::from(65_usize),
+                },
+            },
+        ),
+        (
+            chain(Head(15, 17), Cells(8)),
+            CheckRefusal::ComposeUncertified {
+                at,
+                stratum: StratumDefect::Budget {
+                    bound: ShapeSize::from(17_usize),
+                    counted: ClassCount::from(10_usize),
                 },
             },
         ),

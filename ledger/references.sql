@@ -359,6 +359,7 @@ INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kerne
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','bc468ed7bf854d175494383216341bc52e916430','2026-10-29','715ec7ca272d78491f01e8f72c273f72564822ce');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','2a6bd5457b0841455e1db0206b2e709077fe173c');
+INSERT INTO reference VALUES('vault:01a178aa-5f59-7323-a77d-6f8114cedbba','core-checker','fill','lineage','f5c6fcb3d6e11921354cb06ce23eed12219e5134','2026-10-30','8fab72057caf7d961aa5f6b3ba9ab565e2f15c97');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);

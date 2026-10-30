@@ -10526,7 +10526,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let crate::fill::Realisation { square, realised } =
             crate::fill::realise(self.context, at, types)?;
-        self.context.record_nesting(at, Nesting::Filled(realised));
+        self.context.record_fill(at, realised);
         let expected = self.context.arena_mut().comp_type_returner(square);
         self.wait(Frame::NativeYield(Produced::ValueType(square.into())));
         Ok(Step::Descend(Goal::Computation {

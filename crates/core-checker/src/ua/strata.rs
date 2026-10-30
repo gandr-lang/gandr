@@ -296,11 +296,11 @@ impl Strata
         self.store = store;
     }
 
-    /// The stratum at `at` over the catalogue of `family`: at its bound,
-    /// [`Catalogue::profiles`] under `budget` for [`Family::Profiles`] and
+    /// The stratum at `at` over the catalogue of `family` at its bound, under
+    /// `budget`: [`Catalogue::profiles`] for [`Family::Profiles`] and
     /// [`Catalogue::within`] for [`Family::Wirings`], each recalled from the
-    /// store and replayed when it holds one, and [`Catalogue::chains`] for
-    /// [`Family::Chains`].
+    /// store and replayed when it holds one, and [`Catalogue::chains_within`]
+    /// for [`Family::Chains`].
     ///
     /// # Specification
     /// - requires: nothing.
@@ -310,8 +310,8 @@ impl Strata
     ///   answers the stratum the first answered.
     /// - fails: [`StratumDefect::Allowance`] for a bound past
     ///   [`ShapeSize::LARGEST`] or a catalogue the site refuses;
-    ///   [`StratumDefect::Budget`] for a family past the chains whose bound
-    ///   holds more wirings than `budget`; [`StratumDefect::Degree`] and
+    ///   [`StratumDefect::Budget`] for a bound whose catalogue holds more
+    ///   wirings, or more chains, than `budget`; [`StratumDefect::Degree`] and
     ///   [`StratumDefect::Condition`] as [`SegalStratum::certify`] refuses.
     /// - panics: none.
     /// - intension: the first call at a family and a bound builds its
@@ -495,10 +495,10 @@ impl Strata
     /// call and held for the context's life.
     ///
     /// # Specification
-    /// - ensures: [`Catalogue::profiles`] under `budget` for
+    /// - ensures: under `budget` at `bound`, [`Catalogue::profiles`] for
     ///   [`Family::Profiles`], [`Catalogue::within`] for [`Family::Wirings`]
-    ///   and [`Catalogue::chains`] for [`Family::Chains`], at `bound`; a
-    ///   catalogue built under one budget answers a later call under any other.
+    ///   and [`Catalogue::chains_within`] for [`Family::Chains`]; a catalogue
+    ///   built under one budget answers a later call under any other.
     /// - fails: [`StratumDefect::Budget`] for a catalogue past `budget`, and
     ///   [`StratumDefect::Allowance`] for one the site refuses otherwise.
     /// - panics: none.
@@ -531,7 +531,7 @@ impl Strata
         let built = match *family {
             Family::Profiles(ref profiles) => Catalogue::profiles(bound, profiles.clone(), budget),
             Family::Wirings => Catalogue::within(bound, budget),
-            Family::Chains => Catalogue::chains(bound),
+            Family::Chains => Catalogue::chains_within(bound, budget),
         }
         .map_err(|obstruction| match obstruction {
             ShapeObstruction::PastTheBudget { counted } => StratumDefect::Budget { bound, counted },

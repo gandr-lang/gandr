@@ -544,8 +544,9 @@ pub struct ModuleReport
     /// The stage signature of each definition quantified over stages, by
     /// position.
     stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
-    /// The native path each univalence statement the run decided derives, and
-    /// each path product it judged elaborates to, by node.
+    /// The native path each univalence statement the run decided derives, each
+    /// path product it judged elaborates to, and the value each fill's
+    /// induction returns, by node.
     natives: BTreeMap<ValueId, ValueId>,
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
@@ -868,9 +869,10 @@ impl ModuleReport
         &self.stage_signatures
     }
 
-    /// The native path each univalence statement the run decided derives, and
-    /// each path product it judged elaborates to, by node: what the statement
-    /// or the product crosses to the kernel as.
+    /// The native path each univalence statement the run decided derives, each
+    /// path product it judged elaborates to, and the value each fill's
+    /// induction returns, by node: what the statement, the product or the fill
+    /// crosses to the kernel as.
     ///
     /// # Specification
     /// trivial.

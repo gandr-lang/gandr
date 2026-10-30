@@ -850,6 +850,33 @@ impl CodeDefinitions
         self.lowered.identify(atom, relation);
     }
 
+    /// Record that the fill at `fill` stands for the induction `realised`:
+    /// evaluation reads the fill as the value the induction returns.
+    ///
+    /// # Specification
+    /// - requires: `realised` is the induction [`crate::fill::realise`] built
+    ///   for the fill at `fill`.
+    /// - ensures: the lowered chain records `realised` at `fill`.
+    /// - provides: the one place a realised fill reaches the checker's
+    ///   evaluation.
+    /// - panics: none.
+    /// - executable: none — the lowered chain is read only through an
+    ///   evaluation's definitions; the witness observes the fill there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fill over a `here` cell in a type converts with
+    ///   `here` once realised, and the declaration holding it checks.
+    /// - witness: `fill::tests::a_realised_fill_converts_with_here_in_a_type`
+    #[inline]
+    pub fn realise(
+        &mut self,
+        fill: ValueId,
+        realised: gandr_core_term::ComputationId,
+    )
+    {
+        self.lowered.realise(fill, realised);
+    }
+
     /// The body recorded at `constant`.
     ///
     /// # Specification

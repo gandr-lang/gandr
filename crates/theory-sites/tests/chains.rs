@@ -18,6 +18,7 @@ use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
@@ -201,6 +202,39 @@ fn the_chain_catalogue_is_the_full_sub_site_on_the_chains()
         "a 1-cell goes to each sub-chain of the 3-chain"
     );
     assert_eq!(homs(2, 3), 4, "a 2-chain goes to the 3-chain four ways");
+}
+
+/// The chain budget counts the empty shape, the point and each chain: size
+/// seven holds five shapes, so a budget of five admits them and one of four
+/// stops at the fifth, before any hom set is built. A budget of nothing stops
+/// at the empty shape.
+#[test]
+fn the_chain_budget_counts_the_empty_shape_the_point_and_each_chain()
+{
+    let bound = ShapeSize::from(7_usize);
+    let within =
+        Catalogue::chains_within(bound, ShapeBudget::from(5_usize)).expect("five shapes fit");
+    assert_eq!(
+        within.shapes(),
+        Catalogue::chains(bound)
+            .expect("the catalogue builds")
+            .shapes(),
+        "the budget at the count admits every shape the unbudgeted catalogue holds"
+    );
+    assert!(
+        matches!(
+            Catalogue::chains_within(bound, ShapeBudget::from(4_usize)),
+            Err(ShapeObstruction::PastTheBudget { counted }) if usize::from(counted) == 5
+        ),
+        "one shape under the count stops at the fifth"
+    );
+    assert!(
+        matches!(
+            Catalogue::chains_within(bound, ShapeBudget::from(0_usize)),
+            Err(ShapeObstruction::PastTheBudget { counted }) if usize::from(counted) == 1
+        ),
+        "a budget of nothing stops at the empty shape"
+    );
 }
 
 /// At size seven the chain stratum is certified at degree four with the point

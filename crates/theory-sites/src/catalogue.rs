@@ -55,7 +55,6 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -69,6 +68,7 @@ use crate::map::Membership;
 use crate::map::SiteMap;
 use crate::map::VertexSet;
 use crate::map::homs;
+use crate::shape::ClassCount;
 use crate::shape::End;
 use crate::shape::Shape;
 use crate::shape::ShapeBudget;
@@ -343,12 +343,9 @@ impl Catalogue
     /// each chain no larger than `bound`.
     ///
     /// # Specification
-    /// - ensures: as the type states, every shape in [`Family::Chains`] and one
-    ///   class index per shape.
-    /// - fails: as [`Shape::chain`], a chain past 64 vertices within `bound`.
+    /// - ensures: as [`Catalogue::chains_within`] under [`ShapeBudget::EVERY`].
+    /// - fails: as [`Catalogue::chains_within`], never past the budget.
     /// - panics: none.
-    /// - intension: the chain of `n` vertices has size `2n + 1`, so the bound
-    ///   holds the chains to `(bound - 1) / 2` vertices.
     ///
     /// # Errors
     /// [`ShapeObstruction::TooManyVertices`] for a bound past 129.
@@ -365,20 +362,65 @@ impl Catalogue
     }))]
     pub fn chains(bound: ShapeSize) -> Result<Self, ShapeObstruction>
     {
-        let mut shapes = vec![
-            Shape::default(),
-            Shape::from_ends(EdgeCount::from(1_usize), Vec::new())?,
-        ];
-        let mut length = 1_usize;
-        loop {
-            let chain = Shape::chain(EdgeCount::from(length))?;
-            if chain.size() > bound {
-                break;
+        Self::chains_within(bound, ShapeBudget::EVERY)
+    }
+
+    /// The catalogue of the chains at `bound`, if it holds no more shapes than
+    /// `budget`: the empty shape, the point and each chain no larger than
+    /// `bound`.
+    ///
+    /// # Specification
+    /// - ensures: as the type states, every shape in [`Family::Chains`], one
+    ///   class index per shape, and no more shapes than `budget`.
+    /// - fails: as [`Shape::chain`], a chain past 64 vertices within `bound`,
+    ///   and past the budget at the first shape it does not hold, before any
+    ///   hom set is built.
+    /// - panics: none.
+    /// - intension: the chain of `n` vertices has size `2n + 1`, so the bound
+    ///   holds the chains to `(bound - 1) / 2` vertices. The hom sets between
+    ///   chains are enumerated by assigning vertices, which is where the cost
+    ///   lies, so the budget bounds it as it does [`Catalogue::within`]'s.
+    ///
+    /// # Errors
+    /// [`ShapeObstruction::TooManyVertices`] for a bound past 129, and
+    /// [`ShapeObstruction::PastTheBudget`] above all.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the five shapes at size 7 build under a budget of
+    ///   five and are refused under four, naming five counted.
+    /// - witness: `tests::chains::the_chain_budget_counts_the_empty_shape_the_point_and_each_chain`
+    #[inline]
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref catalogue) => catalogue.homs.len() == catalogue.shapes.len().saturating_mul(catalogue.shapes.len())
+            && catalogue.classes.len() == catalogue.shapes.len()
+            && catalogue.shapes.len() <= usize::from(budget)
+            && catalogue.shapes.iter().all(|shape| shape.size() <= bound && Family::Chains.holds(shape) == Membership::Inside),
+        Err(ShapeObstruction::PastTheBudget { counted }) => usize::from(counted) == usize::from(budget).saturating_add(1),
+        Err(_) => true,
+    })]
+    pub fn chains_within(
+        bound: ShapeSize,
+        budget: ShapeBudget,
+    ) -> Result<Self, ShapeObstruction>
+    {
+        let mut shapes = Vec::new();
+        let mut candidate = Shape::default();
+        let mut length = 0_usize;
+        while candidate.size() <= bound {
+            if shapes.len() == usize::from(budget) {
+                return Err(ShapeObstruction::PastTheBudget {
+                    counted: ClassCount::from(shapes.len().saturating_add(1)),
+                });
             }
-            shapes.push(chain);
+            shapes.push(candidate);
+            candidate = if length == 0 {
+                Shape::from_ends(EdgeCount::from(1_usize), Vec::new())?
+            }
+            else {
+                Shape::chain(EdgeCount::from(length))?
+            };
             length = length.saturating_add(1);
         }
-        shapes.retain(|shape| shape.size() <= bound);
         let reach = Degree::top(&shapes);
         Ok(Self::of(Family::Chains, reach, shapes))
     }

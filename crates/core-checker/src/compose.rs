@@ -22,6 +22,9 @@
 //! synthesised as the chain written with `then` is, so the kernel replays
 //! the terms that chain gives it.
 //!
+//! The chains take a budget ([`chain_budget`]): a stratum whose catalogue
+//! holds more chains is refused by the budget's name, never left to run.
+//!
 //! # Level two
 //!
 //! `compose[n, k](chain(m, (a₁, …, aₘ)), cells)` names the level-two shape
@@ -66,6 +69,12 @@
 //!   filler over the same shape agree by syntax. Reversal: a whisker
 //!   `math.path` writes as `ap`, if the two whiskers are related by a stated
 //!   conversion.
+//! - **A budget on the chains.** The chain catalogue's cost grows with the
+//!   chains it holds faster than any stratum a check waits on: a bound holding
+//!   the 7-chain certifies in under half a second, one holding the 8-chain in
+//!   eight seconds. The budget refuses the stratum by name before its catalogue
+//!   is built. Reversal: the chains' Segal condition decided by the spine,
+//!   without the catalogue's enumeration.
 //!
 //! # References
 //!
@@ -93,6 +102,7 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
 use gandr_theory_sites::Level;
 use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::Wreath;
 use gandr_theory_sites::WreathShape;
 use gandr_theory_sites::fills;
@@ -142,10 +152,11 @@ pub enum Endpoint
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a 3-chain at degree 5 over bound 7 is admitted. A degree
-///   past the catalogue, a chain past the bound, a chain past the degree and
-///   the chain of no cell are each refused by name. One cell at an uncertified
-///   stratum is admitted. The whisker at degree 4 over bound 9 is admitted, and
-///   refused past its degree and past its bound.
+///   past the catalogue, a chain past the bound, a chain past the degree, the
+///   chain of no cell and a bound past the chain budget are each refused by
+///   name. One cell at an uncertified stratum is admitted. The whisker at
+///   degree 4 over bound 9 is admitted, and refused past its degree and past
+///   its bound.
 /// - witness: `compose::tests::a_composite_refuses_each_defect_by_name`
 /// - witness: `compose::tests::one_cell_reads_no_stratum`
 /// - witness: `compose::tests::a_level_two_shape_is_read_at_level_two`
@@ -182,11 +193,7 @@ pub fn admit(
                 return Ok(shape);
             }
             let stratum = strata
-                .certified(
-                    &Family::Chains,
-                    written,
-                    gandr_theory_sites::ShapeBudget::EVERY,
-                )
+                .certified(&Family::Chains, written, chain_budget())
                 .map_err(|stratum| CheckRefusal::ComposeUncertified { at, stratum })?;
             if !stratum.catalogue().shapes().contains(&shape)
                 || Degree::of(&shape) > stratum.degree()
@@ -220,6 +227,22 @@ pub fn admit(
         return Err(not_a_shape);
     }
     Ok(outer)
+}
+
+/// The chain shapes a composite's catalogue may hold before its stratum is
+/// refused: the empty shape, the point and the chains to seven cells.
+///
+/// economy: the chains at bound 15, to the 7-chain, certify degree 13 in under
+/// half a second; bound 17 adds the 8-chain and takes eight seconds; bound 19
+/// runs past half an hour. The budget refuses bound 17 at its tenth shape,
+/// before any hom set is built.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn chain_budget() -> ShapeBudget
+{
+    ShapeBudget::from(9_usize)
 }
 
 /// The outer endpoints of `cells`, one per vertex of `shape`, when they fill

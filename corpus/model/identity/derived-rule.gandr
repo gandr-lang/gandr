@@ -85,3 +85,12 @@ def invMulParity() -> Path(Bit, One, One) {
   run law <- Group.invMul(parityGroup);
   law(One, Zero)
 }
+
+/// `transport` over the derived rule, completion's filler, reduces to its
+/// base: the rule computes to `here`, as any decided cell does.
+def overDerived(
+  M : Bit => Type,
+  v : M(One)
+) -> Path(M(One), transport(\b. M(b), invMulParity(), v), v) {
+  here(v)
+}
