@@ -9,8 +9,9 @@
 //! [`Store::deref`] reads it back. [`Store::write_tree`] admits a record tree
 //! to the record plane and writes its nodes, and [`Store::records`] is that
 //! plane, for opening a stored root. [`Store::set_root`] names a pointer under
-//! the roots lock, reading the roots again first so a second store over the
-//! same directory loses none of its own.
+//! the roots lock: it reads what another store over the same directory named
+//! since, then appends its own naming to the roots journal, so a naming costs
+//! amortised constant time and loses no other store's root.
 
 use core::num::NonZeroU64;
 use std::io;
@@ -34,6 +35,7 @@ use gandr_storage_values::cam_deref;
 
 use crate::plane::ChunkDirectory;
 use crate::plane::NodeDirectory;
+use crate::roots::Kept;
 use crate::roots::RootName;
 use crate::roots::Roots;
 
@@ -45,6 +47,54 @@ const NODES: &str = "nodes";
 
 /// The file a change to a store's roots holds locked.
 const ROOTS_LOCK: &str = "roots.lock";
+
+/// How a store holds its roots lock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Hold
+{
+    /// Beside other readers, to read the roots.
+    Shared,
+    /// Alone, to change them.
+    Alone,
+}
+
+/// The roots lock of the store at `root`, held as `hold` says until the file
+/// returned closes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the lock file stands at `root`, held shared or alone
+///   as `hold` says, for as long as the returned file is open.
+/// - provides: the lock every reading and naming of the roots holds.
+/// - fails: [`StoreError::Io`] when the lock file cannot be opened or locked.
+/// - panics: none.
+/// - executable: none — the lock is the file system's.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two stores over one directory keep each other's roots.
+/// - witness: `tests::store::two_stores_over_one_directory_keep_each_other_s_roots`
+fn locked(
+    root: &Path,
+    hold: Hold,
+) -> Result<std::fs::File, StoreError>
+{
+    let path = root.join(ROOTS_LOCK);
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|error| StoreError::io(&path, &error))?;
+    let held = match hold {
+        Hold::Shared => lock.lock_shared(),
+        Hold::Alone => lock.lock(),
+    };
+    held.map_err(|error| StoreError::io(&path, &error))?;
+    Ok(lock)
+}
 
 /// A value the store commits: a canonical value that names its own codec.
 ///
@@ -219,8 +269,9 @@ pub struct Store
     chunks: ChunkDirectory,
     /// The record plane.
     nodes: NodeDirectory,
-    /// The named roots, as the store last read or wrote them.
-    roots: Roots,
+    /// The named roots, as the store last read or wrote them, and where its
+    /// reading of them stands.
+    roots: Kept,
 }
 
 impl Store
@@ -237,11 +288,13 @@ impl Store
     /// - requires: nothing.
     /// - ensures: on success `root`, `root/chunks` and `root/nodes` stand as
     ///   directories, every object each holds is listed, and the roots are
-    ///   those the roots file names, or none when it stands nowhere.
+    ///   those the roots tree and the journal over it name, read under the
+    ///   roots lock shared, or none when no roots file stands.
     /// - provides: the one way a consumer reaches the storage tier on disk.
-    /// - fails: [`StoreError::Io`] when a directory cannot be made or listed or
-    ///   the roots file cannot be read, [`StoreError::Record`] and
-    ///   [`StoreError::Roots`] when the roots do not read back.
+    /// - fails: [`StoreError::Io`] when a directory cannot be made or listed,
+    ///   or the lock, the roots file or the journal cannot be used, and
+    ///   [`StoreError::Record`] and [`StoreError::Roots`] when the roots do not
+    ///   read back.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     ///
@@ -258,8 +311,10 @@ impl Store
     pub fn open(root: &Path) -> Result<Self, StoreError>
     {
         let chunks = ChunkDirectory::open(root.join(CHUNKS))?;
-        let nodes = NodeDirectory::open(root.join(NODES))?;
-        let roots = Roots::read(root, &nodes)?;
+        let mut nodes = NodeDirectory::open(root.join(NODES))?;
+        let lock = locked(root, Hold::Shared)?;
+        let roots = Kept::read(root, &mut nodes)?;
+        drop(lock);
         Ok(Self {
             root: root.to_path_buf(),
             chunks,
@@ -410,7 +465,7 @@ impl Store
     #[must_use]
     pub const fn roots(&self) -> &Roots
     {
-        &self.roots
+        self.roots.roots()
     }
 
     /// Name `pointer` by `name`, whatever `name` named before.
@@ -418,23 +473,29 @@ impl Store
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the roots read again under the roots lock, with
-    ///   `name` naming `pointer`, are written and are the store's roots, so
+    ///   `name` naming `pointer`, stand on disk and are the store's roots, so
     ///   every other root a store over the same directory set stands too.
     /// - provides: the one way a root changes.
     /// - fails: [`StoreError::Io`] when the lock or a file cannot be used, and
     ///   the faults of reading and writing the roots.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
+    /// - intension: the naming reads the entries other stores journaled since
+    ///   this store last read, and appends one; it builds the whole roots tree
+    ///   only after as many namings as the tree holds roots, so it costs
+    ///   amortised constant time.
     ///
     /// # Errors
     /// As above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a root set reads back after reopening, a second
-    ///   setting of one name replaces it, and two stores over one directory
-    ///   keep each other's roots.
+    ///   setting of one name replaces it, two stores over one directory keep
+    ///   each other's roots, and namings one at a time leave far fewer nodes
+    ///   than namings.
     /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
     /// - witness: `tests::store::two_stores_over_one_directory_keep_each_other_s_roots`
+    /// - witness: `tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081`
     #[inline]
     pub fn set_root(
         &mut self,
@@ -442,18 +503,9 @@ impl Store
         pointer: ContentPtr,
     ) -> Result<(), StoreError>
     {
-        let path = self.root.join(ROOTS_LOCK);
-        let lock = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
-            .map_err(|error| StoreError::io(&path, &error))?;
-        lock.lock().map_err(|error| StoreError::io(&path, &error))?;
-        self.nodes.list()?;
-        let roots = Roots::read(&self.root, &self.nodes)?.with(name, pointer);
-        roots.write(&self.root, &mut self.nodes)?;
-        self.roots = roots;
+        let lock = locked(&self.root, Hold::Alone)?;
+        self.roots
+            .name(&self.root, &mut self.nodes, name, pointer)?;
         drop(lock);
         Ok(())
     }

@@ -16,8 +16,8 @@
 //! # Boundaries
 //!
 //! An object another process writes after this store opened is not listed and
-//! loads as unknown; the roots are listed again before each change, under the
-//! roots lock.
+//! loads as unknown until it is learned by its name: a reading of the roots
+//! learns the nodes of a tree another store wrote, and lists nothing.
 //!
 //! # References
 //!
@@ -177,7 +177,7 @@ where
     /// - requires: nothing.
     /// - ensures: every object the plane held is held as it was, and each file
     ///   of the directory named by an identity it did not hold is listed.
-    /// - provides: the reading the roots take again under their lock.
+    /// - provides: the plane's reading as the store opens.
     /// - fails: [`StoreError::Io`] when the directory cannot be listed.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
@@ -186,9 +186,8 @@ where
     /// [`StoreError::Io`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two stores over one directory each set a root, and
-    ///   both stand after reopening.
-    /// - witness: `tests::store::two_stores_over_one_directory_keep_each_other_s_roots`
+    /// - hypothesis: L3 — a committed value loads after reopening.
+    /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     pub fn list(&mut self) -> Result<(), StoreError>
     {
         let entries =
@@ -205,6 +204,35 @@ where
             });
         }
         Ok(())
+    }
+
+    /// Hold `name` as filed and unread where the plane holds nothing under
+    /// it, as listing the directory would once its file stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every object the plane held is held as it was, and a name it
+    ///   did not hold is held as filed and unread, so its first load reads its
+    ///   file.
+    /// - provides: the reading of an object another store wrote, by its name
+    ///   alone.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the objects are a map.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second store reads the roots tree a first wrote
+    ///   after both opened.
+    /// - witness: `tests::store::two_stores_keep_each_other_s_roots_across_a_fold_4081`
+    pub fn learn(
+        &mut self,
+        name: Name,
+    )
+    {
+        let _held = self.objects.entry(name).or_insert_with(|| Object::Filed {
+            read: OnceCell::new(),
+            standing: Cell::new(Standing::Unrefused),
+        });
     }
 
     /// The bytes held under `name`: taken, or read from its file the first
@@ -274,12 +302,14 @@ where
     }
 
     /// Take `bytes` under `name`, to be written by the next
-    /// [`Directory::write`], unless the plane already holds `name` unrefused.
+    /// [`Directory::write`], unless the plane already holds `name` unrefused
+    /// and readable.
     ///
     /// # Specification
     /// - requires: `bytes` are verified as the object `name` names.
-    /// - ensures: a name the plane held unrefused keeps what it held; another,
-    ///   or one a load refused, is held as `bytes` and pending.
+    /// - ensures: a name the plane held unrefused, and pending or not yet found
+    ///   unreadable, keeps what it held; another, or one a load refused or
+    ///   could not read, is held as `bytes` and pending.
     /// - provides: the insertion both plane traits make.
     /// - fails: never.
     /// - panics: none.
@@ -297,7 +327,11 @@ where
     )
     {
         match self.objects.get(&name) {
-            Some(&Object::Filed { ref standing, .. }) if standing.get() == Standing::Refused => {},
+            Some(&Object::Filed {
+                ref standing,
+                ref read,
+            }) if standing.get() == Standing::Refused || read.get().is_some_and(Result::is_err) => {
+            },
             Some(_) => return,
             None => {},
         }
@@ -503,13 +537,16 @@ impl NodeDirectory
         Directory::open(path).map(Self)
     }
 
-    /// List what the directory holds since, as [`Directory::list`] does.
+    /// Hold `hash` as filed and unread, as [`Directory::learn`] does.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn list(&mut self) -> Result<(), StoreError>
+    pub(crate) fn learn(
+        &mut self,
+        hash: NodeHash,
+    )
     {
-        self.0.list()
+        self.0.learn(hash);
     }
 
     /// Write each pending node, as [`Directory::write`] does.

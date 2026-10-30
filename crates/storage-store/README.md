@@ -18,7 +18,7 @@
 
 **Why.** The package lock, the build layer and the kernel's verdict cache each need a store on disk, and each opening the storage crates on its own would split one key space into three. The planes keep a persistent backend out of themselves, so the backend lives here, beside them.
 
-**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. An insertion is held in memory and written by the operation that made it, published through `gandr-core-publish` as a temporary file renamed into place; a load reads the file once and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots` and changed under `roots.lock`.
+**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. An insertion is held in memory and written by the operation that made it, published through `gandr-core-publish` as a temporary file renamed into place; a load reads the file once and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots`, and a journal of the namings since, `roots.journal`, both changed under `roots.lock`. A naming appends one entry, and the journal folds into the tree once it holds as many entries as the tree holds roots, so a naming costs amortised constant time.
 
 ## References
 
@@ -32,7 +32,7 @@
 - `Store::open` makes the directory and its planes where they are missing and lists what they hold.
 - `Store::commit` commits a `Stored` value under the store's chunking profile and the value's own codec identity, and returns its `ContentPtr`; `Store::deref` reads it back.
 - `Store::write_tree` admits a record tree to the record plane; `Store::records` is the plane, a `BlockStore`, for opening a stored root and proving against it.
-- `Store::set_root` names a pointer by a `RootName`, reading the roots again under the lock so two stores over one directory keep each other's; `Store::roots` reads them.
+- `Store::set_root` names a pointer by a `RootName` in amortised constant time, reading under the lock what another store over the same directory named since, so two stores keep each other's roots; `Store::roots` reads them.
 - `StoreError` names the file system's faults by path, and carries each plane's own refusal, a chunk or node changed on disk among them.
 
 ## Expected features
@@ -55,7 +55,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | ----- | ------ |
 | The facade's layer, its wall, references | [`src/lib.rs`](src/lib.rs) |
 | The two planes on disk and their pending writes | [`plane`](src/plane.rs) |
-| Named roots as a record tree | [`roots`](src/roots.rs) |
+| Named roots as a record tree and a journal of the namings since | [`roots`](src/roots.rs) |
 | The facade, its profile and its faults | [`store`](src/store.rs) |
 
 ## License
