@@ -10,7 +10,8 @@
 //! directory, renamed onto its name, so a reader never meets half an object,
 //! and two writers of one object write the same bytes. Every load verifies
 //! what it read, so bytes changed on disk are refused by the plane's own
-//! fault.
+//! fault. A refused object stands for no name, so the next insertion of that
+//! name takes its bytes and writes them over the file.
 //!
 //! # Boundaries
 //!
@@ -25,6 +26,7 @@
 //!   the writer it publishes through.
 
 use alloc::collections::BTreeMap;
+use core::cell::Cell;
 use core::cell::OnceCell;
 use std::io;
 use std::path::PathBuf;
@@ -90,12 +92,31 @@ pub struct Image<'bytes>(pub &'bytes [u8]);
 #[derive(Clone, Copy, Debug)]
 pub struct FileName<'text>(pub &'text str);
 
+/// Whether a load refused a filed object's bytes as not the object its name
+/// names.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Standing
+{
+    /// No load refused the bytes.
+    #[default]
+    Unrefused,
+    /// A load refused the bytes, so the next insertion of the name writes the
+    /// object afresh.
+    Refused,
+}
+
 /// One object of a plane.
 #[derive(Debug)]
 enum Object
 {
     /// Named by a file of the directory, read on its first load.
-    Filed(OnceCell<Result<Box<[u8]>, io::ErrorKind>>),
+    Filed
+    {
+        /// The file's bytes as first read.
+        read: OnceCell<Result<Box<[u8]>, io::ErrorKind>>,
+        /// Whether a load refused them.
+        standing: Cell<Standing>,
+    },
     /// Taken by an insertion and not written yet.
     Pending(Box<[u8]>),
 }
@@ -178,10 +199,10 @@ where
             else {
                 continue;
             };
-            let _held = self
-                .objects
-                .entry(name)
-                .or_insert_with(|| Object::Filed(OnceCell::new()));
+            let _held = self.objects.entry(name).or_insert_with(|| Object::Filed {
+                read: OnceCell::new(),
+                standing: Cell::new(Standing::Unrefused),
+            });
         }
         Ok(())
     }
@@ -212,7 +233,7 @@ where
         match self.objects.get(&name) {
             None => Maybe::Absent(unheld::Absent::Unlisted),
             Some(&Object::Pending(ref bytes)) => Maybe::Present(Image(bytes)),
-            Some(&Object::Filed(ref read)) => read
+            Some(&Object::Filed { ref read, .. }) => read
                 .get_or_init(|| {
                     std::fs::read(self.path.join(name.to_string()))
                         .map(Vec::into_boxed_slice)
@@ -225,20 +246,49 @@ where
         }
     }
 
+    /// Mark the filed object under `name` refused, so the next
+    /// [`Directory::take`] of `name` writes it afresh.
+    ///
+    /// # Specification
+    /// - requires: a load refused the bytes [`Directory::bytes`] gave for
+    ///   `name` as not the object `name` names.
+    /// - ensures: a filed object under `name` stands refused; a pending one, or
+    ///   none, is as it was.
+    /// - provides: the refusal a later insertion reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the standing is a cell the plane's insertion reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chunk changed on disk is refused, committed again
+    ///   and read back after reopening.
+    /// - witness: `tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074`
+    fn refuse(
+        &self,
+        name: Name,
+    )
+    {
+        if let Some(&Object::Filed { ref standing, .. }) = self.objects.get(&name) {
+            standing.set(Standing::Refused);
+        }
+    }
+
     /// Take `bytes` under `name`, to be written by the next
-    /// [`Directory::write`], unless the plane already holds `name`.
+    /// [`Directory::write`], unless the plane already holds `name` unrefused.
     ///
     /// # Specification
     /// - requires: `bytes` are verified as the object `name` names.
-    /// - ensures: a name the plane held keeps what it held; another is held as
-    ///   `bytes` and pending.
+    /// - ensures: a name the plane held unrefused keeps what it held; another,
+    ///   or one a load refused, is held as `bytes` and pending.
     /// - provides: the insertion both plane traits make.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a committed value derefs before and after reopening.
+    /// - hypothesis: L3 — a committed value derefs before and after reopening,
+    ///   and a refused chunk is written afresh by the next commit.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
+    /// - witness: `tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074`
     #[spec(ensures: self.objects.contains_key(&name))]
     fn take(
         &mut self,
@@ -246,8 +296,10 @@ where
         bytes: Image<'_>,
     )
     {
-        if self.objects.contains_key(&name) {
-            return;
+        match self.objects.get(&name) {
+            Some(&Object::Filed { ref standing, .. }) if standing.get() == Standing::Refused => {},
+            Some(_) => return,
+            None => {},
         }
         let _taken = self
             .objects
@@ -286,7 +338,10 @@ where
                     return Err(StoreError::from(fault));
                 }
                 let written = core::mem::take(bytes);
-                *object = Object::Filed(OnceCell::from(Ok(written)));
+                *object = Object::Filed {
+                    read: OnceCell::from(Ok(written)),
+                    standing: Cell::new(Standing::Unrefused),
+                };
             }
         }
         Ok(())
@@ -403,7 +458,8 @@ impl ChunkStore for ChunkDirectory
     ///   list, or whose file cannot be read, is unknown.
     /// - provides: the value plane's read half on disk.
     /// - fails: [`ValueError::UnknownChunk`], and [`verify_chunk_image`]'s
-    ///   refusals for bytes changed on disk.
+    ///   refusals for bytes changed on disk, which mark the chunk refused so
+    ///   its next insertion writes it afresh.
     /// - panics: none.
     ///
     /// # Errors
@@ -414,6 +470,7 @@ impl ChunkStore for ChunkDirectory
     ///   image changed on disk is refused by its digest.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::a_chunk_changed_on_disk_is_refused_by_its_digest`
+    /// - witness: `tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|chunk| chunk.digest() == digest))]
     fn load(
@@ -426,6 +483,7 @@ impl ChunkStore for ChunkDirectory
             return Err(ValueError::UnknownChunk { digest });
         };
         verify_chunk_image(StoredChunkRef::new(digest, ChunkImage::from(bytes)))
+            .inspect_err(|_refusal| self.0.refuse(digest))
     }
 }
 
@@ -503,7 +561,8 @@ impl BlockStore for NodeDirectory
     ///   or whose file cannot be read, is unknown.
     /// - provides: the record plane's verified load on disk.
     /// - fails: [`RecordTreeError::UnknownNode`], and [`verify_stored_node`]'s
-    ///   refusals for bytes changed on disk.
+    ///   refusals for bytes changed on disk, which mark the node refused so its
+    ///   next insertion writes it afresh.
     /// - panics: none.
     ///
     /// # Errors
@@ -525,7 +584,7 @@ impl BlockStore for NodeDirectory
             return Err(RecordTreeError::UnknownNode { hash });
         };
         let node = StoredNode::new(hash, EncodedNode::from(bytes));
-        verify_stored_node(node)?;
+        verify_stored_node(node).inspect_err(|_refusal| self.0.refuse(hash))?;
         Ok(node)
     }
 }

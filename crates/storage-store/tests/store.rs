@@ -239,6 +239,43 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
     );
 }
 
+/// A chunk a read refused by its digest is written afresh by the next commit
+/// of its value, and a store opened later derefs the value back (#4074).
+#[test]
+fn a_refused_chunk_is_written_afresh_by_the_next_commit_4074()
+{
+    let root = scratch(Path::new("rewritten"));
+    let value = labels(Count(3));
+    let pointer = Store::open(&root)
+        .expect("the store opens")
+        .commit(&value)
+        .expect("the value commits");
+    let file = root.join("chunks").join(pointer.digest().to_string());
+    let mut bytes = std::fs::read(&file).expect("the chunk's file reads");
+    let last = bytes.last_mut().expect("a chunk has bytes");
+    *last ^= 0xFF_u8;
+    std::fs::write(&file, &bytes).expect("the chunk's file is changed");
+    let mut reopened = Store::open(&root).expect("the store opens again");
+    assert!(
+        matches!(
+            reopened.deref::<Labels>(pointer),
+            Err(StoreError::Value(ValueError::DigestMismatch { .. }))
+        ),
+        "the changed chunk is refused by its digest"
+    );
+    assert_eq!(
+        reopened.commit(&value),
+        Ok(pointer),
+        "the value commits again"
+    );
+    let fresh = Store::open(&root).expect("the store opens a third time");
+    assert_eq!(
+        fresh.deref::<Labels>(pointer),
+        Ok(value),
+        "the chunk is written afresh, and the value derefs back"
+    );
+}
+
 /// A written record tree's root opens from the record plane of a store
 /// opened later.
 #[test]
