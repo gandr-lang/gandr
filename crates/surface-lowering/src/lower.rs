@@ -11156,10 +11156,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.identity_call(site, operation, cursor);
         }
         if let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(stratum) = self.ua_head(site, head)?
+            && let Maybe::Present((former, stratum)) = self.stratum_head(site, head)?
         {
             let _head = cursor.operands();
-            return self.ua_call(site, stratum, cursor);
+            return match former {
+                ua::Stratified::Ua => self.ua_call(site, stratum, cursor),
+                ua::Stratified::Compose => self.compose_call(site, stratum, cursor),
+            };
         }
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(derivation) = self.generic_head(site, head)?

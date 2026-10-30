@@ -4777,7 +4777,7 @@ enum Frame
     /// bridge rewrote it to.
     Rewritten
     {
-        /// The split or the session action.
+        /// The split, the session action or the returned composite.
         at: ComputationId,
     },
     /// A received value or an offered choice, awaiting the image of what
@@ -6383,7 +6383,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Value::SessionRelated { .. } => {
                 return Err(Refusal::MachineInvariant);
             },
-            Value::Returned(computation) => (
+            // A composite crosses as its realisation, which the kernel replays.
+            Value::Returned(computation)
+            | Value::Compose {
+                realised: computation,
+                ..
+            } => (
                 Frame::Returned { at },
                 CoreNode::Term(TermNode::Computation(computation)),
             ),
@@ -6776,6 +6781,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         | Value::Equiv(..)
                         | Value::Univalence(..)
                         | Value::Ua { .. }
+                        | Value::Compose { .. }
                         | Value::SessionRelated { .. }
                         | Value::Stay(_)
                         | Value::Then(..)
@@ -7067,7 +7073,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::ApplicationHead { at, argument },
                 TermNode::Computation(head),
             ),
-            Computation::Return(value) => (Frame::Return { at }, TermNode::Value(value)),
+            // A returned composite crosses as its realisation, the fold that
+            // returns its path, so the kernel replays what the chain written
+            // with `then` gives it.
+            Computation::Return(value) => match self.arena.value(value) {
+                Some(&Value::Compose { realised, .. }) => {
+                    (Frame::Rewritten { at }, TermNode::Computation(realised))
+                },
+                Some(_) | None => (Frame::Return { at }, TermNode::Value(value)),
+            },
             Computation::Force(value) => (Frame::Force { at }, TermNode::Value(value)),
             Computation::Bind(bound, body) => {
                 (Frame::BindBound { at, body }, TermNode::Computation(bound))
@@ -7580,6 +7594,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Equiv(..)
                     | Value::Univalence(..)
                     | Value::Ua { .. }
+                    | Value::Compose { .. }
                     | Value::Nested(_)
                     | Value::Run(_)
                     | Value::RecordUpdate { .. }

@@ -1,0 +1,21 @@
+/// `ComposeNotAShape`: a composite whose chain is past its stratum's bound.
+@[ checks ]
+def withinBound(A : Type, x : A, y : A, z : A, w : A, p : Path(A, x, y), q : Path(A, y, z), r : Path(A, z, w)) -> Path(A, x, w) {
+  compose[5, 7](chain(3), (p, q, r))
+}
+
+@[ refuses("ComposeNotAShape") ]
+def pastBound(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  v : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z),
+  r : Path(A, z, w),
+  s : Path(A, w, v)
+) -> Path(A, x, v) {
+  compose[5, 7](chain(4), (p, q, r, s))
+}

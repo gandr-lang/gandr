@@ -351,6 +351,7 @@ fn rebuild(
                     | Value::Equiv(..)
                     | Value::Univalence(..)
                     | Value::Ua { .. }
+                    | Value::Compose { .. }
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Then(..)
@@ -396,6 +397,7 @@ fn rebuild(
                     | Value::Equiv(..)
                     | Value::Univalence(..)
                     | Value::Ua { .. }
+                    | Value::Compose { .. }
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Then(..)

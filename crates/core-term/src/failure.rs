@@ -204,6 +204,9 @@ impl TrackingIssue
     /// A univalence resident not in digits, or a univalence description the
     /// lowering does not read.
     pub const UA_RESIDENT: Self = Self(2661);
+    /// A composite's shape that is no chain: the shapes above dimension one
+    /// the iterated site supplies.
+    pub const ITERATED_SITE: Self = Self(3987);
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);

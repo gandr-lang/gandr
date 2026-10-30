@@ -363,6 +363,7 @@ impl CoreArena
                 | Value::Funext(..)
                 | Value::Equiv(..)
                 | Value::Ua { .. }
+                | Value::Compose { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
@@ -2674,6 +2675,26 @@ impl CoreArena
             sides,
             forward,
             backward,
+        })
+    }
+
+    /// Mint unbiased composition at a stratum, `compose[n, k](Γ, d)`, over
+    /// `cells` in vertex order and the fold `realised` that composes them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_compose(
+        &mut self,
+        composite: crate::compose::Composite,
+        cells: alloc::boxed::Box<[ValueId]>,
+        realised: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Compose {
+            composite,
+            cells,
+            realised,
         })
     }
 

@@ -1155,9 +1155,10 @@ impl<'arena> CoreSource<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each value former read as its [`Former`];
-    ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
-    ///   constructor whose classifier names no data family.
+    /// - ensures: each value former read as its [`Former`], a composite as the
+    ///   returned fold it realises; [`Former::Unreadable`] for an id the arena
+    ///   does not hold, and for a constructor whose classifier names no data
+    ///   family.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1227,7 +1228,7 @@ impl<'arena> CoreSource<'arena>
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
         | (Some(&Value::Nested(body)), Former::Nested(actual))
-        | (Some(&Value::Returned(body)), Former::Returned(actual))
+        | (Some(&(Value::Returned(body) | Value::Compose { realised: body, .. })), Former::Returned(actual))
         | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
         | (Some(&Value::Record(ref fields)), Former::Unit) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
@@ -1366,6 +1367,9 @@ impl<'arena> CoreSource<'arena>
             )]
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
             Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
+            // A composite reads as the fold it realises until the printer
+            // writes the form (#3957).
+            Value::Compose { realised, .. } => Former::Returned(CoreNode::Computation(realised)),
             Value::Ascribe { value, ty } => Former::Annotated {
                 value: CoreNode::Value(value),
                 ty: CoreNode::ValueType(ty),
@@ -2502,6 +2506,7 @@ impl Source for CoreSource<'_>
                 | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
+                | Value::Compose { .. }
                 | Value::Nested(_)
                 | Value::Run(_)
                 | Value::Variable { .. }
@@ -2697,6 +2702,7 @@ impl Source for CoreSource<'_>
                 | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
+                | Value::Compose { .. }
                 | Value::Nested(_)
                 | Value::Run(_)
                 | Value::Variable { .. }

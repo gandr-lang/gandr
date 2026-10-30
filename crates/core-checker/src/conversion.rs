@@ -2199,6 +2199,7 @@ fn convert(
                                         | Value::Equiv(..)
                                         | Value::Univalence(..)
                                         | Value::Ua { .. }
+                                        | Value::Compose { .. }
                                         | Value::Returned(_)
                                         | Value::Nested(_)
                                         | Value::Run(_)

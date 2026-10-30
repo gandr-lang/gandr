@@ -1,0 +1,18 @@
+/// `unbiased-composition`: a chain of paths composes unbiased at a stratum the chain sub-site certifies.
+///
+/// Implemented: `compose[n, k](chain(m), (c₁, …, cₘ))` checks its cells against the chain of `m` cells at the stratum `n` over `k`. The node carries the left-nested `then` fold of its cells, which evaluation runs and the kernel replays.
+///
+/// Not implemented: `then` and `join` read as the composite at the 2-chain (#4057), and the printer writing the form back (#3957).
+///
+/// A composite of reflexivities reduces to reflexivity, so the declaration states it and proves it by reflexivity.
+///
+/// - see: corpus/model/identity/compose-chain.gandr
+
+/// Three reflexivities composed unbiased are reflexivity.
+def composedAtHere(A : Type, x : A) -> Path(
+  Path(A, x, x),
+  compose[5, 7](chain(3), (here(x), here(x), here(x))),
+  here(x)
+) {
+  here(here(x))
+}

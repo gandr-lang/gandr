@@ -102,6 +102,20 @@
 //! word whose endpoints are not spelled, a cell between distinct points,
 //! gives no point to read, and its operations need the written answer again.
 //!
+//! # A composite holds its cells beside their fold
+//!
+//! `compose[n, k](chain(m), d)` composes the cells of `d` unbiased at the
+//! stratum `n` over `k`, its head read as `ua[n, k]`'s is ([`super::ua`]).
+//! `chain` is matched by its spelling and never resolved, as a move's head is.
+//! `m` is written in digits. A tuple's members are the cells in written order,
+//! and any other operand is the one cell. The composite derives as `then`
+//! does. Its path type is read off the answer, or off its first cell's start
+//! and its last cell's end. Its node holds the cells beside their left-nested
+//! `then` fold (`gandr_core_term::compose`). The checker fills the chain with
+//! the cells, and evaluation and the kernel read the fold. The alternative, a
+//! fold the checker builds, leaves evaluation a node it cannot run. Reversal:
+//! a core composition former of its own in both checkers and the kernel.
+//!
 //! # A dependent `transport` reads its motive as a thunked telescope
 //!
 //! Five operands, `transport(+U ((y : A) -> (z : B) -> -F C), p, z₀, q, v)`,
@@ -255,6 +269,8 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::compose::Composite;
+use gandr_core_term::compose::Pasting;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::identity::bi_invertible;
 use gandr_core_term::identity::quasi_inverse;
@@ -262,6 +278,7 @@ use gandr_core_term::session::DialogueMove;
 use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
+use gandr_core_term::ua::Stratum;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldLabel;
@@ -340,6 +357,9 @@ pub(super) const ISO: &str = "Iso";
 
 /// A recorded run's close, a move written as a bare name.
 const CLOSED: &str = "closed";
+
+/// The chain sub-site's pasting shape, as a composite names it.
+const CHAIN: &str = "chain";
 
 /// The record a relation between types abbreviates, or one of the records
 /// nested in it, as a pattern splits it: its labels in written order and
@@ -598,6 +618,14 @@ pub(super) enum Derivation
         function: NodeIndex,
         /// The path mapped.
         path: NodeIndex,
+    },
+    /// `compose[n, k](chain(m), (c₁, …, cₘ))`.
+    Compose
+    {
+        /// The stratum and the chain.
+        composite: Composite,
+        /// The cells in vertex order, in the lowerer's operand store.
+        cells: Stretch,
     },
 }
 
@@ -2344,6 +2372,197 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// Classify `compose[n, k](chain(m), d)` at `site`, its stratum read off
+    /// the head, the cursor at its arguments.
+    ///
+    /// # Specification
+    /// - requires: [`Self::stratum_head`] read `stratum` off the call's head.
+    /// - ensures: the composite of the cells `d` holds over the chain of `m`
+    ///   cells at `stratum`, derived as `then` is: its path type read off the
+    ///   position's answer, or off its first cell's start and its last cell's
+    ///   end. A tuple's members are the cells in written order, and any other
+    ///   operand is the one cell.
+    /// - fails: other than two arguments; a shape that is no `chain(m)` with
+    ///   `m` written in digits; the diagram's own refusal; the derivation's
+    ///   refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::OutOfFragment`] with the arity boundary at the call,
+    /// and the unadmitted boundary at a shape that is no chain or a count out
+    /// of digits; the refusal [`Self::derive`] gives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three cells under a written path answer lower to the
+    ///   composite of their fold; a shape that is no chain, a count out of
+    ///   digits and a call of one argument are each refused by their boundary.
+    /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
+    /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Derived(_))))]
+    pub(super) fn compose_call(
+        &mut self,
+        site: Site,
+        stratum: Stratum,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let start = self.operands.len();
+        let read = arguments(site, &mut cursor, &mut self.operands);
+        let count = self.operands.len().saturating_sub(start);
+        let written = [0_usize, 1_usize]
+            .map(|offset| self.operands.get(start.saturating_add(offset)).copied());
+        self.operands.truncate(start);
+        read?;
+        let (2_usize, [Some(shape), Some(diagram)]) = (count, written)
+        else {
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
+        };
+        let pasting = self.pasting(site, shape)?;
+        let cells = self.diagram(site, diagram)?;
+        self.derive(site, frame, Derivation::Compose {
+            composite: Composite { stratum, pasting },
+            cells,
+        })
+    }
+
+    /// The pasting shape `chain(m)` written at `shape`, an argument of the
+    /// composite at `site`.
+    ///
+    /// The head `chain` is read by its spelling, never resolved, as a move's
+    /// head is: it names a shape of the site, which no binder stands for.
+    ///
+    /// # Specification
+    /// - requires: `shape` is the first argument of the composite at `site`.
+    /// - ensures: the chain of the `m` cells `chain(m)` writes.
+    /// - fails: a shape of any other spelling; `m` written otherwise than in
+    ///   digits; the call's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::OutOfFragment`] at the shape, with the unadmitted
+    /// boundary for a shape that is no chain and for a count out of digits, and
+    /// the arity boundary for a chain of other than one argument.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `chain(3)` reads three cells, and a bare name and a
+    ///   count written as a name are refused.
+    /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
+    /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || self.tree.node(shape).is_some())]
+    fn pasting(
+        &mut self,
+        site: Site,
+        shape: NodeIndex,
+    ) -> Result<Pasting, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(shape)
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ComposePasting)));
+        };
+        let written = Placed::of(shape, node);
+        let at = Site {
+            at: written,
+            ..site
+        };
+        let unadmitted = at.out(FragmentBoundary::Unadmitted(Unbuilt::ComposePasting));
+        let Shape::Form {
+            former: Former::Call,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Err(unadmitted);
+        };
+        let (head, argument) = self.unary_call(at, written)?;
+        if self.name_at(head).as_ref() != CHAIN {
+            return Err(unadmitted);
+        }
+        let Some(counted) = self.tree.node(argument)
+        else {
+            return Err(unadmitted);
+        };
+        Ok(Pasting::Chain {
+            cells: self.resident(at, Placed::of(argument, counted))?,
+        })
+    }
+
+    /// The cells of the diagram written at `diagram`, pushed to the operand
+    /// store in written order.
+    ///
+    /// # Specification
+    /// - requires: `diagram` is the second argument of the composite at `site`.
+    /// - ensures: a tuple's members, each a cell, or the one cell any other
+    ///   operand is, a parenthesised one included; the stretch of the store
+    ///   that holds them, one cell or more.
+    /// - fails: the tuple's own refusal for a member list out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal of the tuple's member list.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple of three paths reads three cells in written
+    ///   order.
+    /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| match ret {
+            | Ok(cells) => cells.start == start && cells.end == self.operands.len() && cells.end > cells.start,
+            | Err(_) => self.operands.len() == start,
+        },
+    )]
+    fn diagram(
+        &mut self,
+        site: Site,
+        diagram: NodeIndex,
+    ) -> Result<Stretch, LoweringRefusal<'source>>
+    {
+        let start = self.operands.len();
+        let tupled = match self.tree.node(diagram) {
+            Some(node)
+                if matches!(
+                    shape_of(self.pbg, node),
+                    Ok(Shape::Form {
+                        former: Former::Parenthesized,
+                        ..
+                    })
+                ) =>
+            {
+                let at = Site {
+                    at: Placed::of(diagram, node),
+                    ..site
+                };
+                let mut scratch = core::mem::take(&mut self.scratch);
+                let read = read_pieces(self.pbg, self.tree, diagram, &mut scratch).and_then(|()| {
+                    let mut list = Cursor::new(&scratch.pieces, node.span());
+                    let mut probe = list.clone();
+                    let _open = probe.tile(TileName::PAREN_OPEN);
+                    let _first = probe.operands();
+                    if let Maybe::Absent(_) = probe.at(TileName::COMMA) {
+                        return Ok(false);
+                    }
+                    arguments(at, &mut list, &mut self.operands)?;
+                    Ok(true)
+                });
+                self.scratch = scratch;
+                read
+            },
+            Some(_) | None => Ok(false),
+        };
+        match tupled {
+            Ok(true) => {},
+            Ok(false) => self.operands.push(diagram),
+            Err(refusal) => {
+                self.operands.truncate(start);
+                return Err(refusal);
+            },
+        }
+        Ok(Stretch {
+            start,
+            end: self.operands.len(),
+        })
+    }
+
     /// Classify the derived operation `derivation`, standing as a computation
     /// at `site` under `frame`.
     ///
@@ -2414,7 +2633,9 @@ impl<'source> Lowerer<'_, 'source>
             None => Stance::Synthesised(
                 match derivation {
                     Derivation::Cong { function, .. } => self.mapped(site, frame, function)?,
-                    Derivation::Back { .. } | Derivation::Then { .. } => Synthesis::Paths,
+                    Derivation::Back { .. }
+                    | Derivation::Then { .. }
+                    | Derivation::Compose { .. } => Synthesis::Paths,
                 },
                 Typings::default(),
             ),
@@ -2436,7 +2657,7 @@ impl<'source> Lowerer<'_, 'source>
                         self.plan(site, Plan::FlowThen(first, second));
                         return Ok(());
                     },
-                    Derivation::Cong { .. } => {
+                    Derivation::Cong { .. } | Derivation::Compose { .. } => {
                         return Err(site.out(FragmentBoundary::Unannotated));
                     },
                     Derivation::Back { .. } => {},
@@ -2452,6 +2673,13 @@ impl<'source> Lowerer<'_, 'source>
             } => {
                 self.read(first, Reading::Value(frame));
                 self.read(second, Reading::Value(frame));
+            },
+            Derivation::Compose { cells, .. } => {
+                for position in cells.start .. cells.end {
+                    if let Some(&cell) = self.operands.get(position) {
+                        self.read(cell, Reading::Value(frame));
+                    }
+                }
             },
         }
         if let Stance::Synthesised(..) = stance {
@@ -2914,6 +3142,19 @@ impl<'source> Lowerer<'_, 'source>
                 Derivation::Back { path } => (path, None, None),
                 Derivation::Cong { path, function } => (path, None, Some(function)),
                 Derivation::Then { first, second } => (first, Some(second), None),
+                // A composite stands from its first cell's start to its last
+                // cell's end.
+                Derivation::Compose { cells, .. } => {
+                    match self.operands.get(cells.start .. cells.end) {
+                        Some(&[only]) => (only, None, None),
+                        Some(&[first, .., last]) => (first, Some(last), None),
+                        Some(&[]) | None => {
+                            self.collected
+                                .offer(at, site.out(FragmentBoundary::Unannotated));
+                            continue;
+                        },
+                    }
+                },
             };
             let synthesis = match (synthesis, function) {
                 (Synthesis::Thunked { declared }, Some(function)) => {
@@ -3807,6 +4048,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
+        let mut composed = Vec::new();
         let (first, second) = match derived.derivation {
             Derivation::Back { path } => match self.value_at(path) {
                 Maybe::Present(path) => (path, path),
@@ -3821,6 +4063,22 @@ impl<'source> Lowerer<'_, 'source>
                 (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                     return Maybe::Absent(reason);
                 },
+            },
+            Derivation::Compose { cells, .. } => {
+                for &cell in self
+                    .operands
+                    .get(cells.start .. cells.end)
+                    .unwrap_or_default()
+                {
+                    match self.value_at(cell) {
+                        Maybe::Present(value) => composed.push(value),
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    }
+                }
+                match (composed.first(), composed.last()) {
+                    (Some(&first), Some(&last)) => (first, last),
+                    _ => return Maybe::Absent(lowered::Absent::Unminted),
+                }
             },
         };
         let mut mark = sink.arena.watermark();
@@ -3868,6 +4126,17 @@ impl<'source> Lowerer<'_, 'source>
             (Answered::Path, Derivation::Then { .. }, _) => {
                 gandr_core_term::identity::then(sink.arena, carrier, left, first, second)
             },
+            // The composite returns the node the checker reads, its cells and
+            // the fold they realise.
+            (Answered::Path, Derivation::Compose { composite, .. }, _) => {
+                let composite = gandr_core_term::compose::compose(
+                    sink.arena,
+                    composite,
+                    (carrier, left),
+                    &composed,
+                );
+                sink.arena.computation_return(composite)
+            },
             (Answered::Path, Derivation::Cong { function, .. }, _) => {
                 // A lambda's body stands under its one binder, as the motive's
                 // right endpoint stands under the motive's, so the motive
@@ -3902,7 +4171,11 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             (Answered::Path | Answered::Flow, Derivation::Back { .. }, Maybe::Absent(_))
-            | (Answered::Flow, Derivation::Then { .. } | Derivation::Cong { .. }, _) => {
+            | (
+                Answered::Flow,
+                Derivation::Then { .. } | Derivation::Cong { .. } | Derivation::Compose { .. },
+                _,
+            ) => {
                 record_since(
                     sink,
                     mark,
@@ -4175,9 +4448,15 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<Stood, lowered::Absent>
     {
-        let transported = match derivation {
-            Derivation::Back { path } | Derivation::Cong { path, .. } => path,
-            Derivation::Then { first, .. } => first,
+        let cells = match derivation {
+            Derivation::Compose { cells, .. } => self.operands.get(cells.start .. cells.end),
+            Derivation::Back { .. } | Derivation::Then { .. } | Derivation::Cong { .. } => None,
+        };
+        let transported = match (derivation, cells) {
+            (Derivation::Back { path } | Derivation::Cong { path, .. }, _) => path,
+            (Derivation::Then { first, .. }, _)
+            | (Derivation::Compose { .. }, Some(&[first, ..])) => first,
+            (Derivation::Compose { .. }, _) => return Maybe::Absent(lowered::Absent::Unminted),
         };
         let Maybe::Present(read) = self.identity_of(transported, typings.transported, frame, sink)
         else {
@@ -4197,6 +4476,19 @@ impl<'source> Lowerer<'_, 'source>
                 right: self
                     .identity_of(second, typings.onward, frame, sink)
                     .map(|onward| onward.right),
+            },
+            // A composite stands from its first cell's start to its last
+            // cell's end, the one cell its own path.
+            (Derivation::Compose { .. }, _) => Stood {
+                answered: Answered::Path,
+                carrier: read.carrier,
+                left: read.left,
+                right: match cells {
+                    Some(&[_, .., last]) => self
+                        .identity_of(last, typings.onward, frame, sink)
+                        .map(|onward| onward.right),
+                    Some(_) | None => Maybe::Present(read.right),
+                },
             },
             (
                 Derivation::Cong {

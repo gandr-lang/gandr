@@ -1075,7 +1075,7 @@ pub fn endpoints(
 /// - hypothesis: L3 — a stay rides as the identity at any motive.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
-fn convertible(
+pub fn convertible(
     context: &CheckingContext<'_>,
     left: ValueId,
     right: ValueId,
@@ -1175,6 +1175,7 @@ pub fn covariant(
                 | Value::Equiv(..)
                 | Value::Univalence(..)
                 | Value::Ua { .. }
+                | Value::Compose { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)

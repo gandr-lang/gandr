@@ -1,0 +1,31 @@
+error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound of its stratum
+   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:20:3
+   │
+ 8 │ ┌ def pastBound(
+ 9 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+10 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+11 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+12 │ │   z : A,
+   │ │   ─ checked; while checking the body of this function; binds z : A
+13 │ │   w : A,
+   │ │   ─ checked; while checking the body of this function; binds w : A
+14 │ │   v : A,
+   │ │   ─ checked against `(v : A) -> Path(A, x, y) -> Path(A, y, z) -> Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds v : A
+15 │ │   p : Path(A, x, y),
+   │ │   ─ checked against `Path(A, x, y) -> Path(A, y, z) -> Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds p : Path(A, x, y)
+16 │ │   q : Path(A, y, z),
+   │ │   ─ checked against `Path(A, y, z) -> Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds q : Path(A, y, z)
+17 │ │   r : Path(A, z, w),
+   │ │   ─ checked against `Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds r : Path(A, z, w)
+18 │ │   s : Path(A, w, v)
+   │ │   ─ checked against `Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds s : Path(A, w, v)
+19 │ │ ) -> Path(A, x, v) {
+20 │ │   compose[5, 7](chain(4), (p, q, r, s))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a chain past its stratum
+21 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ╰ note: `pastBound` is refused with ComposeNotAShape, as its expectation states

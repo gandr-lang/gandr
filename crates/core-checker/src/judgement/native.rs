@@ -104,6 +104,7 @@ impl Machine<'_, '_>
             | &Value::Equiv(..)
             | &Value::Univalence(..)
             | &Value::Ua { .. }
+            | &Value::Compose { .. }
             | &Value::SessionRelated { .. }
             | &Value::Stay(_)
             | &Value::Then(..)
@@ -182,6 +183,7 @@ impl Machine<'_, '_>
                 | &Value::Equiv(..)
                 | &Value::Univalence(..)
                 | &Value::Ua { .. }
+                | &Value::Compose { .. }
                 | &Value::SessionRelated { .. }
                 | &Value::Stay(_)
                 | &Value::Then(..)

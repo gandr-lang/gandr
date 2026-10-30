@@ -518,6 +518,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::NotOver { .. }
         | CheckRefusal::UaUncertified { .. }
         | CheckRefusal::UaInequivalent { .. }
+        | CheckRefusal::ComposeUncertified { .. }
+        | CheckRefusal::ComposeNotAShape { .. }
+        | CheckRefusal::ComposeDoesNotFill { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::ShapeMismatch { .. }
         | CheckRefusal::NotSynthesisable { .. }

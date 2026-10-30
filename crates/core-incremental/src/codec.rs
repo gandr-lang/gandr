@@ -2002,6 +2002,23 @@ where
             write_index(writer, forward)?;
             write_index(writer, backward)?;
         },
+        ContentNode::Compose {
+            composite,
+            ref cells,
+            realised,
+        } => {
+            writer.tag(Tag(0x8A));
+            writer.count(Count(usize::from(composite.stratum.degree)))?;
+            writer.count(Count(usize::from(composite.stratum.bound)))?;
+            match composite.pasting {
+                gandr_core_term::compose::Pasting::Chain { cells: count } => {
+                    writer.tag(Tag(0));
+                    writer.count(Count(usize::from(count)))?;
+                },
+            }
+            write_index(writer, realised)?;
+            write_indices(writer, cells)?;
+        },
         ContentNode::Transport(path, value) => {
             writer.tag(Tag(0x44));
             write_index(writer, path)?;
@@ -3023,6 +3040,129 @@ fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaD
     })
 }
 
+/// Write the pasting a composite names: a tag naming its shape, then its cell
+/// count.
+///
+/// # Specification
+/// - ensures: the chain's tag, then its cell count.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite and its refusal survive persistence with
+///   their pasting.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn write_pasting<Out>(
+    writer: &mut Writer<'_, Out>,
+    pasting: gandr_core_term::compose::Pasting,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match pasting {
+        gandr_core_term::compose::Pasting::Chain { cells } => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(cells)))
+        },
+    }
+}
+
+/// Read a pasting [`write_pasting`] wrote.
+///
+/// # Specification
+/// - ensures: the pasting the tag names, with its cell count.
+/// - fails: an unknown tag or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite and its refusal survive persistence with
+///   their pasting.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_pasting(reader: &mut Reader<'_>) -> Result<gandr_core_term::compose::Pasting, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(gandr_core_term::compose::Pasting::Chain {
+            cells: gandr_core_term::compose::CellCount::from(reader.count()?.0),
+        }),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write why a composite's cells do not fill its pasting.
+///
+/// # Specification
+/// - ensures: a tag naming the defect, then the counts, vertex, profile or wire
+///   it carries.
+/// - fails: an unrepresentable count.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of a diagram survives persistence under its
+///   own name.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn write_unfilled<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: gandr_theory_sites::Unfilled,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    use gandr_theory_sites::Unfilled;
+    let (tag, counts): (u8, &[usize]) = match defect {
+        Unfilled::Cells { vertices, cells } => (0, &[usize::from(vertices), usize::from(cells)]),
+        Unfilled::Profile { vertex, found } => (1, &[
+            usize::from(vertex),
+            usize::from(found.inputs),
+            usize::from(found.outputs),
+        ]),
+        Unfilled::Wire { wire } => (2, &[usize::from(wire)]),
+    };
+    writer.tag(Tag(tag));
+    for &count in counts {
+        writer.count(Count(count))?;
+    }
+    Ok(())
+}
+
+/// Read a diagram defect [`write_unfilled`] wrote.
+///
+/// # Specification
+/// - ensures: the defect the tag names, with its counts.
+/// - fails: an unknown tag or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each defect of a diagram survives persistence under its
+///   own name.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_unfilled(reader: &mut Reader<'_>) -> Result<gandr_theory_sites::Unfilled, CodecError>
+{
+    use gandr_theory_sites::PortCount;
+    use gandr_theory_sites::Profile;
+    use gandr_theory_sites::Unfilled;
+    let tag = reader.tag()?.0;
+    let mut count = || reader.count().map(|count| count.0);
+    Ok(match tag {
+        0 => Unfilled::Cells {
+            vertices: count()?.into(),
+            cells: count()?.into(),
+        },
+        1 => Unfilled::Profile {
+            vertex: count()?.into(),
+            found: Profile {
+                inputs: PortCount::from(count()?),
+                outputs: PortCount::from(count()?),
+            },
+        },
+        2 => Unfilled::Wire {
+            wire: count()?.into(),
+        },
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
 /// Write an endpoint: its fork's site, then its side.
 ///
 /// # Specification
@@ -3923,6 +4063,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                     | ContentNode::Univalence(..) => tag == 0x4F,
                     | ContentNode::TelescopeTransport { .. } => tag == 0x4B,
                     | ContentNode::Ua { .. } => tag == 0x4C,
+                    | ContentNode::Compose { .. } => tag == 0x8A,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -4620,6 +4761,23 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 sides: alloc::sync::Arc::new(gandr_core_term::ua::Sides { source, target }),
                 forward: read_index(reader)?,
                 backward: read_index(reader)?,
+            }
+        },
+        0x8A => {
+            let stratum = gandr_core_term::ua::Stratum {
+                degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+                bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+            };
+            let pasting = match reader.tag()?.0 {
+                0 => gandr_core_term::compose::Pasting::Chain {
+                    cells: gandr_core_term::compose::CellCount::from(reader.count()?.0),
+                },
+                _ => return Err(CodecError::Corrupt),
+            };
+            ContentNode::Compose {
+                composite: gandr_core_term::compose::Composite { stratum, pasting },
+                realised: read_index(reader)?,
+                cells: read_indices(reader)?,
             }
         },
         _ => return Err(CodecError::Corrupt),
@@ -6945,6 +7103,21 @@ where
             write_site(writer, at)?;
             write_ua_defect(writer, defect)?;
         },
+        Refusal::ComposeUncertified { at, stratum } => {
+            writer.tag(Tag(99));
+            write_site(writer, at)?;
+            write_stratum_defect(writer, stratum)?;
+        },
+        Refusal::ComposeNotAShape { at, pasting } => {
+            writer.tag(Tag(100));
+            write_site(writer, at)?;
+            write_pasting(writer, pasting)?;
+        },
+        Refusal::ComposeDoesNotFill { at, defect } => {
+            writer.tag(Tag(101));
+            write_site(writer, at)?;
+            write_unfilled(writer, defect)?;
+        },
         Refusal::UnenclosedRun { at } => {
             writer.tag(Tag(55));
             write_site(writer, at)?;
@@ -7723,6 +7896,18 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             at: read_site(reader)?,
             defect: read_ua_defect(reader)?,
         },
+        99 => Refusal::ComposeUncertified {
+            at: read_site(reader)?,
+            stratum: read_stratum_defect(reader)?,
+        },
+        100 => Refusal::ComposeNotAShape {
+            at: read_site(reader)?,
+            pasting: read_pasting(reader)?,
+        },
+        101 => Refusal::ComposeDoesNotFill {
+            at: read_site(reader)?,
+            defect: read_unfilled(reader)?,
+        },
         55 => Refusal::UnenclosedRun {
             at: read_site(reader)?,
         },
@@ -8124,7 +8309,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+ContentNode::Compose { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
@@ -8507,6 +8692,9 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::NotOver { .. }
             | Refusal::UaUncertified { .. }
             | Refusal::UaInequivalent { .. }
+            | Refusal::ComposeUncertified { .. }
+            | Refusal::ComposeNotAShape { .. }
+            | Refusal::ComposeDoesNotFill { .. }
             | Refusal::NotSynthesisable { .. }
             | Refusal::UnknownConstant { .. }
             | Refusal::OutOfFragment { .. }

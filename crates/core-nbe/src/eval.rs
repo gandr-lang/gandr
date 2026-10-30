@@ -4602,8 +4602,15 @@ fn step_value(
         // returns, or for the stuck computation when it does not return. A
         // nested computation and a written run evaluate the same way: only the
         // checker meets them, before elaboration, and it reads one standing in
-        // a dependent position by what it returns.
-        Value::Returned(computation) | Value::Nested(computation) | Value::Run(computation) => {
+        // a dependent position by what it returns. A composite is what its
+        // realisation returns, so a composite of decided cells is decided.
+        Value::Returned(computation)
+        | Value::Nested(computation)
+        | Value::Run(computation)
+        | Value::Compose {
+            realised: computation,
+            ..
+        } => {
             machine.tasks.push(Task::Returned);
             machine.tasks.push(Task::Comp {
                 term: computation,

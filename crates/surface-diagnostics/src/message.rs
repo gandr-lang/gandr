@@ -1007,6 +1007,15 @@ fn checked(
                 f.write_str("a `ua` translator returns no element of its target code")
             },
         },
+        CheckRefusal::ComposeUncertified { .. } => {
+            f.write_str("`compose` needs a stratum the chain sub-site certifies")
+        },
+        CheckRefusal::ComposeNotAShape { .. } => {
+            f.write_str("`compose` needs a chain within the degree and the bound of its stratum")
+        },
+        CheckRefusal::ComposeDoesNotFill { .. } => {
+            f.write_str("`compose` needs its cells to meet end to end along the chain")
+        },
         CheckRefusal::UnenclosedRun { .. } => f.write_str(
             "a computation read as a value runs before the computation around it, and none \
              stands around this one",

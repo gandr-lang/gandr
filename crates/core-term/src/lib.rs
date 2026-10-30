@@ -207,6 +207,7 @@ extern crate alloc;
 mod arena;
 pub mod children;
 mod classifier;
+pub mod compose;
 mod context;
 pub mod control;
 mod definition;

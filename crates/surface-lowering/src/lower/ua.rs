@@ -15,6 +15,8 @@
 //! that profile in written order. The form stands as a value, as `equiv` does,
 //! and lowers to [`gandr_core_term::Value::Ua`]; `gandr_core_checker`'s `ua`
 //! module certifies the stratum, checks the translators and derives the path.
+//! The head `compose[n, k]` writes its stratum the same way, and
+//! [`Lowerer::stratum_head`] reads both.
 //!
 //! # Decisions
 //!
@@ -82,18 +84,35 @@ mod tests;
 /// The name the head of a univalence statement instantiates.
 const UA: &str = "ua";
 
+/// The name the head of an unbiased composite instantiates.
+const COMPOSE: &str = "compose";
+
+/// The former a stratum head instantiates.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Stratified
+{
+    /// `ua[n, k]`: univalence at the stratum.
+    Ua,
+    /// `compose[n, k]`: unbiased composition at the stratum.
+    Compose,
+}
+
 impl<'source> Lowerer<'_, 'source>
 {
-    /// The stratum a call's head writes, when it is `ua[n, k]`.
+    /// The former and the stratum a call's head writes, when it is `ua[n, k]`
+    /// or `compose[n, k]`.
     ///
     /// # Specification
     /// - requires: `head` is the head operand of the call at `site`.
-    /// - ensures: present for an instantiation whose head is the name `ua`,
-    ///   free at the call, with two number literals between its brackets: `n`
-    ///   the degree and `k` the bound; absent for any other head, so a descent
-    ///   claim `f[<]` and a binder named `ua` read as before.
-    /// - fails: an instantiation of `ua` with other than two residents, a
-    ///   resident that is no decimal number, and the name resolution's own
+    /// - ensures: present for an instantiation whose head is the name `ua` or
+    ///   `compose`, free at the call, with two number literals between its
+    ///   brackets: `n` the degree and `k` the bound; absent for any other head,
+    ///   so a descent claim `f[<]` and a binder named `ua` read as before.
+    /// - fails: an instantiation of either name with other than two residents,
+    ///   a resident that is no decimal number, and the name resolution's own
     ///   refusals.
     /// - panics: none.
     ///
@@ -106,16 +125,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a statement at degree one and bound four lowers to
     ///   that stratum; a resident that is a type and a single resident are
     ///   refused by their own boundaries; a later member named `ua` is a
-    ///   forward reference at the name.
+    ///   forward reference at the name; a composite reads its own stratum.
     /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
     /// - witness: `lower::ua::tests::a_later_member_named_ua_is_a_forward_reference`
+    /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.tree.node(head.node).is_some())]
-    pub(super) fn ua_head(
+    pub(super) fn stratum_head(
         &mut self,
         site: Site,
         head: Placed,
-    ) -> Result<Maybe<Stratum, spelled::Absent>, LoweringRefusal<'source>>
+    ) -> Result<Maybe<(Stratified, Stratum), spelled::Absent>, LoweringRefusal<'source>>
     {
         let unspelled = Ok(Maybe::Absent(spelled::Absent::Unspelled));
         let Some(node) = self.tree.node(head.node)
@@ -160,9 +180,11 @@ impl<'source> Lowerer<'_, 'source>
             )
         });
         let name = self.name_at(named);
-        if !is_name || name.as_ref() != UA {
-            return unspelled;
-        }
+        let former = match name.as_ref() {
+            UA if is_name => Stratified::Ua,
+            COMPOSE if is_name => Stratified::Compose,
+            _ => return unspelled,
+        };
         // The name inside the instantiation is owned by no declaration until
         // the call around it is read, so it resolves at the call's node, at
         // its own bytes: a later member named `ua` is then a forward
@@ -183,14 +205,14 @@ impl<'source> Lowerer<'_, 'source>
                 instantiated.out(FragmentBoundary::Arity(OperandCount::from(residents.len())))
             );
         };
-        Ok(Maybe::Present(Stratum {
+        Ok(Maybe::Present((former, Stratum {
             degree: self.resident(site, degree)?,
             bound: self.resident(site, bound)?,
-        }))
+        })))
     }
 
-    /// The count a resident of `ua[n, k]` writes: a degree or a catalogue
-    /// bound.
+    /// The count a resident of `ua[n, k]` or `compose[n, k]` writes, a degree
+    /// or a catalogue bound, or the cell count of the chain `chain(m)` names.
     ///
     /// A resident is read in the instantiation sort, which holds a type where
     /// a literal is written; a resident whose whole text is decimal digits is
@@ -209,8 +231,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the witnesses' literals read as their values and a
     ///   name in their place is refused.
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
+    /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| self.text_at(resident).as_ref().parse::<usize>().map(Count::from).as_ref() == Ok(value)))]
-    fn resident<Count>(
+    pub(super) fn resident<Count>(
         &self,
         site: Site,
         resident: Placed,
@@ -236,7 +259,7 @@ impl<'source> Lowerer<'_, 'source>
     /// head, the cursor at its arguments.
     ///
     /// # Specification
-    /// - requires: [`Self::ua_head`] read `stratum` off the call's head.
+    /// - requires: [`Self::stratum_head`] read `stratum` off the call's head.
     /// - ensures: plans univalence at `stratum` between the descriptions `a`
     ///   and `b` name, the records `f` and `g` read as values.
     /// - fails: other than four arguments; a description refused as

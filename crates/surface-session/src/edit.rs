@@ -2668,6 +2668,7 @@ enum Agreement
                 }
                 ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
                 ContentNode::KeptType { region: left, .. } => matches!(*new, ContentNode::KeptType { region: right, .. } if left == right),
+                ContentNode::Compose { composite: left, .. } => matches!(*new, ContentNode::Compose { composite: right, .. } if left == right),
                 _ if children(old).next().is_none() => old == new,
                 ContentNode::Dialogue(ref left) => matches!(*new, ContentNode::Dialogue(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(()))),
                 ContentNode::Recorded(ref left) => matches!(*new, ContentNode::Recorded(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.carrying(()) == right.carrying(()))),
@@ -2928,6 +2929,14 @@ fn agreement(
             &ContentNode::KeptType { region: left, .. },
             &ContentNode::KeptType { region: right, .. },
         ) => left == right,
+        (
+            &ContentNode::Compose {
+                composite: left, ..
+            },
+            &ContentNode::Compose {
+                composite: right, ..
+            },
+        ) => left == right,
         (&ContentNode::Memory(ref left), &ContentNode::Memory(ref right)) => {
             left.shape() == right.shape()
         },
@@ -3168,6 +3177,9 @@ fn read(
                         == stratum && other == sides
                     )
                 }
+                Value::Compose { composite, ref cells, .. } => {
+                    matches!(ret, ContentNode::Compose { composite: found, cells: ref other, .. } if found == composite && other.len() == cells.len())
+                }
                 Value::PathEquiv { ref evidence, .. } => {
                     matches!(
                         ret, ContentNode::PathEquiv { evidence : ref found, .. } if found
@@ -3365,6 +3377,18 @@ where
                 sides: alloc::sync::Arc::clone(sides),
                 forward,
                 backward: child(Root::Value(backward)),
+            }
+        },
+        Some(&Value::Compose {
+            composite,
+            ref cells,
+            realised,
+        }) => {
+            let realised = child(Root::Computation(realised));
+            ContentNode::Compose {
+                composite,
+                cells: cells.iter().map(|&cell| child(Root::Value(cell))).collect(),
+                realised,
             }
         },
         Some(&Value::PathEquiv {

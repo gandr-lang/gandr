@@ -20,15 +20,21 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_core_term::compose::CellCount;
+use gandr_core_term::compose::Composite;
+use gandr_core_term::compose::Pasting;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::session::DialogueMove;
 use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
+use gandr_core_term::ua::Stratum;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_sites::Degree;
+use gandr_theory_sites::ShapeSize;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::FragmentBoundary;
@@ -3015,4 +3021,146 @@ fn a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073()
         );
     }
     assert_accepted(&judged(&module, &mut arena));
+}
+
+/// The numbers `compose[n, k](chain(m), d)` writes: `n`, `k` and `m`.
+#[derive(Clone, Copy, Debug)]
+struct Written(usize, usize, usize);
+
+/// The composite `compose[n, k](chain(m), d)` at the stratum and chain its
+/// head and shape write.
+///
+/// # Specification
+/// trivial.
+fn chain_at(Written(degree, bound, cells): Written) -> Composite
+{
+    Composite {
+        stratum: Stratum {
+            degree: Degree::from(degree),
+            bound: ShapeSize::from(bound),
+        },
+        pasting: Pasting::Chain {
+            cells: CellCount::from(cells),
+        },
+    }
+}
+
+#[test]
+fn a_composite_lowers_to_its_cells_and_their_fold()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def composed(A : Type, x : A, y : A, z : A, w : A, p : Path(A, x, y), q : Path(A, y, z), r : Path(A, z, w)) -> Path(A, x, w) {\n  compose[5, 7](chain(3), (p, q, r))\n}\n",
+            "def single(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(A, x, y) {\n  compose[0, 0](chain(1), (p))\n}\n",
+            "def decided(A : Type, x : A) -> Path(Path(A, x, x), compose[5, 7](chain(3), (here(x), here(x), here(x))), here(x)) {\n  here(here(x))\n}\n",
+        )),
+        &mut arena,
+    );
+    let composite = |name: &str| {
+        let tail = arena.computation(tail_of(&module, &arena, name.into()));
+        let Some(&Computation::Return(returned)) = tail
+        else {
+            panic!("`{name}` returns its composite: {tail:?}");
+        };
+        match arena.value(returned) {
+            Some(&Value::Compose {
+                composite,
+                ref cells,
+                realised,
+            }) => (composite, cells.to_vec(), realised),
+            other => panic!("`{name}` returns a composite: {other:?}"),
+        }
+    };
+    let cells_of = |cells: &[gandr_core_term::ValueId]| -> Vec<Option<Value>> {
+        cells
+            .iter()
+            .map(|&cell| arena.value(cell).cloned())
+            .collect()
+    };
+
+    let (held, cells, realised) = composite("composed");
+    assert_eq!(
+        held,
+        chain_at(Written(5, 7, 3)),
+        "the head and the shape it writes"
+    );
+    assert!(
+        cells_of(&cells) == [2_u32, 1_u32, 0_u32].map(|index| Some(variable(index.into()))),
+        "the tuple's members are the cells in written order"
+    );
+    let Some(&Computation::PathTransport { path, value, .. }) = arena.computation(realised)
+    else {
+        panic!("three cells realise as a transport");
+    };
+    assert!(
+        arena.value(path) == Some(&variable(0_u32.into())),
+        "the fold transports along the last cell"
+    );
+    let Some(&Value::Returned(inner)) = arena.value(value)
+    else {
+        panic!("the fold transports the composite of the first two cells");
+    };
+    assert!(
+        matches!(
+            arena.computation(inner),
+            Some(&Computation::PathTransport { path, value, .. })
+                if arena.value(path) == Some(&variable(1_u32.into()))
+                    && arena.value(value) == Some(&variable(2_u32.into()))
+        ),
+        "the first two cells compose as `p then q`"
+    );
+
+    let (held, cells, realised) = composite("single");
+    assert_eq!(held, chain_at(Written(0, 0, 1)), "the chain of one cell");
+    assert!(
+        cells_of(&cells) == [Some(variable(0_u32.into()))],
+        "a parenthesised cell is the one cell"
+    );
+    assert!(
+        matches!(
+            arena.computation(realised),
+            Some(&Computation::Return(cell)) if arena.value(cell) == Some(&variable(0_u32.into()))
+        ),
+        "one cell realises as itself returned"
+    );
+
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_composite_the_syntax_cannot_read_is_refused()
+{
+    let telescope = "(A : Type, x : A, m : Integer, p : Path(A, x, x))";
+    let source = format!(
+        "def unary{telescope} -> Path(A, x, x) {{\n  compose[1, 3](chain(1))\n}}\n\
+         def cycled{telescope} -> Path(A, x, x) {{\n  compose[1, 3](cycle(1), p)\n}}\n\
+         def counted{telescope} -> Path(A, x, x) {{\n  compose[1, 3](1, p)\n}}\n\
+         def named{telescope} -> Path(A, x, x) {{\n  compose[1, 3](chain(m), p)\n}}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let boundary = |name: &str| match outcome_of(&module, name.into()) {
+        DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. }) => {
+            Some(boundary)
+        },
+        DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_) => None,
+    };
+    assert_eq!(
+        ["unary", "cycled", "counted", "named"].map(boundary),
+        [
+            Some(FragmentBoundary::Arity(OperandCount::from(1_usize))),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::ComposePasting)),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::ComposePasting)),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::UaCount)),
+        ],
+        "a call of one argument, a shape no chain, a bare count and a count named"
+    );
 }

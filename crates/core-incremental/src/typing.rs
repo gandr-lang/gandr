@@ -625,6 +625,30 @@ pub enum Refusal
         /// What the translators fail.
         defect: gandr_core_checker::ua::UaDefect,
     },
+    /// A composite at a stratum the chain sub-site does not certify.
+    ComposeUncertified
+    {
+        /// The `compose`.
+        at: Site,
+        /// Why the stratum is not certified.
+        stratum: gandr_core_checker::ua::StratumDefect,
+    },
+    /// A composite whose pasting is no shape of its certified stratum.
+    ComposeNotAShape
+    {
+        /// The `compose`.
+        at: Site,
+        /// The pasting it names.
+        pasting: gandr_core_term::compose::Pasting,
+    },
+    /// A composite whose cells do not fill its pasting.
+    ComposeDoesNotFill
+    {
+        /// The `compose`.
+        at: Site,
+        /// The first defect of the diagram.
+        defect: gandr_theory_sites::Unfilled,
+    },
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -1501,6 +1525,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::NotOver { at, synthesised, expected } = matched_left_value && let Refusal::NotOver { at: projected, synthesised: ref found, expected: ref wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *found == self.value_type(synthesised) && *wanted == self.value_type(expected) }
  else if let CheckRefusal::UaUncertified { at, stratum } = matched_left_value && let Refusal::UaUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
  else if let CheckRefusal::UaInequivalent { at, defect } = matched_left_value && let Refusal::UaInequivalent { at: projected, defect: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == defect }
+ else if let CheckRefusal::ComposeUncertified { at, stratum } = matched_left_value && let Refusal::ComposeUncertified { at: projected, stratum: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == stratum }
+ else if let CheckRefusal::ComposeNotAShape { at, pasting } = matched_left_value && let Refusal::ComposeNotAShape { at: projected, pasting: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == pasting }
+ else if let CheckRefusal::ComposeDoesNotFill { at, defect } = matched_left_value && let Refusal::ComposeDoesNotFill { at: projected, defect: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == defect }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -1793,6 +1820,18 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 stratum,
             },
             CheckRefusal::UaInequivalent { at, defect } => Refusal::UaInequivalent {
+                at: self.site(ArenaNode::Value(at)),
+                defect,
+            },
+            CheckRefusal::ComposeUncertified { at, stratum } => Refusal::ComposeUncertified {
+                at: self.site(ArenaNode::Value(at)),
+                stratum,
+            },
+            CheckRefusal::ComposeNotAShape { at, pasting } => Refusal::ComposeNotAShape {
+                at: self.site(ArenaNode::Value(at)),
+                pasting,
+            },
+            CheckRefusal::ComposeDoesNotFill { at, defect } => Refusal::ComposeDoesNotFill {
                 at: self.site(ArenaNode::Value(at)),
                 defect,
             },

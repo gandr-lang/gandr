@@ -953,6 +953,31 @@ pub enum CheckRefusal
         /// What the translators fail.
         defect: crate::ua::UaDefect,
     },
+    /// A composite at a stratum the chain sub-site does not certify.
+    ComposeUncertified
+    {
+        /// The `compose`.
+        at: ValueId,
+        /// Why the stratum is not certified.
+        stratum: crate::ua::StratumDefect,
+    },
+    /// A composite whose pasting is no shape of its certified stratum: no
+    /// chain, or one past the bound or the degree.
+    ComposeNotAShape
+    {
+        /// The `compose`.
+        at: ValueId,
+        /// The pasting it names.
+        pasting: gandr_core_term::compose::Pasting,
+    },
+    /// A composite whose cells do not fill its pasting.
+    ComposeDoesNotFill
+    {
+        /// The `compose`.
+        at: ValueId,
+        /// The first defect of the diagram.
+        defect: gandr_theory_sites::Unfilled,
+    },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -1503,7 +1528,7 @@ impl CheckRefusal
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
         | Self::OutOfFragment { former, .. } => ret == former.judged(),
-        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::ComposeUncertified { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -1511,7 +1536,7 @@ impl CheckRefusal
         | Self::SealSiteRepeated(_)
         | Self::MachineInvariant | Self::TacticRefused { fault: TacticFault::Forged, .. } => matches!(ret, FailureClass::EngineFault),
         | Self::Undecided { .. } | Self::LoopUndecided { .. }
-        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
+        | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. } | Self::ComposeNotAShape { .. } | Self::ComposeDoesNotFill { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
@@ -1545,6 +1570,8 @@ impl CheckRefusal
             | Self::RoundTripDistinct { .. }
             | Self::NotOver { .. }
             | Self::UaInequivalent { .. }
+            | Self::ComposeNotAShape { .. }
+            | Self::ComposeDoesNotFill { .. }
             | Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -1629,7 +1656,9 @@ impl CheckRefusal
             Self::UncertifiedStratum { .. } => {
                 FailureClass::Unimplemented(TrackingIssue::LIST_TAIL)
             },
-            Self::UaUncertified { .. } => FailureClass::Unimplemented(TrackingIssue::UNIVALENCE),
+            Self::UaUncertified { .. } | Self::ComposeUncertified { .. } => {
+                FailureClass::Unimplemented(TrackingIssue::UNIVALENCE)
+            },
             Self::RideUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::RIDE),
             Self::ForwardUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FORWARD),
             Self::UnboundIndex { .. }
@@ -1861,7 +1890,10 @@ impl CheckRefusal
             | Self::DialogueUnmatched { .. }
             | Self::DialogueInverted { .. }
             | Self::ForwardUnsupported { .. }
-            | Self::Boundary { .. } => (UNNAMED, UNNAMED),
+            | Self::Boundary { .. }
+            | Self::ComposeUncertified { .. }
+            | Self::ComposeNotAShape { .. }
+            | Self::ComposeDoesNotFill { .. } => (UNNAMED, UNNAMED),
         };
         Compared { expected, found }
     }
