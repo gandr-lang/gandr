@@ -72,10 +72,13 @@ def comm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Path(Circle, Base, Base), p then q, q then p) {
-  back(sect(p then q)) then cong(spin, windHom(q, p)) then cong(
-    spin,
-    plusComm(wind(q), wind(p))
-  ) then back(cong(spin, windHom(p, q))) then sect(q then p)
+  compose[9, 11](chain(5), (
+    back(sect(p then q)),
+    cong(spin, windHom(q, p)),
+    cong(spin, plusComm(wind(q), wind(p))),
+    back(cong(spin, windHom(p, q))),
+    sect(q then p)
+  ))
 }
 
 /// Three loops spun and wound count three (cubical's `test-winding-pos`).

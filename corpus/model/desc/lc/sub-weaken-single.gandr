@@ -30,18 +30,16 @@ pub def subWeakenSingle(
   b : Term,
   a : Term
 ) -> Path(Term, subst(subst(b, Shift(S(Z))), Cons(a, Shift(Z))), b) {
-  substSquare(
-    b,
-    Shift(S(Z)),
-    Cons(a, Shift(Z)),
-    Shift(Z),
-    Shift(Z),
-    fn (n) { weakenSingleAgree(a, n) }
-  )
-    then (substCong(
-      Shift(Z),
-      subst(b, Shift(Z)),
+  compose[5, 7](chain(3), (
+    substSquare(
       b,
-      substId(b, Shift(Z), fn (n) { shiftZeroIsId(n) })
-    ) then substId(b, Shift(Z), fn (n) { shiftZeroIsId(n) }))
+      Shift(S(Z)),
+      Cons(a, Shift(Z)),
+      Shift(Z),
+      Shift(Z),
+      fn (n) { weakenSingleAgree(a, n) }
+    ),
+    substCong(Shift(Z), subst(b, Shift(Z)), b, substId(b, Shift(Z), fn (n) { shiftZeroIsId(n) })),
+    substId(b, Shift(Z), fn (n) { shiftZeroIsId(n) })
+  ))
 }

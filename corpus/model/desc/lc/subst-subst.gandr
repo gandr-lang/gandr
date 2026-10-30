@@ -70,11 +70,11 @@ def substSquareLift(
 ) -> Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
   case n {
     Z => here(Ix(Z)),
-    S(m) => substLookWeakenLift(
-      s1,
-      s2,
-      m
-    ) then (weakenedComposites(s1, s2, u1, u2, h, m) then back(substLookWeakenLift(u1, u2, m)))
+    S(m) => compose[5, 7](chain(3), (
+      substLookWeakenLift(s1, s2, m),
+      weakenedComposites(s1, s2, u1, u2, h, m),
+      back(substLookWeakenLift(u1, u2, m))
+    ))
   }
 }
 

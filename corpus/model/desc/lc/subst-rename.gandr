@@ -64,18 +64,19 @@ def substRenameSquareLift(
 ) -> Path(Term, look(rlook(n, RLift(r)), Lift(s), Z), rename(look(n, Lift(u), Z), RLift(q))) {
   case n {
     Z => here(Ix(Z)),
-    S(m) => lookWeakens(
-      rlook(m, r),
-      s,
-      Z
-    ) then (weakenedSquare(r, s, u, q, h, m) then (renameSquare(
-      look(m, u, Z),
-      q,
-      RShift(S(Z)),
-      RShift(S(Z)),
-      RLift(q),
-      fn (i) { shiftPastLift(q, i) }
-    ) then renameLookWeakens(u, q, m)))
+    S(m) => compose[7, 9](chain(4), (
+      lookWeakens(rlook(m, r), s, Z),
+      weakenedSquare(r, s, u, q, h, m),
+      renameSquare(
+        look(m, u, Z),
+        q,
+        RShift(S(Z)),
+        RShift(S(Z)),
+        RLift(q),
+        fn (i) { shiftPastLift(q, i) }
+      ),
+      renameLookWeakens(u, q, m)
+    ))
   }
 }
 
