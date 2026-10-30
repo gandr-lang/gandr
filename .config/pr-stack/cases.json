@@ -3246,5 +3246,109 @@
     "program": "awaited.jq",
     "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": true, "age": 14400 },
     "output": "{\"event\":\"top-stale\",\"exit\":0}"
+  },
+  {
+    "name": "a bottom queued on a merged branch no open pull request heads stands off the trunk, and the landing retargets it (#4168)",
+    "program": "bottom.jq",
+    "args": { "n": 4158, "trunk": "main" },
+    "input": [
+      {
+        "number": 4158,
+        "head": "triage-2-4156-debug-macos",
+        "base": "triage-4058-stall-lane",
+        "created": "2026-10-30T13:50:00Z",
+        "landing": true,
+        "held": false,
+        "stack": 77,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 4159,
+        "head": "program-logic-4112-discharge",
+        "base": "main",
+        "created": "2026-10-30T14:24:33Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":4158,\"base\":\"triage-4058-stall-lane\",\"landing\":true,\"stack\":77}"
+  },
+  {
+    "name": "a bottom on the trunk stands on it, and a member on an open pull request's head is no bottom off the trunk (#4168)",
+    "program": "bottom.jq",
+    "args": { "n": 4159, "trunk": "main" },
+    "input": [
+      {
+        "number": 4159,
+        "head": "program-logic-4112-discharge",
+        "base": "main",
+        "created": "2026-10-30T14:24:33Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 4160,
+        "head": "triage-4160-upper",
+        "base": "program-logic-4112-discharge",
+        "created": "2026-10-30T14:30:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "a stack waits on a carried pull request queued on the trunk, and lands past one queued on a merged branch, naming it (#4168)",
+    "program": "carried.jq",
+    "input": {
+      "open": [
+        {
+          "number": 4158,
+          "head": "triage-2-4156-debug-macos",
+          "base": "triage-4058-stall-lane",
+          "created": "2026-10-30T13:50:00Z",
+          "landing": true,
+          "held": false,
+          "stack": 77,
+          "bot": false,
+          "hold": null
+        },
+        {
+          "number": 4159,
+          "head": "program-logic-4112-discharge",
+          "base": "main",
+          "created": "2026-10-30T14:24:33Z",
+          "landing": false,
+          "held": false,
+          "stack": null,
+          "bot": false,
+          "hold": null
+        },
+        {
+          "number": 4162,
+          "head": "core-4162-lower",
+          "base": "main",
+          "created": "2026-10-30T14:00:00Z",
+          "landing": true,
+          "held": false,
+          "stack": null,
+          "bot": false,
+          "hold": null
+        }
+      ],
+      "trunk": "main",
+      "held": [4162, 4158]
+    },
+    "output": "{\"wait\":[4162],\"off\":[{\"number\":4158,\"base\":\"triage-4058-stall-lane\"}]}"
   }
 ]
