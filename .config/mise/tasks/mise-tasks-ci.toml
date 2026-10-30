@@ -3952,6 +3952,7 @@ usage = '''
 arg "<number>" help="pull request number"
 flag "--timeout <seconds>" default="10800" help="give up after this many seconds"
 '''
+tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -4120,13 +4121,13 @@ red_entry() {
 # The first failed job of this pull request's own queue entry run started
 # since this watch began, if any (#3745). The queue removes an entry whose
 # merge-group run failed, and the entry is gone by the time the removal is
-# read, so `red_entry` has no head to ask: the run is found by the queue's
-# own branch for this pull request.
+# read, so `red_entry` has no head to ask: `queue-runs.jq` finds the run by
+# the queue's own branch for this pull request, under `jq`, since `gh api`
+# takes no `--arg` (#4225).
 red_queue_run() {
   local run_id job
   for run_id in $(gh api "repos/$repo/actions/runs?event=merge_group&per_page=30" \
-    --jq --arg prefix "gh-readonly-queue/$trunk/pr-$number-" --arg since "$started" \
-    '.workflow_runs[] | select((.head_branch | startswith($prefix)) and .conclusion == "failure" and .created_at >= $since) | .id'); do
+    | jq -r --arg prefix "gh-readonly-queue/$trunk/pr-$number-" --arg since "$started" -f "$root/.config/pr-stack/queue-runs.jq"); do
     job=$(gh run view "$run_id" -R "$repo" --json jobs --jq '[.jobs[] | select(.conclusion == "failure") | .name] | first // empty')
     if [[ -n "$job" ]]; then printf '%s' "$job"; return; fi
   done
