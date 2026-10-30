@@ -5204,6 +5204,57 @@ fn a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933()
     );
 }
 
+/// #3972: no checker elaborates below a type, so a thunk over a call stays
+/// there, even where a call reads its arguments as expressions or a thunk's
+/// body is written as one: a call inside a type's call and a call inside the
+/// thunk a path type's endpoint writes keep their arguments' thunks.
+#[test]
+fn no_thunk_is_left_out_below_a_type_3972()
+{
+    let names = [Name::from("kept"), Name::from("twice"), Name::from("pass")];
+    let mut core = CoreArena::new();
+    let suspended = |core: &mut CoreArena| {
+        let one = integer(core, Sign::NonNegative, Written("1"));
+        let twice = core.value_constant(ConstantIndex::from(1_usize));
+        let twice = core.computation_force(twice);
+        let doubled = core.computation_application(twice, one);
+        core.value_thunk(doubled)
+    };
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    let kept = core.computation_force(kept);
+    let pass = core.value_constant(ConstantIndex::from(2_usize));
+    let pass = core.computation_force(pass);
+    let doubled = suspended(&mut core);
+    let passed = core.computation_application(pass, doubled);
+    let passed = core.value_returned(passed);
+    let nested = core.computation_application(kept, passed);
+    let nested = core.value_returned(nested);
+    let nested = core.value_type_element(nested, Level::zero());
+    let number = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(number);
+    let carrier = core.value_type_thunk(returns_integer);
+    let doubled = suspended(&mut core);
+    let left = core.computation_application(kept, doubled);
+    let left = core.value_thunk(left);
+    let doubled = suspended(&mut core);
+    let right = core.computation_application(kept, doubled);
+    let right = core.value_thunk(right);
+    let endpoints = core.value_type_path(carrier, left, right);
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(nested))),
+        faithful(Written("kept(pass(thunk { twice(1) }))")),
+        "a call inside a type's call keeps its argument's thunk"
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(endpoints))),
+        faithful(Written(
+            "Path(+U (-F Integer), thunk { kept(thunk { twice(1) }) }, thunk { kept(thunk { twice(1) }) })"
+        )),
+        "a call inside an endpoint's thunk keeps its argument's thunk"
+    );
+}
+
 /// A lambda ascribed a type is written without the thunk the checker
 /// inserts over it, as the formatter writes it, while an ascribed thunk over
 /// a call keeps its braces (#3872).
@@ -6285,6 +6336,63 @@ fn a_typed_bind_spells_as_written()
     );
 }
 
+/// #3943: a lambda whose parameter states its type spells as written, `fn
+/// (a : Integer) { … }`, never as the bind the lowering holds the argument
+/// to that type by; a bind holding another value, or one whose binder the
+/// body reads, is a statement the body writes. A path type between such
+/// lambdas reads them as written too.
+#[test]
+fn a_stated_parameter_spells_as_written_3943()
+{
+    let names = [Name::from("held")];
+    let mut core = CoreArena::new();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(integer_type);
+    let lambda = |core: &mut CoreArena, holds: ValueId, reads: u32| {
+        let pure_holds = core.computation_return(holds);
+        let ascribed = core.computation_ascribe(pure_holds, returns_integer);
+        let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(reads));
+        let returned = core.computation_return(read);
+        let bound = core.computation_bind(ascribed, returned);
+        core.computation_lambda(bound)
+    };
+    let parameter = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let stated = lambda(&mut core, parameter, 1_u32);
+    let held = core.value_constant(ConstantIndex::from(0_usize));
+    let holding = lambda(&mut core, held, 1_u32);
+    let reading = lambda(&mut core, parameter, 0_u32);
+    let arrow = core.comp_type_arrow(integer_type, returns_integer);
+    let carrier = core.value_type_thunk(arrow);
+    let left = core.value_thunk(stated);
+    let right = core.value_thunk(stated);
+    let path = core.value_type_path(carrier, left, right);
+    let source = CoreSource::new(&core, &names);
+    let computation = |id| Root::Computation(CoreNode::Computation(id));
+    agrees(&core, &names, CoreNode::Computation(stated));
+    assert_eq!(
+        spelled(&source, computation(stated)),
+        faithful(Written("fn (a : Integer) { a }")),
+        "a stated parameter is written with its type"
+    );
+    assert_eq!(
+        spelled(&source, computation(holding)),
+        faithful(Written("fn (a) { run b : Integer <- pure held ; a }")),
+        "a bind holding another value is a statement"
+    );
+    assert_eq!(
+        spelled(&source, computation(reading)),
+        faithful(Written("fn (a) { run b : Integer <- pure a ; b }")),
+        "a bind whose binder the body reads is a statement"
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(path))),
+        faithful(Written(
+            "Path(+U (Integer -> -F Integer), fn (a : Integer) { a }, fn (a : Integer) { a })"
+        )),
+        "a path between stated lambdas writes their parameters' types"
+    );
+}
+
 /// A typed bind returned where a type reads a value, as a `cong`'s image is
 /// at a point under a binder that states its type, is the block of its
 /// statements: an argument takes no statement bare (#3942). The block's
@@ -6337,6 +6445,46 @@ fn a_returned_typed_bind_in_an_argument_is_a_block_3942()
             );
         }
     }
+}
+
+/// #3972: a statement outside its block is a block of its own wherever it
+/// stands: a call's argument and a path's endpoint take the statements an
+/// ascription over a bind writes between braces, never bare and never
+/// between parentheses.
+#[test]
+fn a_statement_outside_its_block_is_a_block_3972()
+{
+    let mut core = CoreArena::new();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let ascribed = |core: &mut CoreArena| {
+        let one = integer(core, Sign::NonNegative, Written("1"));
+        let pure_one = core.computation_return(one);
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = core.computation_return(bound);
+        let statements = core.computation_bind(pure_one, returned);
+        let returns_integer = core.comp_type_returner(integer_type);
+        let ascribed = core.computation_ascribe(statements, returns_integer);
+        core.value_nested(ascribed)
+    };
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    let kept = core.computation_force(kept);
+    let argument = ascribed(&mut core);
+    let called = core.computation_application(kept, argument);
+    let held = core.value_constant(ConstantIndex::from(0_usize));
+    let endpoint = ascribed(&mut core);
+    let path = core.value_type_path(integer_type, endpoint, held);
+    let names = [Name::from("kept")];
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(called))).0,
+        "kept({ run a <- pure 1 ; pure a })",
+        "a call's argument takes the statements as a block"
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(path))).0,
+        "Path(Integer, { run a <- pure 1 ; pure a }, kept)",
+        "a path's endpoint takes the statements as a block"
+    );
 }
 
 /// An annotated return spells as the annotated value it lowered from, `(v :

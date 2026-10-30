@@ -547,9 +547,9 @@ fn the_path_composite_moves_both_ways()
     }
 }
 
-/// A derived motive holding a statement formats once as explicit: the
-/// statement's `;` stands against its value, as the formatter lays out a
-/// block, never after the printer's space (#3891).
+/// A derived motive formats once as explicit (#3891). Its lambda's stated
+/// parameter is the binder's type, `fn (c : Path(A, x, y))`, not the
+/// statement the printer once wrote for it (#3943).
 #[test]
 fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
 {
@@ -569,8 +569,8 @@ fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
 ";
     let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        once.contains("<- pure c;\n") || once.contains("<- pure c; "),
-        "the motive's statement ends against its value: {once}"
+        once.contains("fn (c : Path(A, x, y)) {"),
+        "the motive's lambda states its parameter's type: {once}"
     );
     assert_eq!(
         spelled(&grammar, once.as_str(), Form::Explicit, Selection::Every),

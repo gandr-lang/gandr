@@ -8824,11 +8824,11 @@ mod tests
         }
     }
 
-    /// #3801: a `cong` over an annotated thunk prints a type whose thunk
-    /// binds its argument at the parameter's written type. Read back under a
-    /// parameter the type does not name, each `Path` in that bind and in the
-    /// thunk's annotation reprinted one binder off, `Path(?, A, x)` for
-    /// `Path(A, x, y)`; it reprints as printed.
+    /// #3801: a `cong` over an annotated thunk prints a type whose lambda
+    /// states its parameter's written type, `fn (b : Path(A, x, y)) { … }`
+    /// (#3943). Read back under a parameter the type does not name, each
+    /// `Path` in that binder and in the thunk's annotation reprinted one
+    /// binder off, `Path(?, A, x)` for `Path(A, x, y)`; it reprints as printed.
     #[test]
     fn an_annotated_thunk_under_cong_reprints_its_path_types_3801()
     {
@@ -8847,8 +8847,8 @@ mod tests
         assert!(
             reads
                 .iter()
-                .any(|&(ref spelled, _)| spelled.contains("<- pure")),
-            "a printed type binds the thunk's argument at its written type: {reads:?}"
+                .any(|&(ref spelled, _)| spelled.contains(" : Path(A, x, y)) {")),
+            "a printed type's lambda states its parameter's written type: {reads:?}"
         );
         let moved: Vec<_> = reads
             .iter()
