@@ -2158,5 +2158,63 @@
       ]
     },
     "output": "observation due: #50 — mise run debug:test <package> <test>\n50\tdefect\tworkflow: a lane defect"
+  },
+  {
+    "name": "#4056: a seat's lane claims while another lane over the same areas holds a claim its marker names",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage-2",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 60,
+          "title": "workflow: the other seat's claim",
+          "labels": ["kind:defect", "area:workflow", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n\n<!-- claim: lane=triage -->\n",
+          "blocked": null
+        },
+        {
+          "number": 61,
+          "title": "workflow: an unowned defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #61 — mise run debug:test <package> <test>\n61\tdefect\tworkflow: an unowned defect"
+  },
+  {
+    "name": "#4056: the lane a claim's marker names holds it, beside another lane over the same areas",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 60,
+          "title": "workflow: the other seat's claim",
+          "labels": ["kind:defect", "area:workflow", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n\n<!-- claim: lane=triage -->\n",
+          "blocked": null
+        },
+        {
+          "number": 61,
+          "title": "workflow: an unowned defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        }
+      ]
+    },
+    "output": "held: #60 workflow: the other seat's claim"
   }
 ]
