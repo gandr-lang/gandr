@@ -1,5 +1,6 @@
-//! The one issue a drop files, through `gh`, which resolves the repository
-//! from `GH_REPO` or the checkout.
+//! The one issue a drop files, and the one repeated unprocessed uploads file,
+//! through `gh`, which resolves the repository from `GH_REPO` or the
+//! checkout.
 
 use core::fmt;
 use std::process::Command;
@@ -14,8 +15,11 @@ use serde::Deserialize;
 
 use crate::error::GuardError;
 use crate::report::Comparison;
+use crate::report::IssueTitle;
 use crate::report::Standing;
 use crate::report::TITLE_PREFIX;
+use crate::report::UNPROCESSED_PREFIX;
+use crate::report::Unprocessed;
 
 /// The labels a new issue is opened with: a defect of CI, which triage picks
 /// up, kept by the guard as a collector.
@@ -42,18 +46,18 @@ impl fmt::Display for IssueNumber
     }
 }
 
-/// What filing the comparison did.
+/// What filing the comparison or the unprocessed uploads did.
 ///
 /// # Specification
 /// - provides: the line the binary prints after the report.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Filed
 {
-    /// The coverage dropped and no drop issue was open: one was opened, at
-    /// the address `gh` printed.
+    /// No issue under the title's prefix was open: one was opened, at the
+    /// address `gh` printed.
     Opened(String),
-    /// The coverage dropped and a drop issue was open: its title and body
-    /// now state this drop.
+    /// An issue under the title's prefix was open: its title and body now
+    /// state this filing.
     Updated(IssueNumber),
     /// The coverage held: no issue was read or written.
     Untouched,
@@ -87,6 +91,16 @@ struct Listed
     number: u64,
     /// The issue's title.
     title: String,
+}
+
+/// The one open issue a filing keeps, by the prefix of its title.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Collector
+{
+    /// The drop issue, under [`TITLE_PREFIX`].
+    Drop,
+    /// The issue of unprocessed uploads, under [`UNPROCESSED_PREFIX`].
+    Unprocessed,
 }
 
 /// Files `comparison` on the one open drop issue: opened when none is open,
@@ -124,7 +138,75 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
     if comparison.standing() == Standing::Steady {
         return Ok(Filed::Untouched);
     }
-    let title = comparison.title().to_string();
+    collect(Collector::Drop, &comparison.title(), comparison.to_string())
+}
+
+/// Files `unprocessed` on the one open issue of unprocessed uploads: opened
+/// when none is open, retitled and rewritten when one is.
+///
+/// # Specification
+/// - requires: `gh` on the path, authenticated for the repository with
+///   permission to write issues.
+/// - ensures: the open issue whose title starts with [`UNPROCESSED_PREFIX`]
+///   carries `unprocessed`'s title and body, opened labelled `kind:defect`,
+///   `area:ci` and `collector` if none was open.
+/// - provides: one open issue per repository for uploads Codecov leaves
+///   unprocessed, which obligates triage.
+/// - fails: [`GuardError::Gh`] when a `gh` invocation fails or the listing is
+///   not the JSON this crate reads.
+/// - panics: none.
+/// - executable: none — the outcome is the repository's issue state.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fake `gh` holding no such issue; opening none, or one
+///   under the drop's prefix, changes the recorded invocations.
+/// - witness: `tests::cli::two_unprocessed_uploads_in_a_row_open_their_issue`
+#[inline]
+pub fn file_unprocessed(unprocessed: &Unprocessed) -> Result<Filed, GuardError>
+{
+    collect(
+        Collector::Unprocessed,
+        &unprocessed.title(),
+        unprocessed.to_string(),
+    )
+}
+
+/// Writes `title` and `body` on the one open issue of `collector`, or opens
+/// it.
+///
+/// # Specification
+/// - requires: `gh` on the path, authenticated for the repository with
+///   permission to write issues; `title` starts with `collector`'s prefix.
+/// - ensures: the first open issue whose title starts with `collector`'s prefix
+///   carries `title` and `body` and the `collector` label; when none is open,
+///   one is opened with them, labelled with [`LABELS`].
+/// - provides: the find-or-open both collectors share.
+/// - fails: [`GuardError::Gh`] when a `gh` invocation fails or the listing is
+///   not the JSON this crate reads.
+/// - panics: none.
+/// - executable: none — the outcome is the repository's issue state.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`file()`] and [`file_unprocessed`].
+/// - witness: `tests::cli::a_drop_opens_the_issue`
+/// - witness: `tests::cli::a_second_drop_updates_the_open_issue`
+fn collect(
+    collector: Collector,
+    title: &IssueTitle,
+    body: String,
+) -> Result<Filed, GuardError>
+{
+    let prefix = match collector {
+        Collector::Drop => TITLE_PREFIX,
+        Collector::Unprocessed => UNPROCESSED_PREFIX,
+    };
+    let title = title.to_string();
     let mut list = Command::new("gh");
     list.args([
         "issue",
@@ -134,7 +216,7 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
         "--limit",
         "100",
         "--search",
-        &format!("\"{}\" in:title", TITLE_PREFIX.trim_end()),
+        &format!("\"{}\" in:title", prefix.trim_end()),
         "--json",
         "number,title",
     ]);
@@ -143,7 +225,7 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
         .map_err(|error| GitHubError::unread(&list, error.to_string()))?;
     if let Some(issue) = issues
         .into_iter()
-        .find(|issue| issue.title.starts_with(TITLE_PREFIX))
+        .find(|issue| issue.title.starts_with(prefix))
     {
         run(
             Command::new("gh").args([
@@ -157,7 +239,7 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
                 "--add-label",
                 "collector",
             ]),
-            Feed::Body(Body::from(comparison.to_string())),
+            Feed::Body(Body::from(body)),
         )?;
         return Ok(Filed::Updated(IssueNumber(issue.number)));
     }
@@ -166,6 +248,6 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
     for label in LABELS {
         create.args(["--label", label]);
     }
-    let url = run(&mut create, Feed::Body(Body::from(comparison.to_string())))?;
+    let url = run(&mut create, Feed::Body(Body::from(body)))?;
     Ok(Filed::Opened(url.trim().to_owned()))
 }

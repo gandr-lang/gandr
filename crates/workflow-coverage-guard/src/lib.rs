@@ -3,12 +3,14 @@
 //! than a threshold or the upload covers fewer files.
 //!
 //! - [`codecov`] reads Codecov's public API through `curl`: an upload's totals
-//!   once processed, the upload of `main` before it, and each upload's files.
+//!   once processed, the newest processed upload of `main`, the upload before
+//!   it, and each upload's files.
 //! - [`measure`] computes a coverage as Codecov states it and the points one
 //!   coverage moved from another.
 //! - [`report`] compares the two uploads, sums each crate from its files and
 //!   renders the Markdown the job summary and the issue carry.
-//! - [`github`] keeps the one open drop issue in step through `gh`.
+//! - [`github`] keeps the one open drop issue and the one open issue of
+//!   unprocessed uploads in step through `gh`.
 //!
 //! # Decisions
 //!
@@ -72,5 +74,7 @@ pub use crate::codecov::Wait;
 pub use crate::error::GuardError;
 pub use crate::github::Filed;
 pub use crate::measure::Points;
+pub use crate::report::Badge;
 pub use crate::report::Comparison;
 pub use crate::report::Standing;
+pub use crate::report::Unprocessed;

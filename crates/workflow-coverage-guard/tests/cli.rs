@@ -3,14 +3,15 @@
 //! the path.
 //!
 //! The fake Codecov lists `main`'s uploads as the head `bbbb…`, an upload
-//! `cccc…` still pending, and `aaaa…`, the baseline. `aaaa…` covers crates
-//! `a`, `b` and `gone`; the head covers `a`, `b` and `new`. `FAKE_COVERAGE`
-//! chooses the head's numbers: `drop` (94.50 % to 87.90 %) or `steady`
-//! (94.50 % to 94.60 %). `FAKE_HEAD` set to `pending` keeps the head
-//! processing; `FAKE_LISTING` set to `unlisted` or `nobase` drops the head
-//! or the baseline from the listing; `FAKE_CURL` set to `fail` refuses every
-//! request. The fake `gh`'s issue listing is `FAKE_GH_ISSUES`; it logs every
-//! invocation to `FAKE_GH_LOG` and the last body it was fed to
+//! `cccc…` Codecov left in `error`, `aaaa…`, the baseline, and `dddd…`, the
+//! upload before it. `aaaa…` and `dddd…` cover crates `a`, `b` and `gone`;
+//! the head covers `a`, `b` and `new`. `FAKE_COVERAGE` chooses the head's
+//! numbers: `drop` (94.50 % to 87.90 %) or `steady` (94.50 % to 94.60 %).
+//! `FAKE_HEAD` set to `pending` keeps the head processing; `FAKE_LISTING`
+//! set to `unlisted` or `nobase` drops the head or the baseline from the
+//! listing, and `single` drops `cccc…`; `FAKE_CURL` set to `fail` refuses
+//! every request. The fake `gh`'s issue listing is `FAKE_GH_ISSUES`; it logs
+//! every invocation to `FAKE_GH_LOG` and the last body it was fed to
 //! `FAKE_GH_BODY`, and fails every invocation under `FAKE_GH=fail`.
 //!
 //! The fakes are files of the tree, never written per case: macOS assesses an
@@ -212,20 +213,101 @@ fn a_failing_gh_is_reported_with_its_message()
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
+/// The comparison of `aaaa…` with `dddd…`, which stands in for a head
+/// Codecov has not processed.
+const STOOD_IN: &str = r"Main's coverage moved from 94.40 % at [ddddddd](https://app.codecov.io/github/gandr-lang/gandr/commit/dddddddddddddddddddddddddddddddddddddddd) to 94.50 % at [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa): +0.10 points, against a threshold of 0.50.
+The upload covers 3 files; the one before covered 3.
+
+Steady: within the threshold, no file lost.
+
+<details><summary>1 crate moved — steady</summary>
+
+| crate | before | after | change | missed before | missed after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| a | 94.75 % | 95.00 % | +0.25 | 21 | 20 |
+
+</details>
+";
+
+/// The line naming the pending head.
+const HEAD_SKIPPED: &str = "Codecov has not processed the upload of bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: its state is `pending`. The comparison skips it.";
+
+/// The line naming `cccc…`, left in `error`.
+const ERROR_SKIPPED: &str = "Codecov has not processed the upload of cccccccccccccccccccccccccccccccccccccccc: its state is `error`. The comparison skips it.";
+
 #[test]
-fn a_pending_upload_is_refused_once_the_wait_ends()
+fn a_pending_head_is_skipped_for_the_newest_processed_upload_3978()
 {
     let scratch = scratch!("pending");
-    let output = run!(scratch, ["--threshold", "0.5", "--wait", "0"], [
-        ("FAKE_COVERAGE", "drop"),
-        ("FAKE_HEAD", "pending")
-    ]);
-    assert_eq!(output.status.code(), Some(2_i32));
+    let badge = scratch.join("coverage.json");
+    let output = run!(
+        scratch,
+        [
+            "--threshold".as_ref(),
+            "0.5".as_ref(),
+            "--wait".as_ref(),
+            "0".as_ref(),
+            "--file-issue".as_ref(),
+            "--badge".as_ref(),
+            badge.as_os_str()
+        ],
+        [
+            ("FAKE_COVERAGE", "drop"),
+            ("FAKE_HEAD", "pending"),
+            ("FAKE_LISTING", "single"),
+            ("FAKE_GH", "fail")
+        ]
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
     assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+        format!("{HEAD_SKIPPED}\n\n{STOOD_IN}\nCoverage held; no issue filed.\n")
+    );
+    assert_eq!(log!(scratch), "", "one unprocessed upload files nothing");
+    assert_eq!(
+        std::fs::read_to_string(&badge).unwrap(),
+        "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"94.50 %\",\"color\":\"brightgreen\"}\n",
+        "the badge shows the newest processed upload, never the pending head"
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn two_unprocessed_uploads_in_a_row_open_their_issue()
+{
+    let scratch = scratch!("unprocessed");
+    let output = run!(
+        scratch,
+        ["--threshold", "0.5", "--wait", "0", "--file-issue"],
+        [
+            ("FAKE_COVERAGE", "drop"),
+            ("FAKE_HEAD", "pending"),
+            ("FAKE_GH_ISSUES", "[]")
+        ]
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
         format!(
-            "coverage-guard: Codecov has not processed the upload of {HEAD}: its state is `pending`\n"
+            "{HEAD_SKIPPED}\n\n{ERROR_SKIPPED}\n\n{STOOD_IN}\nOpened https://example.invalid/issues/7.\n\nCoverage held; no issue filed.\n"
         )
+    );
+    assert_eq!(
+        std::fs::read_to_string(scratch.join("body")).unwrap(),
+        format!(
+            "- {HEAD_SKIPPED}\n- {ERROR_SKIPPED}\n\nThe guard compares main's newest processed upload, \
+             aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, in their place, until Codecov processes a newer one.\n"
+        )
+    );
+    let log = log!(scratch);
+    assert!(
+        log.contains(
+            "issue create --title coverage: Codecov left 2 uploads of main unprocessed (bbbbbbb) \
+             --body-file - --label kind:defect --label area:ci --label collector"
+        ),
+        "{log}"
     );
     std::fs::remove_dir_all(&scratch).unwrap();
 }

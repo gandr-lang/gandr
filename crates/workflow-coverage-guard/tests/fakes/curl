@@ -4,6 +4,7 @@ if [ "$FAKE_CURL" = fail ]; then echo 'curl: (22) The requested URL returned err
 A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 C=cccccccccccccccccccccccccccccccccccccccc
+D=dddddddddddddddddddddddddddddddddddddddd
 if [ "$FAKE_COVERAGE" = drop ]; then HITS=879; else HITS=946; fi
 case "$url" in
   https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/commits/$B/)
@@ -13,16 +14,24 @@ case "$url" in
       printf '{"commitid":"%s","state":"complete","totals":{"files":3,"lines":1000,"hits":%s,"misses":1}}' "$B" "$HITS"
     fi ;;
   'https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/commits/?branch=main&page_size=50')
-    head="{\"commitid\":\"$B\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":$HITS}}"
-    pending="{\"commitid\":\"$C\",\"state\":\"pending\",\"totals\":null}"
+    if [ "$FAKE_HEAD" = pending ]; then
+      head="{\"commitid\":\"$B\",\"state\":\"pending\",\"totals\":null}"
+    else
+      head="{\"commitid\":\"$B\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":$HITS}}"
+    fi
+    pending="{\"commitid\":\"$C\",\"state\":\"error\",\"totals\":null}"
     base="{\"commitid\":\"$A\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":945}}"
+    older="{\"commitid\":\"$D\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":944}}"
     case "$FAKE_LISTING" in
       unlisted) printf '{"count":2,"results":[%s,%s]}' "$pending" "$base" ;;
       nobase) printf '{"count":2,"results":[%s,%s]}' "$head" "$pending" ;;
-      *) printf '{"count":3,"results":[%s,%s,%s]}' "$head" "$pending" "$base" ;;
+      single) printf '{"count":3,"results":[%s,%s,%s]}' "$head" "$base" "$older" ;;
+      *) printf '{"count":4,"results":[%s,%s,%s,%s]}' "$head" "$pending" "$base" "$older" ;;
     esac ;;
   "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$A")
     printf '{"totals":{},"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":380}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":285}},{"name":"crates/gone/src/lib.rs","totals":{"lines":300,"hits":280}}]}' ;;
+  "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$D")
+    printf '{"totals":{},"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":379}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":285}},{"name":"crates/gone/src/lib.rs","totals":{"lines":300,"hits":280}}]}' ;;
   "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$B")
     if [ "$FAKE_COVERAGE" = drop ]; then
       printf '{"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":300}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":290}},{"name":"crates/new/src/lib.rs","totals":{"lines":300,"hits":289}}]}'

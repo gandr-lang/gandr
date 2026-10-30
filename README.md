@@ -1,6 +1,6 @@
 # gandr
 
-[![CI](https://github.com/gandr-lang/gandr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gandr-lang/gandr/actions/workflows/ci.yml) [![Nightly](https://github.com/gandr-lang/gandr/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/gandr-lang/gandr/actions/workflows/nightly.yml) [![codecov](https://codecov.io/gh/gandr-lang/gandr/graph/badge.svg)](https://codecov.io/gh/gandr-lang/gandr) [![licence](https://img.shields.io/badge/license-Apache--2.0_WITH_LLVM--exception-blue)](LICENSE.Apache-2.0.txt) [![rustc](https://img.shields.io/badge/rustc-nightly--2026--06--25-blue)](rust-toolchain.toml)
+[![CI](https://github.com/gandr-lang/gandr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gandr-lang/gandr/actions/workflows/ci.yml) [![Nightly](https://github.com/gandr-lang/gandr/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/gandr-lang/gandr/actions/workflows/nightly.yml) [![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fgandr-lang%2Fgandr%2Fbadges%2Fcoverage.json)](https://codecov.io/gh/gandr-lang/gandr) [![licence](https://img.shields.io/badge/license-Apache--2.0_WITH_LLVM--exception-blue)](LICENSE.Apache-2.0.txt) [![rustc](https://img.shields.io/badge/rustc-nightly--2026--06--25-blue)](rust-toolchain.toml)
 
 gandr is a dependently typed programming language for systems programming and mathematics in one tree.
 
