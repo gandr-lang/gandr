@@ -3164,3 +3164,70 @@ fn a_composite_the_syntax_cannot_read_is_refused()
         "a call of one argument, a shape no chain, a bare count and a count named"
     );
 }
+
+#[test]
+fn a_fill_lowers_to_its_generator_and_cells()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
+            "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {\n  thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }\n}\n",
+            "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  transport(\\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))\n}\n",
+            "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(Path(A, x, z), fm then g, fp then g), here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g), rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)) {\n  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))\n}\n",
+        )),
+        &mut arena,
+    );
+    let tail = arena.computation(tail_of(&module, &arena, "firstLifted".into()));
+    let Some(&Computation::Return(returned)) = tail
+    else {
+        panic!("`firstLifted` returns its fill: {tail:?}");
+    };
+    let Some(&Value::Fill {
+        composite,
+        generator,
+        ref cells,
+    }) = arena.value(returned)
+    else {
+        panic!("`firstLifted` returns a fill: {:?}", arena.value(returned));
+    };
+    assert_eq!(
+        composite,
+        chain_at(Written(5, 7, 2)),
+        "the head and the shape it writes"
+    );
+    assert!(
+        cells
+            .iter()
+            .map(|&cell| arena.value(cell).cloned())
+            .eq([1_u32, 0_u32].map(|index| Some(variable(index.into())))),
+        "the tuple's members are the cells in written order, the path of paths first"
+    );
+    assert!(
+        matches!(
+            arena.computation(generator),
+            Some(&Computation::Application(..))
+        ),
+        "the generator lowers as the computation of its call: {:?}",
+        arena.computation(generator)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def short(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp)) -> Path(Path(A, x, y), fm, fp) {\n  fill[1, 3](chain(1), (fa))\n}\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "short".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            }) if count == OperandCount::from(2_usize)
+        ),
+        "a fill without its generator is refused by its count"
+    );
+}

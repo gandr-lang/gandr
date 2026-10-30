@@ -1,0 +1,23 @@
+/// `GeneratorFamilyUnsupported`: a fill whose lifted cell is a directed flow, a family with no filler yet.
+
+/// One cell, its own reflexivity: the generator over the 1-chain.
+@[ checks ]
+def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
+  thunk { fn (f) { here(f) } }
+}
+
+/// The fill over a path of paths, the `Path` instance.
+@[ checks ]
+def alongPath(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp)) -> Path(
+  Path(Path(A, x, y), fm, fp),
+  here(fm) then fa,
+  fa then here(fp)
+) {
+  fill[1, 3](chain(1), selfLoop(A, x, y), (fa))
+}
+
+/// The same fill over a flow of paths, whose instance #3992 lands.
+@[ refuses("GeneratorFamilyUnsupported") ]
+def alongFlow(A : Type, x : A, y : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Flow(Path(A, x, y), fm, fp)) -> Path(Path(A, x, y), fm, fp) {
+  fill[1, 3](chain(1), selfLoop(A, x, y), (fa))
+}

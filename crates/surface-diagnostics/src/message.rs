@@ -2423,6 +2423,44 @@ pub mod tests
                 parent: value_type,
                 shared: value_type,
             },
+            CheckRefusal::ComposeUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::Chain {
+                    cells: gandr_core_term::compose::CellCount::from(4_usize),
+                },
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
+            },
+            CheckRefusal::FillUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::NoFiller {
+                at: value,
+                left: value,
+                right: value,
+                stratum: gandr_core_term::ua::Stratum {
+                    degree: gandr_theory_sites::Degree::from(5_usize),
+                    bound: gandr_theory_sites::ShapeSize::from(7_usize),
+                },
+            },
+            CheckRefusal::GeneratorFamilyUnsupported {
+                at: value,
+                cell: value,
+                family: gandr_core_checker::fill::UnsupportedFamily::Bridge,
+            },
             CheckRefusal::UnenclosedRun { at: value },
             CheckRefusal::ImplicitUnsolved {
                 at: value,

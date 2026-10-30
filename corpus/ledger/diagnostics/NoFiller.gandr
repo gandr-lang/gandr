@@ -1,0 +1,25 @@
+/// `NoFiller`: a fill asked for a square its generator does not make.
+// `Circle`, `Base`, `loop`.
+import "../../model/identity/circle-base.gandr" ;
+
+/// One cell, its own reflexivity: the generator over the 1-chain.
+@[ checks ]
+def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
+  thunk { fn (f) { here(f) } }
+}
+
+/// The square the generator makes at a path of paths from `loop` to itself.
+@[ checks ]
+def made(a : Path(Path(Circle, Base, Base), loop, loop)) -> Path(
+  Path(Path(Circle, Base, Base), loop, loop),
+  here(loop) then a,
+  a then here(loop)
+) {
+  fill[1, 3](chain(1), selfLoop(Circle, Base, Base), (a))
+}
+
+/// The same fill asked for a path from `loop` to `here(Base)`, which no square of the generator is.
+@[ refuses("NoFiller") ]
+def unmade(a : Path(Path(Circle, Base, Base), loop, loop)) -> Path(Path(Circle, Base, Base), loop, here(Base)) {
+  fill[1, 3](chain(1), selfLoop(Circle, Base, Base), (a))
+}

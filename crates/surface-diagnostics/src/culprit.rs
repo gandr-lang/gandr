@@ -395,7 +395,9 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::ComposeDoesNotFill { .. } => "cells that do not fill the chain",
         CheckRefusal::FillUncertified { .. } => "a stratum the chains do not certify",
         CheckRefusal::NoFiller { .. } => "a square the generator does not fill",
-        CheckRefusal::GeneratorFamilyUnsupported { .. } => "a cell of a family with no filler yet",
+        CheckRefusal::GeneratorFamilyUnsupported { .. } => {
+            "a fill along a family with no filler yet"
+        },
         CheckRefusal::UnenclosedRun { .. } => "a run with no computation to run before",
         CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
         CheckRefusal::ModelUnanswered { .. } => "a model implicit no module answers",

@@ -1,0 +1,25 @@
+error[FillUncertified]: `fill` needs a stratum the chain sub-site certifies
+   ╭▸ corpus/ledger/diagnostics/FillUncertified.gandr:38:3
+   │
+33 │   def uncertified(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A,…
+   │   │               ┬         ┬      ┬      ┬      ┬─                  ┬─                  ┬─                                ─ checked; while checking the body of this function; binds g : Path(A, y, z)
+   │   │               │         │      │      │      │                   │                   │
+   │   │               │         │      │      │      │                   │                   checked; while checking the body of this function; binds fa : Path(Path(A, x, y), fm, fp)
+   │   │               │         │      │      │      │                   checked; while checking the body of this function; binds fp : Path(A, x, y)
+   │   │               │         │      │      │      checked; while checking the body of this function; binds fm : Path(A, x, y)
+   │   │               │         │      │      checked; while checking the body of this function; binds z : A
+   │   │               │         │      checked; while checking the body of this function; binds y : A
+   │   │               │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘               checked; while checking the body of this function; binds A : Type
+   │ │
+34 │ │   Path(Path(A, x, z), fm then g, fp then g),
+35 │ │   here(fm then g) then whiskered(A, x, y, z, fm, fp, fa, g),
+36 │ │   whiskered(A, x, y, z, fm, fp, fa, g) then here(fp then g)
+37 │ │ ) {
+38 │ │   fill[0, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a stratum the chains do not certify
+39 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
+   │
+   ├ note: `uncertified` is refused with FillUncertified, as its expectation states
+   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

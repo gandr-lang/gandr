@@ -1,0 +1,15 @@
+error[NoFiller]: `fill` needs a generator whose sides compose its cells, a cell that is a path between two cells, and the square that generator makes
+   ╭▸ corpus/ledger/diagnostics/NoFiller.gandr:24:3
+   │
+23 │   def unmade(a : Path(Path(Circle, Base, Base), loop, loop)) -> Path(Path(Circle, Base, Base), loop, here(Base)) {
+   │   │          ┬                                                                                 ┬───  ────────── a side the generator's square does not make
+   │   │          │                                                                                 │
+   │   │          │                                                                                 a side the generator's square does not make
+   │ ┌─┘          checked against `Path(Path(Circle, Base, Base), loop, loop) -> -F Path(Path(Circle, Base, Base), loop, here(Base))`; while checking the body of this function; binds a : Path(Path(Circle, Base, Base), loop, loop)
+   │ │
+24 │ │   fill[1, 3](chain(1), selfLoop(Circle, Base, Base), (a))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a square the generator does not fill
+25 │ │ }
+   │ └─┘ checked against `Path(Path(Circle, Base, Base), loop, loop) => Path(Path(Circle, Base, Base), loop, here(Base))`; while checking the body of this thunk
+   │
+   ╰ note: `unmade` is refused with NoFiller, as its expectation states

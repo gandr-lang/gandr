@@ -114,6 +114,9 @@ INSERT INTO purpose VALUES('core-checker','failure::FrameRole','enum','The rule 
 INSERT INTO purpose VALUES('core-checker','failure::Obligation','struct','One rule pending when a run refused: a frame of the machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','failure::Pursuit','struct','The goal a run was pursuing when it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','failure::Stage','enum','Where the machine stood when its run refused.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','fill::Realisation','struct','The square a fill synthesises and the based path induction on its lifted cells that proves it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','fill::UnsupportedFamily','enum','A cell family the filler generator lifts no cell of yet, and the unit that lands its instance.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','fill::realise','function','Builds a fill''s square from its generator and cells, with the induction that realises it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','flow::Statement','struct','A session statement the judgement decided: the relation, the two quotes, the classifier the bridge erases it at, the engine''s evidence and the payload pairs its paths are owed for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedCompType','struct','A computation type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedValueType','struct','A value type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);

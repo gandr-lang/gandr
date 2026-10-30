@@ -100,6 +100,7 @@ INSERT INTO reference VALUES('arXiv:2312.00429','theory-computads','','backgroun
 INSERT INTO reference VALUES('arXiv:2407.09146','surface-lowering','lower::identity','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2411.11469','runtime-stencils','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2412.20262','theory-sites','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2501.11620','core-checker','fill','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2501.17869','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2501.17869','theory-virtual-doctrines','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2504.08946','core-incremental','','background',NULL,NULL,NULL);
@@ -485,6 +486,7 @@ INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surfa
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','core-term','syntax::shared','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','surface-dispatcher','tier','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','compose','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','fill','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-checker','ua::strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-incremental','region','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','core-nbe','eval','lineage',NULL,NULL,NULL);
