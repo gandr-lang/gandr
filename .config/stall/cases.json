@@ -2136,5 +2136,46 @@
       "stalled": { "4158": 99400 }
     },
     "output": "{\"findings\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"pages\":[],\"repages\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"stall\":[],\"release\":[],\"seen\":{\"4158:base-blocked:o4158\":100000,\"4158:queued-off-trunk:triage-4058-stall-lane\":99400},\"paged\":{\"4158:queued-off-trunk\":{\"first\":99400,\"last\":100000}},\"stalled\":{\"4158\":99400}}"
+  },
+  {
+    "name": "a detector whose last reading is two intervals old is alive (#4167)",
+    "program": "live.jq",
+    "input": { "now": 1793375100, "interval": 300, "read": 1793374500 },
+    "output": ""
+  },
+  {
+    "name": "a detector whose last reading is a second past two intervals old is down, the line naming its time (#4167)",
+    "program": "live.jq",
+    "input": { "now": 1793375100, "interval": 300, "read": 1793374499 },
+    "output": "STALL detector-down 10m: no reading since 2026-10-30T15:34:59Z; run `mise run stall:watch --install` on the triage lane's host"
+  },
+  {
+    "name": "a host with no reading recorded has no detector (#4167)",
+    "program": "live.jq",
+    "input": { "now": 1793375100, "interval": 300, "read": null },
+    "output": "STALL detector-down: no reading recorded; run `mise run stall:watch --install` on the triage lane's host"
+  },
+  {
+    "name": "the Linux service restarts stall:watch 20 seconds after any exit, from its checkout under its PATH (#4167)",
+    "program": "service.jq",
+    "input": {
+      "os": "linux",
+      "dir": "/srv/gandr",
+      "mise": "/usr/bin/mise",
+      "path": "/usr/bin:/bin"
+    },
+    "output": "[Unit]\nDescription=gandr stall detector (stall:watch)\n\n[Service]\nWorkingDirectory=/srv/gandr\nEnvironment=PATH=/usr/bin:/bin\nExecStart=/usr/bin/mise run stall:watch\nRestart=always\nRestartSec=20\n\n[Install]\nWantedBy=default.target"
+  },
+  {
+    "name": "the macOS agent keeps stall:watch alive with the same delay, its paths escaped as XML (#4167)",
+    "program": "service.jq",
+    "input": { "os": "macos", "dir": "/srv/a&b", "mise": "/usr/bin/mise", "path": "/usr/bin:/bin" },
+    "output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key><string>gandr.stall-watch</string>\n  <key>WorkingDirectory</key><string>/srv/a&amp;b</string>\n  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin</string></dict>\n  <key>ProgramArguments</key><array><string>/usr/bin/mise</string><string>run</string><string>stall:watch</string></array>\n  <key>KeepAlive</key><true/>\n  <key>ThrottleInterval</key><integer>20</integer>\n</dict>\n</plist>"
+  },
+  {
+    "name": "a host neither Linux nor macOS is refused a service (#4167)",
+    "program": "service.jq",
+    "input": { "os": "plan9", "dir": "/", "mise": "mise", "path": "/bin" },
+    "fails": true
   }
 ]

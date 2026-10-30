@@ -13,8 +13,8 @@
 #       each lane's seat's by the lane (#2972), `check` the command that
 #       exits 0 when a seat, its arguments appended, has a live block;
 #   $XDG_STATE_HOME/gandr/stall.json    `{seen, paged, stalled}`, `detect.jq`'s,
-#       and `gone`, `stall:watch`'s count of readings each seat was found
-#       without a live block.
+#       `gone`, `stall:watch`'s count of readings each seat was found
+#       without a live block, and `read`, the time of its last reading.
 
 stall_dir="$(git rev-parse --show-toplevel)/.config/stall"
 stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
@@ -57,4 +57,50 @@ stall_reading() {
 # The memory the last reading left, `{}` when there is none.
 stall_memory() {
   if [[ -f "$stall_state" ]]; then jq -c . "$stall_state"; else echo '{}'; fi
+}
+
+# The detector's liveness (#4167): `live.jq`'s line when the last reading
+# `stall:watch` recorded is older than two intervals or absent, else nothing.
+stall_liveness() {
+  stall_memory | jq -c --argjson now "$(date +%s)" --argjson interval "$(stall_thresholds | jq .interval)" \
+    '{now: $now, interval: $interval, read: .read}' | jq -r -f "$stall_dir/live.jq"
+}
+
+# Install (`$1` = install) or remove (`$1` = remove) the service that keeps
+# `stall:watch` running (#4167), `service.jq`'s unit or agent: a
+# `systemd --user` unit under `$XDG_CONFIG_HOME/systemd/user/` on Linux, a
+# `launchd` agent under `~/Library/LaunchAgents/` on macOS. The service runs
+# from this checkout at the commit it holds, so it belongs in a `wip/`
+# worktree on the trunk, which `wt:sweep` keeps; `--install` again restarts
+# it at that tree's head.
+stall_service() {
+  local action=$1 os file dir mise_bin
+  case "$(uname -s)" in
+    Linux) os=linux file="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/gandr-stall-watch.service" ;;
+    Darwin) os=macos file="$HOME/Library/LaunchAgents/gandr.stall-watch.plist" ;;
+    *) echo "stall:watch --$action knows Linux and macOS, not $(uname -s)" >&2; return 2 ;;
+  esac
+  if [[ "$os" == linux ]]; then
+    systemctl --user disable --now gandr-stall-watch.service 2> /dev/null || :
+  else
+    launchctl bootout "gui/$(id -u)/gandr.stall-watch" 2> /dev/null || :
+  fi
+  if [[ "$action" == remove ]]; then
+    rm -f "$file"
+    if [[ "$os" == linux ]]; then systemctl --user daemon-reload; fi
+    echo "stall:watch: the service is removed ($file)" >&2
+    return 0
+  fi
+  mise_bin=$(command -v mise) || { echo "stall:watch --install needs mise on PATH" >&2; return 2; }
+  dir=$(git rev-parse --show-toplevel)
+  mkdir -p "$(dirname "$file")"
+  jq -rn --arg os "$os" --arg dir "$dir" --arg mise "$mise_bin" --arg path "$PATH" \
+    '{os: $os, dir: $dir, mise: $mise, path: $path}' | jq -r -f "$stall_dir/service.jq" > "$file"
+  if [[ "$os" == linux ]]; then
+    systemctl --user daemon-reload
+    systemctl --user enable --now gandr-stall-watch.service
+  else
+    launchctl bootstrap "gui/$(id -u)" "$file"
+  fi
+  echo "stall:watch: the service runs from $dir ($file)" >&2
 }
