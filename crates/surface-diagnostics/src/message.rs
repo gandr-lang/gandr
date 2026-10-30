@@ -2171,6 +2171,24 @@ pub mod tests
                 at: value,
                 defect: UaDefect::Stuck { corolla, element },
             },
+            CheckRefusal::ComposeUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::Chain {
+                    cells: gandr_core_term::compose::CellCount::from(4_usize),
+                },
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
+            },
             CheckRefusal::SessionMismatch {
                 at: computation,
                 endpoint,

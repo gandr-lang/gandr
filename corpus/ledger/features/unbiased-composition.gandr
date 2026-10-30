@@ -1,8 +1,8 @@
 /// `unbiased-composition`: a chain of paths composes unbiased at a stratum the chain sub-site certifies.
 ///
-/// Implemented: `compose[n, k](chain(m), (c₁, …, cₘ))` checks its cells against the chain of `m` cells at the stratum `n` over `k`. The node carries the left-nested `then` fold of its cells, which evaluation runs and the kernel replays.
+/// Implemented: `compose[n, k](chain(m), (c₁, …, cₘ))` checks its cells against the chain of `m` cells at the stratum `n` over `k`. The node holds its cells beside their left-nested `then` fold. Evaluation runs the fold, and the kernel replays it.
 ///
-/// Not implemented: `then` and `join` read as the composite at the 2-chain (#4057), and the printer writing the form back (#3957).
+/// Not implemented: the lowering of `then` and `join` to the composite at the 2-chain (#4057), and the printer's form for it (#3957).
 ///
 /// A composite of reflexivities reduces to reflexivity, so the declaration states it and proves it by reflexivity.
 ///

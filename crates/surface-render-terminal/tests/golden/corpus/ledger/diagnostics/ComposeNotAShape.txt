@@ -28,4 +28,5 @@ error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound
 21 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `pastBound` is refused with ComposeNotAShape, as its expectation states
+   ├ note: `pastBound` is refused with ComposeNotAShape, as its expectation states
+   ╰ help: write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m cells
