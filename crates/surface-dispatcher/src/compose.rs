@@ -5783,6 +5783,52 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
         );
     }
 
+    /// A composite whose first cell is a call to a defined composite, against
+    /// the composite of that definition's body. One unfolding of the call
+    /// relates the two, and the kernel re-derives the reflexivity as the
+    /// checker accepts it.
+    #[test]
+    fn a_composite_after_a_call_to_a_defined_composite_replays_4246()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(
+                r"/// The 2-path `here(f then g1)` moved along `b`.
+def liftLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), f then g1, f then g2) {
+  transport(\c. Path(Path(A, x, z), f then g1, f then c), b, here(f then g1))
+}
+/// Two lifts composed.
+def two(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2), g3 : Path(A, y, z), c : Path(Path(A, y, z), g2, g3)) -> Path(Path(A, x, z), f then g1, f then g3) {
+  liftLeft(A, x, y, z, f, g1, g2, b) then liftLeft(A, x, y, z, f, g2, g3, c)
+}
+/// `two` then a third lift, against its body then the third lift.
+def unfolded(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2), g3 : Path(A, y, z), c : Path(Path(A, y, z), g2, g3), g4 : Path(A, y, z), d : Path(Path(A, y, z), g3, g4)) -> Path(
+  Path(Path(A, x, z), f then g1, f then g4),
+  two(A, x, y, z, f, g1, g2, b, g3, c) then liftLeft(A, x, y, z, f, g3, g4, d),
+  (liftLeft(A, x, y, z, f, g1, g2, b) then liftLeft(A, x, y, z, f, g2, g3, c)) then liftLeft(A, x, y, z, f, g3, g4, d)
+) {
+  here((liftLeft(A, x, y, z, f, g1, g2, b) then liftLeft(A, x, y, z, f, g2, g3, c)) then liftLeft(A, x, y, z, f, g3, g4, d))
+}
+",
+            ),
+        );
+        let outcomes: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        let checks = Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            outcomes,
+            ["liftLeft", "two", "unfolded"]
+                .map(|name| (name.to_owned(), checks.clone()))
+                .to_vec(),
+            "every definition checks, and the kernel re-derives each"
+        );
+    }
+
     /// A fill whose generator's body is itself a fill, read at reflexivities:
     /// the outer fill reaches its base, the generator at the source face, and
     /// the inner fill there reaches its own. The kernel re-derives the

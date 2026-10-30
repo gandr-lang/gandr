@@ -1534,6 +1534,68 @@ fn an_endpoint_reads_past_a_cong_chain_to_the_bind_outside_it_4129()
     );
 }
 
+/// A returned endpoint's continuation reads as the endpoint does.
+/// `⟨k(y) to a. case a of { b. h(z) to c. g(c); b. return b }⟩` against
+/// `⟨k(y) to a. case a of { b. g(⟨h(z)⟩); b. return b }⟩`, `g`, constant 0,
+/// `thunk { λv. return v }`, and `k`, `y`, `h` and `z` free. Each
+/// continuation cases on its own variable, so the endpoints stand at the
+/// call `k(y)` and decompose, and so does the case. The first arm reaches
+/// `g` only past the bind over the call `h(z)` stuck at a variable, and the
+/// engine reads an endpoint's arm through it.
+#[test]
+fn an_endpoint_s_continuation_reads_through_a_bind_over_a_stuck_call_4246()
+{
+    let mut arena = TermArena::new();
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    let g = ConstantIndex::from(0_usize);
+    // `g(v)`, and the call of the variable at `function` on the one at
+    // `argument`.
+    let call_g = |arena: &mut TermArena, argument: ValueId| {
+        let head = arena.value_constant(g);
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let call_h = |arena: &mut TermArena, function: u32, argument: u32| {
+        let (function, argument) = (variable(arena, function), variable(arena, argument));
+        let forced = arena.computation_force(function);
+        arena.computation_application(forced, argument)
+    };
+    let argument = variable(&mut arena, 0);
+    let returns = arena.computation_return(argument);
+    let identity = arena.computation_lambda(returns);
+    let g_body = arena.value_thunk(identity);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Body(g_body)]);
+    // Free: `z` at 0, `h` at 1, `y` at 2 and `k` at 3. Under `a` and an arm's
+    // `b`: `b` at 0, `a` at 1, `z` at 2 and `h` at 3; under `c` too, `c` at 0.
+    let called = call_h(&mut arena, 3, 2);
+    let bound_c = variable(&mut arena, 0);
+    let reached = call_g(&mut arena, bound_c);
+    let past_h = arena.computation_bind(called, reached);
+    let held_h = arena.value_returned(called);
+    let applied = call_g(&mut arena, held_h);
+    let payload = variable(&mut arena, 0);
+    let returned_b = arena.computation_return(payload);
+    let scrutinee = variable(&mut arena, 0);
+    let k_call = call_h(&mut arena, 3, 2);
+    let endpoint = |arena: &mut TermArena, first: ComputationId| {
+        let cased = arena.computation_case(scrutinee, &[first, returned_b]);
+        let bound = arena.computation_bind(k_call, cased);
+        arena.value_returned(bound)
+    };
+    let (read_through, unfolded) = (endpoint(&mut arena, past_h), endpoint(&mut arena, applied));
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(read_through, unfolded),
+            EngineClaim::Convertible,
+            &[SHARED, SHARED]
+        ),
+        KernelVerdict::Convertible
+    );
+}
+
 #[test]
 fn the_kernel_converts_by_the_forced_rules_alone()
 {
