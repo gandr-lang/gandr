@@ -1020,7 +1020,7 @@ fn checked(
             f.write_str("`compose` needs a chain within the degree and the bound of its stratum")
         },
         CheckRefusal::ComposeDoesNotFill { .. } => {
-            f.write_str("`compose` needs its cells to meet end to end along the chain")
+            f.write_str("a composite needs its cells to meet end to end along the chain")
         },
         CheckRefusal::FillUncertified { .. } => {
             f.write_str("`fill` needs a stratum the chain sub-site certifies")
