@@ -43,7 +43,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it.
 - **Receipt scope.** A `CheckedId` names a position, not an environment identity. Use it only with the corresponding admission history.
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, and `audit` reports every declaration that rests on it.
-- **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
+- **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal. Two stuck eliminations' motives are the exception: the replay reads their endpoints by its own reduction.
 
 ## Examples
 

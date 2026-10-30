@@ -233,6 +233,7 @@ use alloc::vec::Vec;
 use core::mem;
 
 use anodized::spec;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionHeight;
 use gandr_core_term::Zone;
@@ -254,7 +255,8 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
-use crate::code::WrittenCall;
+use crate::arena::ValueClosureId;
+use crate::code::Against;
 use crate::conv::ConversionFault;
 use crate::conv::Settlement;
 use crate::conv::convert_computations;
@@ -3067,13 +3069,13 @@ where
     ///   schedules another turn; otherwise completion of a pending child wakes
     ///   the goal.
     /// - provides: every rule with premises compared child by child.
-    /// - fails: as [`Scheduler::start_fresh`], [`Scheduler::written_call`] and
-    ///   [`Scheduler::depend`].
+    /// - fails: as [`Scheduler::start_fresh`], [`Scheduler::written_call`],
+    ///   [`Scheduler::context_variable`] and [`Scheduler::depend`].
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`Scheduler::start_fresh`], [`Scheduler::written_call`] and
-    /// [`Scheduler::depend`].
+    /// As [`Scheduler::start_fresh`], [`Scheduler::written_call`],
+    /// [`Scheduler::context_variable`] and [`Scheduler::depend`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a decomposition has no premises, pending premises or
@@ -3226,15 +3228,31 @@ where
                     )
                 },
                 Subgoal::Written(written) => {
-                    let entered = self.written_call(written)?;
-                    (
-                        SupportSides::EnteredBeside(
-                            written.side,
-                            entered,
-                            Glued::Computation(written.held),
-                        ),
-                        goal.depth,
-                    )
+                    let entered = self.written_call(written.call, written.closure)?;
+                    let beside =
+                        |against| SupportSides::EnteredBeside(written.side, entered, against);
+                    let sides = match written.against {
+                        Against::Returned(held) => beside(Glued::Computation(held)),
+                        Against::Held(value) => beside(Glued::Computation(
+                            self.domain.comp_return(value, CompTermFace::Reduced),
+                        )),
+                        Against::Variable(zone, level) => {
+                            let value = self.context_variable(zone, level)?;
+                            beside(Glued::Computation(
+                                self.domain.comp_return(value, CompTermFace::Reduced),
+                            ))
+                        },
+                        // Two calls written apart are entered alike, each in
+                        // its own quote's environment.
+                        Against::Written(call, closure) => {
+                            let other = self.written_call(call, closure)?;
+                            match written.side {
+                                ConversionSide::Left => SupportSides::Closed(entered, other),
+                                ConversionSide::Right => SupportSides::Closed(other, entered),
+                            }
+                        },
+                    };
+                    (sides, goal.depth)
                 },
             };
             let child = self.start_fresh(sides, depth)?;
@@ -3360,13 +3378,13 @@ where
     }
 
     /// Close a call one side's quote writes over the quote's environment, to
-    /// be entered against the computation the other side's endpoint returned.
+    /// be entered against what the other side reads at the same place.
     ///
     /// # Specification
     /// - requires: nothing — a dangling quote closure is refused.
-    /// - ensures: a closure whose body is the written call and whose
-    ///   environment is the quote's.
-    /// - provides: the written side of [`Subgoal::Written`].
+    /// - ensures: a closure whose body is `call` and whose environment is the
+    ///   environment of the quote `closure`.
+    /// - provides: each written side of [`Subgoal::Written`].
     /// - fails: [`ConversionFault::Domain`] for a quote closure that does not
     ///   resolve.
     /// - panics: none.
@@ -3380,20 +3398,67 @@ where
     ///   it over another environment reads its variables elsewhere and parts
     ///   the pair.
     /// - witness: `machine::tests::a_written_transport_converts_with_its_held_endpoint_4038`
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|closure| self.domain.comp_closure(*closure)
-        .is_some_and(|entered| entered.body() == crate::closure::CompBody::Source(written.call))))]
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|entered| self.domain.comp_closure(*entered)
+        .is_some_and(|held| held.body() == crate::closure::CompBody::Source(call))))]
     fn written_call(
         &mut self,
-        written: WrittenCall,
+        call: ComputationId,
+        closure: ValueClosureId,
     ) -> Result<CompClosureId, ConversionFault>
     {
         let environment = self
             .domain
-            .value_closure(written.closure)
+            .value_closure(closure)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
             .environment()
             .clone();
-        Ok(self.domain.comp_closure_node(written.call, environment))
+        Ok(self.domain.comp_closure_node(call, environment))
+    }
+
+    /// The variable of the context at `level` in `zone`, as an environment
+    /// holds it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the rigid neutral headed by that variable with an empty
+    ///   spine; an intuitionistic one is [`Self::variable`]'s.
+    /// - provides: the value a written call is entered against when the other
+    ///   side reads a variable there.
+    /// - fails: as [`Self::variable`], and [`ConversionFault::Domain`] when the
+    ///   neutral does not mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call reducing to a context variable converts with
+    ///   that variable and not with another; minting a variable of another
+    ///   level parts the first.
+    /// - witness: `machine::tests::a_written_call_converts_with_what_it_reduces_to_4179`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| matches!(self.domain.value(*value),
+        Some(&DomainValue::Neutral { neutral, .. }) if self.domain.neutral(neutral).is_some_and(|node|
+            node.head() == (NeutralHead::Variable { zone, level }) && node.spine().is_empty()))))]
+    fn context_variable(
+        &mut self,
+        zone: Zone,
+        level: BinderLevel,
+    ) -> Result<DomainValueId, ConversionFault>
+    {
+        if zone == Zone::Intuitionistic {
+            return self.variable(level);
+        }
+        let neutral = self
+            .domain
+            .neutral_node(
+                NeutralHead::Variable { zone, level },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .map_err(ConversionFault::Domain)?;
+        self.domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .map_err(ConversionFault::Domain)
     }
 
     /// Capture one ordinary case branch without introducing an implicit field

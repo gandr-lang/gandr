@@ -205,7 +205,9 @@
 //! **Codes compare by their quoted types.** Structural conversion compares two
 //! quotes by the types they quote; [`replay`](mod@crate::replay) states how a
 //! replayed comparison of two codes closes. Conversion fires no reduction, so
-//! a producer hands the kernel reduced codes to avoid a refusal.
+//! a producer hands the kernel reduced codes to avoid a refusal. Two stuck
+//! eliminations' motives are the one exception: a replayed closing on them
+//! reads each returned endpoint it sets aside by the replay's own reduction.
 //!
 //! # Static operators
 //!

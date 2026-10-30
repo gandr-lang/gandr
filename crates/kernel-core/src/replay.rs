@@ -51,7 +51,7 @@
 //!
 //! | goal | what the replay reads |
 //! | --- | --- |
-//! | any | `ComparedShared` closes it when the sides are α-equal, or alike once each returned endpoint inside them is read (#695), or rigid and α-distinct |
+//! | any | `ComparedShared` closes it when the sides are α-equal, or alike once each returned endpoint inside them is read (#695), a definition at its head unfolding where the goal is two stuck eliminations' motives (#4179), or rigid and α-distinct |
 //! | a defined constant at either head | `Unfold` and the reduction naming its side, with `Postpone` before it; `Freeze`; `ConstShortcut` |
 //! | a thunk against a thunk or a neutral value | two `Force`s |
 //! | a lambda against a neutral computation | `EtaExpand` on the neutral side |
@@ -1266,7 +1266,12 @@ where
             memo: NullMemo,
             owed: Vec::new(),
         };
-        let outcome = run.drive(Goal::premise(Premise { left, right }, expect));
+        let premise = Premise {
+            left,
+            right,
+            defined: DefinedHead::Hold,
+        };
+        let outcome = run.drive(Goal::premise(premise, expect));
         run.arena.truncate_to(watermark);
         Ok(concluded(outcome, expect))
     }
@@ -1359,7 +1364,12 @@ pub fn convert(
         memo: NullMemo,
         owed: Vec::new(),
     };
-    let outcome = run.drive(Goal::premise(Premise { left, right }, Expect::Convertible));
+    let premise = Premise {
+        left,
+        right,
+        defined: DefinedHead::Hold,
+    };
+    let outcome = run.drive(Goal::premise(premise, Expect::Convertible));
     run.arena.truncate_to(watermark);
     concluded(outcome, Expect::Convertible)
 }
@@ -1492,7 +1502,12 @@ fn unfold_owing(
         memo: NullMemo,
         owed: Vec::new(),
     };
-    let outcome = run.drive(Goal::premise(Premise { left, right }, Expect::Convertible));
+    let premise = Premise {
+        left,
+        right,
+        defined: DefinedHead::Hold,
+    };
+    let outcome = run.drive(Goal::premise(premise, Expect::Convertible));
     let verdict = concluded(outcome, Expect::Convertible);
     let mut owed = run.owed;
     if verdict != KernelVerdict::Convertible {
@@ -2024,6 +2039,8 @@ struct Premise
     left: Term,
     /// The right side.
     right: Term,
+    /// How a closing on the two reads an endpoint stuck at a defined head.
+    defined: DefinedHead,
 }
 
 impl Premise
@@ -2040,6 +2057,7 @@ impl Premise
         Self {
             left: Term::Value(left),
             right: Term::Value(right),
+            defined: DefinedHead::Hold,
         }
     }
 
@@ -2055,6 +2073,25 @@ impl Premise
         Self {
             left: Term::Computation(left),
             right: Term::Computation(right),
+            defined: DefinedHead::Hold,
+        }
+    }
+
+    /// Two stuck eliminations' quoted motives, whose closing reads each
+    /// endpoint it sets aside by the replay's own reduction, a defined head
+    /// unfolding.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn motives(
+        left: ValueId,
+        right: ValueId,
+    ) -> Self
+    {
+        Self {
+            left: Term::Value(left),
+            right: Term::Value(right),
+            defined: DefinedHead::Unfold,
         }
     }
 }
@@ -2074,6 +2111,8 @@ struct Goal
     /// How the goal's computations reduce: as returned endpoints' once
     /// [`Replay::open_returned`] has read the goal as their computations.
     reduction: Reduction,
+    /// How a closing on the goal reads an endpoint stuck at a defined head.
+    defined: DefinedHead,
 }
 
 /// How a computation reduces to weak head form.
@@ -2093,10 +2132,12 @@ enum Reduction
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DefinedHead
 {
-    /// Takes the δ-step the head admits, as the kernel's own evaluator does.
+    /// Takes the δ-step the head admits, as the kernel's own evaluator does,
+    /// and as two stuck eliminations' motives read the endpoints a compared
+    /// pair sets aside.
     Unfold,
-    /// Stops there: a compared pair's reading unfolds no definition, as no
-    /// decision names one.
+    /// Stops there: any other compared pair's reading unfolds no definition,
+    /// as no decision names one.
     Hold,
 }
 
@@ -2247,6 +2288,7 @@ impl Goal
             frozen: Frozen::default(),
             expect,
             reduction: Reduction::Plain,
+            defined: premise.defined,
         }
     }
 
@@ -2847,13 +2889,7 @@ where
         let mut goals: Vec<Goal> = parted
             .into_iter()
             .map(|(left, right)| {
-                Goal::premise(
-                    Premise {
-                        left: Term::Computation(left),
-                        right: Term::Computation(right),
-                    },
-                    Expect::Convertible,
-                )
+                Goal::premise(Premise::computations(left, right), Expect::Convertible)
             })
             .collect();
         let mut outcome = Ok(Convertibility::Convertible);
@@ -5721,12 +5757,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: nothing.
     /// - ensures: [`Compared::Equal`] when the sides are α-equal under
     ///   [`equal_weakened`], or converge under [`pending_endpoints`] with every
-    ///   pair it sets aside alike once read by [`Self::endpoints_alike`] — a
-    ///   reading that stops leaves the pair open, as [`read_endpoints`] leaves
-    ///   it apart; under [`Apart::Defer`], [`Compared::Deferred`] when they are
-    ///   alike so but for computations that reading parts;
-    ///   [`Compared::Separated`] when both are rigid and neither holds,
-    ///   [`Compared::Open`] otherwise.
+    ///   pair it sets aside alike once read by [`Self::endpoints_alike`], at a
+    ///   defined head as the goal's premise says — a reading that stops leaves
+    ///   the pair open, as [`read_endpoints`] leaves it apart; under
+    ///   [`Apart::Defer`], [`Compared::Deferred`] when they are alike so but
+    ///   for computations that reading parts; [`Compared::Separated`] when both
+    ///   are rigid and neither holds, [`Compared::Open`] otherwise.
     /// - provides: the replay of a closing on two shared nodes.
     /// - fails: [`ReplayRefusal::Unreadable`] on sides of two polarities.
     /// - panics: none.
@@ -5779,7 +5815,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // Two computations that reading parts, a bind whose continuation
         // calls a lambda through its ascription's fold against the bind that
         // lambda's body is, may still convert by the redexes the walk does not
-        // run: the driver reads them by the forced rules (#4011).
+        // run: the driver reads them by the forced rules (#4011). Two stuck
+        // eliminations' motives read each endpoint as the replay reduces it, a
+        // definition at its head unfolding: the engine entered a call one
+        // motive writes against what the other reads there (#4179).
         let mut pending = Vec::new();
         let mut parted = Vec::new();
         if pending_endpoints(
@@ -5789,7 +5828,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             &mut pending,
         ) == Convertibility::Convertible
             && !pending.is_empty()
-            && self.endpoints_alike(pending, goal.reduction, &mut parted)
+            && self.endpoints_alike(pending, (goal.reduction, goal.defined), &mut parted)
                 == Ok(Convertibility::Convertible)
         {
             if parted.is_empty() {
@@ -5810,19 +5849,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// in it is read by the reduction the goal takes, and each constructor of a
     /// presented type by the type's rules.
     ///
-    /// A side reads as [`Self::normalize_returned`] holding at a defined head
-    /// reads it, by `reduction`: to the value its computation returns, through
-    /// every `return` it reaches, or to the returned endpoint over what a
-    /// computation that reaches none reduced to, so a bind read through to a
-    /// binder's call compares by that call. The side then reads to its normal
-    /// form under the presentations ([`Self::present`]), as a goal's root
-    /// reads before its shape; no definition unfolds, as no decision names
-    /// one. A pair that read to something is walked again, its own set-aside
-    /// pairs read in turn. A pair neither side of which reads to anything
-    /// compares by [`equal_weakened`]; two thunks, or two returned values, it
-    /// leaves apart walk their computations the same way. Two computations
-    /// that walk parts count alike here on condition: the pair joins `parted`,
-    /// for the caller to convert by the forced rules alone
+    /// A side reads as [`Self::normalize_returned`] reads it, by `reduction`
+    /// and at a defined head as `defined` says: to the value its computation
+    /// returns, through every `return` it reaches, or to the returned endpoint
+    /// over what a computation that reaches none reduced to, so a bind read
+    /// through to a binder's call compares by that call. The side then reads
+    /// to its normal form under the presentations ([`Self::present`]), as a
+    /// goal's root reads before its shape. Holding, no definition unfolds, as
+    /// no decision names one. Unfolding, a definition at the head takes the
+    /// replay's own δ-step, as two stuck eliminations' motives read their
+    /// endpoints. A pair that read to something is walked again, its own
+    /// set-aside pairs read in turn. A pair neither side of which reads to
+    /// anything compares by [`equal_weakened`]; two thunks, or two returned
+    /// values, it leaves apart walk their computations the same way. Two
+    /// computations that walk parts count alike here on condition: the pair
+    /// joins `parted`, for the caller to convert by the forced rules alone
     /// ([`Self::forced_converts`]), which run the redexes the walk does not.
     ///
     /// # Specification
@@ -5864,18 +5905,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   pair by α-equality changes the first. Two codes over binds, one
     ///   continuation a lambda's call through its ascription's fold and the
     ///   other that lambda's body, are alike but for their parted pair (#4011);
-    ///   answering them distinct changes the first.
+    ///   answering them distinct changes the first. Two motives whose starts
+    ///   are a definition's call and the variable it returns are alike
+    ///   unfolding, and apart holding (#4179).
     /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
     /// - witness: `replay::tests::a_compared_pair_reads_an_endpoint_through_its_bind_to_a_binder_call_3969`
     /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
     /// - witness: `replay::tests::an_unread_pair_of_returned_calls_walks_their_computations_3920`
     /// - witness: `replay::tests::a_compared_pair_reads_two_binds_by_the_forced_rules_4011`
+    /// - witness: `replay::tests::stuck_transports_read_their_motives_endpoints_by_unfolding_4179`
     #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
         && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget))]
     fn endpoints_alike(
         &mut self,
         mut pending: Vec<SetAside>,
-        reduction: Reduction,
+        (reduction, defined): (Reduction, DefinedHead),
         parted: &mut Vec<(ComputationId, ComputationId)>,
     ) -> Result<Convertibility, Stop>
     {
@@ -5891,7 +5935,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 // endpoint over what it reduced to, as the forced reading
                 // keeps it: a bind read through to a binder's call compares by
                 // that call, as the engine read it (#3969).
-                *side = self.normalize_returned(*side, reduction, DefinedHead::Hold)?;
+                *side = self.normalize_returned(*side, reduction, defined)?;
                 // A constructor of a presented type is set aside for its
                 // normal form: read it by the type's rules.
                 let Term::Value(normal) = self.present(Term::Value(*side))?
@@ -8532,8 +8576,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// [`DefinedHead::Unfold`] takes the δ-step [`Self::unfold_term`]
     /// fires, the one step the head admits, and [`DefinedHead::Hold`]
     /// stops. Unfolding, this is the kernel's own evaluator, not a
-    /// conversion: the normal form goes on to [`convert_values`]. Holding,
-    /// it is the reading a compared pair's set-aside endpoints take
+    /// conversion: the normal form goes on to [`convert_values`], or to the
+    /// walk of a compared pair of motives. Holding, it is the reading any
+    /// other compared pair's set-aside endpoints take
     /// ([`Self::endpoints_alike`]), which no decision lets unfold a
     /// definition. A computation that reaches no `return` stays a returned
     /// endpoint, over what it reduced to, so both readings keep one
@@ -9378,7 +9423,8 @@ fn passed_to(
 ///   transport compares its quoted motive, then its start, its path over and
 ///   its value; a stuck fixpoint compares its fixpoint, then its leading
 ///   arguments in order; a force, a matching record projection or a projection
-///   of one lazy-product side contributes none.
+///   of one lazy-product side contributes none. Each quoted motive is a
+///   [`Premise::motives`], read at a defined head by unfolding.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: unreadable native metadata when a retained source is missing or
 ///   malformed.
@@ -9502,7 +9548,7 @@ fn spines(
                 let (a_motive, b_motive) = (*a_motive, *b_motive);
                 let a_quote = arena.value_quote_computation(a_motive);
                 let b_quote = arena.value_quote_computation(b_motive);
-                premises.push(Premise::values(a_quote, b_quote));
+                premises.push(Premise::motives(a_quote, b_quote));
                 let (Some(left_node), Some(right_node)) =
                     (arena.computation(a_case), arena.computation(b_case))
                 else {
@@ -9611,7 +9657,7 @@ fn spines(
                 let a_quote = arena.value_quote(a_motive);
                 let b_quote = arena.value_quote(b_motive);
                 premises.extend([
-                    Premise::values(a_quote, b_quote),
+                    Premise::motives(a_quote, b_quote),
                     Premise::values(a_value, b_value),
                 ]);
             },
@@ -9636,7 +9682,7 @@ fn spines(
                 let a_quote = arena.value_quote(a_motive);
                 let b_quote = arena.value_quote(b_motive);
                 premises.extend([
-                    Premise::values(a_quote, b_quote),
+                    Premise::motives(a_quote, b_quote),
                     Premise::values(a_value, b_value),
                 ]);
             },
@@ -9666,7 +9712,7 @@ fn spines(
                 let a_quote = arena.value_quote_computation(a_motive);
                 let b_quote = arena.value_quote_computation(b_motive);
                 premises.extend([
-                    Premise::values(a_quote, b_quote),
+                    Premise::motives(a_quote, b_quote),
                     Premise::values(a_start, b_start),
                     Premise::values(a_over, b_over),
                     Premise::values(a_value, b_value),

@@ -5038,6 +5038,154 @@ fn a_written_transport_converts_with_its_held_endpoint_4038()
 }
 
 #[test]
+fn a_written_call_converts_with_what_it_reduces_to_4179()
+{
+    // #4179: under rigid `x`, `y`, `f`, `g`, `q` and `p` at levels 0 to 5,
+    // `same = thunk(λa. return a)` and `f then g` the transport `tr(s.
+    // Path(Unit, x, s), g, f)`. Two transports along `q` from `p` whose
+    // motives start at `⟨same x⟩` and at `x` convert, and so do two starting
+    // at `⟨same ⟨f then g⟩⟩` and at `⟨f then g⟩`, a call against a call of
+    // another kind: the machine enters each written call against what the
+    // other motive reads there, and the kernel replays it by unfolding. Two
+    // starting at `⟨same y⟩` and at `x` do not convert.
+    let mut core = CoreArena::new();
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let unit_type = core.value_type_unit();
+    let bound = variable(&mut core, 0);
+    let returned = core.computation_return(bound);
+    let identity = core.computation_lambda(returned);
+    let same_body = core.value_thunk(identity);
+    let same = core.value_constant(Name::Zero.constant());
+    // Under the motive's binder `t`: `x` is #6, `y` #5, `f` #4, `g` #3.
+    let from = |core: &mut CoreArena, start| {
+        let point = variable(core, 0);
+        core.value_type_path(unit_type, start, point)
+    };
+    let transported = |core: &mut CoreArena, start| {
+        let motive = from(core, start);
+        let (q, p) = (variable(core, 1), variable(core, 0));
+        core.computation_path_transport(motive, q, p)
+    };
+    let applied = |core: &mut CoreArena, argument: ValueId| {
+        let called = call(core, same, &[argument]);
+        core.value_returned(called)
+    };
+    let x = variable(&mut core, 6);
+    let at_x = transported(&mut core, x);
+    let same_x = applied(&mut core, x);
+    let at_same_x = transported(&mut core, same_x);
+    let y = variable(&mut core, 5);
+    let same_y = applied(&mut core, y);
+    let at_same_y = transported(&mut core, same_y);
+    // Under `t` and `s`: `x` is #7; under `t` alone `g` is #3 and `f` #4.
+    let x_under = variable(&mut core, 7);
+    let link = from(&mut core, x_under);
+    let (g, f) = (variable(&mut core, 3), variable(&mut core, 4));
+    let composite = core.computation_path_transport(link, g, f);
+    let composite = core.value_returned(composite);
+    let same_composite = applied(&mut core, composite);
+    let at_composite = transported(&mut core, composite);
+    let at_same_composite = transported(&mut core, same_composite);
+    let world = World::new(core, &[(Name::Zero, same_body)]);
+
+    let decided = |left, right| {
+        let definitions =
+            Definitions::new(&world.chain, &world.environment, world.environment.root());
+        let mut domain = DomainArena::new();
+        let mut environment = crate::closure::Environment::new();
+        for level in 0_u32 .. 6 {
+            let neutral = domain
+                .neutral_node(
+                    crate::domain::NeutralHead::Variable {
+                        zone: Zone::Intuitionistic,
+                        level: BinderLevel::from(level),
+                    },
+                    Vec::new(),
+                    crate::domain::Unfolding::Rigid,
+                )
+                .expect("a variable is a neutral");
+            let held = domain
+                .value_neutral(neutral, crate::domain::TermFace::Reduced)
+                .expect("a neutral is a value");
+            environment.extend(Zone::Intuitionistic, held);
+        }
+        let fuel = Fuel::from(4_096_u32);
+        let mut evaluate = |term| {
+            crate::eval::eval_comp_within(
+                &world.core,
+                &mut domain,
+                definitions,
+                fuel,
+                term,
+                environment.clone(),
+            )
+            .map(|(evaluated, _remaining)| evaluated)
+            .expect("each side evaluates")
+        };
+        let (one, other) = (evaluate(left), evaluate(right));
+        let problem = Problem::computations(one, other).under(BinderLevel::from(6_u32));
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            &world.core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut log,
+        )
+        .expect("the machine answers");
+        let decisions: Vec<ConversionDecision<TraceNode>> = log.decisions().copied().collect();
+        let mut kernel = Kernel::default();
+        let bodies = world
+            .bodies
+            .iter()
+            .map(|&body| Unfoldable::Body(kernel.value(&world.core, body)))
+            .collect();
+        let sides = ReplaySides::Computations(
+            kernel.computation(&world.core, left),
+            kernel.computation(&world.core, right),
+        );
+        let claim = match report.verdict() {
+            MachineVerdict::Convertible => EngineClaim::Convertible,
+            MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+            MachineVerdict::Declined(_) => EngineClaim::Declined,
+        };
+        let replayed = replay(
+            &mut kernel.arena,
+            &Unfoldings::new(bodies),
+            sides,
+            claim,
+            decisions.iter().map(|&decision| kernel_decision(decision)),
+            ReplayBudget::DEFAULT,
+        );
+        (report.verdict(), replayed, decisions)
+    };
+
+    for (left, right) in [
+        (at_same_x, at_x),
+        (at_x, at_same_x),
+        (at_same_composite, at_composite),
+        (at_composite, at_same_composite),
+    ] {
+        let (verdict, replayed, decisions) = decided(left, right);
+        assert_eq!(
+            (MachineVerdict::Convertible, KernelVerdict::Convertible),
+            (verdict, replayed),
+            "motives whose starts reduce alike convert, and the kernel replays it: \
+             {decisions:?}"
+        );
+    }
+    let (verdict, replayed, decisions) = decided(at_same_y, at_x);
+    assert!(
+        verdict != MachineVerdict::Convertible && replayed != KernelVerdict::Convertible,
+        "a start reducing to another variable parts them: {verdict:?}, {replayed:?}, \
+         {decisions:?}"
+    );
+}
+
+#[test]
 fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
 {
     // `⟨g ⟨S⟩ ⟨unit⟩⟩` against `⟨g ⟨S⟩ ()⟩` for the stuck call `S`, the

@@ -11,6 +11,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 
+use super::Against;
 use super::Alike;
 use super::CodeComparison;
 use super::CodeReading;
@@ -1210,7 +1211,6 @@ fn a_written_call_against_a_held_endpoint_is_set_aside_4038()
     // a definition's parameter holds it. The walk cannot match a written call
     // with a held one, so the codes are undecided. The walk that sets aside
     // hands the machine the call and the held computation, on either side.
-    // Against a held variable it sets nothing aside.
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
     let index = |core: &mut CoreArena, at: u32| {
@@ -1253,14 +1253,13 @@ fn a_written_call_against_a_held_endpoint_is_set_aside_4038()
         .expect("the returned call resolves");
     let writing = closure(&mut domain, written, &[v, p]);
     let holding = closure(&mut domain, inside, &[endpoint_held]);
-    let over_variable = closure(&mut domain, inside, &[p]);
     let set_aside = |side| {
         Ok(CodeReading::Over(alloc::vec![SetAside::Written(
             WrittenCall {
                 side,
                 call,
                 closure: writing,
-                held,
+                against: Against::Returned(held),
             }
         )]))
     };
@@ -1280,16 +1279,112 @@ fn a_written_call_against_a_held_endpoint_is_set_aside_4038()
         compare_codes_over(&core, &domain, ConstantReading::Unread, holding, writing),
         "and so on the other side"
     );
+}
+
+#[test]
+fn a_written_call_against_a_variable_or_a_call_is_set_aside_4179()
+{
+    // #4179: `El(⟨tr(Unit, #0, #1)⟩)` written over `[v, p]` against `El(#0)`
+    // over `[p]`, a call against the variable it may reduce to, and against
+    // `El(⟨tr(Unit, #1, #0)⟩)` over `[v, p]`, a call against a call whose
+    // parts part. The walk that sets aside hands the machine each pair whole,
+    // on either side. Two calls whose parts set aside held endpoints keep
+    // those pairs, and a call against a constant sets nothing aside.
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let index = |core: &mut CoreArena, at: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let (path, carried) = (index(&mut core, 0), index(&mut core, 1));
+    let call = core.computation_path_transport(unit, path, carried);
+    let endpoint = core.value_returned(call);
+    let written = core.value_type_element(endpoint, Level::zero());
+    let swapped = core.computation_path_transport(unit, carried, path);
+    let endpoint = core.value_returned(swapped);
+    let written_apart = core.value_type_element(endpoint, Level::zero());
+    let read = index(&mut core, 0);
+    let inside = core.value_type_element(read, Level::zero());
+    let constant = core.value_constant(ConstantIndex::from(0_usize));
+    let at_constant = core.value_type_element(constant, Level::zero());
+
+    let mut domain = DomainArena::new();
+    let p = variable(&mut domain, BinderLevel::from(0_u32));
+    let v = variable(&mut domain, BinderLevel::from(1_u32));
+    let closure = |domain: &mut DomainArena, body, captures: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &capture in captures {
+            environment.extend(Zone::Intuitionistic, capture);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    let returned = |domain: &mut DomainArena, level: u32| {
+        let motive = closure(domain, unit, &[]);
+        let transported = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(level),
+                },
+                Vec::from([Elimination::PathTransport { motive, value: v }]),
+                Unfolding::Rigid,
+            )
+            .expect("a transport along a variable mints");
+        let held = domain.comp_neutral(transported, crate::domain::CompTermFace::Reduced);
+        let neutral = domain
+            .neutral_node(NeutralHead::Returned(held), Vec::new(), Unfolding::Rigid)
+            .expect("a returned call mints");
+        domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("the returned call resolves")
+    };
+    let writing = closure(&mut domain, written, &[v, p]);
+    let writing_apart = closure(&mut domain, written_apart, &[v, p]);
+    let over_variable = closure(&mut domain, inside, &[p]);
+    let over_constant = closure(&mut domain, at_constant, &[]);
+    let (one, other) = (returned(&mut domain, 0), returned(&mut domain, 1));
+    let over_one = closure(&mut domain, written, &[one, p]);
+    let over_other = closure(&mut domain, written, &[other, p]);
+    let written_call = |side, against| {
+        Ok(CodeReading::Over(alloc::vec![SetAside::Written(
+            WrittenCall {
+                side,
+                call,
+                closure: writing,
+                against,
+            }
+        )]))
+    };
+    let at_p = Against::Variable(Zone::Intuitionistic, BinderLevel::from(0_u32));
+    let compared =
+        |left, right| compare_codes_over(&core, &domain, ConstantReading::Unread, left, right);
+
+    assert_eq!(
+        written_call(ConversionSide::Left, at_p),
+        compared(writing, over_variable),
+        "a written call against a variable is set aside"
+    );
+    assert_eq!(
+        written_call(ConversionSide::Right, at_p),
+        compared(over_variable, writing),
+        "and so on the other side"
+    );
+    assert_eq!(
+        written_call(
+            ConversionSide::Left,
+            Against::Written(swapped, writing_apart)
+        ),
+        compared(writing, writing_apart),
+        "two calls whose parts part are set aside whole"
+    );
+    assert_eq!(
+        Ok(CodeReading::Over(alloc::vec![SetAside::Held(one, other)])),
+        compared(over_one, over_other),
+        "two calls whose parts set aside held endpoints keep those pairs"
+    );
     assert_eq!(
         Ok(CodeReading::Compared(CodeComparison::Undecided)),
-        compare_codes_over(
-            &core,
-            &domain,
-            ConstantReading::Unread,
-            writing,
-            over_variable
-        ),
-        "a written call against a held variable sets nothing aside"
+        compared(writing, over_constant),
+        "a written call against a constant sets nothing aside"
     );
 }
 
