@@ -91,6 +91,13 @@ enum Ending
         /// The children, in subgoal order.
         children: Vec<ProcessId>,
     },
+    /// The goal's premises all agreed over this pair, which a replay reads
+    /// whole: the emission closes it in one shared comparison.
+    Shared
+    {
+        /// The pair the premises settle.
+        pair: (Glued, Glued),
+    },
 }
 
 /// One process's derivation: its decisions in order and its ending.
@@ -357,6 +364,50 @@ impl Derivations
         Ok(())
     }
 
+    /// Record that `process` settled `pair` over premises a replay never reads.
+    ///
+    /// # Specification
+    /// - requires: `process` was opened.
+    /// - ensures: when recording, the derivation ends in one shared comparison
+    ///   over `pair`; otherwise nothing changes.
+    /// - provides: the ending of two codes the machine read over their held
+    ///   values, which the kernel's replay compares whole on its own terms.
+    /// - fails: [`ConversionFault::MachineInvariant`] when recording and the
+    ///   process was never opened.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ConversionFault::MachineInvariant`] — no derivation for `process`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two motives over two thunks whose bodies differ as
+    ///   written but convert emit one shared comparison the kernel's replay
+    ///   closes; emitting their premises instead leaves a decomposition the
+    ///   replay cannot read.
+    /// - witness: `machine::tests::codes_over_held_values_emit_one_shared_comparison_4005`
+    #[spec(
+        ensures: |ret| if matches!(self.activity, SinkActivity::Inactive) { ret == Ok(()) }
+        else { self.store.get(usize::from(process)).map_or_else(
+            || ret == Err(ConversionFault::MachineInvariant),
+            |held| ret == Ok(()) && held.ending == Ending::Shared { pair }) },
+    )]
+    pub(crate) fn share_on(
+        &mut self,
+        process: ProcessId,
+        pair: (Glued, Glued),
+    ) -> Result<(), ConversionFault>
+    {
+        if matches!(self.activity, SinkActivity::Inactive) {
+            return Ok(());
+        }
+        let derivation = self
+            .store
+            .get_mut(usize::from(process))
+            .ok_or(ConversionFault::MachineInvariant)?;
+        derivation.ending = Ending::Shared { pair };
+        Ok(())
+    }
+
     /// Emit the derivation rooted at `root` into `sink`, in preorder.
     ///
     /// # Specification
@@ -366,11 +417,12 @@ impl Derivations
     ///   followed by its children's derivations in order — except that an
     ///   agreeing decomposition whose pair the search-free steps settle equal
     ///   emits its ending as one [`ConversionDecision::ComparedShared`] on that
-    ///   pair after its own decisions. An uncollapsed agreeing decomposition
-    ///   emits a `Decompose` delimiter before its children, so a child's
-    ///   closing decision cannot be mistaken for the parent's. Shared
-    ///   derivations are emitted under each parent; inactive sinks receive
-    ///   none.
+    ///   pair after its own decisions, and a pair settled over premises a
+    ///   replay never reads emits that one closing whatever the steps settle.
+    ///   An uncollapsed agreeing decomposition emits a `Decompose` delimiter
+    ///   before its children, so a child's closing decision cannot be mistaken
+    ///   for the parent's. Shared derivations are emitted under each parent;
+    ///   inactive sinks receive none.
     /// - provides: the sequential trace the kernel replays. The predicate
     ///   checks inactivity, root resolution and observable decision counts; the
     ///   witnesses pin preorder and repeated children.
@@ -427,6 +479,7 @@ impl Derivations
                         Ending::Alone => ret == Ok(()) && recorded == own,
                         Ending::Agreed { pair, .. } if matches!(settle(core, domain, pair), Ok(Settlement::Identical | Settlement::StructurallyEqual)) =>
                             ret == Ok(()) && recorded == own.saturating_add(1),
+                        Ending::Shared { .. } => ret == Ok(()) && recorded == own.saturating_add(1),
                         Ending::Children(_) | Ending::Agreed { .. } => true,
                     }
                 }
@@ -474,6 +527,12 @@ impl Derivations
                             stack.extend(children.iter().rev());
                         },
                     }
+                },
+                Ending::Shared { pair } => {
+                    sink.record(ConversionDecision::ComparedShared {
+                        left: TraceNode::of(pair.0),
+                        right: TraceNode::of(pair.1),
+                    });
                 },
             }
         }

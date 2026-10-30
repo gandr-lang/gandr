@@ -12,8 +12,10 @@ use gandr_kernel_term::DeBruijnIndex;
 
 use super::Alike;
 use super::CodeComparison;
+use super::CodeReading;
 use super::ConstantReading;
 use super::compare_codes;
+use super::compare_codes_over;
 use super::motives_alike;
 use crate::arena::DomainArena;
 use crate::arena::DomainValueId;
@@ -740,6 +742,176 @@ fn motives_calling_thunks_written_apart_are_alike_3920()
         Alike::Different,
         motives_alike(&core, &domain, over_f, over_f_other).expect("both motives resolve"),
         "but a motive calling another lambda is not"
+    );
+}
+
+#[test]
+fn codes_over_held_values_the_walk_cannot_match_set_them_aside_4005()
+{
+    // #4005: `El(#0)` over a path an action returned, `⟨transport along p⟩`,
+    // written once through each of two motives of one family written apart.
+    // The two endpoints are two neutrals of one shape, which the walk compares
+    // by identity, so the two codes are undecided. The walk that sets aside
+    // finds them α-equal over the pair of endpoints, which the machine reads
+    // through. So too for two thunks of `λq. return g` and `λq. return g to
+    // t. return t`, whose bodies differ as written. One endpoint held twice
+    // is one code, and a code over another former sets nothing aside.
+    let mut core = CoreArena::new();
+    let element = |core: &mut CoreArena, index: u32| {
+        let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        core.value_type_element(read, Level::zero())
+    };
+    let (inside, one_out, two_out) = (
+        element(&mut core, 0),
+        element(&mut core, 1),
+        element(&mut core, 2),
+    );
+    let unit = core.value_type_unit();
+    let called = {
+        let function = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = core.computation_force(function);
+        let call = core.computation_application(forced, endpoint);
+        let code = core.value_returned(call);
+        core.value_type_element(code, Level::zero())
+    };
+    let (returning, rebinding) = {
+        let g = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let returned = core.computation_return(g);
+        let bound = core.computation_return(g);
+        let t = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let passed = core.computation_return(t);
+        let rebound = core.computation_bind(bound, passed);
+        (
+            core.computation_lambda(returned),
+            core.computation_lambda(rebound),
+        )
+    };
+
+    let mut domain = DomainArena::new();
+    let path = BinderLevel::from(0_u32);
+    let g = variable(&mut domain, BinderLevel::from(1_u32));
+    let carried = variable(&mut domain, BinderLevel::from(2_u32));
+    let endpoint = variable(&mut domain, BinderLevel::from(3_u32));
+    let (x, y) = (
+        variable(&mut domain, BinderLevel::from(4_u32)),
+        variable(&mut domain, BinderLevel::from(5_u32)),
+    );
+    let closure = |domain: &mut DomainArena, body, captures: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &capture in captures {
+            environment.extend(Zone::Intuitionistic, capture);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    // `⟨transport along p⟩` under a motive, minted afresh for each motive.
+    let returned_path = |domain: &mut DomainArena, motive| {
+        let transported = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: path,
+                },
+                Vec::from([Elimination::PathTransport {
+                    motive,
+                    value: carried,
+                }]),
+                Unfolding::Rigid,
+            )
+            .expect("a transport along a variable mints");
+        let call = domain.comp_neutral(transported, crate::domain::CompTermFace::Reduced);
+        domain
+            .neutral_node(NeutralHead::Returned(call), Vec::new(), Unfolding::Rigid)
+            .expect("a returned call mints")
+    };
+    let held = |domain: &mut DomainArena, neutral| {
+        domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("the returned call resolves")
+    };
+    let written = closure(&mut domain, one_out, &[x]);
+    let apart = closure(&mut domain, two_out, &[x, y]);
+    let through_written = returned_path(&mut domain, written);
+    let through_apart = returned_path(&mut domain, apart);
+    let (once, again, other) = (
+        held(&mut domain, through_written),
+        held(&mut domain, through_written),
+        held(&mut domain, through_apart),
+    );
+    let over_once = closure(&mut domain, inside, &[once]);
+    let over_again = closure(&mut domain, inside, &[again]);
+    let over_other = closure(&mut domain, inside, &[other]);
+    assert_eq!(
+        Ok(CodeComparison::Undecided),
+        compare_codes(
+            &core,
+            &domain,
+            ConstantReading::Unread,
+            over_once,
+            over_other
+        ),
+        "two endpoints of one shape written apart are undecided by identity"
+    );
+    assert_eq!(
+        Ok(CodeReading::Over(alloc::vec![(once, other)])),
+        compare_codes_over(
+            &core,
+            &domain,
+            ConstantReading::Unread,
+            over_once,
+            over_other
+        ),
+        "setting the pair of endpoints aside, the two codes are α-equal over it"
+    );
+    assert_eq!(
+        Ok(CodeReading::Compared(CodeComparison::Equal)),
+        compare_codes_over(
+            &core,
+            &domain,
+            ConstantReading::Unread,
+            over_once,
+            over_again
+        ),
+        "one endpoint held twice is one code, nothing set aside"
+    );
+
+    let thunk = |domain: &mut DomainArena, body| {
+        let mut environment = Environment::new();
+        environment.extend(Zone::Intuitionistic, g);
+        let body = domain.comp_closure_node(body, environment);
+        domain.value_thunk(body, TermFace::Reduced)
+    };
+    let f = thunk(&mut domain, returning);
+    let f_rebinding = thunk(&mut domain, rebinding);
+    let calling = closure(&mut domain, called, &[f, endpoint]);
+    let calling_rebinding = closure(&mut domain, called, &[f_rebinding, endpoint]);
+    let over_unit = closure(&mut domain, unit, &[f, endpoint]);
+    assert_eq!(
+        Ok(CodeComparison::Undecided),
+        compare_codes(
+            &core,
+            &domain,
+            ConstantReading::Unread,
+            calling,
+            calling_rebinding
+        ),
+        "two thunks whose bodies differ as written are undecided"
+    );
+    assert_eq!(
+        Ok(CodeReading::Over(alloc::vec![(f, f_rebinding)])),
+        compare_codes_over(
+            &core,
+            &domain,
+            ConstantReading::Unread,
+            calling,
+            calling_rebinding
+        ),
+        "setting the pair of thunks aside, the two codes are α-equal over it"
+    );
+    assert_eq!(
+        Ok(CodeReading::Compared(CodeComparison::Undecided)),
+        compare_codes_over(&core, &domain, ConstantReading::Unread, calling, over_unit),
+        "a code over another former sets nothing aside and stays undecided"
     );
 }
 

@@ -4424,6 +4424,88 @@ fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_
 }
 
 #[test]
+fn codes_over_held_values_emit_one_shared_comparison_4005()
+{
+    // #4005: `λg. λp. return thunk(λq. return g) to f. tr(y. Path(Unit, ⟨force
+    // f ()⟩, y), p, ())` against the same with the lambda's body written `return
+    // g to t. return t`. The two bodies differ as written, so the two motives
+    // are α-equal only over the pair of thunks. The machine reads that pair
+    // through to `return g` on both sides and emits the motives as one shared
+    // comparison, never the forced premises, and the kernel's replay closes
+    // it on its own terms. A thunk returning `p` against one returning `g`
+    // refutes the premise, and the motives decline rather than refute.
+    let build = || {
+        let mut core = CoreArena::new();
+        let unit_type = core.value_type_unit();
+        let unit = core.value_unit();
+        // Under `g`, `p` and the lambda's `q`: `g` is #2 and `p` is #1.
+        let side = |core: &mut CoreArena, read: u32, rebinds: bool| {
+            let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(read));
+            let mut returned = core.computation_return(read);
+            if rebinds {
+                let bound = innermost(core);
+                let passed = core.computation_return(bound);
+                returned = core.computation_bind(returned, passed);
+            }
+            let lambda = core.computation_lambda(returned);
+            let thunk = core.value_thunk(lambda);
+            let f = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            let applied = call(core, f, &[unit]);
+            let endpoint = core.value_returned(applied);
+            let point = innermost(core);
+            let motive = core.value_type_path(unit_type, endpoint, point);
+            let path = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            let transport = core.computation_path_transport(motive, path, unit);
+            let bound = core.computation_return(thunk);
+            let body = core.computation_bind(bound, transport);
+            let over_p = core.computation_lambda(body);
+            core.computation_lambda(over_p)
+        };
+        let returning = side(&mut core, 2, false);
+        let rebinding = side(&mut core, 2, true);
+        let returning_p = side(&mut core, 1, false);
+        let converting = [
+            Sides::Computations(returning, rebinding),
+            Sides::Computations(rebinding, returning),
+        ];
+        (
+            core,
+            converting,
+            Sides::Computations(returning, returning_p),
+        )
+    };
+    let (core, converting, declining) = build();
+    let world = World::new(core, &[]);
+
+    for sides in converting {
+        let (verdict, decisions) = world.traced(sides);
+        assert_eq!(
+            MachineVerdict::Convertible,
+            verdict,
+            "the motives are one code over the pair of thunks: {decisions:?}"
+        );
+        assert!(
+            !decisions
+                .iter()
+                .any(|decision| matches!(decision, ConversionDecision::Force { .. })),
+            "the trace carries the motives as one shared comparison, not the forced thunks: \
+             {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Convertible,
+            world.replayed(sides, verdict, &decisions),
+            "the kernel closes the shared comparison on its own terms: {decisions:?}"
+        );
+    }
+    let (verdict, decisions) = world.traced(declining);
+    assert_eq!(
+        MachineVerdict::Declined(DeclineReason::UndecidedCodes),
+        verdict,
+        "a refuted premise leaves the motives undecided, never apart: {decisions:?}"
+    );
+}
+
+#[test]
 fn a_returning_call_holds_where_its_continuation_passes_it_on_3824()
 {
     // Under rigid `t`, `g`, `h` and `z` at levels 0 to 3: `force t ⟨force h
