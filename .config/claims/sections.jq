@@ -62,8 +62,10 @@ def keyed:
     | if ($keys | length) == 0 then null else {line: $line, keys: $keys, text: (.text | sub("\\s+$"; ""))} end
     end;
 
-# The roles a `## Sources` row gives its source (#3594).
-def source_roles: ["primary", "secondary", "not read"];
+# The roles a `## Sources` row gives its source (#3594). `oracle` names the
+# other system a shallow embedding is compared with (#3964, `design.md` §
+# design-scope), whose unit then owes `## Embedding owes`.
+def source_roles: ["primary", "secondary", "oracle", "not read"];
 
 # The rows of the body's `## Sources` table (#3594), each as {line, keys,
 # role, text}. The table has the columns Source, Role and What it gives. The
@@ -179,6 +181,22 @@ def after:
        none: any($lines[]; after_none),
        numbers: [$lines[] | select(after_item) | capture("^[-*] #(?<n>[0-9]+)").n | tonumber],
        malformed: [$lines[] | select((after_none or after_item) | not)]}
+    end;
+
+# The issue's `## Embedding owes` (#3964): the operations its oracle has and
+# gandr lacks, as {empty, none, numbers, malformed}, or null when the body
+# has none. A content line, HTML comments and blank lines dropped, is
+# `- #n — <the operation>` or `none — <why nothing is owed>`. A bare `none`
+# gives no reason, so it is malformed.
+def owes_none: test("^\\s*none —\\s*\\S"; "i");
+def owes:
+  (section("Embedding owes") // null)
+  | if . == null then null
+    else (join("\n") | gsub("(?s)<!--.*?-->"; "") | split("\n") | map(select(test("\\S")))) as $lines
+    | {empty: ($lines | length == 0),
+       none: any($lines[]; owes_none),
+       numbers: [$lines[] | select(after_item) | capture("^[-*] #(?<n>[0-9]+)").n | tonumber],
+       malformed: [$lines[] | select((owes_none or after_item) | not)]}
     end;
 
 # The body with `#$n` listed in its `## After`, `- #$n — $clause`: the item

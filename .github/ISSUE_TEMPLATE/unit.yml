@@ -64,7 +64,7 @@ body:
     attributes:
       label: Sources
       description: >-
-        One row per source. The role is primary (read whole, or the cited sections), secondary, or not read.
+        One row per source. The role is primary (read whole, or the cited sections), secondary, oracle (the other system a shallow embedding is compared with, which then needs an `## Embedding owes` section), or not read.
         Include the vault's two listings.
       value: |
         | Source | Role | What it gives |
@@ -72,6 +72,15 @@ body:
         | `<library stem or design page>` | primary | <what it decides for this unit> |
     validations:
       required: true
+  - type: textarea
+    id: embedding-owes
+    attributes:
+      label: Embedding owes
+      description: >-
+        Only when a Sources row has the role oracle: one `- #n — <the operation>` per operation the oracle
+        has and gandr lacks, each its own issue, or `none — <why nothing is owed>`. Leave it empty otherwise.
+    validations:
+      required: false
   - type: textarea
     id: readings
     attributes:
