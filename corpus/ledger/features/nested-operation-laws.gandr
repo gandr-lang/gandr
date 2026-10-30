@@ -1,6 +1,6 @@
 /// `nested-operation-laws`: Operations nested in a law or a call.
-/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused; a law nesting an operation over an indexed sort is read, completed and decided with those indices, beside an operation whose output's indices apply one with indices of its own.
-/// Not implemented: a family's rule nesting an operation, a law whose indices apply an operation with indices of its own, and a law whose sides sort only modulo the block's rules, are refused `UndescribedMember.NestedOperation`; #1510 and #522 owe them.
+/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused; a law nesting an operation over an indexed sort is read, completed and decided with those indices, an index at a sort the laws rewrite left off, so a whisker's laws read over objects.
+/// Not implemented: a family's rule nesting an operation, a law whose carried indices apply an operation with indices of its own, and a law whose sides sort only modulo the block's rules, are refused `UndescribedMember.NestedOperation`; #1510 and #522 owe them.
 // A choice that commits to its left branch once a cut stands there, over a
 // sort graded by how a computation may end (#2792): `orBot(cut, fail)` nests
 // two operations where the cell layer reads values, so it normalizes over
@@ -37,9 +37,9 @@ theory Category {
   rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
 }
 
-/// 2-cells between homs: a whisker's output stands at composites, which
-/// carry objects of their own, yet the laws apart from it are read with
-/// their objects and 1-cells (#1510).
+/// 2-cells between homs: the laws rewrite homs, so a 2-cell carries no hom,
+/// and a whisker carries only the objects its hom stands between. A whisker
+/// distributes over vertical composition, which the laws decide (#1510).
 theory TwoCells {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
@@ -54,6 +54,7 @@ theory TwoCells {
   rule unitR : comp(f, id(b)) ==> f;
   rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
   rule vassoc : vcomp(vcomp(s, t), u) ==> vcomp(s, vcomp(t, u));
+  rule whiskerDist : whiskerR(vcomp(s, t), h) ==> vcomp(whiskerR(s, h), whiskerR(t, h));
 }
 
 /// Views of an edited morphism: `fuse` and `step` rewrite `view(edit(f))`
