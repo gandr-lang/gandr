@@ -3,9 +3,11 @@
 //! examined and the smallest counter-example.
 //!
 //! Conditions on single maps run over the shapes of size at most five;
-//! conditions on composable pairs and spans over size at most four. The last
-//! table builds the chain catalogue and the wiring catalogue at size seven and
-//! times each one's build and stratum certification.
+//! conditions on composable pairs and spans over size at most four. The
+//! stratum table builds the chain catalogue and the wiring catalogue at size
+//! seven and times each one's build and stratum certification. The last table
+//! runs the conditions over a level on `W ≀ W`, the wreath of the wiring site
+//! over itself, at the same total sizes.
 //!
 //! Run it with `cargo run --release -p gandr-theory-sites --example suites`.
 
@@ -14,18 +16,22 @@ use std::io::Write;
 use std::io::stdout;
 use std::time::Instant;
 
+use gandr_theory_sites::CaseCount;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Cocones;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::GeneratorBound;
+use gandr_theory_sites::Level as _;
 use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Part;
 use gandr_theory_sites::Scope;
 use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Site;
 use gandr_theory_sites::Uncertified;
+use gandr_theory_sites::Wreath;
 use gandr_theory_sites::closure;
 use gandr_theory_sites::codegeneracies;
 use gandr_theory_sites::core_decomposition;
@@ -176,6 +182,102 @@ fn stratum_row(
         elapsed.as_micros(),
     )?;
     Ok(())
+}
+
+/// How many maps a wreath holds.
+///
+/// # Specification
+/// trivial.
+fn wreath_maps(wreath: &Wreath<Catalogue>) -> CaseCount
+{
+    let count = wreath.objects().len();
+    CaseCount::from(
+        (0 .. count)
+            .flat_map(|source| (0 .. count).map(move |target| (source, target)))
+            .map(|(source, target)| {
+                wreath
+                    .hom(ShapeIndex::from(source), ShapeIndex::from(target))
+                    .len()
+            })
+            .sum::<usize>(),
+    )
+}
+
+/// The wreath's table: `W ≀ W`'s object and map counts, then each condition
+/// over a level, single maps at the first total size and composable pairs
+/// and spans at the second.
+///
+/// # Specification
+/// trivial.
+fn wreath_rows(
+    out: &mut impl Write,
+    (single, paired): (&Catalogue, &Catalogue),
+    (one, two): (ShapeSize, ShapeSize),
+) -> std::io::Result<()>
+{
+    let start = Instant::now();
+    let wide = Wreath::build(single, single, one);
+    let narrow = Wreath::build(paired, paired, two);
+    let built = start.elapsed();
+    writeln!(out)?;
+    writeln!(
+        out,
+        "W ≀ W: {} objects and {} maps at total size ≤ {}, {} and {} at ≤ {}, built in {} ms",
+        wide.objects().len(),
+        usize::from(wreath_maps(&wide)),
+        usize::from(one),
+        narrow.objects().len(),
+        usize::from(wreath_maps(&narrow)),
+        usize::from(two),
+        built.as_millis(),
+    )?;
+    writeln!(out)?;
+    let (wide, narrow) = (Site::new(&wide), Site::new(&narrow));
+    header(out)?;
+    row(out, &"identities", one, &identities(&wide))?;
+    for (name, part) in [
+        ("closure", Part::Whole),
+        ("closure of the raising maps", Part::Raising),
+        ("closure of the lowering maps", Part::Lowering),
+    ] {
+        row(out, &name, two, &closure(&narrow, part))?;
+    }
+    row(
+        out,
+        &"raising ∩ lowering = isomorphisms",
+        one,
+        &intersection(&wide),
+    )?;
+    row(
+        out,
+        &"invertible ⇔ two-sided inverse",
+        one,
+        &invertibility(&wide),
+    )?;
+    row(
+        out,
+        &"degree orders both classes",
+        one,
+        &degree_order(&wide, Scope::Both),
+    )?;
+    row(
+        out,
+        &"factorization, unique up to unique iso",
+        one,
+        &factorization(&wide),
+    )?;
+    row(out, &"rigidity (iv)", one, &rigidity(&wide))?;
+    row(out, &"dual rigidity (iv′)", one, &dual_rigidity(&wide))?;
+    row(out, &"lowering maps split", one, &split_lowering(&wide))?;
+    let pushed = pushouts(&narrow);
+    row(
+        out,
+        &"pushout along a deletion exists",
+        two,
+        &pushed.existence,
+    )?;
+    row(out, &"pushed-out map is raising", two, &pushed.stability)?;
+    writeln!(out, "conditions run in {} ms", start.elapsed().as_millis())
 }
 
 /// Runs every condition and prints its row.
@@ -364,5 +466,6 @@ fn main() -> Result<(), RunError>
         Degree::from(4_usize),
         Catalogue::build,
     )?;
+    wreath_rows(&mut out, (&single, &paired), (one, two))?;
     Ok(())
 }

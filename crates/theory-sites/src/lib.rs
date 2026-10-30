@@ -128,6 +128,12 @@
 //! chains alone, [`Family::Chains`], certifies the same way, and [`fills`]
 //! checks that a diagram's cells meet along a shape's inner wires.
 //!
+//! The conditions read a site through [`Level`], its objects, maps and
+//! classes at a bound; the catalogue is level one. A [`Wreath`] over the
+//! wiring catalogue and a level is the next level: an outer shape whose
+//! vertices each carry an object of the level below, so a pasting diagram of
+//! dimension `n` is a shape of the `n`-th level.
+//!
 //! [`segal`]: crate::segal()
 //!
 //! # Boundary wrappers
@@ -233,6 +239,7 @@ mod catalogue;
 mod conditions;
 mod degree;
 mod diagram;
+mod level;
 mod map;
 #[cfg(test)]
 mod negatives;
@@ -242,6 +249,7 @@ mod segal;
 mod shape;
 mod stratum;
 mod units;
+mod wreath;
 
 pub use catalogue::Catalogue;
 pub use catalogue::Family;
@@ -274,6 +282,7 @@ pub use degree::Degree;
 pub use diagram::Boundary;
 pub use diagram::Unfilled;
 pub use diagram::fills;
+pub use level::Level;
 pub use map::CompositionMismatch;
 pub use map::ImageForm;
 pub use map::Invertibility;
@@ -336,3 +345,6 @@ pub use units::labelled_by_arity;
 pub use units::merge;
 pub use units::scalars;
 pub use units::unit_property;
+pub use wreath::Wreath;
+pub use wreath::WreathMap;
+pub use wreath::WreathShape;
