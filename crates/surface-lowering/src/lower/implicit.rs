@@ -66,8 +66,11 @@
 //!   supply stands and raised past those lambdas, so it names none of them.
 //! - A stage crosses only at a call's head, so a supply of one standing as a
 //!   value opens a lambda for every explicit parameter and stands as the call.
-//! - The grammar writes no telescope after `def rec`, so a recursive function
-//!   has no implicits.
+//! - A recursive tail takes a telescope too, `def rec f @[a : Type] (…)`. Its
+//!   staging is read off the written list and counted over the merged telescope
+//!   ([`Lowerer::merged_staging`]), and its recursive call omits each implicit:
+//!   one before the fixpoint is the function's own, one past it a hole the call
+//!   nominates ([`Lowerer::omitted_entries`]).
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -366,7 +369,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::model_slot`].
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|&(_, ref slot)| !slot.components().is_empty())))]
-    fn implicit_slot(
+    pub(super) fn implicit_slot(
         &mut self,
         site: Site,
         entry: TelescopeEntry<'source>,
@@ -380,6 +383,69 @@ impl<'source> Lowerer<'_, 'source>
             .model_slot(site, declared)?
             .filter(|slot| !slot.components().is_empty())
             .map(|slot| (declared, slot)))
+    }
+
+    /// The staging a recursive tail at `site` binds its parameters by,
+    /// counted over its merged telescope: `written` is read off the
+    /// written parameter list, which a recursive call's arguments follow.
+    ///
+    /// # Specification
+    /// - requires: `written` is [`Self::staged_by_body`]'s staging over the
+    ///   function's explicit parameters, in written order.
+    /// - ensures: for a function with a merged telescope, `staged` is the place
+    ///   the explicit parameter `written.staged` binds at, and `kept` the place
+    ///   of the explicit parameter `written.kept`, every implicit before it
+    ///   kept with the parameters before it: a call omits an implicit, so it
+    ///   passes the function's own. A model implicit counts one place per
+    ///   component. Where no explicit parameter answers, the place past every
+    ///   parameter. Without a merged telescope, `written`.
+    /// - fails: as [`Self::implicit_slot`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recursive tail whose implicit precedes its staged
+    ///   parameter keeps the implicit outside its fixpoint and stages the
+    ///   parameter its match takes apart.
+    /// - witness: `lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged))]
+    pub(super) fn merged_staging(
+        &mut self,
+        site: Site,
+        written: super::native::Staging,
+    ) -> Result<super::native::Staging, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(entries) = self.merged_at(site.at.node)
+        else {
+            return Ok(written);
+        };
+        let entries = entries.to_vec();
+        let mut bound = 0_usize;
+        let mut explicit = 0_usize;
+        let mut kept = None;
+        let mut staged = None;
+        for entry in entries {
+            let width = self
+                .implicit_slot(site, entry)?
+                .map_or(1, |(_, slot)| slot.components().len());
+            if entry.plicity == Plicity::Explicit {
+                if explicit == written.kept.0 && kept.is_none() {
+                    kept = Some(bound);
+                }
+                if explicit == written.staged.0 {
+                    staged = Some(bound);
+                }
+                explicit = explicit.saturating_add(1);
+            }
+            bound = bound.saturating_add(width);
+        }
+        let staged = staged.unwrap_or(bound);
+        Ok(super::native::Staging {
+            kept: super::native::ParameterAt(kept.unwrap_or(bound).min(staged)),
+            staged: super::native::ParameterAt(staged),
+        })
     }
 
     /// Refuse the use at `site` of the declaration `constant` when the
@@ -1043,7 +1109,7 @@ impl<'source> Lowerer<'_, 'source>
         captures: before = self.operands.len(),
         ensures: |ret| ret.is_err() || self.operands.len() == before.saturating_add(slot.components().len()),
     )]
-    fn pass_model(
+    pub(super) fn pass_model(
         &mut self,
         site: Site,
         frame: Frame,

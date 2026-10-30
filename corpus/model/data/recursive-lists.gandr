@@ -4,8 +4,10 @@
 // written with the call nested in the constructor it returns. A structural
 // recursive call stands one stage below the list it was read from (Abel,
 // _Termination checking with types_, doi:10.1051/ita:2004015); the list is
-// the polymorphic one of Martin-Löf's type theory. They run at the naturals
-// in `recursive-nat-lists.gandr`.
+// the polymorphic one of Martin-Löf's type theory. A fold may take the
+// element type implicitly, `@[a : Type]`: its recursive call omits `a` and
+// passes the function's own. They run at the naturals in
+// `recursive-nat-lists.gandr`.
 
 // The naturals and the lists.
 import "./data-base.gandr";
@@ -34,6 +36,15 @@ def rec length_nested(a : Type, xs : List(a)) -> Nat {
   }
 }
 
+/// The length of a list, its element type implicit: the recursive call omits
+/// `a`, so it passes the function's own, and descends on `xs`.
+pub def rec length_implicit @[a : Type] (xs : List(a)) -> Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => Succ(length_implicit[<](rest))
+  }
+}
+
 /// Appending two lists, returned, the run written at its read.
 def rec append(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
@@ -55,6 +66,15 @@ def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_nested[<](a, ys, rest)) : List(a))
+  }
+}
+
+/// Appending two lists, their element type implicit: the recursive call
+/// passes `a` and `ys` on and descends on `xs`.
+pub def rec append_implicit @[a : Type] (ys : List(a), xs : List(a)) -> List(a) {
+  case xs {
+    Nil => ys,
+    Cons(x, rest) => (Cons(x, append_implicit[<](ys, rest)) : List(a))
   }
 }
 

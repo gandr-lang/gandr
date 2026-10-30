@@ -1,0 +1,57 @@
+test: lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-25b2bff7e1b8e468"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-25b2bff7e1b8e468' (x86_64).
+(lldb) settings set -- target.run-args  "lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_lowering-25b2bff7e1b8e468`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000002a7fc18
+(lldb) run
+
+running 1 test
+test lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828 ... 
+thread 'lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828' (1540610) panicked at crates/surface-lowering/src/fixture.rs:74:5:
+the fixture source is one the parser accepts without repair
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1540557 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-25b2bff7e1b8e468' (x86_64)
+Process 1540557 stopped
+* thread #2, name = 'lower::native::', stop reason = breakpoint 1.1
+       frame #0: 0x0000555557fd3c18 gandr_surface_lowering-25b2bff7e1b8e468`__rustc::rust_panic at panicking.rs:875:25
+(lldb) bt 24
+error: gandr_surface_lowering-25b2bff7e1b8e468 0x01859e57: DW_TAG_member '__0' refers to type 0x00000000016e9cba which was unable to be parsed
+* thread #2, name = 'lower::native::', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555557fd3c18 gandr_surface_lowering-25b2bff7e1b8e468`__rustc::rust_panic at panicking.rs:875:25
+     frame #1: 0x000055555819f53f gandr_surface_lowering-25b2bff7e1b8e468`std::panicking::panic_with_hook at panicking.rs:839:5
+     frame #2: 0x0000555557fd31a4 gandr_surface_lowering-25b2bff7e1b8e468`std::panicking::panic_handler::{closure#0} at panicking.rs:680:13
+     frame #3: 0x0000555557fc84d9 gandr_surface_lowering-25b2bff7e1b8e468`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555557fd3e8d gandr_surface_lowering-25b2bff7e1b8e468`__rustc::rust_begin_unwind at panicking.rs:678:5
+     frame #5: 0x0000555558186e6c gandr_surface_lowering-25b2bff7e1b8e468`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x000055555675048f gandr_surface_lowering-25b2bff7e1b8e468`gandr_surface_lowering::fixture::parsed::{closure#0} at fixture.rs:74:5
+     frame #7: 0x00005555565c577a gandr_surface_lowering-25b2bff7e1b8e468`anodized::__::eval_once::<gandr_surface_syntax::tree::SyntaxTree, gandr_surface_lowering::fixture::parsed::{closure#0}>(closure={_ref__pbg:{dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:27, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=169, rule_names:{map:{root:Some({…}), length:169, alloc:{value:{…}}, _marker:{}}}, adaptations:size=73, molds:{molds:size=3314, rctxs:size=3314, bounds:size=3314, owners:size=3314, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=193, mold_labels:size=3314, adjacencies:size=8204, successor_starts:size=3315, has_pred:size=3314, has_succ:size=3314, form_first:size=200, is_first:size=3314, form_last:size=232, complete_last:size=203, is_complete_last:size=3314, required_tail:size=29, is_required_tail:size=3314, closing:size=3314, twins:size=3314, fingerprint:{0:6508449906899417014}}, automaton:{kinds:size=3314, observations:size=3314, width:52, sets:size=832}}, _ref__source:{__0:"data Chain(a : Type) : Type { End : Chain(a); Link : (h : a, t : Chain(a)) --> Chain(a); }\ndef rec size @[a : Type] (xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n"}}) at __.rs:22:5
+     frame #8: 0x000055555675edcf gandr_surface_lowering-25b2bff7e1b8e468`gandr_surface_lowering::fixture::parsed(pbg={dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:27, alloc:{value:{0:{}}}, _marker:{}}, rules:size=169, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:169, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=73, molds:{molds:size=3314, rctxs:size=3314, bounds:size=3314, owners:size=3314, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:31, items:193}, alloc:{}, marker:{}}}, menus:size=193, mold_labels:size=3314, adjacencies:size=8204, successor_starts:size=3315, has_pred:size=3314, has_succ:size=3314, form_first:size=200, is_first:size=3314, form_last:size=232, complete_last:size=203, is_complete_last:size=3314, required_tail:size=29, is_required_tail:size=3314, closing:size=3314, twins:size=3314, fingerprint:{0:6508449906899417014}}, automaton:{kinds:size=3314, observations:size=3314, width:52, sets:size=832}}, source={0:"data Chain(a : Type) : Type { End : Chain(a); Link : (h : a, t : Chain(a)) --> Chain(a); }\ndef rec size @[a : Type] (xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n"}) at fixture.rs:65:1
+     frame #9: 0x00005555572829f8 gandr_surface_lowering-25b2bff7e1b8e468`gandr_surface_lowering::lower::native::tests::lowered::{closure#0} at tests.rs:82:16
+     frame #10: 0x00005555565c44ea gandr_surface_lowering-25b2bff7e1b8e468`anodized::__::eval_once::<gandr_surface_lowering::module::LoweredModule, gandr_surface_lowering::lower::native::tests::lowered::{closure#0}>(closure={_ref__source:{__0:"data Chain(a : Type) : Type { End : Chain(a); Link : (h : a, t : Chain(a)) --> Chain(a); }\ndef rec size @[a : Type] (xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n"}, _ref__arena:{values:{frozen:None, own:size=0}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{}}, region_binders_from:None}}) at __.rs:22:5
+     frame #11: 0x00005555572dbea6 gandr_surface_lowering-25b2bff7e1b8e468`gandr_surface_lowering::lower::native::tests::lowered(source={0:"data Chain(a : Type) : Type { End : Chain(a); Link : (h : a, t : Chain(a)) --> Chain(a); }\ndef rec size @[a : Type] (xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n"}, arena={values:{frozen:None, own:size=0}, computations:{frozen:None, own:size=0}, value_types:{frozen:None, own:size=0}, comp_types:{frozen:None, own:size=0}, words:{words:{}}, region_binders_from:None}) at tests.rs:71:1
+     frame #12: 0x000055555730e3bb gandr_surface_lowering-25b2bff7e1b8e468`gandr_surface_lowering::lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828 at tests.rs:854:18
+     frame #13: 0x0000555557282987 gandr_surface_lowering-25b2bff7e1b8e468`gandr_surface_lowering::lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828::{closure#0}((null)={}) at tests.rs:847:84
+     frame #14: 0x00005555568811f6 gandr_surface_lowering-25b2bff7e1b8e468`<gandr_surface_lowering::lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #15: 0x000055555734cfeb gandr_surface_lowering-25b2bff7e1b8e468`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #16: 0x000055555734cfe9 gandr_surface_lowering-25b2bff7e1b8e468`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #17: 0x000055555735a645 gandr_surface_lowering-25b2bff7e1b8e468`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #18: 0x000055555735a640 gandr_surface_lowering-25b2bff7e1b8e468`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #19: 0x000055555735a640 gandr_surface_lowering-25b2bff7e1b8e468`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #20: 0x000055555735a62b gandr_surface_lowering-25b2bff7e1b8e468`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #21: 0x000055555735a62b gandr_surface_lowering-25b2bff7e1b8e468`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #22: 0x000055555735a62b gandr_surface_lowering-25b2bff7e1b8e468`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #23: 0x000055555735a616 gandr_surface_lowering-25b2bff7e1b8e468`test::run_test::{closure#0} at lib.rs:668:43
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

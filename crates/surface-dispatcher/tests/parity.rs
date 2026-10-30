@@ -627,9 +627,6 @@ enum Held
     /// A printing of a constructor at a type a definition computes, which
     /// names no family the printer reads it by (#3669).
     Computed,
-    /// A printing of a recursive definition with an implicit prefix, which
-    /// the grammar does not read yet (#3828).
-    Prefixed,
 }
 
 impl fmt::Display for Held
@@ -647,7 +644,6 @@ impl fmt::Display for Held
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
             Self::Computed => "#3669, a constructor at a type a definition computes",
-            Self::Prefixed => "#3828, a recursive definition with an implicit prefix",
         })
     }
 }
@@ -770,8 +766,7 @@ fn spelt(
     };
     if let Ok(Maybe::Present(whole)) = present_whole(bodied, whole, (ty, body), page, style) {
         if faithful(&whole) {
-            return prefixed(SourceFragment::from(whole.as_ref()))
-                .unwrap_or_else(|| Spelt::Declared(String::from(whole.as_ref())));
+            return Spelt::Declared(String::from(whole.as_ref()));
         }
         return unfaithful(whole.unspelled(), SourceFragment::from(whole.as_ref()));
     }
@@ -792,22 +787,6 @@ fn spelt(
         .copied()
         .collect();
     unfaithful(&unspelled, SourceFragment::from(text.as_str()))
-}
-
-/// The hold of a whole printing `text` that writes `def rec name @[`, a
-/// recursive definition with an implicit prefix: the grammar reads no such
-/// head yet (#3828), so the printing cannot read back as written.
-///
-/// # Specification
-/// trivial.
-fn prefixed(text: SourceFragment<'_>) -> Option<Spelt>
-{
-    match *tokens(text).as_slice() {
-        [ref def, ref rec, _, ref open, ..] if def == "def" && rec == "rec" && open == "@[" => {
-            Some(Spelt::Held(Held::Prefixed))
-        },
-        _ => None,
-    }
 }
 
 /// A printing `text` the printer wrote approximately for the reasons
