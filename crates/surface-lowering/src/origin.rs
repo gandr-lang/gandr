@@ -726,9 +726,10 @@ pub struct OriginTable
     /// Each label written against an entry, with what it labels, in the
     /// order lowered.
     labels: Vec<Label>,
-    /// Each index a data constructor's result states, by its bytes, with the
-    /// names of the binders it is read under, outermost first, in the order
-    /// lowered: a data declaration has no term whose binders name them.
+    /// Each type and stated index a data declaration writes, by its bytes,
+    /// with the names of the binders it is read under, outermost first, in
+    /// the order lowered: a data declaration has no term whose binders name
+    /// them.
     framed: Vec<(ByteSpan, Vec<String>)>,
     /// Each written type head standing for a type minted elsewhere, which it
     /// adopts, with the head's origin, in the order lowered.
@@ -2154,8 +2155,8 @@ impl OriginTable
         &self.labels
     }
 
-    /// Record that the index written at `span` is read under binders named
-    /// `names`, outermost first.
+    /// Record that the data declaration's type or stated index written at
+    /// `span` is read under binders named `names`, outermost first.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2165,8 +2166,9 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Cons`'s `S(n)` is framed under the family's
-    ///   parameter and the constructor's fields.
-    /// - witness: `lower::native::tests::each_stated_index_is_framed_under_its_family_s_telescope_931`
+    ///   parameter and the constructor's fields, and each type before it under
+    ///   the binders before that type.
+    /// - witness: `lower::native::tests::each_data_type_and_stated_index_is_framed_under_its_telescope_931`
     #[spec(
         captures: before = self.framed.len(),
         ensures: self.framed.len() == before.saturating_add(1),
@@ -2181,9 +2183,9 @@ impl OriginTable
         self.framed.push((span, names));
     }
 
-    /// Each index a data constructor's result states, by its bytes, with the
-    /// names of the binders it is read under, outermost first, in the order
-    /// lowered.
+    /// Each type and stated index a data declaration writes, by its bytes,
+    /// with the names of the binders it is read under, outermost first, in
+    /// the order lowered.
     ///
     /// # Specification
     /// trivial.

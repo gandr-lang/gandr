@@ -97,6 +97,7 @@ use gandr_core_term::hole::HoleId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerWidth;
 use quenchant_shape::shape::Maybe;
@@ -4522,6 +4523,50 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ) -> BinderDepth
     {
         self.binders.depth(zone)
+    }
+
+    /// The types of the intuitionistic binders open above `entry`, outermost
+    /// first: the hypotheses a refusal met there stands under.
+    ///
+    /// # Specification
+    /// - requires: nothing; `entry` at or above the depth gives none.
+    /// - ensures: one type per binder between `entry` and the depth, in the
+    ///   order the binders were opened; the binders are left as they stand.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal under a bind keeps the bind's binder, and a
+    ///   refused data field keeps the parameters and fields before it.
+    /// - witness: `judgement::tests::a_refusal_under_a_bind_keeps_its_hypothesis`
+    /// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
+    #[spec(
+        captures: depth = self.depth(Zone::Intuitionistic),
+        ensures: |ret| self.depth(Zone::Intuitionistic) == depth
+            && ret.len() <= usize::from(depth).saturating_sub(usize::from(entry)),
+    )]
+    pub(crate) fn opened_since(
+        &mut self,
+        entry: BinderDepth,
+    ) -> Vec<ValueTypeId>
+    {
+        let opened = usize::from(self.binders.depth(Zone::Intuitionistic))
+            .saturating_sub(usize::from(entry));
+        let mut hypotheses = Vec::with_capacity(opened);
+        for index in (0 .. opened).rev() {
+            let Ok(index) = u32::try_from(index)
+            else {
+                break;
+            };
+            let Ok(declared) = self
+                .binders
+                .occurrence(Zone::Intuitionistic, DeBruijnIndex::from(index))
+            else {
+                break;
+            };
+            hypotheses.push(declared);
+        }
+        hypotheses
     }
 
     /// The world the judgement stands at, without borrowing the binders

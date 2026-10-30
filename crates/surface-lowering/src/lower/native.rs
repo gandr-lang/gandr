@@ -2277,9 +2277,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   field but its constructor's last, and the last too where the
     ///   constructor states an index, bound to the field's written name or to
     ///   none; one seed per type and stated index the declarations write,
-    ///   appended to `seeds`; each stated index kept with the frame it is read
-    ///   under, for the names an editor spells its type in, and handed the
-    ///   [`Classifier::Stated`] of its place.
+    ///   appended to `seeds`; each of them but the universe kept with the frame
+    ///   it is read under, for the names a report or an editor spells its type
+    ///   in; and each stated index handed the [`Classifier::Stated`] of its
+    ///   place.
     /// - provides: the data half of [`Self::seed`].
     /// - fails: never.
     /// - panics: none.
@@ -2306,6 +2307,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut frame = Frame::Outermost;
             for parameter in &form.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
+                self.data_frames.push((parameter.classifier.node, frame));
                 let name = SurfaceName::from(self.text_at(parameter.named));
                 let bound = self.scope.extend_typed(
                     frame,
@@ -2325,6 +2327,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut indexed = frame;
             for index in &form.indices {
                 seeds.push((index.ty.node, Reading::ValueType(indexed)));
+                self.data_frames.push((index.ty.node, indexed));
                 let bound = match index.named {
                     Maybe::Present(named) => {
                         let name = SurfaceName::from(self.text_at(named));
@@ -2350,6 +2353,7 @@ impl<'source> Lowerer<'_, 'source>
                 let mut inner = frame;
                 for (position, field) in generator.fields.iter().enumerate() {
                     seeds.push((field.ty.node, Reading::ValueType(inner)));
+                    self.data_frames.push((field.ty.node, inner));
                     // The last field binds only for the indices the result
                     // states.
                     if Some(position) == last && generator.indices.is_empty() {
@@ -2377,7 +2381,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 for (place, index) in generator.indices.iter().enumerate() {
                     seeds.push((index.node, Reading::Value(inner)));
-                    self.index_frames.push((index.node, inner));
+                    self.data_frames.push((index.node, inner));
                     // A constructor written there is classified by the
                     // family's index type at its place.
                     let _first = self.inherited.insert(

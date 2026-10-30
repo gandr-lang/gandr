@@ -297,7 +297,8 @@ pub fn sentence(role: FrameRole) -> Sentence
 ///   its innermost, with every binder opened there; none at `primary`; an
 ///   obligation the table or the text cannot locate is an unlocated context,
 ///   one per run of equal roles. The hypotheses are the failure's, each named
-///   where its binder's name was written when the obligations account for every
+///   where its binder's name was written when the names a data declaration's
+///   frame gives ([`framed`]) and the obligations together account for every
 ///   hypothesis.
 /// - provides: what a diagnostic says the refusal stood inside.
 /// - fails: never.
@@ -307,10 +308,12 @@ pub fn sentence(role: FrameRole) -> Sentence
 /// - hypothesis: L3 — a force inside a thunk reads as the thunk checked against
 ///   its type while checking its body, with the force at the primary span left
 ///   out; a mismatch under a `run` binder names the binder; a refusal inside a
-///   checker-minted node keeps an unlocated context.
+///   checker-minted node keeps an unlocated context; a refusal inside a data
+///   declaration names the declaration's binders.
 /// - witness: `tests::diagnostics::a_refusal_names_the_rules_it_stood_inside`
 /// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
 /// - witness: `tests::diagnostics::an_unlocated_rule_becomes_a_note`
+/// - witness: `tests::diagnostics::a_data_declaration_s_refusal_spells_its_binders_by_name_4028`
 #[spec(ensures: |ret| ret.0.iter().all(|context| match context.locus {
     Maybe::Present(locus) => primary != Maybe::Present(locus.span),
     Maybe::Absent(_) => true,
@@ -326,7 +329,15 @@ where
     Reason: Copy + PartialEq,
 {
     let mut contexts: Vec<DiagnosticContext> = Vec::new();
-    let mut named: Vec<Binding> = Vec::with_capacity(failure.hypotheses().len());
+    let mut named: Vec<Binding> = framed(failure, origins)
+        .into_iter()
+        .zip(failure.hypotheses())
+        .map(|(name, &ty)| Binding {
+            name,
+            ty: spelled(spellings, ty),
+        })
+        .collect();
+    named.reserve(failure.hypotheses().len().saturating_sub(named.len()));
     for obligation in failure.obligations() {
         let binders: Vec<Binding> = opened(obligation, origins, text)
             .into_iter()
@@ -439,6 +450,68 @@ pub fn opened(
             },
         })
         .collect()
+}
+
+/// The names of the binders `failure` stood under before its obligations
+/// opened any, outermost first, read through `origins`: a data declaration's
+/// parameters, then its indices or the fields before the refused site.
+///
+/// # Specification
+/// - requires: as [`opened`].
+/// - ensures: when the innermost span the table frames around the node the
+///   failure pursued lists exactly as many names as the hypotheses no
+///   obligation accounts for, one name per such hypothesis, an empty name
+///   [`binding::Absent::Unnamed`]; no name otherwise, so the hypotheses stay
+///   unnamed as when the obligations account for too few.
+/// - provides: the names the diagnostic's hypotheses and the spelling of every
+///   type under them read before the obligations' own ([`opened`]).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal in a field's type, in an index's type and at a
+///   stated index spells a parameter, an index and a field by name.
+/// - witness: `tests::diagnostics::a_data_declaration_s_refusal_spells_its_binders_by_name_4028`
+#[spec(ensures: |ret| ret.is_empty() || ret.len() <= failure.hypotheses().len())]
+pub fn framed(
+    failure: &Failure,
+    origins: &OriginTable,
+) -> Vec<Maybe<String, binding::Absent>>
+{
+    let accounted = failure
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.binders().len())
+        .fold(0_usize, usize::saturating_add);
+    let outer = failure.hypotheses().len().saturating_sub(accounted);
+    if outer == 0 {
+        return Vec::new();
+    }
+    let Maybe::Present(pursued) = node(origins, failure.pursuit().at())
+    else {
+        return Vec::new();
+    };
+    let around = origins
+        .framed()
+        .iter()
+        .filter(|&&(span, _)| span.start() <= pursued.start() && pursued.end() <= span.end())
+        .min_by_key(|&&(span, _)| {
+            usize::from(span.end()).saturating_sub(usize::from(span.start()))
+        });
+    match around {
+        Some(&(_, ref names)) if names.len() == outer => names
+            .iter()
+            .map(|name| {
+                if name.is_empty() {
+                    Maybe::Absent(binding::Absent::Unnamed)
+                }
+                else {
+                    Maybe::Present(name.clone())
+                }
+            })
+            .collect(),
+        Some(_) | None => Vec::new(),
+    }
 }
 
 /// The name the source writes for the binder at `component` of the split at

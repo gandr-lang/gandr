@@ -2063,7 +2063,7 @@ fn an_indexed_family_presents_no_rule_2865()
 }
 
 #[test]
-fn each_stated_index_is_framed_under_its_family_s_telescope_931()
+fn each_data_type_and_stated_index_is_framed_under_its_telescope_931()
 {
     let source = "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> \
                   Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, \
@@ -2086,10 +2086,19 @@ fn each_stated_index_is_framed_under_its_family_s_telescope_931()
     assert_eq!(
         framed,
         [
+            ("Nat", Vec::new()),
+            ("Type", Vec::new()),
+            ("Nat", Vec::from(["a"])),
             ("Z", Vec::from(["a"])),
+            ("Nat", Vec::from(["a"])),
+            ("a", Vec::from(["a", "n"])),
+            ("Vec(a, n)", Vec::from(["a", "n", "x"])),
             ("S(n)", Vec::from(["a", "n", "x", "xs"]))
         ],
-        "each index is read under the family's parameters, then its constructor's fields"
+        "a parameter's type is read under the parameters before it, an index's \
+         under the parameters, a field's under the parameters and the fields \
+         before it, and each stated index under the parameters and all its \
+         constructor's fields"
     );
 }
 

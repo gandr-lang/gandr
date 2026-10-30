@@ -974,9 +974,37 @@ pub fn form(
     node: TypeNode,
 ) -> Result<(), CheckRefusal>
 {
-    let (produced, conversions) =
-        Machine::run(context, Goal::Form(node)).map_err(|failure| failure.refusal())?;
-    checked(produced, conversions).map(|_| ())
+    form_with_failure(context, node).map_err(|failure| failure.refusal())
+}
+
+/// Form `node` in the context's binders, keeping the failure of a refused
+/// run.
+///
+/// # Specification
+/// - requires: as for [`form`].
+/// - ensures: as for [`form`].
+/// - fails: the failure whose refusal [`form`] gives, with the rules pending
+///   and the binders the run had opened when it came.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as for [`form`]; a refusal inside a data declaration's
+///   field type keeps the binders the declaration had opened around it.
+/// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: context.depth(Zone::Intuitionistic) == depth,
+)]
+pub fn form_with_failure(
+    context: &mut CheckingContext<'_>,
+    node: TypeNode,
+) -> Result<(), Failure>
+{
+    let goal = Goal::Form(node);
+    let (produced, conversions) = Machine::run(context, goal)?;
+    checked(produced, conversions)
+        .map(|_| ())
+        .map_err(|refusal| Failure::bare(refusal, pursued(goal)))
 }
 
 /// The fixed endpoints of a forward stack-typing judgment.
@@ -4145,23 +4173,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             halt.refusal
         };
         let pursuit = Pursuit::new(at, expected, stage.1);
-        let opened = usize::from(self.context.binders().depth(Zone::Intuitionistic))
-            .saturating_sub(usize::from(entry));
-        let mut hypotheses = Vec::with_capacity(opened);
-        for index in (0 .. opened).rev() {
-            let Ok(index) = u32::try_from(index)
-            else {
-                break;
-            };
-            let Ok(declared) = self
-                .context
-                .binders()
-                .occurrence(Zone::Intuitionistic, DeBruijnIndex::from(index))
-            else {
-                break;
-            };
-            hypotheses.push(declared);
-        }
+        let hypotheses = self.context.opened_since(entry);
         let counted = frames
             .iter()
             .map(|waiting| usize::from(waiting.frame.opens()))

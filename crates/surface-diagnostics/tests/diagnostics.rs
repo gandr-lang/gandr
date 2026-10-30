@@ -1532,6 +1532,72 @@ fn a_refusal_spells_its_binders_by_name_418()
     );
 }
 
+/// A refusal inside a data declaration spells a type under the declaration's
+/// binders by the names the source writes: a parameter, an index and a
+/// constructor's field, never `?` (#4028).
+#[test]
+fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
+{
+    const BOUNDS: &str = r#"data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+data Fin : Nat -> Type {
+  FZ : (n : Nat) --> Fin(Succ(n));
+}
+"#;
+    for (declaration, expected, found) in [
+        (
+            r#"data Bad(n : Nat) : Type {
+  B : (i : Fin(n), j : Fin(i)) --> Bad(n);
+}
+"#,
+            "Nat",
+            "Fin(n)",
+        ),
+        (
+            r#"data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type {
+  Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j);
+}
+"#,
+            "Nat",
+            "Fin(n)",
+        ),
+        (
+            r#"data Past : (n : Nat, i : Fin(n)) --> Type {
+  Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i);
+}
+"#,
+            "Fin(Succ(n))",
+            "Fin(n)",
+        ),
+    ] {
+        let source = format!("{BOUNDS}{declaration}");
+        let diagnostic = only(Path::new("bounds.gandr"), SourceText::from(source.as_str()));
+        assert_eq!(
+            (
+                diagnostic.detail.compared.expected.clone(),
+                diagnostic.detail.compared.found.clone()
+            ),
+            (
+                Maybe::Present(String::from(expected)),
+                Maybe::Present(String::from(found))
+            ),
+            "the mismatch names the binders it stands under: {declaration}"
+        );
+        assert_eq!(
+            diagnostic
+                .hypotheses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["n : Nat", "i : Fin(n)"],
+            "the hypotheses are the declaration's binders before the refused site, each \
+             named: {declaration}"
+        );
+    }
+}
+
 /// A trace spells a type kept at a region by the name of the scope or hold
 /// that opened it, never `?`: a capability scope's region by its capability,
 /// a hold's by its held slot, counted outermost first (#1494).

@@ -45,13 +45,15 @@
 //! under them all. Each is spelled under the names the source wrote for them,
 //! read as a context's binders are ([`crate::frame::contexts`]), so a mismatch
 //! between `counted_at(presented)` and `counted_at(other)` reads so rather than
-//! as `counted_at(?)` twice. A failure whose obligations do not account for
-//! every hypothesis spells its types under no name. A type stands in the
-//! regions its run had opened the same way, one per capability scope and hold
-//! the checker entered, outermost first, each named as the source writes the
-//! capability or the held slot, so a kept type reads `at c` rather than
-//! `at ?`. A region the failing definition abstracts, `@[r : Region]`, is
-//! named as its telescope writes it, by the lowering's
+//! as `counted_at(?)` twice. A data declaration's binders stand outside every
+//! obligation, and the frame the lowering keeps around the refused node names
+//! them ([`crate::frame::framed`]). A failure whose frame and obligations do
+//! not account for every hypothesis spells its types under no name. A type
+//! stands in the regions its run had opened the same way, one per capability
+//! scope and hold the checker entered, outermost first, each named as the
+//! source writes the capability or the held slot, so a kept type reads `at c`
+//! rather than `at ?`. A region the failing definition abstracts,
+//! `@[r : Region]`, is named as its telescope writes it, by the lowering's
 //! [`LoweredModule::region_names`]. The alternative, a spelling per
 //! diagnostic, is the arena copy the section above declines.
 //!
@@ -107,6 +109,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::binders::written_names;
+use crate::frame::framed;
 use crate::frame::opened;
 use crate::frame::written_binder;
 
@@ -462,6 +465,12 @@ fn spell<'failure>(
         let scope = scopes.len();
         let first = named.len();
         let mut names: Vec<Option<String>> = Vec::with_capacity(failure.hypotheses().len());
+        // A data declaration's binders stand outside every obligation, named
+        // by the frame around the node the failure pursued.
+        names.extend(framed(failure, origins).into_iter().map(|name| match name {
+            Maybe::Present(name) => Some(name),
+            Maybe::Absent(_) => None,
+        }));
         let mut around: Vec<Option<String>> = Vec::new();
         for obligation in failure.obligations() {
             let standing = Scoped {

@@ -730,6 +730,39 @@ impl Failure
         }
     }
 
+    /// This failure, its run standing under the binders `outer` declares,
+    /// outermost first, opened before the run began.
+    ///
+    /// # Specification
+    /// - requires: `outer` is the binders open when the run began.
+    /// - ensures: the hypotheses are `outer` and then this failure's own; the
+    ///   refusal, the obligations, the pursuit and the endpoints are unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused data signature's failure keeps the
+    ///   signature's binders before the binders its run opened.
+    /// - witness: `former::tests::a_refused_field_keeps_the_binders_it_was_formed_under_4028`
+    #[spec(
+        captures: expected = outer.len().saturating_add(self.hypotheses.len()),
+        ensures: |ret| ret.hypotheses.len() == expected,
+    )]
+    pub(crate) fn under(
+        self,
+        mut outer: Vec<ValueTypeId>,
+    ) -> Self
+    {
+        if outer.is_empty() {
+            return self;
+        }
+        outer.extend_from_slice(&self.hypotheses);
+        Self {
+            hypotheses: outer.into_boxed_slice(),
+            ..self
+        }
+    }
+
     /// The refusal.
     ///
     /// # Specification
