@@ -356,6 +356,9 @@ enum Spelled
     /// Its type, which the printer does not spell faithfully: the text it
     /// wrote.
     Unfaithful(String),
+    /// Its type, a composite in it written as the fold it realises, which
+    /// #3957's form retires.
+    Composite,
     /// No type: the lowering refused the declaration, so no form is in
     /// question.
     Untyped,
@@ -381,6 +384,15 @@ fn printed(
                 if ty.fidelity() == Fidelity::Faithful && ty.unspelled().is_empty() =>
             {
                 Spelled::Faithful(String::from(ty.as_ref()))
+            },
+            Maybe::Present(Declared::Typed(ty))
+                if !ty.unspelled().is_empty()
+                    && ty
+                        .unspelled()
+                        .iter()
+                        .all(|&reason| reason == Unspelled::Elided(Elided::Composite)) =>
+            {
+                Spelled::Composite
             },
             Maybe::Present(Declared::Typed(ty)) => Spelled::Unfaithful(String::from(ty.as_ref())),
             Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => Spelled::Untyped,
@@ -535,7 +547,7 @@ fn misses(
             (Spelled::Unfaithful(text), _) | (_, Spelled::Unfaithful(text)) => misses.push(format!(
                 "{name}: `{declaration}`: the printer does not spell its type faithfully: {text}"
             )),
-            (Spelled::Untyped, _) | (_, Spelled::Untyped) => {},
+            (Spelled::Untyped | Spelled::Composite, _) | (_, Spelled::Untyped | Spelled::Composite) => {},
         }
     }
     let printed = printed_whole;

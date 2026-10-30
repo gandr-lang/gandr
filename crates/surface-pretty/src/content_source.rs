@@ -128,11 +128,11 @@ impl Source for ContentSource<'_>
     /// - requires: nothing; any index is admissible.
     /// - ensures: each core former read as its [`Former`], over the same
     ///   indices; a family by its key, a constructor by the name the
-    ///   constructor table gives its family's tag, a composite as the returned
-    ///   fold it realises; the honest set's members — a hole, a mark, the
-    ///   unknown type, a lift — as unreadable, an unresolved node and an index
-    ///   past the table as dangling, and a name the table cannot spell as
-    ///   unnamed.
+    ///   constructor table gives its family's tag, a composite, returned or
+    ///   not, as the fold it realises; the honest set's members — a hole, a
+    ///   mark, the unknown type, a lift — as unreadable, an unresolved node and
+    ///   an index past the table as dangling, and a name the table cannot spell
+    ///   as unnamed.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -147,7 +147,7 @@ impl Source for ContentSource<'_>
     /// - witness: `content_source::tests::ty_dispatches_on_polarity`
     /// - witness: `content_source::tests::a_malformed_table_spells_unknown`
     /// - witness: `content_source::tests::an_empty_tuple_or_record_reads_as_the_unit_and_a_full_one_by_its_arity`
-    #[spec(ensures: |ret| match (self.nodes.get(usize::from(node)), ret) {
+    #[spec(ensures: |ret| match (self.nodes.get(usize::from(self.unreturned(node))), ret) {
         (None, Former::Unreadable(reason)) => reason == Unreadable::Dangling,
         (None, _) => false,
         (Some(content), Former::Unreadable(reason)) => match *content {
@@ -171,7 +171,7 @@ impl Source for ContentSource<'_>
         node: NodeIndex,
     ) -> Former<'_, NodeIndex>
     {
-        let Some(content) = self.nodes.get(usize::from(node))
+        let Some(content) = self.nodes.get(usize::from(self.unreturned(node)))
         else {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -809,6 +809,7 @@ impl Source for ContentSource<'_>
     {
         let read = self.nodes.get(usize::from(node))?;
         let composite = matches!(*read, ContentNode::Compose { .. })
+            || self.unreturned(node) != node
             || matches!(*read, ContentNode::Returned(body) if self.unreturned(body) != body);
         composite.then_some(Elided::Composite)
     }

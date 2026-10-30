@@ -1878,8 +1878,9 @@ impl<'arena> CoreSource<'arena>
     /// - ensures: each computation former read as its [`Former`], its children
     ///   as nodes of their families and its names spelled: a primitive by its
     ///   prelude function's name, an operation and a record field by their own,
-    ///   a scope by its interface's; a hole and a mark as the honest set's, and
-    ///   an id the arena does not hold as dangling.
+    ///   a scope by its interface's; a returned composite as the fold it
+    ///   realises; a hole and a mark as the honest set's, and an id the arena
+    ///   does not hold as dangling.
     /// - provides: the computation half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1890,7 +1891,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
-    #[spec(ensures: |ret| match (self.arena.computation(id), ret) {
+    #[spec(ensures: |ret| match (self.arena.computation(self.unreturned(id)), ret) {
         | (Some(&Computation::Hole(_)), Former::Unreadable(Unreadable::Hole))
         | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
         | (None, Former::Unreadable(Unreadable::Dangling)) => true,
@@ -1970,7 +1971,7 @@ impl<'arena> CoreSource<'arena>
     {
         let value = CoreNode::Value;
         let computation = CoreNode::Computation;
-        let Some(held) = self.arena.computation(id)
+        let Some(held) = self.arena.computation(self.unreturned(id))
         else {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -3133,13 +3134,15 @@ impl Source for CoreSource<'_>
         node: CoreNode,
     ) -> Option<Elided>
     {
-        let CoreNode::Value(id) = node
-        else {
-            return None;
+        let composite = match node {
+            CoreNode::Value(id) => {
+                let read = self.arena.value(id)?;
+                matches!(*read, Value::Compose { .. })
+                    || matches!(*read, Value::Returned(body) if self.unreturned(body) != body)
+            },
+            CoreNode::Computation(id) => self.unreturned(id) != id,
+            CoreNode::ValueType(_) | CoreNode::CompType(_) => false,
         };
-        let read = self.arena.value(id)?;
-        let composite = matches!(*read, Value::Compose { .. })
-            || matches!(*read, Value::Returned(body) if self.unreturned(body) != body);
         composite.then_some(Elided::Composite)
     }
 

@@ -4089,8 +4089,8 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     }
 }
 
-/// A composite of three paths, bare or returned, is written as the
-/// left-nested fold it realises, and the printing names the composite's
+/// A composite of three paths, bare, returned or run as a body, is written as
+/// the left-nested fold it realises, and the printing names the composite's
 /// elided form until the printer writes it (#3957).
 #[test]
 fn a_composite_is_written_as_its_fold_and_noted_3965()
@@ -4111,27 +4111,36 @@ fn a_composite_is_written_as_its_fold_and_noted_3965()
     let bare = gandr_core_term::compose::compose(&mut core, composite, (circle, base), &[
         around, around, around,
     ]);
-    let returned = core.computation_return(bare);
-    let returned = core.value_returned(returned);
+    let body = core.computation_return(bare);
+    let returned = core.value_returned(body);
     let names = [Name::from("Circle"), Name::from("base"), Name::from("loop")];
     let source = CoreSource::new(&core, &names);
-    for root in [bare, returned] {
-        agrees(&core, &names, CoreNode::Value(root));
-        let rendered = presented_in(
-            &source,
-            Root::Value(CoreNode::Value(root)),
-            wide(),
-            Form::Sugared,
-        );
+    // A body states no type of its own, so its fold is written as the
+    // transports it derives, as `then` written there is (#815).
+    let explicit = "transport(\\a. Path(Circle, base, a), loop, transport(\\a. Path(Circle, base, \
+                    a), loop, loop))";
+    for (root, expected) in [
+        (CoreNode::Value(bare), "(loop then loop) then loop"),
+        (CoreNode::Value(returned), "(loop then loop) then loop"),
+        (CoreNode::Computation(body), explicit),
+    ] {
+        agrees(&core, &names, root);
+        let root = match root {
+            CoreNode::Computation(_) => Root::Computation(root),
+            CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => {
+                Root::Value(root)
+            },
+        };
+        let rendered = presented_in(&source, root, wide(), Form::Sugared);
         assert_eq!(
             (
                 rendered.as_ref(),
                 rendered.fidelity(),
                 rendered.unspelled().iter().copied().collect::<Vec<_>>()
             ),
-            ("(loop then loop) then loop", Fidelity::Approximate, vec![
-                Unspelled::Elided(Elided::Composite)
-            ]),
+            (expected, Fidelity::Approximate, vec![Unspelled::Elided(
+                Elided::Composite
+            )]),
         );
     }
 }

@@ -10274,8 +10274,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Continue a composite whose cells synthesised `types`: read each cell's
-    /// type as a path, fill the pasting with their endpoints, and synthesise
-    /// the realisation's type.
+    /// type as the path a transport follows, a word as the path at its point,
+    /// fill the pasting with their endpoints, and synthesise the realisation's
+    /// type.
     ///
     /// # Specification
     /// - requires: `types` are the types the cells of the composite `at`
@@ -10326,7 +10327,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let shape = crate::compose::admit(self.context.strata_mut(), at, composite)?;
         let mut diagram = Vec::with_capacity(cells.len());
         for (&cell, &ty) in cells.iter().zip(types) {
-            let (left, right) = match self.path_expected(TermNode::Value(cell), ty)? {
+            let (left, right) = match self.transported_path(TermNode::Value(cell), ty)? {
                 PathReading::Known { left, right, .. } => (
                     crate::compose::Endpoint::Known(left),
                     crate::compose::Endpoint::Known(right),

@@ -12,6 +12,9 @@
 // - see: `then.gandr` — the composite of two paths
 // - see: `ledger/diagnostics/ComposeDoesNotFill.gandr` — cells that do not meet
 
+// The circle, its point and its loop.
+import "./circle-base.gandr";
+
 /// Three paths, each leaving where the one before arrives, composed unbiased.
 def composed(
   A : Type,
@@ -82,3 +85,10 @@ def called(
 ) -> Path(A, x, w) {
   compose[3, 5](chain(2), (folded(A, x, y, z, w, p, q, r), here(w)))
 }
+
+/// A word written as a cell is the path at the circle's point it is.
+def wound : Path(
+  Path(Circle, Base, Base),
+  compose[3, 5](chain(2), (loop, here(Base))),
+  loop
+) = here(loop);
