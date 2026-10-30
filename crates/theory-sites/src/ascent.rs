@@ -41,6 +41,13 @@
 //! stays outside what it reads. The empty column is the level-two unit, a fat
 //! object, and [`crate::Wreath`] states why the site keeps it.
 //!
+//! # The evidence
+//!
+//! Over the chains to total size 13 and `W ≀ W` to 5, the grounded objects
+//! and their raising maps form a direct category with automorphisms (766 and
+//! 709 cases), the condition the certificate carries. Every object to the
+//! bound is the colimit of its cells, and none of `W ≀ W` fails to size 7.
+//!
 //! # The pinwheel
 //!
 //! A shape whose cells meet in a cycle has no composite: its cells cover it,
@@ -60,6 +67,11 @@
 //!   cover (Theorem 3.49, Corollaries 3.52 and 3.55), proved by induction on
 //!   the dimension; § 3.2 and Example 3.54, the pinwheel, a shape whose cover
 //!   does not determine its maps.
+//! - `Leclerc-2026-cellular_type_theory` — background: Lemma 3, a pasting
+//!   scheme is acyclic, the pinwheel's refusal; Definition 1, Θₙ₊₁ as `Δ ≀ Θₙ`,
+//!   which `tests::oracle` enumerates beside the site's maps; § 2.6.2, the
+//!   Segal condition at a wedge, which this cover meets once a column split
+//!   reads its 1-cell at the shared inner wire.
 
 #[cfg(test)]
 mod tests;

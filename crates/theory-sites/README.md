@@ -28,7 +28,7 @@ The level-two unit is a fat object. The site does not drop it, which is the stic
 
 One site serves two uses. The wiring site indexes the ambient model, where a type is a diagram over the arities and a higher cell is an identity type. The same site, under the wreath, indexes the cells. There the Segal condition at a level certifies the composite over a pasting shape. The two uses coincide at level one, because a 1-pasting is a wiring of 1-cells and the chains are Δ. The univalence warrant is Shulman's inverse EI theorem over the level-one site. A wreath level inherits it only through directness with automorphisms, which the level's certificate re-derives from the level below. This site drops Eilenberg-Zilber. So Berger and Moerdijk's wreath theorem is not the warrant.
 
-The level-two evidence: over the chains to total size 13 and `W ≀ W` to 5, the grounded objects and their raising maps form a direct category with automorphisms (766 and 709 cases), the condition the certificate carries. Every object to the bound is the colimit of its cells, and none of `W ≀ W` fails to size 7. The carrier refuses two cells each the other's source as a directed cycle (Leclerc and Mimram's Lemma 3), so no level holds the pinwheel.
+The level-two evidence stands in [`ascent`](src/ascent.rs). The carrier refuses two cells each the other's source as a directed cycle (Leclerc and Mimram's Lemma 3), so no level holds the pinwheel.
 
 ## References
 
@@ -39,6 +39,7 @@ The level-two evidence: over the chains to total size 13 and `W ≀ W` to 5, the
 - `Ruit-2024-pasting_theorem_iterated_segal_spaces` — exemplar: Jaco Ruit, "A Pasting Theorem for Iterated Segal Spaces", _Journal of Pure and Applied Algebra_ 228, 2024, `arXiv:2210.04549` — Theorem 3.49 and Corollaries 3.52 and 3.55, the pasting theorem level two's certificate instances; § 3.2, the pinwheel.
 - `deJong-2026-study_kocks_fat_delta` — background: Tom de Jong, Nicolai Kraus, Simona Paoli and Stiéphen Pradal, "A Study of Kock's Fat Delta", 2026 — Theorems 4.22 and 4.23, the fat object's nerve theorem.
 - `Shulman-2017-univalence_inverse_ei_diagrams` — background: Michael Shulman, "Univalence for Inverse EI Diagrams", _Homology, Homotopy and Applications_ 19, 2017, `arXiv:1508.02410` — the level-one univalence warrant a wreath level inherits through directness with automorphisms.
+- `Leclerc-2026-cellular_type_theory` — background: Louise Leclerc and Samuel Mimram, "A Cellular Type Theory", preprint, 2026 — Lemma 3, acyclicity; Definition 1, Θ by induction, the oracle of `tests::oracle`.
 
 ## Provided features
 

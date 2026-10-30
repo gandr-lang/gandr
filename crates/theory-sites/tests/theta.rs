@@ -5,7 +5,8 @@
 //! independent of the wreath. Each one is written as the outer chain of `n`
 //! vertices carrying the chain of `m_i` vertices, or the empty shape when `m_i`
 //! is zero, and found in the restriction. The maps are the site's, so their
-//! counts are pinned against the site's own enumeration, never against Θ₂'s.
+//! counts are pinned against the site's own enumeration here. `tests::oracle`
+//! sets them beside Θ₂'s by Leclerc and Mimram's Definition 1.
 
 use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_sites::CaseCount;

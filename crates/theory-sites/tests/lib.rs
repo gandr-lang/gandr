@@ -49,6 +49,8 @@ mod chains;
 #[cfg(test)]
 mod maps;
 #[cfg(test)]
+mod oracle;
+#[cfg(test)]
 mod point_count;
 #[cfg(test)]
 mod profiles;
