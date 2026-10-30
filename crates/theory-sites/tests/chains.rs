@@ -137,7 +137,7 @@ fn the_chains_hold_the_chain_and_refuse_the_rest()
         );
     }
     let catalogue = Catalogue::chains(ShapeSize::from(7)).expect("the catalogue builds");
-    assert_eq!(catalogue.family(), Family::Chains);
+    assert_eq!(catalogue.family(), &Family::Chains);
     assert!(
         matches!(catalogue.find(&held[1]), Maybe::Present(_)),
         "a relabelled 3-chain is found at its class"

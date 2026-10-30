@@ -67,6 +67,24 @@ impl Degree
     {
         Self(self.0.saturating_add(usize::from(count)))
     }
+
+    /// The highest degree of any of `shapes`, zero when there is none.
+    ///
+    /// # Specification
+    /// - ensures: no shape's degree exceeds it, and it is zero or some shape's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the magma's sub-site at size seven tops out at five,
+    ///   the binary vertex fed by two constants, and the wirings it is cut from
+    ///   reach seven.
+    /// - witness: `tests::profiles::the_magma_stratum_names_its_vacuous_degrees`
+    #[spec(ensures: |top| shapes.iter().all(|shape| Self::of(shape).0 <= top.0)
+        && (top.0 == 0 || shapes.iter().any(|shape| Self::of(shape).0 == top.0)))]
+    pub(crate) fn top(shapes: &[Shape]) -> Self
+    {
+        shapes.iter().map(Self::of).max().unwrap_or_default()
+    }
 }
 
 impl fmt::Display for Degree

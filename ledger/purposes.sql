@@ -3919,7 +3919,7 @@ INSERT INTO purpose VALUES('theory-shapes','oracle::Derivation','enum','Names a 
 INSERT INTO purpose VALUES('theory-shapes','oracle::Evidence','enum','Names the answer to an entailment query, so the evidence''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::decide','function','Decides whether the premise entails the conclusion, so the entailment''s evidence is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::Catalogue','struct','Every shape class of a family of size at most a bound, and every map of the class between any two of them.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-sites','catalogue::Family','enum','Which shapes a catalogue holds: every stick-free wiring, or the chains with the empty shape and the point.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','catalogue::Family','enum','Which shapes a catalogue holds: every stick-free wiring, the chains, or the shapes whose every vertex has one of a set of profiles, each with the empty shape and the point.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::ShapeIndex','struct','A shape''s position in a catalogue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationDefect','enum','How a map''s factorization fails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','conditions::FactorizationFailure','struct','A map whose factorization fails, and how; at level one a shape map.',NULL,'fits','sound',NULL);
@@ -4002,6 +4002,7 @@ INSERT INTO purpose VALUES('theory-sites','stratum::SegalStratum','struct','The 
 INSERT INTO purpose VALUES('theory-sites','stratum::Species','struct','A graphical species: finitely many generators at each profile.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','stratum::Table','struct','A bijection''s image of each element, by position: entry `i` is the position of the image of the `i`-th element.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','stratum::Uncertified','enum','Why a stratum is not certified.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','stratum::Vacuity','struct','The degrees a certificate names as vacuous, above its catalogue''s top shape through its own degree, and the replay that checks the claim by the catalogue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','stratum::restrict','function','The corolla restriction of the ua-desc construction: the equivalence of species a natural isomorphism of the free algebras restricts to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','units::GeneratorBound','struct','The most generators a scalar of the universe holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','units::UnitOutcomes','struct','The outcomes of the unit check.',NULL,'fits','sound',NULL);

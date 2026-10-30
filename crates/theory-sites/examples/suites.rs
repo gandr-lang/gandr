@@ -4,12 +4,12 @@
 //!
 //! Conditions on single maps run over the shapes of size at most five;
 //! conditions on composable pairs and spans over size at most four. The
-//! stratum table builds the chain catalogue and the wiring catalogue at size
-//! seven and times each one's build and stratum certification. The last table
-//! runs the conditions over a level on `W ≀ W`, the wreath of the wiring site
-//! over itself, at the same total sizes. The chain restriction's table counts
-//! its objects, maps and pasting schemes at total sizes nine to fifteen, the
-//! counts `tests::theta` pins against Θ₂.
+//! stratum table builds the chain catalogue, the magma's profile catalogue and
+//! the wiring catalogue at size seven and times each one's build and stratum
+//! certification. The last table runs the conditions over a level on `W ≀ W`,
+//! the wreath of the wiring site over itself, at the same total sizes. The
+//! chain restriction's table counts its objects, maps and pasting schemes at
+//! total sizes nine to fifteen, the counts `tests::theta` pins against Θ₂.
 //!
 //! Run it with `cargo run --release -p gandr-theory-sites --example suites`.
 
@@ -26,6 +26,8 @@ use gandr_theory_sites::GeneratorBound;
 use gandr_theory_sites::Level as _;
 use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Part;
+use gandr_theory_sites::PortCount;
+use gandr_theory_sites::Profile;
 use gandr_theory_sites::Scope;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
@@ -521,6 +523,20 @@ fn main() -> Result<(), RunError>
             Catalogue::chains,
         )?;
     }
+    let magma = [(2_usize, 1_usize), (0, 1)]
+        .into_iter()
+        .map(|(inputs, outputs)| Profile {
+            inputs: PortCount::from(inputs),
+            outputs: PortCount::from(outputs),
+        })
+        .collect();
+    stratum_row(
+        &mut out,
+        &"magma profiles",
+        seven,
+        Degree::from(7_usize),
+        |bound| Catalogue::profiles(bound, magma),
+    )?;
     stratum_row(
         &mut out,
         &"wirings",
