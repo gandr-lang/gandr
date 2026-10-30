@@ -101,7 +101,6 @@ use crate::outcome::Outcome;
 use crate::outcome::Tally;
 use crate::shape::End;
 use crate::shape::Shape;
-use crate::stratum::Legs;
 use crate::stratum::Profile;
 
 wrapper! {
@@ -240,7 +239,7 @@ impl Cocone
         let mut inclusions = Vec::with_capacity(usize::from(shape.vertex_count()));
         for vertex in shape.vertices() {
             let uncovered = SegalDefect::Uncovered { vertex };
-            let Some(&corolla) = corollas.get(&Legs::of(shape, vertex).profile())
+            let Some(&corolla) = corollas.get(&Profile::at(shape, vertex))
             else {
                 return Err(uncovered);
             };
@@ -470,7 +469,7 @@ pub fn walk(
     let corollas: BTreeMap<Profile, ShapeIndex> = catalogue
         .entries()
         .filter(|entry| Degree::of(entry.1) == Degree::from(1_usize))
-        .map(|(index, shape)| (Legs::of(shape, Edge::from(0_usize)).profile(), index))
+        .map(|(index, shape)| (Profile::at(shape, Edge::from(0_usize)), index))
         .collect();
     let mut tally = Tally::default();
     let mut read = Vec::new();

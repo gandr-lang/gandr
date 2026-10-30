@@ -77,7 +77,6 @@ use crate::shape::ShapeObstruction;
 use crate::shape::ShapeSize;
 use crate::shape::WireKind;
 use crate::shape::shapes_up_to;
-use crate::stratum::PortCount;
 use crate::stratum::Profile;
 
 wrapper! {
@@ -176,7 +175,7 @@ impl Family
             || shape.ends().len() == usize::from(shape.vertex_count()).saturating_add(1),
         Self::Profiles(ref profiles) => (*membership == Membership::Inside)
             == ((shape.ends().is_empty() && usize::from(shape.vertex_count()) <= 1)
-                || (0 .. usize::from(shape.vertex_count())).all(|vertex| profiles.contains(&profile_at(shape, Edge::from(vertex))))),
+                || (0 .. usize::from(shape.vertex_count())).all(|vertex| profiles.contains(&Profile::at(shape, Edge::from(vertex))))),
     })]
     pub fn holds(
         &self,
@@ -220,7 +219,7 @@ impl Family
             Self::Profiles(ref profiles) => {
                 if alone
                     || (0 .. usize::from(vertices))
-                        .all(|vertex| profiles.contains(&profile_at(shape, Edge::from(vertex))))
+                        .all(|vertex| profiles.contains(&Profile::at(shape, Edge::from(vertex))))
                 {
                     Membership::Inside
                 }
@@ -229,41 +228,6 @@ impl Family
                 }
             },
         }
-    }
-}
-
-/// The profile of `vertex` in `shape`: the wires it consumes and the wires it
-/// produces, counted.
-///
-/// # Specification
-/// - ensures: the counts of the wires whose consumer is `vertex` and of those
-///   whose producer is, as [`Legs::of`](crate::stratum::Legs::of) lists them.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the magma's two corollas read as the binary and the
-///   nullary profile, and a vertex of a third profile keeps its shape out.
-/// - witness: `tests::profiles::the_profiles_hold_the_shapes_their_corollas_fill`
-#[spec(ensures: |profile| profile == crate::stratum::Legs::of(shape, vertex).profile())]
-fn profile_at(
-    shape: &Shape,
-    vertex: Edge,
-) -> Profile
-{
-    let at = End::Vertex(vertex);
-    let (inputs, outputs) =
-        shape
-            .ends()
-            .iter()
-            .fold((0_usize, 0_usize), |(inputs, outputs), ends| {
-                (
-                    inputs.saturating_add(usize::from(ends.consumer() == at)),
-                    outputs.saturating_add(usize::from(ends.producer() == at)),
-                )
-            });
-    Profile {
-        inputs: PortCount::from(inputs),
-        outputs: PortCount::from(outputs),
     }
 }
 
