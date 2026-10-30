@@ -2780,6 +2780,79 @@ fn a_decoded_type_parameter_at_a_call_converts_with_the_type_written_with_it_393
     );
 }
 
+/// #4065: a call passed for a parameter that a later domain's composite starts
+/// at left the composite's motive holding the nested call, `Nested(ext(0))`,
+/// where the argument's type writes the call returned, `⟨ext(0)⟩`. The code
+/// walk read the two as apart. The composite starts at the call returned, as
+/// the type written with the call does.
+#[test]
+fn a_composite_started_at_a_call_argument_converts_with_the_type_written_with_it_4065()
+{
+    // def ext : U (Integer -> F Integer) ;
+    // def loop : Path(Integer, ⟨ext(0)⟩, ⟨ext(0)⟩) ;
+    // def square : Path(Path(Integer, ⟨ext(0)⟩, ⟨ext(0)⟩),
+    //   loop then loop, loop then loop) ;
+    // def use : U ((a : Integer) -> (p : Path(Integer, a, a))
+    //   -> Path(Path(Integer, a, a), p then p, p then p) -> F Unit) ;
+    // use(ext(0), loop, square) : F Unit
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let extending = arena.comp_type_arrow(integer, returns_integer);
+    let extending = arena.value_type_thunk(extending);
+    let at = |arena: &mut CoreArena, constant: usize, argument: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let twice = |arena: &mut CoreArena, start: ValueId, path: ValueId| {
+        let composite = gandr_core_term::identity::then(arena, integer, start, path, path);
+        arena.value_returned(composite)
+    };
+    // `loop` and `square`, written with the call returned.
+    let zero = arena.value_literal(integer_literal());
+    let call = at(&mut arena, 0, zero);
+    let endpoint = arena.value_returned(call);
+    let around = arena.value_type_path(integer, endpoint, endpoint);
+    let looped = arena.value_constant(ConstantIndex::from(1_usize));
+    let composite = twice(&mut arena, endpoint, looped);
+    let square = arena.value_type_path(around, composite, composite);
+    // `use`, its third domain the composite of its second binder at its first.
+    let a = variable(&mut arena, 0);
+    let path = arena.value_type_path(integer, a, a);
+    let a = variable(&mut arena, 1);
+    let p = variable(&mut arena, 0);
+    let around_a = arena.value_type_path(integer, a, a);
+    let composite = twice(&mut arena, a, p);
+    let squared = arena.value_type_path(around_a, composite, composite);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let consumer = arena.comp_type_arrow(squared, returns_unit);
+    let consumer = arena.comp_type_pi(path, consumer);
+    let consumer = arena.comp_type_pi(integer, consumer);
+    let consumer = arena.value_type_thunk(consumer);
+    let zero = arena.value_literal(integer_literal());
+    let extended = at(&mut arena, 0, zero);
+    let extended = arena.value_nested(extended);
+    let first = at(&mut arena, 3, extended);
+    let looped = arena.value_constant(ConstantIndex::from(1_usize));
+    let second = arena.computation_application(first, looped);
+    let squared = arena.value_constant(ConstantIndex::from(2_usize));
+    let applied = arena.computation_application(second, squared);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[extending, around, square, consumer]);
+    let expected = form_comp_type(&mut context, returns_unit).unwrap();
+    let verdict = check_comp(&mut context, applied, expected);
+    assert!(
+        verdict.is_ok(),
+        "`use`'s third domain at the call `ext(0)` starts `loop then loop` at `⟨ext(0)⟩`, as \
+         `square`'s type is written: {verdict:?}"
+    );
+}
+
 #[test]
 fn a_hole_synthesises_the_unknown_type_and_checks_against_any()
 {

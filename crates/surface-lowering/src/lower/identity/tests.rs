@@ -2919,3 +2919,41 @@ fn a_composite_typed_by_join_over_stuck_endpoints_converts_with_then_4038()
     }
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// #4065: a stuck call passed to a parameter whose type writes `p then q` was
+/// refused against the same call written in place. A variable passed there
+/// converts, and so do one stuck call and two.
+#[test]
+fn a_stuck_call_passed_to_a_parameter_converts_with_the_call_written_in_its_type_4065()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def act(A : Type, F : A => A, x : A, y : A, p : Path(A, x, y)) -> Path(A, F(x), \
+             F(y)) {\n  cong(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
+             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), p then q, p then q) {\n  \
+             here(p then q)\n}\n\ndef junction(A : Type, F : A => A, x : A, y : A, z : A, r : \
+             Path(A, x, y), s : Path(A, y, z)) -> Path(Path(A, F(x), F(z)), act(A, F, x, y, r) \
+             then act(A, F, y, z, s), act(A, F, x, y, r) then act(A, F, y, z, s)) {\n  \
+             thenHere(A, F(x), F(y), F(z), act(A, F, x, y, r), act(A, F, y, z, s))\n}\n\ndef \
+             junctionVariables(A : Type, x : A, y : A, z : A, r : Path(A, x, y), s : Path(A, y, \
+             z)) -> Path(Path(A, x, z), r then s, r then s) {\n  thenHere(A, x, y, z, r, \
+             s)\n}\n\ndef junctionOneCall(A : Type, F : A => A, x : A, y : A, z : A, r : Path(A, \
+             x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, F, x, y, r) then s, \
+             act(A, F, x, y, r) then s) {\n  thenHere(A, F(x), F(y), z, act(A, F, x, y, r), \
+             s)\n}\n",
+        ),
+        &mut arena,
+    );
+    for name in ["junction", "junctionVariables", "junctionOneCall"] {
+        assert!(
+            !matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(_)
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
