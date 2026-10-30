@@ -2448,29 +2448,26 @@ fn held(
         else {
             return None;
         };
-        let Some(&ValueType::Path {
-            domain,
-            left,
-            right,
-        }) = arena.value_type(motive)
+        let shape = if matches!(arena.value(moved), Some(&Value::Here { .. })) {
+            let Some(&ValueType::Path {
+                domain,
+                left,
+                right,
+            }) = arena.value_type(motive)
+            else {
+                return None;
+            };
+            if !bound(arena, left)
+                || binder_use(arena, Family::Type(domain)) != BinderUse::Ignored
+                || binder_use(arena, Family::Value(right)) != BinderUse::Ignored
+            {
+                return None;
+            }
+            Held::Back
+        }
         else {
-            return None;
+            composite_legs(arena, formed).map(|_legs| Held::Then)?
         };
-        let here = matches!(arena.value(moved), Some(&Value::Here { .. }));
-        let (shape, fixed) = if bound(arena, right) && !here {
-            (Held::Then, left)
-        }
-        else if bound(arena, left) && here {
-            (Held::Back, right)
-        }
-        else {
-            return None;
-        };
-        if binder_use(arena, Family::Type(domain)) != BinderUse::Ignored
-            || binder_use(arena, Family::Value(fixed)) != BinderUse::Ignored
-        {
-            return None;
-        }
         read.get_or_insert((shape, along, moved));
         focus = along;
     }
@@ -2480,6 +2477,61 @@ fn held(
     else {
         None
     }
+}
+
+/// The two paths of the composite `p then q` that `computation` is, `(p, q)`.
+///
+/// `p then q` is the transport of `p` along `q` in a **link**, a family `y.
+/// Path(D, l, y)` whose carrier and left endpoint ignore the binder. The
+/// decode rows read it in a held path, and the replay reads it at a stuck
+/// transport: transport along it moves the operand along `p`, then along `q`.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reads as no composite.
+/// - ensures: `Some((p, q))` exactly when `computation` is `tr(Q, q, p)`, `Q` a
+///   path type whose right endpoint is the binder and whose carrier and left
+///   endpoint ignore it; `None` otherwise.
+/// - provides: the one reading of a composite's legs, shared by [`held`] and
+///   the replay's transport along a stuck composite.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `q then ua(e)` moves the operand along `q` first, and a
+///   stuck `p then q` moves it along each path in order; swapping the legs, or
+///   reading a family whose left endpoint reads the binder as a link, changes
+///   the reduct.
+/// - witness: `element_identity::tests::transport_along_then_moves_along_both_paths`
+/// - witness: `replay::tests::a_transport_along_a_stuck_composite_moves_along_each_path_in_order`
+#[spec(ensures: |ret| ret.is_none_or(|(first, second)| matches!(
+    arena.computation(computation),
+    Some(&gandr_kernel_term::Computation::PathTransport { path, value, .. }) if path == second && value == first
+)))]
+pub(crate) fn composite_legs(
+    arena: &TermArena,
+    computation: ComputationId,
+) -> Option<(ValueId, ValueId)>
+{
+    let &gandr_kernel_term::Computation::PathTransport {
+        motive,
+        path,
+        value,
+    } = arena.computation(computation)?
+    else {
+        return None;
+    };
+    let &ValueType::Path {
+        domain,
+        left,
+        right,
+    } = arena.value_type(motive)?
+    else {
+        return None;
+    };
+    let linked = matches!(arena.value(right), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+        && binder_use(arena, Family::Type(domain)) == BinderUse::Ignored
+        && binder_use(arena, Family::Value(left)) == BinderUse::Ignored;
+    linked.then_some((value, path))
 }
 
 /// Transport at the universe's decode along a held `back` or `then`.

@@ -1431,11 +1431,8 @@ pub(super) fn ran(
         machine.values.extend([path, read]);
         return Ok(());
     }
-    if let Some((first, second)) = super::composite_legs(core, domain, path)? {
-        let onward = domain.native_continuation(CompBody::AlongThen { motive, second });
-        machine.tasks.push(Task::BindClosure(onward));
-        machine.tasks.push(Task::PathTransport(motive));
-        machine.values.extend([first, operand]);
+    if let Some(legs) = super::composite_legs(core, domain, path)? {
+        super::along_legs(domain, machine, motive, legs, operand);
         return Ok(());
     }
     // The kernel reads a stuck run by its returned path first, then by its

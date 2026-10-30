@@ -6636,11 +6636,8 @@ fn step_path_transport(
     // path, then along its second: transport's functoriality, as along a held
     // `then` at the universe's decode. A held operand stays held, so each
     // path's transport waits on it as the kernel's binds of its run wait.
-    if let Some((first, second)) = composite_legs(core, domain, path)? {
-        let onward = domain.native_continuation(CompBody::AlongThen { motive, second });
-        machine.tasks.push(Task::BindClosure(onward));
-        machine.tasks.push(Task::PathTransport(motive));
-        machine.values.extend([first, value]);
+    if let Some(legs) = composite_legs(core, domain, path)? {
+        along_legs(domain, machine, motive, legs, value);
         return Ok(());
     }
     let grown = stuck_transport(domain, motive, (path, value))?;
@@ -6775,17 +6772,49 @@ fn along_held(
             back_along(core, domain, machine, motive, (along, value))
         },
         crate::identity::TransportFamily::Singleton => {
-            let onward = domain.native_continuation(CompBody::AlongThen {
-                motive,
-                second: along,
-            });
-            machine.tasks.push(Task::BindClosure(onward));
-            machine.tasks.push(Task::PathTransport(motive));
-            machine.values.extend([first, value]);
+            along_legs(domain, machine, motive, (first, along), value);
             Ok(())
         },
         crate::identity::TransportFamily::Other => Err(EvalFault::MachineInvariant),
     }
+}
+
+/// Move `value` along the composite `p then q` in `motive`: along `p`, then
+/// along `q`. Transport's functoriality, `tr(P, p then q, v) ≡ tr(P, q, ⟨tr(P,
+/// p, v)⟩)`.
+///
+/// # Specification
+/// - requires: `legs` are `(p, q)`, both in `domain`.
+/// - ensures: the transport of `value` along `p` in `motive` runs beneath a
+///   [`CompBody::AlongThen`] continuation that moves its result along `q` in
+///   `motive`.
+/// - provides: the one move along a composite's legs, which a held `then` at
+///   the universe's decode and a stuck composite share, as the kernel's two
+///   readings share one reader of the legs.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the first path moves the operand before the second;
+///   swapping the legs changes the transported result.
+/// - witness: `identity::tests::transport_along_a_stuck_composite_moves_along_each_path_in_order`
+/// - witness: `identity::tests::transport_along_then_moves_a_stuck_first_leg_on`
+#[spec(
+    captures: [tasks = machine.tasks.len(), values = machine.values.len()],
+    ensures: |()| machine.tasks.len() == tasks.saturating_add(2) && machine.values.len() == values.saturating_add(2),
+)]
+fn along_legs(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    motive: crate::arena::ValueClosureId,
+    (first, second): (DomainValueId, DomainValueId),
+    value: DomainValueId,
+)
+{
+    let onward = domain.native_continuation(CompBody::AlongThen { motive, second });
+    machine.tasks.push(Task::BindClosure(onward));
+    machine.tasks.push(Task::PathTransport(motive));
+    machine.values.extend([first, value]);
 }
 
 /// The two paths of a stuck composite: a held endpoint whose computation is a

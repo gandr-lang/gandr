@@ -3504,12 +3504,7 @@ where
             && self.along_bound(body).is_some()
         {
             // Stuck on a path: the focus is the link.
-            let Some(&Computation::PathTransport { motive, .. }) =
-                self.arena.computation(focus.node)
-            else {
-                return AlongComposite::Stays;
-            };
-            if self.then_link(motive) == Linked::Other {
+            if crate::element_identity::composite_legs(self.arena, focus.node).is_none() {
                 return AlongComposite::Stays;
             }
             let link = self.unload(cells, focus);
@@ -3517,14 +3512,10 @@ where
             else {
                 return AlongComposite::Stays;
             };
-            let (
-                Some(&Computation::PathTransport {
-                    path: second,
-                    value: first,
-                    ..
-                }),
-                Some(&Computation::PathTransport { motive: family, .. }),
-            ) = (self.arena.computation(link), self.arena.computation(onward))
+            let (Some((first, second)), Some(&Computation::PathTransport { motive: family, .. })) = (
+                crate::element_identity::composite_legs(self.arena, link),
+                self.arena.computation(onward),
+            )
             else {
                 return AlongComposite::Stays;
             };
@@ -3701,17 +3692,12 @@ where
     ) -> Option<(ValueId, ValueId)>
     {
         match self.arena.computation(computation) {
-            Some(&Computation::PathTransport {
-                motive,
-                path,
-                value,
-            }) => (self.then_link(motive) != Linked::Other).then_some((value, path)),
+            Some(&Computation::PathTransport { .. }) => {
+                crate::element_identity::composite_legs(self.arena, computation)
+            },
             Some(&Computation::Bind(ran, body)) => {
-                let Some(&Computation::PathTransport {
-                    motive,
-                    path,
-                    value,
-                }) = self.arena.computation(body)
+                let (value, path) = crate::element_identity::composite_legs(self.arena, body)?;
+                let Some(&Computation::PathTransport { motive, .. }) = self.arena.computation(body)
                 else {
                     return None;
                 };
@@ -3720,7 +3706,6 @@ where
                         self.arena,
                         crate::element_identity::Family::Value(path),
                     ) != BinderUse::Ignored
-                    || self.then_link(motive) == Linked::Other
                     || self.bound_use(motive) == BinderUse::Read
                 {
                     return None;
