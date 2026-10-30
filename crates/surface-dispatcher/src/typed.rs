@@ -8689,6 +8689,43 @@ mod tests
         );
     }
 
+    /// #3947: a function written as a call's argument stands in the type the
+    /// call's parameter instantiates, printed as a bare `fn`, and reads back
+    /// as the thunk the bare `fn` lowers to.
+    #[test]
+    fn a_function_argument_in_a_path_type_reads_back_3947()
+    {
+        let source = SourceText::from(
+            "def first(b : Type, w : #{x : b, y : b}) -> b {\n  case w {\n    #{.x = u, .y = v} \
+             => u\n  }\n}\n\ndef pass(\n  b : Type,\n  s : #{x : b, y : b} => b,\n  e : Path(#{x \
+             : b, y : b} => b, s, s)\n) -> Path(#{x : b, y : b} => b, s, s) {\n  e\n}\n\ndef \
+             user(b : Type, e : Path(#{x : b, y : b} => b, thunk { fn (w) { first(b, w) } }, \
+             thunk { fn (w) { first(b, w) } })) -> Path(#{x : b, y : b} => b, thunk { fn (w) { \
+             first(b, w) } }, thunk { fn (w) { first(b, w) } }) {\n  pass(b, fn (w) { first(b, \
+             w) }, e)\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let trips: Vec<(String, RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            trips
+                .iter()
+                .any(|&(ref spelled, ref trip)| spelled.starts_with("Path(")
+                    && spelled.contains("fn (")
+                    && *trip == RoundTrip::Equal),
+            "the argument's path type prints its function bare and reads back: {trips:?}"
+        );
+        assert!(
+            trips
+                .iter()
+                .all(|&(_, ref trip)| *trip != RoundTrip::Different),
+            "no printed type reads back as another type: {trips:?}"
+        );
+    }
+
     /// #2217: an update whose base is another update builds the record the
     /// inner one stands for and keeps that record's fields, never a
     /// projection off it, so the type a path between the two orders states

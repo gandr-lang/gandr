@@ -1,0 +1,106 @@
+test: syntax::tests::a_suspended_function_reads_as_its_thunk_3947
+package: gandr-core-term
+command: mise run debug:test gandr-core-term syntax::tests::a_suspended_function_reads_as_its_thunk_3947 --break syntax::pair_step$
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_core_term-26be2136b308e849"
+Current executable set to 'target/debug-trace/debug/deps/gandr_core_term-26be2136b308e849' (x86_64).
+(lldb) settings set -- target.run-args  "syntax::tests::a_suspended_function_reads_as_its_thunk_3947" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex syntax::pair_step$
+Breakpoint 1: where = gandr_core_term-26be2136b308e849`gandr_core_term::syntax::pair_step + 79 at syntax.rs:3551:11, address = 0x000000000042f50f
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_term-26be2136b308e849`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x00000000007821f8
+(lldb) run
+
+running 1 test
+test syntax::tests::a_suspended_function_reads_as_its_thunk_3947 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1831691 launched: 'target/debug-trace/debug/deps/gandr_core_term-26be2136b308e849' (x86_64)
+Process 1831691 stopped
+* thread #2, name = 'syntax::tests::', stop reason = breakpoint 1.1
+       frame #0: 0x000055555598350f gandr_core_term-26be2136b308e849`gandr_core_term::syntax::pair_step(arena=Borrowed({values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}), reading=Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}), signatures={root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, goal=ValueType({0:1}, {0:2}), pending=size=0) at syntax.rs:3551:11
+   3548	    use StructuralGoal::Computation as C;
+   3549	    use StructuralGoal::Value as V;
+   3550	    use StructuralGoal::ValueType as VT;
+-> 3551	    match goal {
+    	          ^
+   3552	        V(a, b) => {
+   3553	            if empty_word(arena, signatures, (a, b)) == CertificateEquality::Equal
+   3554	                || empty_word(arena, signatures, (b, a)) == CertificateEquality::Equal
+(lldb) bt 24
+* thread #2, name = 'syntax::tests::', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555598350f gandr_core_term-26be2136b308e849`gandr_core_term::syntax::pair_step(arena=Borrowed({values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}), reading=Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}), signatures={root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, goal=ValueType({0:1}, {0:2}), pending=size=0) at syntax.rs:3551:11
+     frame #1: 0x000055555597fedb gandr_core_term-26be2136b308e849`gandr_core_term::syntax::equal_syntax(arena={values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, reading=Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}), root=ValueType({0:1}, {0:2})) at syntax.rs:2839:12
+     frame #2: 0x0000555555975ff4 gandr_core_term-26be2136b308e849`gandr_core_term::syntax::equal_type_reading::{closure#0} at syntax.rs:1627:5
+     frame #3: 0x0000555555a09591 gandr_core_term-26be2136b308e849`anodized::__::eval_once::<gandr_core_term::syntax::CertificateEquality, gandr_core_term::syntax::equal_type_reading::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #4: 0x00005555559819c8 gandr_core_term-26be2136b308e849`gandr_core_term::syntax::equal_type_reading(arena={values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, signatures={root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, left={0:1}, right={0:2}) at syntax.rs:1617:1
+     frame #5: 0x00005555558b4ac0 gandr_core_term-26be2136b308e849`gandr_core_term::syntax::tests::a_suspended_function_reads_as_its_thunk_3947 at syntax.rs:4762:17
+     frame #6: 0x0000555555895d57 gandr_core_term-26be2136b308e849`gandr_core_term::syntax::tests::a_suspended_function_reads_as_its_thunk_3947::{closure#0}((null)={}) at syntax.rs:4735:54
+     frame #7: 0x0000555555c083b6 gandr_core_term-26be2136b308e849`<gandr_core_term::syntax::tests::a_suspended_function_reads_as_its_thunk_3947::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #8: 0x0000555555c5afab gandr_core_term-26be2136b308e849`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #9: 0x0000555555c5afa9 gandr_core_term-26be2136b308e849`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #10: 0x0000555555c68605 gandr_core_term-26be2136b308e849`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #11: 0x0000555555c68600 gandr_core_term-26be2136b308e849`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #12: 0x0000555555c68600 gandr_core_term-26be2136b308e849`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #13: 0x0000555555c685eb gandr_core_term-26be2136b308e849`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #14: 0x0000555555c685eb gandr_core_term-26be2136b308e849`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #15: 0x0000555555c685eb gandr_core_term-26be2136b308e849`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #16: 0x0000555555c685d6 gandr_core_term-26be2136b308e849`test::run_test::{closure#0} at lib.rs:668:43
+     frame #17: 0x0000555555c63164 gandr_core_term-26be2136b308e849`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #18: 0x0000555555c630e9 gandr_core_term-26be2136b308e849`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #19: 0x0000555555c6b742 gandr_core_term-26be2136b308e849`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #20: 0x0000555555c6b733 gandr_core_term-26be2136b308e849`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #21: 0x0000555555c6b733 gandr_core_term-26be2136b308e849`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #22: 0x0000555555c6b723 gandr_core_term-26be2136b308e849`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #23: 0x0000555555c6b723 gandr_core_term-26be2136b308e849`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+(lldb) frame variable --depth 3
+(alloc::borrow::Cow<gandr_core_term::arena::CoreArena> *) arena = 0x00007ffff79fdd98 Borrowed({values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None})
+(gandr_core_term::syntax::Reading) reading = Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}) {
+  0 = 0x00007ffff79fe230 {root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}
+}
+(alloc::collections::btree::map::BTreeMap<gandr_kernel_term::term::ConstantIndex, alloc::sync::Arc<gandr_core_term::syntax::DataSignature, alloc::alloc::Global>, alloc::alloc::Global> *) signatures = 0x00007ffff79fe230 {root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}
+(gandr_core_term::syntax::StructuralGoal) goal = ValueType({0:1}, {0:2}) {
+  0 = {0:1}
+  1 = {0:2}
+}
+(alloc::vec::Vec<gandr_core_term::syntax::StructuralGoal, alloc::alloc::Global> *) pending = 0x00007ffff79fde88 size=0
+(lldb) up
+frame #1: 0x000055555597fedb gandr_core_term-26be2136b308e849`gandr_core_term::syntax::equal_syntax(arena={values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}, reading=Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}), root=ValueType({0:1}, {0:2})) at syntax.rs:2839:12
+   2836	        if !visited.insert(goal) {
+   2837	            continue;
+   2838	        }
+-> 2839	        if pair_step(&mut arena, reading, signatures, goal, &mut pending)
+    	           ^
+   2840	            == CertificateEquality::Different
+   2841	        {
+   2842	            return CertificateEquality::Different;
+(lldb) frame variable --depth 3
+(gandr_core_term::arena::CoreArena *) arena = 0x00007ffff79fe148 {values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}
+(gandr_core_term::syntax::Reading) reading = Printed({root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}) {
+  0 = 0x00007ffff79fe230 {root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}
+}
+(gandr_core_term::syntax::StructuralGoal) root = ValueType({0:1}, {0:2}) {
+  0 = {0:1}
+  1 = {0:2}
+}
+(alloc::collections::btree::map::BTreeMap<gandr_kernel_term::term::ConstantIndex, alloc::sync::Arc<gandr_core_term::syntax::DataSignature, alloc::alloc::Global>, alloc::alloc::Global>) unread = {root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}
+(alloc::collections::btree::map::BTreeMap<gandr_kernel_term::term::ConstantIndex, alloc::sync::Arc<gandr_core_term::syntax::DataSignature, alloc::alloc::Global>, alloc::alloc::Global> *) signatures = 0x00007ffff79fe230 {root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}
+(alloc::borrow::Cow<gandr_core_term::arena::CoreArena>) arena = Borrowed({values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}) {
+  0 = 0x00007ffff79fe148 {values:{frozen:None, own:size=6}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=5}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None}
+}
+(gandr_core_term::syntax::StaticSteps) steps = {0:256}
+(alloc::vec::Vec<gandr_core_term::syntax::StructuralGoal, alloc::alloc::Global>) pending = size=0
+(alloc::collections::btree::set::BTreeSet<gandr_core_term::syntax::StructuralGoal, alloc::alloc::Global>) visited = {map:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
+(gandr_core_term::syntax::StructuralGoal) goal = ValueType({0:1}, {0:2}) {
+  0 = {0:1}
+  1 = {0:2}
+}
+(gandr_core_term::syntax::StructuralGoal) goal = ValueType({0:1}, {0:2}) {
+  0 = {0:1}
+  1 = {0:2}
+}
