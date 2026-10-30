@@ -54,6 +54,12 @@ use gandr_theory_sites::segal;
 use gandr_theory_sites::segal_two;
 use quenchant_shape::shape::Maybe;
 
+use crate::fixture::Length;
+use crate::fixture::column;
+use crate::fixture::level_one;
+use crate::fixture::restriction;
+use crate::fixture::theta;
+
 /// A profile's legs: its inputs, then its outputs.
 #[derive(Clone, Copy, Debug)]
 struct Legs(usize, usize);
@@ -594,48 +600,6 @@ fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
     );
 }
 
-/// The chain of `length` vertices, or the empty shape for zero.
-///
-/// # Specification
-/// trivial.
-fn column(length: EdgeCount) -> Shape
-{
-    if usize::from(length) == 0 {
-        Shape::default()
-    }
-    else {
-        Shape::chain(length).expect("the chain is admitted")
-    }
-}
-
-/// The Θ₂ object `[n](m_1, …, m_n)` as the outer `n`-chain carrying the
-/// columns' chains.
-///
-/// # Specification
-/// trivial.
-fn theta(
-    outer: EdgeCount,
-    columns: &[EdgeCount],
-) -> WreathShape<Shape>
-{
-    WreathShape::new(column(outer), columns.iter().copied().map(column).collect())
-        .expect("one column per outer vertex")
-}
-
-/// The top degree of `catalogue`'s shapes, where level one is certified.
-///
-/// # Specification
-/// trivial.
-fn top(catalogue: &Catalogue) -> Degree
-{
-    catalogue
-        .shapes()
-        .iter()
-        .map(Degree::of)
-        .max()
-        .expect("the catalogue holds shapes")
-}
-
 /// The whisker `[2](1, 0)`, the horizontal composite `[2](1, 1)` and the
 /// vertical composite `[1](2)` are each the colimit of their two cells over
 /// the chain restriction at total size thirteen. The whisker's second cell is
@@ -650,27 +614,26 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
     let wreath = Wreath::build(level, level, bound);
-    let below =
-        SegalStratum::certify(Arc::clone(&chains), top(level)).expect("level one is certified");
+    let below = level_one(&chains);
     assert_eq!(below.cocones().len(), 5);
     let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
         .expect("level two is certified at degree five");
-    let [zero, one, two] = [0_usize, 1, 2].map(EdgeCount::from);
+    let [zero, one, two] = [0_usize, 1, 2].map(Length);
     let cases = [
         (
-            theta(two, &[one, zero]),
+            theta(&[one, zero]),
             [Spot::Vertex(Edge::from(0_usize)), Spot::Empty],
             1,
             0,
         ),
         (
-            theta(two, &[one, one]),
+            theta(&[one, one]),
             [Spot::Vertex(Edge::from(0_usize)); 2],
             1,
             0,
         ),
         (
-            theta(one, &[two]),
+            theta(&[two]),
             [
                 Spot::Vertex(Edge::from(0_usize)),
                 Spot::Vertex(Edge::from(1_usize)),
@@ -698,8 +661,7 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
         );
     }
     assert_eq!(stratum.cocones().len(), 16);
-    let below =
-        SegalStratum::certify(Arc::clone(&chains), top(level)).expect("level one is certified");
+    let below = level_one(&chains);
     let whole = WreathStratum::certify(&wreath, Degree::from(11_usize), below)
         .expect("level two is certified at the bound's top");
     assert_eq!(whole.cocones().len(), 111);
@@ -720,9 +682,7 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
 #[test]
 fn level_two_is_direct_with_automorphisms_on_its_grounded_objects()
 {
-    let bound = ShapeSize::from(13_usize);
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
-    let restriction = Wreath::build(&chains, &chains, bound);
+    let restriction = restriction(ShapeSize::from(13_usize));
     assert_eq!(direct_core(&Site::new(&restriction)), Outcome::Holds {
         cases: 766.into()
     });
@@ -732,10 +692,10 @@ fn level_two_is_direct_with_automorphisms_on_its_grounded_objects()
     assert_eq!(direct_core(&Site::new(&wreath)), Outcome::Holds {
         cases: 109.into()
     });
-    let [zero, one] = [0_usize, 1].map(EdgeCount::from);
+    let [zero, one] = [0_usize, 1].map(Length);
     let point = WreathShape::new(column(one), vec![column(one)]).expect("one column");
     assert_eq!(Wreath::<Catalogue>::grounded(&point), Membership::Inside);
-    let fat = theta(one, &[zero]);
+    let fat = theta(&[zero]);
     assert_eq!(Wreath::<Catalogue>::grounded(&fat), Membership::Inside);
     let dot = Shape::from_ends(EdgeCount::from(1_usize), vec![]).expect("the point");
     let pointed = WreathShape::new(column(one), vec![dot]).expect("one column");
@@ -769,7 +729,7 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
             ShapeObstruction::Carrier(WiringObstruction::DirectedCycle { .. })
         )
     };
-    let [zero, one] = [0_usize, 1].map(EdgeCount::from);
+    let [zero, one] = [0_usize, 1].map(Length);
     let as_column = cycle().map(|inner| WreathShape::new(column(one), vec![inner]));
     assert!(
         matches!(as_column, Err(ref obstruction) if refused(obstruction)),
@@ -784,8 +744,7 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
     let wirings = Arc::new(Catalogue::build(small).expect("the catalogue builds"));
     let level: &Catalogue = &wirings;
     let wreath = Wreath::build(level, level, small);
-    let below =
-        SegalStratum::certify(Arc::clone(&wirings), top(level)).expect("level one is certified");
+    let below = level_one(&wirings);
     assert_eq!(
         segal_two(&wreath, &below, Degree::from(5_usize)),
         Outcome::Holds {

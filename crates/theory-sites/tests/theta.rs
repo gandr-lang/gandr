@@ -23,29 +23,20 @@ use gandr_theory_sites::WreathShapeObstruction;
 use gandr_theory_sites::shape_class;
 use quenchant_shape::shape::Maybe;
 
-/// A chain's vertex count, or a column's.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Length(usize);
+use crate::fixture::Length;
+use crate::fixture::column;
+use crate::fixture::index;
+use crate::fixture::restriction;
+use crate::fixture::theta;
 
-/// A Θ₂ object `[n](m_1, …, m_n)`: the outer length `n`, at least one, and
-/// one column length `m_i` per outer vertex.
+/// A Θ₂ object `[n](m_1, …, m_n)`: one column length `m_i` per outer vertex,
+/// of which there is at least one.
+#[repr(transparent)]
 #[derive(Clone, Debug)]
 struct Theta
 {
-    /// The outer length.
-    outer: Length,
     /// The column lengths, in vertex order.
     columns: Vec<Length>,
-}
-
-/// The chain of `length` vertices.
-///
-/// # Specification
-/// trivial.
-fn chain(Length(length): Length) -> Shape
-{
-    Shape::chain(EdgeCount::from(length)).expect("the chain is admitted")
 }
 
 /// The size a column of `length` adds: nothing for the empty shape, and its
@@ -83,7 +74,6 @@ fn theta_two(bound: ShapeSize) -> Vec<Theta>
             });
             if total <= budget {
                 objects.push(Theta {
-                    outer: Length(outer),
                     columns: digits.iter().copied().map(Length).collect(),
                 });
             }
@@ -104,39 +94,6 @@ fn theta_two(bound: ShapeSize) -> Vec<Theta>
         outer = outer.saturating_add(1);
     }
     objects
-}
-
-/// The restriction's object for `theta`: the outer chain carrying the chain of
-/// each column's length, the empty shape for length zero.
-///
-/// # Specification
-/// trivial.
-fn encode(theta: &Theta) -> WreathShape<Shape>
-{
-    let column = |length: Length| {
-        if length.0 == 0 {
-            Shape::default()
-        }
-        else {
-            chain(length)
-        }
-    };
-    WreathShape::new(
-        chain(theta.outer),
-        theta.columns.iter().copied().map(column).collect(),
-    )
-    .expect("one column per outer vertex")
-}
-
-/// The chain restriction at level two, every object of total size at most
-/// `bound`.
-///
-/// # Specification
-/// trivial.
-fn restriction(bound: ShapeSize) -> Wreath<Catalogue>
-{
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
-    Wreath::build(&chains, &chains, bound)
 }
 
 /// How many maps run between the objects at `among`.
@@ -176,21 +133,6 @@ fn pasting_scheme(object: &WreathShape<Shape>) -> Membership
     }
 }
 
-/// The index of `object`'s class in `wreath`, which holds it.
-///
-/// # Specification
-/// trivial.
-fn index(
-    wreath: &Wreath<Catalogue>,
-    object: &WreathShape<Shape>,
-) -> ShapeIndex
-{
-    match wreath.find(object) {
-        Maybe::Present(index) => index,
-        Maybe::Absent(reason) => panic!("{object} is held: {reason:?}"),
-    }
-}
-
 /// At total sizes nine, eleven and thirteen the restriction holds 26, 54 and
 /// 114 objects with 793, 4008 and 21119 maps, and Θ₂ holds 8, 16 and 32. Each
 /// Θ₂ object is found at a class of its own, and those classes are exactly
@@ -203,7 +145,7 @@ fn the_chain_restriction_holds_theta_two_at_the_bound()
         (11, 54, 4008, 16, 209),
         (13, 114, 21_119, 32, 733),
     ];
-    for (bound, objects, maps, theta, scheme_maps) in cases {
+    for (bound, objects, maps, held, scheme_maps) in cases {
         let restriction = restriction(ShapeSize::from(bound));
         let every: Vec<ShapeIndex> = (0 .. restriction.objects().len())
             .map(ShapeIndex::from)
@@ -215,10 +157,10 @@ fn the_chain_restriction_holds_theta_two_at_the_bound()
             "maps at {bound}"
         );
         let thetas = theta_two(ShapeSize::from(bound));
-        assert_eq!(thetas.len(), theta, "Θ₂'s objects at {bound}");
+        assert_eq!(thetas.len(), held, "Θ₂'s objects at {bound}");
         let mut found: Vec<ShapeIndex> = thetas
             .iter()
-            .map(|theta| index(&restriction, &encode(theta)))
+            .map(|object| index(&restriction, &theta(&object.columns)))
             .collect();
         found.sort_unstable();
         let schemes: Vec<ShapeIndex> = restriction
@@ -298,17 +240,12 @@ fn the_chain_restriction_is_the_full_sub_site_of_the_wreath()
 fn the_site_keeps_faces_only_with_the_empty_column_initial()
 {
     let restriction = restriction(ShapeSize::from(13_usize));
-    let at = |outer: usize, columns: &[usize]| {
-        index(
-            &restriction,
-            &encode(&Theta {
-                outer: Length(outer),
-                columns: columns.iter().copied().map(Length).collect(),
-            }),
-        )
+    let at = |lengths: &[usize]| {
+        let columns: Vec<Length> = lengths.iter().copied().map(Length).collect();
+        index(&restriction, &theta(&columns))
     };
-    assert_eq!(restriction.hom(at(1, &[0]), at(1, &[1])).len(), 1);
-    assert_eq!(restriction.hom(at(1, &[2]), at(2, &[1, 1])).len(), 0);
+    assert_eq!(restriction.hom(at(&[0]), at(&[1])).len(), 1);
+    assert_eq!(restriction.hom(at(&[2]), at(&[1, 1])).len(), 0);
 }
 
 /// Over the restriction at total size thirteen, the bigon, two wires between
@@ -332,22 +269,22 @@ fn a_cycle_at_the_outer_level_is_refused_by_name()
         Maybe::Absent(shape_class::Absent::OutsideTheFamily)
     );
     assert_eq!(
-        restriction.find(&object(chain(Length(1)), vec![bigon])),
+        restriction.find(&object(column(Length(1)), vec![bigon])),
         Maybe::Absent(shape_class::Absent::OutsideTheFamily)
     );
     let wirings = Catalogue::build(ShapeSize::from(4_usize)).expect("the catalogue builds");
     let full = Wreath::build(&wirings, &wirings, ShapeSize::from(4_usize));
     assert!(matches!(full.find(&over_the_bigon), Maybe::Present(_)));
     assert_eq!(
-        restriction.find(&object(chain(Length(7)), vec![empty(); 7])),
+        restriction.find(&object(column(Length(7)), vec![empty(); 7])),
         Maybe::Absent(shape_class::Absent::PastTheBound)
     );
     assert_eq!(
-        restriction.find(&object(chain(Length(1)), vec![chain(Length(6))])),
+        restriction.find(&object(column(Length(1)), vec![column(Length(6))])),
         Maybe::Absent(shape_class::Absent::PastTheBound)
     );
     assert_eq!(
-        WreathShape::new(chain(Length(2)), vec![empty()]),
+        WreathShape::new(column(Length(2)), vec![empty()]),
         Err(WreathShapeObstruction::Columns {
             vertices: EdgeCount::from(2_usize),
             columns: EdgeCount::from(1_usize),
