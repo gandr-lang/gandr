@@ -2216,5 +2216,77 @@
       ]
     },
     "output": "held: #60 workflow: the other seat's claim"
+  },
+  {
+    "name": "#4063: a focus passes over the units of a deferred sub-epic, and offers the focus epic's own",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": { "80": [81, 83], "81": [82] },
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "focus": {
+        "epics": [80],
+        "members": [
+          {
+            "number": 81,
+            "epic": 80,
+            "parent": 80,
+            "state": "open",
+            "labels": ["kind:epic", "area:workflow", "status:deferred"]
+          },
+          {
+            "number": 82,
+            "epic": 80,
+            "parent": 81,
+            "state": "open",
+            "labels": ["kind:feature", "area:workflow"]
+          },
+          {
+            "number": 83,
+            "epic": 80,
+            "parent": 80,
+            "state": "open",
+            "labels": ["kind:feature", "area:workflow"]
+          }
+        ],
+        "landings": []
+      },
+      "issues": [
+        {
+          "number": 80,
+          "title": "programme: the focus epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 81,
+          "title": "programme: a sub-epic the owner defers",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": 80,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 82,
+          "title": "workflow: the deferred sub-epic's unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 81,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        },
+        {
+          "number": 83,
+          "title": "workflow: the focus epic's own unit",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 80,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "focus: #80\n83\tfocus\tworkflow: the focus epic's own unit"
   }
 ]
