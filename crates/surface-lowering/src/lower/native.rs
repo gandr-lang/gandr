@@ -2186,21 +2186,22 @@ impl Compiling
 impl<'source> Lowerer<'_, 'source>
 {
     /// Seed every data declaration's types: each parameter's type under the
-    /// parameters before it, each index classifier under the parameters, the
-    /// universe at the outermost frame, each field's type under all the
-    /// parameters and the fields before it in its constructor, and each index
-    /// a constructor states, as a value, under the parameters and all its
-    /// fields.
+    /// parameters before it, each index classifier under the parameters and
+    /// the indices before it, the universe at the outermost frame, each
+    /// field's type under all the parameters and the fields before it in its
+    /// constructor, and each index a constructor states, as a value, under the
+    /// parameters and all its fields.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: one frame per parameter, typed with its written type and
-    ///   mentioned, so a type naming it counts it; one frame per field but its
-    ///   constructor's last, and the last too where the constructor states an
-    ///   index, bound to the field's written name or to none; one seed per type
-    ///   and stated index the declarations write, appended to `seeds`; and each
-    ///   stated index kept with the frame it is read under, for the names an
-    ///   editor spells its type in.
+    ///   mentioned, so a type naming it counts it; one frame per index, bound
+    ///   to its written name, typed and mentioned, or to none; one frame per
+    ///   field but its constructor's last, and the last too where the
+    ///   constructor states an index, bound to the field's written name or to
+    ///   none; one seed per type and stated index the declarations write,
+    ///   appended to `seeds`; and each stated index kept with the frame it is
+    ///   read under, for the names an editor spells its type in.
     /// - provides: the data half of [`Self::seed`].
     /// - fails: never.
     /// - panics: none.
@@ -2238,8 +2239,31 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(kind) = form.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
+            // Each index reads under the parameters and the indices before
+            // it, a named one by its name; the generators read under the
+            // parameters alone.
+            let mut indexed = frame;
             for index in &form.indices {
-                seeds.push((index.node, Reading::ValueType(frame)));
+                seeds.push((index.ty.node, Reading::ValueType(indexed)));
+                let bound = match index.named {
+                    Maybe::Present(named) => {
+                        let name = SurfaceName::from(self.text_at(named));
+                        let bound = self.scope.extend_typed(
+                            indexed,
+                            name,
+                            index.ty.node,
+                            Maybe::Present(named.span),
+                        );
+                        self.scope.mention(bound);
+                        bound
+                    },
+                    Maybe::Absent(_) => self.scope.extend(
+                        indexed,
+                        SurfaceName::from(""),
+                        Maybe::Absent(binder_site::Absent::Unwritten),
+                    ),
+                };
+                indexed = Frame::Inner(bound);
             }
             for generator in &form.generators {
                 let last = generator.fields.len().checked_sub(1);
@@ -2333,7 +2357,7 @@ impl<'source> Lowerer<'_, 'source>
                         .get(argued.place)
                         .map(|parameter| parameter.classifier)
                 },
-                |index| form.indices.get(index).copied(),
+                |index| form.indices.get(index).map(|index| index.ty),
             )
             && self.tree.node(classifier.node).is_some_and(|node| {
                 matches!(
@@ -7483,22 +7507,16 @@ impl<'source> Lowerer<'_, 'source>
                     .collect();
                 constructors.push(fields);
             }
-            let mut indices = Vec::with_capacity(form.indices.len());
-            for (earlier, index) in form.indices.iter().enumerate() {
-                let (Maybe::Present(classifier), Ok(earlier)) =
-                    (self.value_type_at(index.node), u32::try_from(earlier))
-                else {
-                    continue;
-                };
-                indices.push(
-                    gandr_core_term::shift_value_type(
-                        sink.arena,
-                        classifier,
-                        gandr_core_term::Binders::from(earlier),
-                    )
-                    .settle(sink.arena),
-                );
-            }
+            // Each classifier is read under the parameters and the indices
+            // before it already, as the signature's index telescope holds it.
+            let indices: Vec<ValueTypeId> = form
+                .indices
+                .iter()
+                .filter_map(|index| match self.value_type_at(index.ty.node) {
+                    Maybe::Present(id) => Some(id),
+                    Maybe::Absent(_) => None,
+                })
+                .collect();
             let results: Vec<Vec<ValueId>> = form
                 .generators
                 .iter()
@@ -8378,9 +8396,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the family's parameter and index types and the arguments
     ///   before the place are minted or absent.
     /// - ensures: the family's parameter, or index, at the place, read under
-    ///   the parameters before it, with each of those replaced by the argument
-    ///   written for it, every node the substitution mints recorded at
-    ///   `origin`; nothing when the classifier or an argument did not lower.
+    ///   the parameters and indices before it, with each of those replaced by
+    ///   the argument written for it, every node the substitution mints
+    ///   recorded at `origin`; nothing when the classifier or an argument did
+    ///   not lower.
     /// - provides: the classifier of a constructor written as a family's
     ///   argument (#421).
     /// - fails: never.
@@ -8405,7 +8424,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        // An index reads under the parameters alone.
+        // An index reads under the parameters and the indices before it.
         let parameters = form.parameters.len();
         let classifier = argued.place.checked_sub(parameters).map_or_else(
             || {
@@ -8413,7 +8432,7 @@ impl<'source> Lowerer<'_, 'source>
                     .get(argued.place)
                     .map(|parameter| parameter.classifier)
             },
-            |index| form.indices.get(index).copied(),
+            |index| form.indices.get(index).map(|index| index.ty),
         );
         let Some(classifier) = classifier
         else {
@@ -8423,7 +8442,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(declared) => declared,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let bound = argued.place.min(parameters);
+        let bound = argued.place;
         let mut environment = Vec::with_capacity(bound);
         for &argument in stretch(&self.operands, argued.applied).iter().take(bound) {
             match self.value_at(argument) {

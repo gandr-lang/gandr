@@ -1,0 +1,51 @@
+/// This source declares families whose named index telescope is refused.
+///
+/// It pins the refusals a named telescope adds, so a misstated index stays refused by the checker or the lowering.
+///
+/// A constructor states its indices in the order the telescope names them, each at the type its entry states. A telescope ends in `-->` and a universe, and an index takes no grade.
+///
+/// - see: #4022
+import "../../model/data/data-base.gandr";
+
+/// Positions below a bound.
+data Fin : Nat -> Type {
+  /// The first position below the successor of `n`.
+  FZ : (n : Nat) --> Fin(Succ(n));
+}
+
+/// A constructor states the position before the bound, out of the telescope's
+/// order: the position stands where the bound `n : Nat` is stated.
+@[ refuses("TypeMismatch") ]
+data Swapped : (n : Nat, i : Fin(n)) --> Type {
+  /// The two indices in the wrong order.
+  Turned : (n : Nat, i : Fin(n)) --> Swapped(i, n);
+}
+
+/// A constructor states a position below `n` at a bound one past it.
+@[ refuses("TypeMismatch") ]
+data Past : (n : Nat, i : Fin(n)) --> Type {
+  /// The position stands below `n`, not below its successor.
+  Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i);
+}
+
+/// The type of an index reads an earlier index at the wrong type: `i` is a
+/// position, and `Fin` asks for a bound.
+@[ refuses("TypeMismatch") ]
+data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type {
+  /// A mark at three indices.
+  Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j);
+}
+
+/// A telescope with no arrow after it states no universe.
+@[ refuses("MalformedForm") ]
+data Unended : (n : Nat) {
+  /// The one constructor.
+  Only : Unended;
+}
+
+/// An index takes no grade.
+@[ refuses("MalformedForm") ]
+data Graded : (1 n : Nat) --> Type {
+  /// A mark at zero.
+  AtZero : Graded(Zero);
+}

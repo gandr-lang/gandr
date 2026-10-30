@@ -1,0 +1,50 @@
+error[MalformedForm]: an operand is missing in this data declaration
+   ╭▸ corpus/pathological/data/index-telescope.gandr:41:16
+   │
+41 │ data Unended : (n : Nat) {
+   │                ━━━━━━━━━━━ an operand is missing here
+   │
+   ├ note: `Unended` is refused with MalformedForm, as its expectation states
+   ╰ help: write the missing operand
+
+error[MalformedForm]: a keyword or symbol of this data declaration is out of place
+   ╭▸ corpus/pathological/data/index-telescope.gandr:48:16
+   │
+48 │ data Graded : (1 n : Nat) --> Type {
+   │                ━ out of place
+   │
+   ├ note: `Graded` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the data declaration
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/data/index-telescope.gandr:21:46
+   │
+19 │ data Swapped : (n : Nat, i : Fin(n)) --> Type {
+   │                     ─── the type it is checked against
+20 │   /// The two indices in the wrong order.
+21 │   Turned : (n : Nat, i : Fin(n)) --> Swapped(i, n);
+   │                                              ━ its type does not convert: expected `Nat`, found `Fin(?)`
+   │
+   ├ note: `Swapped` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/data/index-telescope.gandr:28:50
+   │
+28 │   Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i);
+   │                                                  ━ its type does not convert: expected `Fin(Succ(?))`, found `Fin(?)`
+   │
+   ├ note: `Past` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/data/index-telescope.gandr:34:46
+   │
+11 │ data Fin : Nat -> Type {
+   │            ─── the type it is checked against
+   ‡
+34 │ data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type {
+   │                                              ━ its type does not convert: expected `Nat`, found `Fin(?)`
+   │
+   ├ note: `Misread` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

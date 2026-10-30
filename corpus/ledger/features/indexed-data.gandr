@@ -1,6 +1,6 @@
 /// `indexed-data`: Indexed data families.
-/// Implemented: data families over value indices, whose case checks each arm at its constructor's fields with one equation per index. The solution of an equation with a variable side refines its arm. At a family of one index, the case leaves out an arm whose constructor stands apart.
-/// Not implemented: pruning at several indices and injectivity at a match; #1314 owes the first and #3515 the second.
+/// Implemented: data families over value indices, written as the kind `Nat -> Type` or as a named telescope whose later index types read the earlier ones, whose case checks each arm at its constructor's fields with one equation per index. The solution of an equation with a variable side refines its arm. At a family of one index, the case leaves out an arm whose constructor stands apart.
+/// Not implemented: pruning at several indices, injectivity at a match, and a constructor of an indexed family written at an index; #1314 owes the first, #3515 the second and #4027 the third.
 // Vectors: lists indexed by their length, a family whose constructors each
 // state the index their value stands at (Dybjer, _Inductive families_,
 // doi:10.1007/BF01211308). The kind `Nat -> Type` reads the length's type
@@ -32,4 +32,17 @@ def pair() -> Vec(Integer, Succ(Succ(Zero))) {
     1,
     (VCons(Zero, 2, (VNil : Vec(Integer, Zero))) : Vec(Integer, Succ(Zero)))
   )
+}
+
+/// A vector of `a` marked at its length: the indices a named telescope, the
+/// type of the vector reading the length before it.
+@[ checks ]
+data Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type {
+  Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v);
+}
+
+/// A vector of integers, marked at its length.
+@[ checks ]
+def measured(n : Nat, v : Vec(Integer, n)) -> Sized(Integer, n, v) {
+  Measured(n, v)
 }

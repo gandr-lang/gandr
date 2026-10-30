@@ -893,6 +893,27 @@ fn a_result_head_of_the_wrong_arity_declines()
     assert_eq!(diagnostic.fault, DescriptionFault::NonUniformResult);
 }
 
+/// A named index telescope is read as a family head, its arity one index per
+/// entry: a result stating both indices reads, and one stating one declines
+/// as non-uniform at that result (#4022).
+#[test]
+fn a_named_index_telescope_counts_its_indices_4022()
+{
+    let source = "data N : Type { Z : N; }\ndata Two : (n : N, m : N) --> Type { Both : (n : N, m : \
+                  N) --> Two(n, m); }\ndata Short : (n : N, m : N) --> Type { One : (n : N) --> \
+                  Short(n); }";
+    let report = elaborated(SourceText::from(source));
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("only the short result declines: {:?}", report.diagnostics);
+    };
+    assert_eq!(diagnostic.fault, DescriptionFault::NonUniformResult);
+    assert_eq!(
+        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
+        Some("Short(n)")
+    );
+}
+
 #[test]
 fn a_bare_result_head_over_a_parameterized_family_declines()
 {

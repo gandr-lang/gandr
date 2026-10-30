@@ -1,0 +1,57 @@
+/// This source declares families whose `data` header states its indices as a named telescope on the right of the colon.
+///
+/// The type of a later index can read an earlier one. A family of variables over a context needs those names.
+///
+/// The telescope `(x : A, y : B(x)) --> Type` names each index. The kind `A -> Type` is the same telescope with no names.
+///
+/// - see: #4022
+import "./data-base.gandr";
+
+/// The types of a simply typed object language.
+data ObjTy : Type {
+  /// The base type.
+  Base : ObjTy;
+  /// The functions from `dom` to `cod`.
+  Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy;
+}
+
+/// Contexts as lists of object types, the last entry outermost.
+data Ctx : Type {
+  /// The empty context.
+  Empty : Ctx;
+  /// The context `gamma` extended by one entry of type `a`.
+  Extend : (gamma : Ctx, a : ObjTy) --> Ctx;
+}
+
+/// A variable of type `a` in the context `gamma`, counted from the last entry.
+data Var : (gamma : Ctx, a : ObjTy) --> Type {
+  /// The variable the last entry binds.
+  Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a);
+  /// A variable of `gamma`, past one more entry.
+  There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a);
+}
+
+/// The variable of the first entry in a context of two.
+def firstVar(a : ObjTy, b : ObjTy) -> Var(Extend(Extend(Empty, a), b), a) {
+  There(Extend(Empty, a), a, b, Here(Empty, a))
+}
+
+/// Positions below a bound.
+data Fin : Nat -> Type {
+  /// The first position below the successor of `n`.
+  FZ : (n : Nat) --> Fin(Succ(n));
+  /// The position after `i`, below the successor of `n`.
+  FS : (n : Nat, i : Fin(n)) --> Fin(Succ(n));
+}
+
+/// A value of `a` marked at the position `i` below `n`. The type of the
+/// second index reads the first, beside the parameter.
+data Pinned(a : Type) : (n : Nat, i : Fin(n)) --> Type {
+  /// The value `x` at the position `i`.
+  Pin : (n : Nat, i : Fin(n), x : a) --> Pinned(a, n, i);
+}
+
+/// The integer `x` marked at the position `i` below `n`.
+def pin(n : Nat, i : Fin(n), x : Integer) -> Pinned(Integer, n, i) {
+  Pin(n, i, x)
+}
