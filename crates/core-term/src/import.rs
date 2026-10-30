@@ -235,7 +235,11 @@ impl Image
                 | Value::Thunk(ref mut body)
                 | Value::Returned(ref mut body)
                 | Value::Nested(ref mut body)
-                | Value::Run(ref mut body),
+                | Value::Run(ref mut body)
+                | Value::Compose {
+                    realised: ref mut body,
+                    ..
+                },
             )
             | Self::Computation(
                 Computation::Lambda(ref mut body)
@@ -709,7 +713,11 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 Value::Row(ref row) => self.pending.extend(
                                     row.types().rev().map(|ty| Task::Open(Node::ValueType(ty))),
                                 ),
-                                Value::Tuple(ref components) => self.pending.extend(
+                                Value::Tuple(ref components)
+                                | Value::Compose {
+                                    cells: ref components,
+                                    ..
+                                } => self.pending.extend(
                                     components
                                         .iter()
                                         .rev()
@@ -1046,7 +1054,13 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 *value = map_value(*value)?;
                             }
                         },
-                        Image::Value(Value::Tuple(ref mut components)) => {
+                        Image::Value(
+                            Value::Tuple(ref mut components)
+                            | Value::Compose {
+                                cells: ref mut components,
+                                ..
+                            },
+                        ) => {
                             for value in components.iter_mut() {
                                 *value = map_value(*value)?;
                             }

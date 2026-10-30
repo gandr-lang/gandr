@@ -1,0 +1,19 @@
+error[ComposeDoesNotFill]: `compose` needs its cells to meet end to end along the chain
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:9:3
+   │
+ 8 │   def apart(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, x, z)) -> Path(A, x, z) {
+   │   │         ┬         ┬      ┬      ┬      ┬                  ─ checked against `Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds q : Path(A, x, z)
+   │   │         │         │      │      │      │
+   │   │         │         │      │      │      checked against `Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds p : Path(A, x, y)
+   │   │         │         │      │      checked against `(z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds z : A
+   │   │         │         │      checked against `(y : A) -> (z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds y : A
+   │   │         │         checked against `(x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds x : A
+   │ ┌─┘         checked against `(A : Type) -> (x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds A : Type
+   │ │
+ 9 │ │   compose[3, 5](chain(2), (p, q))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ cells that do not fill the chain
+10 │ │ }
+   │ └─┘ checked against `(A : Type, x : A, y : A, z : A, Path(A, x, y), Path(A, x, z)) => Path(A, x, z)`; while checking the body of this thunk
+   │
+   ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: start each cell at the point where the cell before it ends

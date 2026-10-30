@@ -1,0 +1,19 @@
+error[ComposeUncertified]: `compose` needs a stratum the chain sub-site certifies
+   ╭▸ corpus/ledger/diagnostics/ComposeUncertified.gandr:9:3
+   │
+ 8 │   def uncertified(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+   │   │               ┬         ┬      ┬      ┬      ┬                  ─ checked against `Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds q : Path(A, y, z)
+   │   │               │         │      │      │      │
+   │   │               │         │      │      │      checked against `Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds p : Path(A, x, y)
+   │   │               │         │      │      checked against `(z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds z : A
+   │   │               │         │      checked against `(y : A) -> (z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds y : A
+   │   │               │         checked against `(x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds x : A
+   │ ┌─┘               checked against `(A : Type) -> (x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds A : Type
+   │ │
+ 9 │ │   compose[0, 5](chain(2), (p, q))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a stratum the chains do not certify
+10 │ │ }
+   │ └─┘ checked against `(A : Type, x : A, y : A, z : A, Path(A, x, y), Path(A, y, z)) => Path(A, x, z)`; while checking the body of this thunk
+   │
+   ├ note: `uncertified` is refused with ComposeUncertified, as its expectation states
+   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

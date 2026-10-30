@@ -536,6 +536,7 @@ pub mod bridge;
 mod capability;
 pub mod codata;
 mod code;
+mod compose;
 mod context;
 mod conversion;
 mod coverage;

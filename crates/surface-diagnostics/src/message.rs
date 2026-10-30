@@ -35,6 +35,12 @@
 //! `message::tests::every_refusal_name_has_a_plain_message`, which builds one
 //! refusal of every vocabulary name and holds each message to one line with no
 //! grammar sort.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's
+//!   three refusals, each worded by what the stratum, the chain or a wire
+//!   lacks.
 
 use core::fmt;
 
@@ -1006,6 +1012,15 @@ fn checked(
             UaDefect::Stuck { .. } => {
                 f.write_str("a `ua` translator returns no element of its target code")
             },
+        },
+        CheckRefusal::ComposeUncertified { .. } => {
+            f.write_str("`compose` needs a stratum the chain sub-site certifies")
+        },
+        CheckRefusal::ComposeNotAShape { .. } => {
+            f.write_str("`compose` needs a chain within the degree and the bound of its stratum")
+        },
+        CheckRefusal::ComposeDoesNotFill { .. } => {
+            f.write_str("`compose` needs its cells to meet end to end along the chain")
         },
         CheckRefusal::UnenclosedRun { .. } => f.write_str(
             "a computation read as a value runs before the computation around it, and none \
@@ -2161,6 +2176,24 @@ pub mod tests
             CheckRefusal::UaInequivalent {
                 at: value,
                 defect: UaDefect::Stuck { corolla, element },
+            },
+            CheckRefusal::ComposeUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::Chain {
+                    cells: gandr_core_term::compose::CellCount::from(4_usize),
+                },
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
             },
             CheckRefusal::SessionMismatch {
                 at: computation,

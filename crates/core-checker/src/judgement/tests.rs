@@ -4093,7 +4093,7 @@ proptest! {
                     );
                 },
                 | Value::Univalence(..)
-                | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. }
+                | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. }
                 | Value::Constructor { .. } | Value::Record(_)
                 | Value::Reify(_)
                 | Value::PathProduct(..)

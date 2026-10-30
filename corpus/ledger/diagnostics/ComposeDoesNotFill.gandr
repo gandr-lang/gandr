@@ -1,0 +1,10 @@
+/// `ComposeDoesNotFill`: a composite whose cells do not meet end to end.
+@[ checks ]
+def meeting(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+  compose[3, 5](chain(2), (p, q))
+}
+
+@[ refuses("ComposeDoesNotFill") ]
+def apart(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, x, z)) -> Path(A, x, z) {
+  compose[3, 5](chain(2), (p, q))
+}

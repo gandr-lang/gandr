@@ -98,6 +98,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `NotATranslation`, a `via` riding no flow.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a `via` naming no flow is a malformed source.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a flow's code is demanded by a `via` alone.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each a malformed source.
 
 ## License
 

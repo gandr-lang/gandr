@@ -4089,6 +4089,62 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     }
 }
 
+/// A composite of three paths, bare, returned or run as a body, is written as
+/// the left-nested fold it realises, and the printing names the composite's
+/// elided form until the printer writes it (#3957).
+#[test]
+fn a_composite_is_written_as_its_fold_and_noted_3965()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let around = core.value_constant(ConstantIndex::from(2_usize));
+    let composite = gandr_core_term::compose::Composite {
+        stratum: gandr_core_term::ua::Stratum {
+            degree: gandr_theory_sites::Degree::from(5_usize),
+            bound: gandr_theory_sites::ShapeSize::from(7_usize),
+        },
+        pasting: gandr_core_term::compose::Pasting::Chain {
+            cells: gandr_core_term::compose::CellCount::from(3_usize),
+        },
+    };
+    let bare = gandr_core_term::compose::compose(&mut core, composite, (circle, base), &[
+        around, around, around,
+    ]);
+    let body = core.computation_return(bare);
+    let returned = core.value_returned(body);
+    let names = [Name::from("Circle"), Name::from("base"), Name::from("loop")];
+    let source = CoreSource::new(&core, &names);
+    // A body states no type of its own, so its fold is written as the
+    // transports it derives, as `then` written there is (#815).
+    let explicit = "transport(\\a. Path(Circle, base, a), loop, transport(\\a. Path(Circle, base, \
+                    a), loop, loop))";
+    for (root, expected) in [
+        (CoreNode::Value(bare), "(loop then loop) then loop"),
+        (CoreNode::Value(returned), "(loop then loop) then loop"),
+        (CoreNode::Computation(body), explicit),
+    ] {
+        agrees(&core, &names, root);
+        let root = match root {
+            CoreNode::Computation(_) => Root::Computation(root),
+            CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => {
+                Root::Value(root)
+            },
+        };
+        let rendered = presented_in(&source, root, wide(), Form::Sugared);
+        assert_eq!(
+            (
+                rendered.as_ref(),
+                rendered.fidelity(),
+                rendered.unspelled().iter().copied().collect::<Vec<_>>()
+            ),
+            (expected, Fidelity::Approximate, vec![Unspelled::Elided(
+                Elided::Composite
+            )]),
+        );
+    }
+}
+
 /// A composite a transport reads as its path or as the value it moves stays
 /// the transport it derives: nothing there states the composite's type, and
 /// the lowering reads `p then q` only where something does, as a call's

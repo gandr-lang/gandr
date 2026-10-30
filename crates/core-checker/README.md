@@ -37,6 +37,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
 - `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` and `ModuleReport::natives`: `ua_n` at every certified stratum, and the native paths it and `pathProduct` cross as.
 - `CheckingContext::keep_strata_in`, `ua::StratumStore`, `ua::StratumAt`, `ua::NoStratumStore` and `ua::recalled`: the strata a context holds for its life, recalled from a store the driver implements and replayed before use.
+- `CheckRefusal::ComposeUncertified`, `ComposeNotAShape` and `ComposeDoesNotFill`: a chain's unbiased composite.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
 - `ModuleRun`, `Checkpoint`, `CheckingContext::checkpoint` and `CheckingContext::resume`: a module judged in stretches, each continuing the last one's state.
@@ -74,7 +75,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Topic | Module |
 | ----- | ------ |
 | Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
-| Function extensionality, universe equivalence, the product of universe paths, `ua_n` | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs) |
+| Function extensionality, universe equivalence, the product of universe paths, `ua_n`, composites | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs), [`compose`](src/compose.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |
 | Temporary access | [`access`](src/access.rs), [`judgement::access`](src/judgement/access.rs) |

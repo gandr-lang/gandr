@@ -124,6 +124,11 @@
 //! ride or a transport to name the new node, where the focusing already visits
 //! each node once. The choice reverses if the command IL gains an identity
 //! former of its own.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite
+//!   focuses as the fold it realises, so it needs no combinator of its own.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -1239,6 +1244,7 @@ fn rebuilt(
         | Value::Funext(..)
         | Value::Equiv(..)
         | Value::Ua { .. }
+        | Value::Compose { .. }
         | Value::SessionRelated { .. }
         | Value::Stay(_)
         | Value::Then(..)
@@ -1336,6 +1342,7 @@ pub fn each_field<Each>(
         | Value::Funext(..)
         | Value::Equiv(..)
         | Value::Ua { .. }
+        | Value::Compose { .. }
         | Value::SessionRelated { .. }
         | Value::Stay(_)
         | Value::Then(..)

@@ -816,7 +816,15 @@ fn formers(
                         gandr_core_term::control::StackFrame::Project(_) => None,
                     }));
                 },
-                Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
+                // The checker checks a composite's realisation, which folds
+                // its cells.
+                Some(
+                    &(Value::Thunk(suspended)
+                    | Value::Compose {
+                        realised: suspended,
+                        ..
+                    }),
+                ) => worklist.push(Node::Computation(suspended)),
                 Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)

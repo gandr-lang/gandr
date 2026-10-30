@@ -1244,6 +1244,14 @@ where
                                 .map(|&component| (AnyNode::Value(component), reach)),
                         );
                     },
+                    Some(&Value::Compose {
+                        ref cells,
+                        realised,
+                        ..
+                    }) => {
+                        pending.extend(cells.iter().map(|&cell| (AnyNode::Value(cell), reach)));
+                        pending.push((AnyNode::Computation(realised), reach));
+                    },
                     Some(&Value::Recorded(ref moves)) => {
                         pending.extend(moves.iter().filter_map(
                             |movement| match movement.payload() {

@@ -3076,6 +3076,37 @@ fn every_refusal() -> Vec<Refusal>
         ]
         .map(|defect| Refusal::UaInequivalent { at, defect }),
     );
+    refusals.push(Refusal::ComposeUncertified {
+        at,
+        stratum: StratumDefect::Degree {
+            degree: gandr_theory_sites::Degree::from(0_usize),
+        },
+    });
+    refusals.push(Refusal::ComposeNotAShape {
+        at,
+        pasting: gandr_core_term::compose::Pasting::Chain {
+            cells: gandr_core_term::compose::CellCount::from(4_usize),
+        },
+    });
+    refusals.extend(
+        [
+            gandr_theory_sites::Unfilled::Cells {
+                vertices: 3_usize.into(),
+                cells: 2_usize.into(),
+            },
+            gandr_theory_sites::Unfilled::Profile {
+                vertex: 1_usize.into(),
+                found: gandr_theory_sites::Profile {
+                    inputs: gandr_theory_sites::PortCount::from(2_usize),
+                    outputs: gandr_theory_sites::PortCount::from(1_usize),
+                },
+            },
+            gandr_theory_sites::Unfilled::Wire {
+                wire: 1_usize.into(),
+            },
+        ]
+        .map(|defect| Refusal::ComposeDoesNotFill { at, defect }),
+    );
     refusals
 }
 

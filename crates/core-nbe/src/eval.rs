@@ -261,6 +261,11 @@
 //! (see `traced`), and readback and conversion still walk the expansion. A
 //! cache keyed on the source node inside a machine would make the sharing
 //! decision behind the parameter's back.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite
+//!   evaluates as the left-nested fold it realises.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
@@ -4602,8 +4607,15 @@ fn step_value(
         // returns, or for the stuck computation when it does not return. A
         // nested computation and a written run evaluate the same way: only the
         // checker meets them, before elaboration, and it reads one standing in
-        // a dependent position by what it returns.
-        Value::Returned(computation) | Value::Nested(computation) | Value::Run(computation) => {
+        // a dependent position by what it returns. A composite is what its
+        // realisation returns, so a composite of decided cells is decided.
+        Value::Returned(computation)
+        | Value::Nested(computation)
+        | Value::Run(computation)
+        | Value::Compose {
+            realised: computation,
+            ..
+        } => {
             machine.tasks.push(Task::Returned);
             machine.tasks.push(Task::Comp {
                 term: computation,

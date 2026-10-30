@@ -25,6 +25,7 @@ The crate root's rustdoc carries the worked example and the boundaries.
 - Conor McBride, "Everybody's Got To Be Somewhere", _MSFP 2018_, EPTCS 275, [doi:10.4204/EPTCS.275.6](https://doi.org/10.4204/EPTCS.275.6): the support carried on every node that scopes a solution.
 - Jesper Cockx and Dominique Devriese, "Proof-Relevant Unification: Dependent Pattern Matching with Only the Axioms of Your Type Theory", _Journal of Functional Programming_ 28, 2018, [doi:10.1017/S095679681800014X](https://doi.org/10.1017/S095679681800014X): the conflict and cycle rules, the only refutations.
 - Andrew Slattery and Jonathan Sterling, "Bidirectional Elaborators à la Carte", 2026, [arXiv:2607.09564](https://arxiv.org/abs/2607.09564): postponement as partiality over one dominance, whose constraint actions commute.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is a former whose cells and fold the solver reads as its children.
 
 ## Provided features
 

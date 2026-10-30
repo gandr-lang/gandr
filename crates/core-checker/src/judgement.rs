@@ -1799,6 +1799,16 @@ enum Frame
         /// The `ua`.
         at: ValueId,
     },
+    /// Await the types a composite's cells synthesise, collected from the
+    /// result-stack suffix at `base`, then fill its pasting with them and
+    /// check its realisation.
+    ComposeCells
+    {
+        /// The `compose`.
+        at: ValueId,
+        /// The result-stack suffix owned by its cells.
+        base: usize,
+    },
     /// Await the type a compound endpoint's computation synthesises, which
     /// must be a pure returner.
     ReturnedEndpoint
@@ -2580,6 +2590,7 @@ impl Frame
             Self::EquivForward { .. } => FrameRole::EquivForward,
             Self::EquivBackward { .. } => FrameRole::EquivBackward,
             Self::UaTranslators { .. } => FrameRole::UaTranslators,
+            Self::ComposeCells { .. } => FrameRole::ComposeCells,
             Self::UnivalenceRecord { .. } => FrameRole::UnivalenceRecord,
             Self::UnivalenceChecked { .. } => FrameRole::UnivalenceChecked,
             Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
@@ -2741,6 +2752,7 @@ impl Frame
             | Self::EquivForward { .. }
             | Self::EquivBackward { .. }
             | Self::UaTranslators { .. }
+            | Self::ComposeCells { .. }
             | Self::UnivalenceRecord { .. }
             | Self::UnivalenceChecked { .. }
             | Self::ReturnedEndpoint { .. }
@@ -3198,6 +3210,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::EquivForward { .. }
                 | Frame::EquivBackward { .. }
                 | Frame::UaTranslators { .. }
+                | Frame::ComposeCells { .. }
                 | Frame::UnivalenceRecord { .. }
                 | Frame::UnivalenceChecked { .. }
                 | Frame::ReturnedEndpoint { .. }
@@ -4871,6 +4884,55 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
                 self.resume(first.frame, Produced::Checked)
             },
+            Value::Compose { composite, .. } => {
+                crate::compose::admit(self.context.strata_mut(), term, composite)?;
+                let Some(&Value::Compose { ref cells, .. }) = self.context.arena().value(term)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let owner = self.owner;
+                self.frames.push(Waiting {
+                    frame: Frame::ComposeCells {
+                        at: term,
+                        base: self.native_types.len(),
+                    },
+                    owner,
+                });
+                for &cell in cells.iter().rev() {
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeCollect,
+                        owner,
+                    });
+                    // A cell written as a call runs, and the composite reads
+                    // the path it returns, as a scrutinee does.
+                    let goal = if let Some(&Value::Nested(call)) = self.context.arena().value(cell)
+                    {
+                        self.frames.push(Waiting {
+                            frame: Frame::Ran {
+                                at: cell,
+                                read: Read::Unsuspended,
+                            },
+                            owner,
+                        });
+                        Goal::Computation {
+                            term: call,
+                            direction: Direction::Synthesise,
+                        }
+                    }
+                    else {
+                        Goal::Value {
+                            term: cell,
+                            direction: Direction::Synthesise,
+                        }
+                    };
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(goal),
+                        owner,
+                    });
+                }
+                let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                self.resume(first.frame, Produced::Checked)
+            },
             Value::Returned(computation) => {
                 self.wait(Frame::ReturnedEndpoint { at: term });
                 Ok(Step::Descend(Goal::Computation {
@@ -5478,6 +5540,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
+            | Value::Compose { .. }
             | Value::Constructor { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -5769,6 +5832,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Equiv(..)
             | Value::Univalence(..)
             | Value::Ua { .. }
+            | Value::Compose { .. }
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
@@ -8731,6 +8795,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let identity = universal.identity(self.context.arena_mut());
                 Ok(Step::Ascend(Produced::ValueType(identity.into())))
             },
+            (Frame::ComposeCells { at, base }, Produced::Checked) => {
+                let types: Vec<ValueTypeId> = self
+                    .native_types
+                    .get(base ..)
+                    .map(<[ValueTypeId]>::to_vec)
+                    .unwrap_or_default();
+                self.native_types.truncate(base);
+                self.composed(at, &types)
+            },
             (Frame::Ran { at, read }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 let (result, purity) = match comp_type_view(self.context.arena(), head)? {
@@ -9876,6 +9949,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FunextRight { .. }
                 | Frame::EquivBackward { .. }
                 | Frame::UaTranslators { .. }
+                | Frame::ComposeCells { .. }
                 | Frame::UnivalenceChecked { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::TelescopeMotive { .. }
@@ -10197,6 +10271,80 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 found: TypeNode::Value(classifier),
             }),
         }
+    }
+
+    /// Continue a composite whose cells synthesised `types`: read each cell's
+    /// type as the path a transport follows, a word as the path at its point,
+    /// fill the pasting with their endpoints, and synthesise the realisation's
+    /// type.
+    ///
+    /// # Specification
+    /// - requires: `types` are the types the cells of the composite `at`
+    ///   synthesised, in vertex order.
+    /// - ensures: a composite whose cells fill its pasting waits on its
+    ///   realisation's synthesis as a compound endpoint's does. The realisation
+    ///   is the fold of those cells, so it synthesises the path from the first
+    ///   start to the last end, and the composite elaborates as the chain
+    ///   written with `then` does.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at a cell whose type is no
+    ///   path; the refusals of [`crate::compose::admit`] and
+    ///   [`crate::compose::fill`]; a machine invariant for a node that is no
+    ///   composite or types of another count than its cells.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three composable paths synthesise the path between
+    ///   their outer endpoints, a cell of another type is refused by shape, and
+    ///   a cell whose start is not its predecessor's end is refused at its
+    ///   wire.
+    /// - witness: `compose::tests::composable_cells_fill_their_chain`
+    /// - witness: `compose::tests::a_composite_refuses_each_defect_by_name`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))) && self.frames.len() > depth,
+    )]
+    fn composed(
+        &mut self,
+        at: ValueId,
+        types: &[ValueTypeId],
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Some(&Value::Compose {
+            composite,
+            ref cells,
+            realised,
+        }) = self.context.arena().value(at)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let cells = cells.to_vec();
+        if types.len() != cells.len() {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let shape = crate::compose::admit(self.context.strata_mut(), at, composite)?;
+        let mut diagram = Vec::with_capacity(cells.len());
+        for (&cell, &ty) in cells.iter().zip(types) {
+            let (left, right) = match self.transported_path(TermNode::Value(cell), ty)? {
+                PathReading::Known { left, right, .. } => (
+                    crate::compose::Endpoint::Known(left),
+                    crate::compose::Endpoint::Known(right),
+                ),
+                PathReading::Unknown(_) => (
+                    crate::compose::Endpoint::Unknown,
+                    crate::compose::Endpoint::Unknown,
+                ),
+            };
+            diagram.push(crate::compose::cell(left, right));
+        }
+        crate::compose::fill(self.context, at, &shape, &diagram)?;
+        self.wait(Frame::ReturnedEndpoint { at });
+        Ok(Step::Descend(Goal::Computation {
+            term: realised,
+            direction: Direction::Synthesise,
+        }))
     }
 
     /// Read the type of the path a transport follows: a parameterless type of

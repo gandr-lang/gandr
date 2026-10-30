@@ -209,7 +209,10 @@
 //!   process, which leave a second process certifying again, and a fixed
 //!   allowance of bounds, which refuses a stratum that certifies in under a
 //!   second. Reversal: a stratum whose replay costs what its certification
-//!   costs.
+//!   costs. The context holds them per [`Site`]: `ua[n, k]` reads the wirings,
+//!   and `compose[n, k]` the chains ([`crate::compose`]). The store keeps
+//!   wiring strata alone, keyed by bound and degree, since a chain catalogue
+//!   holds one shape per length and certifies at once.
 //!
 //! # References
 //!
@@ -726,6 +729,15 @@ fn stratum_budget() -> ShapeBudget
     ShapeBudget::from(1000_usize)
 }
 
+/// The catalogue family a stratum is certified over.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Site
+{
+    /// Every wiring up to the bound, as `ua[n, k]` reads it.
+    Wirings,
+    /// The chains up to the bound, as `compose[n, k]` reads them.
+    Chains,
+}
 /// Why the stratum a `ua` statement names is not certified.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StratumDefect
@@ -1105,6 +1117,7 @@ pub(crate) fn decide(
     let certified = context
         .strata_mut()
         .certified(
+            Site::Wirings,
             StratumAt {
                 bound: stratum.bound,
                 degree: stratum.degree,

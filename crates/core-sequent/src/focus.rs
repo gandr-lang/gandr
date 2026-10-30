@@ -730,7 +730,7 @@ pub fn focus_value(
     captures: [mark = arena.watermark(), recorded = provenance.len()],
     ensures: |ret| match ret {
         | Ok(id) => arena.producer(id).is_some_and(|node| matches!(node, &ProducerNode::Mu { .. })
-            == matches!(core.value(value), Some(&Value::Returned(_)))),
+            == matches!(core.value(value), Some(&(Value::Returned(_) | Value::Compose { .. })))),
         | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
     },
 )]
@@ -742,7 +742,13 @@ pub fn focus_definition(
     writers: &Writers,
 ) -> Result<ProducerId, FocusRefusal>
 {
-    let Some(&Value::Returned(computation)) = core.value(value)
+    let Some(
+        &(Value::Returned(computation)
+        | Value::Compose {
+            realised: computation,
+            ..
+        }),
+    ) = core.value(value)
     else {
         return focus_value(core, value, arena, provenance, writers);
     };
@@ -1253,7 +1259,7 @@ impl<'run> Focusing<'run>
             | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
                 Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Row(_) => true,
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Compose { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Row(_) => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
                 Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
@@ -2259,6 +2265,7 @@ impl<'run> Focusing<'run>
                     | Value::Funext(..)
                     | Value::Equiv(..)
                     | Value::Ua { .. }
+                    | Value::Compose { .. }
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)
                     | Value::Forward(_)
@@ -2296,7 +2303,8 @@ impl<'run> Focusing<'run>
             Value::Funext(..)
             | Value::Ua { .. }
             | Value::SessionRelated { .. }
-            | Value::Returned(_) => {
+            | Value::Returned(_)
+            | Value::Compose { .. } => {
                 return Err(FocusRefusal::ElementPath(id));
             },
             Value::Hole(_) | Value::Mark { .. } => {
@@ -3093,7 +3101,7 @@ impl<'run> Focusing<'run>
     ///   and every generated former holding none focuses as it did.
     /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
-    #[spec(ensures: |ret| !matches!(self.core.value(value), Some(&Value::Returned(_))) || ret == Holding::Returned)]
+    #[spec(ensures: |ret| !matches!(self.core.value(value), Some(&(Value::Returned(_) | Value::Compose { .. }))) || ret == Holding::Returned)]
     fn holds_returned(
         &mut self,
         value: ValueId,
@@ -3104,7 +3112,7 @@ impl<'run> Focusing<'run>
         else {
             return Holding::Plain;
         };
-        if matches!(*node, Value::Returned(_)) {
+        if matches!(*node, Value::Returned(_) | Value::Compose { .. }) {
             return Holding::Returned;
         }
         if crate::identity::composite(node) == Composite::Leaf {
@@ -3117,7 +3125,7 @@ impl<'run> Focusing<'run>
         // former is decided after the formers beneath it.
         let held = |decided: &BTreeMap<ValueId, Holding>, field: ValueId| {
             core.value(field).is_some_and(|node| {
-                matches!(*node, Value::Returned(_))
+                matches!(*node, Value::Returned(_) | Value::Compose { .. })
                     || decided.get(&field) == Some(&Holding::Returned)
             })
         };
@@ -3203,7 +3211,12 @@ impl<'run> Focusing<'run>
         let node = core
             .value(value)
             .ok_or(FocusRefusal::DanglingValue(value))?;
-        if let Value::Returned(computation) = *node {
+        if let Value::Returned(computation)
+        | Value::Compose {
+            realised: computation,
+            ..
+        } = *node
+        {
             self.tasks.push(Task::Computation {
                 computation,
                 continuation,

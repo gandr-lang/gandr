@@ -320,6 +320,10 @@ struct Row<Node>
 /// the word arena holds the codes wider than a slot. Rows [`Self::freeze`]
 /// froze are shared by every clone made after, so such a clone copies, and
 /// its drop releases, only the rows minted since.
+///
+/// The context, the chain and the environment store ids and never dereference
+/// them. A lookup refuses an id the arena does not hold, but it cannot tell an
+/// id another arena minted, so the caller keeps every id with its arena.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CoreArena
 {
@@ -363,6 +367,7 @@ impl CoreArena
                 | Value::Funext(..)
                 | Value::Equiv(..)
                 | Value::Ua { .. }
+                | Value::Compose { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
@@ -2674,6 +2679,26 @@ impl CoreArena
             sides,
             forward,
             backward,
+        })
+    }
+
+    /// Mint unbiased composition at a stratum, `compose[n, k](Γ, d)`, over
+    /// `cells` in vertex order and the fold `realised` that composes them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_compose(
+        &mut self,
+        composite: crate::compose::Composite,
+        cells: alloc::boxed::Box<[ValueId]>,
+        realised: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Compose {
+            composite,
+            cells,
+            realised,
         })
     }
 

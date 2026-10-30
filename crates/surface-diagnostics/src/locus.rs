@@ -959,6 +959,9 @@ fn checked(
         | CheckRefusal::RoundTripDistinct { at }
         | CheckRefusal::UaUncertified { at, .. }
         | CheckRefusal::UaInequivalent { at, .. }
+        | CheckRefusal::ComposeUncertified { at, .. }
+        | CheckRefusal::ComposeNotAShape { at, .. }
+        | CheckRefusal::ComposeDoesNotFill { at, .. }
         | CheckRefusal::UnenclosedRun { at }
         | CheckRefusal::ImplicitUnsolved { at, .. }
         | CheckRefusal::ModelUnanswered { at, .. }
@@ -1363,6 +1366,35 @@ impl fmt::Display for Checked
                     f.write_str("a translator returns no element of its target code")
                 },
             },
+            | CheckRefusal::ComposeUncertified { stratum, .. } => match stratum {
+                | StratumDefect::Degree { degree } => write!(
+                    f,
+                    "composition over a chain is certified from degree 1 to the largest degree of a chain in the catalogue, not degree {}",
+                    usize::from(degree)
+                ),
+                | StratumDefect::Condition { degree } => write!(
+                    f,
+                    "composition needs every chain up to its degree to be the colimit of its corollas; a chain of degree {} is not",
+                    usize::from(degree)
+                ),
+                | StratumDefect::Allowance { bound } => write!(
+                    f,
+                    "composition reads chains of size up to 64, the most vertices a shape holds, not {}",
+                    usize::from(bound)
+                ),
+                | StratumDefect::Budget { bound, counted } => write!(
+                    f,
+                    "the chains of size up to {} count {} shape classes before they stop, past the budget composition reads within",
+                    usize::from(bound),
+                    usize::from(counted)
+                ),
+            },
+            | CheckRefusal::ComposeNotAShape { pasting: gandr_core_term::compose::Pasting::Chain { cells }, .. } => write!(
+                f,
+                "a chain of m = {} cells has size 2m + 1 and degree 2m - 1, which must lie within the stratum's bound and degree",
+                usize::from(cells)
+            ),
+            | CheckRefusal::ComposeDoesNotFill { defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
             | CheckRefusal::UnenclosedRun { .. } => f.write_str("a run where a value is read needs a computation around it to run before"),
             | CheckRefusal::ImplicitUnsolved { .. } => f.write_str("an implicit this call omits is determined by neither its arguments nor the type it is checked against"),
             | CheckRefusal::ModelUnanswered { .. } => f.write_str("no module in scope is a model this call's omitted model implicit admits"),
@@ -2969,6 +3001,24 @@ mod tests
                     element: ElementIndex::from(0_usize),
                 },
             },
+            CheckRefusal::ComposeUncertified {
+                at: value,
+                stratum: StratumDefect::Degree {
+                    degree: gandr_theory_sites::Degree::from(0_usize),
+                },
+            },
+            CheckRefusal::ComposeNotAShape {
+                at: value,
+                pasting: gandr_core_term::compose::Pasting::Chain {
+                    cells: gandr_core_term::compose::CellCount::from(4_usize),
+                },
+            },
+            CheckRefusal::ComposeDoesNotFill {
+                at: value,
+                defect: gandr_theory_sites::Unfilled::Wire {
+                    wire: 1_usize.into(),
+                },
+            },
             CheckRefusal::UnenclosedRun { at: value },
             CheckRefusal::ImplicitUnsolved {
                 at: value,
@@ -3461,6 +3511,9 @@ mod tests
                         | CheckRefusal::RoundTripDistinct { .. }
                         | CheckRefusal::UaUncertified { .. }
                         | CheckRefusal::UaInequivalent { .. }
+                        | CheckRefusal::ComposeUncertified { .. }
+                        | CheckRefusal::ComposeNotAShape { .. }
+                        | CheckRefusal::ComposeDoesNotFill { .. }
                         | CheckRefusal::UnenclosedRun { .. }
                         | CheckRefusal::ImplicitUnsolved { .. }
                         | CheckRefusal::ModelUnanswered { .. }

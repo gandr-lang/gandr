@@ -1,0 +1,94 @@
+// Unbiased composition of a chain of paths at a certified stratum.
+//
+// A chain of paths has one composite up to its bracketings, so the former
+// names that composite and chooses no bracketing.
+//
+// `compose[n, k](chain(m), (c₁, …, cₘ))` composes `m` cells that meet end to
+// end. The chain sub-site certifies the stratum at degree `n` over bound `k`,
+// and the chain is a shape of it. The node carries the left-nested `then` fold
+// of its cells. Evaluation runs the fold, and the kernel replays it as it
+// replays the chain written with `then`.
+//
+// - see: `then.gandr` — the composite of two paths
+// - see: `ledger/diagnostics/ComposeDoesNotFill.gandr` — cells that do not meet
+
+// The circle, its point and its loop.
+import "./circle-base.gandr";
+
+/// Three paths, each leaving where the one before arrives, composed unbiased.
+def composed(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z),
+  r : Path(A, z, w)
+) -> Path(A, x, w) {
+  compose[5, 7](chain(3), (p, q, r))
+}
+
+/// The same three paths composed by `then`, the fold the composite carries.
+def folded(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z),
+  r : Path(A, z, w)
+) -> Path(A, x, w) {
+  (p then q) then r
+}
+
+/// The composite is the fold it carries, by reflexivity.
+def agrees(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z),
+  r : Path(A, z, w)
+) -> Path(Path(A, x, w), composed(A, x, y, z, w, p, q, r), folded(A, x, y, z, w, p, q, r)) {
+  here(folded(A, x, y, z, w, p, q, r))
+}
+
+/// One cell is its own composite, and reads no stratum.
+def single(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(A, x, y) {
+  compose[0, 0](chain(1), p)
+}
+
+/// Three reflexivities compose unbiased to a loop at their point.
+def reflexivities(A : Type, x : A) -> Path(A, x, x) {
+  compose[5, 7](chain(3), (here(x), here(x), here(x)))
+}
+
+/// A composite of reflexivities reduces to reflexivity.
+def decided(A : Type, x : A) -> Path(Path(A, x, x), reflexivities(A, x), here(x)) {
+  here(here(x))
+}
+
+/// A cell written as a call runs, and the composite reads the path it returns.
+def called(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z),
+  r : Path(A, z, w)
+) -> Path(A, x, w) {
+  compose[3, 5](chain(2), (folded(A, x, y, z, w, p, q, r), here(w)))
+}
+
+/// A word written as a cell is the path at the circle's point it is.
+def wound : Path(
+  Path(Circle, Base, Base),
+  compose[3, 5](chain(2), (loop, here(Base))),
+  loop
+) = here(loop);

@@ -185,6 +185,8 @@ pub enum FrameRole
     /// A univalence statement's translators are being checked against their
     /// corollas' codes.
     UaTranslators,
+    /// A composite waits on the types its cells synthesise.
+    ComposeCells,
     /// A univalence waits on the type its record synthesises.
     UnivalenceRecord,
     /// A univalence's record and codes are being checked against the
@@ -421,6 +423,7 @@ impl fmt::Display for FrameRole
             Self::EquivForward => "EquivForward",
             Self::EquivBackward => "EquivBackward",
             Self::UaTranslators => "UaTranslators",
+            Self::ComposeCells => "ComposeCells",
             Self::UnivalenceRecord => "UnivalenceRecord",
             Self::UnivalenceChecked => "UnivalenceChecked",
             Self::ReturnedEndpoint => "ReturnedEndpoint",

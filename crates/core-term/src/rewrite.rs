@@ -2097,6 +2097,7 @@ Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Row(ref row) => row.types().count(),
 Value::Tuple(ref components) => components.len(),
+Value::Compose { ref cells, .. } => cells.len().saturating_add(1),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) | Value::Web(_) => 0_usize,
@@ -2270,6 +2271,19 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         .rev()
                         .map(|&component| open(Node::Value(component), depth)),
                 ),
+                Some(&Value::Compose {
+                    ref cells,
+                    realised,
+                    ..
+                }) => {
+                    self.tasks.push(open(Node::Computation(realised), depth));
+                    self.tasks.extend(
+                        cells
+                            .iter()
+                            .rev()
+                            .map(|&cell| open(Node::Value(cell), depth)),
+                    );
+                },
                 Some(&Value::Recorded(ref moves)) => self.tasks.extend(
                     moves
                         .iter()
@@ -3000,6 +3014,7 @@ Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::Row(ref row) => row.types().count(),
 Value::Tuple(ref components) => components.len(),
+Value::Compose { ref cells, .. } => cells.len().saturating_add(1),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) | Value::Web(_) => 0_usize,
@@ -3401,6 +3416,31 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 match changed {
                     Some(components) => self.arena.value_tuple(&components),
                     None => id,
+                }
+            },
+            Value::Compose {
+                composite,
+                ref cells,
+                realised,
+            } => {
+                let rewritten_realised = Self::computation(&mut self.results, realised);
+                let mut changed: Option<Vec<ValueId>> = None;
+                for (index, original) in cells.iter().enumerate().rev() {
+                    let rewritten = Self::value(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| cells.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                if changed.is_none() && rewritten_realised == realised {
+                    id
+                }
+                else {
+                    let cells = changed.map_or_else(|| cells.clone(), Vec::into_boxed_slice);
+                    self.arena
+                        .value_compose(composite, cells, rewritten_realised)
                 }
             },
             Value::ListCons(head, tail) => {
@@ -6432,7 +6472,13 @@ fn survey_value(
                     }),
             );
         },
-        Value::Tuple(ref components) => next.extend(
+        // A composite's runs stand in its cells, which its realisation shares
+        // node for node, so the cells alone place them.
+        Value::Tuple(ref components)
+        | Value::Compose {
+            cells: ref components,
+            ..
+        } => next.extend(
             components
                 .iter()
                 .map(|&component| Position::Value(component, region)),

@@ -410,6 +410,21 @@ pub enum Value
         /// generators.
         backward: ValueId,
     },
+    /// Unbiased composition at a stated stratum, `compose[n, k](Γ, d)`: an
+    /// element of `Path(A, x₀, xₘ)` for cells `cᵢ : Path(A, xᵢ₋₁, xᵢ)` that
+    /// fill the shape Γ, in vertex order. The checker certifies the stratum,
+    /// reads Γ as a shape of it and checks the cells fill it; the value is
+    /// what `realised`, the lowering's left-nested `then` fold of the cells,
+    /// returns, and evaluation and the kernel read that fold.
+    Compose
+    {
+        /// The stratum and the shape the composite is made at.
+        composite: crate::compose::Composite,
+        /// The cells, in vertex order.
+        cells: alloc::boxed::Box<[ValueId]>,
+        /// The composite the cells realise: their `then` fold.
+        realised: ComputationId,
+    },
     /// A session identity statement between two session codes: `bisim(a, b)`,
     /// an element of `Path(Type, a, b)` when the protocols are bisimilar, or
     /// `sim(a, b)`, an element of `Flow(Type, a, b)` when `a` is a Gay–Hole
@@ -636,7 +651,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Row(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::Compose { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Row(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -652,6 +667,7 @@ impl Value
             | Self::Funext(..)
             | Self::Equiv(..)
             | Self::Ua { .. }
+            | Self::Compose { .. }
             | Self::SessionRelated { .. }
             | Self::Stay(_)
             | Self::Then(..)
@@ -3330,12 +3346,12 @@ where
 /// - ensures: [`CertificateEquality::Equal`] for two values of one former that
 ///   agree in each payload the enumeration does not hand on: a constructor's
 ///   tag and field count, a record's labels, a reified stack's frame kinds and
-///   projections, a tuple's width, univalence's stratum and sides, an
-///   injection's summand, a primitive, a lift's target, a mark, a session
-///   relation, a row's shape, a web, and a variable, constant, literal or hole
-///   whole. A path equivalence's evidence is no payload.
-///   [`CertificateEquality::Different`] otherwise, and for two recorded logs or
-///   two dialogues, which [`pair_step`] pairs itself.
+///   projections, a tuple's width, univalence's stratum and sides, a
+///   composite's stratum, pasting and cell count, an injection's summand, a
+///   primitive, a lift's target, a mark, a session relation, a row's shape, a
+///   web, and a variable, constant, literal or hole whole. A path equivalence's
+///   evidence is no payload. [`CertificateEquality::Different`] otherwise, and
+///   for two recorded logs or two dialogues, which [`pair_step`] pairs itself.
 /// - panics: none.
 /// - executable: none — this is the structural comparison's former rule.
 ///
@@ -3388,6 +3404,18 @@ fn value_formers(
                 ..
             },
         ) => left_stratum == right_stratum && left_sides == right_sides,
+        (
+            &Value::Compose {
+                composite: left,
+                cells: ref left_cells,
+                ..
+            },
+            &Value::Compose {
+                composite: right,
+                cells: ref right_cells,
+                ..
+            },
+        ) => left == right && left_cells.len() == right_cells.len(),
         (&Value::Injection(left, _), &Value::Injection(right, _)) => left == right,
         (
             &Value::Primitive {
@@ -5655,6 +5683,31 @@ mod tests
             same,
             alloc::vec![other_degree, other_sides],
             "a univalence",
+        ));
+        let composite = |degree, cells| crate::compose::Composite {
+            stratum: stratum(degree),
+            pasting: crate::compose::Pasting::Chain {
+                cells: crate::compose::CellCount::from(cells),
+            },
+        };
+        let [twin, same, other_degree, other_count] = [(3_usize, 2_usize), (3, 2), (2, 2), (3, 1)]
+            .map(|(degree, cells)| {
+                arena.value_compose(
+                    composite(degree, cells),
+                    alloc::vec![unit; cells].into_boxed_slice(),
+                    returned,
+                )
+            });
+        let wider = arena.value_compose(
+            composite(3, 2),
+            alloc::vec![unit; 3].into_boxed_slice(),
+            returned,
+        );
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_degree, other_count, wider],
+            "a composite",
         ));
         let [twin, same, other] =
             [0_usize, 0, 1].map(|summand| arena.value_injection(Summand::from(summand), unit));

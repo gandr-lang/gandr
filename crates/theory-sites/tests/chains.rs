@@ -281,10 +281,6 @@ fn a_diagram_that_does_not_fill_its_chain_is_named()
         }),
         "a cell short"
     );
-    let unary = Profile {
-        inputs: PortCount::from(1),
-        outputs: PortCount::from(1),
-    };
     assert_eq!(
         fills(
             &three,
@@ -293,7 +289,6 @@ fn a_diagram_that_does_not_fill_its_chain_is_named()
         ),
         Err(Unfilled::Profile {
             vertex: Edge::from(1),
-            expected: unary,
             found: Profile {
                 inputs: PortCount::from(2),
                 outputs: PortCount::from(1)

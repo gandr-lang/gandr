@@ -91,6 +91,9 @@
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
 //!   ruling (§ compilation-recipe-zero-cost) — a flow's code is demanded by a
 //!   `via` alone, and `NotATranslation` refuses one that names no flow.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's
+//!   three refusals, `ComposeUncertified`, `ComposeNotAShape` and
+//!   `ComposeDoesNotFill`, each a malformed source.
 
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -871,6 +874,12 @@ pub enum RefusalName
     NotNatural,
     /// A translator that returns no element of its target code.
     TranslatorStuck,
+    /// A composite at a stratum the chain sub-site does not certify.
+    ComposeUncertified,
+    /// A composite whose chain is no shape of its certified stratum.
+    ComposeNotAShape,
+    /// A composite whose cells do not fill its chain.
+    ComposeDoesNotFill,
     /// A run with no computation enclosing it to run before.
     UnenclosedRun,
     /// A term name no binder or earlier declaration answers.
@@ -1262,7 +1271,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 228_usize] = [
+    pub const VOCABULARY: [Self; 231_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1314,6 +1323,9 @@ impl RefusalName
         Self::NotInverse,
         Self::NotNatural,
         Self::TranslatorStuck,
+        Self::ComposeUncertified,
+        Self::ComposeNotAShape,
+        Self::ComposeDoesNotFill,
         Self::UnenclosedRun,
         Self::CapabilityForged,
         Self::CapabilityAmplified,
@@ -1697,6 +1709,9 @@ impl RefusalName
         | (Self::NotInverse, b"NotInverse")
         | (Self::NotNatural, b"NotNatural")
         | (Self::TranslatorStuck, b"TranslatorStuck")
+        | (Self::ComposeUncertified, b"ComposeUncertified")
+        | (Self::ComposeNotAShape, b"ComposeNotAShape")
+        | (Self::ComposeDoesNotFill, b"ComposeDoesNotFill")
         | (Self::UnenclosedRun, b"UnenclosedRun")
         | (Self::SessionMismatch, b"SessionMismatch")
         | (Self::UnofferedLabel, b"UnofferedLabel")
@@ -1847,6 +1862,9 @@ impl RefusalName
             Self::NotInverse => "NotInverse",
             Self::NotNatural => "NotNatural",
             Self::TranslatorStuck => "TranslatorStuck",
+            Self::ComposeUncertified => "ComposeUncertified",
+            Self::ComposeNotAShape => "ComposeNotAShape",
+            Self::ComposeDoesNotFill => "ComposeDoesNotFill",
             Self::UnenclosedRun => "UnenclosedRun",
             Self::SessionMismatch => "SessionMismatch",
             Self::UnofferedLabel => "UnofferedLabel",
@@ -2943,6 +2961,9 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UaInequivalent { defect: UaDefect::NotInverse { .. }, .. }, RefusalName::NotInverse)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
+        | (CheckRefusal::ComposeUncertified { .. }, RefusalName::ComposeUncertified)
+        | (CheckRefusal::ComposeNotAShape { .. }, RefusalName::ComposeNotAShape)
+        | (CheckRefusal::ComposeDoesNotFill { .. }, RefusalName::ComposeDoesNotFill)
         | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
         | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
         | (CheckRefusal::ModelUnanswered { .. }, RefusalName::ModelUnanswered)
@@ -3084,6 +3105,9 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             UaDefect::NotNatural { .. } => RefusalName::NotNatural,
             UaDefect::Stuck { .. } => RefusalName::TranslatorStuck,
         },
+        CheckRefusal::ComposeUncertified { .. } => RefusalName::ComposeUncertified,
+        CheckRefusal::ComposeNotAShape { .. } => RefusalName::ComposeNotAShape,
+        CheckRefusal::ComposeDoesNotFill { .. } => RefusalName::ComposeDoesNotFill,
         CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
         CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
         CheckRefusal::ModelUnanswered { .. } => RefusalName::ModelUnanswered,

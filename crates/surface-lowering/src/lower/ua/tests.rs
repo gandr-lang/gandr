@@ -243,6 +243,26 @@ fn a_later_member_named_ua_is_a_forward_reference()
     );
 }
 
+/// A recursive function named `compose` claims its recursion with
+/// `compose[<](…)`: its own name shadows the composite's head.
+#[test]
+fn a_recursive_function_named_compose_recurses_through_its_claim()
+{
+    let source = "def rec compose(xs : List(Integer)) -> Integer {\n  case xs {\n    [] => 0,\n    [_, \
+                  ..rest] => compose[<](rest)\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, "compose".into()),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "the claim recurses: {:?}",
+        outcome_of(&module, "compose".into())
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_description_outside_the_stratum_is_refused_at_its_name()
 {

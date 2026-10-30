@@ -483,6 +483,13 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "give the abstract type an `identity` attribute that names its relation, or relate \
              points of a type that is not sealed",
         ),
+        CheckRefusal::ComposeNotAShape { .. } => String::from(
+            "write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m \
+             cells",
+        ),
+        CheckRefusal::ComposeDoesNotFill { .. } => {
+            String::from("start each cell at the point where the cell before it ends")
+        },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
@@ -518,6 +525,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::NotOver { .. }
         | CheckRefusal::UaUncertified { .. }
         | CheckRefusal::UaInequivalent { .. }
+        | CheckRefusal::ComposeUncertified { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::ShapeMismatch { .. }
         | CheckRefusal::NotSynthesisable { .. }
@@ -584,7 +592,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 30] = [
+    const WORDED: [&str; 32] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -615,6 +623,8 @@ mod tests
         "SignatureMismatch.Sort",
         "BridgeAtSealedType",
         "UnlabelledRequirement",
+        "ComposeNotAShape",
+        "ComposeDoesNotFill",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

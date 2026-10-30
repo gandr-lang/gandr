@@ -245,10 +245,13 @@ pub enum Unbuilt
     SessionProtocol,
     /// A stage supply whose resident is no single tile.
     StageResident,
-    /// A univalence resident not written in digits alone.
+    /// A stratum resident, or a chain's cell count, not written in digits
+    /// alone.
     UaCount,
     /// A univalence description the lowering does not read.
     UaDescription,
+    /// A composite's shape that is no `chain(m)`.
+    ComposePasting,
     /// A cell member with parameters, a side that is no closed term, or a rule
     /// arrow.
     CellMember,
@@ -263,7 +266,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 78_usize] = [
+    pub const ALL: [Self; 79_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -338,6 +341,7 @@ impl Unbuilt
         Self::StageResident,
         Self::UaCount,
         Self::UaDescription,
+        Self::ComposePasting,
         Self::CellMember,
         Self::ConstructorBlockMember,
         Self::GeneratorAttribute,
@@ -441,6 +445,7 @@ impl Unbuilt
             Self::StageResident => "instantiation_expression.stage",
             Self::UaCount => "ua_count",
             Self::UaDescription => "ua_description",
+            Self::ComposePasting => "compose_pasting",
             Self::CellMember => "cell_member",
             Self::ConstructorBlockMember => "constructor_block_member",
             Self::GeneratorAttribute => "attribute",
@@ -537,6 +542,7 @@ impl Unbuilt
             },
             Self::SessionProtocol => TrackingIssue::SESSION_PROTOCOL,
             Self::UaCount | Self::UaDescription => TrackingIssue::UA_RESIDENT,
+            Self::ComposePasting => TrackingIssue::ITERATED_SITE,
             Self::CellMember | Self::ConstructorBlockMember | Self::GeneratorAttribute => {
                 TrackingIssue::DATA_MEMBER
             },

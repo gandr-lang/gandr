@@ -106,7 +106,7 @@ impl<Colour> Boundary<Colour>
 /// - hypothesis: L3 — each variant is produced by a diagram failing only it and
 ///   asserted with its exact payload.
 /// - witness: `tests::chains::a_diagram_that_does_not_fill_its_chain_is_named`
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Unfilled
 {
     /// The diagram holds another number of cells than the shape has vertices.
@@ -117,13 +117,11 @@ pub enum Unfilled
         /// The diagram's cell count.
         cells: EdgeCount,
     },
-    /// A cell has another profile than its vertex.
+    /// A cell has another profile than its vertex, which the shape states.
     Profile
     {
         /// The vertex.
         vertex: Edge,
-        /// The vertex's profile.
-        expected: Profile,
         /// The cell's profile.
         found: Profile,
     },
@@ -203,7 +201,7 @@ impl core::error::Error for Unfilled
         && boundary.outputs.len() == shape.ends().iter().filter(|ends| ends.consumer() == End::Open).count(),
     Err(Unfilled::Cells { vertices, cells: count }) => vertices == shape.vertex_count()
         && usize::from(count) == cells.len() && count != vertices,
-    Err(Unfilled::Profile { vertex, expected, found }) => expected != found
+    Err(Unfilled::Profile { vertex, found }) => Legs::of(shape, vertex).profile() != found
         && cells.get(usize::from(vertex)).is_some_and(|cell| cell.profile() == found),
     Err(Unfilled::Wire { wire }) => shape.ends().get(usize::from(wire))
         .is_some_and(|ends| ends.producer() != End::Open && ends.consumer() != End::Open),
@@ -229,11 +227,7 @@ where
         let legs = Legs::of(shape, vertex);
         let (expected, found) = (legs.profile(), cell.profile());
         if expected != found {
-            return Err(Unfilled::Profile {
-                vertex,
-                expected,
-                found,
-            });
+            return Err(Unfilled::Profile { vertex, found });
         }
         for (side, colours, slots) in [
             (legs.inputs(), &cell.inputs, &mut consumed),

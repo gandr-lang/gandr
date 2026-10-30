@@ -776,7 +776,7 @@ Value::QuoteComputation(quoted) => ret == Ok(Atom::QuoteComputation(quoted, plac
 Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
-Value::Returned(computation) => ret == Ok(Atom::Called(computation, place)),
+Value::Returned(computation) | Value::Compose { realised: computation, .. } => ret == Ok(Atom::Called(computation, place)),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
 Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
 }),
@@ -857,7 +857,11 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                             Node::Code(argument, place),
                         ));
                     },
-                    Value::Returned(computation) => {
+                    Value::Returned(computation)
+                    | Value::Compose {
+                        realised: computation,
+                        ..
+                    } => {
                         return Ok(Atom::Called(computation, place));
                     },
                     Value::PathRefl(_)
@@ -945,6 +949,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                         | Value::Funext(..)
                         | Value::Equiv(..)
                         | Value::Ua { .. }
+                        | Value::Compose { .. }
                         | Value::Returned(_)
                         | Value::Nested(_)
                         | Value::Run(_)
@@ -2352,6 +2357,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 | Value::Funext(..)
                 | Value::Equiv(..)
                 | Value::Ua { .. }
+                | Value::Compose { .. }
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)

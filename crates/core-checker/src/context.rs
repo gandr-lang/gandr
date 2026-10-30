@@ -4527,6 +4527,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Equiv(..)
             | Value::Univalence(..)
             | Value::Ua { .. }
+            | Value::Compose { .. }
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)

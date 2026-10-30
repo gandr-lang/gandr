@@ -8,6 +8,7 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -102,6 +103,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Two forms of one walk, two spellings, a body's canonical form with its exits elided, the answers the lint wall checks at compile time, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
 | The input is a source | [`former`](src/former.rs) |
 | Products, sums and tuples between their braces, native universe paths, break points, a body's statements breaking together, binder names, bounds | [`walk`](src/walk.rs) |
+
+## References
+
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is written as the fold it realises until the printer writes the former.
 
 ## License
 

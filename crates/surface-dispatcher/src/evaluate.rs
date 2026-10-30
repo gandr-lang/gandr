@@ -3345,7 +3345,7 @@ Value::StaticApplication(..) | Value::Hole(_) | Value::Web(_) | Value::Row(_))) 
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
 &Value::Univalence(..) |
-&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::PathProduct(..) |
+&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::PathProduct(..) |
 Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. } | Value::Ascribe { .. })) => true,
@@ -3425,6 +3425,11 @@ fn references(
                     },
                     Some(&Value::Tuple(ref components)) => {
                         pending.extend(components.iter().map(|&component| Node::Value(component)));
+                    },
+                    // The realisation folds the cells' own nodes, so the
+                    // cells alone carry each reference once.
+                    Some(&Value::Compose { ref cells, .. }) => {
+                        pending.extend(cells.iter().map(|&cell| Node::Value(cell)));
                     },
                     Some(
                         &(Value::PathRefl(inner)

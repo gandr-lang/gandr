@@ -12133,6 +12133,19 @@ where
                     },
                     Form::Sugared => source.implied(node).unwrap_or(node),
                 };
+                // A node the source reads with a part left out is written
+                // without it, and the printing says which part.
+                if let Some(elided) = source.elided(node) {
+                    #[cfg_attr(
+                        dylint_lib = "quenchant_dylints",
+                        expect(
+                            answer_totality,
+                            reason = "the printer writes no composite's form until #3957: the \
+                                      composite stands as the fold it realises"
+                        )
+                    )]
+                    walk.note(Unspelled::Elided(elided));
+                }
                 walk.visit(
                     source,
                     node,

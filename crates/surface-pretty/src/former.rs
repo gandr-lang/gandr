@@ -28,6 +28,12 @@
 //!   the per-node dispatch shows in a profile. A build that prints core types
 //!   but never reads checkpoints, measured paying for the incremental tier,
 //!   moves `ContentSource` behind a feature.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is
+//!   written as the fold it realises and noted [`Elided::Composite`] until the
+//!   printer writes the former.
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
@@ -1299,6 +1305,9 @@ pub enum Elided
     Region,
     /// An ascription's type: the ascription stands as its body.
     Ascription,
+    /// A composite's form: the composite stands as the left-nested fold it
+    /// realises until the printer writes `compose[n, k](Γ, d)` (#3957).
+    Composite,
 }
 
 /// Why a presentation is approximate.
@@ -1794,6 +1803,35 @@ pub trait Source
         &self,
         node: Self::Node,
     ) -> Option<Self::Node>
+    {
+        let _ = node;
+        None
+    }
+
+    /// The part of `node`'s former the source leaves out of what [`read`]
+    /// answers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Elided::Composite`] when `node` is a composite, returned or
+    ///   not, that [`read`] answers as the fold it realises; none otherwise,
+    ///   and the default leaves none.
+    /// - provides: the reason a printing that writes the fold is approximate.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite in a body is written as its fold and
+    ///   noted approximate.
+    /// - witness: `tests::goldens::a_composite_is_written_as_its_fold_and_noted_3965`
+    #[inline]
+    fn elided(
+        &self,
+        node: Self::Node,
+    ) -> Option<Elided>
     {
         let _ = node;
         None

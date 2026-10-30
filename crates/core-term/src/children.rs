@@ -216,6 +216,16 @@ pub fn of_value<Walk>(
                 visit.value(component, at);
             }
         },
+        Value::Compose {
+            ref cells,
+            realised,
+            ..
+        } => {
+            for &cell in cells {
+                visit.value(cell, at);
+            }
+            visit.computation(realised, at);
+        },
         Value::Quote(quoted) => visit.value_type(quoted, at),
         Value::QuoteComputation(quoted) => visit.comp_type(quoted, at),
         Value::StaticLambda(body) => visit.value(body, under(Binders::ONE)),

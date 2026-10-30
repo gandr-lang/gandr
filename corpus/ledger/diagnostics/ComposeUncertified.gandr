@@ -1,0 +1,10 @@
+/// `ComposeUncertified`: a composite at a degree no chain of the catalogue reaches.
+@[ checks ]
+def certified(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+  compose[3, 5](chain(2), (p, q))
+}
+
+@[ refuses("ComposeUncertified") ]
+def uncertified(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+  compose[0, 5](chain(2), (p, q))
+}
