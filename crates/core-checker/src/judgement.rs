@@ -7840,7 +7840,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   call, nested or returned, is instantiated with the call bound ahead of
     ///   each decode whose returned code reads it, and returned at each decode
     ///   of the binder itself
-    ///   ([`gandr_core_term::instantiate_comp_type_at_call`]).
+    ///   ([`gandr_core_term::instantiate_comp_type_at_call`]). Everywhere else
+    ///   a nested call decided [`Nesting::Returned`] stands as the value it
+    ///   returns ([`gandr_core_term::CoreArena::value_returned`]), the form the
+    ///   elaboration rebuilds it in, and any other call argument as written.
     /// - fails: the staged instantiation's refusal.
     /// - panics: none.
     ///
@@ -7851,10 +7854,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — ordinary and dependent applications expose exact
     ///   result types, with a dependent argument substituted into its codomain;
     ///   retaining a bound variable or changing an ambient codomain differs; a
-    ///   type argument a later argument holds at a stage is substituted staged.
+    ///   type argument a later argument holds at a stage is substituted staged;
+    ///   a nested call a composite's motive reads converts with the call
+    ///   written returned, which the nested node does not.
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
     /// - witness: `judgement::tests::a_family_at_a_call_argument_converts_with_the_type_written_with_it_720`
+    /// - witness: `judgement::tests::a_composite_started_at_a_call_argument_converts_with_the_type_written_with_it_4065`
     /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
     #[spec(ensures: |ret| match codomain {
         | Codomain::Ambient(held) => ret == Ok(held),
@@ -7889,15 +7895,30 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     ) => argument,
                 };
                 let lift = self.context.lifts().get(&argument).cloned();
+                let decided = self
+                    .context
+                    .nesting()
+                    .get(&self.context.written(argument))
+                    .copied();
                 let arena = self.context.arena_mut();
-                if lift.is_none()
-                    && instance == argument
-                    && let Some(&(Value::Nested(call) | Value::Returned(call))) =
-                        arena.value(argument)
-                {
-                    return Ok(instantiate_comp_type_at_call(
-                        arena, codomain, argument, call,
-                    ));
+                if lift.is_none() && instance == argument {
+                    match arena.value(argument) {
+                        // A pure run a type reads stands there as the value
+                        // it returns, which is how the elaboration rebuilds it
+                        // and how a type written with the call holds it.
+                        Some(&Value::Nested(call)) if decided == Some(Nesting::Returned) => {
+                            let returned = arena.value_returned(call);
+                            return Ok(instantiate_comp_type_at_call(
+                                arena, codomain, returned, call,
+                            ));
+                        },
+                        Some(&(Value::Nested(call) | Value::Returned(call))) => {
+                            return Ok(instantiate_comp_type_at_call(
+                                arena, codomain, argument, call,
+                            ));
+                        },
+                        _ => {},
+                    }
                 }
                 let code = lift.map_or(instance, |lift| lift.mint(arena, instance));
                 Ok(instantiate_comp_type(arena, codomain, code))

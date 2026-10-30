@@ -1,0 +1,75 @@
+/// A stuck call passed to a parameter meets the call its parameter's type
+/// writes.
+///
+/// `composedHere`'s type writes `p then q` over its parameters. Each `passed`
+/// declaration passes it paths, and states the type with those paths written in
+/// place. A variable reads alike in both. A call to `onPath` does not reduce on
+/// a variable path, so `composedHere`'s type must read it as that call.
+///
+/// The checker decides a pure call a type reads to stand as the value it
+/// returns. The instantiated type reads the argument in that form, as the
+/// stated type writes it. The kernel replays each declaration by its own
+/// reading.
+///
+/// - see: #4065 — the checker refused a stuck call passed to a parameter
+/// - see: #4038 — a composite by a definition over stuck endpoints
+/// - see: #720 — a call argument's form in a type
+
+/// The action of `F` on `p`, which does not reduce while `p` is a variable.
+def onPath(A : Type, F : A => A, x : A, y : A, p : Path(A, x, y)) -> Path(A, F(x), F(y)) {
+  cong(F, p)
+}
+
+/// Reflexivity at the composite of its two parameters.
+def composedHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path(A, x, y),
+  q : Path(A, y, z)
+) -> Path(Path(A, x, z), p then q, p then q) {
+  here(p then q)
+}
+
+/// `composedHere` at two variables.
+def passedVariables(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  r : Path(A, x, y),
+  s : Path(A, y, z)
+) -> Path(Path(A, x, z), r then s, r then s) {
+  composedHere(A, x, y, z, r, s)
+}
+
+/// `composedHere` at one stuck call and one variable.
+def passedOneCall(
+  A : Type,
+  F : A => A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path(A, x, y),
+  s : Path(A, F(y), z)
+) -> Path(Path(A, F(x), z), onPath(A, F, x, y, r) then s, onPath(A, F, x, y, r) then s) {
+  composedHere(A, F(x), F(y), z, onPath(A, F, x, y, r), s)
+}
+
+/// `composedHere` at two stuck calls.
+def passedTwoCalls(
+  A : Type,
+  F : A => A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path(A, x, y),
+  s : Path(A, y, z)
+) -> Path(
+  Path(A, F(x), F(z)),
+  onPath(A, F, x, y, r) then onPath(A, F, y, z, s),
+  onPath(A, F, x, y, r) then onPath(A, F, y, z, s)
+) {
+  composedHere(A, F(x), F(y), F(z), onPath(A, F, x, y, r), onPath(A, F, y, z, s))
+}
