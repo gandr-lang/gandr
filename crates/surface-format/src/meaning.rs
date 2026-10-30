@@ -21,9 +21,9 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
-use gandr_core_term::equal_certificate_syntax;
-use gandr_core_term::equal_comp_type_syntax;
-use gandr_core_term::equal_type_syntax;
+use gandr_core_term::equal_certificate_folded;
+use gandr_core_term::equal_comp_type_folded;
+use gandr_core_term::equal_type_folded;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
@@ -299,14 +299,14 @@ pub fn unelaborated(
 /// - ensures: [`Agreement::Unpaired`] unless the two hold as many declarations;
 ///   else [`Agreement::Same`] exactly when each pair, in order, has one name,
 ///   role and container and outcomes of one kind whose types, bodies and data
-///   signatures are syntactically equal — evidence erased, no reduction —
-///   bodies that are not counting as equal where `elaborated` holds equal
-///   elaborations of both, whose seals agree but for their types' positions,
-///   and whose refusals are of one kind; else [`Agreement::Declarations`] with
-///   each of `before`'s declarations whose pair is not so, in order: the keys
-///   of the forms holding it, its name, its span in the source starting at
-///   `base`, and why — the refusal the rewritten declaration met, or that it
-///   lowered otherwise.
+///   signatures are syntactically equal — evidence erased, no reduction, a
+///   returned composite read as its fold, as the bridge erases it — bodies that
+///   are not counting as equal where `elaborated` holds equal elaborations of
+///   both, whose seals agree but for their types' positions, and whose refusals
+///   are of one kind; else [`Agreement::Declarations`] with each of `before`'s
+///   declarations whose pair is not so, in order: the keys of the forms holding
+///   it, its name, its span in the source starting at `base`, and why — the
+///   refusal the rewritten declaration met, or that it lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -327,7 +327,7 @@ pub fn agree(
 ) -> Agreement
 {
     let types = |left: ValueTypeId, right: ValueTypeId| {
-        equal_type_syntax(arena, left, right) == CertificateEquality::Equal
+        equal_type_folded(arena, left, right) == CertificateEquality::Equal
     };
     let all_types = |left: &[ValueTypeId], right: &[ValueTypeId]| {
         left.len() == right.len()
@@ -337,7 +337,7 @@ pub fn agree(
                 .all(|(&left, &right)| types(left, right))
     };
     let values =
-        |left, right| equal_certificate_syntax(arena, left, right) == CertificateEquality::Equal;
+        |left, right| equal_certificate_folded(arena, left, right) == CertificateEquality::Equal;
     // Bodies that lower otherwise agree where the checker elaborates them
     // alike, when it was asked.
     let elaborates = |position: usize| {
@@ -431,7 +431,7 @@ pub fn agree(
                                     .iter()
                                     .zip(right_codata.observations())
                                     .all(|(&left, &right)| {
-                                        equal_comp_type_syntax(arena, left, right)
+                                        equal_comp_type_folded(arena, left, right)
                                             == CertificateEquality::Equal
                                     })
                         },

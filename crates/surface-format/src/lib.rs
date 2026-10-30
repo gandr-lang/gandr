@@ -12,6 +12,24 @@
 //! source's, and each comment must belong to the node it belonged to, or
 //! [`format`] refuses with [`FormatError::Changed`] and returns nothing.
 //!
+//! # Copied as written
+//!
+//! Some material is laid down byte for byte, the line breaks inside it
+//! included:
+//!
+//! - A string: its fragments are its text.
+//! - A shell block: its line breaks separate commands, so its interior is not
+//!   formatted. Formatting the shell fragment is its own decision, and keeping
+//!   it byte-identical is the conservative one until the fragment states a
+//!   layout.
+//! - A hole: holes are left as written, as error regions are.
+//! - A repaired form: a top-level form holding grout or a minted close, or that
+//!   a parser obligation touches, is copied from its first token to its last,
+//!   so formatting a source mid-edit never moves what the parser had to guess
+//!   at. Its [`Piece`] says [`Layout::Repaired`].
+//!
+//! A comment spanning lines, or holding a tab, is copied the same way.
+//!
 //! # Every comment belongs to a node
 //!
 //! The parser places each comment among the children of the node it

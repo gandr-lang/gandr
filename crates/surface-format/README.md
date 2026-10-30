@@ -27,6 +27,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 
 - Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7, OOPSLA2, October 2023. [doi:10.1145/3622837](https://doi.org/10.1145/3622837), [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the cost order the layouts are chosen under.
 - Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor (editors), _The Fun of Programming_, Palgrave Macmillan, 2003. [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf) — a group that is flat only when everything inside it is.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `p then q` is the composite at the 2-chain, written explicit as the fold it realises.
 - The Go authors. [gofmt](https://pkg.go.dev/cmd/gofmt) — a formatter that keeps the line breaks an author wrote between statements and changes only the layout around them.
 
 ## Provided features
@@ -95,14 +96,7 @@ The engine chooses among the flat and broken layout of every group at once, by l
 
 ## Copied as written
 
-Some material is laid down byte for byte, the line breaks inside it included:
-
-- **A string.** Its fragments are its text.
-- **A shell block.** Its line breaks separate commands, so the formatter does not format its interior; formatting the shell fragment is its own decision, and keeping it byte-identical is the conservative one until the shell fragment states a layout.
-- **A hole.** Holes are left as written, as error regions are.
-- **A repaired form.** A top-level form holding grout or a minted close, or that a parser obligation touches, is copied from its first token to its last, so formatting a source mid-edit never moves what the parser had to guess at. Its `Piece` says `Layout::Repaired`.
-
-A comment spanning lines, or holding a tab, is copied the same way.
+The formatter keeps strings, shell blocks, holes, forms the parser repairs and comments that span lines or hold a tab byte for byte, as the crate docs state.
 
 ## The meaning is checked, not assumed
 

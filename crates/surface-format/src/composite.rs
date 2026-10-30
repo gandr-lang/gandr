@@ -13,7 +13,14 @@
 //! under the names the source writes for the binders around the operation.
 //! An operation whose transport the printer cannot spell faithfully — one
 //! standing under a binder the source names nothing — has none, keeps its
-//! spelling and is reported.
+//! spelling and is reported. `p then q` lowers to the composite of its two
+//! cells, which returns the transport above as the fold it realises: the
+//! fold is read at the composite's own node.
+//!
+//! # References
+//!
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `p then q` is the
+//!   composite at the 2-chain, whose explicit spelling is the fold it realises.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -223,11 +230,12 @@ impl Motives
 ///
 /// # Specification
 /// - requires: `module` was lowered from `text` into `arena`.
-/// - ensures: a motive for each span's transport minted last, when the printer
-///   spells it faithfully under the names the source writes for the binders
-///   around it, in a type or a body alike, read from a declaration a form of
-///   the source writes; none for one standing under a binder the source names
-///   nothing, outside every value declaration's roots, or only in a functor
+/// - ensures: a motive for each span's transport minted last, a returned
+///   composite's fold read at the composite's own node, when the printer spells
+///   it faithfully under the names the source writes for the binders around it,
+///   in a type or a body alike, read from a declaration a form of the source
+///   writes; none for one standing under a binder the source names nothing,
+///   outside every value declaration's roots, or only in a functor
 ///   instantiation's copy of a member, which no form writes and whose names are
 ///   the argument's.
 /// - provides: the motives the explicit form writes.
@@ -288,14 +296,24 @@ pub fn motives(
             Some(_) | None => {},
         }
     }
+    // A returned composite reads as the fold it realises, at the composite's
+    // own node: the scopes reach that node, and never the fold beneath it.
+    let transport = |id: ComputationId| {
+        matches!(
+            arena.computation(id),
+            Some(&Computation::PathTransport { .. })
+        )
+    };
     let mut composites: Vec<(ByteSpan, ComputationId)> = origins
         .computations()
         .iter()
-        .filter(|&&(id, _)| {
-            matches!(
-                arena.computation(id),
-                Some(&Computation::PathTransport { .. })
-            )
+        .filter(|&&(id, _)| match arena.computation(id) {
+            Some(&Computation::PathTransport { .. }) => true,
+            Some(&Computation::Return(returned)) => matches!(
+                arena.value(returned),
+                Some(&Value::Compose { realised, .. }) if transport(realised)
+            ),
+            Some(_) | None => false,
         })
         .filter_map(|&(id, origin)| Some((within(origin.span(), base)?, id)))
         .collect();
