@@ -50,6 +50,8 @@ INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_seriali
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-records','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','d79616b7f14951779128a95cb9a8bf64be0e10e6');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','storage-values','','exemplar','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8b696948ad821b58ff0396a795d5884518aaa6b2');
+INSERT INTO reference VALUES('Ruit-2024-pasting_theorem_iterated_segal_spaces','theory-sites','ascent','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Shulman-2017-univalence_inverse_ei_diagrams','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-closure_conversion_little_pieces','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-reflections_closures','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
@@ -119,6 +121,7 @@ INSERT INTO reference VALUES('arXiv:2603.24468','theory-nominal-automata','','ba
 INSERT INTO reference VALUES('arXiv:2607.09383','core-checker','capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-checker','elaboration','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-unify','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('deJong-2026-study_kocks_fat_delta','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45749-6_17','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','eliminator','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1007/3-540-45842-5_13','core-checker','solution','background',NULL,NULL,NULL);
@@ -473,5 +476,6 @@ INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surfa
 INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','surface-session','session','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','core-term','syntax::shared','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18584-cd93-7e42-9b53-9deb10b838fc','surface-dispatcher','tier','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-circuit-algebras','interface','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
 COMMIT;

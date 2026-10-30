@@ -656,37 +656,46 @@ where
     tally.holds()
 }
 
-/// Whether the point-free core is a direct category: every map between
-/// shapes without points is raising, and strictly raises the degree unless
-/// it is an isomorphism, which preserves it.
+/// Whether the grounded core is a direct category with automorphisms: every
+/// map between grounded objects is raising, and strictly raises the degree
+/// unless it is an isomorphism, which preserves it.
+///
+/// At level one the grounded shapes are the point-free ones. At a wreath level
+/// an object is grounded when no shape of it holds a point, so an outer vertex
+/// carrying the empty column stays: the level keeps that object and fences
+/// only its deletion, which is lowering.
 ///
 /// # Specification
-/// - ensures: holds exactly when every map whose source and target have no
-///   point is raising, preserves the degree when invertible and strictly raises
-///   it otherwise; the first failing map otherwise.
+/// - ensures: holds exactly when every map whose source and target are grounded
+///   is raising, preserves the degree when invertible and strictly raises it
+///   otherwise; the first failing map otherwise.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the outcome is pinned at the bound with its case count
-///   related to the maps between point-free shapes; L3 — the point-free
-///   contraction `C(1,1) → p→q` raises the degree from one to three.
+///   related to the maps between grounded objects, at level one and over the
+///   chain restriction at level two; L3 — the point-free contraction `C(1,1) →
+///   p→q` raises the degree from one to three.
 /// - witness: `tests::reedy::the_point_free_core_is_direct`
+/// - witness: `tests::stratum::level_two_is_direct_with_automorphisms_on_its_grounded_objects`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => {
-        let (low, high) = (Degree::of(witness.source()), Degree::of(witness.target()));
-        usize::from(witness.source().point_count()) == 0
-            && usize::from(witness.target().point_count()) == 0
-            && (witness.map().raising() == Membership::Outside
-                || match witness.map().invertibility(witness.target()) {
+        let (low, high) = (L::degree(witness.source()), L::degree(witness.target()));
+        L::grounded(witness.source()) == Membership::Inside
+            && L::grounded(witness.target()) == Membership::Inside
+            && (L::raising(witness.map()) == Membership::Outside
+                || match L::invertibility(witness.map(), witness.target()) {
                     Invertibility::Invertible => low != high,
                     Invertibility::NotInvertible => low >= high,
                 })
     },
 })]
-pub fn direct_core(site: &Site<'_>) -> Outcome<MapCase>
+pub fn direct_core<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
+where
+    L: Level,
 {
     let mut tally = Tally::default();
     for &(source, target) in &site.pairs {
@@ -694,10 +703,10 @@ pub fn direct_core(site: &Site<'_>) -> Outcome<MapCase>
         else {
             continue;
         };
-        if usize::from(from.point_count()) != 0 || usize::from(to.point_count()) != 0 {
+        if L::grounded(from) == Membership::Outside || L::grounded(to) == Membership::Outside {
             continue;
         }
-        let (low, high) = (Degree::of(from), Degree::of(to));
+        let (low, high) = (L::degree(from), L::degree(to));
         for arrow in site.arrows(source, target) {
             tally.count();
             let ordered = match arrow.invertibility {

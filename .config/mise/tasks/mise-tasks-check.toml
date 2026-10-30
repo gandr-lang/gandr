@@ -815,6 +815,38 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 description = "Every exemplar settles under `gandr test`"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/ledger"
 
+# The site's two paragraphs the owner set down (#3993): the fat object and
+# one site serving two uses stand verbatim in the wreath's rustdoc and in the
+# `gandr-theory-sites` README. Each paragraph is read from
+# `crates/theory-sites/src/wreath.rs`, its `//!` lines joined, and the README
+# must carry it as one paragraph.
+["check:sites"]
+description = "The theory-sites README carries the wreath rustdoc's fat-object and one-site paragraphs verbatim"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source=crates/theory-sites/src/wreath.rs
+readme=crates/theory-sites/README.md
+failed=0
+for opening in 'The level-two unit is a fat object.' 'One site serves two uses.'; do
+  paragraph=$(awk -v opening="$opening" '
+    /^\/\/!/ { line = substr($0, 5); if (index(line, opening) == 1) keep = 1; if (keep && line == "") exit; if (keep) text = text (text == "" ? "" : " ") line }
+    END { print text }' "$source")
+  if [[ -z $paragraph ]]; then
+    echo "$source: no paragraph opens with \`$opening\`" >&2
+    failed=1
+  elif ! grep -qxF -- "$paragraph" "$readme"; then
+    echo "$readme: lacks the paragraph \`$opening …\` as $source states it" >&2
+    failed=1
+  fi
+done
+if (( failed )); then
+  echo 'sites check FAILED' >&2
+  exit 1
+fi
+echo 'sites check OK: the README carries the fat-object and one-site paragraphs as the wreath states them'
+'''
+
 # The features ledger (`ledger/features.sql`, `ledger/README.md`): the dump
 # round-trips and keeps its constraints, every path a row names exists, every
 # language feature names an exemplar, and every implemented row without a

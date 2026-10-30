@@ -3918,6 +3918,15 @@ INSERT INTO purpose VALUES('theory-shapes','oracle::Countermodel','struct','Hold
 INSERT INTO purpose VALUES('theory-shapes','oracle::Derivation','enum','Names a derivation of entailment in the finite face lattice, so the derivation''s form is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::Evidence','enum','Names the answer to an entailment query, so the evidence''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::decide','function','Decides whether the premise entails the conclusion, so the entailment''s evidence is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::Cell','struct','One cell of a level-two object and its inclusion: the column, the cell''s place in it, its object and the wreath map onto that place.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::InnerGraft','struct','A graft of a column''s level-one cocone, its legs the column''s vertices, glueing two cells of that column.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::LevelDefect','enum','How a level-two object fails to be the colimit of its cells against a test object: uncovered, a stray map, or an ambiguous or unmediated family.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::LevelFailure','struct','A level-two object that is not the colimit of its cells, the test object it fails against, and how.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::LevelUncertified','enum','Why level two is not certified at a degree: the degree, directness with automorphisms, or the Segal condition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::Spot','enum','Where a cell sits in its column: the empty column''s 1-cell, or a vertex of the column.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::WreathCocone','struct','A level-two object''s Segal cocone: its cells and the outer and inner grafts that glue them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::WreathStratum','struct','Level two certified at a degree from level one''s certificate, which it holds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','ascent::segal_two','function','Whether every level-two object of degree two to `degree` is the colimit of its cells over level one''s certificate.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::Catalogue','struct','Every shape class of a family of size at most a bound, and every map of the class between any two of them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::Family','enum','Which shapes a catalogue holds: every stick-free wiring, the chains, or the shapes whose every vertex has one of a set of profiles, each with the empty shape and the point.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','catalogue::ShapeIndex','struct','A shape''s position in a catalogue.',NULL,'fits','sound',NULL);
@@ -3965,6 +3974,7 @@ INSERT INTO purpose VALUES('theory-sites','outcome::Tally','struct','A running c
 INSERT INTO purpose VALUES('theory-sites','outcome::Verdict','enum','Whether a condition held.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','point_count::core_decomposition','function','Whether every shape decomposes uniquely as its core beside its points.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','point_count::grounded_stratum','function','Whether the grounded shapes, every vertex on some wire, are exactly the shapes without points.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','segal::Choice','struct','A position among one cell''s candidate maps into a test object, the unit the family search counts in at every level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','segal::Cocone','struct','A shape''s Segal cocone: its corollas at its vertices and the grafts that glue them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','segal::Cocones','enum','Which families of maps out of the corollas a Segal statement counts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','segal::Graft','struct','An inner wire of a shape as the pushout it is: the output leg of its producer''s corolla glued to the input leg of its consumer''s.',NULL,'fits','sound',NULL);

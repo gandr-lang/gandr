@@ -4,7 +4,10 @@
 
 use alloc::collections::BTreeMap;
 
+use gandr_theory_circuit_algebras::Edge;
+use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_circuit_algebras::Wire;
+use gandr_theory_circuit_algebras::WiringObstruction;
 use gandr_theory_sites::Bijection;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Cocones;
@@ -12,12 +15,15 @@ use gandr_theory_sites::Defect;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Element;
 use gandr_theory_sites::ElementIndex;
+use gandr_theory_sites::End;
+use gandr_theory_sites::Ends;
 use gandr_theory_sites::Equivalence;
 use gandr_theory_sites::GeneratorCount;
 use gandr_theory_sites::GeneratorIndex;
 use gandr_theory_sites::Graft;
 use gandr_theory_sites::Leg;
 use gandr_theory_sites::Level as _;
+use gandr_theory_sites::Membership;
 use gandr_theory_sites::Natural;
 use gandr_theory_sites::Outcome;
 use gandr_theory_sites::Port;
@@ -28,13 +34,21 @@ use gandr_theory_sites::SegalFailure;
 use gandr_theory_sites::SegalStratum;
 use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeIndex;
+use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
+use gandr_theory_sites::Site;
 use gandr_theory_sites::SiteMap;
 use gandr_theory_sites::Species;
+use gandr_theory_sites::Spot;
 use gandr_theory_sites::Table;
 use gandr_theory_sites::Uncertified;
+use gandr_theory_sites::Wreath;
+use gandr_theory_sites::WreathShape;
+use gandr_theory_sites::WreathStratum;
+use gandr_theory_sites::direct_core;
 use gandr_theory_sites::restrict;
 use gandr_theory_sites::segal;
+use gandr_theory_sites::segal_two;
 use quenchant_shape::shape::Maybe;
 
 /// A profile's legs: its inputs, then its outputs.
@@ -573,4 +587,202 @@ fn a_shape_of_degree_two_is_the_colimit_of_its_corollas()
         ),
         "no shape of degree five at size four"
     );
+}
+
+/// The chain of `length` vertices, or the empty shape for zero.
+///
+/// # Specification
+/// trivial.
+fn column(length: EdgeCount) -> Shape
+{
+    if usize::from(length) == 0 {
+        Shape::default()
+    }
+    else {
+        Shape::chain(length).expect("the chain is admitted")
+    }
+}
+
+/// The Θ₂ object `[n](m_1, …, m_n)` as the outer `n`-chain carrying the
+/// columns' chains.
+///
+/// # Specification
+/// trivial.
+fn theta(
+    outer: EdgeCount,
+    columns: &[EdgeCount],
+) -> WreathShape<Shape>
+{
+    WreathShape::new(column(outer), columns.iter().copied().map(column).collect())
+        .expect("one column per outer vertex")
+}
+
+/// The top degree of `catalogue`'s shapes, where level one is certified.
+///
+/// # Specification
+/// trivial.
+fn top(catalogue: &Catalogue) -> Degree
+{
+    catalogue
+        .shapes()
+        .iter()
+        .map(Degree::of)
+        .max()
+        .expect("the catalogue holds shapes")
+}
+
+/// The whisker `[2](1, 0)`, the horizontal composite `[2](1, 1)` and the
+/// vertical composite `[1](2)` are each the colimit of their two cells over
+/// the chain restriction at total size thirteen. The whisker's second cell is
+/// its empty column's 1-cell, glued to the 2-cell by the one outer graft; the
+/// vertical composite's two 2-cells meet along one inner graft. At degree five
+/// level two holds the cocones of the 16 objects of degree two to five, and at
+/// eleven, the bound's top, 111 cocones of 398 cells from level one's five.
+#[test]
+fn the_whisker_and_both_composites_are_certified_at_level_two()
+{
+    let bound = ShapeSize::from(13_usize);
+    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+    let wreath = Wreath::build(&chains, &chains, bound);
+    let below = SegalStratum::certify(&chains, top(&chains)).expect("level one is certified");
+    assert_eq!(below.cocones().len(), 5);
+    let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
+        .expect("level two is certified at degree five");
+    let [zero, one, two] = [0_usize, 1, 2].map(EdgeCount::from);
+    let cases = [
+        (
+            theta(two, &[one, zero]),
+            [Spot::Vertex(Edge::from(0_usize)), Spot::Empty],
+            1,
+            0,
+        ),
+        (
+            theta(two, &[one, one]),
+            [Spot::Vertex(Edge::from(0_usize)); 2],
+            1,
+            0,
+        ),
+        (
+            theta(one, &[two]),
+            [
+                Spot::Vertex(Edge::from(0_usize)),
+                Spot::Vertex(Edge::from(1_usize)),
+            ],
+            0,
+            1,
+        ),
+    ];
+    for (object, spots, outer, inner) in cases {
+        let Maybe::Present(at) = wreath.find(&object)
+        else {
+            panic!("{object} is an object of the restriction");
+        };
+        let cocone = stratum
+            .cocones()
+            .iter()
+            .find(|cocone| cocone.object() == at)
+            .unwrap_or_else(|| panic!("{object} has a cocone"));
+        let read: Vec<Spot> = cocone.cells().iter().map(|cell| cell.spot).collect();
+        assert_eq!(read, spots, "{object}'s cells");
+        assert_eq!(
+            (cocone.outer().len(), cocone.inner().len()),
+            (outer, inner),
+            "{object}'s grafts"
+        );
+    }
+    assert_eq!(stratum.cocones().len(), 16);
+    let below = SegalStratum::certify(&chains, top(&chains)).expect("level one is certified");
+    let whole = WreathStratum::certify(&wreath, Degree::from(11_usize), below)
+        .expect("level two is certified at the bound's top");
+    assert_eq!(whole.cocones().len(), 111);
+    let cells: usize = whole
+        .cocones()
+        .iter()
+        .map(|cocone| cocone.cells().len())
+        .sum();
+    assert_eq!(cells, 398);
+}
+
+/// Level two's grounded objects, an empty column among them, form a direct
+/// category with automorphisms: over the chain restriction at total size
+/// thirteen, 766 maps between grounded objects, and over `W ≀ W` at total
+/// size four, 109, every one raising and strictly raising the degree unless
+/// invertible. A map of the whole wreath lowers: the point's deletion is
+/// fenced, never read.
+#[test]
+fn level_two_is_direct_with_automorphisms_on_its_grounded_objects()
+{
+    let bound = ShapeSize::from(13_usize);
+    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+    let restriction = Wreath::build(&chains, &chains, bound);
+    assert_eq!(direct_core(&Site::new(&restriction)), Outcome::Holds {
+        cases: 766.into()
+    });
+    let small = ShapeSize::from(4_usize);
+    let wirings = Catalogue::build(small).expect("the catalogue builds");
+    let wreath = Wreath::build(&wirings, &wirings, small);
+    assert_eq!(direct_core(&Site::new(&wreath)), Outcome::Holds {
+        cases: 109.into()
+    });
+    let [zero, one] = [0_usize, 1].map(EdgeCount::from);
+    let point = WreathShape::new(column(one), vec![column(one)]).expect("one column");
+    assert_eq!(Wreath::<Catalogue>::grounded(&point), Membership::Inside);
+    let fat = theta(one, &[zero]);
+    assert_eq!(Wreath::<Catalogue>::grounded(&fat), Membership::Inside);
+    let dot = Shape::from_ends(EdgeCount::from(1_usize), vec![]).expect("the point");
+    let pointed = WreathShape::new(column(one), vec![dot]).expect("one column");
+    assert_eq!(Wreath::<Catalogue>::grounded(&pointed), Membership::Outside);
+}
+
+/// Two 2-cells each the other's source are no level-two object, as Leclerc and
+/// Mimram's Lemma 3 states of a pasting scheme. The carrier refuses the wiring
+/// they would make by name, as a directed cycle, whether it stands as a column
+/// or as the outer shape of two columns. So no level holds a shape whose cells
+/// meet in a cycle. Every object of `W ≀ W` at total size five is the colimit
+/// of its cells.
+#[test]
+fn two_cells_each_the_others_source_are_refused_at_level_two()
+{
+    let cycle = || {
+        Shape::from_ends(EdgeCount::from(2_usize), vec![
+            Ends::new(
+                End::Vertex(Edge::from(0_usize)),
+                End::Vertex(Edge::from(1_usize)),
+            ),
+            Ends::new(
+                End::Vertex(Edge::from(1_usize)),
+                End::Vertex(Edge::from(0_usize)),
+            ),
+        ])
+    };
+    let refused = |obstruction: &ShapeObstruction| {
+        matches!(
+            *obstruction,
+            ShapeObstruction::Carrier(WiringObstruction::DirectedCycle { .. })
+        )
+    };
+    let [zero, one] = [0_usize, 1].map(EdgeCount::from);
+    let as_column = cycle().map(|inner| WreathShape::new(column(one), vec![inner]));
+    assert!(
+        matches!(as_column, Err(ref obstruction) if refused(obstruction)),
+        "two opposite 2-cells in one column are refused as a directed cycle: {as_column:?}"
+    );
+    let as_outer = cycle().map(|outer| WreathShape::new(outer, vec![column(zero), column(zero)]));
+    assert!(
+        matches!(as_outer, Err(ref obstruction) if refused(obstruction)),
+        "two opposite cells across columns are refused as a directed cycle: {as_outer:?}"
+    );
+    let small = ShapeSize::from(5_usize);
+    let wirings = Catalogue::build(small).expect("the catalogue builds");
+    let wreath = Wreath::build(&wirings, &wirings, small);
+    let below = SegalStratum::certify(&wirings, top(&wirings)).expect("level one is certified");
+    assert_eq!(
+        segal_two(&wreath, &below, Degree::from(5_usize)),
+        Outcome::Holds {
+            cases: 46592.into()
+        }
+    );
+    let stratum = WreathStratum::certify(&wreath, Degree::from(5_usize), below)
+        .expect("level two over the wirings is certified at five");
+    assert_eq!(stratum.cocones().len(), 208);
 }

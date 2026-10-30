@@ -105,9 +105,9 @@ use crate::stratum::Legs;
 use crate::stratum::Profile;
 
 wrapper! {
-    /// A position among one vertex's candidate maps into a test shape.
+    /// A position among one cell's candidate maps into a test shape.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-    struct Choice(usize);
+    pub struct Choice(usize);
 }
 
 /// Which families of maps out of the corollas a Segal statement counts.
@@ -546,14 +546,88 @@ fn colimit(
         .iter()
         .map(|inclusion| hom(inclusion.corolla))
         .collect();
-    let families = families(&candidates, &cocone.grafts, cocones);
-    let mut hits = alloc::vec![0_usize; families.len()];
+    let found = families(&candidates, |chosen, cursor| {
+        agrees((&candidates, &cocone.grafts, cocones), chosen, cursor)
+    });
+    let restrict =
+        |position: usize, map: &SiteMap| cocone.inclusions.get(position)?.map.then(map).ok();
+    bijection(&candidates, &found, hom(cocone.shape), restrict).map_err(|mismatch| match mismatch {
+        Mismatch::Stray { map } => SegalDefect::Stray { map },
+        Mismatch::Unmediated { family } => SegalDefect::Unmediated { family },
+        Mismatch::Ambiguous { family } => SegalDefect::Ambiguous { family },
+    })
+}
+
+/// How restriction along a cocone fails to be a bijection onto its families,
+/// at any level.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Mismatch<Map>
+{
+    /// A map whose restriction is no family counted.
+    Stray
+    {
+        /// The map.
+        map: Map,
+    },
+    /// A family no map restricts to.
+    Unmediated
+    {
+        /// The family, one map per cell.
+        family: Box<[Map]>,
+    },
+    /// A family two maps restrict to.
+    Ambiguous
+    {
+        /// The family, one map per cell.
+        family: Box<[Map]>,
+    },
+}
+
+/// Whether restriction sends `maps` one to one onto `found`: each map
+/// restricted along every cell by `restrict` lands on one family, and every
+/// family is hit once.
+///
+/// # Specification
+/// - ensures: `Ok` exactly when every map restricts, cell by cell, to a
+///   candidate of that cell, the restrictions form a family of `found`, and
+///   each family of `found` is the restriction of exactly one map.
+/// - fails: [`Mismatch::Stray`] at the first map that does not restrict to a
+///   family of `found`; otherwise, in the order of `found`,
+///   [`Mismatch::Unmediated`] for a family no map hits and
+///   [`Mismatch::Ambiguous`] for one two maps hit.
+/// - panics: none.
+///
+/// # Errors
+/// - [`Mismatch`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the two points against the point at level one; at level
+///   two the whisker and the composites, and a cover with its outer graft left
+///   out, which leaves a family unmediated.
+/// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
+/// - witness: `tests::stratum::the_whisker_and_both_composites_are_certified_at_level_two`
+/// - witness: `ascent::tests::a_cover_without_its_outer_graft_leaves_a_family_unmediated`
+#[spec(ensures: |ref ret| match *ret {
+    Err(Mismatch::Unmediated { ref family } | Mismatch::Ambiguous { ref family }) => family.len() == candidates.len(),
+    Ok(()) | Err(_) => true,
+})]
+pub fn bijection<Map, Restrict>(
+    candidates: &[&[Map]],
+    found: &[Box<[Choice]>],
+    maps: &[Map],
+    restrict: Restrict,
+) -> Result<(), Mismatch<Map>>
+where
+    Map: Clone + PartialEq,
+    Restrict: Fn(usize, &Map) -> Option<Map>,
+{
+    let mut hits = alloc::vec![0_usize; found.len()];
     let mut restricted = Vec::with_capacity(candidates.len());
-    for map in hom(cocone.shape) {
-        let stray = || SegalDefect::Stray { map: map.clone() };
+    for map in maps {
+        let stray = || Mismatch::Stray { map: map.clone() };
         restricted.clear();
-        for (inclusion, options) in cocone.inclusions.iter().zip(&candidates) {
-            let Ok(leg) = inclusion.map.then(map)
+        for (cell, options) in candidates.iter().enumerate() {
+            let Some(leg) = restrict(cell, map)
             else {
                 return Err(stray());
             };
@@ -563,46 +637,44 @@ fn colimit(
             };
             restricted.push(Choice(position));
         }
-        let Ok(found) =
-            families.binary_search_by(|family| family.as_ref().cmp(restricted.as_slice()))
+        let Ok(at) = found.binary_search_by(|family| family.as_ref().cmp(restricted.as_slice()))
         else {
             return Err(stray());
         };
-        if let Some(count) = hits.get_mut(found) {
+        if let Some(count) = hits.get_mut(at) {
             *count = count.saturating_add(1);
         }
     }
-    for (family, &count) in families.iter().zip(&hits) {
+    for (family, &count) in found.iter().zip(&hits) {
         if count == 1 {
             continue;
         }
-        let maps: Box<[SiteMap]> = family
+        let maps: Box<[Map]> = family
             .iter()
-            .zip(&candidates)
+            .zip(candidates)
             .filter_map(|(&position, options)| options.get(position.0).cloned())
             .collect();
         return Err(if count == 0 {
-            SegalDefect::Unmediated { family: maps }
+            Mismatch::Unmediated { family: maps }
         }
         else {
-            SegalDefect::Ambiguous { family: maps }
+            Mismatch::Ambiguous { family: maps }
         });
     }
     Ok(())
 }
 
-/// Every family of one map per vertex, drawn from `candidates`, that agrees
-/// along every graft and, for [`Cocones::Admitted`], has disjoint images; as
-/// candidate positions, in increasing order.
+/// Every family of one candidate per cell that `agrees` keeps, as candidate
+/// positions, in increasing order.
 ///
 /// # Specification
-/// - ensures: each agreeing family once, in lexicographic order of its
-///   positions, each position within its vertex's candidates; none when a
-///   vertex has no candidate.
+/// - ensures: each family `agrees` admits at every prefix once, in
+///   lexicographic order of its positions, each position within its cell's
+///   candidates; none when a cell has no candidate or there is no cell.
 /// - panics: none.
-/// - intension: a search over the vertices in order with an explicit stack of
-///   chosen positions, abandoning a partial family at the first graft between
-///   its last vertex and an earlier one that disagrees, or the first overlap.
+/// - intension: a search over the cells in order with an explicit stack of
+///   chosen positions, abandoning a partial family at the first candidate
+///   `agrees` refuses beside the cells chosen before it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the two points against the point have four blanket
@@ -611,11 +683,12 @@ fn colimit(
 #[spec(ensures: |ref found| found.iter().zip(found.iter().skip(1)).all(|(first, second)| first < second)
     && found.iter().all(|family| family.len() == candidates.len()
         && family.iter().zip(candidates).all(|(&position, options)| position.0 < options.len())))]
-fn families(
-    candidates: &[&[SiteMap]],
-    grafts: &[Graft],
-    cocones: Cocones,
+pub fn families<Map, Agrees>(
+    candidates: &[&[Map]],
+    agrees: Agrees,
 ) -> Vec<Box<[Choice]>>
+where
+    Agrees: Fn(&[Choice], Choice) -> Membership,
 {
     let mut found = Vec::new();
     let mut chosen: Vec<Choice> = Vec::with_capacity(candidates.len());
@@ -634,7 +707,7 @@ fn families(
             cursor = Choice(last.0.saturating_add(1));
             continue;
         }
-        if agrees((candidates, grafts, cocones), &chosen, cursor) == Membership::Inside {
+        if agrees(&chosen, cursor) == Membership::Inside {
             chosen.push(cursor);
             cursor = Choice(0);
         }
