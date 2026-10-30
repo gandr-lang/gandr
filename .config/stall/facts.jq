@@ -1,7 +1,7 @@
 # The open pull requests as the stall detector reads them (#2785), from one
 # answer to `query.graphql`, the latest merged ones' refactoring verdicts
 # beside the refactor issues filed for them (#2885), and the claimed issues'
-# areas (#3822).
+# areas (#3822) and lanes (#4174).
 #
 # Input: the answer's `repository`; `merged`, `refactors` and `claimed`
 # absent read as none.
@@ -22,10 +22,12 @@
 # verdict, rows}`: when it merged, in epoch seconds, its `## Refactoring`
 # verdict (`yes`, `maybe`, `no` or null) and how many rows its table names;
 # `filed` the pull requests a `kind:refactor` issue's `from:` line names;
-# `claimed` one entry per open `status:claimed` issue, `{number, areas}`, its
-# `area:` labels.
+# `claimed` one entry per open `status:claimed` issue, `{number, areas,
+# lane}`: its `area:` labels, and the lane its claim marker names
+# (`markers.jq`'s `claim_lane`), null for a claim with no marker.
 
 include "sections";
+include "markers";
 
 def epoch: if . == null then null else fromdateiso8601 end;
 
@@ -64,4 +66,4 @@ def verdict:
    rows: ($r.rows // [] | length)
  }],
  filed: [(.refactors.nodes // [])[] | .body // "" | from_lines[]] | unique,
- claimed: [(.claimed.nodes // [])[] | {number, areas: [.labels.nodes[].name | select(startswith("area:"))]}]}
+ claimed: [(.claimed.nodes // [])[] | {number, areas: [.labels.nodes[].name | select(startswith("area:"))], lane: (.body | claim_lane)}]}

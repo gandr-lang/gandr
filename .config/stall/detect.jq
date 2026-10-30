@@ -39,10 +39,12 @@
 #                  session. Its fix is `mise run refactor:file <n>`; a merged
 #                  pull request is never stalled, only paged.
 #   seat-idle      a lane that holds a seat, with no open pull request whose
-#                  branch names it and no `status:claimed` issue carrying one
-#                  of its areas, for `idle` minutes since the detector first
-#                  saw it so (#3822): a restored seat's watchers died with
-#                  its old process, and nothing claims for it. Its line
+#                  branch names it and no `status:claimed` issue it holds, for
+#                  `idle` minutes since the detector first saw it so (#3822):
+#                  a restored seat's watchers died with its old process, and
+#                  nothing claims for it. A lane holds the claims whose marker
+#                  names it, and a markerless claim carrying one of its areas,
+#                  as `claim:next` places a claim (#4174). Its line
 #                  names the claim to run. It has no pull request, so it is
 #                  keyed by its lane, paged once while it lasts and never
 #                  stalled or paged again. With a programme focus set and no
@@ -78,8 +80,8 @@
 #   prs         `facts.jq`'s pull requests;
 #   merged, filed, claimed
 #               `facts.jq`'s merged pull requests, the numbers refactor
-#               issues were filed from and the claimed issues' areas; absent
-#               reads as none;
+#               issues were filed from and the claimed issues' areas and
+#               lanes; absent reads as none;
 #   seats       the lanes that hold a seat; absent reads as none;
 #   areas       each lane's areas, `{"<lane>": ["<area>"]}`; a seat's lane
 #               it lacks is read by no kind;
@@ -148,11 +150,13 @@
   def off_trunk: . as $pr
     | $pr.queued and $pr.base != $in.trunk and all($in.prs[]; .head != $pr.base);
   # The lanes that hold a seat and nothing in hand: no open pull request on
-  # a branch of the lane, and no claimed issue in one of its areas.
+  # a branch of the lane, and no claimed issue it holds, by the claim's marker
+  # or, with none, by one of its areas.
   [($in.seats // [])[] | . as $lane
     | (($in.areas // {})[$lane] // empty | map("area:" + .)) as $labels
     | select(any($in.prs[]; lane == $lane) | not)
-    | select(any(($in.claimed // [])[]; any(.areas[]; IN($labels[]))) | not)
+    | select(any(($in.claimed // [])[];
+        if .lane != null then .lane == $lane else any(.areas[]; IN($labels[])) end) | not)
     | $lane] as $idle
 | ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
     + [$prs[] | select([blocker] != []) | "\(.number):base-blocked:\(.oid)"]
@@ -206,8 +210,8 @@
       | select($in.now - $since >= $t.idle * 60)
       | ($in.now - $since | minutes) as $age
       | (if $in.focus != null and ($in.focus.open | length) == 0
-         then "no open pull request and no claimed issue in its areas, and the focus \($in.focus.epics | map("#\(.)") | join(" ")) holds no unowned member; the coordinator assigns its next work"
-         else "no open pull request and no claimed issue in its areas; run `mise run claim:next \($lane)`" end) as $what
+         then "no open pull request and no claim it holds, and the focus \($in.focus.epics | map("#\(.)") | join(" ")) holds no unowned member; the coordinator assigns its next work"
+         else "no open pull request and no claim it holds; run `mise run claim:next \($lane)`" end) as $what
       | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age,
          line: "STALL seat-idle \($lane) \($age)m: \($what)"})
   ]
