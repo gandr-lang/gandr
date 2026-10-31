@@ -851,7 +851,7 @@ fn a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_382
 {
     let mut arena = CoreArena::new();
     let source = "data Chain(a : Type) : Type { End : Chain(a); Link : (h : a, t : Chain(a)) --> Chain(a); }\n\
-                  def rec size @[a : Type] (xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n";
+                  def rec size[a : Type](xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("size"));
     assert_eq!(

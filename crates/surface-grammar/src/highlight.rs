@@ -885,7 +885,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
         Opener::Form => HlRole::Variable,
         Opener::Bracket { label, left } => match label.0 {
             "#{" | "{" => HlRole::Member,
-            "@[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
+            "@[" | "[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
             "[" if matches!(facts.kind.0, "u_type" | "thunk_expression") => HlRole::Number,
             "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
             "@[" | "[" => HlRole::Other,
@@ -941,7 +941,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         Opener::Form => HlRole::Variable,
         Opener::Bracket { label, left } => match label.0 {
             "#{" | "{" => HlRole::Member,
-            "@[" if right_crosses(":") => HlRole::VariableParam,
+            "@[" | "[" if right_crosses(":") => HlRole::VariableParam,
             "@[" => HlRole::Other,
             "[" => match kind {
                 "u_type" | "thunk_expression" => HlRole::Number,
@@ -1189,7 +1189,7 @@ mod tests
             ("data_declaration", "op", None, HlRole::FunctionDef),
             ("lambda_expression", "(", Some(")"), HlRole::VariableParam),
             ("block", "(", None, HlRole::VariableParam),
-            ("def_value", "@[", Some(":"), HlRole::VariableParam),
+            ("def_value", "[", Some(":"), HlRole::VariableParam),
             ("attribute_block", "@[", Some("("), HlRole::Other),
             ("data_declaration", "[", None, HlRole::Other),
             ("import_declaration", "as", None, HlRole::VariableDef),

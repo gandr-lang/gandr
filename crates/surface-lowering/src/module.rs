@@ -10393,7 +10393,7 @@ const fn misplaced_in<'source>(
     captures: first = header.peek(),
     ensures: |ret| match ret {
         | Tail::Function(_) => {
-            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::ATTRIBUTES)
+            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::BRACKET_OPEN)
                 && header.peek() == first
         },
         | Tail::Wrote(kind, _) => {
@@ -10416,7 +10416,7 @@ fn read_tail<'source>(
 ) -> Tail<'source>
 {
     let mut past = header.clone();
-    if let Maybe::Present(_) = past.tile(TileName::ATTRIBUTES) {
+    if let Maybe::Present(_) = past.tile(TileName::BRACKET_OPEN) {
         while let Maybe::Present(piece) = past.read() {
             if let Piece::Tile { label, .. } = piece
                 && label == TileName::BRACKET_CLOSE
@@ -10538,7 +10538,7 @@ fn signing(mut header: Cursor<'_>) -> Signing
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
 #[spec(
     ensures: |ret| {
-        ret == if matches!(header.at(TileName::ATTRIBUTES), Maybe::Present(_)) {
+        ret == if matches!(header.at(TileName::BRACKET_OPEN), Maybe::Present(_)) {
             LoweringRefusal::ImplicitTelescope { span: declaration.span }
         }
         else if let Maybe::Present(Piece::Operand(stray)) = header.peek() {
@@ -10554,7 +10554,7 @@ fn unadmitted_tail<'source>(
     declaration: Placed,
 ) -> LoweringRefusal<'source>
 {
-    if let Maybe::Present(_) = header.at(TileName::ATTRIBUTES) {
+    if let Maybe::Present(_) = header.at(TileName::BRACKET_OPEN) {
         return LoweringRefusal::ImplicitTelescope {
             span: declaration.span,
         };
@@ -11309,13 +11309,13 @@ pub struct Forgetting
     pub sorts: Vec<Name>,
 }
 
-/// A model implicit a function's telescope writes, `@[s : Model(S) with sort
+/// A model implicit a function's telescope writes, `[s : Model(S) with sort
 /// x = A]`, as a source writes it.
 ///
 /// The core binds one parameter per component of `S` and none for a sort the
 /// type fixes, so a printed telescope writes the slot whole in their place, a
 /// body reads each component as `s.x`, and a call supplies the slot by one
-/// path, `f[s = M]`.
+/// path, `f[.s = M]`.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -11496,7 +11496,7 @@ pub struct LoweredModule<'source>
     /// Each function written with a model implicit, each such slot of its
     /// merged telescope, by the function's position.
     model_slots: Layered<ConstantIndex, Vec<FlattenedSlot<'source>>>,
-    /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
+    /// Each stage a call supplies its callee's binder at, `f[.i = s]`, by the
     /// declaration whose body makes the call.
     supplies: Layered<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
     /// The laws each capability scope over a theory owes it, read through the
@@ -13050,7 +13050,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The names of the region binders the definition at `constant`
-    /// abstracts, `@[r : Region]`, by ordinal: what a type kept at
+    /// abstracts, `[r : Region]`, by ordinal: what a type kept at
     /// [`gandr_core_term::effect::capability::Region::Bound`] is spelled by.
     ///
     /// # Specification
@@ -13082,7 +13082,7 @@ impl<'source> LoweredModule<'source>
 
     /// The parameters of the function at `constant`, in the merged
     /// telescope's order, each implicit by the name a use supplies it by,
-    /// `f[x = v]`, and each explicit one as none: what a printed call writes
+    /// `f[.x = v]`, and each explicit one as none: what a printed call writes
     /// its arguments by, residents for the implicits and the rest in place.
     ///
     /// # Specification
@@ -13142,7 +13142,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The stages `declaration`'s calls supply their callees' binders at,
-    /// `f[i = s]`: what the checker's declaration carries for its judgement
+    /// `f[.i = s]`: what the checker's declaration carries for its judgement
     /// to hold each call to, and the kernel never reads.
     ///
     /// # Specification

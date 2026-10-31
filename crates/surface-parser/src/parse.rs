@@ -1777,7 +1777,7 @@ pure greeting
     fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let src = r#"def nth @[A : Type, i : Fin(length(xs))] (xs : List(A)) -> A {
+        let src = r#"def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
   pure xs
 }
 "#;

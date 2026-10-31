@@ -1396,7 +1396,7 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A call omitting an instance where several instances of its interface
-    /// are in scope: the call names the one it means, `f[a = c](…)`.
+    /// are in scope: the call names the one it means, `f[.a = c](…)`.
     InstanceAmbiguous
     {
         /// The bytes of the call.
@@ -1416,7 +1416,7 @@ pub enum LoweringRefusal<'source>
     /// A model implicit standing as a value: named alone where a value is
     /// read, or supplied by what names neither a module nor a model implicit.
     /// A model implicit is its components, each read as `s.x`, and a slot
-    /// takes a module's name or a model implicit's, `f[s = M]`.
+    /// takes a module's name or a model implicit's, `f[.s = M]`.
     ModelImplicitValue
     {
         /// The bytes of the name or the supply.

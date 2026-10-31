@@ -973,7 +973,7 @@ pub enum Former
     /// one below it, `Nat[<i]`.
     StagedType,
     /// A type at a mode variable, `m T`: a method's receiver at the mode its
-    /// telescope's `@[m : Mode]` binds, refused anywhere else.
+    /// telescope's `[m : Mode]` binds, refused anywhere else.
     ModedType,
     /// The capability scope `handle c : I { … } with { … }`: a deep handler
     /// for the host interface `I` whose body holds the capability it

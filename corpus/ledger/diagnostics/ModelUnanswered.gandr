@@ -9,7 +9,7 @@ theory Pointed {
 
 /// The point, over any pointed type the slot names.
 @[ checks ]
-def pointOf @[p : Model(Pointed)] (c : p.C) -> p.C { p.point }
+def pointOf[p : Model(Pointed)](c : p.C) -> p.C { p.point }
 
 @[ refuses("ModelUnanswered") ]
 def unanswered() -> Integer { pointOf(3) }

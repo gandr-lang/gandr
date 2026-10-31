@@ -1,3 +1,12 @@
-/// `telescope_expression`: a telescope with labelled fields.
+/// `telescope_expression`: a telescope with labelled fields. A field written
+/// alone takes the variable of its name: `.x` is `.x = x`.
 @[ checks ]
-def point = #{ .x = 1, .y = 2 } ;
+def moved(x : Integer) -> #{x : Integer, y : Integer} { #{ .x, .y = x + 1 } }
+
+/// The punned field holds the argument.
+@[ runs("3") ]
+def movedX() -> Integer {
+  case moved(3) {
+    #{ .x, .y } => x
+  }
+}

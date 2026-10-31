@@ -3466,7 +3466,7 @@ struct Lowerer<'run, 'source>
     /// The linear binders a `resume` or an `abort` ends: a view a block ends
     /// asks its call for an exclusive lend.
     ended_views: BTreeSet<ScopeId>,
-    /// The stages a call supplies its callee's binders at, `f[i = s]`, by the
+    /// The stages a call supplies its callee's binders at, `f[.i = s]`, by the
     /// node of the callee's name, beside the declaration making the call.
     planned_supplies: BTreeMap<
         NodeIndex,
@@ -3525,7 +3525,7 @@ struct Lowerer<'run, 'source>
     /// its own, carries the function the unquote calls.
     typed_heads: BTreeMap<NodeIndex, NodeIndex>,
     /// The head of each call that applies a function with implicits, each
-    /// supplied by name, `f[a = T](…)`, or nominated where the call omits it
+    /// supplied by name, `f[.a = T](…)`, or nominated where the call omits it
     /// (`Self::nominated`): the one place such a function is named without
     /// refusal.
     supplied: BTreeSet<NodeIndex>,
@@ -8305,6 +8305,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
             },
         }
+    }
+
+    /// Plan the label tile `label` of a punned entry, `.l` in a record or in
+    /// an instantiation slot, as the name `l` it spells, read as a value under
+    /// `frame`. The tile is a piece of its entry's form, so the sweep never
+    /// classifies it as a form of its own.
+    ///
+    /// # Specification
+    /// - requires: `label` is an entry's label tile.
+    /// - ensures: as [`Self::name`] at the tile; the tile is kept out of the
+    ///   classifying sweep.
+    /// - fails: as [`Self::name`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a punned record field and a punned implicit supply
+    ///   each lower to the variable they name, and a pun naming nothing is
+    ///   refused as unresolved.
+    /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
+    /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
+    #[spec(ensures: |ret| ret.is_err() || self.classified_ahead.contains(&label.node))]
+    fn pun(
+        &mut self,
+        label: Placed,
+        frame: Frame,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _first = self.classified_ahead.insert(label.node);
+        self.name(Site {
+            at: label,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        })
     }
 
     /// Classify a capitalised name in term position.
@@ -26377,7 +26413,7 @@ mod tests
     #[test]
     fn an_implicit_telescope_on_no_function_is_refused_by_name()
     {
-        let refused = refusal(SourceText::from("def f @[a : Type] = 1 ;"));
+        let refused = refusal(SourceText::from("def f[a : Type] = 1 ;"));
         assert!(
             matches!(refused, LoweringRefusal::ImplicitTelescope { span } if span.start() == ByteOffset::from(0_usize)),
             "a telescope binds a function's parameters, and is refused at any other \

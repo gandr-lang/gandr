@@ -1304,7 +1304,7 @@ pub enum Notation
     Row,
     /// A model implicit's components a call supplies by no one path, each
     /// written in place, `f(A, a, g)`: the surface supplies a model by a
-    /// module or a model implicit, `f[s = M]`, never by its components.
+    /// module or a model implicit, `f[.s = M]`, never by its components.
     Supply,
     /// A pasting past level two, written `tree(l, [[[]], [[]]])`: its level,
     /// then its tree as nested brackets. The source writes a pasting only
@@ -1933,8 +1933,8 @@ pub trait Source
     /// - ensures: the telescope the source records for `head`'s constant, or
     ///   the empty slice; the default records none, so every argument is
     ///   written in place.
-    /// - provides: the residents `f[x = v](…)` a printed call supplies its
-    ///   callee's implicits by, and a printed definition's `@[x : T]`.
+    /// - provides: the residents `f[.x = v](…)` a printed call supplies its
+    ///   callee's implicits by, and a printed definition's `[x : T]`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1966,8 +1966,8 @@ pub trait Source
     /// - ensures: the slots the source records for `head`'s constant, or the
     ///   empty slice; the default records none, so every component is written
     ///   as a parameter of its own.
-    /// - provides: the resident `f[s = M]` a printed call supplies a model by,
-    ///   and a printed definition's `@[s : Model(S)]`.
+    /// - provides: the resident `f[.s = M]` a printed call supplies a model by,
+    ///   and a printed definition's `[s : Model(S)]`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1989,7 +1989,7 @@ pub trait Source
     }
 }
 
-/// A model implicit a function's telescope writes, `@[s : Model(S) with sort
+/// A model implicit a function's telescope writes, `[s : Model(S) with sort
 /// x = A]`: the parameters from `at` on, one per component, bind its
 /// components, and a sort the type fixes binds none.
 #[derive(Clone, Debug, Eq, PartialEq)]

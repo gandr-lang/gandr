@@ -400,8 +400,8 @@ fn a_row_stays_open_through_its_tail_2270()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def log @[r : Row] (s : String) -> -F [Console | r] Unit { Console.print(s) }\n",
-            "def alone @[r : Row] () -> -F [r] Unit { pure unit }\n",
+            "def log[r : Row](s : String) -> -F [Console | r] Unit { Console.print(s) }\n",
+            "def alone[r : Row]() -> -F [r] Unit { pure unit }\n",
         )),
         &mut arena,
     );
@@ -2718,7 +2718,7 @@ fn a_capability_at_a_scope_lives_in_its_region()
 }
 
 /// A kept type naming a region binder of its definition, `A at r` under
-/// `@[q : Region, r : Region]`, keeps its value at that binder's ordinal among
+/// `[q : Region, r : Region]`, keeps its value at that binder's ordinal among
 /// the telescope's region binders, and the binder named as a value is refused
 /// as one (#1221).
 #[test]
@@ -2729,9 +2729,9 @@ fn a_kept_type_at_a_region_binder_is_bound_to_it_1221()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def read @[q : Region, r : Region] (k : (() => Integer) at r) -> -F Integer { force \
+            "def read[q : Region, r : Region](k : (() => Integer) at r) -> -F Integer { force \
              k }\n",
-            "def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }\n",
+            "def named[r : Region](k : (() => Integer) at r) -> -F Integer { pure r }\n",
         )),
         &mut arena,
     );

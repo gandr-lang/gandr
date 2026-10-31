@@ -17,7 +17,7 @@ module Origin : Model(Pointed) {
 
 /// The point of any pointed model the slot names.
 @[ checks ]
-def pointOf @[s : Model(Pointed)] () -> s.C { s.point }
+def pointOf[s : Model(Pointed)]() -> s.C { s.point }
 
 @[ refuses("ModelImplicitValue") ]
-def packed() -> -F Integer { pointOf[s = pack Origin at Model(Pointed)]() }
+def packed() -> -F Integer { pointOf[.s = pack Origin at Model(Pointed)]() }

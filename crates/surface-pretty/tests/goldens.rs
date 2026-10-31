@@ -2755,7 +2755,7 @@ fn a_call_supplies_its_callee_s_implicits_by_name_2267()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(supplied)),
-        faithful(Written("fn (a) { chosen[x = 7](3) }"))
+        faithful(Written("fn (a) { chosen[.x = 7](3) }"))
     );
     assert_eq!(
         spelled(&source, body(left_out)),
@@ -2768,7 +2768,7 @@ fn a_call_supplies_its_callee_s_implicits_by_name_2267()
 }
 
 /// A call supplies a callee's model implicit by the module its components
-/// are members of, `f[s = M]`, writes nothing for a slot it omits, and
+/// are members of, `f[.s = M]`, writes nothing for a slot it omits, and
 /// writes components no one path names in place, in the printer's own
 /// notation (#2364).
 #[test]
@@ -2815,7 +2815,7 @@ fn a_call_supplies_a_model_implicit_by_its_path_2364()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(module)),
-        faithful(Written("fn (a) { stepped[s = Up](7) }"))
+        faithful(Written("fn (a) { stepped[.s = Up](7) }"))
     );
     assert_eq!(
         spelled(&source, body(resolved)),
@@ -5269,7 +5269,7 @@ fn a_recursive_call_omits_the_instance_it_passes_as_itself_4102()
     assert_eq!(
         declared_whole(&source, (ty, kept), wide),
         written(
-            "def rec down @[x : Nat] (a : Nat) -> Nat {\n  case a { Zero => x, Succ(b) => down[<](b) }\n}"
+            "def rec down[x : Nat](a : Nat) -> Nat {\n  case a { Zero => x, Succ(b) => down[<](b) }\n}"
         ),
         "the implicit bound outside the fixpoint goes unwritten"
     );
@@ -5283,14 +5283,14 @@ fn a_recursive_call_omits_the_instance_it_passes_as_itself_4102()
     assert_eq!(
         declared_whole(&source, (ty, own), wide),
         written(
-            "def rec down @[o : Nat] (a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b) }\n}"
+            "def rec down[o : Nat](a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b) }\n}"
         ),
         "the instance passed as itself goes unwritten"
     );
     assert_eq!(
         declared_whole(&source, (ty, other), wide),
         written(
-            "def rec down @[o : Nat] (a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b, a) }\n}"
+            "def rec down[o : Nat](a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b, a) }\n}"
         ),
         "a parameter passed in the instance's place is written with the rest"
     );
@@ -5373,14 +5373,14 @@ fn a_definition_writes_its_implicits_in_its_telescope_2267()
     assert_eq!(
         declared_whole(&source, (ty, defined), PageWidth::from(100_u32)),
         Maybe::Present((
-            String::from("def down @[x : Nat] (a : Nat) -> Nat {\n  x\n}"),
+            String::from("def down[x : Nat](a : Nat) -> Nat {\n  x\n}"),
             Fidelity::Faithful
         ))
     );
 }
 
 /// A function quantifying over a model spells whole with the model implicit
-/// in its telescope, `@[s : Model(S) with sort C = A]`, in place of the
+/// in its telescope, `[s : Model(S) with sort C = A]`, in place of the
 /// parameters its components bind, each component read by its path, `s.x`,
 /// and passed on to a callee's slot by the implicit's name (#2364).
 #[test]
@@ -5425,8 +5425,8 @@ fn a_definition_writes_its_model_implicit_whole_2364()
         declared_whole(&source, (ty, defined), PageWidth::from(100_u32)),
         Maybe::Present((
             String::from(
-                "def down @[s : Model(Counter) with sort C = Nat] (a : Nat) -> Nat {\n  \
-                 stepped[t = s](a)\n}"
+                "def down[s : Model(Counter) with sort C = Nat](a : Nat) -> Nat {\n  \
+                 stepped[.t = s](a)\n}"
             ),
             Fidelity::Faithful
         ))
@@ -5767,7 +5767,7 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
 }
 
 /// A definition over region binders spells whole with its telescope,
-/// `@[r : Region]`, before its parameters, and each type kept at a binder
+/// `[r : Region]`, before its parameters, and each type kept at a binder
 /// names it; a binder below the greatest one kept at is written though
 /// nothing is kept there, so each `at` reads back at its own ordinal (#1221).
 #[test]
@@ -5795,10 +5795,8 @@ fn a_definition_over_a_region_spells_its_binder_1221()
     assert_eq!(
         [first, second].map(|ty| declared_whole(&source, (ty, passed), wide)),
         [
-            written("def down @[r : Region] (a : Nat at r) -> -F (Nat at r) {\n  a\n}"),
-            written(
-                "def down @[r : Region, r1 : Region] (a : Nat at r1) -> -F (Nat at r1) {\n  a\n}"
-            ),
+            written("def down[r : Region](a : Nat at r) -> -F (Nat at r) {\n  a\n}"),
+            written("def down[r : Region, r1 : Region](a : Nat at r1) -> -F (Nat at r1) {\n  a\n}"),
         ],
         "the binder is written and named at each kept type, every ordinal below it too"
     );
@@ -6327,7 +6325,7 @@ fn a_row_writes_each_instance_by_its_label_2271()
         declared_whole(&source, (ty, body), PageWidth::from(120_u32)),
         Maybe::Present((
             String::from(
-                "def down @[r : Region, r1 : Region] (a : Cap {print} at r, b : Cap {print} at \
+                "def down[r : Region, r1 : Region](a : Cap {print} at r, b : Cap {print} at \
                  r1) -> [r : Console, r1 : Console] Unit {\n  unit\n}"
             ),
             Fidelity::Faithful
@@ -6450,7 +6448,7 @@ fn a_labelled_theory_entry_spells_its_label_3230()
         declared_whole(&CoreSource::new(&core, &[]), (ty, body), wide),
         Maybe::Present((
             String::from(
-                "def down @[r : Region] (a : Cap {get} at r) -> [r : State] Unit {\n  unit\n}"
+                "def down[r : Region](a : Cap {get} at r) -> [r : State] Unit {\n  unit\n}"
             ),
             Fidelity::Faithful
         )),

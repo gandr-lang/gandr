@@ -2,7 +2,7 @@
 ///
 /// A value combined with itself, the combination implicit.
 @[ checks ]
-def twice @[m : Type, combine : (m, m) => m] (x : m) -> -F m { combine(x, x) }
+def twice[m : Type, combine : (m, m) => m](x : m) -> -F m { combine(x, x) }
 
 @[ refuses("ImplicitUnsolved") ]
 def undetermined : () => Integer ;

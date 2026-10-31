@@ -953,7 +953,7 @@ fn module_signature_field() -> Regex
     ])
 }
 
-/// Build the `def rec` recursive tail: `rec id @[implicits]? (params) -> T? {
+/// Build the `def rec` recursive tail: `rec id [implicits]? (params) -> T? {
 /// body }`.
 ///
 /// A single `{ … }` with an interior alternative separates the corecursive
@@ -1721,19 +1721,21 @@ fn patterns(
 ///
 /// The dedicated sort is the syntax boundary at which name resolution and
 /// checking interpret or decline each resident: type arguments, direction
-/// sigils, named measures, explicit residents (the reserved `size = e` and
-/// `cost = e` forms included), and `tail` inhabit only
+/// sigils, supplies and claims by name (the reserved `.size = e`, `.cost = e`
+/// and named-stage `.i <` forms included), and `tail` inhabit only
 /// [`Sort::Instantiation`], an atom-only context for `<` and `>` distinct from
-/// their binary-expression molds. An explicit resident's value is a whole
-/// expression up to the slot's next `,` or its `]`, `f[g = M.h]` and `f[n =
-/// a + 1]` alike: the resident stands at the loosest band, `explicit`, so no
-/// operator or projection after its `=` takes the resident as its operand.
+/// their binary-expression molds. A supply names its implicit with a dot, as a
+/// record entry names its field: `.a = e`, or `.a` alone for `.a = a`. Its
+/// value is a whole expression up to the slot's next `,` or its `]`, `f[.g =
+/// M.h]` and `f[.n = a + 1]` alike: the resident stands at the loosest band,
+/// `explicit`, so no operator or projection after its `=` takes the resident
+/// as its operand.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends six ordered instantiation residents, all at the dedicated
-///   sort with shared instantiation provenance, the explicit resident at
-///   `explicit` and the rest at `p`.
+/// - ensures: appends five ordered instantiation residents, all at the
+///   dedicated sort with shared instantiation provenance, the explicit resident
+///   at `explicit` and the rest at `p`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1744,7 +1746,7 @@ fn patterns(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["instantiation.type", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.named_measure", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == if name == "instantiation.explicit" { explicit } else { p } && rule.provenance().0 == "instantiation_expression")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 5 && added.iter().zip(["instantiation.type", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == if name == "instantiation.explicit" { explicit } else { p } && rule.provenance().0 == "instantiation_expression")))]
 fn instantiations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -1773,22 +1775,23 @@ fn instantiations(
         p,
         t(TileLabel(">")),
     ));
-    out.push(r(
-        RuleName("instantiation.named_measure"),
-        Provenance("instantiation_expression"),
-        s,
-        p,
-        seq([t(TileLabel("identifier")), t(TileLabel("<"))]),
-    ));
+    // A resident that names an implicit: `.a = e` supplies it, `.a` alone
+    // supplies it from the variable `a`, and `.i <` or `.i >` claims the
+    // stage `i` descends or is guarded. One rule, so the `.` keeps one mold
+    // and the tile after the name decides.
     out.push(r(
         RuleName("instantiation.explicit"),
         Provenance("instantiation_expression"),
         s,
         explicit,
         seq([
+            t(TileLabel(".")),
             t(TileLabel("identifier")),
-            t(TileLabel("=")),
-            h(Sort::Expression),
+            opt(alt([
+                seq([t(TileLabel("=")), h(Sort::Expression)]),
+                t(TileLabel("<")),
+                t(TileLabel(">")),
+            ])),
         ]),
     ));
     out.push(r(
@@ -3749,18 +3752,19 @@ fn type_member_tail() -> Regex
     ])
 }
 
-/// Build the declaration-level implicit telescope `@[binder, …]`.
+/// Build the declaration-level implicit telescope `[binder, …]`.
 ///
 /// This prefix follows the declaration name and precedes its explicit
 /// parameter list. Binders are kept in source order and their type holes are
 /// ordinary type syntax, so a binder may mention a later explicit parameter;
 /// dependency ordering is a later lowering concern. The optional body admits
-/// the empty `@[]` spelling without conflating this form with the ordinary
-/// attribute block, which remains before `def`.
+/// the empty `[]` spelling. `[ … ]` is the bracket of static arguments: the
+/// declaration binds them here and a use supplies them after its head,
+/// `f[.a = e]`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an attribute-style opener with an optional typed-binder list and
+/// - ensures: the static-argument opener with an optional typed-binder list and
 ///   its closer.
 /// - panics: none.
 ///
@@ -3771,11 +3775,11 @@ fn type_member_tail() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "@[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
 fn implicit_telescope() -> Regex
 {
     seq([
-        t(TileLabel("@[")),
+        t(TileLabel("[")),
         opt(comma1(implicit_param())),
         t(TileLabel("]")),
     ])
@@ -3865,9 +3869,9 @@ fn regular_def_tail() -> Regex
     ])
 }
 
-// The prefix telescope is intentionally absent from ordinary attribute blocks:
-// `@[doc("…")] def …` remains the declaration-level attribute spelling, while
-// `def name @[A : Type] …` is the typed implicit-parameter spelling.
+// The prefix telescope is distinct from the attribute block by its opener:
+// `@[doc("…")] def …` is the declaration-level attribute spelling, while
+// `def name[A : Type] …` is the typed implicit-parameter spelling.
 
 /// Build one nested module component.
 ///
@@ -4366,10 +4370,10 @@ fn primary_expressions(
         s,
         p,
         alt([
-            // labelled: `#{ .l = E, … }`
+            // labelled: `#{ .l = E, … }`, and `.l` alone for `.l = l`
             seq([
                 t(TileLabel("#{")),
-                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
+                comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
                 t(TileLabel("}")),
             ]),
             seq([

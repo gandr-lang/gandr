@@ -5629,7 +5629,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;
+                r#"@[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;
 module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
@@ -7056,7 +7056,7 @@ def delivered() -> -F Unit {
         );
         assert_eq!(
             unused(
-                "def chosen @[x : t] (t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
+                "def chosen[x : t](t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
                  -> Type ;\ndef apply = \\F. \\X. F(X) ;\n"
             ),
             [""; 0],

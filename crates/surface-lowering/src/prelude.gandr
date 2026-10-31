@@ -46,7 +46,7 @@ pub module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 {
 
 /// Equality through the model of `PartialEq` the operands' type resolves:
 /// what `a == b` calls.
-pub def eq @[e : Model(PartialEq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
+pub def eq[e : Model(PartialEq)](a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
 
 /// A decidable order over a carrier with its equality: below, at most, above
 /// and at least.
@@ -87,16 +87,16 @@ pub module OrdString : Model(Ord) with sort Carrier = String {
 
 /// Below, through the model of `Ord` the operands' type resolves: what `a < b`
 /// calls.
-pub def lt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.lt(a, b) }
+pub def lt[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> Bool { o.lt(a, b) }
 
 /// At most, through the operands' model of `Ord`: what `a <= b` calls.
-pub def le @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.le(a, b) }
+pub def le[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> Bool { o.le(a, b) }
 
 /// Above, through the operands' model of `Ord`: what `a > b` calls.
-pub def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b) }
+pub def gt[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b) }
 
 /// At least, through the operands' model of `Ord`: what `a >= b` calls.
-pub def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
+pub def ge[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
 
 /// A positive number in binary, its least digit outermost, as Isabelle/HOL's
 /// `num`: one, or twice a positive, or twice a positive and one.

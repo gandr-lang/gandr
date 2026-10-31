@@ -518,7 +518,7 @@ pub fn reaches(
 }
 
 /// How the type `root` reaches a region its definition abstracts, `A at r`
-/// under `@[r : Region]`, anywhere a region stands in it.
+/// under `[r : Region]`, anywhere a region stands in it.
 ///
 /// # Specification
 /// - ensures: what [`first_region`] answers choosing every [`Region::Bound`]:
@@ -565,7 +565,7 @@ pub fn binder_precedence(
     }
 }
 
-/// The region binders the type `root` names, `A at r` under `@[r : Region]`,
+/// The region binders the type `root` names, `A at r` under `[r : Region]`,
 /// wherever a region stands in it, each once, in ascending order.
 ///
 /// # Specification

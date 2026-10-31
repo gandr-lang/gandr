@@ -837,7 +837,7 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
-         : C) --> Integer; }\ndef stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { \
+         : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer { \
          s.read(s.incr(c)) }\n",
     );
     let Lowered::Module { module, arena } =
@@ -1686,15 +1686,15 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
     }
 }
 
-/// A type kept at a definition's own region binder, `@[r : Region]`, is spelled
+/// A type kept at a definition's own region binder, `[r : Region]`, is spelled
 /// by the binder's name, so a mismatch between two binders names both, never
 /// `?` (#2138).
 #[test]
 fn a_mismatch_between_two_region_binders_names_both_2138()
 {
     let text = SourceText::from(
-        "def read @[r : Region] (k : (() => Integer) at r) -> -F Integer { force k }\n\ndef crossed \
-         @[r : Region, s : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F \
+        "def read[r : Region](k : (() => Integer) at r) -> -F Integer { force k }\n\ndef crossed \
+         [r : Region, s : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F \
          Integer {\n  run m : (() => Integer) at s <- pure k ;\n  read(m)\n}\n",
     );
     let diagnostic = only(Path::new("crossed.gandr"), text);
@@ -1812,7 +1812,7 @@ fn repeated_equal_siblings_point_at_the_right_occurrence()
 fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
 {
     let text = "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
-                C) --> Integer;\n}\ndef stepped @[s : Model(Tally)] (c : s.C) -> Integer { \
+                C) --> Integer;\n}\ndef stepped[s : Model(Tally)](c : s.C) -> Integer { \
                 s.read(s.incr(c)) }\nmodule Up : Model(Tally) {\n  type C = Integer;\n  def \
                 incr(c : Integer) -> Integer { c + 1 }\n  def read(c : Integer) -> Integer { c \
                 }\n}\nmodule Tens : Model(Tally) {\n  type C = Integer;\n  def incr(c : Integer) \
@@ -1823,7 +1823,7 @@ fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
             .message
             .text,
         "more than one module in scope answers the model implicit `s` this call to `stepped` \
-         omits: `Up` and `Tens`; supply the one meant as `stepped[s = …](…)`"
+         omits: `Up` and `Tens`; supply the one meant as `stepped[.s = …](…)`"
     );
 }
 

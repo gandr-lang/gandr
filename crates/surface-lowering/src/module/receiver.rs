@@ -71,7 +71,7 @@ pub(super) fn receiver_of<'source>(
 ) -> Option<ReceiverMode>
 {
     let mut cursor = header.clone();
-    if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+    if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
         loop {
             match cursor.read() {
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACKET_CLOSE => {

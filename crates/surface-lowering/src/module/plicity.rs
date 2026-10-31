@@ -9,7 +9,7 @@
 //! stable topological sort: each parameter stands after every parameter its
 //! type mentions, and ties keep the written order, the telescope's entries
 //! before the parentheses'. An implicit's type may name an explicit parameter
-//! written after it, `@[i : Fin(n)] (n : Nat)`, which places the implicit
+//! written after it, `[i : Fin(n)] (n : Nat)`, which places the implicit
 //! after it; an explicit parameter's type reads the parameters before it as
 //! it always has, so a later explicit name it mentions orders nothing. A
 //! name a type binds itself — the key of a group's entry, `x` in `(x : A) =>
@@ -19,9 +19,9 @@
 //!
 //! Which parameters are implicit is the declaration's metadata
 //! ([`super::Collected::plicities`]), never type structure: the declared type
-//! is the merged telescope's ordinary function type, so `def f @[a : Type] (x
+//! is the merged telescope's ordinary function type, so `def f[a : Type](x
 //! : a) -> -F a` and `def f(a : Type, x : a) -> -F a` declare one type. A use
-//! supplies the implicits by name in the instantiation slot, `f[a = T](x)`,
+//! supplies the implicits by name in the instantiation slot, `f[.a = T](x)`,
 //! in any order.
 //!
 //! # An instance is a parameter its row's label binds
@@ -32,8 +32,8 @@
 //! also named `a`, so `at a` names its region and `a.print(…)` exercises it,
 //! and the row's `a : Console` is the instance at that region, apart from the
 //! default `Console`. A label naming a region binder of the telescope,
-//! `@[r : Region] … -> [r : I] B`, binds nothing: it is that binder's
-//! instance. A call supplies an instance by name, `f[a = c](…)`, or omits it
+//! `[r : Region] … -> [r : I] B`, binds nothing: it is that binder's
+//! instance. A call supplies an instance by name, `f[.a = c](…)`, or omits it
 //! and passes the one instance of the interface in scope where it stands, a
 //! capability scope's or a label of the caller's own row; none is
 //! [`LoweringRefusal::InstanceUnanswered`] and several
@@ -394,7 +394,7 @@ impl<'source> Collector<'_, 'source>
         // The names the implicit telescope binds that are no entry: a region
         // binder's, which a label of the result row names rather than binds.
         let mut staged: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
-        if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+        if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
                 if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
                     let Maybe::Present(Piece::Operand(sort)) = cursor.read()
@@ -585,7 +585,7 @@ impl<'source> Collector<'_, 'source>
     ///   label's tile and its declared tile the interface's name; nothing for a
     ///   result writing no row or a row writing no label. The sorts an entry
     ///   fixes, `with sort x = A`, are passed over. A label naming a region
-    ///   binder `@[r : Region]` is that binder's instance, bound already.
+    ///   binder `[r : Region]` is that binder's instance, bound already.
     /// - fails: a form fault reading the result's pieces.
     /// - panics: none.
     ///
@@ -707,7 +707,7 @@ impl<'source> Collector<'_, 'source>
     {
         let mut cursor = header.clone();
         let mut bound: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
-        if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+        if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             loop {
                 match cursor.read() {
                     Maybe::Present(Piece::Tile { label, .. })
@@ -886,7 +886,7 @@ impl<'source> Collector<'_, 'source>
     ///   written order; empty without a telescope or with none. `header` is
     ///   left where it was.
     /// - provides: the stage binders of [`super::Collected::stage_binders`],
-    ///   which a call's supply `f[i = s]` names.
+    ///   which a call's supply `f[.i = s]` names.
     /// - fails: a form fault reading an entry's sort.
     /// - panics: none.
     /// - executable: none — each entry's sort is read off the tree, and a
@@ -906,7 +906,7 @@ impl<'source> Collector<'_, 'source>
     {
         let mut binders = Vec::new();
         let mut cursor = header.clone();
-        if let Maybe::Absent(_) = cursor.tile(TileName::ATTRIBUTES) {
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
             return Ok(binders);
         }
         let mut scratch = Pieces::new();

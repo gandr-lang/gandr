@@ -740,12 +740,14 @@ impl<'source> Lowerer<'_, 'source>
         Ok(entries)
     }
 
-    /// Read the entries `.l <between> e` of a labelled value form up to `}`.
+    /// Read the entries `.l <between> e` of a labelled value form up to `}`;
+    /// where `between` is `=`, an entry `.l` alone puns its label.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the form's opener.
-    /// - ensures: every entry in written order, the cursor exhausted.
-    /// - fails: a misplaced tile, and a hole's own fault.
+    /// - ensures: every entry in written order, the cursor exhausted; an entry
+    ///   `.l` with no `= e`, where `between` is `=`, is punned on its label.
+    /// - fails: a misplaced tile, a pun by position, and a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -756,8 +758,10 @@ impl<'source> Lowerer<'_, 'source>
     /// refuses.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — labelled telescopes and copattern blocks.
+    /// - hypothesis: L3 — labelled telescopes, punned and written, and
+    ///   copattern blocks.
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
+    /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| !matches!(entry.key, Key::Positional))))]
     fn dotted_entries(
         &self,
@@ -769,11 +773,19 @@ impl<'source> Lowerer<'_, 'source>
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
             let key = self.dotted(site, cursor)?;
-            closed(site, cursor, between)?;
-            entries.push(Entry {
-                key,
-                held: Held::Operand(site.one(cursor.operands())?),
-            });
+            let held = match key {
+                Key::Label(_, label)
+                    if between == TileName::EQUALS
+                        && matches!(cursor.at(TileName::EQUALS), Maybe::Absent(_)) =>
+                {
+                    Held::Punned(label)
+                },
+                Key::Label(..) | Key::Index(..) | Key::Positional => {
+                    closed(site, cursor, between)?;
+                    Held::Operand(site.one(cursor.operands())?)
+                },
+            };
+            entries.push(Entry { key, held });
             separated(site, cursor, TileName::BRACE_CLOSE)?;
         }
         exhausted(site, cursor)?;
@@ -1745,17 +1757,19 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a telescope value, `#{a, …}`, `#{.l = a, …}` or `#{l = a,
-    /// …}`, or the update `#{e | l = a, …}`.
+    /// Classify a telescope value, `#{a, …}`, `#{.l = a, …}`, `#{.l, …}` or
+    /// `#{l = a, …}`, or the update `#{e | l = a, …}`.
     ///
     /// # Specification
     /// - requires: `site` is a telescope value in term position.
     /// - ensures: positional entries, in index order, plan the tuple of their
-    ///   values, of any arity; labelled entries plan the record over them; an
-    ///   update plans its base beside the record of the fields it writes; each
-    ///   entry and an update's base is read as a value under the form's frame.
+    ///   values, of any arity; labelled entries plan the record over them, a
+    ///   punned entry `.l` holding the variable `l`; an update plans its base
+    ///   beside the record of the fields it writes; each entry and an update's
+    ///   base is read as a value under the form's frame.
     /// - fails: the wrong-sort refusal where no value is read; the entries' and
-    ///   the labels' own refusals, an update's field written twice among them.
+    ///   the labels' own refusals, a punned name nothing binds, an update's
+    ///   field written twice among them.
     /// - panics: none.
     ///
     /// # Errors
@@ -1777,7 +1791,15 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::Value)?;
         closed(site, &mut cursor, TileName::RECORD)?;
         let entries = if let Maybe::Present(_) = cursor.at(TileName::DOT) {
-            self.dotted_entries(site, &mut cursor, TileName::EQUALS)?
+            let entries = self.dotted_entries(site, &mut cursor, TileName::EQUALS)?;
+            // A punned entry `.l` holds the variable `l`: its label tile
+            // stands as that name.
+            for entry in &entries {
+                if let Held::Punned(label) = entry.held {
+                    self.pun(label, frame)?;
+                }
+            }
+            entries
         }
         else {
             match self.hole_entries(site, &mut cursor)? {

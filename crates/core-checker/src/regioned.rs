@@ -1,5 +1,5 @@
 //! A definition abstracted over its caller's regions, read at one call: `def
-//! read @[r : Region] (k : (() => Integer) at r) -> -F Integer`, called with
+//! read[r : Region] (k : (() => Integer) at r) -> -F Integer`, called with
 //! a thunk kept in a capability scope's region.
 //!
 //! The declared type keeps each value whose region the definition abstracts

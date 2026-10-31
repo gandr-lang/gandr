@@ -6,16 +6,16 @@ data Nat : Type {
 }
 
 @[ checks ]
-def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {
+def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {
   f(x)
 }
 
 @[ checks ]
-def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> -F Nat[<j] {
+def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> -F Nat[<j] {
   y
 }
 
 @[ refuses("StagesDisagree") ]
-def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
-  applyAt[i = k](f, x)
+def suppliedApart[j : Size, k : Size](f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
+  applyAt[.i = k](f, x)
 }

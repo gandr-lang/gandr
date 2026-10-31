@@ -4,7 +4,7 @@ def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 module Places {
   @[ checks ]
-  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+  def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self[0] }
 }
 @[ checks ]
 def raised() -> -F List(Integer) {

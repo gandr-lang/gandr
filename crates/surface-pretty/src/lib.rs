@@ -1082,20 +1082,20 @@ quenchant_shape::reason_enum! {
 ///   binder where the source names it and neither the definition nor an earlier
 ///   parameter takes it, otherwise the next generated name that neither `name`,
 ///   the definition nor an earlier parameter takes. Where a header type or the
-///   body keeps a value at a region binder, the header writes `@[r : Region,
-///   …]` before the parameters, one binder per ordinal up to the greatest kept
-///   at, each `r`, `r1`, … where the definition takes no such name and named as
-///   a parameter is otherwise, and every `at` names its binder. Where `source`
+///   body keeps a value at a region binder, the header writes `[r : Region, …]`
+///   before the parameters, one binder per ordinal up to the greatest kept at,
+///   each `r`, `r1`, … where the definition takes no such name and named as a
+///   parameter is otherwise, and every `at` names its binder. Where `source`
 ///   records a telescope for `constant` ([`CoreSource::naming_implicits`]) of
 ///   one entry per parameter, each implicit `xᵢ` is written after the region
-///   binders as `xᵢ : Aᵢ`, `@[xᵢ : Aᵢ, …]`, under the name the telescope
-///   records where nothing earlier takes it, and only the explicit parameters
-///   stand in the parentheses. Where the returner's row labels an instance of a
-///   theory whose entry `source` records ([`CoreSource::manifesting`]) at a
-///   region binder past every other the header writes, and a parameter is a
-///   capability at that binder, the row's label is the parameter's name, `[st :
-///   T with sort C = A]`, and neither the binder nor the parameter is written:
-///   `Cap {…}` names a host interface's operations alone. The presentation is
+///   binders as `xᵢ : Aᵢ`, `[xᵢ : Aᵢ, …]`, under the name the telescope records
+///   where nothing earlier takes it, and only the explicit parameters stand in
+///   the parentheses. Where the returner's row labels an instance of a theory
+///   whose entry `source` records ([`CoreSource::manifesting`]) at a region
+///   binder past every other the header writes, and a parameter is a capability
+///   at that binder, the row's label is the parameter's name, `[st : T with
+///   sort C = A]`, and neither the binder nor the parameter is written: `Cap
+///   {…}` names a host interface's operations alone. The presentation is
 ///   approximate, its unspelled reasons collected, when a header type or the
 ///   body is. Absent for any other shape, and when no names for the parameters
 ///   are found.
@@ -1270,7 +1270,7 @@ pub fn present_whole(
     else {
         &[]
     };
-    // A model implicit is written whole, `@[s : Model(S)]`, and each of its
+    // A model implicit is written whole, `[s : Model(S)]`, and each of its
     // components under the path a body reads it by, `s.x`.
     let slots: Vec<&ModelSlot<'_, CoreNode>> = source
         .slots(constant)
@@ -1481,7 +1481,7 @@ pub fn present_whole(
         .filter(|entry| !matches!(entry, Entry::Explicit(_)))
         .peekable();
     if telescope.peek().is_some() {
-        text.push_str(" @[");
+        text.push('[');
         for (place, &entry) in telescope.enumerate() {
             if place > 0_usize {
                 text.push_str(", ");
@@ -1517,7 +1517,7 @@ pub fn present_whole(
                 appended(&mut text, &mut written, typed);
             }
         }
-        text.push_str("] ");
+        text.push(']');
     }
     text.push('(');
     let explicit = header.iter().filter_map(|&entry| match entry {

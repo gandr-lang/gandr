@@ -1325,7 +1325,7 @@ fn declared_head(
 }
 
 /// How a run checking `goal` reaches a region its definition abstracts, `A at
-/// r` under `@[r : Region]`, with no region open: through the type it checks
+/// r` under `[r : Region]`, with no region open: through the type it checks
 /// against.
 ///
 /// # Specification
@@ -1337,7 +1337,7 @@ fn declared_head(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a definition over `@[r : Region]` that stashes a value
+/// - hypothesis: L3 — a definition over `[r : Region]` that stashes a value
 ///   kept at `r` in a thunk kept in no region is refused, and one that forces
 ///   it or hands it back at `r` checks.
 /// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
@@ -8069,7 +8069,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// The type the constant at `constant`, declared `declared`, has where a
     /// call forces it: for a definition quantified over stages, `declared`
     /// with each binder at the stage the call's arguments show it at, which a
-    /// stage the call supplies, `f[i = j]`, must be.
+    /// stage the call supplies, `f[.i = j]`, must be.
     ///
     /// # Specification
     /// - requires: the constant is the term the machine has just synthesised.
@@ -8181,8 +8181,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call lending a thunk kept in a capability scope's
-    ///   region to a definition over `@[r : Region]` reads its parameter at
-    ///   that region.
+    ///   region to a definition over `[r : Region]` reads its parameter at that
+    ///   region.
     /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
     /// - witness: `regioned::tests::a_call_of_a_definition_over_a_region_checks_where_it_stands`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |placed| match *placed {

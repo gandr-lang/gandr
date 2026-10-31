@@ -181,7 +181,7 @@ pub(super) struct Sessions
     /// outermost first: a slot below a region's mark outlives the region.
     pub regions: Vec<usize>,
     /// How the run's own type reaches a region its definition abstracts, `A at
-    /// r` under `@[r : Region]`: where it reaches one, a captor or a child may
+    /// r` under `[r : Region]`: where it reaches one, a captor or a child may
     /// name a value kept in a region while no region is open.
     pub abstracted: crate::capability::Reach,
     /// Each capability scope and operation whose clause receives a

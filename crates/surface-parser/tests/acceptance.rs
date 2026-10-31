@@ -282,7 +282,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// A declaration-local `@[...]` prefix is typed syntax, not an attribute.
+/// A declaration-local `[...]` prefix is typed syntax, not an attribute.
 ///
 /// The binder types stay in source order even when the first binder refers to
 /// the later explicit `xs` parameter. That dependency is intentionally left
@@ -290,7 +290,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
 #[test]
 fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def nth @[A : Type, i : Fin(length(xs))] (xs : List(A)) -> A {
+    let source = r#"def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
   pure xs
 }
 "#;
@@ -334,7 +334,7 @@ fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<()
 fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Box<dyn Error>>
 {
     let source = r#"@[doc("d")]
-def tagged @[] (x : Type) -> Type { pure x }
+def tagged[](x : Type) -> Type { pure x }
 "#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
@@ -350,8 +350,11 @@ def tagged @[] (x : Type) -> Type { pure x }
     .expect("the attributed declaration remains one top-level meld");
     let tiles = descendant_tiles(result.tree(), item);
     assert_eq!(
-        2,
-        tiles.iter().filter(|tile| tile.as_str() == "@[").count(),
+        (1, 1),
+        (
+            tiles.iter().filter(|tile| tile.as_str() == "@[").count(),
+            tiles.iter().filter(|tile| tile.as_str() == "[").count()
+        ),
         "one ordinary attribute and one empty typed prefix remain visible: {tiles:?}"
     );
     assert!(
@@ -369,8 +372,8 @@ def tagged @[] (x : Type) -> Type { pure x }
 #[test]
 fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def bad @[A : Type, broken] (x : Type) -> Type { pure x }
-def good @[B : Type] (y : Type) -> Type { pure y }
+    let source = r#"def bad[A : Type, broken](x : Type) -> Type { pure x }
+def good[B : Type](y : Type) -> Type { pure y }
 "#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
@@ -380,7 +383,7 @@ def good @[B : Type] (y : Type) -> Type { pure y }
     let good = find_meld_with_tile(result.tree(), result.tree().root(), TileText::from("good"))
         .expect("the later valid definition survives prefix recovery");
     assert_eq!(
-        "def good @[B : Type] (y : Type) -> Type { pure y }",
+        "def good[B : Type](y : Type) -> Type { pure y }",
         text(result.tree(), good),
         "the surviving declaration is not absorbed by the malformed prefix"
     );

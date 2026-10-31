@@ -750,7 +750,7 @@ struct Context
     recursive: Option<Recursive>,
 }
 
-/// A model implicit among a context's binders, `@[s : Model(S) with sort x =
+/// A model implicit among a context's binders, `[s : Model(S) with sort x =
 /// A]`: the binders from `at` on, one per component, are its components,
 /// each named by the path a body reads it by, `s.x`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -778,8 +778,8 @@ struct Under
     /// Each binder as a parameter, `name : type, `, outermost first, but for
     /// a model implicit's components.
     parameters: String,
-    /// The model implicits among the binders, each written whole, ` @[s :
-    /// Model(S), …] `; empty when there is none.
+    /// The model implicits among the binders, each written whole, `[s :
+    /// Model(S), …]`; empty when there is none.
     implicits: String,
     /// The binders' names the parameters declare, and the types they bind.
     context: Context,
@@ -3794,8 +3794,8 @@ impl TypeTable
             .collect();
         models.sort_by_key(|&(modelled, _)| modelled);
         let constructors = self.families.naming();
-        // A call supplies its callee's implicits by name, `f[x = a](b)`, and a
-        // model implicit by the path its components read under, `f[s = M]`:
+        // A call supplies its callee's implicits by name, `f[.x = a](b)`, and a
+        // model implicit by the path its components read under, `f[.s = M]`:
         // the core applies every argument in place.
         let implicits: Vec<(ConstantIndex, Vec<Option<Name<'_>>>)> = self
             .telescopes
@@ -4101,7 +4101,7 @@ impl TypeTable
                 spelled.unspelled().is_empty().then_some(spelled)
             };
             if let Some(&slot) = starting.get(&at) {
-                let opener = if implicits.is_empty() { " @[" } else { ", " };
+                let opener = if implicits.is_empty() { "[" } else { ", " };
                 for part in [
                     opener,
                     slot.name.as_str(),
@@ -4146,7 +4146,7 @@ impl TypeTable
             at = at.saturating_add(1_usize);
         }
         if !implicits.is_empty() {
-            implicits.push_str("] ");
+            implicits.push(']');
         }
         Some(Under {
             parameters,
@@ -7195,7 +7195,7 @@ mod tests
     }
 
     /// A type naming a model implicit's components spells them by their
-    /// paths and reads back under the implicit declared whole, `@[s :
+    /// paths and reads back under the implicit declared whole, `[s :
     /// Model(Counter)]`, where every component's binder is written at the
     /// implicit's one name (#2364).
     #[test]
@@ -7203,7 +7203,7 @@ mod tests
     {
         let source = SourceText::from(
             "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read \
-             : (c : C) --> Integer; }\ndef stepped @[s : Model(Counter)] (c : s.C) -> -F Integer \
+             : (c : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer \
              { s.read(s.incr(c)) }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");

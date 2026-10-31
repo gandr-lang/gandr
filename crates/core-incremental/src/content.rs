@@ -2563,7 +2563,7 @@ pub enum DeclarationRoots
         /// content.
         stages: Vec<gandr_kernel_term::StageBound>,
         /// Each stage a call of the body supplies its callee's binder at,
-        /// `f[i = j]`, at the node of the value the call forces; empty for a
+        /// `f[.i = j]`, at the node of the value the call forces; empty for a
         /// declaration whose calls supply none. The checker holds a call to
         /// it, so a changed supply is changed content.
         supplies: Vec<(

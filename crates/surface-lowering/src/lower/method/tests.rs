@@ -172,7 +172,7 @@ fn a_mode_word_off_a_receiver_is_refused()
     let source = "def top(x : shared Integer) -> -F Integer { pure x }\n\
                   module M { def second(self : shared Integer, y : consumed Integer) -> -F \
                   Integer { pure y } }\n\
-                  def deduced @[m : Mode] (x : m Integer) -> -F Integer { pure 0 }\n\
+                  def deduced[m : Mode](x : m Integer) -> -F Integer { pure 0 }\n\
                   def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
                   def pick(t : Type, x : t) -> -F t { pure x }\n";
     let mut arena = CoreArena::new();
@@ -227,7 +227,7 @@ fn a_receiver_is_a_typed_first_self()
     let source = "module M {\n\
                   def untyped(self) -> -F Integer { pure 0 }\n\
                   def other(x : Integer) -> -F Integer { pure x }\n\
-                  def generic @[a : Type] (self : shared a) -> -F a { pure self }\n\
+                  def generic[a : Type](self : shared a) -> -F a { pure self }\n\
                   }\n\
                   def first() -> -F Integer { hold s = 1; s.untyped() }\n\
                   def second() -> -F Integer { hold s = 1; s.other() }\n\
@@ -260,8 +260,8 @@ fn a_receiver_is_a_typed_first_self()
 const PLACES: &str = r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 module Places {
-  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
-  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
+  def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+  def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
 }
 def head() -> -F Integer { hold xs = pair; run h <- xs.first(); pure h }
 def doubled() -> -F Integer { hold xs = pair; xs.first() as w { pure w + w } }
@@ -273,7 +273,7 @@ def untouched() -> -F Integer { hold xs = pair; xs.first() as w { abort(w) }; pu
 fn a_deduced_mode_is_erased_from_the_telescope()
 {
     let source = format!(
-        "{PLACES}module Unbound {{\n  def lost @[m : Mode] (self : k List(Integer)) -> -F \
+        "{PLACES}module Unbound {{\n  def lost[m : Mode](self : k List(Integer)) -> -F \
          View[m](Integer) {{ self[0] }}\n}}\n"
     );
     let mut arena = CoreArena::new();
@@ -342,9 +342,9 @@ fn a_view_method_answers_its_place_index()
 fn a_view_method_answering_no_place_is_refused()
 {
     let source = format!(
-        "{PLACES}module Misplaced {{\n  def valued @[m : Mode] (self : m List(Integer)) -> -F \
-         Integer {{ self[0] }}\n  def computed @[m : Mode] (self : m List(Integer)) -> -F \
-         View[m](Integer) {{ pure 0 }}\n  def crossed @[m : Mode, n : Mode] (self : m \
+        "{PLACES}module Misplaced {{\n  def valued[m : Mode](self : m List(Integer)) -> -F \
+         Integer {{ self[0] }}\n  def computed[m : Mode](self : m List(Integer)) -> -F \
+         View[m](Integer) {{ pure 0 }}\n  def crossed[m : Mode, n : Mode](self : m \
          List(Integer)) -> -F View[n](Integer) {{ self[0] }}\n}}\ndef stray(v : \
          View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(xs : List(Integer), i : Integer) \
          -> -F Integer {{ run y <- xs[i]; pure y }}\n"

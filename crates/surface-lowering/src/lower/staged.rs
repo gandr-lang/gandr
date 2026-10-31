@@ -1,5 +1,5 @@
 //! Definitions quantified over stages and regions in the lowering: the
-//! telescope `@[i : Size, j < i, r : Region]` after a function's name, the
+//! telescope `[i : Size, j < i, r : Region]` after a function's name, the
 //! staged types `Nat[i]` and `Nat[<i]` its parameter and result types write,
 //! and the region binders a kept type `A at r` names.
 //!
@@ -17,7 +17,7 @@
 //!
 //! # A call supplies a stage by name
 //!
-//! A call may state the stage of a binder of its callee, `applyAt[i = j](f,
+//! A call may state the stage of a binder of its callee, `applyAt[.i = j](f,
 //! x)`, inside a function quantified over `j`. The supply crosses beside the
 //! declaration making the call ([`crate::LoweredModule::supplies`]), at the
 //! value the call forces: the callee's binder by its ordinal and the stage the
@@ -140,7 +140,7 @@ enum Placement
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read the telescope `@[i : Size, j < i, r : Region, m : Mode]` a
+    /// Read the telescope `[i : Size, j < i, r : Region, m : Mode]` a
     /// function's name is followed by, when it is: file its stage binders'
     /// bounds, its region binders and its mode binders, and mark each staged
     /// type its parameter and result types write.
@@ -186,7 +186,7 @@ impl<'source> Lowerer<'_, 'source>
         cursor: &mut Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES)
+        let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN)
         else {
             return Ok(());
         };
@@ -324,7 +324,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The stages a call at `site` supplies the stage binders of the function
-    /// at `callee` at, `f[i = j]`, each such resident taken out of
+    /// at `callee` at, `f[.i = j]`, each such resident taken out of
     /// `supplied`.
     ///
     /// # Specification

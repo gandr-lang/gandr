@@ -531,7 +531,7 @@ fn add_type_rules(
         ]),
     ));
     // A type at a stage, `Nat[i]`, or below one, `Nat[<i]`: the stage a
-    // declaration's implicit `@[i : Size]` binds. Postfix in the path band,
+    // declaration's implicit `[i : Size]` binds. Postfix in the path band,
     // so `Nat[<i] => Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
@@ -743,7 +743,7 @@ fn add_type_rules(
         tile(TileLabel("type_variable")),
     ));
     // A type at a mode variable, `m List(Integer)`: a method's receiver
-    // `self : m T`, its mode the telescope's `@[m : Mode]`. The variable is
+    // `self : m T`, its mode the telescope's `[m : Mode]`. The variable is
     // also a whole type, `x : t`, so the two readings tie on the variable and
     // the token after it decides: a type continues this form, anything else
     // ends the variable. After the atom and the application, so `f(A)` keeps

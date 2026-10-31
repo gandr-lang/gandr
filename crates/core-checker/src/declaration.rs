@@ -488,7 +488,7 @@ pub struct Declaration
     /// each binder's stage by the binder's ordinal.
     stages: Vec<gandr_kernel_term::StageBound>,
     /// The stages a value declaration's calls supply their callees' binders
-    /// at, `f[i = j]`, each at the value its call forces; none for every
+    /// at, `f[.i = j]`, each at the value its call forces; none for every
     /// other declaration. The kernel never reads them.
     supplies: Vec<gandr_core_term::staged::Supply>,
     /// The model slots a value declaration's calls omit, each with the
@@ -860,8 +860,8 @@ impl Declaration
     ///   binder and a stage naming no binder.
     /// - ensures: a value declaration carries exactly `stages`; any other
     ///   declaration is returned unchanged.
-    /// - provides: how a producer attaches the binders a `@[i : Size]`
-    ///   signature states.
+    /// - provides: how a producer attaches the binders a `[i : Size]` signature
+    ///   states.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -897,7 +897,7 @@ impl Declaration
     ///   call's arguments show.
     /// - ensures: a value declaration carries exactly `supplies`; any other
     ///   declaration is returned unchanged.
-    /// - provides: how a producer attaches the stages `f[i = j]` supplies.
+    /// - provides: how a producer attaches the stages `f[.i = j]` supplies.
     /// - panics: none.
     ///
     /// # Adequacy

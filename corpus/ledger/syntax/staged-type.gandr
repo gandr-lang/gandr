@@ -5,4 +5,4 @@ data Nat : Type {
   Succ : (n : Nat) --> Nat;
 }
 @[ checks ]
-def kept @[i : Size] (n : Nat[i]) -> -F Nat[i] { return n }
+def kept[i : Size](n : Nat[i]) -> -F Nat[i] { return n }

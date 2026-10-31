@@ -419,18 +419,18 @@ enum Placed
     /// each classifier and the universe answer.
     Kind,
     /// The sort `Size` a stage binder of a function's telescope is read at,
-    /// `Size` in `def predAt @[i : Size] (…)`: the lowering reads the binder
+    /// `Size` in `def predAt[i : Size](…)`: the lowering reads the binder
     /// as a stage of the signature and forms no type for its sort, so the
     /// staged types naming the binder answer. Or a stage binder a call
-    /// supplies by name, `j` in `applyAt[i = j](f, x)`: the stage is erased
+    /// supplies by name, `j` in `applyAt[.i = j](f, x)`: the stage is erased
     /// from the core, so no node holds it, and the call answers.
     Stage,
     /// The sort `Region` a region binder of a function's telescope is read
-    /// at, `Region` in `def read @[r : Region] (…)`: the lowering reads the
+    /// at, `Region` in `def read[r : Region](…)`: the lowering reads the
     /// binder as a region of the signature and forms no type for its sort,
     /// so the kept types naming the binder answer.
     /// Or a row's label naming a region, as a label names its function's
-    /// region binder, `r` in `[r : Console]` beside `@[r : Region]`, or the
+    /// region binder, `r` in `[r : Console]` beside `[r : Region]`, or the
     /// function's instance from a row other than its result's: a region, no
     /// term, so the row answers (#2390).
     Region,
@@ -442,7 +442,7 @@ enum Placed
     /// The module a pack packs and the model type it states, `M` and
     /// `Model(T)` in `pack M at Model(T)`, the module or the caller's model
     /// implicit a call supplies a model implicit by, `M` or `t` in `f[s =
-    /// M]` and `f[s = t]` (#2364), or the model type a written
+    /// M]` and `f[.s = t]` (#2364), or the model type a written
     /// forgetting map states, `Model(T)` in `forget[sort C = A](m) at
     /// Model(T)` (#2218): the module is a namespace and the model type names
     /// the theory whose record the pack builds or whose map the call applies,
@@ -552,7 +552,7 @@ fn gated(
         }))
         .filter(|name| !name.is_empty())
         .collect();
-    // The stage binders the source declares, `j` in `@[j : Size]`, by name.
+    // The stage binders the source declares, `j` in `[j : Size]`, by name.
     let stages: BTreeSet<&str> = source
         .match_indices(": Size")
         .filter_map(|(at, _)| {
@@ -592,7 +592,7 @@ fn gated(
         })
         .flatten()
         .collect();
-    // The region binders a telescope writes, `r` in `@[r : Region]`, by name.
+    // The region binders a telescope writes, `r` in `[r : Region]`, by name.
     let regions: BTreeSet<String> = source
         .match_indices(": Region")
         .filter_map(|(at, _)| named(source.get(.. at).unwrap_or("")))
@@ -976,7 +976,7 @@ fn gated(
                     || ((def.label == "identifier" || def.label == "type_variable") && modelled)
             };
         // A module or a model implicit a call supplies a model implicit by,
-        // `M` in `f[s = M]` and `t` in `f[s = t]`.
+        // `M` in `f[.s = M]` and `t` in `f[.s = t]`.
         let packed = !melded
             && ((def.label == "constructor" && models.modules.contains(text.trim()))
                 || (def.label == "identifier" && modelled))
@@ -1012,7 +1012,7 @@ fn gated(
             && text == "Region"
             && parent.is_some_and(|(_, label, ..)| label == "def");
         // A row's label that names a region rather than binding an instance:
-        // one naming a region binder, `r` in `[r : Console]` beside `@[r :
+        // one naming a region binder, `r` in `[r : Console]` beside `[r :
         // Region]`, or one in a row other than a function's result, `o` in a
         // parameter's `+U (-F [o : Console] Unit)`.
         let naming = !melded

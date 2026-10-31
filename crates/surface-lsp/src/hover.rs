@@ -2645,11 +2645,11 @@ mod tests
     fn a_model_implicit_hovers_its_model_type_2407()
     {
         let text = SourceText::from(
-            "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n}\ndef stepped @[s : \
+            "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n}\ndef stepped[s : \
              Model(Tally)] (c : s.C) -> s.C { s.incr(c) }\n",
         );
         assert_eq!(
-            shown(text, (4.into(), 14.into())),
+            shown(text, (4.into(), 12.into())),
             Ok(String::from("```gandr\ns : Model(Tally)\n```"))
         );
     }

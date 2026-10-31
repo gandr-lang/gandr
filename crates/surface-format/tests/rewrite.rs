@@ -336,12 +336,12 @@ fn a_result_at_a_region_keeps_its_returner_2325()
 {
     let grammar = grammar();
     let source = "\
-def pass @[r : Region] (k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
+def pass[r : Region](k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
   pure k
 }
 ";
     let sugared = "\
-def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
+def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
   pure k
 }
 ";
@@ -374,11 +374,11 @@ def apply(k : +U (Unit -> -F [Div] Unit)) -> -F [Div] Unit {
   k(unit)
 }
 
-def tailed @[r : Row] () -> -F [Div | r] Unit {
+def tailed[r : Row]() -> -F [Div | r] Unit {
   pure unit
 }
 
-def open @[r : Row] () -> -F [r] Unit {
+def open[r : Row]() -> -F [r] Unit {
   pure unit
 }
 ";
@@ -395,11 +395,11 @@ def apply(k : +U (Unit -> -F [Div] Unit)) -> [Div] Unit {
   k(unit)
 }
 
-def tailed @[r : Row] () -> [Div | r] Unit {
+def tailed[r : Row]() -> [Div | r] Unit {
   pure unit
 }
 
-def open @[r : Row] () -> [r] Unit {
+def open[r : Row]() -> [r] Unit {
   pure unit
 }
 ";
@@ -427,7 +427,7 @@ def both() -> -F [Div, out : Console] Unit {
   out.print(\"said\")
 }
 
-def tailed @[r : Row] () -> -F [d : Console, Div | r] Unit {
+def tailed[r : Row]() -> -F [d : Console, Div | r] Unit {
   pure unit
 }
 ";
@@ -440,7 +440,7 @@ def both() -> [Div, out : Console] Unit {
   out.print(\"said\")
 }
 
-def tailed @[r : Row] () -> [d : Console, Div | r] Unit {
+def tailed[r : Row]() -> [d : Console, Div | r] Unit {
   pure unit
 }
 ";

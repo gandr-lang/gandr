@@ -295,7 +295,7 @@ fn the_resolved_comparisons_read_back_2429()
     assert!(
         reads
             .iter()
-            .any(|read| read.spelled.contains("eq[e = EqInteger](x, y)")),
+            .any(|read| read.spelled.contains("eq[.e = EqInteger](x, y)")),
         "a resolved model is written by its path"
     );
     let unread: Vec<(&str, &RoundTrip)> = reads

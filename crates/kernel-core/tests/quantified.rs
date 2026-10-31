@@ -99,7 +99,7 @@ fn below_i(path: &[PlacedChild]) -> StageMark
     )
 }
 
-/// `applyAt @[i : Size] (f : U (Nat[<i] → F Nat), x : Nat[<i]) : F Nat =
+/// `applyAt[i : Size] (f : U (Nat[<i] → F Nat), x : Nat[<i]) : F Nat =
 /// (force f) x`: the plain type `U (U (Nat → F Nat) → Nat → F Nat)`, the
 /// stage signature `signature` beside it, admitted by the kernel or refused.
 ///
@@ -220,7 +220,7 @@ fn a_call_handing_the_scrutinee_is_refused()
     );
 }
 
-/// #1227: `sameAt @[i : Size] (f : U (Nat[i] → F Nat), x : Nat[i])`. The
+/// #1227: `sameAt[i : Size] (f : U (Nat[i] → F Nat), x : Nat[i])`. The
 /// claim's domain bounds `i` from above at one below the recursion's stage
 /// and the field bounds it from below at its own: they agree at the field's.
 /// The scrutinee bounds it from below at the recursion's stage, which no
@@ -323,7 +323,7 @@ fn a_call_at_no_stage_reads_its_result_plain()
     assert!(admitted.is_ok(), "{admitted:?}");
 }
 
-/// `boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) : F
+/// `boundedAt[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) : F
 /// Nat[<j] = return y`: the plain type `U (Nat → Nat → F Nat)` with `x` at
 /// `j`, `y` at `k` and the result one below `j`.
 ///

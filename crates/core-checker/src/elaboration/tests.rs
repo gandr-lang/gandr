@@ -1503,7 +1503,7 @@ fn a_model_slot_no_candidate_answers_is_refused_739()
 #[test]
 fn a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317()
 {
-    // `fromZero()` over `@[s : Model(Tally) with sort C = Integer]`: the slot
+    // `fromZero()` over `[s : Model(Tally) with sort C = Integer]`: the slot
     // binds the step alone, nothing forces it, and the sort is fixed, so only
     // the fixed sort tells `Up`, over the integers, from `Flips`, over the
     // unit type. A fixed type reading a binder of the callee tests nothing.

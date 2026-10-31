@@ -37,7 +37,7 @@
 //! # A deduced mode lends the place the method answers
 //!
 //! A method whose receiver is written at a mode its telescope binds, `def
-//! f @[m : Mode] (self : m T, …) -> -F View[m](a) { self[e] }`, answers the
+//! f[m : Mode] (self : m T, …) -> -F View[m](a) { self[e] }`, answers the
 //! place `self[e]` of its receiver: never a value, and never a lens. It lowers
 //! to the function answering the place's index, which lends its receiver's
 //! place shared to judge the element there at `a`: `hold p = self ; access

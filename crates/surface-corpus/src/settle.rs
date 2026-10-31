@@ -2646,16 +2646,16 @@ mod tests
     {
         let rows = [
             (
-                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;"#,
+                r#"@[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;"#,
                 Settlement::Settled,
             ),
             (
-                r#"@[ refuses("TypeMismatch") ] def f @[a : Type] = 1 ;"#,
+                r#"@[ refuses("TypeMismatch") ] def f[a : Type] = 1 ;"#,
                 Settlement::Unsettled,
             ),
-            (r#"def f @[a : Type] = 1 ;"#, Settlement::Unsettled),
+            (r#"def f[a : Type] = 1 ;"#, Settlement::Unsettled),
             (
-                r#"def f : Integer ; @[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;"#,
+                r#"def f : Integer ; @[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;"#,
                 Settlement::Settled,
             ),
         ];

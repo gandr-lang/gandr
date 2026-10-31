@@ -4513,7 +4513,7 @@ enum Resident<Node>
 {
     /// The argument, walked where it stands.
     Node(Node),
-    /// The path, written as it reads: `M` in `f[s = M]`.
+    /// The path, written as it reads: `M` in `f[.s = M]`.
     Path(String),
 }
 
@@ -9395,7 +9395,7 @@ impl Walk<'_, '_>
     ///   (#1102). Where the head forces a constant whose telescope
     ///   ([`Source::implicits`]) names an implicit at the place of an argument
     ///   the call writes, and the spine is read whole, the join is instead the
-    ///   form `f[x = a, …](b, …)`: the head, then each such argument after its
+    ///   form `f[.x = a, …](b, …)`: the head, then each such argument after its
     ///   implicit's name in the telescope's order, then the rest in place, each
     ///   visited in that order. A forced function literal — a thunk, or a
     ///   computation nested where a value is read, which a force decides as a
@@ -9590,7 +9590,7 @@ impl Walk<'_, '_>
             }
         }
         // A callee whose telescope names an implicit at an argument's place
-        // takes that argument by name, `f[x = a](b)`, where the spine is read
+        // takes that argument by name, `f[.x = a](b)`, where the spine is read
         // whole: the core applies every argument in place, and the
         // parentheses admit only the explicit ones. A model implicit's
         // components are supplied by the one path each reads under, `f[s =
@@ -9680,11 +9680,11 @@ impl Walk<'_, '_>
                 match *resident {
                     Resident::Node(_) => {
                         let _ = parts
-                            .text(format!("{} = ", name.as_ref()))
+                            .text(format!(".{} = ", name.as_ref()))
                             .piece(Binding::ARGUMENT);
                     },
                     Resident::Path(ref path) => {
-                        let _ = parts.text(format!("{} = {path}", name.as_ref()));
+                        let _ = parts.text(format!(".{} = {path}", name.as_ref()));
                     },
                 }
             }

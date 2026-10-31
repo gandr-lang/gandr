@@ -53,7 +53,7 @@
 //! scope and hold the checker entered, outermost first, each named as the
 //! source writes the capability or the held slot, so a kept type reads `at c`
 //! rather than `at ?`. A region the failing definition abstracts,
-//! `@[r : Region]`, is named as its telescope writes it, by the lowering's
+//! `[r : Region]`, is named as its telescope writes it, by the lowering's
 //! [`LoweredModule::region_names`]. The alternative, a spelling per
 //! diagnostic, is the arena copy the section above declines.
 //!

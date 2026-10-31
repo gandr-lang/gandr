@@ -1,5 +1,5 @@
 //! Model implicits, flattened: a function quantifying over a model in its
-//! prefix block, `@[s : Model(S)]`, binds one implicit parameter per component
+//! prefix block, `[s : Model(S)]`, binds one implicit parameter per component
 //! of the signature `S` derives — each sort at its universe, each operation,
 //! constant and law at its derived type, in signature order, each later one
 //! read under the ones before it — and no parameter holding a record of the
@@ -12,16 +12,16 @@
 //! `s.op` as the variables of their parameters. A model a function quantifies
 //! over is never a value of its own, so `s` named alone is refused,
 //! [`LoweringRefusal::ModelImplicitValue`]. A sort a manifest model type
-//! fixes, `@[s : Model(S) with sort x = A]`, binds no parameter: `s.x` reads
+//! fixes, `[s : Model(S) with sort x = A]`, binds no parameter: `s.x` reads
 //! `A`, as it reads off a binder held at that type. A nested component's model
 //! stays the record of its theory, one parameter.
 //!
 //! # A supply names a module or a model
 //!
-//! `f[s = M]` passes the module `M`'s members, one per component, as `pack M
+//! `f[.s = M]` passes the module `M`'s members, one per component, as `pack M
 //! at Model(S)` reads them: a module of a theory that includes `S` passes the
 //! members `S` places, its reduct, and a module wanting one is refused as the
-//! pack is. `f[s = t]`, for a model implicit `t` of the caller's, passes `t`'s
+//! pack is. `f[.s = t]`, for a model implicit `t` of the caller's, passes `t`'s
 //! component of each name. Anything else a slot is supplied is refused,
 //! [`LoweringRefusal::ModelImplicitValue`]: a model implicit is supplied by a
 //! path, never by a value.
@@ -243,7 +243,7 @@ pub(in crate::lower) enum Supplied
     Nominated(Vec<HoleId>),
 }
 
-/// A model implicit as its declaration writes it, `@[s : Model(S) with sort x
+/// A model implicit as its declaration writes it, `[s : Model(S) with sort x
 /// = A]`: what a printed telescope writes in place of the parameters its
 /// components bind.
 ///

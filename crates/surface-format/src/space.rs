@@ -70,25 +70,15 @@ const FACE: &[RCtxStep] = &[RCtxStep {
     crossed: StepSym::Tile("="),
 }];
 
-/// The rules whose `@[` opens a block of attributes, padded by its brackets:
-/// a declaration's, a module member's and a theory member's; any other `@[`
-/// opens an implicit telescope, hugged by them.
-const ATTRIBUTES: [&str; 3] = [
-    "attribute_block",
-    "attributed_module_member",
-    "theory_declaration",
-];
-
 /// The rules whose `#{` opens a module signature, padded by its braces; any
 /// other `#{` opens a record, hugged by them.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
 
 /// The rules a `<` or `>` marks the bound or direction it touches in.
-const MARKS: [&str; 4] = [
+const MARKS: [&str; 3] = [
     "staged_type",
     "instantiation.direction.descent",
     "instantiation.direction.productivity",
-    "instantiation.named_measure",
 ];
 
 /// The keywords whose parenthesis lists binders, one space after the keyword:
@@ -114,8 +104,6 @@ pub enum Context
     Binding,
     /// The `{` of a sum, a lazy record or a shape's face.
     Telescope,
-    /// The `@[` of an implicit telescope, set apart from a `(` after it.
-    Implicit,
     /// The `#{` of a module signature.
     Signature,
     /// Any other token.
@@ -158,7 +146,6 @@ impl Context
             "[" if APART.contains(&rule) => Self::Operand,
             "{" if TELESCOPES.contains(&rule) => Self::Telescope,
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
-            "@[" if !ATTRIBUTES.contains(&rule) => Self::Implicit,
             "#{" if SIGNATURES.contains(&rule) => Self::Signature,
             "+" | "&" if TELESCOPES.contains(&rule) => Self::Prefix,
             "-" if rule == "unary_expression" || rule == "universe_type" => Self::Prefix,
@@ -185,7 +172,7 @@ pub enum Join
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Padding
 {
-    /// They do: `(x)`, `[x]`, `#{a, b}`, `+{a : A}`, `@[r : Row]`.
+    /// They do: `(x)`, `[x]`, `#{a, b}`, `+{a : A}`, `[r : Row]`.
     Hug,
     /// One space stands inside each: `{ x }`, `@[ checks ]`, `#{ type T }`.
     Pad,
@@ -215,7 +202,7 @@ pub fn padding(open: Token<'_>) -> Padding
 {
     match <&str>::from(open.text) {
         "@[" | "{" => match open.context {
-            Context::Telescope | Context::Implicit | Context::Written => Padding::Hug,
+            Context::Telescope | Context::Written => Padding::Hug,
             Context::Operand
             | Context::Prefix
             | Context::Binding
@@ -228,7 +215,6 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Prefix
             | Context::Binding
             | Context::Telescope
-            | Context::Implicit
             | Context::Plain
             | Context::Written => Padding::Hug,
         },
@@ -295,25 +281,14 @@ enum Wordlike
 }
 
 /// Whether `left` ends an operand a bracket or a `.` after it applies to: a
-/// word, material, or the closer of a hugging group other than an implicit
-/// telescope.
+/// word, material, or the closer of a hugging group.
 ///
 /// # Specification
 /// trivial.
 fn applied(left: Token<'_>) -> Wordlike
 {
     match left.kind {
-        Kind::Material => Wordlike::Yes,
-        Kind::Close(Padding::Hug) => match left.context {
-            Context::Implicit => Wordlike::No,
-            Context::Operand
-            | Context::Prefix
-            | Context::Binding
-            | Context::Telescope
-            | Context::Signature
-            | Context::Plain
-            | Context::Written => Wordlike::Yes,
-        },
+        Kind::Material | Kind::Close(Padding::Hug) => Wordlike::Yes,
         Kind::Token => word(left.text),
         Kind::Open | Kind::Close(Padding::Pad) | Kind::Comment => Wordlike::No,
     }
@@ -371,7 +346,6 @@ pub fn join(
             Context::Operand
             | Context::Prefix
             | Context::Telescope
-            | Context::Implicit
             | Context::Signature
             | Context::Plain
             | Context::Written => Join::Touch,

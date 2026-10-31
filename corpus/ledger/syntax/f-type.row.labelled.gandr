@@ -2,6 +2,6 @@
 /// an interface whole and an instance by its label, open through a row
 /// variable after the bar.
 @[ checks ]
-def idle @[r : Row] () -> -F [Div, d : Console | r] Unit {
+def idle[r : Row]() -> -F [Div, d : Console | r] Unit {
   pure unit
 }

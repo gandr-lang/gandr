@@ -1506,7 +1506,7 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     // in an include, and its own `eq` shadows the prelude's; alone, it reads
     // neither.
     let pbg = grammar();
-    let source = "theory Decided { include Eq; }\ndef same @[e : Model(Eq)] (a : e.Carrier, b \
+    let source = "theory Decided { include Eq; }\ndef same[e : Model(Eq)](a : e.Carrier, b \
                   : e.Carrier) -> Bool { e.eq(a, b) }\ndef eq(a : Bool) -> Bool { a }\ndef \
                   mine() -> Bool { eq(true) }\n";
     let (text, unit) =
@@ -2569,16 +2569,16 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
     let pbg = grammar();
     let base = SourceText::from(concat!(
         "pub data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n",
-        "pub def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\n",
-        "def appliedAt @[j : Size, k : Size] (f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
-        "  applyAt[i = k](f, x)\n}\n",
-        "def crossed @[s : Region, r : Region] (k : (() => Integer) at r, j : (() => Integer) \
+        "pub def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\n",
+        "def appliedAt[j : Size, k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
+        "  applyAt[.i = k](f, x)\n}\n",
+        "def crossed[s : Region, r : Region](k : (() => Integer) at r, j : (() => Integer) \
          at s) -> -F Integer {\n  force k\n}\n",
         "pub theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
          read : (c : C) --> Integer; }\n",
         "pub module Up : Model(Counter) {\n  type C = Integer;\n  def zero = 0;\n  def incr(c : \
          Integer) -> -F Integer { c + 1 }\n  def read(c : Integer) -> -F Integer { c }\n}\n",
-        "pub def stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
+        "pub def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
         "def omitted() -> -F Integer { stepped(4) }\n",
         "pub theory StatePutLaws {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
          (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put(s, \
@@ -2593,11 +2593,11 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
     ));
     let document = SourceText::from(concat!(
         "import \"./base.gandr\" ;\n",
-        "def appliedAgain @[k : Size] (f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
-        "  applyAt[i = k](f, x)\n}\n",
-        "def crossedAgain @[r : Region] (k : (() => Integer) at r) -> -F Integer {\n  force \
+        "def appliedAgain[k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
+        "  applyAt[.i = k](f, x)\n}\n",
+        "def crossedAgain[r : Region](k : (() => Integer) at r) -> -F Integer {\n  force \
          k\n}\n",
-        "def fixed @[s : Model(Counter) with sort C = Integer] (c : Integer) -> -F Integer { \
+        "def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F Integer { \
          s.read(s.incr(c + s.zero)) }\n",
         "def omittedAgain() -> -F Integer { stepped(5) }\n",
         "def forgetfulAgain() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \

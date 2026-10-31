@@ -195,7 +195,7 @@ fn the_printer_decides_every_inner_space()
                   def  f ( x:Integer , y : Integer ) -> -F Integer{ return x+y ;}\n\
                   def p = #{ a = 1 , b = - 2 } ;\n\
                   def q : +{ A : Integer , B : Unit } ;\n\
-                  def g @[ r : Row ]( k : Integer ) -> [ Div | r ] Unit { pure unit }\n\
+                  def g[ r : Row ]( k : Integer ) -> [ Div | r ] Unit { pure unit }\n\
                   def l = \\ x . x ;\n\
                   def c = thunk { fn( x ) { x } } ;\n\
                   def m = r . a [ 0 ] ;\n\
@@ -209,7 +209,7 @@ fn the_printer_decides_every_inner_space()
          def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
          def p = #{a = 1, b = -2};\n\
          def q : +{A : Integer, B : Unit};\n\
-         def g @[r : Row] (k : Integer) -> [Div | r] Unit { pure unit }\n\
+         def g[r : Row](k : Integer) -> [Div | r] Unit { pure unit }\n\
          def l = \\x. x;\n\
          def c = thunk { fn (x) { x } };\n\
          def m = r.a[0];\n\
