@@ -47,15 +47,14 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the static-argument bracket: the implicit telescope `[ … ]`, dotted
-/// supplies with puns and named-stage claims, and punned record entries.
-const BUILT_IN_FINGERPRINT: u64 = 0x56d0_51c7_d2a5_74c1;
+/// the as-pattern named first, `x @ p` and its dotted alias `x .@ p`.
+const BUILT_IN_FINGERPRINT: u64 = 0x6b24_7801_0ddb_d5f1;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3362);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3363);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -86,6 +85,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-F", 3),
     (".", 48),
     ("..", 3),
+    (".@", 1),
     (":", 284),
     (":>", 2),
     (";", 251),
@@ -105,6 +105,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (">=", 1),
     (">>", 1),
     ("?", 4),
+    ("@", 1),
     ("@[", 4),
     ("Any", 1),
     ("Boolean", 1),
@@ -130,7 +131,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("access", 1),
     ("acquire", 20),
     ("admitted", 2),
-    ("as", 85),
+    ("as", 84),
     ("at", 3),
     ("become", 1),
     ("bind", 9),

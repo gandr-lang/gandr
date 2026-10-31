@@ -1708,12 +1708,18 @@ fn patterns(
         or,
         seq([h(s), t(TileLabel("|")), h(s)]),
     ));
+    // The as-pattern names its match first, `x @ p`, or glued through the
+    // dotted alias, `x .@ p`: a glued `x@[` would open an attribute block.
     out.push(r(
         RuleName("as_pattern"),
         Provenance("as_pattern"),
         s,
         as_p,
-        seq([h(s), t(TileLabel("as")), t(TileLabel("identifier"))]),
+        seq([
+            t(TileLabel("identifier")),
+            alt([t(TileLabel("@")), t(TileLabel(".@"))]),
+            h(s),
+        ]),
     ));
 }
 
@@ -2288,9 +2294,10 @@ struct PatternPrecs
 {
     /// The alternation `p | q`.
     or: Prec,
-    /// The binding `p as x`.
+    /// The binding `x @ p`.
     as_p: Prec,
-    /// The word cons `g ∷ p`, right-associative, between `as` and the atoms.
+    /// The word cons `g ∷ p`, right-associative, between the binding and the
+    /// atoms.
     cons: Prec,
     /// Every atomic pattern.
     atom: Prec,

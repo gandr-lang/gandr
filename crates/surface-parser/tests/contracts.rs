@@ -225,7 +225,7 @@ fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Box<dyn Erro
             Sort::Pattern,
             Sort::Pattern,
         ]),
-        ("def f = case c { ? as whole => 0 };", &[Sort::Pattern]),
+        ("def f = case c { whole @ ? => 0 };", &[Sort::Pattern]),
         // The scrutinee's hole is an expression, the arm's is a pattern, and
         // the arm body's is an expression again — one spelling, three slots.
         ("def f = case ? { ? => ?body };", &[

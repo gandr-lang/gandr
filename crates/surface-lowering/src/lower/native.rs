@@ -5730,12 +5730,14 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::AS_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
-            let inner = here.one(cursor.operands())?;
-            closed(here, &mut cursor, TileName::AS)?;
             let Maybe::Present(alias) = cursor.tile(TileName::IDENTIFIER)
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
+            if let Maybe::Absent(_) = cursor.tile(TileName::AT_SIGN) {
+                closed(here, &mut cursor, TileName::DOT_AT)?;
+            }
+            let inner = here.one(cursor.operands())?;
             exhausted(here, &cursor)?;
             let parts = allocated(patterns, work, &[
                 Queued {

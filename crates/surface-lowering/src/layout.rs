@@ -8,7 +8,7 @@
 //! ```text
 //! def same(n : Integer) -> -F Integer {
 //!   case n {{
-//!     0 as zero => return zero,
+//!     zero @ 0 => return zero,
 //!     _ => return n
 //!   }
 //! }

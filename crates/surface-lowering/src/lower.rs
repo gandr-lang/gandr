@@ -26757,14 +26757,14 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
-        let case = "def same(n : Integer) -> -F Integer {\n  case n {{\n    0 as zero => return \
+        let case = "def same(n : Integer) -> -F Integer {\n  case n {{\n    zero @ 0 => return \
                     zero,\n    _ => return n\n  }\n}\n";
         let access = "def bump() -> -F Integer {\n  hold c = 0;\n  access c as v { resume(v, v + \
                       1) ;\n  pure c\n}\n";
         let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
                       c.exit(1);\n    return n\n  with {\n    pure(x) => pure x,\n    oper \
                       exit(code, k) => k(unit)\n  }\n}\n";
-        let unopened = "def same(n : Integer) -> -F Integer {\n  case n\n    0 as zero => \
+        let unopened = "def same(n : Integer) -> -F Integer {\n  case n\n    zero @ 0 => \
                         return zero,\n    _ => return n\n  }\n}\n";
         let quoted = "def numbers : List((Integer) ;\ndef numbers = cons(1, nil) ;\n";
         let after = |source: &str, written: &str| {

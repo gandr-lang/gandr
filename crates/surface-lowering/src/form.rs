@@ -392,7 +392,7 @@ impl FormName
     pub const LITERAL_PATTERN: Self = Self("literal_pattern");
     /// The or-pattern `p | q`.
     pub const OR_PATTERN: Self = Self("or_pattern");
-    /// The as-pattern `p as x`.
+    /// The as-pattern `x @ p`, or `x .@ p`.
     pub const AS_PATTERN: Self = Self("as_pattern");
     /// The list pattern `[p, …]`.
     pub const LIST_PATTERN: Self = Self("list_pattern");
@@ -516,6 +516,10 @@ impl TileName
     pub const ADMITTED: Self = Self("admitted");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
+    /// The as-pattern's `@`, `x @ p`.
+    pub const AT_SIGN: Self = Self("@");
+    /// The as-pattern's dotted `.@`, `x .@ p`.
+    pub const DOT_AT: Self = Self(".@");
     /// The bang `!` marking a shared fork, and the send session type's lead.
     pub const BANG: Self = Self("!");
     /// The bar `|` that may lead a case arm.
