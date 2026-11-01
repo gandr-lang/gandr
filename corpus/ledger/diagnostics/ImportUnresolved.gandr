@@ -2,6 +2,6 @@
 import "./circle-absent.gandr" ;
 
 @[ refuses("ImportUnresolved") ]
-data Point : Type {
-  Here : Point;
+data Point : Type where {
+  | Here
 }

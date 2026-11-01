@@ -1,9 +1,9 @@
 /// `coverage`: a match is checked for missing and unreachable arms; every `Shape` meets one arm here, with no wildcard to hide a gap.
 @[ checks ]
-data Shape : Type {
-  Dot : Shape;
-  Line : (n : Integer) --> Shape;
-  Pair : (a : Shape, b : Shape) --> Shape;
+data Shape : Type where {
+  | Dot
+  | Line(n : Integer)
+  | Pair(a : Shape, b : Shape)
 }
 
 /// Each arm takes values the arms before it left: the literal `0` before the variable that takes every other length, and a pair split on its left part.

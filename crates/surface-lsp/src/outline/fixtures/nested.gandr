@@ -1,0 +1,15 @@
+/// Doubles nothing.
+@[ checks ]
+def twice(x: Integer) -> -F Integer {
+  return x
+}
+def answer = 42 ;
+@[ checks ]
+data Color : Type where { | Red }
+module Outer {
+  def inner = 1 ;
+  module Nested {
+    def deep = 2 ;
+  }
+}
+world seat ;

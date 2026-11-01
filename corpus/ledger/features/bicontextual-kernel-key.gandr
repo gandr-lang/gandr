@@ -9,27 +9,27 @@
 /// - see: crates/kernel-core/src/support.rs
 
 /// The naturals `side` answers.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero
   /// The natural after `n`.
-  Succ : (n : Nat) --> Nat;
+  | Succ(n : Nat)
 }
 
 /// A flag, on or off.
-data Flag : Type {
+data Flag : Type where {
   /// On.
-  On : Flag;
+  | On
   /// Off.
-  Off : Flag;
+  | Off
 }
 
 /// A natural or a flag.
-data Either : Type {
+data Either : Type where {
   /// A natural.
-  Count : (m : Nat) --> Either;
+  | Count(m : Nat)
   /// A flag.
-  Mark : (f : Flag) --> Either;
+  | Mark(f : Flag)
 }
 
 /// Answers `n` whichever side `e` takes, each branch under the field it binds.

@@ -5173,8 +5173,7 @@ mod tests
         // The fold's nested calls and `told`'s are elaborated: the closure's
         // nodes are located before the document's lowering, the document's
         // after it.
-        let closure_text = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : \
-                            Int) --> Int;\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\ndef \
+        let closure_text = "data Int : Type where {\n  | Z\n  | S(x : Int)\n  | P(x :  Int)\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\ndef \
                             rec tell(n : Int) -> -F Int {\n  case n {\n    Z => Z,\n    S(x) \
                             => S(tell[<](x)),\n    P(x) => P(tell[<](x))\n  }\n}\ndef one : \
                             Integer ;\ndef one = 1 ;\ndef owed : Integer ;\ndef lost = nowhere \
@@ -6885,25 +6884,7 @@ def delivered() -> -F Unit {
     fn a_nested_call_checks_to_the_certificate_of_its_bind()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "data Int : Type {\n\
-             Z : Int;\n\
-             S : (x : Int) --> Int;\n\
-             P : (x : Int) --> Int;\n\
-             rule S(P(x)) ==> x;\n\
-             rule P(S(x)) ==> x;\n\
-             }\n\
-             def rec dbl(n : Int) -> -F Int {\n\
-             case n { Z => Z, S(x) => S(S(dbl[<](x))), P(x) => P(P(dbl[<](x))) }\n\
-             }\n\
-             def rec bound(n : Int) -> -F Int {\n\
-             case n {\n\
-             Z => Z,\n\
-             S(x) => { run d <- bound[<](x) ; S(S(d)) },\n\
-             P(x) => { run d <- bound[<](x) ; P(P(d)) }\n\
-             }\n\
-             }\n",
-        );
+        let source = SourceText::from(include_str!("compose/fixtures/nested-int.gandr"));
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
             .expect("the module lowers")
@@ -7045,7 +7026,7 @@ def delivered() -> -F Unit {
         };
         assert_eq!(
             unused(
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef pick(n : Nat, \
+                "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef pick(n : Nat, \
                  m : Nat) -> -F Nat {\n  run k <- pure Succ(n) ;\n  case n {\n    Zero => n,\n    \
                  Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fn (y) { Zero } } ;\n"
             ),
@@ -7856,7 +7837,7 @@ def delivered() -> -F Unit {
 
         let grammar = grammar();
         let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\nrec {\n  data \
+            "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n\nrec {\n  data \
              ULevel : Nat -> Type {\n    NatV : (n : Nat) --> ULevel(n);\n    TypeV : (n : Nat) \
              --> ULevel(Succ(n));\n    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> \
              -F ULevel(n))) --> ULevel(n);\n  }\n\n  def rec elLevel(n : Nat, u : ULevel(n)) -> \

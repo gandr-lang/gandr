@@ -160,7 +160,7 @@ mod tests
     fn an_unresolved_name_is_offered_the_import_declaring_it()
     {
         let far = declared(SourceText::from(
-            "pub data Shape : Type {\n  Circle : Shape;\n}\npub def faraway : Integer ;\ndef \
+            "pub data Shape : Type where {\n  | Circle\n}\npub def faraway : Integer ;\ndef \
              faraway = 7 ;\n",
         ));
         let twin = declared(SourceText::from(

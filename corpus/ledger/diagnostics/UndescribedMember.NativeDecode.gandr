@@ -1,7 +1,7 @@
 /// `UndescribedMember.NativeDecode`: a codata observation at a type the native description reading cannot interpret.
 @[ checks ]
-data Big : Type[+, 1] {
-  Mk : Big;
+data Big : Type[+, 1] where {
+  | Mk
 }
 
 @[ refuses("UndescribedMember.NativeDecode") ]

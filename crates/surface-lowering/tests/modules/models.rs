@@ -84,8 +84,8 @@ fn a_derived_signature_states_what_the_written_one_does()
 fn a_lowered_theory_exposes_its_description_and_its_model()
 {
     let source = format!(
-        "data Flag : Type {{ Off : Flag; On : Flag; }}\n{SIGN}module Setoids : Model(CatShape) \
-         {{\n  {SETOIDS}}}\n"
+        "data Flag : Type where {{ | Off | On }}\n{SIGN}module Setoids : Model(CatShape) \
+         {{\n  {{SETOIDS}}}}\n"
     );
     let lowered = lower(source.as_str());
     let theories: Vec<_> = lowered.module.theories().collect();
@@ -703,7 +703,7 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 #[test]
 fn a_stated_law_is_a_component_a_model_proves_2356()
 {
-    let source = "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type {\n  Only : One;\n}\nmodule Proved : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n  law trans admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n  law refl admitted;\n}\n";
+    let source = "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type where {\n  | Only\n}\nmodule Proved : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n  law trans admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n  law refl admitted;\n}\n";
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for (path, role, amounts) in [
@@ -746,7 +746,7 @@ fn an_omitted_law_is_discharged_by_the_checker_4112()
 {
     let source = "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
                   Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
-                  true);\n}\ndata One : Type {\n  Only : One;\n}\nmodule Converts : Model(Same) \
+                  true);\n}\ndata One : Type where {\n  | Only\n}\nmodule Converts : Model(Same) \
                   with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true \
                   }\n}\nmodule Parts : Model(Same) with sort Carrier = One {\n  def same(a : \
                   One, b : One) -> Bool { false }\n}\n";
@@ -1209,8 +1209,7 @@ fn a_family_sort_is_a_function_into_the_universe()
 }
 
 /// The data a computation carrier wraps.
-const MAYBE: &str = "data Maybe(a : Type) : Type {\n  None : Maybe(a);\n  Some : (x : a) --> \
-                     Maybe(a);\n}\n";
+const MAYBE: &str = "data Maybe(a : Type) : Type where {\n  | None\n  | Some(x : a)\n}\n";
 
 /// A `Type[-]` sort is a family, or a type, into the computation types: a
 /// module answering it with computation types checks and its model type is the
@@ -2118,8 +2117,7 @@ fn a_theory_s_terms_are_its_operations_over_its_rules_4143()
 {
     let askers = "def neutral : Terms(Mag) = Mag.one;\ndef twice : Terms(Mag) = \
                   Mag.mul(Mag.one, Mag.one);\ndef again : Terms(Mag) = Mag.one;\n";
-    let by_hand = "data MagTerms : Type {\n  One : MagTerms;\n  Mul : (x : MagTerms, y : MagTerms) \
-                   --> MagTerms;\n  rule Mul(One, x) <=> x;\n  rule Mul(x, One) <=> x;\n}\n";
+    let by_hand = "data MagTerms : Type where {\n  | One\n  | Mul(x : MagTerms, y : MagTerms)\n  rule Mul(One, x) <=> x;\n  rule Mul(x, One) <=> x;\n}\n";
     let source = format!("{MAG}{by_hand}{askers}");
     let mut lowered = lower(source.as_str());
     let found = rows(&lowered);

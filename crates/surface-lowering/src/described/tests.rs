@@ -586,8 +586,7 @@ fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 fn an_indexed_family_s_operation_answers_at_its_index_2940()
 {
     let source = SourceText::from(
-        "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\ndata Skip : N -> Type {\n  Halt : \
-         Skip(Z);\n  oper skip(k : Skip(Z)) -> Skip(Z);\n  oper climb(c : Skip(Z)) -> \
+        "data N : Type where {\n  | Z\n  | S(n : N)\n}\ndata Skip : N -> Type where {\n  | Halt : Skip(Z)\n  oper skip(k : Skip(Z)) -> Skip(Z);\n  oper climb(c : Skip(Z)) -> \
          Skip(S(Z));\n  rule skip(k) ==> k;\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
@@ -601,7 +600,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
         }) => Some((usize::from(tag), fields.clone())),
         Some(_) | None => None,
     };
-    let natural = ty(entry(&types, span("Z :", "Z"), DescribedRole::Name));
+    let natural = ty(entry(&types, span("| Z", "Z"), DescribedRole::Name));
 
     let port = entry(&types, span("(k :", "k"), DescribedRole::Name);
     let Some(ValueType::Data { ref arguments, .. }) = ty(port)
@@ -686,7 +685,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
 fn a_data_rule_answers_each_node_at_its_sort()
 {
     let source = SourceText::from(
-        "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  oper \
+        "data NatDiv : Type where {\n  | Zero\n  | Succ(n : NatDiv)\n  oper \
          divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  oper half(h : \
          NatDiv) -> NatDiv;\n  rule divmod(m, Succ(d)) ==> (Zero, m);\n}\n",
     );
@@ -696,23 +695,19 @@ fn a_data_rule_answers_each_node_at_its_sort()
     let (types, arena) = described(source);
     let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
 
-    let zero = entry(&types, span("Zero :", "Zero"), DescribedRole::Name);
+    let zero = entry(&types, span("| Zero", "Zero"), DescribedRole::Name);
     assert!(
         matches!(ty(zero), Some(ValueType::Data { .. })),
         "a constant at its family"
     );
-    let succ = entry(&types, span("Succ :", "Succ"), DescribedRole::Name);
+    let succ = entry(&types, span("| Succ", "Succ"), DescribedRole::Name);
     assert!(
         matches!(ty(succ), Some(ValueType::Thunk(_))),
         "a constructor over its field"
     );
-    let field = entry(&types, span("(n : NatDiv) -->", "n"), DescribedRole::Name);
+    let field = entry(&types, span("(n : NatDiv)", "n"), DescribedRole::Name);
     assert_eq!(ty(field), ty(zero), "a field at its sort");
-    let field_sort = entry(
-        &types,
-        span("(n : NatDiv) -->", "NatDiv"),
-        DescribedRole::Type,
-    );
+    let field_sort = entry(&types, span("(n : NatDiv)", "NatDiv"), DescribedRole::Type);
     assert!(
         matches!(ty(field_sort), Some(ValueType::Universe { .. })),
         "a field's written sort at its family's universe"
@@ -771,7 +766,7 @@ fn a_data_rule_answers_each_node_at_its_sort()
 fn a_parameterised_constructor_answers_under_its_parameters()
 {
     let source = SourceText::from(
-        "data Maybe(a : Type) : Type {\n  None : Maybe(a);\n  Some : (x : a) --> Maybe(a);\n}\n",
+        "data Maybe(a : Type) : Type where {\n  | None : Maybe(a)\n  | Some(x : a) : Maybe(a)\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -779,13 +774,13 @@ fn a_parameterised_constructor_answers_under_its_parameters()
     let (types, arena) = described(source);
     let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
 
-    let none = entry(&types, span("None :", "None"), DescribedRole::Name);
+    let none = entry(&types, span("| None", "None"), DescribedRole::Name);
     assert!(
         matches!(ty(none), Some(ValueType::Data { ref arguments, .. }) if arguments.len() == 1),
         "a constant at its family applied to its parameter"
     );
     assert_eq!(context(&types, none), ["a"], "under the parameters");
-    let some = entry(&types, span("Some :", "Some"), DescribedRole::Name);
+    let some = entry(&types, span("| Some", "Some"), DescribedRole::Name);
     assert!(
         matches!(ty(some), Some(ValueType::Thunk(_))),
         "a constructor over its field"
@@ -795,14 +790,14 @@ fn a_parameterised_constructor_answers_under_its_parameters()
     assert!(ty(field).is_some(), "a field at its type");
     let result = entry(
         &types,
-        span("--> Maybe(a)", "Maybe(a)"),
+        span(") : Maybe(a)", "Maybe(a)"),
         DescribedRole::Type,
     );
     assert!(
         matches!(ty(result), Some(ValueType::Universe { .. })),
         "the result at the family's universe"
     );
-    let argument = entry(&types, span("(a);\n}", "a"), DescribedRole::Type);
+    let argument = entry(&types, span("(a)\n}", "a"), DescribedRole::Type);
     assert!(
         matches!(ty(argument), Some(ValueType::Universe { .. })),
         "an argument at its parameter's classifier"
@@ -818,7 +813,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
 fn a_family_the_native_reading_owns_answers_at_its_signature()
 {
     let source = SourceText::from(
-        "data Two : Type { L : Two; R : Two; }\ndata Tree : Type {\n  Leaf : Tree;\n  Node : (f : +U (Two -> -F Tree)) --> Tree;\n}\n",
+        "data Two : Type where { | L | R }\ndata Tree : Type where {\n  | Leaf\n  | Node(f : +U (Two -> -F Tree)) : Tree\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -826,12 +821,12 @@ fn a_family_the_native_reading_owns_answers_at_its_signature()
     let (types, arena) = described(source);
     let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
 
-    let leaf = entry(&types, span("Leaf :", "Leaf"), DescribedRole::Name);
+    let leaf = entry(&types, span("| Leaf", "Leaf"), DescribedRole::Name);
     assert!(
         matches!(ty(leaf), Some(ValueType::Data { ref arguments, .. }) if arguments.is_empty()),
         "a constant at its family"
     );
-    let node = entry(&types, span("Node :", "Node"), DescribedRole::Name);
+    let node = entry(&types, span("| Node", "Node"), DescribedRole::Name);
     assert!(
         matches!(ty(node), Some(ValueType::Thunk(_))),
         "a constructor over its function field"
@@ -841,7 +836,7 @@ fn a_family_the_native_reading_owns_answers_at_its_signature()
         matches!(ty(field), Some(ValueType::Thunk(_))),
         "the field at its function type"
     );
-    let result = entry(&types, span("--> Tree", "Tree"), DescribedRole::Type);
+    let result = entry(&types, span(") : Tree", "Tree"), DescribedRole::Type);
     assert!(
         matches!(ty(result), Some(ValueType::Universe { .. })),
         "the result at the family's universe"
@@ -1178,9 +1173,8 @@ fn an_indexed_constructor_answers_at_the_index_it_states_3528()
         }
     }
     let source = SourceText::from(
-        "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\ndata Fin : N -> Type {\n  FZ : (n : \
-         N) --> Fin(S(n));\n}\ndata At : N -> Type {\n  AtZ : At(Z);\n}\ndata V(a : Type) : N -> \
-         Type {\n  VN : V(a, Z);\n  VC : (n : N, x : a, t : V(a, n)) --> V(a, S(n));\n}\n",
+        "data N : Type where {\n  | Z\n  | S(n : N)\n}\ndata Fin : N -> Type where {\n  | FZ(n :  N) : Fin(S(n))\n}\ndata At : N -> Type where {\n  | AtZ : At(Z)\n}\ndata V(a : Type) : N -> \
+         Type where {\n  | VN : V(a, Z)\n  | VC(n : N, x : a, t : V(a, n)) : V(a, S(n))\n}\n",
     );
     let (types, arena) = described(source);
     let name = |around: &'static str, inner: &'static str| {
@@ -1200,7 +1194,7 @@ fn an_indexed_constructor_answers_at_the_index_it_states_3528()
         Some(_) | None => None,
     };
 
-    let fz = name("FZ :", "FZ");
+    let fz = name("| FZ", "FZ");
     assert_eq!(
         arguments(returned(&arena, fz.ty)),
         Some(Vec::from([String::from("1(#0)")])),
@@ -1211,20 +1205,20 @@ fn an_indexed_constructor_answers_at_the_index_it_states_3528()
             if matches!(arena.comp_type(chain), Some(CompType::Pi { .. }))),
         "the field the index names is bound"
     );
-    let at_zero = name("AtZ :", "AtZ");
+    let at_zero = name("| AtZ", "AtZ");
     assert_eq!(
         arguments(arena.value_type(at_zero.ty).cloned()),
         Some(Vec::from([String::from("0()")])),
         "the constant constructor answers at `At(Z)`"
     );
-    let nil = name("VN :", "VN");
+    let nil = name("| VN", "VN");
     assert_eq!(
         arguments(arena.value_type(nil.ty).cloned()),
         Some(Vec::from([String::from("#0"), String::from("0()")])),
         "`VN` answers at `V(a, Z)`"
     );
     assert_eq!(context(&types, nil), ["a"], "under the parameter");
-    let cons = name("VC :", "VC");
+    let cons = name("| VC", "VC");
     assert_eq!(
         arguments(returned(&arena, cons.ty)),
         Some(Vec::from([String::from("#1"), String::from("1(#0)")])),

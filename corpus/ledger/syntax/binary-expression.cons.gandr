@@ -1,8 +1,8 @@
 /// `binary_expression.cons`: path cons: a step before the rest of a path, written with its glyph and in ASCII.
 @[ checks ]
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base
+  | loop : Base <-> Base
 }
 @[ checks ]
 def flipped : Path(Circle, Base, Base) = back(loop) ∷ here(Base) ;

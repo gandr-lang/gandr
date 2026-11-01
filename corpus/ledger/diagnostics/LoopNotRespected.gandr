@@ -1,7 +1,7 @@
 /// `LoopNotRespected`: a case over a sort its words loop at is not shown to respect one of the loops.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base
+  | loop : Base <-> Base
 }
 
 @[ refuses("LoopNotRespected") ]

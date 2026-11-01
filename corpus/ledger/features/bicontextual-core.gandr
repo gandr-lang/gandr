@@ -14,29 +14,29 @@
 
 /// The naturals, whose successor reads them.
 @[ reads(Nat) ]
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero
   /// The natural after `n`.
-  Succ : (n : Nat) --> Nat;
+  | Succ(n : Nat)
 }
 
 /// A flag, whose constructors read nothing.
 @[ reads(()) ]
-data Flag : Type {
+data Flag : Type where {
   /// On.
-  On : Flag;
+  | On
   /// Off.
-  Off : Flag;
+  | Off
 }
 
 /// A natural or a flag, whose fields read `Nat` and `Flag`.
 @[ reads((Flag, Nat)) ]
-data Either : Type {
+data Either : Type where {
   /// A natural.
-  Count : (m : Nat) --> Either;
+  | Count(m : Nat)
   /// A flag.
-  Mark : (f : Flag) --> Either;
+  | Mark(f : Flag)
 }
 
 /// Answers `n` whichever side `e` takes. The case reads `Either` through its constructors, and never the fields it binds.

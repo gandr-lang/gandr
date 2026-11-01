@@ -3887,7 +3887,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_value_runs_to_its_spelling_in_either_spelling_782()
     {
         let mut words = program(
-            "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
+            "data Circle : Type where { | Base | loop : Base <-> Base }\ndef once : +U (-F \
              Path(Circle, Base, Base)) ; def once = thunk { loop } ;",
         );
         for (spelling, spelled) in [
@@ -4611,7 +4611,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// Four loops a pass of runs through: a statement, a bound statement, a
     /// bound inner loop that breaks, and a `while` whose test always holds.
-    const LOOPS: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+    const LOOPS: &str = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n\
          def tick(n : Nat) -> -F Unit { return unit }\n\
          def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
          def bound : +U (-F Nat) ;\ndef bound = thunk { loop { run u <- tick(Zero) ; continue } } ;\n\
@@ -4672,7 +4672,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
-    const PICK: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+    const PICK: &str = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n\
          def pick(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
          Succ(p) => {\n      run q <- case p { Zero => return n, Succ(r) => pure r } ;\n      \
          pure q\n    },\n  } ;\n  return Succ(m)\n}\n\
@@ -4868,8 +4868,8 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         let depth =
             (0_u32 .. 10_u32).fold(String::from("Zero"), |inner, _| format!("Succ({inner})"));
         format!(
-            "data Depth : Type {{\n  Zero : Depth;\n  Succ : (p : Depth) --> Depth;\n}}\n\
-             data Tree : Type {{\n  Leaf : (n : Integer) --> Tree;\n  Node : (l : Tree, r : Tree) --> Tree;\n}}\n\
+            "data Depth : Type where {{\n  | Zero\n  | Succ(p : Depth)\n}}\n\
+             data Tree : Type where {{\n  | Leaf(n : Integer)\n  | Node(l : Tree, r : Tree)\n}}\n\
              def rec full(d : Depth) -> Tree {{ case d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
              def rec sum(t : Tree) -> Integer {{ case t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
              def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\

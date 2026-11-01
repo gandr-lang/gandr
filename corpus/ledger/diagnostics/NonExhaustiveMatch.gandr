@@ -1,8 +1,8 @@
 /// `NonExhaustiveMatch`: a match some scrutinee value reaches no arm of.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
+data Int : Type where {
+  | Z
+  | S(x : Int)
+  | P(x : Int)
   rule S(P(x)) <=> x;
   rule P(S(x)) <=> x;
 }

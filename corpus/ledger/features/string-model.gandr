@@ -17,9 +17,9 @@ import "../../model/data/data-base.gandr" ;
 /// otherwise in a buffer on the heap that every copy of the string shares,
 /// beside the number of strings that hold it.
 @[ checks ]
-data Repr : Type {
-  Inline : (bytes : List(Integer)) --> Repr;
-  Shared : (holders : Integer, bytes : List(Integer)) --> Repr;
+data Repr : Type where {
+  | Inline(bytes : List(Integer))
+  | Shared(holders : Integer, bytes : List(Integer))
 }
 
 /// The bytes a string holds, wherever they live.

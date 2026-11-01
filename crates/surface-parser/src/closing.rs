@@ -139,6 +139,7 @@ const CLASS_LABELS: &[&str] = &[
 /// The labels whose tile the labeler emits under another text, with that
 /// text.
 const WRITTEN_AS: &[(&str, &str)] = &[
+    ("arm_bar", "|"),
     ("command_substitution_start", "$!{"),
     ("subshell_close", "]"),
     ("subshell_open", "["),
@@ -1339,7 +1340,7 @@ mod tests
     #[test]
     fn every_label_a_token_offers_is_spelled_as_it_reads()
     {
-        let source = "def f = X(x, 1, 1u32, 'c', \"s\\n\"); #!sh{ A=b echo 'q' $v [ ls ] 2>x }";
+        let source = "def f = X(x, 1, 1u32, 'c', \"s\\n\"); #!sh{ A=b echo 'q' $v [ ls ] 2>x } match x { | y => y }";
         let mut lexemes = BTreeSet::new();
         for token in label(SourceFragment::from(source)) {
             let start = usize::try_from(token.start).unwrap_or(usize::MAX);
@@ -1376,6 +1377,7 @@ mod tests
             Lexeme::SubshellOpen,
             Lexeme::SubshellClose,
             Lexeme::FileDescriptor,
+            Lexeme::ArmBar,
             Lexeme::Space,
         ]
         .iter()

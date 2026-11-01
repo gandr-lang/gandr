@@ -1,0 +1,17 @@
+data Int : Type where {
+  | Z
+  | S(x : Int)
+  | P(x : Int)
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+def rec dbl(n : Int) -> -F Int {
+  case n { Z => Z, S(x) => S(S(dbl[<](x))), P(x) => P(P(dbl[<](x))) }
+}
+def rec bound(n : Int) -> -F Int {
+  case n {
+    Z => Z,
+    S(x) => { run d <- bound[<](x) ; S(S(d)) },
+    P(x) => { run d <- bound[<](x) ; P(P(d)) }
+  }
+}

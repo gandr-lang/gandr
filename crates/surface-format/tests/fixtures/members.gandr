@@ -1,9 +1,9 @@
 /// The naturals.
-data Nat : Type {
+data Nat : Type where {
       /// The base.
-  Zero : Nat;
+  | Zero
   /// One more than `n`.
-        Succ : (n : Nat) --> Nat;
+        | Succ(n : Nat)
     /// The successor of zero is not zero.
   rule Succ(Zero) <=> Succ(Zero);
 }

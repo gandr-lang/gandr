@@ -277,22 +277,15 @@ fn declarations(
     let s = Sort::Item;
 
     // --- `data` datatype declaration ---------
-    // THE one data-declaration form is the nested generator block: the family
-    // head binds its parameters once — each a typed binder `a : Type` — and
-    // declares its indices as the head annotation, the kind `: Idx -> Type`
-    // or the telescope `: (x : A, y : B(x)) --> Type` a generator's side
-    // writes (`: Type` when unindexed); every generator member is a judgment
-    // `Ctor : (binders) --> Result` whose result head is the family applied
-    // to the parameter variables. Members are first-token-discriminated by case
-    // (uppercase-led constructors versus the lowercase-led reserved `oper` /
-    // `rule` members) and are terminated by `;`, with a comma separator
-    // admissible between members so the declined shapes still parse whole:
-    // the Haskell-style head `data Maybe(a)` (bare parameters, no head
-    // annotation) and the field-tuple member `Ctor(x: A)` reach the
-    // elaborator, which declines them with the respelling hint (as it does
-    // the `~>` face arrow) rather than the parser repairing a token. An
-    // unseparated member list is deliberately not admitted; the mis-parse
-    // mechanism is documented on `member_list`.
+    // The family head binds its parameters once — each a typed binder
+    // `a : Type` — and declares its indices as the head annotation, the kind
+    // `: Idx -> Type` or the telescope `: (x : A, y : B(x)) --> Type` (`: Type`
+    // when unindexed). `where` then opens the members in braces: each
+    // constructor and each cell opens on an arm bar, `| Nil`,
+    // `| Cons(head : a, tail : List(a))`, `| VCons(n : Nat, x : a) :
+    // Vec(a, Succ(n))`, `| loop : Base <-> Base`, and the keyword-led `oper`
+    // and `rule` members end on `;`. The bar is never hole content, so it
+    // ends the member before it without a separator.
     let mut data = r(
         RuleName("data_declaration"),
         Provenance("data_declaration"),
@@ -303,20 +296,16 @@ fn declarations(
             t(TileLabel("type_identifier")),
             opt(head_params()),
             opt(seq([t(TileLabel(":")), generator_signature()])),
+            t(TileLabel("where")),
             t(TileLabel("{")),
-            opt(member_list(data_member())),
+            repeat(data_member()),
             t(TileLabel("}")),
         ]),
     );
     data.adaptations.push(Adaptation::new(
         RuleName("data_declaration"),
         SurfaceForm("data_generator"),
-        AdaptationReason("the generator member `Ctor : (binders) --> Result` is inlined in the data block: its telescope `( name : Type, … )` is kept LOCAL to the member so a named binder list never becomes a standalone `(`-opened form competing with the parenthesized type at every type slot (the `op_result` precedent), and its `:` lead discriminates against the declined field-tuple tail one tile after the constructor name"),
-    ));
-    data.adaptations.push(Adaptation::new(
-        RuleName("data_declaration"),
-        SurfaceForm("constructor_block_member"),
-        AdaptationReason("parse-and-decline: the Haskell-style constructor member `Ctor(fields) (: Result)?`, or a bare `Ctor`, stays admissible as the constructor-led member's second tail so a stale declaration reaches the elaborator's decline with the respelling hint instead of a parse repair; the tail discriminates on `(` vs `:` immediately after the constructor name, and its result annotation follows the field tuple only, since a fieldless `Ctor : Result` is the generator"),
+        AdaptationReason("the constructor member `| C(fields) : Result` is inlined in the data block: its field telescope `( name : Type, … )` is kept LOCAL to the member so a named binder list never becomes a standalone `(`-opened form competing with the parenthesized type at every type slot (the `op_result` precedent); the arm bar leads it, so no separator follows it"),
     ));
     data.adaptations.push(Adaptation::new(
         RuleName("data_declaration"),
@@ -1061,62 +1050,60 @@ fn head_params() -> Regex
     ])
 }
 
-/// Build an inline `data` member: a **generator** judgment (the one form), the
-/// declined field-tuple constructor (admissible for the elaborator's decline),
-/// a reserved `op` operation, a reserved `rule` 2-cell, or a **cell** between
-/// two terms of the block's sort.
+/// Build an inline `data` member: a **constructor** or a **cell** after an arm
+/// bar, or a keyword-led `oper` operation or `rule` 2-cell ending on `;`.
 ///
-/// The constructor-led tails share the `constructor` tile and discriminate one
-/// tile later: `:` leads the generator judgment, anything else the declined
-/// field-tuple tail — so the choice is locally decidable exactly as the `def`
-/// family's factored tails are. The declined tail annotates a result only after
-/// its field tuple, so no fieldless member reads its `:` a second way.
+/// A constructor writes its fields after its name and its result after a
+/// colon, each optional: `| Nil`, `| Cons(head : a, tail : List(a))`,
+/// `| VNil : Vec(a, Zero)`. The tile after the name tells the three tails
+/// apart, so the choice is locally decidable.
 ///
-/// A cell is named by a lowercase identifier, which no other member opens on:
-/// `loop : Base <-> Base` relates two terms by one glyph of the arrow grid.
+/// A cell is named by a lowercase identifier, which no constructor opens on:
+/// `| loop : Base <-> Base` relates two terms by one glyph of the arrow grid.
 /// The grammar admits the whole grid between terms so the elaborator refuses
 /// each glyph the fragment does not lower by its own name, as the circuit
 /// grid's rows are refused, rather than the parser by repair.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: constructor, operation, rewrite-member and cell branches; the
-///   constructor owns one shared leading tile.
+/// - ensures: the arm-bar branch (constructor or cell), then the operation and
+///   rewrite-member branches, each ending on `;`.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts,
-///   and a second `:` successor of the constructor name is refused. The
-///   predicate observes the stated shape; source programs outside the finite
-///   corpus are not exhausted.
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::walk::a_data_member_colon_after_a_constructor_name_reads_one_way`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "constructor")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "arm_bar")))) && parts.iter().skip(1).all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn data_member() -> Regex
 {
     alt([
         seq([
-            t(TileLabel("constructor")),
+            t(TileLabel("arm_bar")),
             alt([
-                // generator judgment `Ctor : Side (--> Result)? [attrs]?` —
-                // THE one constructor-declaration form.
-                seq([t(TileLabel(":")), generator_signature(), opt(attr_slot())]),
-                // declined `Ctor(fields) (: Result)? [attrs]?` and bare `Ctor`,
-                // kept admissible so the elaborator's decline names the
-                // respelling. The result annotation follows the field tuple
-                // only: `Ctor : Result` is the generator without a telescope,
-                // and a fieldless declined tail led by `:` would read the same
-                // tiles a second way.
+                // a constructor `| C(fields)? (: Result)? [attrs]?`.
                 seq([
-                    opt(seq([
-                        t(TileLabel("(")),
-                        comma1(ctor_field()),
-                        t(TileLabel(")")),
-                        opt(seq([t(TileLabel(":")), h(Sort::Type)])),
-                    ])),
+                    t(TileLabel("constructor")),
+                    opt(generator_telescope()),
+                    opt(seq([t(TileLabel(":")), h(Sort::Type)])),
                     opt(attr_slot()),
+                ]),
+                // a cell `| name : a <-> b` between two terms of the block's
+                // sort, its glyph any of the arrow grid's.
+                seq([
+                    t(TileLabel("identifier")),
+                    t(TileLabel(":")),
+                    h(Sort::Expression),
+                    alt([
+                        t(TileLabel("-->")),
+                        t(TileLabel("<->")),
+                        t(TileLabel("==>")),
+                        t(TileLabel("<=>")),
+                    ]),
+                    h(Sort::Expression),
                 ]),
             ]),
         ]),
@@ -1124,27 +1111,17 @@ fn data_member() -> Regex
         // still parses so the elaborator can decline it with the respelling
         // (as it does the `~>` face arrow); `op` otherwise leads only the
         // operator-fixity declaration.
-        data_oper_member(alt([t(TileLabel("oper")), t(TileLabel("op"))])),
+        seq([
+            data_oper_member(alt([t(TileLabel("oper")), t(TileLabel("op"))])),
+            t(TileLabel(";")),
+        ]),
         // `rule lhs <=> rhs`, or `rule lhs ==> rhs` pinning the direction.
         seq([
             t(TileLabel("rule")),
             h(Sort::Expression),
             rule_face_arrow(),
             h(Sort::Expression),
-        ]),
-        // a cell `name : a <-> b` between two terms of the block's sort, its
-        // glyph any of the arrow grid's.
-        seq([
-            t(TileLabel("identifier")),
-            t(TileLabel(":")),
-            h(Sort::Expression),
-            alt([
-                t(TileLabel("-->")),
-                t(TileLabel("<->")),
-                t(TileLabel("==>")),
-                t(TileLabel("<=>")),
-            ]),
-            h(Sort::Expression),
+            t(TileLabel(";")),
         ]),
     ])
 }

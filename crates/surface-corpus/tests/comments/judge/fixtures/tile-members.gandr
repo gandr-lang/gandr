@@ -1,0 +1,27 @@
+// file
+
+// the naturals
+data Nat : Type where {
+  // the base
+  | Zero
+  | Succ(n : Nat)
+
+  // a comment cut off by a blank line
+
+  rule Succ(Zero) <=> Zero;
+}
+
+// a theory
+theory T {
+  /// the carrier
+  sort S : Type+;
+  oper get : (k : S) --> S;
+  rule g : get(k) <=> k;
+}
+
+// a stream
+codata Stream(a : Type) : Type[-] {
+  head : a;
+  /// what follows
+  tail : Stream(a);
+}

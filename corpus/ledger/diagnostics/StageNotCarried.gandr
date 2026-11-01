@@ -1,12 +1,12 @@
 /// `StageNotCarried`: a transport moves a value of a recursion along a path whose carrier is not a set.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base
+  | loop : Base <-> Base
 }
 
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
 
 @[ refuses("StageNotCarried") ]

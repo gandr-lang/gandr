@@ -7,10 +7,10 @@
 
 /// Three colours, one arm each.
 @[ checks ]
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red
+  | Green
+  | Blue
 }
 
 /// Every colour has its arm.

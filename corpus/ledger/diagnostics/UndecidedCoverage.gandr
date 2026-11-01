@@ -1,9 +1,9 @@
 /// `UndecidedCoverage`: a leaf of a match's tree is one of its pattern holes.
 @[ checks ]
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red
+  | Green
+  | Blue
 }
 
 @[ refuses("UndecidedCoverage") ]

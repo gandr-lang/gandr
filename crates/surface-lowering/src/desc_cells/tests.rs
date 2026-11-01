@@ -21,9 +21,9 @@ use crate::namespace::Recognition;
 use crate::unit::Unit;
 
 /// Two frame-defining constructors and two operation laws.
-const NAT_ADD: &str = r#"data NatAdd : Type {
-    Zero : NatAdd;
-    Succ : (n : NatAdd) --> NatAdd;
+const NAT_ADD: &str = r#"data NatAdd : Type where {
+    | Zero
+    | Succ(n : NatAdd)
     oper add(m : NatAdd, n : NatAdd) -> NatAdd;
     rule add(Zero, n) ==> n;
     rule add(Succ(m), n) ==> Succ(add(m, n));
@@ -89,7 +89,7 @@ fn a_declared_single_output_operation_lets_its_rule_become_a_cell()
 #[test]
 fn a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output()
 {
-    let source = "data NatDiv : Type { Zero : NatDiv; oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); rule divmod(m, Zero) ==> (Zero, m); }";
+    let source = "data NatDiv : Type where { | Zero oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); rule divmod(m, Zero) ==> (Zero, m); }";
     let descriptions = descriptions(source);
     assert_eq!(descriptions.diagnostics, []);
     assert_eq!(
@@ -116,7 +116,7 @@ fn a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output()
 #[test]
 fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
 {
-    let source = "data NatDiv2 : Type { Zero : NatDiv2; oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }";
+    let source = "data NatDiv2 : Type where { | Zero oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }";
     let descriptions = descriptions(source);
     assert_eq!(descriptions.diagnostics, []);
     let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
@@ -182,7 +182,7 @@ fn a_copied_variable_is_refused_at_its_second_occurrence()
 {
     for (source, member, second) in [
         (
-            "data NatSub : Type { Zero : NatSub; oper minus(m : NatSub, n : NatSub) -> NatSub; rule minus(x, x) ==> Zero; }",
+            "data NatSub : Type where { | Zero oper minus(m : NatSub, n : NatSub) -> NatSub; rule minus(x, x) ==> Zero; }",
             "rule minus(x, x) ==> Zero",
             "rule minus(x, ".len(),
         ),
@@ -266,9 +266,9 @@ fn declaration_order_is_the_cell_order()
         elaborate_desc_cells(&descriptions(NAT_ADD).declarations, &mut Decisions::none());
     let swapped = elaborate_desc_cells(
         &descriptions(
-            r#"data NatAdd : Type {
-    Zero : NatAdd;
-    Succ : (n : NatAdd) --> NatAdd;
+            r#"data NatAdd : Type where {
+    | Zero
+    | Succ(n : NatAdd)
     oper add(m : NatAdd, n : NatAdd) -> NatAdd;
     rule add(Succ(m), n) ==> Succ(add(m, n));
     rule add(Zero, n) ==> n;
@@ -292,7 +292,7 @@ fn declaration_order_is_the_cell_order()
 fn a_face_declared_twice_is_one_cell()
 {
     let descriptions = descriptions(
-        "data Idem : Type { Zero : Idem; oper f(x : Idem) -> Idem; rule f(Zero) ==> Zero; rule f(Zero) ==> Zero; }",
+        "data Idem : Type where { | Zero oper f(x : Idem) -> Idem; rule f(Zero) ==> Zero; rule f(Zero) ==> Zero; }",
     );
     assert_eq!(descriptions.declarations[0].description.rules.len(), 2);
     let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
@@ -308,7 +308,7 @@ fn a_face_declared_twice_is_one_cell()
 fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 {
     let descriptions = descriptions(
-        r#"data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+        r#"data Nat : Type where { | Zero | Succ(n : Nat) }
         theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
             rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
                 node : p(x) ==> (xp); node : add(xp, y) --> (z);
@@ -374,7 +374,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
     // the member fault the refusal carries, at the member it stops.
     let rows = [
         (
-            "data NatDiv2 : Type { Zero : NatDiv2; oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }",
+            "data NatDiv2 : Type where { | Zero oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }",
             "rule divmod(Zero, n) ==> Zero",
             MemberFault::ResultArity,
         ),
@@ -430,7 +430,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
 #[test]
 fn ordinary_lowering_executes_the_cell_gate_and_preserves_later_values()
 {
-    let source = "data Flag : Type { Off : Flag; On : Flag; oper split(x : Flag) -> (a : Flag, b : Flag); rule split(Off) ==> On; } def later = 7;";
+    let source = "data Flag : Type where { | Off | On oper split(x : Flag) -> (a : Flag, b : Flag); rule split(Off) ==> On; } def later = 7;";
     let grammar = grammar();
     let tree = parse(&grammar, source.into()).unwrap().into_tree();
     let mut arena = CoreArena::new();

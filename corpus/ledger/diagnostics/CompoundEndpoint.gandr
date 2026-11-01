@@ -1,8 +1,8 @@
 /// `CompoundEndpoint`: a compound endpoint whose computation returns no pure value.
 @[ checks, form(explicit) ]
-data Two : Type {
-  L : Two;
-  R : Two;
+data Two : Type where {
+  | L
+  | R
 }
 
 @[ refuses("CompoundEndpoint") ]

@@ -520,7 +520,7 @@ impl Referents
         for &(span, family, tag) in patterns {
             keep(span, constructed(family, tag), false);
         }
-        // A constructor's result names its family at its head, and each
+        // A constructor's stated result names its family at its head, and each
         // argument repeating a parameter names that parameter's binder; the
         // lowering mints neither, the family being the constructor's own.
         for declaration in module.declarations() {
@@ -529,8 +529,12 @@ impl Referents
                 continue;
             };
             for constructor in *constructors {
-                keep(constructor.head, declared(declaration.constant()), true);
-                for repeated in &constructor.parameters {
+                let Maybe::Present(ref result) = constructor.result
+                else {
+                    continue;
+                };
+                keep(result.head, declared(declaration.constant()), true);
+                for repeated in &result.parameters {
                     let binder = placed(unit, repeated.named).map(|(source, named)| Referent {
                         source,
                         named,

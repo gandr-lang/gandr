@@ -1440,7 +1440,7 @@ fn an_unqualified_import_answers_a_name_its_source_declares()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;",
+                "pub data Point : Type where { | One }\npub def one : Point ;\ndef one = One ;",
             ),
             &[],
         ),
@@ -1667,8 +1667,8 @@ fn a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687()
 fn the_prelude_offers_no_presentation_constructor_2302()
 {
     let pbg = grammar();
-    let source = "data Shape : Type {\n  Circle : (r : Integer) --> Shape;\n}\ndata Figure : \
-                  Type {\n  Round : (r : Integer) --> Figure;\n}\ndef toFigure(shape : Shape) \
+    let source = "data Shape : Type where {\n  | Circle(r : Integer)\n}\ndata Figure : \
+                  Type where {\n  | Round(r : Integer)\n}\ndef toFigure(shape : Shape) \
                   -> Figure {\n  case shape {\n    Circle(r) => Round(r)\n  }\n}\ndef redrawn : \
                   Flow(Type, Shape, Figure) = forward(toFigure) ;\n";
     let (text, unit) =
@@ -1692,7 +1692,7 @@ fn a_source_s_type_shadows_the_prelude_s_constructor_3287()
 {
     let pbg = grammar();
     let source =
-        "data One : Type {\n  Single : One;\n}\ndef same : Path(Type, One, One) = here(One) ;\n";
+        "data One : Type where {\n  | Single\n}\ndef same : Path(Type, One, One) = here(One) ;\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -2217,7 +2217,7 @@ fn a_source_lowers_alike_whatever_follows_it_776()
     let pbg = grammar();
     let base = SourceText::from(
         "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
-         Nat) --> Nat;\n}\npub data Point : Type { One : Point; }\npub def one : Point ;\ndef \
+         Nat) --> Nat;\n}\npub data Point : Type where { | One }\npub def one : Point ;\ndef \
          one = One ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
     );
     let importer = SourceText::from(
@@ -2437,7 +2437,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
     let pbg = grammar();
     let base = SourceText::from(
         "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
-         Nat) --> Nat;\n}\npub data Point : Type { One : Point; }\npub def one : Point ;\ndef \
+         Nat) --> Nat;\n}\npub data Point : Type where { | One }\npub def one : Point ;\ndef \
          one = One ;\ndef pending = ? ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
     );
     let importer = SourceText::from(
@@ -2568,7 +2568,7 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
 {
     let pbg = grammar();
     let base = SourceText::from(concat!(
-        "pub data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n",
+        "pub data Nat : Type where { | Zero | Succ(n : Nat) }\n",
         "pub def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\n",
         "def appliedAt[j : Size, k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
         "  applyAt[.i = k](f, x)\n}\n",
@@ -2587,7 +2587,7 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
         "def forgetful() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
          st.put(1); st.get() } with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => \
          k(unit) } }\n",
-        "data NatAdd : Type {\n  AddZero : NatAdd;\n  AddSucc : (n : NatAdd) --> NatAdd;\n  oper \
+        "data NatAdd : Type where {\n  | AddZero\n  | AddSucc(n : NatAdd)\n  oper \
          add(m : NatAdd, n : NatAdd) -> NatAdd;\n  rule add(AddZero, n) ==> n;\n  rule \
          add(AddSucc(m), n) ==> AddSucc(add(m, n));\n}\n",
     ));
@@ -2603,7 +2603,7 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
         "def forgetfulAgain() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
          st.put(2); st.get() } with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => \
          k(unit) } }\n",
-        "data Bit : Type {\n  Off : Bit;\n  On : Bit;\n  oper not(a : Bit) -> Bit;\n  rule \
+        "data Bit : Type where {\n  | Off\n  | On\n  oper not(a : Bit) -> Bit;\n  rule \
          not(Off) ==> On;\n  rule not(On) ==> Off;\n}\n",
     ));
     let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
@@ -2835,7 +2835,7 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     }
     let pbg = grammar();
     let base = SourceText::from(
-        "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;\ndef \
+        "pub data Point : Type where { | One }\npub def one : Point ;\ndef one = One ;\ndef \
          pending = ? ;",
     );
     let importer = SourceText::from(
@@ -3044,7 +3044,7 @@ fn an_aliased_import_qualifies_its_source_s_names()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;",
+                "pub data Point : Type where { | One }\npub def one : Point ;\ndef one = One ;",
             ),
             &[],
         ),
@@ -3096,7 +3096,7 @@ fn a_module_path_import_binds_its_module_qualified_2687()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;",
+                "pub data Point : Type where { | One }\npub def one : Point ;\ndef one = One ;",
             ),
             &[],
         ),
@@ -3159,7 +3159,7 @@ fn an_import_list_binds_only_the_names_it_lists_2687()
 {
     let pbg = grammar();
     let imported = SourceText::from(
-        "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;\npub def \
+        "pub data Point : Type where { | One }\npub def one : Point ;\ndef one = One ;\npub def \
          two : Point ;\ndef two = One ;\ndef hidden : Point ;\ndef hidden = One ;",
     );
     let refusals = |importer: &'static str| -> Vec<(String, String)> {
@@ -3783,11 +3783,11 @@ fn a_constructor_an_import_binds_again_refuses_its_family()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from("pub data Bit : Type { O : Bit; I : Bit; }"),
+            SourceText::from("pub data Bit : Type where { | O | I }"),
             &[],
         ),
         (
-            SourceText::from("import \"./base.gandr\" ;\ndata Other : Type { O : Other; }"),
+            SourceText::from("import \"./base.gandr\" ;\ndata Other : Type where { | O }"),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -5085,7 +5085,7 @@ fn each_import_a_name_is_read_through_is_reached()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub data Point : Type { One : Point; }\npub module Cancel :> #{\n  notes : \
+                "pub data Point : Type where { | One }\npub module Cancel :> #{\n  notes : \
                  String\n} {\n  def notes = \"notes\";\n}\npub module Str { def len(self : shared \
                  Integer) -> -F Integer { pure self } }\npub def seven : Integer ;\ndef seven = 7 ;",
             ),
@@ -5168,8 +5168,8 @@ fn each_import_a_name_is_read_through_is_reached()
 const VISIBLE_BASE: &str = "pub def shown : Integer ;\ndef shown = 2 ;\ndef hidden : Integer \
                             ;\npub def hidden = 1 ;\n@[ checks ]\npub def checked : Integer ;\ndef \
                             checked = 4 ;\npub @[ checks ]\ndef early : Integer ;\ndef early = 5 \
-                            ;\ndef secret = 3 ;\npub data Bit : Type { O : Bit; }\ndata Hid : \
-                            Type { H : Hid; }\npub theory Pointed {\n  sort P : Type;\n  oper pt \
+                            ;\ndef secret = 3 ;\npub data Bit : Type where { | O }\ndata Hid : \
+                            Type where { | H }\npub theory Pointed {\n  sort P : Type;\n  oper pt \
                             : () --> P;\n}\ntheory Closed {\n  sort Q : Type;\n  oper qt : () \
                             --> Q;\n}\npub module Open { def x = 6; }\nmodule Shut { def y = 7; \
                             }\npub module Methods { def width(self : shared Integer) -> -F Integer \
@@ -5367,8 +5367,7 @@ fn a_mark_before_a_stray_word_yields_to_the_word_3495()
 fn documentation_before_a_pub_mark_documents_its_declaration_2687()
 {
     let pbg = grammar();
-    let text = "/// The answer.\npub def answer = 42 ;\n/// A point.\npub data Point : Type { P : \
-                Point; }\n/// First.\npub @[ doc(\"Second.\") ]\ndef both = 1 ;";
+    let text = "/// The answer.\npub def answer = 42 ;\n/// A point.\npub data Point : Type where { | P }\n/// First.\npub @[ doc(\"Second.\") ]\ndef both = 1 ;";
     let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
     let documented = |name: &str| {
         module

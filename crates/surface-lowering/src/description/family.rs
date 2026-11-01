@@ -21,8 +21,14 @@ use crate::form::Placed;
 
 /// The number of term-index positions declared by a family's classifier.
 #[repr(transparent)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) struct IndexArity(usize);
+
+impl IndexArity
+{
+    /// The arity of a family that declares no index position.
+    pub(super) const UNINDEXED: Self = Self(0);
+}
 
 impl Reader<'_, '_>
 {

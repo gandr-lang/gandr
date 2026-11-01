@@ -2566,6 +2566,7 @@ INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenObse
 INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenOperation','struct','Holds a written operation, so the operation''s ports are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenPath','struct','Holds a written path, so the path''s endpoints are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenPort','struct','Holds a written port, so the port''s sort is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenResult','struct','Holds a constructor''s stated result, so the index the constructor builds is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenRewrite','struct','Holds a written rewrite, so the rewrite''s sides are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenSort','struct','Holds a written sort, so the sort''s universe is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenSortMember','struct','Holds a written sort member, so the member''s sort is read.',NULL,'fits','sound',NULL);

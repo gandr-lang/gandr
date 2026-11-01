@@ -1,0 +1,4 @@
+pub data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
+}

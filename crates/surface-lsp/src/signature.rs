@@ -22,8 +22,8 @@
 //! | --- | --- | --- |
 //! | `def plus(n : Nat, m : Nat) -> -F Nat` | `plus(n : Nat, m : Nat) -> -F Nat` | `n : Nat`, `m : Nat` |
 //! | `def double : +U (Nat -> -F Nat)` | `double : +U (Nat -> -F Nat)` | each domain of the arrow: `Nat` |
-//! | `Cons : (head : a, tail : List(a)) --> List(a)` | as written | `head : a`, `tail : List(a)` |
-//! | `data List(a : Type) : Type` | `List(a : Type) : Type` | `a : Type` |
+//! | `\| Cons(head : a, tail : List(a))` | as written, past its bar | `head : a`, `tail : List(a)` |
+//! | `data List(a : Type) : Type where` | `List(a : Type) : Type` | `a : Type` |
 //!
 //! The pieces of a head are joined with one space wherever the source leaves
 //! layout between them, so a head written over several lines reads on one,
@@ -1073,8 +1073,9 @@ impl Depth
 }
 
 /// The head of `text` whose pieces start with its name `from`, documented by
-/// `documentation`: the pieces up to the next name, the start of a body or
-/// documentation outside its parentheses.
+/// `documentation`: the pieces up to the next name, the start of a body, the
+/// `where` opening a declaration's members, the bar opening the next member,
+/// or documentation outside its parentheses.
 ///
 /// # Specification
 /// trivial.
@@ -1100,7 +1101,7 @@ fn head(
                 let written = spelled(text, span);
                 depth = depth.after(written);
                 role.is_some_and(|role| NAMING.contains(&role))
-                    || matches!(<&str>::from(written), "{" | "=" | ";" | "}")
+                    || matches!(<&str>::from(written), "{" | "=" | ";" | "}" | "where" | "|")
             },
             Piece::Doc(_) => depth == Depth::default(),
             Piece::Operand(..) => false,
@@ -1920,11 +1921,7 @@ mod tests
 
     /// A family, a function matching on it, a call nesting a constructor and
     /// a family applied in a type.
-    const CALLED: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
-                          plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
-                          Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = \
-                          thunk { plus(Succ(Zero), Zero) } ;\ndata List(a : Type) : Type {\n  \
-                          Nil : List(a);\n}\n";
+    const CALLED: &str = include_str!("signature/fixtures/called.gandr");
 
     /// #1403: an importer's heads, read after its closure's lowering, are the
     /// heads read off its whole tree, and a second reading after the same
@@ -2053,7 +2050,7 @@ mod tests
             "a recursive call, headed by its claim"
         );
         assert_eq!(
-            called(CALLED, "a);"),
+            called(CALLED, "a)\n}"),
             answer("List", 0),
             "a family's application in a type"
         );
@@ -2067,13 +2064,7 @@ mod tests
     #[test]
     fn each_head_reads_its_parameters()
     {
-        let text = "/// Natural numbers.\ndata Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ \
-                    : (n : Nat) --> Nat;\n}\n/// Addition.\n@[ checks ]\ndef rec plus(n : Nat,\n    \
-                    m : Nat) -> -F Nat { n }\ndef double : +U (Nat -> Nat -> -F Nat) ;\ndata \
-                    List(a : Type) : Type {\n  Nil : List(a);\n  Cons : (head : a, tail : List(a)) \
-                    --> List(a);\n}\ndef ap(f : +U (Nat -> -F Nat), x : Nat) -> -F Nat { f(x) \
-                    }\ndef r : #{ sub : +U (Nat -> Nat -> -F Type), subTm : (g : Nat, t : sub(g, \
-                    g)) => Nat } ;\n";
+        let text = include_str!("signature/fixtures/heads.gandr");
         let grammar = grammar().expect("the grammar builds");
         let roles = roles().expect("the roles build");
         let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
@@ -2114,13 +2105,8 @@ mod tests
         };
         assert_eq!(read, [
             head("Nat", "Nat : Type", &[], Some("Natural numbers.")),
-            head("Zero", "Zero : Nat", &[], None),
-            head(
-                "Succ",
-                "Succ : (n : Nat) --> Nat",
-                &["n : Nat"],
-                Some("One more.")
-            ),
+            head("Zero", "Zero", &[], None),
+            head("Succ", "Succ(n : Nat)", &["n : Nat"], Some("One more.")),
             head(
                 "plus",
                 "plus(n : Nat, m : Nat) -> -F Nat",
@@ -2134,10 +2120,10 @@ mod tests
                 None
             ),
             head("List", "List(a : Type) : Type", &["a : Type"], None),
-            head("Nil", "Nil : List(a)", &[], None),
+            head("Nil", "Nil", &[], None),
             head(
                 "Cons",
-                "Cons : (head : a, tail : List(a)) --> List(a)",
+                "Cons(head : a, tail : List(a))",
                 &["head : a", "tail : List(a)"],
                 None
             ),
@@ -2183,10 +2169,7 @@ mod tests
             Vec<(String, Option<String>)>,
             Option<String>,
         );
-        let text = "data Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ : (\n    /// The \
-                    predecessor.\n    n : Nat\n  ) --> Nat;\n}\n/// Addition.\ndef plus(\n  /// The \
-                    first summand.\n  n : Nat,\n  /// The second\n  /// summand.\n  m : Nat,\n  k : \
-                    Nat\n) -> -F Nat { n }\n";
+        let text = include_str!("signature/fixtures/documented-parameters.gandr");
         let grammar = grammar().expect("the grammar builds");
         let roles = roles().expect("the roles build");
         let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
@@ -2231,15 +2214,10 @@ mod tests
                 Vec::new(),
                 None
             ),
-            (
-                String::from("Zero"),
-                String::from("Zero : Nat"),
-                Vec::new(),
-                None
-            ),
+            (String::from("Zero"), String::from("Zero"), Vec::new(), None),
             (
                 String::from("Succ"),
-                String::from("Succ : (n : Nat) --> Nat"),
+                String::from("Succ(n : Nat)"),
                 Vec::from([documented("n : Nat", Some("The predecessor."))]),
                 Some(String::from("One more.")),
             ),
@@ -2264,11 +2242,7 @@ mod tests
     #[test]
     fn a_run_documents_only_what_it_is_written_before_1800()
     {
-        let text = "data Nat : Type {\n  Zero : Nat;\n  Succ : (\n    /// The predecessor.\n    n : \
-                    Nat\n  ) --> Nat;\n  Two : Nat;\n  /// Three.\n  Three : Nat;\n}\ndef apply(\n  f \
-                    : (\n    /// The argument.\n    x : Nat\n  ) -> -F Nat,\n  /// The pair.\n  p : \
-                    (a : Nat, b : Nat),\n  y : Nat\n) -> -F Nat { y }\ndef use(\n  h : (\n    /// \
-                    The index.\n    i : Nat\n  ) => Nat\n) -> -F Nat { 0 }\n";
+        let text = include_str!("signature/fixtures/documented-runs.gandr");
         let grammar = grammar().expect("the grammar builds");
         let roles = roles().expect("the roles build");
         let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
@@ -2304,15 +2278,15 @@ mod tests
             .collect();
         assert_eq!(read, [
             ("Nat", "Nat : Type", Vec::new(), None),
-            ("Zero", "Zero : Nat", Vec::new(), None),
+            ("Zero", "Zero", Vec::new(), None),
             (
                 "Succ",
-                "Succ : (n : Nat) --> Nat",
+                "Succ(n : Nat)",
                 Vec::from([("n : Nat", Some("The predecessor."))]),
                 None
             ),
-            ("Two", "Two : Nat", Vec::new(), None),
-            ("Three", "Three : Nat", Vec::new(), Some("Three.")),
+            ("Two", "Two", Vec::new(), None),
+            ("Three", "Three", Vec::new(), Some("Three.")),
             (
                 "apply",
                 "apply(f : (x : Nat) -> -F Nat, p : (a : Nat, b : Nat), y : Nat) -> -F Nat",

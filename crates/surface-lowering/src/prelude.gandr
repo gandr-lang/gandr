@@ -100,20 +100,20 @@ pub def ge[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
 
 /// A positive number in binary, its least digit outermost, as Isabelle/HOL's
 /// `num`: one, or twice a positive, or twice a positive and one.
-pub data Pos : Type {
+pub data Pos : Type where {
   /// One.
-  One : Pos;
+  | One
   /// Twice `p`.
-  Bit0 : (p : Pos) --> Pos;
+  | Bit0(p : Pos)
   /// Twice `p`, and one.
-  Bit1 : (p : Pos) --> Pos;
+  | Bit1(p : Pos)
 }
 
 /// A natural number in binary: zero, or a positive. A numeral annotated
 /// `(n : Nat)` is its constructor term.
-pub data Nat : Type {
+pub data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero
   /// A positive number.
-  Positive : (p : Pos) --> Nat;
+  | Positive(p : Pos)
 }

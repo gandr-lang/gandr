@@ -12,14 +12,14 @@
 import "../../model/effects/tree.gandr" ;
 
 /// Exceptions' operation: raise a code.
-data ExnOp : Type {
-  Raise : (code : Integer) --> ExnOp;
+data ExnOp : Type where {
+  | Raise(code : Integer)
 }
 
 /// What an exception handler answers: raised with a code, or returned.
-data Outcome(a : Type) : Type {
-  Raised : (code : Integer) --> Outcome(a);
-  Returned : (x : a) --> Outcome(a);
+data Outcome(a : Type) : Type where {
+  | Raised(code : Integer)
+  | Returned(x : a)
 }
 
 /// State answered at the front of the row from the state `s`, the rest of

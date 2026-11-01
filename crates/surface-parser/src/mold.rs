@@ -1003,13 +1003,16 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
 /// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
 /// tile against `identifier` there.
+///
+/// `where` is reserved: it ends a declaration's head, whose last slot is a
+/// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
     "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
-    "world", "mobile", "inf", "pub", "flow",
+    "world", "mobile", "inf", "pub", "flow", "where",
 ];
 
 /// The keywords that open a block's statements: one that no open form
@@ -1115,6 +1118,7 @@ pub fn candidate_labels<'text>(
         Lexeme::SubshellOpen => labels.push(CandidateLabel::from("subshell_open")),
         Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
         Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
+        Lexeme::ArmBar => labels.push(CandidateLabel::from("arm_bar")),
         Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
             // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
@@ -4389,6 +4393,7 @@ mod tests
             (Lexeme::SubshellOpen, "[", &["subshell_open"]),
             (Lexeme::SubshellClose, "]", &["subshell_close"]),
             (Lexeme::FileDescriptor, "2", &["file_descriptor"]),
+            (Lexeme::ArmBar, "|", &["arm_bar"]),
             (Lexeme::Punct, "#!sh{", &["#!sh{", "#!{"]),
             (Lexeme::Punct, "$!py{", &[
                 "$!py{",
@@ -5362,7 +5367,7 @@ mod tests
             ("def x = 1 ;", "def_value"),
             ("def x : Integer ;", "def_value"),
             ("def f(y : Integer) -> -F Integer { return y }", "def_value"),
-            ("data Color : Type {\n  Red : Color;\n}", "data_declaration"),
+            ("data Color : Type where {\n  | Red\n}", "data_declaration"),
         ];
         for count in 1_usize ..= 6 {
             let attributes = vec!["runs(\"1\")"; count].join(", ");

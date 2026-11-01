@@ -111,7 +111,7 @@
 //! definition's body is judged with every family admitted. Nothing here is a
 //! new judgement: each step is the one a lone declaration takes, taken in the
 //! block's order. A universe and its decoder are the instance —
-//! `data U { PiC : (a : U, b : +U (el(a) -> -F U)) --> U }` names `el`, whose
+//! `data U where { | PiC(a : U, b : +U (el(a) -> -F U)) }` names `el`, whose
 //! declared type names `U` — and inside the decoder's own fixpoint its
 //! constant in the family's fields reads as its self binder, as
 //! [`crate::recursion::stage_branch`] states. Witness:

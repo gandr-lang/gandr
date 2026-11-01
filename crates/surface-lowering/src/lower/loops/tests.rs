@@ -32,7 +32,7 @@ use crate::resolve::SurfaceName;
 
 /// The naturals every witness matches on, and a computation of unit a loop
 /// can run on every pass.
-const PRELUDE: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+const PRELUDE: &str = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
                        def tick(n : Nat) -> -F Unit { return unit }\n";
 
 /// The indices of every force of a variable reachable from the body of

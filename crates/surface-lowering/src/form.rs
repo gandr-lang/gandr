@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 75_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -222,7 +222,6 @@ impl FormName
         Self::WORLD_DECLARATION,
         Self::OFFERS_DECLARATION,
         Self::DATA_GENERATOR,
-        Self::CONSTRUCTOR_BLOCK_MEMBER,
         Self::CELL_MEMBER,
         Self::RULE_MEMBER,
         Self::CASE,
@@ -344,7 +343,7 @@ impl FormName
     pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
     /// The statement `val p = e ;`, inlined into its block.
     pub const VAL_STATEMENT: Self = Self("val_statement");
-    /// The data declaration `data T(a : A) : U { … }`.
+    /// The data declaration `data T(a : A) : U where { … }`.
     pub const DATA: Self = Self("data_declaration");
     /// The world declaration `world w ;`.
     pub const WORLD_DECLARATION: Self = Self("world_declaration");
@@ -355,14 +354,11 @@ impl FormName
     pub const FLOW: Self = Self("flow_declaration");
     /// The derived rule `derive r : l <=> r in T`.
     pub const DERIVE_DECLARATION: Self = Self("derive_declaration");
-    /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
+    /// A data block's constructor member `| C(x : A) : T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");
     /// The mutual block `rec { … }`, whose members are items.
     pub const MUTUAL: Self = Self("rec_block");
-    /// The declined constructor member `C(fields) : T`, inlined into the data
-    /// block so it is declined by name.
-    pub const CONSTRUCTOR_BLOCK_MEMBER: Self = Self("constructor_block_member");
     /// A data block's cell member `name : a <-> b` between two terms,
     /// inlined into the declaration.
     pub const CELL_MEMBER: Self = Self("cell_member");
@@ -524,6 +520,8 @@ impl TileName
     pub const BANG: Self = Self("!");
     /// The bar `|` that may lead a case arm.
     pub const BAR: Self = Self("|");
+    /// The arm bar `|` opening a constructor, a clause or a match arm.
+    pub const ARM_BAR: Self = Self("arm_bar");
     /// The bind arrow `<-` of a `run` statement.
     pub const BIND: Self = Self("<-");
     /// The theory member `boundary` naming a shape parameter's points.
@@ -659,6 +657,9 @@ impl TileName
     pub const LOOP: Self = Self("loop");
     /// The conditional loop keyword `while`.
     pub const WHILE: Self = Self("while");
+    /// The keyword `where` that ends a declaration's head and opens its
+    /// members.
+    pub const WHERE: Self = Self("where");
     /// The list loop keyword `for`.
     pub const FOR: Self = Self("for");
     /// The `in` naming the list a `for` loop steps through.
@@ -996,7 +997,7 @@ pub enum Former
     /// of its body — a definition or a nested module — which the grammar
     /// files under the same kind.
     Module,
-    /// The nominal data declaration `data T(a : A) : U { C : … ; … }`.
+    /// The nominal data declaration `data T(a : A) : U where { | C(x : B) … }`.
     Data,
     /// The mutual block `rec { … }`: its data declarations and definitions,
     /// each read as one at the root is, admitted as one block.

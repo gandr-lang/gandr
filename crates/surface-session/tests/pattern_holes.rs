@@ -45,7 +45,7 @@ use crate::written::refusal;
 
 /// A payload-bearing family without parameters: `Nothing` is tag 0 and
 /// `Just(x)` tag 1.
-const MAYBE: &str = "data Maybe : Type { Nothing : Maybe; Just : (x : Integer) --> Maybe; }\n";
+const MAYBE: &str = "data Maybe : Type where { | Nothing | Just(x : Integer) }\n";
 
 /// `pick` over `Color`, its arms `arms` written in source.
 ///

@@ -36,9 +36,9 @@ fn described<'source>(source: impl Into<SourceText<'source>>) -> DescriptionRepo
 fn a_ruled_theory_block_lowers_its_members_into_a_description()
 {
     let report = described(
-        r#"data Nat : Type {
-        Zero : Nat;
-        Succ : (n : Nat) --> Nat;
+        r#"data Nat : Type where {
+        | Zero
+        | Succ(n : Nat)
     }
     theory Nat {
         sort Nat : Type;

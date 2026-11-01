@@ -10,8 +10,8 @@ theory Reflexive {
 
 /// One value, of a type the source writes.
 @[ checks ]
-data Lone : Type {
-  Alone : Lone;
+data Lone : Type where {
+  | Alone
 }
 
 /// The model at `Lone`.

@@ -21,9 +21,9 @@ use crate::namespace::Recognition;
 /// Addition with both unit laws: the two unit rules overlap at `add(Zero,
 /// Zero)`, the right unit and the successor rule at `add(Succ(m), Zero)`, and
 /// both pairs join.
-const BOTH_UNITS: &str = r#"data NatUnits : Type {
-    Zero : NatUnits;
-    Succ : (n : NatUnits) --> NatUnits;
+const BOTH_UNITS: &str = r#"data NatUnits : Type where {
+    | Zero
+    | Succ(n : NatUnits)
     oper add(m : NatUnits, n : NatUnits) -> NatUnits;
     rule add(Zero, n) ==> n;
     rule add(m, Zero) ==> m;
@@ -124,10 +124,10 @@ fn an_overlap_that_joins_is_certified_and_runs_either_way()
 }
 
 /// The circle presented by its two cancellations.
-const CIRCLE: &str = r#"data Circle : Type {
-    Base : Circle;
-    Loop : (c : Circle) --> Circle;
-    Unloop : (c : Circle) --> Circle;
+const CIRCLE: &str = r#"data Circle : Type where {
+    | Base
+    | Loop(c : Circle)
+    | Unloop(c : Circle)
     rule Loop(Unloop(x)) ==> x;
     rule Unloop(Loop(x)) ==> x;
 }"#;
@@ -206,10 +206,10 @@ fn a_third_cancellation_parts_the_circles_readings()
 {
     let source = SourceText::from(
         r#"@[ checks ]
-data Circle : Type {
-    Base : Circle;
-    Loop : (c : Circle) --> Circle;
-    Unloop : (c : Circle) --> Circle;
+data Circle : Type where {
+    | Base
+    | Loop(c : Circle)
+    | Unloop(c : Circle)
     rule Loop(Unloop(x)) ==> x;
     rule Unloop(Loop(x)) ==> x;
     rule Loop(Loop(x)) ==> x;
@@ -374,9 +374,9 @@ fn two_rules_rewriting_one_term_apart_refuse_the_block()
 {
     let source = SourceText::from(
         r#"@[ checks ]
-data NatApart : Type {
-    Zero : NatApart;
-    Succ : (n : NatApart) --> NatApart;
+data NatApart : Type where {
+    | Zero
+    | Succ(n : NatApart)
     oper add(m : NatApart, n : NatApart) -> NatApart;
     rule add(Zero, n) ==> n;
     rule add(m, Zero) ==> Succ(m);
@@ -597,9 +597,9 @@ fn a_scope_extrusion_family_never_completes()
 fn a_permuted_call_no_order_orients_is_uncompleted()
 {
     let source = SourceText::from(
-        r#"data Nat : Type {
-    Zero : Nat;
-    Succ : (n : Nat) --> Nat;
+        r#"data Nat : Type where {
+    | Zero
+    | Succ(n : Nat)
     oper plus(m : Nat, n : Nat) -> Nat;
     oper pick(m : Nat, n : Nat) -> Nat;
     rule pick(m, n) ==> plus(m, n);
@@ -651,9 +651,9 @@ fn a_permuted_call_no_order_orients_is_uncompleted()
 fn a_data_blocks_derived_rule_is_a_pattern_rule()
 {
     let completed = SourceText::from(
-        r#"data NatSwap : Type {
-    Zero : NatSwap;
-    Succ : (n : NatSwap) --> NatSwap;
+        r#"data NatSwap : Type where {
+    | Zero
+    | Succ(n : NatSwap)
     oper add(m : NatSwap, n : NatSwap) -> NatSwap;
     oper swap(m : NatSwap, n : NatSwap) -> NatSwap;
     rule add(Zero, n) ==> n;
@@ -690,9 +690,9 @@ fn a_data_blocks_derived_rule_is_a_pattern_rule()
         assert_eq!(reached.spelling(), "Succ(Zero)");
     });
     let repeated = SourceText::from(
-        r#"data NatTwice : Type {
-    Zero : NatTwice;
-    Succ : (n : NatTwice) --> NatTwice;
+        r#"data NatTwice : Type where {
+    | Zero
+    | Succ(n : NatTwice)
     oper add(m : NatTwice, n : NatTwice) -> NatTwice;
     oper pick(m : NatTwice, n : NatTwice) -> NatTwice;
     rule add(Zero, n) ==> n;
@@ -722,9 +722,9 @@ fn two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_sa
 {
     let source = SourceText::from(
         r#"@[ checks ]
-data NatApart : Type {
-    Zero : NatApart;
-    Succ : (n : NatApart) --> NatApart;
+data NatApart : Type where {
+    | Zero
+    | Succ(n : NatApart)
     oper add(m : NatApart, n : NatApart) -> NatApart;
     rule add(m, Zero) ==> Succ(m);
     rule add(Zero, n) ==> n;
@@ -767,10 +767,10 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
     use crate::description::written::RuleOrientation::Unpinned;
 
     let source = SourceText::from(
-        r#"data Int : Type {
-    Z : Int;
-    S : (x : Int) --> Int;
-    P : (x : Int) --> Int;
+        r#"data Int : Type where {
+    | Z
+    | S(x : Int)
+    | P(x : Int)
     rule x <=> S(P(x));
     rule P(S(x)) <=> x;
 }"#,
@@ -801,8 +801,8 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
         );
     });
     let commuting = SourceText::from(
-        r#"data Pair : Type {
-    Z : Pair;
+        r#"data Pair : Type where {
+    | Z
     oper add(m : Pair, n : Pair) -> Pair;
     rule add(m, n) <=> add(n, m);
 }"#,
@@ -834,9 +834,9 @@ fn a_call_lends_the_text_it_was_written_as()
 fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
 {
     let source = SourceText::from(
-        r#"data NatGrow : Type {
-    Zero : NatGrow;
-    Succ : (n : NatGrow) --> NatGrow;
+        r#"data NatGrow : Type where {
+    | Zero
+    | Succ(n : NatGrow)
     oper grow(n : NatGrow) -> NatGrow;
     rule grow(n) ==> Succ(grow(n));
 }"#,
@@ -1055,10 +1055,10 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 fn an_equation_written_backwards_orients_forwards()
 {
     let source = SourceText::from(
-        r#"data Int : Type {
-    Z : Int;
-    S : (x : Int) --> Int;
-    P : (x : Int) --> Int;
+        r#"data Int : Type where {
+    | Z
+    | S(x : Int)
+    | P(x : Int)
     rule x <=> S(P(x));
     rule P(S(x)) <=> x;
 }"#,
@@ -1175,9 +1175,9 @@ fn a_congruence_is_no_rewrite_of_its_own()
 fn a_call_reads_its_normal_form_or_says_why_not()
 {
     let source = SourceText::from(
-        r#"data NatDiv : Type {
-  Zero : NatDiv;
-  Succ : (n : NatDiv) --> NatDiv;
+        r#"data NatDiv : Type where {
+  | Zero
+  | Succ(n : NatDiv)
   oper walk(m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) -> (quot : NatDiv, rem : NatDiv);
   oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);
   rule walk(Zero, g, d, q, r) ==> (q, r);

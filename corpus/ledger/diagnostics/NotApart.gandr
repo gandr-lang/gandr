@@ -1,10 +1,10 @@
 /// `NotApart`: a case of no branches over a path type whose endpoints are not shown apart.
-data Empty : Type {}
+data Empty : Type where {}
 
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
+data Int : Type where {
+  | Z
+  | S(x : Int)
+  | P(x : Int)
   rule S(P(x)) <=> x;
   rule P(S(x)) <=> x;
 }

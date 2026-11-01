@@ -786,7 +786,10 @@ impl<'source> Lowerer<'_, 'source>
                 .written
                 .constructors
                 .iter()
-                .any(|written| written.arguments.len() > entry.parameters.len())
+                .any(|written| match written.result {
+                    Maybe::Present(ref result) => result.arguments.len() > entry.parameters.len(),
+                    Maybe::Absent(_) => false,
+                })
         {
             return Err(Uncovered::Applied(position));
         }
@@ -941,7 +944,6 @@ fn uncarried(
                 | DescriptionFault::Repaired { .. }
                 | DescriptionFault::FamilyHead
                 | DescriptionFault::NonUniformResult
-                | DescriptionFault::GeneratorJudgment
                 | DescriptionFault::MemberPolarity
                 | DescriptionFault::TypeShape
                 | DescriptionFault::RetiredRuleArrow

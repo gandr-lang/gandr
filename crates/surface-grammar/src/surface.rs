@@ -500,7 +500,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "circuit_member",
     "circuit_signature",
     "codata_observation",
-    "constructor_block_member",
     "data_generator",
     "def_rec",
     "feed_statement",

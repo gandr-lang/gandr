@@ -1,0 +1,6 @@
+data Circle : Type where {
+  | Base
+  | loop : Base <-> Base
+}
+def wound : Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base)) ;
+def wound = 1 ;

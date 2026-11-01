@@ -1180,6 +1180,7 @@ fn typed(tile: TileLabel) -> Spelled
         | Lexeme::SubshellOpen
         | Lexeme::SubshellClose
         | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
         | Lexeme::Space
         | Lexeme::Unknown => false,
     };
@@ -2500,7 +2501,7 @@ mod tests
             ("def x = (", ")"),
             ("def x = ", "answer;"),
             ("def f(x: Nat) -> -F Nat {\n  case x {", " }\n}"),
-            ("data Nat : Type {\n  Zero : Nat;", "\n}"),
+            ("data Nat : Type where {\n  | Zero", "\n}"),
             ("def x = (", ") + 1;"),
             ("def x = (", "1 + 2)"),
             ("def x = (", "(1))"),
@@ -2565,13 +2566,12 @@ mod tests
               " + { . ${1:identifier} = ${2:pattern} \\} => ${3:computation}"
               " ${1:pattern} => ${2:computation}, | ${3:pattern} => ${4:computation}"
               " [${1:pattern}] => ${2:computation}"
-            "data Nat : Type {\n  Zero : Nat;" ‸ "\n}"
-              " ${1:constructor}"
-              " ${1:constructor} : ${2:type}"
-              " rule ${1:value} ==> ${2:value}"
-              " rule ${1:value} <=> ${2:value}"
-              " rule ${1:value} ~> ${2:value}"
-              " ${1:constructor} [${2:identifier}]"
+            "data Nat : Type where {\n  | Zero" ‸ "\n}"
+              " : ${1:type}"
+              " (${1:type})"
+              " [${1:identifier}]"
+              " (${1:type}) : ${2:type}"
+              " (${1:identifier} : ${2:type})"
             "def x = (" ‸ ") + 1;"
               "${1:value}"
               "- ${1:value}"
@@ -2700,7 +2700,7 @@ mod tests
               " type(${1:type})"
             "" ‸ ""
               "def ${1:identifier} : ${2:type};"
-              "data ${1:type_identifier} { \\}"
+              "data ${1:type_identifier} where { \\}"
               "codata ${1:type_identifier} { \\}"
               "module ${1:type_identifier} { ${2:member} \\}"
               "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}"

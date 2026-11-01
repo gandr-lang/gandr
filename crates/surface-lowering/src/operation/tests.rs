@@ -35,9 +35,9 @@ use crate::namespace::Recognition;
 
 /// Division with remainder over unary naturals: a two-output operation over a
 /// five-input helper, with the divisor carried twice so no rule copies it.
-const NAT_DIV: &str = "data NatDiv : Type {
-    Zero : NatDiv;
-    Succ : (n : NatDiv) --> NatDiv;
+const NAT_DIV: &str = "data NatDiv : Type where {
+    | Zero
+    | Succ(n : NatDiv)
     oper walk(m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) -> (quot : NatDiv, rem : NatDiv);
     oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);
     rule walk(Zero, g, d, q, r) ==> (q, r);
@@ -273,9 +273,9 @@ fn an_operations_rules_read_in_pre_order_over_module_positions()
 #[test]
 fn a_call_reaches_the_operation_before_a_builtin_of_its_name()
 {
-    let source = "data NatAdd : Type {
-    Zero : NatAdd;
-    Succ : (n : NatAdd) --> NatAdd;
+    let source = "data NatAdd : Type where {
+    | Zero
+    | Succ(n : NatAdd)
     oper add(m : NatAdd, n : NatAdd) -> NatAdd;
     rule add(Zero, n) ==> n;
     rule add(Succ(m), n) ==> Succ(add(m, n));
@@ -309,9 +309,9 @@ def two = thunk { become add(Succ(Zero), Succ(Zero)) } ;
 #[test]
 fn a_leaf_delivers_its_results_in_port_order()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
+    let source = "data Flag : Type where {
+    | Down
+    | Up
     oper swap(a : Flag, b : Flag) -> (x : Flag, y : Flag);
     rule swap(a, b) ==> (b, a);
 }
@@ -371,9 +371,9 @@ fn a_leaf_delivers_its_results_in_port_order()
 #[test]
 fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 {
-    let source = "data NatOp : Type {
-    Zero : NatOp;
-    One : NatOp;
+    let source = "data NatOp : Type where {
+    | Zero
+    | One
     oper half(m : NatOp, n : NatOp) -> NatOp;
     rule half(Zero, n) ==> n;
 }
@@ -390,9 +390,9 @@ fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 #[test]
 fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
+    let source = "data Flag : Type where {
+    | Down
+    | Up
     oper pick(x : Flag, y : Flag) -> Flag;
     rule pick(x) ==> x;
 }
@@ -409,12 +409,12 @@ fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 #[test]
 fn an_operation_at_an_index_routes_nothing_2940()
 {
-    let source = "data N : Type {
-    Z : N;
-    S : (n : N) --> N;
+    let source = "data N : Type where {
+    | Z
+    | S(n : N)
 }
-data Skip : N -> Type {
-    Halt : Skip(Z);
+data Skip : N -> Type where {
+    | Halt : Skip(Z)
     oper skip(k : Skip(Z)) -> Skip(Z);
     rule skip(k) ==> k;
 }
@@ -431,9 +431,9 @@ data Skip : N -> Type {
 #[test]
 fn an_operation_calling_a_later_one_is_not_callable()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
+    let source = "data Flag : Type where {
+    | Down
+    | Up
     oper first(x : Flag) -> Flag;
     oper second(x : Flag) -> Flag;
     rule first(x) ==> second(x);
@@ -452,9 +452,9 @@ fn an_operation_calling_a_later_one_is_not_callable()
 #[test]
 fn an_operation_declared_twice_in_one_family_is_routed_once()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
+    let source = "data Flag : Type where {
+    | Down
+    | Up
     oper keep(x : Flag) -> Flag;
     oper keep(x : Flag) -> Flag;
     rule keep(x) ==> x;
@@ -472,9 +472,9 @@ fn an_operation_declared_twice_in_one_family_is_routed_once()
 #[test]
 fn a_declined_rule_withholds_only_its_own_operation()
 {
-    let source = "data Bit : Type {
-    Off : Bit;
-    On : Bit;
+    let source = "data Bit : Type where {
+    | Off
+    | On
     oper not(a : Bit) -> Bit;
     oper and(a : Bit, b : Bit) -> Bit;
     rule not(Off) ==> On;
@@ -497,9 +497,9 @@ fn an_operation_with_a_law_runs_by_its_other_rules_1510()
     use gandr_kernel_term::FieldCount;
     use gandr_kernel_term::OperationNode;
     use gandr_kernel_term::RuleVariable;
-    let source = "data NatAssoc : Type {
-    Zero : NatAssoc;
-    Succ : (n : NatAssoc) --> NatAssoc;
+    let source = "data NatAssoc : Type where {
+    | Zero
+    | Succ(n : NatAssoc)
     oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
     rule add(Zero, n) ==> n;
     rule add(Succ(m), n) ==> Succ(add(m, n));

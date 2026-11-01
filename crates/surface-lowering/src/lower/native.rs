@@ -240,7 +240,7 @@
 //! `def rec` function to one fixpoint over the parameter its matches take
 //! apart, recursive calls written with the descent claim `f[<](…)`.
 //!
-//! `data T(a : A) : Type { C : (x : X) --> T(a); … }` at the root lowers to the
+//! `data T(a : A) : Type where { | C(x : X) … }` at the root lowers to the
 //! core's native `DataSignature`: the parameters as a telescope, each
 //! generator's fields as one constructor, in source order. A field may name the
 //! family it belongs to, applied to its own parameters, which is how `List(a)`
@@ -248,15 +248,14 @@
 //! checker's judgment, not the lowering's. `DeclarationOutcome::Data` carries a
 //! `DataIndex` into `LoweredModule::data`, so the outcome stays `Copy` and the
 //! signature is shared, not cloned, with the checker's declaration. A kind
-//! written as an arrow, `data V(a : A) : I -> Type { … }`, indexes the family:
-//! each domain is an index classifier read under the parameters, and each
-//! generator's result applies the family to its own parameters and then one
-//! term per index, the index its value stands at, read under the parameters
+//! written as an arrow, `data V(a : A) : I -> Type where { … }`, indexes the
+//! family: each domain is an index classifier read under the parameters, and
+//! each generator's result applies the family to its own parameters and then
+//! one term per index, the index its value stands at, read under the parameters
 //! and the generator's fields (`tests::an_indexed_family_lowers_its_indices`).
 //! A generator whose result applies the family to anything else, and a cell on
 //! an indexed family, are declined as `OutOfFragment` with the `Indexed`
-//! boundary; the constructor-block spelling and a field's attributes or grade
-//! are declined by name
+//! boundary; a field's attributes or grade are declined by name
 //! (`tests::members_outside_the_fragment_are_declined_by_name`); a constructor
 //! named twice is `DuplicateDefinition`. Each of these is decided while the
 //! declaration is collected, so the declaration records no half and its

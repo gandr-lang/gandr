@@ -1,8 +1,8 @@
 /// `OutOfFragment.Reserved`: a form parsed so it can be declined by name: a recursive call claiming both descent and productivity.
 @[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
 
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]

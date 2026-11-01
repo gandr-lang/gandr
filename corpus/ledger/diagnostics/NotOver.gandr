@@ -1,23 +1,23 @@
 /// `NotOver`: a telescope transport's second identity that does not lie over its path.
 @[ checks ]
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base
+  | loop : Base <-> Base
 }
 
 @[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
+data Int : Type where {
+  | Z
+  | S(x : Int)
+  | P(x : Int)
   rule S(P(x)) <=> x;
   rule P(S(x)) <=> x;
 }
 
 @[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
 
 @[ refuses("NotOver") ]

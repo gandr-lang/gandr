@@ -23,8 +23,8 @@ theory Equivalence {
 }
 
 /// One value.
-data Single : Type {
-  Only : Single;
+data Single : Type where {
+  | Only
 }
 
 /// Every two values are alike, so each law's sides convert, and the checker discharges all three.

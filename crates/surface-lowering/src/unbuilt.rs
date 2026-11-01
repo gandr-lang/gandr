@@ -255,8 +255,6 @@ pub enum Unbuilt
     /// A cell member with parameters, a side that is no closed term, or a rule
     /// arrow.
     CellMember,
-    /// The constructor member `C(fields) : T` of a data block.
-    ConstructorBlockMember,
     /// An attribute block on a data block's generator.
     GeneratorAttribute,
     /// A model signature the derivation cannot state.
@@ -273,7 +271,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 82_usize] = [
+    pub const ALL: [Self; 81_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -351,7 +349,6 @@ impl Unbuilt
         Self::UaDescription,
         Self::ComposePasting,
         Self::CellMember,
-        Self::ConstructorBlockMember,
         Self::GeneratorAttribute,
         Self::ModelSignature,
         Self::TermsType,
@@ -457,7 +454,6 @@ impl Unbuilt
             Self::UaDescription => "ua_description",
             Self::ComposePasting => "compose_pasting",
             Self::CellMember => "cell_member",
-            Self::ConstructorBlockMember => "constructor_block_member",
             Self::GeneratorAttribute => "attribute",
             Self::ModelSignature => "model_signature",
             Self::TermsType => "terms_type.sorted",
@@ -557,9 +553,7 @@ impl Unbuilt
             Self::ComposePasting => TrackingIssue::ITERATED_SITE,
             Self::TermsType => TrackingIssue::SORTED_TERMS,
             Self::LawTerms => TrackingIssue::LAW_CELL,
-            Self::CellMember | Self::ConstructorBlockMember | Self::GeneratorAttribute => {
-                TrackingIssue::DATA_MEMBER
-            },
+            Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
         }
     }
 }

@@ -1504,7 +1504,7 @@ fn a_derived_operation_needs_a_written_path_answer()
     let module = lowered(
         SourceText::from(concat!(
             "def g(p: Path(Integer, 1, 1)) -> -F Integer {\n  become back(p)\n}\n",
-            "data Triple(a : Type, b : Type, c : Type) : Type {\n  Mk : Triple(a, b, c);\n}\n",
+            "data Triple(a : Type, b : Type, c : Type) : Type where {\n  | Mk\n}\n",
             "def three(p: Path(Integer, 1, 1)) -> -F Triple(Integer, Integer, Integer) {\n  become back(p)\n}\n",
         )),
         &mut arena,
@@ -1535,7 +1535,7 @@ fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
             "def derived : Path(Circle, Base, Base);\ndef derived = loop then loop;\n",
             "def written : Path(Circle, Base, Base);\ndef written = transport(\\a. Path(Circle, Base, a), loop, loop);\n",
         )),
@@ -1583,7 +1583,7 @@ fn back_at_a_looped_point_moves_its_empty_word_1003()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
             "def derived : Path(Circle, Base, Base);\ndef derived = back(loop);\n",
             "def written : Path(Circle, Base, Base);\ndef written = transport(\\a. Path(Circle, a, Base), loop, here(Base));\n",
         )),
@@ -1633,7 +1633,7 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
             "def collapse(x : Circle) -> -F Circle {\n  case x {\n    Base => Base\n  }\n}\n",
             "def two : Path(Circle, Base, Base);\ndef two = loop then loop;\n",
             "def undone : Path(Circle, Base, Base);\ndef undone = back(loop then loop);\n",
@@ -1766,8 +1766,8 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
-            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
+            "data Int : Type where {\n  | Z\n  | S(x : Int)\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             // A parameter, in a body and in a type.
             "def inBody(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  back(p)\n}\n",
@@ -1844,7 +1844,7 @@ fn a_derived_operation_reads_a_named_paths_stated_type_2995()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
             "def named : Path(Circle, Base, Base) = loop;\n",
             "def flipped : Path(Circle, Base, Base) = back(named);\n",
             "def round : Path(Circle, Base, Base) = named then back(named);\n",
@@ -1884,7 +1884,7 @@ fn a_call_reads_a_dependent_result_through_either_spelling_812()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "data Int : Type where {\n  | Z\n  | S(x : Int)\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             "def sugared : (a : Int) => Path(Int, a, a) ;\n",
             "def thunked : +U ((a : Int) -> -F Path(Int, a, a)) ;\n",
@@ -1915,7 +1915,7 @@ fn a_call_reads_a_non_dependent_result_through_either_spelling()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "data Int : Type where {\n  | Z\n  | S(x : Int)\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             "def sugared : Int => Path(Int, Z, Z) ;\n",
             "def thunked : +U (Int -> -F Path(Int, Z, Z)) ;\n",
@@ -1944,7 +1944,7 @@ fn a_descent_reads_its_path_result_past_a_leading_parameter()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "data Int : Type where {\n  | Z\n  | S(x : Int)\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             "def rec descend(k : Int, b : Int) -> -F Path(Int, b, b) {\n  case b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](k, x)) then here(S(x))\n  }\n}\n",
         )),
@@ -1969,8 +1969,8 @@ fn cong_reads_a_map_stated_as_a_value_function_791()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
-            "data Int : Type {\n  Z : Int;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
+            "data Int : Type where {\n  | Z\n}\n",
             "def explicit(f : +U (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
             "def sugared(f : Circle => Int) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
             "def grouped(f : (Circle => Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
@@ -1999,7 +1999,7 @@ fn cong_reads_a_map_its_signature_states_778()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n",
+            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n",
             "def sugared : Circle => Circle ;\n",
             "def sugared = thunk { fn (a) { a } } ;\n",
             "def explicit : +U (Circle -> -F Circle) ;\n",

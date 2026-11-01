@@ -694,8 +694,8 @@ fn declared(
 }
 
 /// Where the node at `at` starts, when it is a tile ending what a declaration
-/// writes after its name: the `=` before its definition, the `{` opening its
-/// body or the `;` ending it.
+/// writes after its name: the `=` before its definition, the `where` or `{`
+/// opening its body or the `;` ending it.
 ///
 /// # Specification
 /// trivial.
@@ -710,7 +710,7 @@ fn body_start(
         return None;
     };
     tree.fragment(at)
-        .filter(|text| matches!(<&str>::from(*text), "=" | "{" | ";"))
+        .filter(|text| matches!(<&str>::from(*text), "=" | "where" | "{" | ";"))
         .map(|_| node.span().start())
 }
 
@@ -836,7 +836,7 @@ fn kind_of(
 pub struct Run
 {
     /// From its first child to the `;` ending it, or to its last child
-    /// before the closing `}`.
+    /// before the next member's bar or the closing `}`.
     pub span: ByteSpan,
     /// Its own tiles written at the braces' depth, in source order: the `{`
     /// opening a nested group among them, the `}` closing it not.
@@ -845,14 +845,17 @@ pub struct Run
 
 /// The runs of the form at `at`: its own children between the first `{`
 /// among its own tiles and the `}` closing it, cut at each `;` the braces hold
-/// directly.
+/// directly and before each arm bar they hold directly.
 ///
 /// # Specification
 /// - requires: nothing; a form with no braces has no runs.
 /// - ensures: one run per stretch of the form's own children, layout and
 ///   documentation aside, ended by a `;` at the braces' depth — which it
-///   includes — or by the closing `}`, in source order; a brace a run writes
-///   nests, so a `shape`'s faces stay in its run. An empty stretch is no run.
+///   includes — or by the closing `}`, in source order; a `|` at the braces'
+///   depth ends the run before it and opens the next, which leaves the bar out,
+///   and that run ends before the next `oper`, `op` or `rule`, which writes no
+///   bar; a brace a run writes nests, so a `shape`'s faces stay in its run. An
+///   empty stretch is no run.
 /// - provides: the members a theory, a family or a codata declaration writes,
 ///   for its symbols and its hover.
 /// - fails: never.
@@ -874,6 +877,7 @@ pub fn runs(
     let mut depth = 0_usize;
     let mut written: Option<ByteSpan> = None;
     let mut tiles: Vec<NodeIndex> = Vec::new();
+    let mut barred = false;
     for child in tree.children(at) {
         let Some(node) = tree.node(child)
         else {
@@ -889,6 +893,19 @@ pub fn runs(
         };
         let text = tree.fragment(child).filter(|_| tile).map(<&str>::from);
         let written_at = depth;
+        let ends_barred = barred && matches!(text, Some("oper" | "op" | "rule"));
+        if depth == 1 && (text == Some("|") || ends_barred) {
+            if let Some(span) = written.take() {
+                runs.push(Run {
+                    span,
+                    tiles: core::mem::take(&mut tiles),
+                });
+            }
+            barred = text == Some("|");
+            if barred {
+                continue;
+            }
+        }
         match (depth, text) {
             (0, Some("{")) => {
                 depth = 1;
@@ -907,6 +924,7 @@ pub fn runs(
                     });
                 }
                 written = None;
+                barred = false;
                 if closer == "}" {
                     break;
                 }
@@ -1435,17 +1453,13 @@ mod tests
     #[test]
     fn declarations_nest_as_symbols()
     {
-        let source = "/// Doubles nothing.\n@[ checks ]\ndef twice(x: Integer) -> -F Integer {\n  return x\n}\n\
-                      def answer = 42 ;\n\
-                      @[ checks ]\ndata Color : Type { Red : Color; }\n\
-                      module Outer {\n  def inner = 1 ;\n  module Nested {\n    def deep = 2 ;\n  }\n}\n\
-                      world seat ;\n";
+        let source = include_str!("outline/fixtures/nested.gandr");
         let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(outline(&answered), [
             "twice 12 1:0-4:1 at 2:4-2:9",
             "answer 12 5:0-5:17 at 5:4-5:10",
-            "Color 10 6:0-7:34 at 7:5-7:10",
-            "  Red 9 7:20-7:32 at 7:20-7:23",
+            "Color 10 6:0-7:33 at 7:5-7:10",
+            "  Red 9 7:28-7:31 at 7:28-7:31",
             "Outer 2 8:0-13:1 at 8:7-8:12",
             "  inner 12 9:2-9:17 at 9:6-9:11",
             "  Nested 2 10:2-12:3 at 10:9-10:15",
@@ -1537,12 +1551,7 @@ mod tests
     #[test]
     fn each_symbol_carries_what_it_writes_after_its_name()
     {
-        let source = "def twice(\n  x : Integer\n) -> -F Integer {\n  return x\n}\ndef answer = 42 \
-                      ;\ndef later : Integer ;\ndata Color : Type { Red : Color; }\ntheory Shapes {\n  \
-                      sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule spin : (data s : \
-                      M) ==> (out : M) {\n    node : mul(s, s) --> (out);\n  };\n}\nmodule Plain \
-                      {\n  def one = 1 ;\n}\nworld seat ;\nmodule Kit.Tools : #{ two : Integer } \
-                      {\n  def two = 2 ;\n}\n";
+        let source = include_str!("outline/fixtures/details.gandr");
         let details: Vec<(String, Option<String>)> = Reading::of(SourceText::from(source))
             .symbols()
             .0

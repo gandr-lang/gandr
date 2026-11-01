@@ -615,7 +615,7 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+                "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n",
             ),
             (
                 "deeper/mid.gandr",

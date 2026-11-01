@@ -1,13 +1,13 @@
 /// `MismatchedPattern`: a case arm naming a constructor of another data type than the first arm's.
 @[ checks ]
-data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+data Bit : Type where {
+  | Zero
+  | One
 }
 
 @[ checks ]
-data Box : Type {
-  Boxed : (n : Integer) --> Box;
+data Box : Type where {
+  | Boxed(n : Integer)
 }
 
 @[ refuses("MismatchedPattern") ]

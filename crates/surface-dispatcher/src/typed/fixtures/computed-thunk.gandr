@@ -1,0 +1,31 @@
+data Sig(a : Type, b : +U (a -> -F Type)) : Type where {
+  | MkSig(x : a, y : b(x))
+}
+data IR(d : Type) : Type[+, 1] where {
+  | Iota(e : d)
+  | DeltaC(a : Type, f : +U (+U (a -> -F d) -> -F IR(d)))
+}
+def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
+  case c {
+    Iota(e) => return Unit,
+    DeltaC(a, f) => return (Sig(
+      +U (a -> -F x),
+      thunk { fn (h) { args[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t) } }
+    ))
+  }
+}
+def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> Unit {
+  return unit
+}
+def delta(
+  d : Type,
+  a : Type,
+  f : +U (+U (a -> -F d) -> -F IR(d)),
+  x : Type,
+  t : +U (x -> -F d),
+  v : args(d, (DeltaC(a, f) : IR(d)), x, t)
+) -> Unit {
+  case v {
+    MkSig(h, r) => keep(d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
+  }
+}

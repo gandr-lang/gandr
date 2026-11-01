@@ -98,7 +98,7 @@ const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Int
                          String { run m <- id(n) ; return m }\n";
 
 /// Unary naturals, addition, Fibonacci both ways and two closed points.
-const FIBONACCI: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
+const FIBONACCI: &str = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef rec \
                          plus(a : Nat, b : Nat) -> Nat {\n  case a {\n    Zero => b,\n    \
                          Succ(m) => Succ(plus[<](m, b))\n  }\n}\ndef rec fib(n : Nat) -> Nat {\n  \
                          case n {\n    Zero => Zero,\n    Succ(m) => case m {\n      Zero => \
@@ -592,7 +592,7 @@ fn a_mismatch_spells_the_constructors_its_type_mentions()
     let mismatch = only(
         Path::new("constructed.gandr"),
         SourceText::from(
-            "data Box : Type {\n  Wrap : (n : Integer) --> Box;\n}\ndef wrapped : Path(Box, \
+            "data Box : Type where {\n  | Wrap(n : Integer)\n}\ndef wrapped : Path(Box, \
                  Wrap(4), Wrap(5)) ;\ndef wrapped = 1 ;\n",
         ),
     );
@@ -608,11 +608,7 @@ fn a_word_spells_by_its_letters()
 {
     let mismatch = only(
         Path::new("worded.gandr"),
-        SourceText::from(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef wound : \
-                 Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base)) ;\ndef \
-                 wound = 1 ;\n",
-        ),
+        SourceText::from(include_str!("diagnostics/fixtures/worded.gandr")),
     );
     assert_eq!(
         mismatch.detail.compared.expected,
@@ -624,11 +620,7 @@ fn a_word_spells_by_its_letters()
     );
     let preceded = only(
         Path::new("preceded.gandr"),
-        SourceText::from(
-            "data Other : Type {\n  Spot : Other;\n}\ndata Circle : Type {\n  Base : Circle;\n  \
-                 loop : Base <-> Base;\n}\ndef wound : Path(Path(Circle, Base, Base), back(loop) \
-                 ∷ here(Base), here(Base)) ;\ndef wound = 1 ;\n",
-        ),
+        SourceText::from(include_str!("diagnostics/fixtures/preceded.gandr")),
     );
     assert_eq!(
         preceded.detail.compared.expected,
@@ -644,7 +636,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n}\ndef rec down(n : Nat) \
+        "data Nat : Type where {\n  | Zero\n  | Succ(p : Nat)\n}\ndef rec down(n : Nat) \
          -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  \
          }\n}\n",
     );
@@ -713,8 +705,7 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Term : Type {\n  Var : (n : Integer) --> Term;\n  App : (t : Term, u : Term) --> \
-         Term;\n}\ntheory Pointed {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
+        "data Term : Type where {\n  | Var(n : Integer)\n  | App(t : Term, u : Term)\n}\ntheory Pointed {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
          applies(link : Theory) -> Integer {\n  case link {\n    Theory.App(head, rest) => 1,\n    \
          _ => 0\n  }\n}\n",
     );
@@ -781,7 +772,7 @@ fn a_declaration_s_binders_are_named_as_written_803()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n}\ndef rec down(n : Nat) \
+        "data Nat : Type where {\n  | Zero\n  | Succ(p : Nat)\n}\ndef rec down(n : Nat) \
          -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(m) => become down[<](m)\n  \
          }\n}\n",
     );
@@ -1008,7 +999,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef invLooper(x : \
+        "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\ndef invLooper(x : \
          Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -1487,7 +1478,7 @@ fn a_mismatch_under_a_binder_names_it()
 fn a_refusal_spells_its_binders_by_name_418()
 {
     let text = SourceText::from(
-        "data Theory : Type {\n  Monoid : Theory;\n  Group : Theory;\n}\ndef counted_at(s : Theory) -> \
+        "data Theory : Type where {\n  | Monoid\n  | Group\n}\ndef counted_at(s : Theory) -> \
              -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
              String\n  }\n}\ndef moved(presented : Theory, other : Theory, n : counted_at(presented)) \
              -> -F counted_at(other) {\n  n\n}\n",
@@ -1538,34 +1529,34 @@ fn a_refusal_spells_its_binders_by_name_418()
 #[test]
 fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
 {
-    const BOUNDS: &str = r#"data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+    const BOUNDS: &str = r#"data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
-data Fin : Nat -> Type {
-  FZ : (n : Nat) --> Fin(Succ(n));
+data Fin : Nat -> Type where {
+  | FZ(n : Nat) : Fin(Succ(n))
 }
 "#;
     for (declaration, expected, found) in [
         (
-            r#"data Bad(n : Nat) : Type {
-  B : (i : Fin(n), j : Fin(i)) --> Bad(n);
+            r#"data Bad(n : Nat) : Type where {
+  | B(i : Fin(n), j : Fin(i))
 }
 "#,
             "Nat",
             "Fin(n)",
         ),
         (
-            r#"data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type {
-  Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j);
+            r#"data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type where {
+  | Read(n : Nat, i : Fin(n), j : Fin(n)) : Misread(n, i, j)
 }
 "#,
             "Nat",
             "Fin(n)",
         ),
         (
-            r#"data Past : (n : Nat, i : Fin(n)) --> Type {
-  Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i);
+            r#"data Past : (n : Nat, i : Fin(n)) --> Type where {
+  | Over(n : Nat, i : Fin(n)) : Past(Succ(n), i)
 }
 "#,
             "Fin(Succ(n))",
@@ -1605,12 +1596,12 @@ data Fin : Nat -> Type {
 #[test]
 fn a_signature_s_refusal_spells_its_binders_by_name_4043()
 {
-    const BOUNDS: &str = r#"data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+    const BOUNDS: &str = r#"data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
-data Fin : Nat -> Type {
-  FZ : (n : Nat) --> Fin(Succ(n));
+data Fin : Nat -> Type where {
+  | FZ(n : Nat) : Fin(Succ(n))
 }
 "#;
     for (declaration, hypotheses) in [
@@ -1619,7 +1610,7 @@ data Fin : Nat -> Type {
             &["k : Nat", "x : Fin(k)"][..],
         ),
         (
-            "data Inner(n : Nat) : Type { C : (k : Nat, f : (x : Fin(k)) => Fin(x)) --> Inner(n); }\n",
+            "data Inner(n : Nat) : Type where { | C(k : Nat, f : (x : Fin(k)) => Fin(x)) }\n",
             &["n : Nat", "k : Nat", "x : Fin(k)"][..],
         ),
     ] {
@@ -3130,9 +3121,8 @@ fn a_words_point_spells_its_constructors_arguments()
 
     let grammar = built_in().expect("the grammar builds");
     let text = SourceText::from(
-        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n  Pair : (a : Nat, b : \
-         Nat) --> Nat;\n  step : Succ(Zero) <-> Succ(Zero);\n  both : Pair(Zero, Zero) <-> \
-         Pair(Zero, Zero);\n}\n",
+        "data Nat : Type where {\n  | Zero\n  | Succ(p : Nat)\n  | Pair(a : Nat, b :  Nat)\n  | step : Succ(Zero) <-> Succ(Zero)\n  | both : Pair(Zero, Zero) <-> \
+         Pair(Zero, Zero)\n}\n",
     );
     let Lowered::Module { module, .. } =
         lower_source(&grammar, text, &mut LoweringCount::default())
@@ -3230,7 +3220,7 @@ fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498(
 fn a_later_binder_of_one_split_spells_under_the_earlier()
 {
     let text = SourceText::from(
-        "data Theory : Type {\n  Monoid : Theory;\n  Group : Theory;\n}\ndef counted_at(s : \
+        "data Theory : Type where {\n  | Monoid\n  | Group\n}\ndef counted_at(s : \
          Theory) -> -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
          String\n  }\n}\ndef bad(p : #{s : Theory, n : counted_at(s)}, other : Theory) -> -F \
          counted_at(other) {\n  case p {\n    #{s, n} => return n\n  }\n}\n",

@@ -10090,7 +10090,7 @@ mod tests
         let directory = std::env::temp_dir().join(format!("gandr-symbols-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let base = "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n";
+        let base = include_str!("server/fixtures/nat-base.gandr");
         let disk = [
             ("base.gandr", base),
             (
@@ -10140,8 +10140,8 @@ mod tests
             search(&mut server, "su"),
             serde_json::json!([{"jsonrpc": "2.0", "id": 9_i32, "result": [
                 {"name": "Succ", "kind": 9_i32, "containerName": "Nat", "location": {"uri": base_uri,
-                    "range": {"start": {"line": 2_i32, "character": 2_i32},
-                              "end": {"line": 2_i32, "character": 6_i32}}}}]}]),
+                    "range": {"start": {"line": 2_i32, "character": 4_i32},
+                              "end": {"line": 2_i32, "character": 8_i32}}}}]}]),
             "a constructor a sibling two open closures read is found once, at the sibling's path, \
              held by its family"
         );
@@ -10246,10 +10246,7 @@ mod tests
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let opener = "import \"./base.gandr\" ;\ndef near : Nat ;\ndef near = Zero ;\n";
         for (file, text) in [
-            (
-                "base.gandr",
-                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
-            ),
+            ("base.gandr", include_str!("server/fixtures/nat-base.gandr")),
             ("opener.gandr", opener),
             ("held.gandr", "def stale : Integer ;\ndef stale = 1 ;\n"),
             (
@@ -10320,7 +10317,7 @@ mod tests
             [(
                 String::from("Succ"),
                 uri("base.gandr"),
-                at(2_i32, 2_i32, 6_i32)
+                at(2_i32, 4_i32, 8_i32)
             )],
             "a source an open closure reads and the folder holds is found once"
         );
@@ -10536,7 +10533,7 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+                "pub data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n",
             ),
             (
                 "lonely/far.gandr",
@@ -10710,9 +10707,7 @@ mod tests
         let disk = [
             (
                 "base.gandr",
-                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-                 pub def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
-                 Succ(p) => Succ(plus[<](n, p))\n  }\n}\n",
+                include_str!("server/fixtures/nat-plus-base.gandr"),
             ),
             (
                 "first.gandr",
@@ -10761,7 +10756,7 @@ mod tests
         assert_eq!(
             references("first.gandr", 2, 14, true),
             Value::Array(
-                core::iter::once(location("base.gandr", 1, 2, 6))
+                core::iter::once(location("base.gandr", 1, 4, 8))
                     .chain(uses.iter().cloned())
                     .collect()
             ),
@@ -10769,7 +10764,7 @@ mod tests
              then its uses in every open document, an unopened importer's not read"
         );
         assert_eq!(
-            references("base.gandr", 1, 3, false),
+            references("base.gandr", 1, 5, false),
             Value::Array(uses.to_vec()),
             "the same uses from the declaring name, the declaration left out"
         );
@@ -11203,9 +11198,7 @@ mod tests
         let disk = [
             (
                 "base.gandr",
-                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-                 pub def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
-                 Succ(p) => Succ(plus[<](n, p))\n  }\n}\n",
+                include_str!("server/fixtures/nat-plus-base.gandr"),
             ),
             (
                 "first.gandr",
@@ -11255,7 +11248,7 @@ mod tests
                 serde_json::json!({"context": {"includeDeclaration": true}})
             )["result"],
             serde_json::json!([
-                location("base.gandr", 1, 2, 6),
+                location("base.gandr", 1, 4, 8),
                 location("first.gandr", 2, 13, 17),
                 location("base.gandr", 6, 4, 8),
                 location("unopened.gandr", 2, 13, 17),
@@ -11295,7 +11288,7 @@ mod tests
                 serde_json::json!({"newName": "Nought"})
             )["result"],
             serde_json::json!({"changes": {
-                uri("base.gandr"): [edit(1, 2, 6), edit(6, 4, 8)],
+                uri("base.gandr"): [edit(1, 4, 8), edit(6, 4, 8)],
                 uri("first.gandr"): [edit(2, 13, 17)],
                 uri("unopened.gandr"): [edit(2, 13, 17)],
             }}),
@@ -11360,7 +11353,10 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let disk = [
-            ("base.gandr", "pub data Nat : Type {\n  Zero : Nat;\n}\n"),
+            (
+                "base.gandr",
+                include_str!("server/fixtures/nat-zero-base.gandr"),
+            ),
             (
                 "first.gandr",
                 "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
@@ -11397,7 +11393,7 @@ mod tests
         assert_eq!(
             renamed(serde_json::json!({})),
             serde_json::json!({"changes": {
-                uri("base.gandr"): [edit(1, 2, 6)],
+                uri("base.gandr"): [edit(1, 4, 8)],
                 uri("first.gandr"): [edit(2, 13, 17)],
             }}),
             "a client that declares nothing takes the edits by URI"
@@ -11405,7 +11401,7 @@ mod tests
         assert_eq!(
             renamed(serde_json::json!({"workspace": {"workspaceEdit": {"documentChanges": true}}})),
             serde_json::json!({"documentChanges": [
-                {"textDocument": {"uri": uri("base.gandr"), "version": null}, "edits": [edit(1, 2, 6)]},
+                {"textDocument": {"uri": uri("base.gandr"), "version": null}, "edits": [edit(1, 4, 8)]},
                 {"textDocument": {"uri": uri("first.gandr"), "version": 7_i32}, "edits": [edit(2, 13, 17)]},
             ]}),
             "a client that takes document changes gets its copy's version, and null for a file it \
@@ -11417,7 +11413,7 @@ mod tests
             serde_json::json!({
                 "documentChanges": [
                     {"textDocument": {"uri": uri("base.gandr"), "version": null},
-                        "edits": [annotated(1, 2, 6)]},
+                        "edits": [annotated(1, 4, 8)]},
                     {"textDocument": {"uri": uri("first.gandr"), "version": 7_i32},
                         "edits": [edit(2, 13, 17)]},
                 ],
@@ -11444,7 +11440,7 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "pub data Nat : Type {\n  Zero : Nat;\n}\npub def zero : Nat ;\ndef zero = Zero ;\n",
+                "pub data Nat : Type where {\n  | Zero\n}\npub def zero : Nat ;\ndef zero = Zero ;\n",
             ),
             ("first.gandr", opened),
             (
@@ -11523,14 +11519,13 @@ mod tests
                 {{"parameterInformation":{{"labelOffsetSupport":{offsets}}}}}}}}}}}}}}}"#
             );
             let _answered = send(&mut server, Json(&initialize));
-            let _published = send(
-                &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                        {"uri":"file:///tmp/called.gandr","languageId":"gandr","version":1,
-                         "text":"data Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, Succ()) } ;\ndef ap(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g(x) }\n"}}}"#,
-                ),
-            );
+            let opened = serde_json::json!({
+                "jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///tmp/called.gandr",
+                    "languageId": "gandr", "version": 1_i32,
+                    "text": include_str!("server/fixtures/called.gandr")}},
+            });
+            let _published = send(&mut server, Json(&opened.to_string()));
             server
         };
         let ask = |server: &mut Connected, line: u32, character: u32| {
@@ -11563,9 +11558,9 @@ mod tests
         );
         let succ = wire(Json(
             r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
-                "label":"Succ : (n : Nat) --> Nat",
+                "label":"Succ(n : Nat)",
                 "documentation":{"kind":"markdown","value":"One more."},
-                "parameters":[{"label":[8,15]}]}],
+                "parameters":[{"label":[5,12]}]}],
                 "activeSignature":0,"activeParameter":0}}]"#,
         ));
         assert_eq!(
@@ -11671,7 +11666,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
-                     "text":"data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
+                     "text":"data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
             ),
         );
         let ask = |server: &mut Connected, character: u32| {
@@ -14437,10 +14432,7 @@ mod tests
 
     /// A data type, a recursive function over it and a numeral built of its
     /// constructors: each line names what a definition request there reads.
-    const REFERRED: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-                            def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero \
-                            => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef two : Nat ;\n\
-                            def two = Succ(Succ(Zero)) ;\n";
+    const REFERRED: &str = include_str!("server/fixtures/referred.gandr");
 
     /// A running server whose client takes definitions as links as `linked`
     /// says, holding [`REFERRED`] at `file:///tmp/referred.gandr`.
@@ -14543,7 +14535,7 @@ mod tests
             start: position(0, 0),
             end: position(3, 1),
         };
-        let succ = range(2, 2, 6);
+        let succ = range(2, 4, 8);
         assert_eq!(
             definition(&mut linked, 6, 12),
             Value::Array(vec![link(range(6, 12, 13), n, n)]),
@@ -14658,7 +14650,7 @@ mod tests
         assert_eq!(
             highlight(uri, 7, 5),
             Value::Array(vec![
-                mark(1, 2, 2, 6),
+                mark(1, 2, 4, 8),
                 mark(2, 7, 4, 8),
                 mark(2, 7, 15, 19),
                 mark(2, 11, 10, 14),

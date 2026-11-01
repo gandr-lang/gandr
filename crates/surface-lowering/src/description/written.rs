@@ -88,6 +88,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a constructor writes no result.
+    pub mod stated_result {
+        /// The reason the result is unwritten.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The constructor of an unindexed family leaves its result to
+            /// the family at its parameters, `| Cons(head : a, tail : List(a))`.
+            Unstated,
+        }
+    }
+}
+
 /// Which way a written rule runs.
 ///
 /// # Specification
@@ -423,8 +436,8 @@ pub struct WrittenCircuit
     pub frames: Vec<WrittenFrame>,
 }
 
-/// Where a `data` constructor's signature is written: `Succ : (n : Nat) -->
-/// Nat`.
+/// Where a `data` constructor's signature is written:
+/// `| Succ(n : Nat) : Nat`.
 ///
 /// # Specification
 /// trivial.
@@ -436,8 +449,19 @@ pub struct WrittenConstructor
     /// Each field, in written order; a field written as its type alone is
     /// unnamed.
     pub fields: Vec<WrittenPort>,
-    /// The result the constructor returns.
-    pub result: ByteSpan,
+    /// The result the constructor states, when it states one.
+    pub result: Maybe<WrittenResult, stated_result::Absent>,
+}
+
+/// Where a constructor's stated result is written: `Vec(a, Succ(n))`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenResult
+{
+    /// The whole result.
+    pub span: ByteSpan,
     /// The family's name tile at the result's head.
     pub head: ByteSpan,
     /// Each argument of the result that repeats a family parameter, with the

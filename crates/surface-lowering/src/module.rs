@@ -68,7 +68,7 @@
 //!
 //! # A data declaration is one more slot
 //!
-//! `data T(a : A) : U { C : (x : B) --> T(a) ; … }` takes the next admission
+//! `data T(a : A) : U where { | C(x : B) … }` takes the next admission
 //! position under its family's name and files a definition half lowered at the
 //! declaration form itself, like a function tail. Its constructors go into one
 //! table by name, each with its family, tag and arity, so a term or a pattern
@@ -13623,7 +13623,7 @@ mod tests
         let tree = parsed(
             &pbg,
             SourceText::from(
-                "def before = 1 ; rec { data N : Type { Z : N ; } def f = 1 ; } def after = 2 ;",
+                "def before = 1 ; rec { data N : Type where { | Z  } def f = 1 ; } def after = 2 ;",
             ),
         );
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();

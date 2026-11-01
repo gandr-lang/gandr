@@ -76,9 +76,9 @@ theory EditedViews {
 /// Addition with its associativity: the law nests `add` in a call, so `add`
 /// runs by its two other rules, and the kernel decides the three converge.
 @[ normalizes("add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
-data NatAssoc : Type {
-  Zero : NatAssoc;
-  Succ : (n : NatAssoc) --> NatAssoc;
+data NatAssoc : Type where {
+  | Zero
+  | Succ(n : NatAssoc)
   oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
   rule add(Zero, n) ==> n;
   rule add(Succ(m), n) ==> Succ(add(m, n));

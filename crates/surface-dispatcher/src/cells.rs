@@ -399,7 +399,7 @@ mod tests
         scratch.file(
             Path::new("tree/a-tree.gandr"),
             SourceText::from(
-                "pub data Tree : Type {\n  Leaf : Tree;\n  Node : (l : Tree, r : Tree) --> Tree;\n  \
+                "pub data Tree : Type where {\n  | Leaf\n  | Node(l : Tree, r : Tree)\n  \
                  oper left(t : Tree) -> Tree;\n  oper twice(t : Tree) -> Tree;\n  oper thrice(t \
                  : Tree) -> Tree;\n  rule left(Leaf) ==> Leaf;\n  rule left(Node(l, r)) ==> \
                  l;\n  rule twice(t) ==> Node(t, t);\n  rule thrice(t) ==> Node(t, Node(t, \
@@ -410,8 +410,7 @@ mod tests
         scratch.file(
             Path::new("tree/b-importer.gandr"),
             SourceText::from(
-                "import \"./a-tree.gandr\" ;\n\npub data Flag : Type {\n  Off : Flag;\n  On : \
-                 Flag;\n  oper flip(f : Flag) -> Flag;\n  rule flip(Off) ==> On;\n  rule \
+                "import \"./a-tree.gandr\" ;\n\npub data Flag : Type where {\n  | Off\n  | On\n  oper flip(f : Flag) -> Flag;\n  rule flip(Off) ==> On;\n  rule \
                  flip(On) ==> Off;\n}\n",
             ),
         );

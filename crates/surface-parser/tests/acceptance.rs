@@ -1482,7 +1482,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 {
     for survivor in [
         "def good = 2;",
-        "data Good { }",
+        "data Good  where { }",
         "codata Good { }",
         "module Good { }",
         "theory Good { }",

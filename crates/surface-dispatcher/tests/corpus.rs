@@ -830,10 +830,10 @@ fn no_subject_declares_a_name_twice()
 #[test]
 fn a_reads_claim_settles_against_the_carried_footprint_2520()
 {
-    let text = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-data Flag : Type { On : Flag; Off : Flag; }
+    let text = "data Nat : Type where { | Zero | Succ(n : Nat) }
+data Flag : Type where { | On | Off }
 @[ reads((Flag, Nat)) ]
-data Either : Type { Count : (m : Nat) --> Either; Mark : (f : Flag) --> Either; }
+data Either : Type where { | Count(m : Nat) | Mark(f : Flag) }
 @[ reads((Either, Nat)) ]
 def side(n : Nat, e : Either) -> -F Nat { case e -> -F Nat { Count(_m) => n, Mark(_f) => n } }
 @[ reads((side, Nat, Flag, Either)) ]

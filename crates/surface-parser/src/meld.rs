@@ -10963,7 +10963,7 @@ mod tests
             "#!{ echo a b c d e f; ls | grep x && echo y; }",
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
             "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
-            "data Tree(a) { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
+            "data Tree(a) where { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
             "def s = \"a ${ f(\"${x}\") } b\";",
             "case v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
@@ -11281,13 +11281,13 @@ mod tests
                 "@[ checks ]\n/// x\ndef x = 1;\n",
             ],
             &[
-                "data D : Type { A : D; }\n",
-                "@[ doc(\"x\") ] data D : Type { A : D; }\n",
-                "/// x\ndata D : Type { A : D; }\n",
+                "data D : Type where { | A }\n",
+                "@[ doc(\"x\") ] data D : Type where { | A }\n",
+                "/// x\ndata D : Type where { | A }\n",
             ],
             &[
-                "@[ checks ] data D : Type { A : D; }\n",
-                "@[ doc(\"x\"), checks ] data D : Type { A : D; }\n",
+                "@[ checks ] data D : Type where { | A }\n",
+                "@[ doc(\"x\"), checks ] data D : Type where { | A }\n",
             ],
         ];
         let mut keys = Vec::new();

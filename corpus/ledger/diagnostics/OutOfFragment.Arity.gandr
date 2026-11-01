@@ -1,13 +1,13 @@
 /// `OutOfFragment.Arity`: a form out of the fragment: the form is a former of this sort, offered a number of operands it does not take.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
 
 @[ checks ]
-data U : Type {
-  NatC : U;
-  Arrow : (a : U, b : U) --> U;
+data U : Type where {
+  | NatC
+  | Arrow(a : U, b : U)
 }
 
 @[ checks ]

@@ -51,11 +51,10 @@ use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
 /// Three nullary constructors.
-const COLOR: &str = "data Color : Type { Red : Color; Green : Color; Blue : Color; }\n";
+const COLOR: &str = "data Color : Type where { | Red | Green | Blue }\n";
 
 /// A family of one parameter.
-const MAYBE: &str =
-    "data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }\n";
+const MAYBE: &str = "data Maybe(a : Type) : Type where { | None | Some(x : a) }\n";
 
 /// The module the parser and the lowering make of `source`.
 ///
@@ -430,7 +429,7 @@ fn an_annotation_at_a_statement_is_of_the_wrong_sort()
 #[test]
 fn a_constructor_is_no_value_inside_its_own_family()
 {
-    let source = "data T : Type { A : T; B : (x : Path(T, A, A)) --> T; }\n";
+    let source = "data T : Type where { | A | B(x : Path(T, A, A)) }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let start = source.find("A, A").expect("the endpoint is written");
@@ -455,7 +454,7 @@ fn a_data_declaration_lowers_to_its_signature()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Pair(a : Type, b : Type) : Type { Mk : (x : a, y : b) --> Pair(a, b); }\ndata Flag : Type { On : Flag; Off : Flag; }\n",
+            "data Pair(a : Type, b : Type) : Type where { | Mk(x : a, y : b) }\ndata Flag : Type where { | On | Off }\n",
         ),
         &mut arena,
     );
@@ -509,7 +508,7 @@ fn a_presented_family_lowers_its_rules()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Circle : Type {\n  Base : Circle;\n  Loop : (x : Circle) --> Circle;\n  Unloop : (x : Circle) --> Circle;\n  rule Loop(Unloop(x)) ==> x;\n  rule Unloop(Loop(y)) ==> y;\n}\ndata Flag : Type { On : Flag; Off : Flag; }\n",
+            "data Circle : Type where {\n  | Base\n  | Loop(x : Circle)\n  | Unloop(x : Circle)\n  rule Loop(Unloop(x)) ==> x;\n  rule Unloop(Loop(y)) ==> y;\n}\ndata Flag : Type where { | On | Off }\n",
         ),
         &mut arena,
     );
@@ -554,7 +553,7 @@ fn a_recursive_family_names_itself_in_its_fields()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\ndata List(a : Type) : Type { Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }\ndata Bad : Type { MkBad : (f : +U (Bad -> -F Nat)) --> Bad; }\ndef self_named : Later ;\ndata Later : Type { Now : Later; }\n",
+            "data Nat : Type where { | Zero | Succ(n : Nat) }\ndata List(a : Type) : Type where { | Nil | Cons(head : a, tail : List(a)) }\ndata Bad : Type where { | MkBad(f : +U (Bad -> -F Nat)) }\ndef self_named : Later ;\ndata Later : Type where { | Now }\n",
         ),
         &mut arena,
     );
@@ -634,7 +633,7 @@ fn a_recursive_family_names_itself_in_its_fields()
 }
 
 /// The unary naturals every recursive-function witness recurses over.
-const NAT: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n";
+const NAT: &str = "data Nat : Type where { | Zero | Succ(n : Nat) }\n";
 
 /// The variable `index` binders out.
 ///
@@ -850,7 +849,7 @@ fn a_recursion_under_an_instance_row_binds_its_own_name_3699()
 fn a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828()
 {
     let mut arena = CoreArena::new();
-    let source = "data Chain(a : Type) : Type { End : Chain(a); Link : (h : a, t : Chain(a)) --> Chain(a); }\n\
+    let source = "data Chain(a : Type) : Type where { | End | Link(h : a, t : Chain(a)) }\n\
                   def rec size[a : Type](xs : Chain(a)) -> -F Integer { case xs { End => return 0, Link(h, t) => size[<](t) } }\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("size"));
@@ -1129,8 +1128,8 @@ fn a_claim_under_a_match_on_a_decode_stages_the_code_3680()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}data Pair(a : Type) : Type {{ MkPair : (x : a, y : a) --> Pair(a); }}\n\
-         data U : Type {{ NatU : U; PairU : (a : U) --> U; }}\n\
+        "{NAT}data Pair(a : Type) : Type where {{ | MkPair(x : a, y : a) }}\n\
+         data U : Type where {{ | NatU | PairU(a : U) }}\n\
          def rec el(u : U) -> -F Type {{ case u {{ NatU => return Nat, PairU(a) => {{ run e <- el[<](a); return (Pair(e)) }} }} }}\n\
          def rec size(c : U, v : el(c)) -> -F Nat {{ case c {{ NatU => return Zero, PairU(a) => case v {{ MkPair(x, y) => size[<](a, x) }} }} }}\n"
     );
@@ -1238,7 +1237,7 @@ fn a_mutual_blocks_recursive_functions_share_one_fixpoint()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}rec {{\n  data Rose : Type {{ Node : (kids : Forest) --> Rose; }}\n  data Forest : Type {{ Empty : Forest; More : (head : Rose, tail : Forest) --> Forest; }}\n  def rec size(t : Rose) -> -F Nat {{ case t {{ Node(kids) => {{ run s <- sizes[<](kids); return Succ(s) }} }} }}\n  def rec sizes(ts : Forest) -> -F Nat {{ case ts {{ Empty => return Zero, More(t, rest) => {{ run a <- size[<](t); sizes[<](rest) }} }} }}\n}}\n"
+        "{NAT}rec {{\n  data Rose : Type where {{ | Node(kids : Forest) }}\n  data Forest : Type where {{ | Empty | More(head : Rose, tail : Forest) }}\n  def rec size(t : Rose) -> -F Nat {{ case t {{ Node(kids) => {{ run s <- sizes[<](kids); return Succ(s) }} }} }}\n  def rec sizes(ts : Forest) -> -F Nat {{ case ts {{ Empty => return Zero, More(t, rest) => {{ run a <- size[<](t); sizes[<](rest) }} }} }}\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     // The joint a member applies, and the summand it injects its parameter at.
@@ -1340,7 +1339,7 @@ fn a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}rec {{\n  data Rose : Type {{ Node : (kids : Forest) --> Rose; }}\n  data Forest : Type {{ Empty : Forest; More : (head : Rose, tail : Forest) --> Forest; }}\n  def rec size(t : Rose, k : Nat) -> -F Nat {{ case t {{ Node(kids) => {{ run s <- sizes[<](kids, k); return Succ(s) }} }} }}\n  def rec sizes(ts : Forest, k : Nat) -> -F Nat {{ case ts {{ Empty => return k, More(t, rest) => {{ run a <- size[<](t, k); sizes[<](rest, a) }} }} }}\n}}\n"
+        "{NAT}rec {{\n  data Rose : Type where {{ | Node(kids : Forest) }}\n  data Forest : Type where {{ | Empty | More(head : Rose, tail : Forest) }}\n  def rec size(t : Rose, k : Nat) -> -F Nat {{ case t {{ Node(kids) => {{ run s <- sizes[<](kids, k); return Succ(s) }} }} }}\n  def rec sizes(ts : Forest, k : Nat) -> -F Nat {{ case ts {{ Empty => return k, More(t, rest) => {{ run a <- size[<](t, k); sizes[<](rest, a) }} }} }}\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for name in ["size", "sizes"].map(SurfaceName::from) {
@@ -1408,7 +1407,7 @@ fn a_member_beside_a_refused_sibling_calls_its_declaration_2340()
 fn a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint()
 {
     let mut arena = CoreArena::new();
-    let source = "rec {\n  data U : Type { NatC : U; PiC : (a : U, b : +U (el(a) -> -F U)) --> U; }\n  def rec el(u : U) -> -F Type { case u { NatC => return Integer, PiC(a, b) => return (+U ((x : el[<](a)) -> -F Integer)) } }\n}\n";
+    let source = "rec {\n  data U : Type where { | NatC | PiC(a : U, b : +U (el(a) -> -F U)) }\n  def rec el(u : U) -> -F Type { case u { NatC => return Integer, PiC(a, b) => return (+U ((x : el[<](a)) -> -F Integer)) } }\n}\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(&Value::Thunk(fixpoint)) = arena.value(body_named(&module, SurfaceName::from("el")))
     else {
@@ -1768,7 +1767,7 @@ fn an_indexed_generator_is_declined()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Vec(n : Integer) : Type { Nil : Vec(0); }\ndata Bad(a : Type) : Type { Mk : Bad(Integer); }\ndata Two(a : Type, b : Type) : Type { Mk2 : Two(b, a); }\ndata Ext(a : Type) : Type { Mk3 : Ext(a, a); }\n",
+            "data Vec(n : Integer) : Type where { | Nil : Vec(0) }\ndata Bad(a : Type) : Type where { | Mk : Bad(Integer) }\ndata Two(a : Type, b : Type) : Type where { | Mk2 : Two(b, a) }\ndata Ext(a : Type) : Type where { | Mk3 : Ext(a, a) }\n",
         ),
         &mut arena,
     );
@@ -1799,7 +1798,7 @@ fn an_indexed_family_lowers_its_indices()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndef one() -> -F Vec(Integer, S(Z)) { return Cons(Z, 3, (Nil : Vec(Integer, Z))) }\ndef two() -> -F Vec(Integer, S(S(Z))) { return Cons(Z, 3, (Nil : Vec(Integer, Z))) }\ndata Pt : Nat -> Type { P : Pt(Z); loop : P <-> P; }\n",
+            "data Nat : Type where { | Z | S(n : Nat) }\ndata Vec(a : Type) : Nat -> Type where { | Nil : Vec(a, Z) | Cons(n : Nat, x : a, xs : Vec(a, n)) : Vec(a, S(n)) }\ndef one() -> -F Vec(Integer, S(Z)) { return Cons(Z, 3, (Nil : Vec(Integer, Z))) }\ndef two() -> -F Vec(Integer, S(S(Z))) { return Cons(Z, 3, (Nil : Vec(Integer, Z))) }\ndata Pt : Nat -> Type where { | P : Pt(Z) | loop : P <-> P }\n",
         ),
         &mut arena,
     );
@@ -1889,7 +1888,7 @@ fn a_named_index_telescope_lowers_its_dependencies_4022()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type { Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v); }\ndata Twice(a : Type) : a -> a -> Type { Both : (x : a) --> Twice(a, x, x); }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type { Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n); }\n",
+            "data Nat : Type where { | Z | S(n : Nat) }\ndata Vec(a : Type) : Nat -> Type where { | Nil : Vec(a, Z) | Cons(n : Nat, x : a, xs : Vec(a, n)) : Vec(a, S(n)) }\ndata Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where { | Measured(n : Nat, v : Vec(a, n)) : Sized(a, n, v) }\ndata Twice(a : Type) : a -> a -> Type where { | Both(x : a) : Twice(a, x, x) }\ndata Turned : (n : Nat, v : Vec(Integer, n)) --> Type where { | Swap(n : Nat, v : Vec(Integer, n)) : Turned(v, n) }\n",
         ),
         &mut arena,
     );
@@ -1981,15 +1980,9 @@ fn a_named_index_telescope_lowers_its_dependencies_4022()
 #[test]
 fn a_constructor_at_a_family_s_index_takes_the_index_s_type_4027()
 {
-    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\ndata Fin : Nat -> Type \
-                  { FZ : (n : Nat) --> Fin(Succ(n)); }\ndata Ring : Fin(Succ(Zero)) -> Type { D : \
-                  (i : Fin(Succ(Zero))) --> Ring(i); }\ndef r() -> Ring(FZ(Zero)) { \
-                  D(FZ(Zero)) }\ndata Q : Fin(Succ(Zero)) -> Type { C : Fin(Succ(Zero)) --> \
-                  Q(FZ(Zero)); }\ndata Pt : (n : Nat, i : Fin(n)) --> Type { P : (n : Nat) --> \
-                  Pt(Succ(n), FZ(n)); }\ndata PtBad : (n : Nat, i : Fin(n)) --> Type { B : (n : \
-                  Nat) --> PtBad(n, FZ(n)); }\ndata At(m : Nat) : Fin(Succ(m)) -> Type { A : (k \
-                  : Nat) --> At(m, FZ(m)); }\ndata AtBad(m : Nat) : Fin(Succ(m)) -> Type { E : \
-                  (k : Nat) --> AtBad(m, FZ(k)); }\n";
+    let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\ndata Fin : Nat -> Type \
+                  where { | FZ(n : Nat) : Fin(Succ(n)) }\ndata Ring : Fin(Succ(Zero)) -> Type where { | D(i : Fin(Succ(Zero))) : Ring(i) }\ndef r() -> Ring(FZ(Zero)) { \
+                  D(FZ(Zero)) }\ndata Q : Fin(Succ(Zero)) -> Type where { | C(Fin(Succ(Zero))) : Q(FZ(Zero)) }\ndata Pt : (n : Nat, i : Fin(n)) --> Type where { | P(n : Nat) : Pt(Succ(n), FZ(n)) }\ndata PtBad : (n : Nat, i : Fin(n)) --> Type where { | B(n :  Nat) : PtBad(n, FZ(n)) }\ndata At(m : Nat) : Fin(Succ(m)) -> Type where { | A(k  : Nat) : At(m, FZ(m)) }\ndata AtBad(m : Nat) : Fin(Succ(m)) -> Type where { | E(k : Nat) : AtBad(m, FZ(k)) }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let report = judged(&module, &mut arena);
@@ -2029,10 +2022,9 @@ fn a_constructor_at_a_family_s_index_takes_the_index_s_type_4027()
 #[test]
 fn an_indexed_family_presents_no_rule_2865()
 {
-    let source = "data N : Type { Z : N; S : (n : N) --> N; }\ndata Prog : N -> Type { Stop : Prog(Z); \
-                  Ask : (k : Prog(Z)) --> Prog(S(Z)); Tell : (s : Integer, k : Prog(Z)) --> \
-                  Prog(Z); rule Tell(s, Tell(u, k)) <=> Tell(u, k); }\ndata Skip : N -> Type { \
-                  Halt : Skip(Z); oper skip(k : Skip(Z)) -> Skip(Z); rule skip(k) ==> k; }\n";
+    let source = "data N : Type where { | Z | S(n : N) }\ndata Prog : N -> Type where { | Stop : Prog(Z) \
+                  | Ask(k : Prog(Z)) : Prog(S(Z)) | Tell(s : Integer, k : Prog(Z)) : Prog(Z) rule Tell(s, Tell(u, k)) <=> Tell(u, k); }\ndata Skip : N -> Type where { \
+                  | Halt : Skip(Z) oper skip(k : Skip(Z)) -> Skip(Z); rule skip(k) ==> k; }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let written = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
@@ -2068,9 +2060,8 @@ fn an_indexed_family_presents_no_rule_2865()
 #[test]
 fn each_data_type_and_stated_index_is_framed_under_its_telescope_931()
 {
-    let source = "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> \
-                  Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, \
-                  S(n)); }\n";
+    let source = "data Nat : Type where { | Z | S(n : Nat) }\ndata Vec(a : Type) : Nat -> \
+                  Type where { | Nil : Vec(a, Z) | Cons(n : Nat, x : a, xs : Vec(a, n)) : Vec(a,  S(n)) }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let framed: Vec<(&str, Vec<&str>)> = module
@@ -2108,7 +2099,7 @@ fn each_data_type_and_stated_index_is_framed_under_its_telescope_931()
 #[test]
 fn operation_and_rule_members_are_left_to_the_description_route()
 {
-    let source = "data NatOp : Type { Zero : NatOp; One : NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; rule add(Zero, n) ==> n; }\ndata NatRetired : Type { Only : NatRetired; op stale(x : NatRetired) -> NatRetired; }\n";
+    let source = "data NatOp : Type where { | Zero | One oper add(m : NatOp, n : NatOp) -> NatOp; rule add(Zero, n) ==> n; }\ndata NatRetired : Type where { | Only op stale(x : NatRetired) -> NatRetired; }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let [operated, retired, held] = *module.declarations().iter().collect::<Vec<_>>()
@@ -2158,7 +2149,7 @@ fn an_attribute_block_decorates_the_data_declaration_after_it()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "@[ checks ]\ndata Flag : Type { On : Flag; Off : Flag; }\n@[ checks ]\ndef on = On;\n",
+            "@[ checks ]\ndata Flag : Type where { | On | Off }\n@[ checks ]\ndef on = On;\n",
         ),
         &mut arena,
     );
@@ -2186,7 +2177,7 @@ fn a_constructor_named_twice_is_refused()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data A : Type { X : A; Y : A; }\ndata B : Type { Z : B; X : B; }\ndata C : Type { W : C; W : C; }\n",
+            "data A : Type where { | X | Y }\ndata B : Type where { | Z | X }\ndata C : Type where { | W | W }\n",
         ),
         &mut arena,
     );
@@ -2209,8 +2200,8 @@ fn a_constructor_named_twice_is_refused()
 fn a_data_family_named_as_a_builtin_type_is_refused_at_its_name()
 {
     for (source, name) in [
-        ("data Integer : Type { I : Integer; }\n", "Integer"),
-        ("data Unit : Type { U : Unit; }\n", "Unit"),
+        ("data Integer : Type where { | I }\n", "Integer"),
+        ("data Unit : Type where { | U }\n", "Unit"),
     ] {
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
@@ -2234,7 +2225,7 @@ fn a_constructor_applies_to_its_fields()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}data Triple : Type {{ T : (a : Integer, b : Integer, c : Integer) --> Triple; }}\ndef green = Green;\ndef triple = T(1, 2, 3);\ndef short = T(1, 2);\n"
+        "{COLOR}data Triple : Type where {{ | T(a : Integer, b : Integer, c : Integer) }}\ndef green = Green;\ndef triple = T(1, 2, 3);\ndef short = T(1, 2);\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let Some(&Value::Constructor {
@@ -2285,7 +2276,7 @@ fn a_constructor_applies_to_its_fields()
 fn a_constructor_keeps_its_family_under_another_s_classifier_2075()
 {
     let mut arena = CoreArena::new();
-    let source = "data Celsius : Type { Cel : (x : Integer) --> Celsius; }\ndata Fahrenheit : Type { Fah : (x : Integer) --> Fahrenheit; }\ndata Box(a : Type) : Type { B : (x : a) --> Box(a); }\ndata Crate(a : Type) : Type { C : (x : a) --> Crate(a); }\ndef foreign = (Cel(20) : Fahrenheit);\ndef signed : Crate(Integer);\ndef signed = B(3);\ndef own = (Cel(20) : Celsius);\n";
+    let source = "data Celsius : Type where { | Cel(x : Integer) }\ndata Fahrenheit : Type where { | Fah(x : Integer) }\ndata Box(a : Type) : Type where { | B(x : a) }\ndata Crate(a : Type) : Type where { | C(x : a) }\ndef foreign = (Cel(20) : Fahrenheit);\ndef signed : Crate(Integer);\ndef signed = B(3);\ndef own = (Cel(20) : Celsius);\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let celsius = ValueType::Data {
         declaration: ConstantIndex::from(0_usize),
@@ -2622,7 +2613,7 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}data Box(m : Maybe(Integer)) : Type {{ Boxed : Box(m); }}\n\
+        "{MAYBE}data Box(m : Maybe(Integer)) : Type where {{ | Boxed }}\n\
          def tail : +U (-F Maybe(Integer)) ;\ndef tail = thunk {{ Some(3) }} ;\n\
          def alias : () => Maybe(Integer) ;\ndef alias = thunk {{ None }} ;\n\
          def pured : +U (-F Maybe(Integer)) ;\ndef pured = thunk {{ pure Some(5) }} ;\n\
@@ -2798,7 +2789,7 @@ fn a_constructor_argument_reads_the_arguments_before_it_1876()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}data List(a : Type) : Type {{ Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }}\n\
+        "{MAYBE}data List(a : Type) : Type where {{ | Nil | Cons(head : a, tail : List(a)) }}\n\
          def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}\n\
          def dependent : () => Integer ;\ndef dependent = thunk {{ become pick(Integer, None) }} ;\n\
          def filled : () => Integer ;\ndef filled = thunk {{ become pick(Integer, Some(3)) }} ;\n\
@@ -2898,7 +2889,7 @@ fn a_refused_callee_classifies_no_argument_2126()
 fn a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127()
 {
     let mut arena = CoreArena::new();
-    let source = "data List(a : Type) : Type { Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }\n\
+    let source = "data List(a : Type) : Type where { | Nil | Cons(head : a, tail : List(a)) }\n\
          def rec onto(xs : List(Integer), acc : List(Integer)) -> -F List(Integer) {\n\
            case xs { Nil => return acc, Cons(x, rest) => become onto[<](rest, Cons(x, acc)) }\n\
          }\n\
@@ -2932,9 +2923,9 @@ fn a_field_classifies_the_constructor_written_in_it_1171()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}data Repr : Type {{ Inline : (s : Maybe(Integer)) --> Repr; }}\n\
-         data Box(a : Type) : Type {{ Wrap : (m : Maybe(a)) --> Box(a); }}\n\
-         data Dep : Type[+, 1] {{ Dee : (a : Type, m : Maybe(a)) --> Dep; }}\n\
+        "{MAYBE}data Repr : Type where {{ | Inline(s : Maybe(Integer)) }}\n\
+         data Box(a : Type) : Type where {{ | Wrap(m : Maybe(a)) }}\n\
+         data Dep : Type[+, 1] where {{ | Dee(a : Type, m : Maybe(a)) }}\n\
          def closed : Repr ;\ndef closed = Inline(Some(3)) ;\n\
          def annotated : Repr ;\ndef annotated = Inline((Some(3) : Maybe(Integer))) ;\n\
          def opened : Box(Integer) ;\ndef opened = Wrap(Some(3)) ;\n\
@@ -2986,8 +2977,8 @@ fn an_annotation_inside_a_signature_type_counts_its_binders_there_3744()
 {
     let mut arena = CoreArena::new();
     let source = SourceText::from(
-        "data J(d : Type) : Type { Jota : (e : d) --> J(d); }\n\
-         data K(a : Type) : Type { Wrap : (x : a) --> K(a); }\n\
+        "data J(d : Type) : Type where { | Jota(e : d) }\n\
+         data K(a : Type) : Type where { | Wrap(x : a) }\n\
          def jargs(d : Type, c : J(d)) -> -F Type { return Unit }\n\
          def named(d : Type, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }\n\
          def unnamed(d : Type, v : Integer, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }\n\
@@ -3123,7 +3114,7 @@ fn a_tuple_gives_its_members_the_product_s_components_1877()
 #[test]
 fn a_constructor_takes_its_slot_as_a_family_argument_421()
 {
-    let families = "data SumOb(a : Type, b : Type) : Type { Inl : (x : a) --> SumOb(a, b); Inr : (y : b) --> SumOb(a, b); }\ndata Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type { Tag : (n : Integer) --> Tagged(l, r, s); }\n";
+    let families = "data SumOb(a : Type, b : Type) : Type where { | Inl(x : a) | Inr(y : b) }\ndata Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type where { | Tag(n : Integer) }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{COLOR}{families}def tagged = (Tag(1) : Tagged(Color, Integer, Inl(Red)));\n"
@@ -3175,7 +3166,7 @@ fn a_type_argument_names_the_type_its_constructor_shares_a_name_with_1855()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}data Box : Type {{ Box : (x : Integer) --> Box; }}\ndef kept(b : Box) -> -F Maybe(Box) {{ (Some(b) : Maybe(Box)) }}\n"
+        "{MAYBE}data Box : Type where {{ | Box(x : Integer) }}\ndef kept(b : Box) -> -F Maybe(Box) {{ (Some(b) : Maybe(Box)) }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert_accepted(&judged(&module, &mut arena));
@@ -3227,7 +3218,7 @@ fn a_pattern_variable_names_its_field_binder()
 fn a_record_names_every_field_binder_in_order()
 {
     let mut arena = CoreArena::new();
-    let source = "data Rgb : Type {\n  RGB : (r : Integer, g : Integer, b : Integer) --> Rgb;\n}\ndef green(c : Rgb) -> -F Integer { case c { RGB(r, g, b) => { run n : Integer <- pure g ; return n } } }\n";
+    let source = "data Rgb : Type where {\n  | RGB(r : Integer, g : Integer, b : Integer)\n}\ndef green(c : Rgb) -> -F Integer { case c { RGB(r, g, b) => { run n : Integer <- pure g ; return n } } }\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("green")));
     let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(root)
@@ -3363,7 +3354,7 @@ fn nested_constructor_patterns_compile_to_nested_cases()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Inner : Type { No : Inner; Yes : (n : Integer) --> Inner; }\ndata Outer : Type { Nothing : Outer; Just : (i : Inner) --> Outer; }\ndef depth(m : Outer) -> -F Integer { case m { Just(Yes(n)) => return n, Just(No) => return 0, other => return 1 } }\ndef answer = (Just((Yes(41) : Inner)) : Outer);\n",
+            "data Inner : Type where { | No | Yes(n : Integer) }\ndata Outer : Type where { | Nothing | Just(i : Inner) }\ndef depth(m : Outer) -> -F Integer { case m { Just(Yes(n)) => return n, Just(No) => return 0, other => return 1 } }\ndef answer = (Just((Yes(41) : Inner)) : Outer);\n",
         ),
         &mut arena,
     );
@@ -3385,7 +3376,7 @@ fn a_data_case_names_the_family_it_eliminates_809()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}data Inner : Type {{ No : Inner; Yes : (n : Integer) --> Inner; }}\ndef depth(m : Maybe(Inner)) -> -F Integer {{ case m {{ Some(Yes(n)) => return n, Some(No) => return 0, None => return 1 }} }}\ndef nested(m : Maybe(Inner)) -> -F Integer {{ case m {{ None => return 1, Some(i) => case i {{ No => return 0, Yes(n) => return n }} }} }}\n"
+        "{MAYBE}data Inner : Type where {{ | No | Yes(n : Integer) }}\ndef depth(m : Maybe(Inner)) -> -F Integer {{ case m {{ Some(Yes(n)) => return n, Some(No) => return 0, None => return 1 }} }}\ndef nested(m : Maybe(Inner)) -> -F Integer {{ case m {{ None => return 1, Some(i) => case i {{ No => return 0, Yes(n) => return n }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let constant = |wanted: &str| {
@@ -3631,7 +3622,7 @@ fn a_pattern_of_another_type_is_refused_at_its_arm()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}data Box : Type {{ Boxed : (n : Integer) --> Box; }}\ndef foreign(c : Color) -> -F Integer {{ case c {{ Red => return 0, Boxed(n) => return n, _ => return 2 }} }}\ndef literal(c : Color) -> -F Integer {{ case c {{ Red => return 0, 1 => return 1, _ => return 2 }} }}\n"
+        "{COLOR}data Box : Type where {{ | Boxed(n : Integer) }}\ndef foreign(c : Color) -> -F Integer {{ case c {{ Red => return 0, Boxed(n) => return n, _ => return 2 }} }}\ndef literal(c : Color) -> -F Integer {{ case c {{ Red => return 0, 1 => return 1, _ => return 2 }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let at = |name: &str, pattern: &str| {
@@ -3664,7 +3655,7 @@ fn a_misnamed_or_misshapen_pattern_is_refused_by_name()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}data Pair : Type {{ P : (a : Integer, b : Integer) --> Pair; }}\ndef twice(p : Pair) -> -F Integer {{ case p {{ P(a, a) => return a }} }}\ndef unknown(m : Maybe(Integer)) -> -F Integer {{ case m {{ Nope(x) => return x, _ => return 1 }} }}\ndef wide(m : Maybe(Integer)) -> -F Integer {{ case m {{ Some(x, y) => return x, None => return 1 }} }}\n"
+        "{MAYBE}data Pair : Type where {{ | P(a : Integer, b : Integer) }}\ndef twice(p : Pair) -> -F Integer {{ case p {{ P(a, a) => return a }} }}\ndef unknown(m : Maybe(Integer)) -> -F Integer {{ case m {{ Nope(x) => return x, _ => return 1 }} }}\ndef wide(m : Maybe(Integer)) -> -F Integer {{ case m {{ Some(x, y) => return x, None => return 1 }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
@@ -3724,7 +3715,7 @@ fn a_match_of_no_arms_switches_on_empty_data_and_on_a_path()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "data Empty : Type {{}}\ndata Nada(a : Type) : Type {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ case v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ case v -> -F Integer {{}} }}\ndef apart(e : Path(Color, Red, Blue)) -> -F Empty {{ case e {{}} }}\ndef paren(v : (Empty)) -> -F Integer {{ case v {{}} }}\ndef wrapped(e : (Path(Color, Red, Blue))) -> -F Empty {{ case e {{}} }}\ndef applied(v : Nada(Integer)) -> -F Integer {{ case v {{}} }}\n"
+        "data Empty : Type where {{}}\ndata Nada(a : Type) : Type where {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ case v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ case v -> -F Integer {{}} }}\ndef apart(e : Path(Color, Red, Blue)) -> -F Empty {{ case e {{}} }}\ndef paren(v : (Empty)) -> -F Integer {{ case v {{}} }}\ndef wrapped(e : (Path(Color, Red, Blue))) -> -F Empty {{ case e {{}} }}\ndef applied(v : Nada(Integer)) -> -F Integer {{ case v {{}} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for name in ["absurd", "stated", "apart", "paren", "wrapped", "applied"] {
@@ -3755,7 +3746,7 @@ fn a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Empty : Type {}\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = thunk { fn (x) { case x {} } } ;\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = thunk { fn (x) { case x -> -F Integer {} } } ;\n",
+            "data Empty : Type where {}\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = thunk { fn (x) { case x {} } } ;\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = thunk { fn (x) { case x -> -F Integer {} } } ;\n",
         ),
         &mut arena,
     );
@@ -3781,7 +3772,7 @@ fn a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Empty : Type {}\n@[ checks ]\ndef aliased : Empty => Integer ;\ndef aliased = fn (x) { case x {} } ;\n@[ checks ]\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = fn (x) { case x {} } ;\n@[ checks ]\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = fn (x) { case x -> -F Integer {} } ;\n",
+            "data Empty : Type where {}\n@[ checks ]\ndef aliased : Empty => Integer ;\ndef aliased = fn (x) { case x {} } ;\n@[ checks ]\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = fn (x) { case x {} } ;\n@[ checks ]\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = fn (x) { case x -> -F Integer {} } ;\n",
         ),
         &mut arena,
     );
@@ -3798,7 +3789,7 @@ fn an_argument_lambda_s_binder_is_typed_by_its_parameter_1948()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Empty : Type {}\ndef aliased(f : Empty => Integer, v : Empty) -> -F Integer { f(v) }\ndef arrowed(f : +U (Empty -> -F Integer), v : Empty) -> -F Integer { f(v) }\n@[ checks ]\ndef thunked(v : Empty) -> -F Integer { aliased(thunk { fn (x) { case x {} } }, v) }\n@[ checks ]\ndef bare(v : Empty) -> -F Integer { aliased(fn (x) { case x {} }, v) }\n@[ checks ]\ndef stated(v : Empty) -> -F Integer { aliased(thunk { fn (x) { case x -> -F Integer {} } }, v) }\n@[ checks ]\ndef underArrow(v : Empty) -> -F Integer { arrowed(thunk { fn (x) { case x {} } }, v) }\n",
+            "data Empty : Type where {}\ndef aliased(f : Empty => Integer, v : Empty) -> -F Integer { f(v) }\ndef arrowed(f : +U (Empty -> -F Integer), v : Empty) -> -F Integer { f(v) }\n@[ checks ]\ndef thunked(v : Empty) -> -F Integer { aliased(thunk { fn (x) { case x {} } }, v) }\n@[ checks ]\ndef bare(v : Empty) -> -F Integer { aliased(fn (x) { case x {} }, v) }\n@[ checks ]\ndef stated(v : Empty) -> -F Integer { aliased(thunk { fn (x) { case x -> -F Integer {} } }, v) }\n@[ checks ]\ndef underArrow(v : Empty) -> -F Integer { arrowed(thunk { fn (x) { case x {} } }, v) }\n",
         ),
         &mut arena,
     );
@@ -3827,7 +3818,7 @@ fn a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808()
     ] {
         let mut arena = CoreArena::new();
         let source = alloc::format!(
-            "data Empty : Type {{}}\ndef aliased : {alias} ;\ndef aliased = {body} ;\ndef thunked : {arrow} ;\ndef thunked = {body} ;\n"
+            "data Empty : Type where {{}}\ndef aliased : {alias} ;\ndef aliased = {body} ;\ndef thunked : {arrow} ;\ndef thunked = {body} ;\n"
         );
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
         assert_eq!(
@@ -3865,7 +3856,7 @@ fn a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815()
     ] {
         let mut arena = CoreArena::new();
         let source = alloc::format!(
-            "data Empty : Type {{}}\ndata One : Type {{\n  Only : One;\n}}\ndef aliased : {alias} ;\ndef aliased = {body} ;\ndef thunked : {arrow} ;\ndef thunked = {body} ;\n"
+            "data Empty : Type where {{}}\ndata One : Type where {{\n  | Only\n}}\ndef aliased : {alias} ;\ndef aliased = {body} ;\ndef thunked : {arrow} ;\ndef thunked = {body} ;\n"
         );
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
         assert_eq!(
@@ -4356,7 +4347,7 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(n), Succ(p) => {{ run q <- still[<](p); become cong(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path(Nat, m, m) {{ case n {{ Zero => return here(m), Succ(p) => return here(m) }} }}\ndata Circle : Type {{ Base : Circle; loop : Base <-> Base; }}\ndef loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return loop ∷ p }}\ndef unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return back(loop) ∷ p }}\ndef rec looped(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p, p) {{ case p {{ here => return here(p), loop ∷ q => {{ run r <- looped[<](q); become cong(loopOn, r) }}, back(loop) ∷ q => {{ run r <- looped[<](q); become cong(unloopOn, r) }} }} }}\n"
+        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path(Nat, n, n) {{ case n {{ Zero => return here(n), Succ(p) => {{ run q <- still[<](p); become cong(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path(Nat, m, m) {{ case n {{ Zero => return here(m), Succ(p) => return here(m) }} }}\ndata Circle : Type where {{ | Base | loop : Base <-> Base }}\ndef loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return loop ∷ p }}\ndef unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return back(loop) ∷ p }}\ndef rec looped(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p, p) {{ case p {{ here => return here(p), loop ∷ q => {{ run r <- looped[<](q); become cong(loopOn, r) }}, back(loop) ∷ q => {{ run r <- looped[<](q); become cong(unloopOn, r) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let cased = |arena: &CoreArena, name: &str| {
@@ -4493,7 +4484,7 @@ fn an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}data Pair : Type {{ Mk : (a : Nat, b : Nat) --> Pair; }}\n\
+        "{NAT}data Pair : Type where {{ | Mk(a : Nat, b : Nat) }}\n\
          def half(p : Pair) -> -F Path(Pair, p, p) {{ case p {{ Mk(a, _) => case a {{ Zero => return here(p), Succ(c) => return here(p) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -4566,8 +4557,7 @@ fn a_qualified_constructor_names_its_family_s_constructor_2428()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Term : Type { Var : (n : Integer) --> Term; App : (t : Term, u : Term) --> \
-             Term; }\ntheory Pointed { sort P : Type; oper point : () --> (p : P); }\ndef \
+            "data Term : Type where { | Var(n : Integer) | App(t : Term, u : Term) }\ntheory Pointed { sort P : Type; oper point : () --> (p : P); }\ndef \
              theirs : Theory ;\ndef theirs = Theory.App(\"f\", Theory.End) ;\ndef ours : Term \
              ;\ndef ours = Term.App(Var(0), Var(1)) ;\ndef applies(link : Theory) -> Integer { \
              case link { Theory.App(head, rest) => 1, _ => 0 } }\n",
@@ -4618,7 +4608,7 @@ fn a_qualified_constructor_names_its_family_s_constructor_2428()
 fn a_case_over_a_family_of_parameters_reads_its_answer_unabstracted()
 {
     let mut arena = CoreArena::new();
-    let source = "data Box(a : Type) : Type { Put : (x : a) --> Box(a); }\ndef same(b : \
+    let source = "data Box(a : Type) : Type where { | Put(x : a) }\ndef same(b : \
                   Box(Integer)) -> -F Path(Box(Integer), b, b) { case b { Put(x) => return \
                   here(b) } }\n";
     let module = lowered(SourceText::from(source), &mut arena);
@@ -4668,9 +4658,9 @@ fn a_constructor_no_row_admits_at_one_index_is_pruned()
 {
     let mut arena = CoreArena::new();
     let source = concat!(
-        "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n",
-        "data Vec(a : Type) : Nat -> Type { VNil : Vec(a, Zero); ",
-        "VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n)); }\n",
+        "data Nat : Type where { | Zero | Succ(n : Nat) }\n",
+        "data Vec(a : Type) : Nat -> Type where { | VNil : Vec(a, Zero) ",
+        "| VCons(n : Nat, head : a, tail : Vec(a, n)) : Vec(a, Succ(n)) }\n",
         "def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> -F Integer ",
         "{ case v { VCons(m, h, t) => h } }\n",
     );
@@ -4816,7 +4806,7 @@ fn a_leaf_copy_keeps_each_use_naming_its_pattern_variable()
 fn a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder_451()
 {
     let source = concat!(
-        "data Int : Type { Z : Int; S : (x : Int) --> Int; }\n",
+        "data Int : Type where { | Z | S(x : Int) }\n",
         "def r(n : Int) -> -F Path(Int, n, n) { here(n) }\n",
         "def f(a : Int, b : Int) -> -F Path(Int, a, a) { case b { Z => back(r(a)), S(x) => back(r(a)) } }\n",
     );
@@ -5072,7 +5062,7 @@ fn a_loop_mints_the_words_at_its_point()
 
     use crate::module::Role;
     let mut arena = CoreArena::new();
-    let source = "data Circle : Type {\n  Base : Circle;\n  Next : (x : Circle) --> Circle;\n  loop : Next(Base) <-> Next(Base);\n  turn : Next(Base) <-> Next(Base);\n}\ndata Flag : Type { On : Flag; }\n";
+    let source = "data Circle : Type where {\n  | Base\n  | Next(x : Circle)\n  | loop : Next(Base) <-> Next(Base)\n  | turn : Next(Base) <-> Next(Base)\n}\ndata Flag : Type where { | On }\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let [circle, words, looped, turned, flag] = *module.declarations().iter().collect::<Vec<_>>()
     else {
@@ -5211,7 +5201,7 @@ fn a_loop_mints_the_words_at_its_point()
 #[test]
 fn a_cell_between_terms_is_a_loop_or_refused_by_name()
 {
-    let source = "data Directed : Type { One : Directed; loop : One --> One; }\ndata Segment : Type { Start : Segment; End : Segment; seg : Start <-> End; }\ndata Ruled : Type { Two : Ruled; cell : Two ==> Two; }\ndata Swapped : Type { Five : Swapped; cell : Five <=> Five; }\ndata Open : Type { Three : Open; Next : (x : Open) --> Open; cell : Next(x) <-> Next(x); }\ndata Indexed(a : Type) : Type { Four : Indexed(a); cell : Four <-> Four; }\n";
+    let source = "data Directed : Type where { | One | loop : One --> One }\ndata Segment : Type where { | Start | End | seg : Start <-> End }\ndata Ruled : Type where { | Two | cell : Two ==> Two }\ndata Swapped : Type where { | Five | cell : Five <=> Five }\ndata Open : Type where { | Three | Next(x : Open) | cell : Next(x) <-> Next(x) }\ndata Indexed(a : Type) : Type where { | Four | cell : Four <-> Four }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let spelled = |refusal: &LoweringRefusal<'_>| {
@@ -5264,7 +5254,7 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
 #[test]
 fn only_back_inverts_a_letter()
 {
-    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef bad : Path(Circle, \
+    let source = "data Circle : Type where { | Base | loop : Base <-> Base }\ndef bad : Path(Circle, \
                   Base, Base) ;\ndef bad = here(loop) ∷ loop ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -5291,7 +5281,7 @@ fn a_letter_naming_nothing_is_unresolved_1997()
     // `lop` names no loop and nothing else: the letter is unresolved at its
     // name, plain or inside `back`, and `turn`, a declaration other than a
     // loop, is still no letter.
-    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef turn : Integer ;\ndef turn = 1 ;\ndef plain : Path(Circle, Base, Base) ;\ndef plain = lop ∷ here(Base) ;\ndef inverse : Path(Circle, Base, Base) ;\ndef inverse = back(lop) ∷ here(Base) ;\ndef other : Path(Circle, Base, Base) ;\ndef other = turn ∷ here(Base) ;\n";
+    let source = "data Circle : Type where { | Base | loop : Base <-> Base }\ndef turn : Integer ;\ndef turn = 1 ;\ndef plain : Path(Circle, Base, Base) ;\ndef plain = lop ∷ here(Base) ;\ndef inverse : Path(Circle, Base, Base) ;\ndef inverse = back(lop) ∷ here(Base) ;\ndef other : Path(Circle, Base, Base) ;\ndef other = turn ∷ here(Base) ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for (declaration, written) in [("plain", "lop ∷"), ("inverse", "lop) ∷")] {
@@ -5324,7 +5314,7 @@ fn a_letter_naming_nothing_is_unresolved_1997()
 #[test]
 fn a_word_conses_its_letters_and_matches_them()
 {
-    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef empty : Path(Circle, Base, Base) ;\ndef empty = here(Base) ;\ndef word : Path(Circle, Base, Base) ;\ndef word = back(loop) ∷ loop ;\ndef rec size(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => become size[<](q),\n    back(loop) ∷ q => become size[<](q)\n  }\n}\n";
+    let source = "data Circle : Type where { | Base | loop : Base <-> Base }\ndef empty : Path(Circle, Base, Base) ;\ndef empty = here(Base) ;\ndef word : Path(Circle, Base, Base) ;\ndef word = back(loop) ∷ loop ;\ndef rec size(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => become size[<](q),\n    back(loop) ∷ q => become size[<](q)\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let words = module
@@ -5447,7 +5437,7 @@ fn a_word_conses_its_letters_and_matches_them()
 #[test]
 fn a_loop_arm_follows_the_constructors_branches()
 {
-    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndata Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndef invLooper(x : Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\nmodule Late {\n  def kept(x : Circle) -> -F Circle {\n    case x {\n      later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => loop,\n    loop => back(loop)\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  case n {\n    Z => Z,\n    S(m) => m,\n    loop => Z\n  }\n}\n";
+    let source = "data Circle : Type where { | Base | loop : Base <-> Base }\ndata Nat : Type where { | Z | S(n : Nat) }\ndef invLooper(x : Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\nmodule Late {\n  def kept(x : Circle) -> -F Circle {\n    case x {\n      later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => loop,\n    loop => back(loop)\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  case n {\n    Z => Z,\n    S(m) => m,\n    loop => Z\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(Computation::DataCase { branches, .. }) = arena
@@ -5507,7 +5497,7 @@ fn a_loop_arm_follows_the_constructors_branches()
         ),
         "an arm for a loop the scrutinee's sort does not carry is refused"
     );
-    let source = "data Eight : Type { Mid : Eight; left : Mid <-> Mid; right : Mid <-> Mid; }\ndef swap(x : Eight) -> -F Eight {\n  case x {\n    Mid => Mid,\n    right => left,\n    left => right\n  }\n}\n";
+    let source = "data Eight : Type where { | Mid | left : Mid <-> Mid | right : Mid <-> Mid }\ndef swap(x : Eight) -> -F Eight {\n  case x {\n    Mid => Mid,\n    right => left,\n    left => right\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
@@ -5529,9 +5519,9 @@ fn a_data_field_is_the_case_returning_it_1106()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Band : Type { Bounds : (low : Integer, high : Integer) --> Band; }\n\
-             data Shape : Type { Dot : (tag : Integer) --> Shape; Line : (start : Integer, tag : Integer) --> Shape; }\n\
-             data Twin(a : Type) : Type { Both : (first : a, second : a) --> Twin(a); }\n\
+            "data Band : Type where { | Bounds(low : Integer, high : Integer) }\n\
+             data Shape : Type where { | Dot(tag : Integer) | Line(start : Integer, tag : Integer) }\n\
+             data Twin(a : Type) : Type where { | Both(first : a, second : a) }\n\
              def lowOf(band : Band) -> -F Integer { band.low }\n\
              def above(band : Band) -> -F Bool { band.high >= 1 }\n\
              def tagOf(shape : Shape) -> -F Integer { shape.tag }\n\
@@ -5631,8 +5621,8 @@ fn a_data_field_some_constructor_lacks_is_refused_1106()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Shape : Type { Dot : (tag : Integer) --> Shape; Line : (start : Integer, tag : Integer) --> Shape; }\n\
-             data Packed : Type[+, 1] { Pack : (a : Type, xs : List(a)) --> Packed; }\n\
+            "data Shape : Type where { | Dot(tag : Integer) | Line(start : Integer, tag : Integer) }\n\
+             data Packed : Type[+, 1] where { | Pack(a : Type, xs : List(a)) }\n\
              def startOf(shape : Shape) -> -F Integer { shape.start }\n\
              def sizeOf(packed : Packed) -> -F Integer { run xs <- packed.xs ; return 0 }\n",
         ),
@@ -5667,7 +5657,7 @@ fn a_data_field_some_constructor_lacks_is_refused_1106()
 #[test]
 fn a_written_answer_ascribes_the_match_2089()
 {
-    let source = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef bound() -> \
+    let source = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef bound() -> \
                   -F Integer {\n  run m <- case 3 -> -F Integer { 0 => pure 0, _ => pure 5 } ;\n  \
                   pure (m + m)\n}\ndef counted(n : Nat) -> -F Nat {\n  run m <- case n -> -F Nat \
                   { Zero => pure n, Succ(p) => pure p } ;\n  pure m\n}\n";

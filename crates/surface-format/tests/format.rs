@@ -277,8 +277,8 @@ fn a_member_after_a_column_zero_comment_starts_a_statement_2950()
             "/// T.\ntheory T {\n  /// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
         ),
         (
-            "/// N.\ndata N : Type {\n/// Zero.\n  Z : N;\n  S : (n : N) --> N;\n}\n",
-            "/// N.\ndata N : Type {\n  /// Zero.\n  Z : N;\n  S : (n : N) --> N;\n}\n",
+            "/// N.\ndata N : Type where {\n/// Zero.\n  | Z\n  | S(n : N)\n}\n",
+            "/// N.\ndata N : Type where {\n  /// Zero.\n  | Z\n  | S(n : N)\n}\n",
         ),
     ] {
         assert_eq!(

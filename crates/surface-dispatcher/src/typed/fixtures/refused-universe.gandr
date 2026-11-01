@@ -1,0 +1,6 @@
+data Small : Type where {
+  | Pick(a : Type, f : +U (a -> -F Small))
+}
+data Flag : Type where {
+  | On
+}

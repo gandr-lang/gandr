@@ -1,0 +1,12 @@
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
+}
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+def two : Nat ;
+def two = Succ(Succ(Zero)) ;

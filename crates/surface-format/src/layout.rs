@@ -772,8 +772,10 @@ enum Continuation
 /// separates, so the commas inside a statement, as in a rule's
 /// `where a # q, b # q`, stay on its line. An item the source started on a
 /// new line, after no separator and indented deeper than the statement before
-/// it, continues that statement; a comment is no statement, so code after a
-/// comment the group opens with starts one wherever the comment stands.
+/// it, continues that statement, unless a bar leads it: a `|` at the head of a
+/// line is an arm bar, which opens a member as a separator ends one. A comment
+/// is no statement, so code after a comment the group opens with starts one
+/// wherever the comment stands.
 ///
 /// # Specification
 /// trivial.
@@ -803,8 +805,12 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
             start = index;
             continuation = Continuation::Statement;
             if current.element.kind() == Kind::Code {
+                let barred =
+                    matches!(current.element, Element::Text(text) if <&str>::from(text) == "|");
                 match base {
-                    Some(statement) if !ended && breaks && current.indent > statement => {
+                    Some(statement)
+                        if !ended && !barred && breaks && current.indent > statement =>
+                    {
                         continuation = Continuation::Continued;
                     },
                     Some(_) | None => base = Some(current.indent),

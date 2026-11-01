@@ -1434,8 +1434,11 @@ fn kept(
             .and_then(|after| after.find('\n'))
             .map_or(written.len(), |newline| named.saturating_add(newline));
         let holding = written.get(from .. to).unwrap_or_default();
-        let indent = holding.len().saturating_sub(holding.trim_start().len());
-        let shown = holding.trim();
+        // A member led by its arm bar is quoted from past the bar.
+        let unbarred = holding.trim_start();
+        let unbarred = unbarred.strip_prefix('|').map_or(unbarred, str::trim_start);
+        let indent = holding.len().saturating_sub(unbarred.len());
+        let shown = unbarred.trim_end();
         let start = from.saturating_add(indent);
         if site.source() == own {
             quote(
@@ -2403,7 +2406,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "data Flag : Type {\n  On : Flag;\n  Off : Flag;\n}\ndef decoded(f : Flag) -> -F \
+                "data Flag : Type where {\n  | On\n  | Off\n}\ndef decoded(f : Flag) -> -F \
                  Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
                  Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
             )),
@@ -2416,7 +2419,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "data U : Type {\n  NatC : U;\n  Arrow : (a : U, b : U) --> U;\n}\ndef el(u : U) \
+                "data U : Type where {\n  | NatC\n  | Arrow(a : U, b : U)\n}\ndef el(u : U) \
                  -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
                  }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
             )),
@@ -2476,7 +2479,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef rec size(p : \
+                "data Circle : Type where { | Base | loop : Base <-> Base }\ndef rec size(p : \
                  Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    \
                  loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
             )),
@@ -2738,15 +2741,11 @@ mod tests
     #[test]
     fn a_declaration_s_own_tile_hovers_the_declaration_1202()
     {
-        let data = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
-                    oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  \
-                    rule divmod(m, Zero) ==> (Zero, m);\n}\n";
+        let data = include_str!("hover/fixtures/natdiv.gandr");
         let module = "module Ints {\n  def one : Integer ;\n  def one = 1 ;\n}\n";
-        let rec = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\nrec {\n  def \
-                   rec ping(n : Nat) -> -F Nat { become pong(n) }\n  def rec pong(n : Nat) -> \
-                   -F Nat { return n }\n}\n";
-        let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
-        let zero = fenced(SourceText::from("Zero : NatDiv"));
+        let rec = include_str!("hover/fixtures/rec-group.gandr");
+        let succ = fenced(SourceText::from("Succ(n : NatDiv)"));
+        let family = fenced(SourceText::from("NatDiv : Type"));
         let rule = fenced(SourceText::from("rule divmod(m, Zero) ==> (Zero, m)"));
         let ints = fenced(SourceText::from("module Ints"));
         let group = format!(
@@ -2755,16 +2754,25 @@ mod tests
                 "def rec ping(n : Nat) -> -F Nat\ndef rec pong(n : Nat) -> -F Nat"
             ))
         );
-        let rows: [Row<'_>; 11] = [
+        let rows: [Row<'_>; 10] = [
             (
                 "a constructor's parenthesis",
                 data,
-                (2, 9),
+                (2, 8),
                 Ok(succ.clone()),
             ),
-            ("a constructor's colon", data, (1, 7), Ok(zero.clone())),
-            ("a constructor's semicolon", data, (1, 15), Ok(zero)),
-            ("a constructor's arrow", data, (2, 22), Ok(succ)),
+            (
+                "a member's bar, the family's own tile",
+                data,
+                (1, 2),
+                Ok(family),
+            ),
+            (
+                "a constructor's closing parenthesis",
+                data,
+                (2, 19),
+                Ok(succ),
+            ),
             (
                 "a data declaration's closing brace",
                 data,
@@ -2800,13 +2808,8 @@ mod tests
     #[test]
     fn a_described_member_hovers_its_own_type()
     {
-        let data = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
-                    oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  \
-                    rule divmod(m, Zero) ==> (Zero, m);\n}\n";
-        let theory = "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  \
-                    oper id : (a : Ob) --> Hom(a, a);\n  \
-                    oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-                    rule unitL : comp(id(a), f) ==> f;\n}\n";
+        let data = include_str!("hover/fixtures/natdiv.gandr");
+        let theory = include_str!("hover/fixtures/cat.gandr");
         let rows: [Row<'_>; 14] = [
             (
                 "a data family's name",
@@ -2823,19 +2826,19 @@ mod tests
             (
                 "a constant constructor",
                 data,
-                (1, 3),
+                (1, 4),
                 Ok(fenced(SourceText::from("Zero : NatDiv"))),
             ),
             (
                 "a constructor with a field",
                 data,
-                (2, 3),
+                (2, 4),
                 Ok(fenced(SourceText::from("Succ : +U (NatDiv -> -F NatDiv)"))),
             ),
             (
                 "a constructor's field",
                 data,
-                (2, 10),
+                (2, 9),
                 Ok(fenced(SourceText::from("n : NatDiv"))),
             ),
             (
@@ -2999,23 +3002,22 @@ mod tests
     #[test]
     fn a_checker_refused_declaration_hovers_its_refusal_1204()
     {
-        let source = "data Small : Type {\n  Pick : (a : Type, f : +U (a -> -F Small)) --> \
-                      Small;\n}\n";
+        let source = include_str!("hover/fixtures/refused-universe.gandr");
         let declared = "```gandr\nSmall : Type\n```\n\nrefused: a constructor field exceeds the declared \
              universe";
         let rows = [
             ("the declaration's name", (0, 5), String::from(declared)),
             (
                 "a field's parenthesis",
-                (1, 27),
+                (1, 26),
                 format!("```gandr\n(\n```\n\nA tile of `parenthesized_type`.\n\n{declared}"),
             ),
             (
                 "a field's thunk type",
-                (1, 24),
+                (1, 23),
                 format!("```gandr\n+U\n```\n\nA tile of `u_type`.\n\n{declared}"),
             ),
-            ("a use of the declaration", (1, 37), String::from(declared)),
+            ("a use of the declaration", (1, 36), String::from(declared)),
         ];
         for (position, (line, character), expected) in rows {
             assert_eq!(
@@ -3035,8 +3037,7 @@ mod tests
     #[test]
     fn a_refused_declaration_hovers_what_the_lowering_kept_1201()
     {
-        let source = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef bad(x \
-                      : Nat) -> -F Nat {\n  return Succ(x, x)\n}\n";
+        let source = include_str!("hover/fixtures/refused-call.gandr");
         let refused = "```gandr\nbad\n```\n\nrefused: `call_expression`, read as a value, does not take 2 \
              operands";
         let rows = [
@@ -3044,7 +3045,7 @@ mod tests
                 "a constructor's use",
                 (5, 9),
                 format!(
-                    "```gandr\nSucc : (n : Nat) --> Nat;\n```\n\nA constructor, written at line \
+                    "```gandr\nSucc(n : Nat)\n```\n\nA constructor, written at line \
                      3.\n\n{refused}"
                 ),
             ),

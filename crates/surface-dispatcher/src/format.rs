@@ -812,7 +812,7 @@ mod tests
     fn a_linear_run_is_written_away_beside_a_checker()
     {
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-        let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+        let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
                       \n\
                       def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                       \n\
@@ -829,7 +829,7 @@ mod tests
                       def chained(n : Nat) -> Nat {\n  run a <- twice(n);\n  run b <- twice(a);\n  become twice(b)\n}\n\
                       \n\
                       def suspended(n : Nat) -> Nat {\n  run t <- make(n);\n  apply(t)\n}\n";
-        let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+        let sugared = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
                        \n\
                        def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                        \n\
@@ -897,7 +897,7 @@ mod tests
     fn a_thunk_the_checker_inserts_is_left_to_it_1327()
     {
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-        let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+        let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
                       \n\
                       def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
                       \n\
@@ -914,7 +914,7 @@ mod tests
                       \n\
                       def none : () => Nat;\n\
                       def none = thunk { Zero };\n";
-        let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+        let sugared = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
                        \n\
                        def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
                        \n\

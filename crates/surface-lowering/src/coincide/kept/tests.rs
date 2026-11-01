@@ -14,9 +14,9 @@ use crate::unit::Unit;
 
 /// Two rules rewriting `add(Zero, Zero)` apart: the block is refused at the
 /// later rule, naming the earlier.
-const APART: &str = r#"data NatApart : Type {
-    Zero : NatApart;
-    Succ : (n : NatApart) --> NatApart;
+const APART: &str = r#"data NatApart : Type where {
+    | Zero
+    | Succ(n : NatApart)
     oper add(m : NatApart, n : NatApart) -> NatApart;
     rule add(Zero, n) ==> n;
     rule add(m, Zero) ==> Succ(m);

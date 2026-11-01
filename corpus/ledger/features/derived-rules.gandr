@@ -20,9 +20,9 @@ derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
 
 /// A bit.
 @[ checks ]
-data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+data Bit : Type where {
+  | Zero
+  | One
 }
 
 /// Exclusive or.

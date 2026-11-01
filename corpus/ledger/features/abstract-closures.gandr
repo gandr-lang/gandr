@@ -10,11 +10,11 @@
 /// - see: crates/core-sequent/src/closure.rs
 
 /// The naturals the closures return.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero
   /// The natural after `n`.
-  Succ : (n : Nat) --> Nat;
+  | Succ(n : Nat)
 }
 
 /// The constant function at `n`, a closure over `n`.

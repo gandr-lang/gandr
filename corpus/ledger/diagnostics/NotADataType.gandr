@@ -1,7 +1,7 @@
 /// `NotADataType`: a type names a data declaration the checker refused.
 @[ refuses("DataKindNotUniverse") ]
-data Odd : Integer {
-  Z : Odd;
+data Odd : Integer where {
+  | Z
 }
 
 @[ refuses("NotADataType") ]

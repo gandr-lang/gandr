@@ -1,0 +1,15 @@
+/// Natural numbers.
+data Nat : Type where {
+  | Zero
+  /// One more.
+  | Succ(n : Nat)
+}
+/// Addition.
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+/// The answer.
+def answer = 42 ;

@@ -1,8 +1,8 @@
 /// `StagesDisagree`: two arguments of a call show stages for one stage binder that no stage satisfies together.
 @[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
 }
 
 @[ checks ]
