@@ -18,7 +18,7 @@
 @[ checks ]
 theory Let where {
   sort Tm : Type+;
-  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
 }
 
@@ -27,7 +27,7 @@ theory Let where {
 @[ checks ]
 theory LetPair where {
   sort Tm : Type+;
-  oper let2 : (u : Tm, v : Tm, t : pi+ (x : Tm) . pi+ (y : Tm) . Tm) --> Tm;
+  oper let2 : (u : Tm, v : Tm, t : (x : Tm) -> (y : Tm) -> Tm) --> Tm;
   rule zeta2 : let2(u, v, t) <=> t(u, v);
 }
 
@@ -39,7 +39,7 @@ theory LetBeside where {
   oper zero : () --> Tm;
   oper one : () --> Tm;
   oper f : (a : Tm) --> Tm;
-  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
   rule fZero : f(a) <=> zero();
   rule fOne : f(a) <=> one();
@@ -53,7 +53,7 @@ theory LetBeside where {
 theory LetOverlap where {
   sort Tm : Type+;
   oper zero : () --> Tm;
-  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
   rule zetaZero : let(zero(), t) <=> t(zero());
 }

@@ -1746,9 +1746,9 @@ fn a_rendered_signature_reparses_to_itself()
             ),
         ],
     );
-    // An unnamed port under a binder renders as `_ : pi+ (x : S) . T`, which
-    // an input port does not read yet (#718); every port here is named or
-    // binds nothing.
+    // An unnamed port under a binder renders as `_ : (x : S) -> T`, which an
+    // input port does not read yet (#718); every port here is named or binds
+    // nothing.
     for original in [
         lambda,
         identity_return,
@@ -2073,24 +2073,29 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
     // sort's index and a circuit's wire bind nothing.
     for (source, refused, written) in [
         (
-            "theory Nested where { sort Tm : Type+; oper lam : (t : pi+ (x : pi+ (y : Tm) . Tm) . Tm) --> Tm; }",
-            "Repaired",
+            "theory Nested where { sort Tm : Type+; oper lam : (t : (x : (y : Tm) -> Tm) -> Tm) --> Tm; }",
+            "Malformed",
             "a binder whose domain binds",
         ),
         (
-            "theory Result where { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
-            "Repaired",
+            "theory Result where { sort Tm : Type+; oper lam : (t : Tm) --> (u : (x : Tm) -> Tm); }",
+            "Malformed",
             "a result that binds",
         ),
         (
-            "theory Indexed where { sort Tm : Type+; sort S(i : pi+ (x : Tm) . Tm) : Type; }",
+            "theory Indexed where { sort Tm : Type+; sort S(i : (x : Tm) -> Tm) : Type; }",
             "Malformed",
             "an index that binds",
         ),
         (
-            "theory Wired where { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : pi+ (x : Tm) . Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
-            "Repaired",
+            "theory Wired where { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : (x : Tm) -> Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
+            "Malformed",
             "a circuit port that binds",
+        ),
+        (
+            "theory Dotted where { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
+            "Repaired",
+            "a result under the dotted binder",
         ),
     ] {
         let report = described(source);
@@ -2110,7 +2115,7 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 fn an_abstraction_stands_outside_the_binders()
 {
     let report = described(
-        "theory Inner where { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : pi+ (x : Val) . bind (c : Name) . Proc) --> Proc; }",
+        "theory Inner where { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : (x : Val) -> bind (c : Name) . Proc) --> Proc; }",
     );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2119,10 +2124,10 @@ fn an_abstraction_stands_outside_the_binders()
     assert_eq!(
         diagnostic.fault,
         DescriptionFault::Malformed,
-        "a `bind` inside a `pi+` is malformed"
+        "a `bind` inside a restricted binder is malformed"
     );
     let report = described(
-        "theory Outer where { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : bind (c : Name) . bind (d : Name) . pi+ (x : Val) . Proc) --> Proc; }",
+        "theory Outer where { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : bind (c : Name) . bind (d : Name) . (x : Val) -> Proc) --> Proc; }",
     );
     assert_eq!(report.diagnostics, [], "abstractions outside the binders");
     let [ref theory] = *report.declarations.as_slice()
@@ -2732,7 +2737,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
 
 /// #2115: a name applied, on a left side, to the names abstracted above it
 /// reads as a metavariable's pattern, which the right side instantiates; an
-/// operation applied there stays a call. At `get`'s `pi+` port each
+/// operation applied there stays a call. At `get`'s binding port each
 /// abstraction is the port's binding field and each name its variable.
 #[test]
 fn an_applied_bound_name_reads_as_a_pattern_2115()

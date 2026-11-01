@@ -856,7 +856,7 @@ fn render_oper_member(oper: &OperDesc) -> String
 
 /// Render one port (`m : Nat`), spelling the sort bare when the port carries
 /// no authored name, a restricted binder telescope as nested
-/// `pi+ (x : S) . T`, outermost binder first, and its atom abstractions as
+/// `(x : S) -> T`, outermost binder first, and its atom abstractions as
 /// `bind (a : N) .` outside them.
 ///
 /// A binder is a form of a named port, so an anonymous port under one renders
@@ -867,7 +867,7 @@ fn render_oper_member(oper: &OperDesc) -> String
 ///   bare sort, and under either renders as `_`, a colon separator and its
 ///   sort; authored names render as the name, a colon separator and their sort.
 ///   The sort ends with the port's own sort application, after one `bind`
-///   prefix per abstraction and then one `pi+` prefix per binder.
+///   prefix per abstraction and then one `(x : S) ->` prefix per binder.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -887,16 +887,18 @@ fn render_oper_member(oper: &OperDesc) -> String
 fn render_port(port: &SortRef) -> String
 {
     let mut sort = render_sort(&port.sort, &port.arguments);
-    let binders = port
-        .abstractions
-        .iter()
-        .map(|atom| ("bind", atom))
-        .chain(port.bindings.iter().map(|binder| ("pi+", binder)));
-    for (keyword, binder) in binders.rev() {
+    for binder in port.bindings.iter().rev() {
         sort = format!(
-            "{keyword} ({} : {}) . {sort}",
+            "({} : {}) -> {sort}",
             binder.name,
             render_sort(&binder.sort, &binder.arguments)
+        );
+    }
+    for atom in port.abstractions.iter().rev() {
+        sort = format!(
+            "bind ({} : {}) . {sort}",
+            atom.name,
+            render_sort(&atom.sort, &atom.arguments)
         );
     }
     match authored_name(port) {
@@ -1472,7 +1474,7 @@ mod tests
         let bound = SortRef::new("", "T").pi_plus([SortIndex::new("x", "S")]);
         assert_eq!(
             render_port(&bound),
-            "_ : pi+ (x : S) . T",
+            "_ : (x : S) -> T",
             "an anonymous port under a binder renders under the placeholder name"
         );
         for (outputs, expected) in [

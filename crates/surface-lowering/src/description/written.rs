@@ -265,8 +265,8 @@ pub struct WrittenSort
     pub indices: Vec<WrittenTerm>,
 }
 
-/// Where a `pi+` binder over a port is written: `x : VTm(a)` in `t : pi+ (x :
-/// VTm(a)) . CTm(b)`.
+/// Where a restricted binder over a port is written: `x : VTm(a)` in `t : (x
+/// : VTm(a)) -> CTm(b)`.
 ///
 /// # Specification
 /// trivial.
@@ -289,8 +289,8 @@ pub struct WrittenPort
 {
     /// The port's name tile.
     pub named: Maybe<ByteSpan, port_name::Absent>,
-    /// The `pi+` binders written over its sort, outermost first; none for a
-    /// first-order port.
+    /// The restricted binders written over its sort, outermost first; none for
+    /// a first-order port.
     pub binders: Vec<WrittenBound>,
     /// Its sort.
     pub sort: WrittenSort,

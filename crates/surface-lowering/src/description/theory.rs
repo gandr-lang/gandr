@@ -49,28 +49,27 @@
 //! # Second-order members
 //!
 //! A sort member classified `Type+` is representable, and an operation's
-//! input port may write its sort under restricted binders, `t : pi+ (x : S) .
-//! T`, each binding a variable of a representable sort `S` over `T`, outermost
+//! input port may write its sort under restricted binders, `t : (x : S) -> T`,
+//! each binding a variable of a representable sort `S` over `T`, outermost
 //! first (Kaposi and Xie, _Second-Order Generalised Algebraic Theories_, FSCD
-//! 2024, Definition 3). The reader codes both in the value — a sort at
+//! 2024, Definition 3). The corpus writes `t : pi+ (x : S) . T` until it moves,
+//! and the reader reads both. The reader codes both in the value — a sort at
 //! `Representable`, a port at `Bound` with its binder chain — so a block
 //! written as the description's rendering reads back to that description. A
 //! binder over an ordinary sort is the description check's
 //! `NonRepresentableBinder`; a sort's index is a plain variable and is refused
-//! as malformed under a binder; a binder's domain and a result do not parse
-//! under one. `Model(S)` states such an operation's port as the thunked
-//! function from its variables, `+U ((x : S) -> -F T)`, and refuses a law
-//! relating a term at the port by name.
+//! as malformed under a binder. `Model(S)` states such an operation's port as
+//! the thunked function from its variables, `+U ((x : S) -> -F T)`, and
+//! refuses a law relating a term at the port by name.
 //!
-//! **Choice.** The binder is a form of the input port, not a type former: `pi+`
-//! is a marked tile, read only where a parameter list writes a named port. The
-//! alternative was a type rule at every type slot, refused by the lowering
-//! outside a port; its parenthesis, name, colon and dot molds then competed in
+//! **Choice.** The arrowed binder is the dependent function type itself, read
+//! as a binder where an input port writes it, so it costs the parser nothing.
+//! The dotted `pi+` is a form of the input port, not a type former: a marked
+//! tile, read only where a parameter list writes a named port. A type rule at
+//! every type slot would put its parenthesis, name, colon and dot molds in
 //! every damaged type the parser repairs, and the one-token-drop records
-//! recovered worse at dozens of corpus tokens, where the port form leaves
-//! every record no worse. The choice reverses when a binder is admitted as a
-//! type elsewhere, where a type rule is what reads it. `Type+` stays a type
-//! atom: one tile no other form shares. Witnesses:
+//! recovered worse at dozens of corpus tokens. `Type+` stays a type atom: one
+//! tile no other form shares. Witnesses:
 //! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `model::tests::an_underivable_component_keeps_its_fault`.
@@ -80,15 +79,15 @@
 //! A sort member classified `Atom` is an atom sort: orbit-infinite, with
 //! equality and swapping its only structure (Pitts, _Nominal Sets_, CUP 2013).
 //! The reader codes it at `Atom` in the value. An operation's port may sit at
-//! it; an output at it is the description check's `AtomResult`, and a `pi+`
-//! binder over it its `NonRepresentableBinder`.
+//! it; an output at it is the description check's `AtomResult`, and a
+//! restricted binder over it its `NonRepresentableBinder`.
 //!
 //! An operation's port abstracts atoms of it under `bind`, `p : bind (a :
-//! Name) . Proc`: swapping renames the atom, and it may escape, where `pi+`
-//! binds a variable that substitution instantiates. The abstractions stand
-//! outside the port's `pi+` binders, so a `bind` after a `pi+` is malformed;
-//! the reader codes such a port at `Abstracted`, and an abstraction over a
-//! sort that is not an atom sort is the description check's
+//! Name) . Proc`: swapping renames the atom, and it may escape, where a
+//! restricted binder binds a variable that substitution instantiates. The
+//! abstractions stand outside the port's restricted binders, so a `bind` after
+//! a `pi+` is malformed; the reader codes such a port at `Abstracted`, and an
+//! abstraction over a sort that is not an atom sort is the description check's
 //! `NonAtomAbstraction`. Witnesses:
 //! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
@@ -274,6 +273,7 @@ use crate::description::DescribedDeclaration as Earlier;
 use crate::description::Visible;
 use crate::form::Piece;
 use crate::form::Placed;
+use crate::form::TileName;
 use crate::model::Binder;
 use crate::model::Hypothesis;
 use crate::model::Included;
@@ -354,8 +354,8 @@ struct Side
     names: Vec<Maybe<ByteSpan, port_name::Absent>>,
 }
 
-/// A binder as a port writes it: a restricted binder, `pi+ (name : domain)
-/// .`, or an atom abstraction, `bind (name : domain) .`.
+/// A binder as a port writes it: a restricted binder, `(name : domain) ->` or
+/// `pi+ (name : domain) .`, or an atom abstraction, `bind (name : domain) .`.
 #[derive(Clone, Copy)]
 struct WrittenBinder
 {
@@ -824,7 +824,7 @@ impl Reader<'_, '_>
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
-        // An abstraction a rule writes at a `pi+` port is the binding field
+        // An abstraction a rule writes at a binding port is the binding field
         // that port binds, read against every operation the parts hold.
         parts.bind_fields();
         let presentation = Presentation {
@@ -1820,11 +1820,11 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: one port per entry of `ports`, in order, under its written
     ///   name or, unnamed, the empty one, with one abstraction per written
-    ///   `bind` and one binder per written `pi+`, each list outermost first,
-    ///   each entry under its written name over its domain's sort; and one
-    ///   written port per port, its name tile from `names`, its abstractions
-    ///   then its binders where they are written, and its sort's bytes and
-    ///   index terms.
+    ///   `bind` and one binder per written restricted binder, each list
+    ///   outermost first, each entry under its written name over its domain's
+    ///   sort; and one written port per port, its name tile from `names`, its
+    ///   abstractions then its binders where they are written, and its sort's
+    ///   bytes and index terms.
     /// - fails: a sort or a binder's domain [`Self::sort_term`] cannot read.
     /// - panics: none.
     /// - executable: none — the sorts read are source syntax.
@@ -2502,7 +2502,8 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: only a written arrow makes the first side an input interface.
     /// - fails: expression endpoints and mismatched arrows remain
-    ///   distinguishable.
+    ///   distinguishable; a binder over an output, or over a circuit rule's
+    ///   port, is malformed: only an operation's input binds.
     /// - panics: none.
     /// - executable: none — whether an arrow was written is source syntax the
     ///   boundary does not retain.
@@ -2541,6 +2542,16 @@ impl Reader<'_, '_>
                 first,
             )
         };
+        let bound_inputs = match row {
+            ArrowRow::Mapping => &[][..],
+            ArrowRow::Face => inputs.binders.as_slice(),
+        };
+        if let Some(binder) = bound_inputs.iter().chain(&outputs.binders).flatten().next() {
+            return Err(DescriptionDiagnostic {
+                span: binder.name.span,
+                fault: DescriptionFault::Malformed,
+            });
+        }
         Ok(Boundary {
             inputs: inputs.ports,
             outputs: outputs.ports,
@@ -2648,10 +2659,11 @@ impl Reader<'_, '_>
                     });
                 }
                 let (name, sort, named, binders) = if run.eat(Spelling(":")).0 {
-                    let binders = run.binders()?;
+                    let mut binders = run.binders()?;
+                    let sort = self.arrowed(run.take()?, &mut binders)?;
                     (
                         self.port_name(first),
-                        run.take()?,
+                        sort,
                         Maybe::Present(first.span),
                         binders,
                     )
@@ -2735,13 +2747,77 @@ impl Reader<'_, '_>
             self.text(at).0.into()
         }
     }
+
+    /// The sort a port's type `(x : S) -> T` writes under its restricted
+    /// binders, each pushed onto `binders` outermost first: a dependent
+    /// function type over one named domain binds the name at the domain over
+    /// its codomain.
+    ///
+    /// # Specification
+    /// - ensures: one restricted binder per dependent arrow `(x : S) ->` the
+    ///   type opens with, in order, each its name and domain; the codomain the
+    ///   last arrow leaves, or `sort` itself when it opens with none.
+    /// - fails: a diagnostic reading a form's pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pieces' diagnostic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the λ-calculus `lam` port written with the arrow
+    ///   reads back its one binder, as the dotted spelling does.
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
+    #[spec(captures: before = binders.len(), ensures: |ret| ret.is_err() || binders.len() >= before)]
+    fn arrowed(
+        &self,
+        mut sort: Placed,
+        binders: &mut Vec<WrittenBinder>,
+    ) -> Result<Placed, DescriptionDiagnostic>
+    {
+        loop {
+            let [
+                Piece::Operand(domain),
+                Piece::Tile { label: arrow, .. },
+                Piece::Operand(codomain),
+            ] = *self.pieces(sort)?.as_slice()
+            else {
+                return Ok(sort);
+            };
+            if arrow != TileName::ARROW {
+                return Ok(sort);
+            }
+            let [
+                Piece::Tile { label: open, .. },
+                Piece::Operand(name),
+                Piece::Tile { label: colon, .. },
+                Piece::Operand(bound),
+                Piece::Tile { label: close, .. },
+            ] = *self.pieces(domain)?.as_slice()
+            else {
+                return Ok(sort);
+            };
+            if open != TileName::PAREN_OPEN
+                || colon != TileName::COLON
+                || close != TileName::PAREN_CLOSE
+            {
+                return Ok(sort);
+            }
+            binders.push(WrittenBinder {
+                name,
+                domain: bound,
+                abstracts: false,
+            });
+            sort = codomain;
+        }
+    }
 }
 
 impl Run<'_>
 {
-    /// Read the binders a port's sort is written under, outermost first: the
-    /// atom abstractions, `bind (a : N) .` each, then the restricted binders,
-    /// `pi+ (x : S) .` each.
+    /// Read the dotted binders a port's sort is written under, outermost
+    /// first: the atom abstractions, `bind (a : N) .` each, then the
+    /// restricted binders `pi+ (x : S) .` the corpus writes until it moves to
+    /// the arrow [`Reader::arrowed`] reads.
     ///
     /// # Specification
     /// - ensures: one binder per `bind` or `pi+` the run continues with, in

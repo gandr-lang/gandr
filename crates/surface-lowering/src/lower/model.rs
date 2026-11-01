@@ -11,7 +11,7 @@
 //! telescope entry, dependent exactly where a later entry or the result names
 //! it, into the returner of the result — the product of the results for a
 //! many-out operation. An entry whose port binds variables binds the thunked
-//! function from them to its sort: `k : pi+ (s : R) . C` binds
+//! function from them to its sort: `k : (s : R) -> C` binds
 //! `+U ((s : R) -> -F C)`, Π over a variable a later variable's sort or `C`
 //! names and an arrow over any other. A law mints the same telescope into the
 //! returner of `Path(S, l, r)`, an application `g(t₁, …)` in either endpoint

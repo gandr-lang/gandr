@@ -984,16 +984,19 @@ fn parameter() -> Regex
 }
 
 /// Build one input port: a plain [`port`] whose named form may write its type
-/// under binders, outermost first. A restricted binder, `t : pi+ (x : S) .
-/// T`, puts `T` under one variable of the representable sort `S`, the binding
-/// a second-order signature's operation writes (Kaposi and Xie's `S ⇒⁺ T`). A
-/// nominal binder, `p : bind (a : N) . T`, abstracts one atom of the atom sort
-/// `N` over `T`, the code universe's `⟨a⟩T` (Pitts, _Nominal Sets_, CUP 2013).
-/// A telescope nests outermost first, `pi+ (x : S) . pi+ (y : S) . T`.
+/// under binders, outermost first. A restricted binder, `t : (x : S) -> T`,
+/// puts `T` under one variable of the representable sort `S`, the binding a
+/// second-order signature's operation writes (Kaposi and Xie's `S ⇒⁺ T`). It
+/// is the dependent function type itself, which the description reads as the
+/// port's binder, so it costs the port no molds. A nominal binder, `p : bind
+/// (a : N) . T`, abstracts one atom of the atom sort `N` over `T`, the code
+/// universe's `⟨a⟩T` (Pitts, _Nominal Sets_, CUP 2013). A telescope nests
+/// outermost first, `(x : S) -> (y : S) -> T`. The dotted `pi+ (x : S) . T` is
+/// read beside the arrow until the corpus moves.
 ///
-/// The binder belongs to the port, not to the type language: a rule in every
-/// type slot would put its parenthesis, name, colon and dot molds before
-/// every damaged type the parser repairs, and results never bind.
+/// The nominal binder belongs to the port, not to the type language: a rule
+/// in every type slot would put its parenthesis, name, colon and dot molds
+/// before every damaged type the parser repairs, and results never bind.
 ///
 /// # Specification
 /// - requires: nothing.

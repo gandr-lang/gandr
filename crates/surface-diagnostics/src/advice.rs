@@ -361,7 +361,7 @@ fn ill_formed(kind: WfKind) -> String
         },
         WfKind::AtomResult => "return a sort that is not an atom sort",
         WfKind::NonAtomAbstraction => {
-            "abstract over an atom sort, or bind the variable with `pi+` instead"
+            "abstract over an atom sort, or bind the variable with `(x : S) ->` instead"
         },
         WfKind::UnknownFreshness => {
             "name in the condition an atom that the rule abstracts and a variable that its left \

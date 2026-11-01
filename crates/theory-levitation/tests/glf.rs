@@ -155,7 +155,7 @@ fn restricted_binding_requires_representability()
     assert!(
         serialize_desc(&source)
             .as_ref()
-            .contains("t : pi+ (x : Tm) . Tm")
+            .contains("t : (x : Tm) -> Tm")
     );
     // An ordinary domain: one refusal, by name, for the one binder.
     source.sorts[0].representability = Representability::Ordinary;
@@ -181,7 +181,7 @@ fn restricted_binding_requires_representability()
     assert!(
         serialize_desc(&twice)
             .as_ref()
-            .contains("u : pi+ (y : Tm) . pi+ (z : Tm) . Tm")
+            .contains("u : (y : Tm) -> (z : Tm) -> Tm")
     );
     let kinds: Vec<WfKind> = check_desc(&twice)
         .iter()

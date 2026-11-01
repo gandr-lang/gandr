@@ -1471,7 +1471,7 @@ fn head_of<'heads>(
 }
 
 /// Derive a sort's or an operation's head: its ports' and results' sorts
-/// elaborated in order, a binding port's sort under its `pi+` variables,
+/// elaborated in order, a binding port's sort under its bound variables,
 /// every name a port does not bind a free sort variable whose sort its
 /// occurrences infer, bound first.
 ///

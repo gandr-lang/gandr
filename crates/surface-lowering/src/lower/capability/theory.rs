@@ -4,8 +4,8 @@
 //! an effect interface, its handler a model of `T` whose carrier is the
 //! handler's answer. The carrier is the one unindexed sort every effect
 //! operation returns; every other sort is a value sort, which the manifest
-//! fixes at the type it writes. An operation `oper op : (p : P, …, k : pi+ (x :
-//! R, …) . C) --> C` takes its continuation last, at the carrier: the inputs
+//! fixes at the type it writes. An operation `oper op : (p : P, …, k : (x : R)
+//! -> … -> C) --> C` takes its continuation last, at the carrier: the inputs
 //! before it are the payload, a value of each `P`, and the continuation's
 //! binders are the reply, a value of each `R`. No value is the unit, one is its
 //! own type, and several are their tuple, as an exercise's arguments are. This
@@ -27,7 +27,7 @@
 //! theory State {
 //!   sort S : Type+;
 //!   sort C : Type;
-//!   oper get : (k : pi+ (s : S) . C) --> C;
+//!   oper get : (k : (s : S) -> C) --> C;
 //!   oper put : (s : S, k : C) --> C;
 //! }
 //! ```
