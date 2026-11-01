@@ -727,7 +727,6 @@ fn undescribed(fault: MemberFault) -> FailureClass
         MemberFault::DependentField => FailureClass::Unimplemented(TrackingIssue::DEPENDENT_FIELD),
         MemberFault::TypeShape => FailureClass::Unimplemented(TrackingIssue::TYPE_SHAPE),
         MemberFault::NativeDecode => FailureClass::Unimplemented(TrackingIssue::NATIVE_DECODE),
-        MemberFault::MultiOutput => FailureClass::Unimplemented(TrackingIssue::PORT_MONOMIALS),
         MemberFault::AggregatedOutput | MemberFault::UnrepresentableOperation => {
             FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE)
         },
@@ -1536,10 +1535,6 @@ mod tests
             (
                 MemberFault::NativeDecode,
                 FailureClass::Unimplemented(TrackingIssue::NATIVE_DECODE),
-            ),
-            (
-                MemberFault::MultiOutput,
-                FailureClass::Unimplemented(TrackingIssue::PORT_MONOMIALS),
             ),
             (
                 MemberFault::AggregatedOutput,

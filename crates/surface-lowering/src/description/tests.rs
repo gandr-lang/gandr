@@ -602,11 +602,6 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
             "a field naming the one before it",
             "Pack",
         ),
-        (
-            "data Tree : Type where { | Split : (n : Integer) --> (l : Tree, r : Tree) }",
-            "a constructor with several outputs",
-            "Tree",
-        ),
     ] {
         let report = elaborated(SourceText::from(source));
         assert!(
@@ -641,17 +636,44 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
         Some("Integer -> Integer")
     );
-    // So does a constructor with several outputs.
-    let source = "data Tree : Type where { | Split : (n : Integer) --> (l : Tree, r : Tree) oper prune : (t : Tree) --> Tree; }";
+}
+
+#[test]
+fn a_multi_output_constructor_describes_one_constructor_per_port()
+{
+    let source = "data Tree : Type where { | Leaf : (n : Integer) --> Tree | Split : (t : Tree) --> (l : Tree, r : Tree) oper prune : (t : Tree) --> Tree; }";
     let report = elaborated(SourceText::from(source));
-    let [ref diagnostic] = *report.diagnostics.as_slice()
+    assert_eq!(report.diagnostics, [], "the description reads every port");
+    let [ref entry] = *report.declarations.as_slice()
     else {
-        panic!("one multi-output constructor")
+        panic!("one description")
     };
-    assert_eq!(diagnostic.fault, DescriptionFault::MultiOutput);
+    let names: Vec<&str> = entry
+        .description
+        .ctors
+        .iter()
+        .map(|ctor| ctor.name.as_ref())
+        .collect();
+    assert_eq!(names, ["Leaf", "Split.l", "Split.r"]);
+    let [_, ref left, ref right] = *entry.description.ctors.as_ref()
+    else {
+        panic!("three constructors")
+    };
+    assert_eq!(left.code, right.code, "the ports share the input `t`");
+    let results: Vec<Option<&str>> = entry
+        .written
+        .constructors
+        .iter()
+        .map(|written| {
+            source.get(
+                usize::from(written.result.span.start()) .. usize::from(written.result.span.end()),
+            )
+        })
+        .collect();
     assert_eq!(
-        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("(l : Tree, r : Tree)")
+        results,
+        [Some("Tree"), Some("Tree"), Some("Tree")],
+        "each port keeps its own result"
     );
 }
 
@@ -1512,7 +1534,6 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::UnderivedWiring,
         MemberFault::ParallelRedexes,
         MemberFault::OffBoundary,
-        MemberFault::MultiOutput,
     ]
     .map(|fault| fault.to_string());
     for (position, message) in messages.iter().enumerate() {

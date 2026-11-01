@@ -2172,6 +2172,28 @@ struct Inverse(bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Width(usize);
 
+/// A port pattern `C(x, …).l` as read: the port and its field patterns.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `port` is the constructor of the port the pattern selects, and
+///   `fields` its field patterns in order.
+/// - executable: none — the record holds no constructor list.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm per port covers a two-output constructor.
+/// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PortPattern
+{
+    /// The constructor's name tile.
+    head: Placed,
+    /// The port selected.
+    port: Constructor,
+    /// The field patterns, in order.
+    fields: Vec<Placed>,
+}
+
 /// A pattern the reader has allocated and not yet read.
 ///
 /// # Specification
@@ -5276,31 +5298,13 @@ impl<'source> Lowerer<'_, 'source>
             return unplanned;
         };
         let output = self.name_at(selected);
-        let Generators::Written(form) = ported.form
-        else {
-            return unplanned;
-        };
-        let tag = self.collected.data.get(form).and_then(|data| {
-            (ported.first .. ported.first.saturating_add(ported.count)).find(|&tag| {
-                data.generators.get(tag).is_some_and(|generator| {
-                    matches!(generator.port, Maybe::Present(port) if self.name_at(port) == output)
-                })
-            })
-        });
-        let Some(tag) = tag
+        let Maybe::Present(constructor) = self.port_of(ported, output)
         else {
             return Err(LoweringRefusal::PartialField {
                 span: selected.span,
                 field: output,
                 constructor: self.name_at(ported.named),
             });
-        };
-        let constructor = Constructor {
-            family: ported.family,
-            form: ported.form,
-            tag,
-            arity: ported.arity,
-            named: ported.named,
         };
         self.constructed_at(head.span, constructor);
         let _head = cursor.operands();
@@ -6117,8 +6121,8 @@ impl<'source> Lowerer<'_, 'source>
                 Some(family) => self.qualified_constructor(site, family, name)?,
                 None => self.constructor_named(site, name),
             };
-            // A multi-output constructor is matched through its ports, which
-            // patterns do not read yet.
+            // A multi-output constructor is matched through one port at a
+            // time, `C(x).l`.
             if family.is_none()
                 && let Maybe::Absent(_) = found
                 && let Maybe::Present(_) = self.ported_named(site, name)
@@ -6126,6 +6130,23 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::PortPattern)));
             }
             let shape = self.constructor_pattern(here, head, found, &fields, patterns, work)?;
+            patterns
+                .spelled
+                .push((queued.slot, head.span, PatternReading::Constructor));
+            return Ok(shape);
+        }
+        if name == FormName::PROJECTION
+            && let Maybe::Present(PortPattern { head, port, fields }) =
+                self.port_pattern(here, pieces)?
+        {
+            let shape = self.constructor_pattern(
+                here,
+                head,
+                Maybe::Present(port),
+                &fields,
+                patterns,
+                work,
+            )?;
             patterns
                 .spelled
                 .push((queued.slot, head.span, PatternReading::Constructor));
@@ -6156,6 +6177,141 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Err(here.out(FragmentBoundary::Unadmitted(super::unread_pattern(name))))
+    }
+
+    /// The port a projection pattern `C(x, …).l` matches: the port `l` of the
+    /// multi-output constructor `C`, its field patterns `x, …`.
+    ///
+    /// # Specification
+    /// - requires: `here` is a projection pattern; `pieces` holds its reading.
+    /// - ensures: for a projection off a constructor applied to field patterns,
+    ///   or off a bare constructor, whose name [`Self::ported_named`] resolves,
+    ///   the constructor's tile, the port at the selected output's tag, and the
+    ///   field patterns in order; the unnamed absence for a projection off
+    ///   anything else.
+    /// - fails: [`LoweringRefusal::PartialField`] at the member when the
+    ///   constructor has no such output; a misplaced tile inside the
+    ///   parentheses.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm per port covers a two-output constructor, and
+    ///   an arm missing one port is refused for it.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        Ok(Maybe::Present(ref read)) => read.fields.len() == read.port.arity,
+        Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn port_pattern(
+        &mut self,
+        here: Site,
+        pieces: &Pieces,
+    ) -> Result<Maybe<PortPattern, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        let Ok((target, selected)) = Self::link(here, &pieces.pieces, here.at.span)
+        else {
+            return unnamed;
+        };
+        let mut written = Pieces::new();
+        read_pieces(self.pbg, self.tree, target.node, &mut written)?;
+        if let Maybe::Present(repaired) = written.repair {
+            return Err(repaired.refusal(here.name));
+        }
+        let mut cursor = Cursor::new(&written.pieces, target.span);
+        // The head is the constructor's tile of a constructor pattern, the
+        // operand of a call, or the target itself when it is a bare name.
+        let head = match cursor.tile(TileName::CONSTRUCTOR) {
+            Maybe::Present(head) => head,
+            Maybe::Absent(_) => match cursor.clone().operands() {
+                Run::One(head) if matches!(self.form_at(head)?, Some((_, Former::Constructor))) => {
+                    let _head = cursor.operands();
+                    head
+                },
+                Run::One(_) | Run::Several { .. } | Run::Empty(_) => {
+                    if !matches!(self.form_at(target)?, Some((_, Former::Constructor))) {
+                        return unnamed;
+                    }
+                    cursor = Cursor::new(&[], target.span);
+                    target
+                },
+            },
+        };
+        let mut fields = Vec::new();
+        if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
+            while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+                fields.push(here.one(cursor.operands())?);
+                if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                    closed(here, &mut cursor, TileName::PAREN_CLOSE)?;
+                    break;
+                }
+            }
+        }
+        exhausted(here, &cursor)?;
+        let Maybe::Present(ported) = self.ported_named(here, SurfaceName::from(self.text_at(head)))
+        else {
+            return unnamed;
+        };
+        let output = self.name_at(selected);
+        let Maybe::Present(port) = self.port_of(ported, output)
+        else {
+            return Err(LoweringRefusal::PartialField {
+                span: selected.span,
+                field: output,
+                constructor: self.name_at(ported.named),
+            });
+        };
+
+        Ok(Maybe::Present(PortPattern { head, port, fields }))
+    }
+
+    /// The port of the multi-output constructor `ported` whose output is
+    /// named `output`, as a constructor of its family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the generator among `ported`'s ports whose output tile spells
+    ///   `output`, at its tag, with the constructor's arity and name tile; the
+    ///   unnamed absence when no port spells it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::port`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(port) => port.tag >= ported.first && port.tag < ported.first.saturating_add(ported.count),
+        Maybe::Absent(_) => true,
+    })]
+    fn port_of(
+        &self,
+        ported: Ported,
+        output: SurfaceName<'source>,
+    ) -> Maybe<Constructor, constructed::Absent>
+    {
+        let Generators::Written(form) = ported.form
+        else {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        };
+        let tag = self.collected.data.get(form).and_then(|data| {
+            (ported.first .. ported.first.saturating_add(ported.count)).find(|&tag| {
+                data.generators.get(tag).is_some_and(|generator| {
+                    matches!(generator.port, Maybe::Present(port) if self.name_at(port) == output)
+                })
+            })
+        });
+        tag.map_or(Maybe::Absent(constructed::Absent::Unnamed), |tag| {
+            Maybe::Present(Constructor {
+                family: ported.family,
+                form: ported.form,
+                tag,
+                arity: ported.arity,
+                named: ported.named,
+            })
+        })
     }
 
     /// The shape of the constructor pattern at `here`, `found` the constructor

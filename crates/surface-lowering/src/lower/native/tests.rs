@@ -2328,7 +2328,7 @@ fn a_multi_output_constructor_is_one_port_per_output()
     );
     let report = judged(&module, &mut arena);
     for name in [
-        "Expr", "left", "both", "apart", "whole", "unpacked", "Pair", "first",
+        "Expr", "left", "both", "apart", "whole", "unpacked", "measured", "Tree", "Pair", "first",
     ] {
         let Some(declaration) = module
             .declarations()
@@ -2350,13 +2350,21 @@ fn a_multi_output_constructor_is_one_port_per_output()
                 Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
             ),
             name != "apart",
-            "`{name}`: only the path between the two ports is rejected"
+            "`{name}`: only the path between the two ports is rejected, {:?}",
+            judged.verdict()
         );
     }
     assert!(matches!(
         refusal_of(&module, SurfaceName::from("middle")),
         LoweringRefusal::PartialField { field, .. } if field == SurfaceName::from("middle")
     ));
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("partial")),
+            LoweringRefusal::NonExhaustiveMatch { .. }
+        ),
+        "a match missing the `right` port is refused"
+    );
     for (name, feature) in [
         ("doubled", Unbuilt::PortTuple),
         ("matched", Unbuilt::PortPattern),

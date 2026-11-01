@@ -170,9 +170,6 @@ pub enum DescriptionFault
     MemberPolarity,
     /// A type shape has no symbolic first-order reference.
     TypeShape,
-    /// A constructor with several outputs, which the description code holds
-    /// as no monomial yet.
-    MultiOutput,
     /// The retired rule arrow has no rewrite-face reading.
     RetiredRuleArrow,
     /// The retired operation lead is not a synonym for an operation member.
@@ -244,9 +241,6 @@ pub enum MemberFault
     ParallelRedexes,
     /// A circuit rule whose redex lies off the boundary its wiring derives.
     OffBoundary,
-    /// A constructor with several outputs in a family the description reads,
-    /// whose monomials the description code does not hold yet.
-    MultiOutput,
 }
 
 impl fmt::Display for MemberFault
@@ -307,21 +301,16 @@ impl fmt::Display for MemberFault
             Self::OffBoundary => {
                 "is a circuit whose redex lies off the boundary its wiring derives"
             },
-            Self::MultiOutput => {
-                "is a constructor with several outputs, whose monomials the description code \
-                 does not hold yet"
-            },
         })
     }
 }
 
 /// The field refusals that mark the description code's limit rather than a
 /// fault of the source: the native reading admits each such field.
-const UNCODED: [DescriptionFault; 4] = [
+const UNCODED: [DescriptionFault; 3] = [
     DescriptionFault::HigherOrderField,
     DescriptionFault::DependentField,
     DescriptionFault::TypeShape,
-    DescriptionFault::MultiOutput,
 ];
 
 /// What the route reads a declaration form as.
@@ -333,14 +322,15 @@ enum Read
     Native(alloc::boxed::Box<NativeFamily>),
 }
 
-/// A generator judgment as read.
+/// A generator judgment as read: one constructor, or one per output of a
+/// multi-output constructor, its ports.
 struct Generator
 {
-    /// The constructor's description, or the first field its description
-    /// code cannot carry.
-    ctor: Result<CtorDesc<DescriptionGrade>, DescriptionDiagnostic>,
-    /// Where the judgment's name, fields and result are written.
-    written: written::WrittenConstructor,
+    /// Each port's description, in order, or the first field their
+    /// description code cannot carry.
+    ctors: Result<Vec<CtorDesc<DescriptionGrade>>, DescriptionDiagnostic>,
+    /// Where each port's name, fields and result are written, in order.
+    written: Vec<written::WrittenConstructor>,
 }
 
 /// What a constructor writes after its `-->`.
@@ -348,14 +338,8 @@ enum After
 {
     /// One result type.
     Single(Placed),
-    /// An output group, read as its first output's type and its bytes.
-    Outputs
-    {
-        /// The first output's type.
-        first: Placed,
-        /// The group's bytes, its parentheses included.
-        span: ByteSpan,
-    },
+    /// An output group: each output's name and type, in order.
+    Outputs(Vec<(Placed, Placed)>),
 }
 
 /// A data family the native reading owns whole.
@@ -439,7 +423,6 @@ impl DescriptionDiagnostic
             DescriptionFault::HigherOrderField => undescribed(MemberFault::HigherOrderField),
             DescriptionFault::DependentField => undescribed(MemberFault::DependentField),
             DescriptionFault::TypeShape => undescribed(MemberFault::TypeShape),
-            DescriptionFault::MultiOutput => undescribed(MemberFault::MultiOutput),
             DescriptionFault::NativeDecode(_) => undescribed(MemberFault::NativeDecode),
             DescriptionFault::Signature(crate::circuit::SignatureFault::OperationFiller) => {
                 undescribed(MemberFault::OperationFiller)
@@ -1339,11 +1322,11 @@ impl Reader<'_, '_>
                     DeclPolarity::Data => self
                         .generator(&mut member, &family, &parameters, indices)
                         .map(|generator| {
-                            generators.push(generator.written.clone());
-                            match generator.ctor {
-                                Ok(ctor) => {
-                                    ctors.push(ctor);
-                                    written.constructors.push(generator.written);
+                            generators.extend(generator.written.iter().cloned());
+                            match generator.ctors {
+                                Ok(ported) => {
+                                    ctors.extend(ported);
+                                    written.constructors.extend(generator.written);
                                 },
                                 Err(diagnostic) => uncoded.push(diagnostic),
                             }
@@ -1416,19 +1399,19 @@ impl Reader<'_, '_>
         )))
     }
 
-    /// Read a constructor, `C : R` or `C : (fields) --> R`, and require its
-    /// result to be uniform, keeping where its name, each field and its
-    /// result are written.
+    /// Read a constructor, `C : R`, `C : (fields) --> R` or
+    /// `C : (fields) --> (l : R, …)`, and require each result to be uniform,
+    /// keeping where its name, each field and each result are written.
     ///
     /// # Specification
     /// - ensures: each payload field keeps its type, grade and order; the
     ///   written constructor holds the name tile, one port per field, its name
     ///   tile when written, and the result's bytes and each of its arguments'.
-    ///   A higher-order or universe field, or one whose type names a field
-    ///   before it, leaves the constructor uncoded with the first such field's
-    ///   refusal, and the constructor is still read whole. An output group
-    ///   leaves it uncoded as a constructor with several outputs, its first
-    ///   output standing as the written result.
+    ///   An output group reads as one constructor per output, its port, named
+    ///   `C.l`, over the same fields, each with its own written result. A
+    ///   higher-order or universe field, or one whose type names a field before
+    ///   it, leaves the constructor uncoded with the first such field's
+    ///   refusal, and the constructor is still read whole.
     /// - fails: nonuniform results, a member with no colon and incomplete
     ///   constructors are located.
     /// - panics: none.
@@ -1439,11 +1422,12 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — reordered or instantiated parameters cannot pass head
     ///   uniformity, and an uncoded field keeps the fields and result after it
-    ///   written.
+    ///   written; a two-output constructor describes as its two ports.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.ctor.as_ref().map_or(true, |ctor| ctor.result == *family)))]
+    /// - witness: `description::tests::a_multi_output_constructor_describes_one_constructor_per_port`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |read| !read.written.is_empty() && read.ctors.as_ref().map_or(true, |ctors| ctors.len() == read.written.len() && ctors.iter().all(|ctor| ctor.result == *family))))]
     fn generator(
         &self,
         run: &mut Run<'_>,
@@ -1522,111 +1506,101 @@ impl Reader<'_, '_>
                 After::Single(side)
             }
         };
-        let result = match after {
-            After::Single(result) => result,
-            After::Outputs { first, span } => {
-                // The description codes one monomial per constructor: a
-                // constructor with several outputs is the native reading's.
-                uncoded = Some(DescriptionDiagnostic {
-                    span,
-                    fault: DescriptionFault::MultiOutput,
-                });
-                first
+        // One result per port: the constructor's own, or each output's.
+        let results = match after {
+            After::Single(result) => {
+                alloc::vec![(alloc::string::String::from(self.text(named).0), result)]
             },
-        };
-        let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
-        let repeated = arguments
-            .iter()
-            .zip(parameters)
-            .map(|(&span, parameter)| written::WrittenUse {
-                span,
-                named: parameter.named.span,
-            })
-            .collect();
-        let result = written::WrittenResult {
-            span: result.span,
-            head,
-            parameters: repeated,
-            arguments,
+            After::Outputs(outputs) => outputs
+                .into_iter()
+                .map(|(label, result)| {
+                    (
+                        alloc::format!("{}.{}", self.text(named).0, self.text(label).0),
+                        result,
+                    )
+                })
+                .collect(),
         };
         let attrs = self.attrs(run)?;
         run.end()?;
-        Ok(Generator {
-            ctor: uncoded.map_or_else(
-                || {
-                    Ok(CtorDesc::new(
-                        self.text(named).0,
-                        Code::product_of(fields),
-                        family.clone(),
-                        attrs,
-                    ))
-                },
-                Err,
-            ),
-            written: written::WrittenConstructor {
+        let mut ctors = Vec::with_capacity(results.len());
+        let mut written = Vec::with_capacity(results.len());
+        for (name, result) in results {
+            let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
+            let repeated = arguments
+                .iter()
+                .zip(parameters)
+                .map(|(&span, parameter)| written::WrittenUse {
+                    span,
+                    named: parameter.named.span,
+                })
+                .collect();
+            written.push(written::WrittenConstructor {
                 named: named.span,
-                fields: ports,
-                result,
-            },
+                fields: ports.clone(),
+                result: written::WrittenResult {
+                    span: result.span,
+                    head,
+                    parameters: repeated,
+                    arguments,
+                },
+            });
+            ctors.push(CtorDesc::new(
+                name,
+                Code::product_of(fields.clone()),
+                family.clone(),
+                attrs.clone(),
+            ));
+        }
+        Ok(Generator {
+            ctors: uncoded.map_or_else(|| Ok(ctors), Err),
+            written,
         })
     }
 
     /// Read what a constructor writes after its `-->`: its result type, or an
-    /// output group `(l : T, …)`, read as its first output and its span.
+    /// output group `(l : T, …)`.
     ///
     /// # Specification
     /// - requires: `run` stands just past the `-->`.
     /// - ensures: [`After::Single`] over the result; [`After::Outputs`] over
-    ///   the first output's type and the group's bytes, every output read.
-    /// - fails: an output with no colon or no type, or a group left open, as
-    ///   malformed.
+    ///   each output's name and type, in order.
+    /// - fails: an output with no colon or no type, an empty group, or a group
+    ///   left open, as malformed.
     /// - panics: none.
     ///
     /// # Errors
     /// [`DescriptionFault::Malformed`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a two-output constructor leaves its family to the
-    ///   native reading.
-    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
-    #[spec(ensures: |result| match result {
-        Ok(After::Outputs { ref first, ref span }) => span.start() <= first.span.start() && first.span.end() <= span.end(),
-        Ok(After::Single(_)) | Err(_) => true,
-    })]
+    /// - hypothesis: L3 — a two-output constructor describes as two ports.
+    /// - witness: `description::tests::a_multi_output_constructor_describes_one_constructor_per_port`
+    #[spec(ensures: |result| !matches!(result, Ok(After::Outputs(ref outputs)) if outputs.is_empty()))]
     fn after_arrow(
         &self,
         run: &mut Run<'_>,
     ) -> Result<After, DescriptionDiagnostic>
     {
-        if !run.at(Spelling("(")).0 {
+        if !run.eat(Spelling("(")).0 {
             return Ok(After::Single(run.take()?));
         }
-        let open = run.take()?;
-        let mut first = None;
-        let close = loop {
-            let _name = run.take()?;
+        let mut outputs = Vec::new();
+        loop {
+            let label = run.take()?;
             let _grade = self.grade(run)?;
             if !run.eat(Spelling(":")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
-            let output = run.take()?;
-            let _first = first.get_or_insert(output);
+            outputs.push((label, run.take()?));
             if run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                 continue;
             }
-            if run.at(Spelling(")")).0 {
-                break run.take()?.span;
+            if run.eat(Spelling(")")).0 {
+                break;
             }
             return Err(run.fault(DescriptionFault::Malformed));
-        };
-        let Some(first) = first
-        else {
-            return Err(run.fault(DescriptionFault::Malformed));
-        };
-        Ok(After::Outputs {
-            first,
-            span: open.span.join(close),
-        })
+        }
+        Ok(After::Outputs(outputs))
     }
 
     /// Read a codata observation, retaining its declared input boundary.

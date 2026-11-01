@@ -1,0 +1,33 @@
+/// `multi-output-data`: Multi-output data constructors.
+/// Implemented: a constructor writing an output group, read at grade ω as one port per output, an ordinary constructor over the shared inputs; `C(x).l` constructs a port and matches it, coverage counts each port, a block's rules name ports, and `C(x)` is the record of the ports of a family without arguments.
+/// Not implemented: the grade-1 reading, whose values are circuits, owed by #4288; the record of a parameterised family's ports, owed by #4292.
+// A shared subterm written once: `Share(e)` has two outputs, and each is a
+// value of `Expr` in its own right. The ports share the input `e`, so the
+// size below counts the shared subterm from either side.
+
+/// Expressions with an explicit share node.
+@[ checks ]
+data Expr : Type where {
+  | Lit : (n : Integer) --> Expr
+  | Add : (a : Expr, b : Expr) --> Expr
+  | Share : (e : Expr) --> (left : Expr, right : Expr)
+}
+
+/// The size of an expression, each port read on its own.
+@[ checks ]
+def rec size(e : Expr) -> -F Integer {
+  match e {
+    Lit(n) => return 1,
+    Add(a, b) => { run x <- size[<](a); run y <- size[<](b); return x + y + 1 },
+    Share(x).left => size[<](x),
+    Share(x).right => size[<](x)
+  }
+}
+
+/// Both ports of one share, added.
+@[ runs("3") ]
+def twice() -> -F Integer { size(Add(Share(Lit(1)).left, Share(Lit(1)).right)) }
+
+/// The two ports of a share, as a record.
+@[ checks ]
+def ports : #{left : Expr, right : Expr} = Share(Lit(1));

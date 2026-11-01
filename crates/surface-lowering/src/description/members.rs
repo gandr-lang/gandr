@@ -35,6 +35,7 @@ use super::written::member_name;
 use super::written::port_name;
 use crate::form::Piece;
 use crate::form::Placed;
+use crate::form::TileName;
 
 impl Reader<'_, '_>
 {
@@ -449,6 +450,52 @@ impl Reader<'_, '_>
                         let atom = Name::from(spelled);
                         pending.push(TermFrame::Abstract(atom));
                         pending.push(TermFrame::Read(body));
+                        continue;
+                    }
+                    // `C(a, …).l` names the port `l` of the multi-output
+                    // constructor `C`: the constructor `C.l` over `a, …`.
+                    if let [
+                        Piece::Operand(target),
+                        Piece::Tile { label: dot, .. },
+                        Piece::Tile {
+                            label: field,
+                            at: output,
+                        },
+                    ] = *pieces.as_slice()
+                        && dot == TileName::DOT
+                        && field == TileName::IDENTIFIER
+                    {
+                        let called = self.pieces(target)?;
+                        let mut call = Run::new(&called, target.span);
+                        let head = call.take()?;
+                        if !matches!(self.pieces(head)?.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref()))
+                        {
+                            return Err(DescriptionDiagnostic {
+                                span: at.span,
+                                fault: DescriptionFault::Malformed,
+                            });
+                        }
+                        let mut args = Vec::new();
+                        if call.eat(Spelling("(")).0 {
+                            while !call.eat(Spelling(")")).0 {
+                                args.push(call.take()?);
+                                if !call.eat(Spelling(",")).0 && !call.at(Spelling(")")).0 {
+                                    return Err(call.fault(DescriptionFault::Malformed));
+                                }
+                            }
+                        }
+                        call.end()?;
+                        written.nodes.push(WrittenNode {
+                            span: at.span,
+                            head: Maybe::Present(head.span),
+                        });
+                        let port = alloc::format!("{}.{}", self.text(head).0, self.text(output).0);
+                        pending.push(TermFrame::Apply(
+                            Name::from(port),
+                            ArgumentCount(args.len()),
+                            TermKind::Constructor,
+                        ));
+                        pending.extend(args.into_iter().rev().map(TermFrame::Read));
                         continue;
                     }
                     let head = run.take()?;

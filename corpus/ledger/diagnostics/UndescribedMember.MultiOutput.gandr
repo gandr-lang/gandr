@@ -1,7 +1,0 @@
-/// `UndescribedMember.MultiOutput`: a member the description does not read: a constructor with several outputs in a family that writes an operation.
-@[ refuses("UndescribedMember.MultiOutput") ]
-data Tree : Type where {
-  | Leaf : (n : Integer) --> Tree
-  | Split : (t : Tree) --> (left : Tree, right : Tree)
-  oper prune : (t : Tree) --> Tree;
-}
