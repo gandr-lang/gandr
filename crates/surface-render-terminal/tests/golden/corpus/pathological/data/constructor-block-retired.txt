@@ -1,8 +1,8 @@
-error[MalformedForm]: a keyword or symbol of this parameter is out of place
-  ╭▸ corpus/pathological/data/constructor-block-retired.gandr:5:13
+error[MalformedForm]: this lambda expression has an operand it does not take here
+  ╭▸ corpus/pathological/data/constructor-block-retired.gandr:5:27
   │
 5 │ data Maybe(a) { None, Some(x : a) }
-  │             ━ out of place
+  │                           ━ the form leaves its shape here
   │
   ├ note: `Maybe` is refused with MalformedForm, as its expectation states
-  ╰ help: move the keyword or symbol to its place in the parameter
+  ╰ help: remove the extra operand

@@ -4,18 +4,18 @@
 // state, so the source stands pending until a member carries one.
 
 /// A block holding a dotted module, refused at the dotted name.
-module Outer {
+module Outer where {
   /// A dotted module inside a block.
-  module In.Deep {
+  module In.Deep where {
     /// A value.
     def v = 2;
   }
 }
 
 /// A block holding a theory, which is no member.
-module Holder {
+module Holder where {
   /// A theory inside a block.
-  theory In.T {
+  theory In.T where {
     /// Its size.
     oper size : Integer;
   }

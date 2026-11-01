@@ -2,13 +2,13 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory Reflexive {
+theory Reflexive where {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
   law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
 }
 
 @[ refuses("NoFiller.Omitted") ]
-module Undischarged : Model(Reflexive) with sort Carrier = Integer {
+module Undischarged : Model(Reflexive) with sort Carrier = Integer where {
   def alike(a : Integer, b : Integer) -> Bool { false }
 }

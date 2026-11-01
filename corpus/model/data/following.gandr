@@ -13,9 +13,9 @@ import "./data-base.gandr";
 /// Truncated subtraction, by recursion on the first argument: never larger
 /// than it, so a call's result stands where its first argument does.
 def rec minus(n : Nat, k : Nat) -> Nat {
-  case k {
+  match k {
     Zero => n,
-    Succ(j) => case n {
+    Succ(j) => match n {
       Zero => Zero,
       Succ(p) => minus[<](p, j)
     }
@@ -25,7 +25,7 @@ def rec minus(n : Nat, k : Nat) -> Nat {
 /// `n` divided by `d + 1`, rounded up: what `minus` leaves of the predecessor
 /// `p` stands where `p` does, below `n`.
 def rec divided(n : Nat, d : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run r <- minus(p, d); Succ(divided[<](r, d)) }
   }
@@ -34,7 +34,7 @@ def rec divided(n : Nat, d : Nat) -> Nat {
 /// Half a number, rounded up, through `minus`: one less than the field `p`
 /// stands where `p` does.
 def rec halvedUp(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run q <- minus(p, Succ(Zero)); Succ(halvedUp[<](q)) }
   }
@@ -43,7 +43,7 @@ def rec halvedUp(n : Nat) -> Nat {
 /// The number of binary digits of `n`, a logarithm: half of the field `p`
 /// stands where `p` does, below `n`, since `halvedUp` follows its argument.
 def rec digits(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run h <- halvedUp(p); Succ(digits[<](h)) }
   }

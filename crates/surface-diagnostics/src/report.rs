@@ -1391,7 +1391,7 @@ impl fmt::Display for MessageText<'_>
                     }
                     write!(
                         f,
-                        "; supply the one meant as `{function}[{implicit} = …](…)`"
+                        "; supply the one meant as `{function}[.{implicit} = …](…)`"
                     )
                 },
                 Maybe::Present(&Omitted::Scope {

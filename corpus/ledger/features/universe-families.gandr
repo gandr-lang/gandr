@@ -21,7 +21,7 @@ def twice : Type -> Type = \Y. Y * Y ;
 /// application (#1080).
 @[ checks ]
 def sum(p : apply(twice, Integer)) -> Integer {
-  case p {
+  match p {
     #{a, b} => a + b
   }
 }

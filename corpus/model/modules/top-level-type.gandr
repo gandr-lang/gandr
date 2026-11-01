@@ -10,7 +10,7 @@ def setBand : Band = #{low = 200000, high = 800000};
 
 /// The width of a band, its fields read through the synonym.
 pub def width(band : Band) -> Integer {
-  case band {
+  match band {
     #{.low = low, .high = high} => high - low
   }
 }

@@ -27,9 +27,11 @@ const OPERANDS: [&str; 6] = [
 
 /// The rules a `[` stands apart from the word before it in, as an operand's
 /// does: a computation's effect row, the world a migration or a package
-/// names, a world's requirement and a site's offer, a theory's or a data
-/// type's bracketed parameters.
-const APART: [&str; 11] = [
+/// names, a world's requirement and a site's offer, a theory's bracketed
+/// parameters. A data declaration's `[` is apart too, a constructor's
+/// decoration list, but for a field's grade, `x[1] : A`, which touches the
+/// field's name.
+const APART: [&str; 10] = [
     "f_type.result",
     "f_type.result.labelled",
     "f_type.row",
@@ -38,7 +40,6 @@ const APART: [&str; 11] = [
     "pack_expression",
     "package_type",
     "theory_declaration",
-    "data_declaration",
     "world_declaration",
     "offers_declaration",
 ];
@@ -70,25 +71,15 @@ const FACE: &[RCtxStep] = &[RCtxStep {
     crossed: StepSym::Tile("="),
 }];
 
-/// The rules whose `@[` opens a block of attributes, padded by its brackets:
-/// a declaration's, a module member's and a theory member's; any other `@[`
-/// opens an implicit telescope, hugged by them.
-const ATTRIBUTES: [&str; 3] = [
-    "attribute_block",
-    "attributed_module_member",
-    "theory_declaration",
-];
-
 /// The rules whose `#{` opens a module signature, padded by its braces; any
 /// other `#{` opens a record, hugged by them.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
 
 /// The rules a `<` or `>` marks the bound or direction it touches in.
-const MARKS: [&str; 4] = [
+const MARKS: [&str; 3] = [
     "staged_type",
     "instantiation.direction.descent",
     "instantiation.direction.productivity",
-    "instantiation.named_measure",
 ];
 
 /// The keywords whose parenthesis lists binders, one space after the keyword:
@@ -102,8 +93,8 @@ pub enum Context
     /// A `(` or `[` standing apart from the word before it: one opening an
     /// operand of its own (a parenthesised term or type, a tuple pattern, a
     /// list, an import's list of names), an effect row, a migration's or a
-    /// package's world, a world's requirement or a site's offer, a theory's or
-    /// a data type's bracketed parameters.
+    /// package's world, a world's requirement or a site's offer, a theory's
+    /// bracketed parameters.
     Operand,
     /// An operator touching what follows it: a negation, a session's `!` or
     /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's
@@ -114,8 +105,6 @@ pub enum Context
     Binding,
     /// The `{` of a sum, a lazy record or a shape's face.
     Telescope,
-    /// The `@[` of an implicit telescope, set apart from a `(` after it.
-    Implicit,
     /// The `#{` of a module signature.
     Signature,
     /// Any other token.
@@ -156,9 +145,15 @@ impl Context
                 Self::Binding
             },
             "[" if APART.contains(&rule) => Self::Operand,
+            "[" if rule == "data_declaration"
+                && before
+                    .last()
+                    .is_none_or(|step| step.crossed != StepSym::Tile("identifier")) =>
+            {
+                Self::Operand
+            },
             "{" if TELESCOPES.contains(&rule) => Self::Telescope,
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
-            "@[" if !ATTRIBUTES.contains(&rule) => Self::Implicit,
             "#{" if SIGNATURES.contains(&rule) => Self::Signature,
             "+" | "&" if TELESCOPES.contains(&rule) => Self::Prefix,
             "-" if rule == "unary_expression" || rule == "universe_type" => Self::Prefix,
@@ -185,7 +180,7 @@ pub enum Join
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Padding
 {
-    /// They do: `(x)`, `[x]`, `#{a, b}`, `+{a : A}`, `@[r : Row]`.
+    /// They do: `(x)`, `[x]`, `#{a, b}`, `+{a : A}`, `[r : Row]`.
     Hug,
     /// One space stands inside each: `{ x }`, `@[ checks ]`, `#{ type T }`.
     Pad,
@@ -214,8 +209,8 @@ impl Padding
 pub fn padding(open: Token<'_>) -> Padding
 {
     match <&str>::from(open.text) {
-        "@[" | "{" => match open.context {
-            Context::Telescope | Context::Implicit | Context::Written => Padding::Hug,
+        "@[" | "@![" | "{" => match open.context {
+            Context::Telescope | Context::Written => Padding::Hug,
             Context::Operand
             | Context::Prefix
             | Context::Binding
@@ -228,7 +223,6 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Prefix
             | Context::Binding
             | Context::Telescope
-            | Context::Implicit
             | Context::Plain
             | Context::Written => Padding::Hug,
         },
@@ -295,25 +289,14 @@ enum Wordlike
 }
 
 /// Whether `left` ends an operand a bracket or a `.` after it applies to: a
-/// word, material, or the closer of a hugging group other than an implicit
-/// telescope.
+/// word, material, or the closer of a hugging group.
 ///
 /// # Specification
 /// trivial.
 fn applied(left: Token<'_>) -> Wordlike
 {
     match left.kind {
-        Kind::Material => Wordlike::Yes,
-        Kind::Close(Padding::Hug) => match left.context {
-            Context::Implicit => Wordlike::No,
-            Context::Operand
-            | Context::Prefix
-            | Context::Binding
-            | Context::Telescope
-            | Context::Signature
-            | Context::Plain
-            | Context::Written => Wordlike::Yes,
-        },
+        Kind::Material | Kind::Close(Padding::Hug) => Wordlike::Yes,
         Kind::Token => word(left.text),
         Kind::Open | Kind::Close(Padding::Pad) | Kind::Comment => Wordlike::No,
     }
@@ -326,11 +309,12 @@ fn applied(left: Token<'_>) -> Wordlike
 /// - requires: `left` stands directly before `right` on one line, and neither
 ///   is the bracket of a group the other is the first or last element of.
 /// - ensures: a `,` or `;` touches what stands before it and is followed by one
-///   space; a comment has one space on either side; a `.` touches the word or
-///   bracket before it, and the word after it unless it ends a binder; a prefix
-///   operator touches what follows it; a `(` or `[` touches the word or hugging
-///   bracket before it, unless it opens an operand or the binders of `fn`,
-///   `fork`, `bind` or `pi+`; any other two are one space apart.
+///   space; a comment has one space on either side; a `.` or a selector `.#[`
+///   or `.#{` touches the word or bracket before it, and a `.` the word after
+///   it unless it ends a binder; a prefix operator touches what follows it; a
+///   `(` or `[` touches the word or hugging bracket before it, unless it opens
+///   an operand or the binders of `fn`, `fork`, `bind` or `pi+`; any other two
+///   are one space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -362,7 +346,10 @@ pub fn join(
     if left.kind == Kind::Comment || right.kind == Kind::Comment {
         return Join::Space;
     }
-    if right.kind == Kind::Token && right_text == "." && applied(left) == Wordlike::Yes {
+    if (right.kind == Kind::Token && right_text == "."
+        || right.kind == Kind::Open && matches!(right_text, ".#[" | ".#{"))
+        && applied(left) == Wordlike::Yes
+    {
         return Join::Touch;
     }
     if left.kind == Kind::Token && left_text == "." {
@@ -371,7 +358,6 @@ pub fn join(
             Context::Operand
             | Context::Prefix
             | Context::Telescope
-            | Context::Implicit
             | Context::Signature
             | Context::Plain
             | Context::Written => Join::Touch,

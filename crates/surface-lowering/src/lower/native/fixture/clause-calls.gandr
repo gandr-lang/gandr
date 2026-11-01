@@ -1,0 +1,18 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+data List(a : Type) : Type where {
+  | Nil : List(a)
+  | Cons : (head : a, tail : List(a)) --> List(a)
+}
+
+def rec length(a : Type) : List(a) => Nat where {
+  | Nil => Zero
+  | Cons(_, rest) => Succ(length[<](a, rest))
+}
+
+def two() -> Nat { length(Nat, Cons(Zero, Cons(Zero, (Nil : List(Nat))))) }
+
+def one() -> Nat { length(Nat, Cons(Zero, Nil)) }

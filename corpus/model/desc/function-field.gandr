@@ -10,18 +10,18 @@
 
 /// Programs over an integer state: a read hands the state to its
 /// continuation, and a store the next store overwrites is no store.
-pub data Program : Type {
-  Done : (x : Integer) --> Program;
-  Get : (k : Integer => Program) --> Program;
-  Put : (s : Integer, k : Program) --> Program;
-  rule Put(s, Put(u, k)) <=> Put(u, k);
+pub data Program : Type where {
+  | Done : (x : Integer) --> Program
+  | Get : (k : Integer => Program) --> Program
+  | Put : (s : Integer, k : Program) --> Program
+  rule : Put(s, Put(u, k)) <=> Put(u, k);
 }
 
 /// The state-passing handler: a read continues at the state it reads, and
 /// a store runs the rest from the state it stores. The fold reaches a
 /// read's rest by applying its continuation, one stage below the read.
 def rec final(p : Program, s : Integer) -> Integer {
-  case p {
+  match p {
     Done(x) => x,
     Get(k) => final[<](k(s), s),
     Put(t, k) => final[<](k, t)

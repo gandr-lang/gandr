@@ -87,7 +87,7 @@ pub enum Unbuilt
     /// A projection, `e.1` or `e.field`, where the fragment reads none, or a
     /// path the projection does not resolve.
     Projection,
-    /// An index `xs[i]` outside a view-answering method's body.
+    /// An index `xs.#[i]` outside a view-answering method's body.
     Index,
     /// A module packed into a value, `pack [T, …] e`.
     Pack,
@@ -136,8 +136,8 @@ pub enum Unbuilt
     /// String interpolation where the prelude holds no `string.append` to
     /// fold it with.
     Interpolation,
-    /// A match on a view, `case e with v { … }`.
-    CaseView,
+    /// A match on a view, `match e with v { … }`.
+    MatchView,
     /// A bind expression standing where a term is read.
     Bind,
     /// A circuit declaration where a term is read.
@@ -203,8 +203,6 @@ pub enum Unbuilt
     TypeGrade,
     /// The type abstraction `fn [T] { … }`.
     TypeAbstraction,
-    /// The statement `val p = e ;`.
-    Val,
     /// An infix form the lowering does not read: an operator outside the
     /// prelude's vocabulary, or a word `g ∷ w` whose `g` is neither a loop
     /// nor `back` of one; a `g` that names nothing is unresolved.
@@ -213,7 +211,7 @@ pub enum Unbuilt
     PrefixOperator,
     /// A match of no arms over a type no data switch reads, such as the
     /// empty sum, written with its answer type.
-    EmptyCase,
+    EmptyMatch,
     /// A form where a pattern is read that no pattern reading takes and the
     /// table declines by no feature of its own.
     UnreadPattern,
@@ -255,8 +253,6 @@ pub enum Unbuilt
     /// A cell member with parameters, a side that is no closed term, or a rule
     /// arrow.
     CellMember,
-    /// The constructor member `C(fields) : T` of a data block.
-    ConstructorBlockMember,
     /// An attribute block on a data block's generator.
     GeneratorAttribute,
     /// A model signature the derivation cannot state.
@@ -268,12 +264,22 @@ pub enum Unbuilt
     /// The terms `Terms(S)` of a theory that states a law, which the initial
     /// model carries as a cell.
     LawTerms,
+    /// A multi-output constructor grading an input or an output `[1]`: the
+    /// linear reading, whose values are circuits.
+    LinearPorts,
+    /// A pattern naming a multi-output constructor with no output: the joint
+    /// pattern over a node's outputs, the linear reading's. At grade ω a value
+    /// is one port, matched as `C(x).l`.
+    PortPattern,
+    /// An inner attribute block at a source's root, `@![ … ]`: the source it
+    /// decorates has no key of its own yet.
+    SourceAttribute,
 }
 
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 82_usize] = [
+    pub const ALL: [Self; 83_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -297,7 +303,7 @@ impl Unbuilt
         Self::StagedType,
         Self::UnknownType,
         Self::Interpolation,
-        Self::CaseView,
+        Self::MatchView,
         Self::Bind,
         Self::Circuit,
         Self::Codata,
@@ -329,10 +335,9 @@ impl Unbuilt
         Self::ThunkGrade,
         Self::TypeGrade,
         Self::TypeAbstraction,
-        Self::Val,
         Self::InfixForm,
         Self::PrefixOperator,
-        Self::EmptyCase,
+        Self::EmptyMatch,
         Self::UnreadPattern,
         Self::StatedType,
         Self::Presentation,
@@ -351,11 +356,13 @@ impl Unbuilt
         Self::UaDescription,
         Self::ComposePasting,
         Self::CellMember,
-        Self::ConstructorBlockMember,
         Self::GeneratorAttribute,
         Self::ModelSignature,
         Self::TermsType,
         Self::LawTerms,
+        Self::LinearPorts,
+        Self::PortPattern,
+        Self::SourceAttribute,
     ];
 
     /// The qualifier a fixture's `refuses` expectation names the feature by:
@@ -403,7 +410,7 @@ impl Unbuilt
             Self::StagedType => "staged_type",
             Self::UnknownType => "unknown_type",
             Self::Interpolation => "string_interpolation",
-            Self::CaseView => "case_with_view",
+            Self::MatchView => "match_with_view",
             Self::Bind => "bind_expression",
             Self::Circuit => "circuit_declaration",
             Self::Codata => "codata_declaration",
@@ -435,10 +442,9 @@ impl Unbuilt
             Self::ThunkGrade => "grade.value",
             Self::TypeGrade => "grade.value_type",
             Self::TypeAbstraction => "type_abstraction",
-            Self::Val => "val_statement",
             Self::InfixForm => "binary_expression",
             Self::PrefixOperator => "unary_expression",
-            Self::EmptyCase => "case_expression",
+            Self::EmptyMatch => "match_expression",
             Self::UnreadPattern => "pattern",
             Self::StatedType => "stated_type",
             Self::Presentation => "presentation",
@@ -457,11 +463,13 @@ impl Unbuilt
             Self::UaDescription => "ua_description",
             Self::ComposePasting => "compose_pasting",
             Self::CellMember => "cell_member",
-            Self::ConstructorBlockMember => "constructor_block_member",
             Self::GeneratorAttribute => "attribute",
             Self::ModelSignature => "model_signature",
             Self::TermsType => "terms_type.sorted",
             Self::LawTerms => "terms_type.law",
+            Self::LinearPorts => "linear_ports",
+            Self::PortPattern => "port_pattern",
+            Self::SourceAttribute => "inner_attribute_block",
         })
     }
 
@@ -500,10 +508,10 @@ impl Unbuilt
             },
             Self::StagedType => TrackingIssue::PLACED_STAGE,
             Self::UnknownType => TrackingIssue::UNKNOWN_TYPE,
-            Self::CaseView => TrackingIssue::CASE_VIEW,
+            Self::MatchView => TrackingIssue::MATCH_VIEW,
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
-            Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
+            Self::EmptyMatch => TrackingIssue::EMPTY_CASE_ANSWER,
             Self::ExternBlock | Self::HostEscape => TrackingIssue::EXTERN_BLOCK,
             Self::ShellBlock
             | Self::CommandSubstitution
@@ -541,7 +549,6 @@ impl Unbuilt
             Self::Interpolation => TrackingIssue::INTERPOLATION,
             Self::TypeGrade => TrackingIssue::TYPE_GRADE,
             Self::TypeAbstraction => TrackingIssue::TYPE_ABSTRACTION,
-            Self::Val => TrackingIssue::VAL,
             Self::StatedType | Self::MethodCall => TrackingIssue::UNCARRIED_DECLARATION,
             Self::Presentation => TrackingIssue::PRESENTATION,
             Self::RecordedMove | Self::DialogueMove => TrackingIssue::MOVES,
@@ -557,9 +564,9 @@ impl Unbuilt
             Self::ComposePasting => TrackingIssue::ITERATED_SITE,
             Self::TermsType => TrackingIssue::SORTED_TERMS,
             Self::LawTerms => TrackingIssue::LAW_CELL,
-            Self::CellMember | Self::ConstructorBlockMember | Self::GeneratorAttribute => {
-                TrackingIssue::DATA_MEMBER
-            },
+            Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
+            Self::LinearPorts | Self::PortPattern => TrackingIssue::LINEAR_PORTS,
+            Self::SourceAttribute => TrackingIssue::SOURCE_ATTRIBUTE,
         }
     }
 }

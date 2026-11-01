@@ -1,11 +1,11 @@
-data Outer : Type {
-  None : Outer;
-  Some : (n : Integer) --> Outer;
+data Outer : Type where {
+  | None : Outer
+  | Some : (n : Integer) --> Outer
 }
 
 @[ refuses("NonExhaustiveMatch") ]
 def by_literal(m : Outer) -> -F Integer {
-  case m {
+  match m {
     Some(0) => return 0,
     None => return 1
   }

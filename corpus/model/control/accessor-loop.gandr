@@ -70,7 +70,7 @@ def climb() -> [Div] Integer {
   run m <- loop {
     access n as v { resume(v, v + 1) };
     run done <- n >= 5;
-    case done {
+    match done {
       true => break(n),
       false => continue,
     }
@@ -85,7 +85,7 @@ def stride() -> [Div] Integer {
   loop {
     access n as v { resume(v, v + 2) };
     run done <- n >= 4;
-    case done {
+    match done {
       true => break,
       false => continue,
     }

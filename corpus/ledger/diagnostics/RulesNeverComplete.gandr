@@ -1,6 +1,6 @@
 /// `RulesNeverComplete`: two rules of a block whose completion never ends.
 @[ refuses("RulesNeverComplete") ]
-theory Extrusion {
+theory Extrusion where {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;

@@ -1,5 +1,5 @@
 /// `type_identifier`: a named type.
-module Counts {
+module Counts where {
   type Count = Integer;
   @[ checks ]
   def zero : Count ;

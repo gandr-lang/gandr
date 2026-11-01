@@ -1,0 +1,17 @@
+data Nat : Type where {
+  | Zero : Nat
+  /// One more.
+  | Succ : (
+    /// The predecessor.
+    n : Nat
+  ) --> Nat
+}
+/// Addition.
+def plus(
+  /// The first summand.
+  n : Nat,
+  /// The second
+  /// summand.
+  m : Nat,
+  k : Nat
+) -> -F Nat { n }

@@ -1,30 +1,30 @@
 /// `boundary`: names the row each member of an `extern "rust"` block is admitted against.
-data Scalar : Type {
-  U32 : Scalar;
+data Scalar : Type where {
+  | U32 : Scalar
 }
-data Code : Type {
-  Plain : (s : Scalar) --> Code;
+data Code : Type where {
+  | Plain : (s : Scalar) --> Code
 }
-data Coded : Type {
-  NoCoded : Coded;
-  Coded : (name : String, c : Code, rest : Coded) --> Coded;
+data Coded : Type where {
+  | NoCoded : Coded
+  | Coded : (name : String, c : Code, rest : Coded) --> Coded
 }
-data Signature : Type {
-  Signature : (params : Coded, result : Code) --> Signature;
+data Signature : Type where {
+  | Signature : (params : Coded, result : Code) --> Signature
 }
-data Signatures : Type {
-  NoSignature : Signatures;
-  Member : (s : Signature, rest : Signatures) --> Signatures;
+data Signatures : Type where {
+  | NoSignature : Signatures
+  | Member : (s : Signature, rest : Signatures) --> Signatures
 }
-data Row : Type {
-  Row : (result : Code) --> Row;
+data Row : Type where {
+  | Row : (result : Code) --> Row
 }
-data Rows : Type {
-  NoRow : Rows;
-  Named : (r : Row, rest : Rows) --> Rows;
+data Rows : Type where {
+  | NoRow : Rows
+  | Named : (r : Row, rest : Rows) --> Rows
 }
-data Admission : Type {
-  Admitted : Admission;
+data Admission : Type where {
+  | Admitted : Admission
 }
 def admitBlock(ss : Signatures, rs : Rows) -> Admission {
   Admitted

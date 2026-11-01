@@ -20,12 +20,12 @@ def constantTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Get), fn (a) {
 /// `constant`'s clauses as a fold: every read is answered four, and a store
 /// is forgotten.
 def rec answeringFour(p : Prog(Either(StateOp, Void), Integer)) -> Integer {
-  case p {
+  match p {
     Done(x) => x,
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Get) => answeringFour[<](k(4)),
       Left(Put(_s)) => answeringFour[<](k(0)),
-      Right(none) => case none {}
+      Right(none) => match none {}
     }
   }
 }
@@ -47,12 +47,12 @@ def passingTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Put(4)), fn (_u
 /// The state-passing model as a fold: a read is answered the current state,
 /// and a store replaces it.
 def rec passingState(p : Prog(Either(StateOp, Void), Integer), s : Integer) -> Integer {
-  case p {
+  match p {
     Done(x) => x,
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Get) => passingState[<](k(s), s),
       Left(Put(t)) => passingState[<](k(0), t),
-      Right(none) => case none {}
+      Right(none) => match none {}
     }
   }
 }
@@ -65,10 +65,10 @@ def passingByFold() -> Integer { passingState(passingTree, 0) }
 /// constructor per operation, each holding its payload and the continuation
 /// awaiting its reply. `get` holds the unit and awaits the state; `put` holds
 /// the state and awaits the unit.
-data StateModel(a : Type) : Type {
-  Answer : (x : a) --> StateModel(a);
-  Read : (u : Unit, k : Integer => StateModel(a)) --> StateModel(a);
-  Write : (s : Integer, k : Unit => StateModel(a)) --> StateModel(a);
+data StateModel(a : Type) : Type where {
+  | Answer : (x : a) --> StateModel(a)
+  | Read : (u : Unit, k : Integer => StateModel(a)) --> StateModel(a)
+  | Write : (s : Integer, k : Unit => StateModel(a)) --> StateModel(a)
 }
 
 /// `constant`'s subject as a program of the model.
@@ -81,7 +81,7 @@ def constantProgram : StateModel(Integer) = Read(unit, fn (a) {
 /// `constant`'s clauses as the model's fold: a read resumes at four, and a
 /// store resumes at the unit.
 def rec constantFold(p : StateModel(Integer)) -> Integer {
-  case p {
+  match p {
     Answer(x) => x,
     Read(_u, k) => constantFold[<](k(4)),
     Write(_s, k) => constantFold[<](k(unit))

@@ -282,7 +282,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// A declaration-local `@[...]` prefix is typed syntax, not an attribute.
+/// A declaration-local `[...]` prefix is typed syntax, not an attribute.
 ///
 /// The binder types stay in source order even when the first binder refers to
 /// the later explicit `xs` parameter. That dependency is intentionally left
@@ -290,7 +290,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
 #[test]
 fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def nth @[A : Type, i : Fin(length(xs))] (xs : List(A)) -> A {
+    let source = r#"def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
   pure xs
 }
 "#;
@@ -334,7 +334,7 @@ fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<()
 fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Box<dyn Error>>
 {
     let source = r#"@[doc("d")]
-def tagged @[] (x : Type) -> Type { pure x }
+def tagged[](x : Type) -> Type { pure x }
 "#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
@@ -350,8 +350,11 @@ def tagged @[] (x : Type) -> Type { pure x }
     .expect("the attributed declaration remains one top-level meld");
     let tiles = descendant_tiles(result.tree(), item);
     assert_eq!(
-        2,
-        tiles.iter().filter(|tile| tile.as_str() == "@[").count(),
+        (1, 1),
+        (
+            tiles.iter().filter(|tile| tile.as_str() == "@[").count(),
+            tiles.iter().filter(|tile| tile.as_str() == "[").count()
+        ),
         "one ordinary attribute and one empty typed prefix remain visible: {tiles:?}"
     );
     assert!(
@@ -369,8 +372,8 @@ def tagged @[] (x : Type) -> Type { pure x }
 #[test]
 fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def bad @[A : Type, broken] (x : Type) -> Type { pure x }
-def good @[B : Type] (y : Type) -> Type { pure y }
+    let source = r#"def bad[A : Type, broken](x : Type) -> Type { pure x }
+def good[B : Type](y : Type) -> Type { pure y }
 "#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
@@ -380,7 +383,7 @@ def good @[B : Type] (y : Type) -> Type { pure y }
     let good = find_meld_with_tile(result.tree(), result.tree().root(), TileText::from("good"))
         .expect("the later valid definition survives prefix recovery");
     assert_eq!(
-        "def good @[B : Type] (y : Type) -> Type { pure y }",
+        "def good[B : Type](y : Type) -> Type { pure y }",
         text(result.tree(), good),
         "the surviving declaration is not absorbed by the malformed prefix"
     );
@@ -401,15 +404,19 @@ fn command_substitution_molds_with_zero_obligations() -> Result<(), Box<dyn Erro
 }
 
 #[test]
-fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
+fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let renamed = ["def use() -> -F Integer { val value = expression; pure value }"];
-    for src in renamed {
+    let written = [
+        "def use() -> -F Integer { let value = expression; pure value }",
+        "def use() -> -F Integer { let value : Integer = expression; pure value }",
+        "def use() -> -F Integer { let (a, b) = expression; pure a }",
+    ];
+    for src in written {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
             bool::from(result.is_clean()),
-            "`val PAT = E;` molds clean in {src:?}; obligations: {:?}",
+            "`let PAT (: A)? = E;` molds clean in {src:?}; obligations: {:?}",
             result
                 .obligations()
                 .iter()
@@ -417,12 +424,6 @@ fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
                 .collect::<Vec<_>>()
         );
     }
-
-    let retired = parse(pbg, SourceText::from("let value = expression;"))?;
-    assert!(
-        !bool::from(retired.is_clean()),
-        "the retired `let PAT = E;` spelling must require repair"
-    );
     Ok(())
 }
 
@@ -463,15 +464,15 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 {
     // The optional `-> T` slot sits after the scrutinee on both check-only
     // eliminators, on the nested `else if` tail as well as the head, and past
-    // the reserved `with` view on `case`. The bare spellings are unchanged.
+    // the reserved `with` view on `match`. The bare spellings are unchanged.
     let pbg = built();
     let annotated = [
         "if flag -> -F Integer { pure 1 } else { pure 2 }",
         "if flag -> -F Integer { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
         "if flag { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
-        "case subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
-        "case subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
-        "case subject -> -F Integer { }",
+        "match subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject -> -F Integer { }",
         "if flag -> +U[1] (-F Integer) -> -F Integer { pure f } else { pure g }",
     ];
     for src in annotated {
@@ -489,7 +490,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 
     let bare = [
         "if flag { pure 1 } else { pure 2 }",
-        "case subject { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject { Inl(x) => pure x, Inr(y) => pure y }",
     ];
     for src in bare {
         let result = parse(pbg, SourceText::from(src))?;
@@ -542,14 +543,6 @@ fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
                 .collect::<Vec<_>>()
         );
     }
-
-    // The annotation rides the computation bind alone: the value bind keeps the
-    // unannotated spelling the binder lane landed.
-    let rejected = parse(pbg, SourceText::from("val value : Integer = expression;"))?;
-    assert!(
-        !bool::from(rejected.is_clean()),
-        "the value bind takes no annotation slot"
-    );
     Ok(())
 }
 
@@ -564,7 +557,7 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The congruence cell, members `;`-terminated.
-        r#"theory Nat {
+        r#"theory Nat where {
   sort Nat : Type;
   data Zero : Nat;
   data Succ : Nat --> Nat;
@@ -589,14 +582,14 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 "#,
         // The sugar ladder's named-port normal form, including `()` and `_`.
-        r#"theory N {
+        r#"theory N where {
   sort Nat : Type;
   data Zero : () --> (_ : Nat);
   data Succ : (_ : Nat) --> (_ : Nat);
 }
 "#,
         // Occurrence labels and the pinned-endpoint binder.
-        r#"theory L {
+        r#"theory L where {
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
     node w1 : p(x) ==> (m);
     node w2 : step(m) --> (o);
@@ -604,8 +597,8 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 "#,
         // The invertible face, and the reserved reversible glyph.
-        "theory I { rule involutive : (b : Bit) <=> (c : Bit); }",
-        "theory R { oper negate : (b : Bit) <-> (c : Bit); }",
+        "theory I where { rule involutive : (b : Bit) <=> (c : Bit); }",
+        "theory R where { oper negate : (b : Bit) <-> (c : Bit); }",
         // A top-level `rule` declaration beside the top-level `oper`.
         "rule step : (x : Nat) ==> (y : Nat)",
     ];
@@ -629,7 +622,8 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 #[test]
 fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 {
-    let source = "codata S : Type { head : Nat; oper tail(s : S) -> S; rule head ==> head; }";
+    let source =
+        "codata S : Type where { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -648,7 +642,7 @@ fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Erro
 #[test]
 fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"theory Theory { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
+    let source = r#"theory Theory where { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -672,7 +666,7 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let unchanged: &[&str] = &[
-        "case x { A => 1, B => 2 }",
+        "match x { A => 1, B => 2 }",
         "def bind() -> -F Integer { run value <- action; pure value }",
         "def le() -> -F Boolean { return a <= b }",
         "def eq() -> -F Boolean { return a == b }",
@@ -768,7 +762,7 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
     let member = parse(
         pbg,
         SourceText::from(
-            "theory S { data Zero : Nat; data Succ : Nat --> Nat; oper add : (Nat, Nat) --> Nat; }",
+            "theory S where { data Zero : Nat; data Succ : Nat --> Nat; oper add : (Nat, Nat) --> Nat; }",
         ),
     )?;
     assert!(
@@ -795,7 +789,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def sort = 1;",
         "def node = 1;",
         "def feed = 1;",
-        "def use() -> -F Integer { val node = 1; pure node }",
+        "def use() -> -F Integer { let node = 1; pure node }",
         "def project(sort: Integer) -> -F Integer { return sort }",
         "def record = #{ node = 1, feed = 2 };",
     ];
@@ -816,10 +810,10 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
     // ports sit are past the member lead's slot, so a type variable spelled
     // `sort` molds as a type there.
     let inside: &[&str] = &[
-        "theory S { oper f : (a : sort) --> (b : Nat); sort Bit : Type; }",
-        "theory S { rule r : (rule p : sort ==> other, data x : Nat) ==> (z : Nat); }",
-        "theory S { oper f : node --> Nat; }",
-        "theory S { oper f : (a : feed) --> (b : Nat); }",
+        "theory S where { oper f : (a : sort) --> (b : Nat); sort Bit : Type; }",
+        "theory S where { rule r : (rule p : sort ==> other, data x : Nat) ==> (z : Nat); }",
+        "theory S where { oper f : node --> Nat; }",
+        "theory S where { oper f : (a : feed) --> (b : Nat); }",
     ];
     for &src in inside {
         let result = parse(pbg, SourceText::from(src))?;
@@ -847,7 +841,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The headline shape: one wire consumed twice in a redex line.
-        r#"theory Copy {
+        r#"theory Copy where {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (s : Nat);
   rule copy2 : (data x : Nat) ==> (z : Nat) {
@@ -857,7 +851,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 "#,
         // The same reading with distinct names, and the sugar ladder's
         // unnamed-port rungs.
-        r#"theory Copy {
+        r#"theory Copy where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule copy2 : (data x : Nat, data y : Nat) ==> (z : Nat) {
@@ -866,7 +860,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 }
 "#,
         // A body-less rule member ahead of the closing brace.
-        r#"theory B {
+        r#"theory B where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule copy2 : (data x : Nat) ==> (z : Nat);
@@ -891,7 +885,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let unterminated = parse(
         pbg,
         SourceText::from(
-            r#"theory S {
+            r#"theory S where {
   sort Nat : Type
   sort T : Type;
 }
@@ -914,18 +908,18 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"theory S {
+        r#"theory S where {
   sort S : Type;
 
 }
 "#,
-        r#"theory S {
+        r#"theory S where {
   sort S : Type;
 
   sort T : Type;
 }
 "#,
-        r#"theory S {
+        r#"theory S where {
   sort S : Type;
 
   oper f : (S) --> S;
@@ -935,7 +929,7 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
   };
 }
 "#,
-        r#"theory S {
+        r#"theory S where {
 
   sort S : Type;
 
@@ -972,15 +966,15 @@ fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Bo
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"theory Unknown {
+        r#"theory Unknown where {
   sort Nat : Type;
 }
 "#,
-        r#"theory Boolean {
+        r#"theory Boolean where {
   sort Bit : Type;
 }
 "#,
-        r#"theory Any {
+        r#"theory Any where {
   sort Nat : Type;
 }
 "#,
@@ -1017,7 +1011,10 @@ fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Bo
     );
     // And the name slot of a primitive-named block reads the word as the
     // generic class — the two readings of one spelling, separated by position.
-    let named = parse(pbg, SourceText::from("theory Unknown { sort Nat : Type; }"))?;
+    let named = parse(
+        pbg,
+        SourceText::from("theory Unknown where { sort Nat : Type; }"),
+    )?;
     assert_eq!(
         Some("type_identifier".to_owned()),
         mold_label_of(
@@ -1050,6 +1047,18 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
         (Oblig::MissingTile, "="),
         (Oblig::MissingTile, ";"),
     ]),
+    // The retired constructor block, `data D(a) { C, … }`: a family's
+    // members open after `where`, each on its bar.
+    (
+        "fixture/pathological/data/constructor-block-retired.gandr",
+        &[
+            (Oblig::MissingTile, ")"),
+            (Oblig::MissingTile, "{"),
+            (Oblig::MissingTile, ","),
+            (Oblig::MissingTile, "Some"),
+            (Oblig::MissingTile, "}"),
+        ],
+    ),
 ];
 
 /// The zero-obligation gate over the language's corpus: the candidate
@@ -1244,7 +1253,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
 fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let written = "theory Magma {\n    sort M : type;\n}";
+    let written = "theory Magma where {\n    sort M : type;\n}";
     let result = parse(pbg, SourceText::from(written))?;
     let start = written.find("type").ok_or("the keyword is written")?;
     assert_eq!(
@@ -1272,12 +1281,12 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
         .collect();
     assert_eq!(
         tiles,
-        ["theory", "Magma", "{", "sort", "M", ":", ";", "}"],
+        ["theory", "Magma", "where", "{", "sort", "M", ":", ";", "}"],
         "the member's terminator and the block's closer are the block's own tiles"
     );
     let spelled = parse(
         pbg,
-        SourceText::from("theory Magma {\n    sort M : Type;\n}"),
+        SourceText::from("theory Magma where {\n    sort M : Type;\n}"),
     )?;
     assert!(
         bool::from(spelled.is_clean()),
@@ -1302,10 +1311,10 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
         for written in [
             format!("def {keyword} : Integer ;\ndef ok = 2 ;"),
             format!(
-                "theory T {{\n  sort Tm : Type;\n  oper {keyword} : (b : Tm) --> Tm;\n}}\ndef ok = 2 ;"
+                "theory T where {{\n  sort Tm : Type;\n  oper {keyword} : (b : Tm) --> Tm;\n}}\ndef ok = 2 ;"
             ),
             format!(
-                "theory T {{\n  sort Tm : Type;\n  oper nil : () --> Tm;\n  rule {keyword} : nil() <=> nil();\n}}\ndef ok = 2 ;"
+                "theory T where {{\n  sort Tm : Type;\n  oper nil : () --> Tm;\n  rule {keyword} : nil() <=> nil();\n}}\ndef ok = 2 ;"
             ),
         ] {
             let result = parse(pbg, SourceText::from(written.as_str()))?;
@@ -1479,10 +1488,10 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 {
     for survivor in [
         "def good = 2;",
-        "data Good { }",
-        "codata Good { }",
-        "module Good { }",
-        "theory Good { }",
+        "data Good  where { }",
+        "codata Good where { }",
+        "module Good where { }",
+        "theory Good where { }",
         "import \"good\" as good ;",
     ] {
         let source = format!("def bad = ( 1 ;\n{survivor}");
@@ -2441,7 +2450,7 @@ fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn 
             "def g() -> -F Integer { run value <- action; pure value }",
             [false].as_slice(),
         ),
-        ("def g() -> -F Integer { val v = run f(x); pure v }", &[
+        ("def g() -> -F Integer { let v = run f(x); pure v }", &[
             true,
         ]),
         (

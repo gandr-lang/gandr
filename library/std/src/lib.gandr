@@ -5,7 +5,7 @@
 import package (Gandr);
 
 /// The package: `std`, at the version `gandr.toml` records.
-pub module Package : Model(Gandr.Package) {
+pub module Package : Model(Gandr.Package) where {
   /// The package's name, `std`.
   def name = "std";
   /// The version `std` releases at.

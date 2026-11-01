@@ -5,7 +5,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                         ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-14 │ │┌   case n {
+14 │ │┌   match n {
 15 │ ││     Zero => Zero,
 16 │ ││     Succ(p) => { run q <- plus(Zero, p); Succ(halvedThroughPlus[<](q)) }
    │ ││                  ┬──                     ┬────┬────────────────────┯──

@@ -9,7 +9,7 @@
 
 /// A unital magma's signature.
 @[ checks ]
-theory Mag {
+theory Mag where {
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -33,7 +33,7 @@ def cancelled : Path(
 /// The terms' fold into themselves: each rule's two sides convert under it.
 @[ checks ]
 def rec copy(t : Terms(Mag)) -> Terms(Mag) {
-  case t {
+  match t {
     Mag.one => Mag.one,
     Mag.mul(x, y) => Mag.mul(copy[<](x), copy[<](y))
   }

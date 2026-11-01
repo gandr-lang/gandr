@@ -1,10 +1,10 @@
 /// `pack_model_expression`: a module packed at its theory's models.
 @[ checks ]
-theory Pointed {
+theory Pointed where {
   sort P : Type;
   oper point : P;
 }
-module Zero : Model(Pointed) {
+module Zero : Model(Pointed) where {
   type P = Integer;
   @[ checks ]
   def point = 0;

@@ -14,7 +14,7 @@ import "../data/data-maybe.gandr";
 
 /// The left unit: returning a value to an extension runs its continuation at
 /// that value, a second-order rule over values `V` and computations `C`.
-theory MonadLeftUnit {
+theory MonadLeftUnit where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
@@ -25,7 +25,7 @@ theory MonadLeftUnit {
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
 /// it at its port of the sort `V` (#2115).
-theory MonadRightUnit {
+theory MonadRightUnit where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
@@ -37,7 +37,7 @@ theory MonadRightUnit {
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
 /// unification, and its two reducts normalize to one term (#2116).
-pub theory RelativeMonad {
+pub theory RelativeMonad where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
@@ -54,7 +54,7 @@ def ret(A : Type, a : A) -> Maybe(A) { Some(a) }
 /// a present value to the continuation and stop at an absent one.
 def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> Maybe(B) {
   run r <- force m;
-  case r {
+  match r {
     None => None,
     Some(x) => k(x)
   }
@@ -69,7 +69,7 @@ def two() -> Integer {
     ret(Integer, 1),
     fn (x) { ret(Integer, x + 1) }
   );
-  case r {
+  match r {
     None => 0,
     Some(y) => y
   }

@@ -3,8 +3,8 @@
 // University Press, 1998, § 4.1): unwrapping a wrapped term gives the term.
 
 /// A wrapper and its unwrapping, the rule cancelling the two.
-data Wrap : Type {
-  MkWrap : (n : Wrap) --> Wrap;
-  oper unwrap(w : Wrap) -> Wrap;
-  rule unwrap(MkWrap(x)) <=> x;
+data Wrap : Type where {
+  | MkWrap : (n : Wrap) --> Wrap
+  oper unwrap : (w : Wrap) --> Wrap;
+  rule : unwrap(MkWrap(x)) <=> x;
 }

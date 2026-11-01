@@ -5,20 +5,20 @@
 // the transport as a match on the run's moves, to the run conversion gives.
 
 /// A bit.
-pub data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+pub data Bit : Type where {
+  | Zero : Bit
+  | One : Bit
 }
 
 /// An answer.
-pub data Answer : Type {
-  No : Answer;
-  Yes : Answer;
+pub data Answer : Type where {
+  | No : Answer
+  | Yes : Answer
 }
 
 /// A bit read as an answer.
 def decode(b : Bit) -> Answer {
-  case b {
+  match b {
     Zero => No,
     One => Yes,
   }
@@ -26,7 +26,7 @@ def decode(b : Bit) -> Answer {
 
 /// An answer written as a bit.
 def encode(a : Answer) -> Bit {
-  case a {
+  match a {
     No => Zero,
     Yes => One,
   }
@@ -34,7 +34,7 @@ def encode(a : Answer) -> Bit {
 
 /// Encoding a decoded bit gives the bit back.
 def encoded(b : Bit) -> Path(Bit, encode(decode(b)), b) {
-  case b {
+  match b {
     Zero => here(Zero),
     One => here(One),
   }
@@ -42,7 +42,7 @@ def encoded(b : Bit) -> Path(Bit, encode(decode(b)), b) {
 
 /// Decoding an encoded answer gives the answer back.
 def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
-  case a {
+  match a {
     No => here(No),
     Yes => here(Yes),
   }
@@ -52,7 +52,7 @@ def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
 pub def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
 
 /// A protocol that hears a bit, and one that hears an answer.
-module Ask {
+module Ask where {
   type Coded = ?Bit. end;
   type Decoded = ?Answer. end;
 }

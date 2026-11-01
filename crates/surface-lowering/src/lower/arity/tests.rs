@@ -198,6 +198,10 @@ fn shown(
                 Some(&Computation::Lambda(body)) => {
                     (String::from("lambda"), vec![Root::Computation(body)])
                 },
+                Some(&Computation::Bind(bound, body)) => (String::from("bind"), vec![
+                    Root::Computation(bound),
+                    Root::Computation(body),
+                ]),
                 Some(&Computation::With(ref components)) => (
                     format!("with{}", components.len()),
                     components
@@ -723,6 +727,62 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
     );
 }
 
+/// A sub-record binds each field it selects in written order, the name
+/// raised past the fields bound before it, and returns the record of the
+/// bound fields: off a stated record each field is projected as `r.l` is, and
+/// off a record no type states at its label for the checker. A value that is
+/// no name is unadmitted.
+#[test]
+fn a_sub_record_binds_each_field_and_returns_their_record()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def pick(r : #{a : Integer, b : Integer, c : Integer}) -> -F #{c : Integer, a : \
+         Integer} { r.#{.c, .a} } def outer = #{ x = 1, y = 2 } ; def free() -> -F #{y : \
+         Integer} { outer.#{.y} }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "pick"),
+        [
+            "thunk",
+            "lambda",
+            "bind",
+            "field.c",
+            "#0",
+            "bind",
+            "field.a",
+            "#1",
+            "return",
+            "record{a,c}",
+            "#0",
+            "#1"
+        ],
+        "each field is bound in written order and their record returned"
+    );
+    assert_eq!(
+        body(&arena, &module, "free"),
+        [
+            "thunk",
+            "bind",
+            "field.y",
+            "const1",
+            "return",
+            "record{y}",
+            "#0"
+        ],
+        "a record no type states is projected at the label"
+    );
+    assert!(
+        matches!(
+            refused("def p(r : #{a : Integer}) -> -F #{a : Integer} { (r).#{.a} }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a value that is no name is unadmitted"
+    );
+}
+
 /// A selection by position projects the pair its operand is: `.0` its first
 /// component and `.1` its second, as the labels of a type of two name them;
 /// a third position names nothing.
@@ -1225,7 +1285,8 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         "a block of one clause is the lazy product of one"
     );
     assert_eq!(lazy("none"), ["with0"], "`&{{}}` is the empty lazy product");
-    let maybe = "data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }\n";
+    let maybe =
+        "data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{maybe}def some(n : Integer) -> &{{-F Maybe(Integer), -F String}} {{ &{{.0 => return \
@@ -1295,7 +1356,7 @@ fn a_co_bundle_is_the_lazy_record_of_its_labels()
 #[test]
 fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
 {
-    let pair = "codata Duo : Type[-] { fst : Integer; snd : String; }\n";
+    let pair = "codata Duo : Type[-] where { fst : Integer; snd : String; }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{pair}def ordered(n : Integer) -> Duo {{ &{{.fst => return n, .snd => return \"s\"}} \
@@ -1336,7 +1397,7 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         refused(source.as_str())
     );
     let source = String::from(
-        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef short(n : Integer) \
+        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef short(n : Integer) \
          -> Trio { &{.a => return n, .b => return n} }\n",
     );
     assert!(
@@ -1417,7 +1478,7 @@ fn an_observation_by_position_projects_its_entry_941()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef labelled(m : +U \
+        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef labelled(m : +U \
          &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.b }\ndef placed(m : +U &{a \
          : -F Integer, b : -F Integer}) -> -F Integer { become m.1 }\ndef chained(m : +U (-F \
          Integer & -F String & -F Integer)) -> -F Integer { become m.2 }\ndef named(t : +U \
@@ -1474,7 +1535,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
+        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
          -> Trio { &{ .a => n, .b => n, .c => n } }\ndef pair(n : Integer) -> &{a : -F Integer, \
          b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { trio(1).b \
          }\ndef counted() -> -F Integer { trio(1).1 }\ndef recorded() -> -F Integer { \
@@ -1520,7 +1581,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         "an observation off a call stands as an operand: {:?}",
         outcome(&module, "above")
     );
-    let source = "codata Duo : Type[-] { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
+    let source = "codata Duo : Type[-] where { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
                   1, .b => 2 } }\ndef gone() -> -F Integer { duo().z }\n";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
@@ -1539,7 +1600,7 @@ fn a_chain_of_observations_projects_each_link_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef rec upward(n : \
+        "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef rec upward(n : \
          Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>](n + 1) } }\ndef \
          second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }\ndef third() -> -F Integer \
          { upward(1).tail.tail.head }\ndef counted() -> -F Integer { upward(1).1.tail.0 }\ndef \

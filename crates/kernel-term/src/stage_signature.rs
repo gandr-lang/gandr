@@ -1,6 +1,6 @@
 //! A definition's signature quantified over stages.
 //!
-//! `def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i])` takes a stage
+//! `def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i])` takes a stage
 //! `i` beside its parameters. The declared type crosses erased, `(Nat => Nat,
 //! Nat) -> F Nat`, and the signature says where each binder stands in it: a
 //! [`StageMark`] is a path from the declared type to a data-type occurrence,
@@ -88,9 +88,9 @@ impl From<PlacedChild> for usize
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StageBound
 {
-    /// Any stage: `@[i : Size]`.
+    /// Any stage: `[i : Size]`.
     Unbounded,
-    /// A stage strictly below an earlier binder's: `@[n : Size, i : Size, i <
+    /// A stage strictly below an earlier binder's: `[n : Size, i : Size, i <
     /// n]`.
     Below(StageBinder),
 }

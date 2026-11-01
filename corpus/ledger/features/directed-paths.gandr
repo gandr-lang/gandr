@@ -7,21 +7,21 @@
 // sequence ride a record of the first schema to the third.
 
 /// Three versions of a record schema and the flows between them.
-module Versions {
+module Versions where {
   type V1 = String * Integer;
   type V2 = Integer * String;
   type V3 = (Unit + Unit) * Integer * String;
   /// The first translator: the fields swapped.
   @[ checks ]
   def toV2(record : V1) -> V2 {
-    case record {
+    match record {
       #{name, age} => (age, name)
     }
   }
   /// The second translator: a flag added.
   @[ checks ]
   def toV3(record : V2) -> V3 {
-    case record {
+    match record {
       #{age, name} => (+{.1 = unit}, age, name)
     }
   }

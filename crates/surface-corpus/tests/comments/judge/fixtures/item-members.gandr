@@ -1,0 +1,18 @@
+// file
+
+// a module
+module M where {
+  /// one
+  @[ checks ]
+  def one = 1;
+  def two = 2;
+  @[ checks ]
+  def three = 3;
+}
+
+// a rec block
+rec {
+  data Rose : Type where {
+    | Node : Rose
+  }
+}

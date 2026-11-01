@@ -25,7 +25,7 @@
 //!   its statement and each path at their universe; each binder at its sort and
 //!   each hypothesis's name at the path it assumes; each node of a side as a
 //!   rule's, a `true` or `false` at the path's carrier. A port that binds a
-//!   variable (`t : pi+ (x : S) . T`) answers at the thunked function from its
+//!   variable (`t : (x : S) -> T`) answers at the thunked function from its
 //!   variables, `+U ((x : S) -> -F T)`, as its operation's component takes it,
 //!   and each binder's name at its sort. A law relating a term at such a port
 //!   has no component: a field `bind x .` names its variable at the sort the
@@ -1351,7 +1351,7 @@ impl Typer<'_>
             );
         }
         // The port's own sort reads under the variables it binds: `x` in
-        // `q : pi+ (x : V) . Below(k(x), l(x))` is `q`'s.
+        // `q : (x : V) -> Below(k(x), l(x))` is `q`'s.
         let under: Vec<Binder> = telescope.iter().chain(&port.binders).cloned().collect();
         self.occurrence(&written.sort, &port.sort.sort, &declared.sorts);
         self.indices(
@@ -2219,7 +2219,7 @@ impl Typer<'_>
                 }
             }
             if let Some(universe) = universe_of(self.arena, family) {
-                self.emit(member.result, DescribedRole::Type, universe, closed);
+                self.emit(member.result.span, DescribedRole::Type, universe, closed);
             }
         }
         let mut operations: BTreeMap<Name, Operation> = BTreeMap::new();
@@ -2560,13 +2560,9 @@ impl Typer<'_>
                     self.emit(named, DescribedRole::Name, outside, context);
                 }
             }
-            self.emit(
-                member.result,
-                DescribedRole::Type,
-                signature.kind(),
-                context,
-            );
-            for (&argument, &classifier) in member.arguments.iter().zip(&classifiers) {
+            let result = &member.result;
+            self.emit(result.span, DescribedRole::Type, signature.kind(), context);
+            for (&argument, &classifier) in result.arguments.iter().zip(&classifiers) {
                 self.emit(argument, DescribedRole::Type, classifier, context);
             }
         }

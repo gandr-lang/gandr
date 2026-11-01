@@ -24,7 +24,7 @@ def legacy = 1;
 def current = legacy;
 
 // A module whose member is marked.
-module Shapes {
+module Shapes where {
   // The side, marked with a note alone.
   @[ checks ]
   @[ deprecated(#{note = "use area"}) ]

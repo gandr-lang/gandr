@@ -1,5 +1,5 @@
 @[ refuses("UndescribedMember.ParallelRedexes") ]
-theory Nat {
+theory Nat where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 

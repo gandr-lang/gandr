@@ -39,7 +39,7 @@ use crate::resolve::SurfaceName;
 /// operator's held by the rest of the block, with an intuitionistic parameter
 /// and every receipt's binder standing between an endpoint and its uses.
 const EXCHANGE: &str = "def exchange(n : Integer) -> -F Unit {\n\
-     fork (c : ?String. mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !String. end }) {\n\
+     fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {\n\
        recv(c) as task;\n\
        select(c, report);\n\
        send(c, \"progress\");\n\
@@ -266,10 +266,10 @@ fn actions(
 fn a_session_type_lowers_to_its_protocol()
 {
     let source = SourceText::from(
-        "def seat : ?String. mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end } ;\n\
-         def ticker : mu t. !Integer. (t) ;\n\
-         def choose : +{ ok : !Integer. end } ;\n\
-         def menu : &{ get : !Integer. end, put : ?String. end } ;\n",
+        "def seat : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end } ;\n\
+         def ticker : rec t => !Integer >> (t) ;\n\
+         def choose : +{ ok : !Integer >> end } ;\n\
+         def menu : &{ get : !Integer >> end, put : ?String >> end } ;\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -293,7 +293,7 @@ fn a_session_type_lowers_to_its_protocol()
             "!Integer",
             "end"
         ],
-        "every former reads to its own step, each payload in its own slot, and `turn` returns to its `mu`"
+        "every former reads to its own step, each payload in its own slot, and `turn` returns to its `rec`"
     );
     assert_eq!(
         walked(&arena, seat, &[
@@ -316,7 +316,7 @@ fn a_session_type_lowers_to_its_protocol()
     assert_eq!(
         walked(&arena, ticker, &[Move::On, Move::On, Move::On]),
         ["!Integer", "!Integer", "!Integer"],
-        "a variable under its `mu`, parenthesised, recurs"
+        "a variable under its `rec`, parenthesised, recurs"
     );
     let choose = declared_of(&module, SurfaceName::from("choose"));
     assert_eq!(
@@ -335,8 +335,8 @@ fn a_session_type_lowers_to_its_protocol()
 #[test]
 fn each_state_answers_where_it_is_written()
 {
-    let text = "def seat : ?String. mu turn. +{ report : !String. &{ next : turn, retire : end }, \
-                handoff : !Integer. end } ;\n";
+    let text = "def seat : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, \
+                handoff : !Integer >> end } ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(text), &mut arena);
     let written = |start: usize, end: usize| text.get(start .. end).unwrap_or_default();
@@ -367,11 +367,11 @@ fn each_state_answers_where_it_is_written()
             .map(|&(_, at)| at)
     };
     for continuation in [
-        "mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end }",
-        "+{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end }",
-        "!String. &{ next : turn, retire : end }",
+        "rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }",
+        "+{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }",
+        "!String >> &{ next : turn, retire : end }",
         "&{ next : turn, retire : end }",
-        "!Integer. end",
+        "!Integer >> end",
         "turn",
         "end",
     ] {
@@ -408,7 +408,7 @@ fn each_state_answers_where_it_is_written()
     };
     assert_eq!(
         named("report"),
-        at("!String. &{ next : turn, retire : end }"),
+        at("!String >> &{ next : turn, retire : end }"),
         "a select's label answers at the state it continues with"
     );
     assert_eq!(
@@ -419,9 +419,9 @@ fn each_state_answers_where_it_is_written()
     assert_eq!(
         named("turn"),
         at(
-            "mu turn. +{ report : !String. &{ next : turn, retire : end }, handoff : !Integer. end }"
+            "rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end }"
         ),
-        "a `mu`'s variable answers at the state it binds"
+        "a `rec`'s variable answers at the state it binds"
     );
 }
 
@@ -429,12 +429,12 @@ fn each_state_answers_where_it_is_written()
 fn a_malformed_protocol_is_refused_where_it_is_written()
 {
     let source = SourceText::from(
-        "def spin : mu t. t ;\n\
-         def nested : !Integer. mu t. mu u. !Integer. t ;\n\
-         def typed : !Integer. Integer ;\n\
-         def free : !Integer. t ;\n\
-         def positional : !Integer. +{ end, end } ;\n\
-         def twice : !Integer. &{ go : end, go : end } ;\n",
+        "def spin : rec t => t ;\n\
+         def nested : !Integer >> rec t => rec u => !Integer >> t ;\n\
+         def typed : !Integer >> Integer ;\n\
+         def free : !Integer >> t ;\n\
+         def positional : !Integer >> +{ end, end } ;\n\
+         def twice : !Integer >> &{ go : end, go : end } ;\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -444,32 +444,32 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
         LoweringRefusal::OutOfFragment {
             span: spelled_within(
                 source,
-                SourceText::from("spin : mu t. t"),
-                SourceText::from("mu t. t")
+                SourceText::from("spin : rec t => t"),
+                SourceText::from("rec t => t")
             ),
             form: mu,
             sort: FragmentSort::ValueType,
             boundary: FragmentBoundary::NonContractive,
         },
-        "a `mu` whose body is its own variable is not contractive"
+        "a `rec` whose body is its own variable is not contractive"
     );
     assert_eq!(
         refusal_of(&module, SurfaceName::from("nested")),
         LoweringRefusal::OutOfFragment {
             span: spelled_within(
                 source,
-                SourceText::from("nested : !Integer. mu t. mu u. !Integer. t"),
-                SourceText::from("mu t. mu u. !Integer. t")
+                SourceText::from("nested : !Integer >> rec t => rec u => !Integer >> t"),
+                SourceText::from("rec t => rec u => !Integer >> t")
             ),
             form: mu,
             sort: FragmentSort::ValueType,
             boundary: FragmentBoundary::NonContractive,
         },
-        "nor one whose body is a `mu`, refused at the outer one"
+        "nor one whose body is a `rec`, refused at the outer one"
     );
     for (name, written, continuation) in [
-        ("typed", "typed : !Integer. Integer", "Integer"),
-        ("free", "free : !Integer. t", "t"),
+        ("typed", "typed : !Integer >> Integer", "Integer"),
+        ("free", "free : !Integer >> t", "t"),
     ] {
         assert!(
             matches!(
@@ -477,7 +477,7 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
                 LoweringRefusal::OutOfFragment { span, sort: FragmentSort::Continuation, boundary: FragmentBoundary::WrongSort, .. }
                     if span == spelled_within(source, SourceText::from(written), SourceText::from(continuation))
             ),
-            "`{name}`: a type no `mu` binds stands where a continuation is read"
+            "`{name}`: a type no `rec` binds stands where a continuation is read"
         );
     }
     assert_eq!(
@@ -485,7 +485,7 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
         LoweringRefusal::MalformedForm {
             span: spelled_within(
                 source,
-                SourceText::from("positional : !Integer. +{ end,"),
+                SourceText::from("positional : !Integer >> +{ end,"),
                 SourceText::from("end")
             ),
             form: FormName::SELECT_SESSION_TYPE,
@@ -498,7 +498,7 @@ fn a_malformed_protocol_is_refused_where_it_is_written()
             refusal_of(&module, SurfaceName::from("twice")),
             LoweringRefusal::DuplicateDefinition { name, span, .. }
                 if name == SurfaceName::from("go")
-                    && span == spelled_within(source, SourceText::from("twice : !Integer. &{ go : end, go"), SourceText::from("go"))
+                    && span == spelled_within(source, SourceText::from("twice : !Integer >> &{ go : end, go"), SourceText::from("go"))
         ),
         "a label is offered once"
     );
@@ -628,7 +628,11 @@ fn each_endpoint_answers_at_its_action()
             | Labelled::Kind(_) => None,
         })
         .collect();
-    let offered = EXCHANGE.matches(" => ").count();
+    // A `rec t =>` binds a protocol variable; every other ` => ` arms an offer.
+    let offered = EXCHANGE
+        .matches(" => ")
+        .count()
+        .saturating_sub(EXCHANGE.matches("rec ").count());
     assert!(
         branches.len() == offered
             && branches.iter().all(|&(written, action, label)| {
@@ -793,15 +797,15 @@ fn sharing_is_reserved_by_name()
 fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
     let source = SourceText::from(
-        "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def joined(n : Nat) -> -F Integer {\n\
-           hold c = 100;\n\
-           run m <- case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
+           var c = 100;\n\
+           run m <- match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
            pure c\n\
          }\n\
          def joined_by_hand(n : Nat) -> -F Integer {\n\
-           hold c = 100;\n\
-           case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
+           var c = 100;\n\
+           match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();
@@ -821,25 +825,25 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
 {
     let source = SourceText::from(
-        "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def forked(n : Nat) -> -F Unit {\n\
            fork (c : end) { close(c) } as d ;\n\
            close(d) ;\n\
-           run m <- case n { Zero => return unit, Succ(p) => pure unit } ;\n\
+           run m <- match n { Zero => return unit, Succ(p) => pure unit } ;\n\
            return m\n\
          }\n\
          def forked_by_hand(n : Nat) -> -F Unit {\n\
            fork (c : end) { close(c) } as d ;\n\
            close(d) ;\n\
-           case n { Zero => return unit, Succ(p) => return unit }\n\
+           match n { Zero => return unit, Succ(p) => return unit }\n\
          }\n\
          def offered(n : Nat) -> -F Unit {\n\
            fork (c : +{ go : end }) { select(c, go) ; close(c) } as d ;\n\
-           offer(d) { go => { close(d) ; run m <- case n { Zero => return unit, Succ(p) => pure unit } ; return m } }\n\
+           offer(d) { go => { close(d) ; run m <- match n { Zero => return unit, Succ(p) => pure unit } ; return m } }\n\
          }\n\
          def offered_by_hand(n : Nat) -> -F Unit {\n\
            fork (c : +{ go : end }) { select(c, go) ; close(c) } as d ;\n\
-           offer(d) { go => { close(d) ; case n { Zero => return unit, Succ(p) => return unit } } }\n\
+           offer(d) { go => { close(d) ; match n { Zero => return unit, Succ(p) => return unit } } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();

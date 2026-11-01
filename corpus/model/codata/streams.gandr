@@ -6,7 +6,7 @@
 // refuses is in `../../pathological/codata/streams.gandr`.
 
 /// A stream of values of `a`: its head, and the stream after it.
-codata Stream(a : Type) : Type[-] {
+codata Stream(a : Type) : Type[-] where {
   head : a;
   tail : Stream(a);
 }

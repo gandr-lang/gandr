@@ -1,7 +1,7 @@
 /// `CellNotALoop`: a cell `<->` of a `data` block between two distinct terms.
 @[ refuses("CellNotALoop") ]
-data Interval : Type {
-  Start : Interval;
-  End : Interval;
-  seg : Start <-> End;
+data Interval : Type where {
+  | Start : Interval
+  | End : Interval
+  | seg : Start <-> End
 }

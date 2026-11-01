@@ -14,18 +14,18 @@ use crate::unit::Unit;
 
 /// Two rules rewriting `add(Zero, Zero)` apart: the block is refused at the
 /// later rule, naming the earlier.
-const APART: &str = r#"data NatApart : Type {
-    Zero : NatApart;
-    Succ : (n : NatApart) --> NatApart;
-    oper add(m : NatApart, n : NatApart) -> NatApart;
-    rule add(Zero, n) ==> n;
-    rule add(m, Zero) ==> Succ(m);
-    rule add(Succ(m), n) ==> Succ(add(m, n));
+const APART: &str = r#"data NatApart : Type where {
+    | Zero : NatApart
+    | Succ : (n : NatApart) --> NatApart
+    oper add : (m : NatApart, n : NatApart) --> NatApart;
+    rule : add(Zero, n) ==> n;
+    rule : add(m, Zero) ==> Succ(m);
+    rule : add(Succ(m), n) ==> Succ(add(m, n));
 }"#;
 
 /// A group's laws with the left inverse, which completion joins by deriving
 /// rules into the block's store.
-const GROUP: &str = r#"theory Group {
+const GROUP: &str = r#"theory Group where {
     sort G : Type;
     oper e : G;
     oper a : G;
@@ -86,7 +86,10 @@ fn a_block_whose_rule_changed_is_decided_again_1547()
     let mut decisions = Decisions::held();
     let apart = elaborated(APART, &mut decisions);
     assert!(!apart.diagnostics.is_empty(), "the written rules part");
-    let changed = APART.replace("rule add(m, Zero) ==> Succ(m);", "rule add(m, Zero) ==> m;");
+    let changed = APART.replace(
+        "rule : add(m, Zero) ==> Succ(m);",
+        "rule : add(m, Zero) ==> m;",
+    );
     let decided = elaborated(changed.as_str(), &mut decisions);
     assert_eq!(
         decisions.kept.len(),

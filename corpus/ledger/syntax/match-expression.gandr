@@ -1,7 +1,7 @@
-/// `case_expression`: a case analysis.
+/// `match_expression`: a case analysis.
 @[ checks ]
 def sign(b : Bool) -> -F Integer {
-  case b {
+  match b {
     true => return 1,
     false => return 0
   }

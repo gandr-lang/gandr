@@ -20,7 +20,7 @@ import "../../model/identity/model-counter.gandr";
 import "../../model/identity/model-counter-manifest.gandr";
 
 /// A ticker: a carrier, a zero and a step, and no reading.
-theory Ticker {
+theory Ticker where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -45,7 +45,7 @@ def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> Model(Rea
 /// second's counts are not the first's (#2131).
 @[ refuses("TypeMismatch") ]
 def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer {
-  case b {
+  match b {
     #{.zero = z, .incr = i, .read = r} => r(i(c))
   }
 }
@@ -92,7 +92,7 @@ def rightApart(
   m : Model(Pairing) with sort A = Integer,
   n : Model(Pairing) with sort A = Integer
 ) -> Integer {
-  case n {
+  match n {
     #{.left = l, .right = r} => leftBeside(m, r)
   }
 }

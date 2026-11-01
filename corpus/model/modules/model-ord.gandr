@@ -43,7 +43,7 @@ def integerOrder() -> Bool { -4 < 9 }
 def sameName() -> Bool { "alpha" == "alpha" }
 
 /// The lesser of two, through the order the operands force.
-def least @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> o.Carrier {
+def least[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> o.Carrier {
   if o.lt(b, a) { b } else { a }
 }
 

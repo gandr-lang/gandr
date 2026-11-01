@@ -1382,7 +1382,7 @@ fn defined(
     found
 }
 
-/// Each `def name(…) …`, `def name @[…] (…) …` or `def rec name(…) …` among
+/// Each `def name(…) …`, `def name[…](…) …` or `def rec name(…) …` among
 /// `forms`, the top-level forms of `text`: the whole form's tokens, by name.
 ///
 /// # Specification
@@ -1402,7 +1402,7 @@ fn recursed(
         let whole = tokens(SourceFragment::from(written));
         let named = match *whole.as_slice() {
             [ref def, ref rec, ref name, ..] if def == "def" && rec == "rec" => Some(name),
-            [ref def, ref name, ref open, ..] if def == "def" && (open == "(" || open == "@[") => {
+            [ref def, ref name, ref open, ..] if def == "def" && (open == "(" || open == "[") => {
                 Some(name)
             },
             _ => None,

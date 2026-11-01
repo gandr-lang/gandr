@@ -37,7 +37,7 @@ def within(n : Nat) -> Bool {
 def boundThree : Path(Bool, within((3 : Nat)), true) = here(true);
 
 /// The extensional reading at integer answers: every charge is the identity.
-module Erased : Model(Cost) with sort N = Nat => Nat {
+module Erased : Model(Cost) with sort N = Nat => Nat where {
   /// The answer itself.
   type C = Integer;
   /// A charge leaves what runs after it as it is.

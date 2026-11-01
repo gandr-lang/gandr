@@ -26,14 +26,14 @@ use crate::resolve::SurfaceName;
 /// The data a boundary check builds, declared as `std.boundary` and
 /// `std.layout` declare them, with one row.
 const DATA: &str = concat!(
-    "data Scalar : Type { U32 : Scalar; U64 : Scalar; I32 : Scalar; I64 : Scalar; }\n",
-    "data Code : Type { Plain : (s : Scalar) --> Code; }\n",
-    "data Coded : Type { NoCoded : Coded; Coded : (name : String, c : Code, rest : Coded) --> Coded; }\n",
-    "data Signature : Type { Signature : (params : Coded, result : Code) --> Signature; }\n",
-    "data Signatures : Type { NoSignature : Signatures; Member : (s : Signature, rest : Signatures) --> Signatures; }\n",
-    "data Row : Type { Row : (result : Code) --> Row; }\n",
-    "data Rows : Type { NoRow : Rows; Named : (r : Row, rest : Rows) --> Rows; }\n",
-    "data Admission : Type { Admitted : Admission; }\n",
+    "data Scalar : Type where { | U32 : Scalar | U64 : Scalar | I32 : Scalar | I64 : Scalar }\n",
+    "data Code : Type where { | Plain : (s : Scalar) --> Code }\n",
+    "data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest : Coded) --> Coded }\n",
+    "data Signature : Type where { | Signature : (params : Coded, result : Code) --> Signature }\n",
+    "data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, rest : Signatures) --> Signatures }\n",
+    "data Row : Type where { | Row : (result : Code) --> Row }\n",
+    "data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
+    "data Admission : Type where { | Admitted : Admission }\n",
     "def addRow : Row = Row(Plain(U32));\n",
 );
 

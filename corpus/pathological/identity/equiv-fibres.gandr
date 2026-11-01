@@ -4,14 +4,14 @@
 // trip claimed for one is refused at that field of the record.
 
 /// Two points.
-pub data Two : Type {
-  Yes : Two;
-  No : Two;
+pub data Two : Type where {
+  | Yes : Two
+  | No : Two
 }
 
 /// One point.
-pub data One : Type {
-  Only : One;
+pub data One : Type where {
+  | Only : One
 }
 
 /// Both points to the one.
@@ -26,7 +26,7 @@ pub def pick(u : One) -> Two {
 
 /// Every point of `One` is `Only`, by induction on it.
 pub def single(u : One) -> Path(One, collapse(pick(u)), u) {
-  case u {
+  match u {
     Only => here(Only)
   }
 }

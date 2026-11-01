@@ -1,5 +1,5 @@
-data Empty : Type {}
+data Empty : Type where {}
 
 def absurd(v : Empty) -> Integer {
-  case v {}
+  match v {}
 }

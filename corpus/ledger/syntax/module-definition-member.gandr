@@ -1,4 +1,4 @@
 /// `module_definition_member`: a definition inside a module body.
-module Answers {
+module Answers where {
   def answer = 42;
 }

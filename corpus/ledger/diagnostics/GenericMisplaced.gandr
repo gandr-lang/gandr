@@ -1,7 +1,7 @@
 /// `GenericMisplaced`: `Eq.generic` applied inside a larger body rather than as a definition's whole body.
 @[ checks ]
-data Point : Type {
-  Point : (x : Integer, y : Integer) --> Point;
+data Point : Type where {
+  | Point : (x : Integer, y : Integer) --> Point
 }
 
 @[ refuses("GenericMisplaced") ]

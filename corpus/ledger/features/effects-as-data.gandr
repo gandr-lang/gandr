@@ -12,22 +12,22 @@
 import "../../model/effects/tree.gandr" ;
 
 /// Exceptions' operation: raise a code.
-data ExnOp : Type {
-  Raise : (code : Integer) --> ExnOp;
+data ExnOp : Type where {
+  | Raise : (code : Integer) --> ExnOp
 }
 
 /// What an exception handler answers: raised with a code, or returned.
-data Outcome(a : Type) : Type {
-  Raised : (code : Integer) --> Outcome(a);
-  Returned : (x : a) --> Outcome(a);
+data Outcome(a : Type) : Type where {
+  | Raised : (code : Integer) --> Outcome(a)
+  | Returned : (x : a) --> Outcome(a)
 }
 
 /// State answered at the front of the row from the state `s`, the rest of
 /// the row forwarded.
 def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Integer) -> Prog(e, a) {
-  case p {
+  match p {
     Done(x) => (Done(x) : Prog(e, a)),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Get) => runState[<](e, a, k(s), s),
       Left(Put(t)) => runState[<](e, a, k(0), t),
       Right(other) => (Op(other, fn (r) {
@@ -40,9 +40,9 @@ def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Intege
 /// Exceptions answered at the front of the row, the rest of the row
 /// forwarded: a raise ends the program with its code.
 def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Outcome(a)) {
-  case p {
+  match p {
     Done(x) => (Done(Returned(x)) : Prog(e, Outcome(a))),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Raise(c)) => (Done(Raised(c)) : Prog(e, Outcome(a))),
       Right(other) => (Op(other, fn (r) {
         runExn[<](e, a, k(r))
@@ -53,9 +53,9 @@ def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Out
 
 /// A program with nothing left in its row is its result.
 def pureOf(a : Type, p : Prog(Void, a)) -> a {
-  case p {
+  match p {
     Done(x) => x,
-    Op(o, _k) => case o {}
+    Op(o, _k) => match o {}
   }
 }
 
@@ -95,9 +95,9 @@ def rec runExnAt(p : Prog(Either(ExnOp, Either(StateOp, Void)), Integer)) -> Pro
   Either(StateOp, Void),
   Outcome(Integer)
 ) {
-  case p {
+  match p {
     Done(x) => (Done(Returned(x)) : Prog(Either(StateOp, Void), Outcome(Integer))),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Raise(c)) => (Done(Raised(c)) : Prog(Either(StateOp, Void), Outcome(Integer))),
       Right(other) => (Op(other, fn (r) {
         runExnAt[<](k(r))
@@ -111,21 +111,21 @@ def rec runStateAt(p : Prog(Either(StateOp, Void), Outcome(Integer)), s : Intege
   Void,
   Outcome(Integer)
 ) {
-  case p {
+  match p {
     Done(x) => (Done(x) : Prog(Void, Outcome(Integer))),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Get) => runStateAt[<](k(s), s),
       Left(Put(t)) => runStateAt[<](k(0), t),
-      Right(none) => case none {}
+      Right(none) => match none {}
     }
   }
 }
 
 /// `pureOf` at the answer.
 def pureAt(p : Prog(Void, Outcome(Integer))) -> Outcome(Integer) {
-  case p {
+  match p {
     Done(x) => x,
-    Op(o, _k) => case o {}
+    Op(o, _k) => match o {}
   }
 }
 

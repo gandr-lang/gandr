@@ -8,7 +8,7 @@
 /// `ins` takes the cell's value at both points, so `outp(ins(x, y))` reads
 /// `zero` by the boundary and `x` by β (#641).
 @[ refuses("RulesUncompleted") ]
-theory FreeFiber {
+theory FreeFiber where {
   boundary Two { p, q };
   face left = {p};
   sort Val : Type;

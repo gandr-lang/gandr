@@ -13,9 +13,9 @@ def oneByName : Nat = Succ(Zero);
 
 /// Whether the first natural is at most the second.
 def rec le(a : Nat, b : Nat) -> Bool {
-  case a {
+  match a {
     Zero => true,
-    Succ(p) => case b {
+    Succ(p) => match b {
       Zero => false,
       Succ(q) => le[<](p, q),
     },
@@ -39,11 +39,11 @@ def threeAboveOne : Path(Bool, le(three, oneByName), false) = here(false);
 
 /// Whether the first natural is at most both the second and the third; it recurses on the third.
 def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
-  case a {
+  match a {
     Zero => true,
-    Succ(p) => case b {
+    Succ(p) => match b {
       Zero => false,
-      Succ(q) => case c {
+      Succ(q) => match c {
         Zero => false,
         Succ(r) => leBoth[<](p, q, r),
       },
@@ -55,23 +55,23 @@ def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
 def zeroFirst : Path(Bool, leBoth(Zero, oneByName, three), true) = here(true);
 
 /// Positive binary numerals, the high bit outermost.
-data Pos : Type {
+data Pos : Type where {
   /// One.
-  H : Pos;
+  | H : Pos
   /// Twice `p`.
-  O : (p : Pos) --> Pos;
+  | O : (p : Pos) --> Pos
   /// Twice `p`, and one.
-  I : (p : Pos) --> Pos;
+  | I : (p : Pos) --> Pos
 }
 
 /// How two positives compare.
-data Cmp : Type {
+data Cmp : Type where {
   /// The first is below the second.
-  Lt : Cmp;
+  | Lt : Cmp
   /// The two are equal.
-  Eq : Cmp;
+  | Eq : Cmp
   /// The first is above the second.
-  Gt : Cmp;
+  | Gt : Cmp
 }
 
 /// Two, named.
@@ -79,18 +79,18 @@ def twoPos : Pos = O(H);
 
 /// Compare two positives low bit first, `k` the verdict the lower bits gave.
 def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp {
-  case a {
-    H => case b {
+  match a {
+    H => match b {
       H => k,
       O(q) => Lt,
       I(q) => Lt,
     },
-    O(p) => case b {
+    O(p) => match b {
       H => Gt,
       O(q) => cmpPos[<](p, q, k),
       I(q) => cmpPos[<](p, q, Lt),
     },
-    I(p) => case b {
+    I(p) => match b {
       H => Gt,
       O(q) => cmpPos[<](p, q, Gt),
       I(q) => cmpPos[<](p, q, k),

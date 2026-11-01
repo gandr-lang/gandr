@@ -7,11 +7,11 @@
 // `../../model/data/stratified.gandr`.
 
 /// The type with no element.
-data Empty : Type {}
+data Empty : Type where {}
 
 /// A node holding a function from its own family into the empty type.
-data Bad : Type {
-  MkBad : (f : Bad => Empty) --> Bad;
+data Bad : Type where {
+  | MkBad : (f : Bad => Empty) --> Bad
 }
 
 /// A function applied to a node, each at its declared type.
@@ -23,7 +23,7 @@ def apply(g : Bad => Empty, b : Bad) -> Empty {
 /// (#517).
 @[ refuses("StageNotBelow") ]
 def bad(b : Bad) -> Empty {
-  case b {
+  match b {
     MkBad(f) => f(b)
   }
 }
@@ -32,7 +32,7 @@ def bad(b : Bad) -> Empty {
 /// nodes only below the node, not every node `apply` hands it (#517).
 @[ refuses("StageNotBelow") ]
 def smuggled(b : Bad) -> Empty {
-  case b {
+  match b {
     MkBad(f) => apply(f, b)
   }
 }

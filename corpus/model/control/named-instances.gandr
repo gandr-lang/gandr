@@ -3,7 +3,7 @@
 // interface's default and from every other instance, so one row holds two
 // instances of one interface. The label is a parameter the function
 // abstracts, placed after every parameter it writes: a call supplies it by
-// name, `say[out = c]()`, or omits it and passes the one instance of the
+// name, `say[.out = c]()`, or omits it and passes the one instance of the
 // interface handled where the call stands, a capability scope's capability
 // or a label of the caller's own row (Brachthäuser, Schuster and
 // Ostermann, "Effects as Capabilities: Effect Handlers and Lightweight
@@ -32,7 +32,7 @@ def resolved() -> Integer {
 def namedOuter() -> Integer {
   handle a : Console {
     handle b : Console {
-      say[out = a]();
+      say[.out = a]();
       pure 0
     } with {
       pure(x) => pure x,
@@ -49,7 +49,7 @@ def namedOuter() -> Integer {
 def namedInner() -> Integer {
   handle a : Console {
     handle b : Console {
-      say[out = b]();
+      say[.out = b]();
       pure 0
     } with {
       pure(x) => pure x,
@@ -81,17 +81,17 @@ def sayLineRuns() -> Integer {
 }
 
 /// Steps down to the ground, which a recursion takes apart one by one.
-data Steps : Type {
+data Steps : Type where {
   /// The ground, where the recursion stops.
-  Ground : Steps;
+  | Ground : Steps
   /// One step above the rest.
-  Step : (rest : Steps) --> Steps;
+  | Step : (rest : Steps) --> Steps
 }
 
 /// A recursion under its row: each level prints through `out`, and the
 /// recursive call passes `out` on, as a call that omits its instance does.
 def rec descend(s : Steps) -> [out : Console] Unit {
-  case s {
+  match s {
     Ground => pure unit,
     Step(rest) => {
       out.print("step");
@@ -119,8 +119,8 @@ def descendRuns() -> Integer {
 /// Two instances of `Console` in one row, `first` printed through before
 /// `second`.
 def both() -> [first : Console, second : Console] Unit {
-  say[out = first]();
-  say[out = second]()
+  say[.out = first]();
+  say[.out = second]()
 }
 
 /// `both` with its first instance the outer scope: the outer clause
@@ -129,7 +129,7 @@ def both() -> [first : Console, second : Console] Unit {
 def outerFirst() -> Integer {
   handle a : Console {
     handle b : Console {
-      both[first = a, second = b]();
+      both[.first = a, .second = b]();
       pure 0
     } with {
       pure(x) => pure x,
@@ -147,7 +147,7 @@ def outerFirst() -> Integer {
 def innerFirst() -> Integer {
   handle a : Console {
     handle b : Console {
-      both[first = b, second = a]();
+      both[.first = b, .second = a]();
       pure 0
     } with {
       pure(x) => pure x,
@@ -168,12 +168,12 @@ def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
 /// `both` as the printer writes it: each instance's region binder in the
 /// telescope, its capability an explicit parameter, and each label of the
 /// row naming a binder, which binds nothing more.
-def bothWritten @[r : Region, r1 : Region] (
+def bothWritten[r : Region, r1 : Region](
   first : Cap { print } at r,
   second : Cap { print } at r1
 ) -> [r : Console, r1 : Console] Unit {
-  say[out = first]();
-  say[out = second]()
+  say[.out = first]();
+  say[.out = second]()
 }
 
 /// `bothWritten` passed the inner scope first: its clause answers.

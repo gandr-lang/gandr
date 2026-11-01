@@ -10,17 +10,17 @@
 
 /// The codes of two types.
 @[ checks ]
-data Code : Type {
+data Code : Type where {
   /// The integers.
-  CInt : Code;
+  | CInt : Code
   /// The unit type.
-  CUnit : Code;
+  | CUnit : Code
 }
 
 /// The type each code decodes to.
 @[ checks ]
 def decode(c : Code) -> Type {
-  case c {
+  match c {
     CInt => return Integer,
     CUnit => return Unit
   }
@@ -28,18 +28,18 @@ def decode(c : Code) -> Type {
 
 /// Values, indexed by the code of their type.
 @[ checks ]
-data Tagged : Code -> Type {
+data Tagged : Code -> Type where {
   /// An integer.
-  AnInt : (i : Integer) --> Tagged(CInt);
+  | AnInt : (i : Integer) --> Tagged(CInt)
   /// The unit value.
-  AUnit : Tagged(CUnit);
+  | AUnit : Tagged(CUnit)
 }
 
 /// A tagged value at its code's decode. Each arm's goal reads its own
 /// constructor's code.
 @[ checks ]
 def untag(c : Code, v : Tagged(c)) -> decode(c) {
-  case v {
+  match v {
     AnInt(i) => i,
     AUnit => unit
   }

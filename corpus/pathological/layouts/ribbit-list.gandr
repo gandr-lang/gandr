@@ -8,16 +8,16 @@
 import "../../model/layouts/ribbit-list.gandr";
 
 /// A tag without its payloads, Ribbit's Example 3.15: it tells the empty list from the rest and keeps nothing else.
-data Tags : Type {
+data Tags : Type where {
   /// The empty list's tag.
-  Bare : Tags;
+  | Bare : Tags
   /// Any other list's tag.
-  Held : Tags;
+  | Held : Tags
 }
 
 /// A list's tag.
 def tagsOf(l : Ints) -> Tags {
-  case l {
+  match l {
     Nil => Bare,
     Cons(x, rest) => Held
   }
@@ -25,7 +25,7 @@ def tagsOf(l : Ints) -> Tags {
 
 /// A tag read back as a list, a zero standing for what the tag never kept.
 def listOf(t : Tags) -> Ints {
-  case t {
+  match t {
     Bare => Nil,
     Held => Cons(0i32, Nil)
   }
@@ -34,7 +34,7 @@ def listOf(t : Tags) -> Ints {
 /// The tag loses the list's elements, so reading it back is refused as undoing it (vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576, § layouts-ribbit).
 @[ refuses("EndpointMismatch") ]
 def restored(l : Ints) -> Path(Ints, listOf(tagsOf(l)), l) {
-  case l {
+  match l {
     Nil => here(Nil),
     Cons(x, rest) => here(Cons(x, rest))
   }

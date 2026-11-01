@@ -6,13 +6,13 @@
 // leaves is natural, so the translator is natural at every list.
 
 /// A list of records migrated by riding each cell along the records' flow.
-module Cells {
+module Cells where {
   type Old = String * Integer;
   type New = Integer * String;
   /// The records' translator: the fields swapped.
   @[ checks ]
   def swap(old : Old) -> New {
-    case old {
+    match old {
       #{name, age} => (age, name)
     }
   }

@@ -1,18 +1,18 @@
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ refuses("UnmarkedSelfReference") ]
 def rec bare(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => bare(p)
   }
 }
 
 def rec marked(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => n,
     Succ(p) => marked[<](p)
   }
@@ -23,7 +23,7 @@ def rec idle(n : Nat) -> Nat { n }
 /// A parameter written before the staged one may vary across the call: it is
 /// passed to the fixpoint as a leading argument (#626).
 def rec varied(n : Nat, m : Nat) -> Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => varied[<](p, p)
   }
@@ -33,7 +33,7 @@ def rec varied(n : Nat, m : Nat) -> Nat {
 /// the function runs again (#644).
 @[ refuses("UnguardedCorecursion") ]
 def rec ahead(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => ahead[>](p)
   }

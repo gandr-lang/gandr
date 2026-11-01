@@ -60,19 +60,19 @@ def low(w : u64) -> i32 { i32.from_integer(u64.to_integer(w)) }
 
 /// The tagged list at the word `w`, or `None` once `fuel` runs out.
 def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) {
-  case fuel {
+  match fuel {
     Zero => None,
     Succ(rest) => {
       run n <- u64.to_integer(w);
       run bit <- int.mod(n, 2);
-      case bit == 1 {
+      match bit == 1 {
         true => Some(TagNil),
         false => {
           run h <- Memory.word(w);
           run head <- low(h);
           run t <- Memory.word(past(n, 8));
           run tail <- readTagged[<](rest, t);
-          case tail {
+          match tail {
             None => None,
             Some(l) => Some(TagCons(head, l))
           }
@@ -86,16 +86,16 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) {
 /// fourth tag. A pointer's cell holds two elements in its first word and the
 /// rest in its second.
 def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
-  case fuel {
+  match fuel {
     Zero => None,
     Succ(rest) => {
       run n <- u64.to_integer(w);
       run tag <- int.mod(n, 4);
-      case tag == 0 {
+      match tag == 0 {
         true => Some(Empty),
-        false => case tag == 1 {
+        false => match tag == 1 {
           true => Some(One(i32.from_integer(int.div(n, 4)))),
-          false => case tag == 2 {
+          false => match tag == 2 {
             true => {
               run xy <- Memory.word(past(n, -2));
               run m <- u64.to_integer(xy);
@@ -103,7 +103,7 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
               run y <- i32.from_integer(int.div(m, 4294967296));
               run r <- Memory.word(past(n, 6));
               run tail <- readPacked[<](rest, r);
-              case tail {
+              match tail {
                 None => None,
                 Some(l) => Some(Many(x, y, l))
               }
@@ -119,7 +119,7 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
 /// The length of the tagged list at `w`, or `-1` when it does not read.
 pub def taggedLengthAt(w : u64) -> [Memory] Integer {
   run read <- readTagged(fuel, w);
-  case read {
+  match read {
     None => -1,
     Some(l) => {
       run f <- transport(\X. X => Integer, taggedPath, fn (l) { length(l) });
@@ -131,7 +131,7 @@ pub def taggedLengthAt(w : u64) -> [Memory] Integer {
 /// The length of the packed list at `w`, or `-1` when it does not read.
 pub def packedLengthAt(w : u64) -> [Memory] Integer {
   run read <- readPacked(fuel, w);
-  case read {
+  match read {
     None => -1,
     Some(l) => {
       run f <- transport(\X. X => Integer, packedPath, fn (l) { length(l) });
@@ -144,7 +144,7 @@ pub def packedLengthAt(w : u64) -> [Memory] Integer {
 /// `u32` the word addresses at any other.
 pub def derefOr(x : u64, d : u32) -> [Memory] u32 {
   run n <- u64.to_integer(x);
-  case n == 0 {
+  match n == 0 {
     true => d,
     false => Memory.half(x)
   }

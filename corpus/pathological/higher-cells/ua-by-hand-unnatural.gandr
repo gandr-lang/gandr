@@ -1,4 +1,4 @@
-theory Rig {
+theory Rig where {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
@@ -9,12 +9,12 @@ theory Rig {
 /// both swapped forms: it is its own inverse, so code univalence accepts it and
 /// the hand-built product is a path, but it does not commute with the
 /// corolla's input swap, so `ua` refuses it.
-module Unnatural {
+module Unnatural where {
   type Tel = Unit * (Unit + Unit + Unit + Unit);
 
   @[ checks ]
   def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
-    case e {
+    match e {
       +{.0 = u} => +{.2 = u},
       +{.1 = u} => +{.1 = u},
       +{.2 = u} => +{.0 = u},

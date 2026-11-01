@@ -8,7 +8,7 @@ import "../../model/modules/functor-pair.gandr";
 
 /// A counter with no reader: it exports three of the four components
 /// `MkCounter`'s parameter states.
-module Unread :> #{ type T, zero : T, next : T => T } {
+module Unread :> #{ type T, zero : T, next : T => T } where {
   type T = Integer;
   /// The counter's zero.
   def zero = 0;

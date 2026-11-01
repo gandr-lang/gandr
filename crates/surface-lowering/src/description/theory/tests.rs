@@ -36,11 +36,11 @@ fn described<'source>(source: impl Into<SourceText<'source>>) -> DescriptionRepo
 fn a_ruled_theory_block_lowers_its_members_into_a_description()
 {
     let report = described(
-        r#"data Nat : Type {
-        Zero : Nat;
-        Succ : (n : Nat) --> Nat;
+        r#"data Nat : Type where {
+        | Zero : Nat
+        | Succ : (n : Nat) --> Nat
     }
-    theory Nat {
+    theory Nat where {
         sort Nat : Type;
         oper add : (Nat, Nat) --> Nat;
         rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
@@ -95,7 +95,7 @@ fn a_ruled_theory_block_lowers_its_members_into_a_description()
 #[test]
 fn an_expression_kind_signature_endpoint_is_refused_by_the_description_route()
 {
-    let source = "theory Wrong { sort Nat : Type; oper f : (a : Nat) --> (b : Nat); rule face : (f) ==> (z : Nat) { node : f(f) --> (z); }; }";
+    let source = "theory Wrong where { sort Nat : Type; oper f : (a : Nat) --> (b : Nat); rule face : (f) ==> (z : Nat) { node : f(f) --> (z); }; }";
     let report = described(source);
     let [ref theory] = *report.declarations.as_slice()
     else {
@@ -123,7 +123,7 @@ fn an_expression_kind_signature_endpoint_is_refused_by_the_description_route()
 fn an_item_level_data_member_declines_with_the_nested_block_respelling()
 {
     let report = described(
-        "theory Stale { sort Nat : Type; data Zero : Nat; oper add : (Nat, Nat) --> Nat; }",
+        "theory Stale where { sort Nat : Type; data Zero : Nat; oper add : (Nat, Nat) --> Nat; }",
     );
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::RetiredDataMember)));
@@ -136,7 +136,7 @@ fn an_item_level_data_member_declines_with_the_nested_block_respelling()
 
 /// The rewrite node of a two-output congruence: `p` rewrites the dividend
 /// before `divmod` reads it, and both of `divmod`'s ports leave the body.
-const DIVMOD_CONGRUENCE: &str = "theory Div {
+const DIVMOD_CONGRUENCE: &str = "theory Div where {
   sort Nat : Type;
   oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);
   rule pass : (rule p : Nat ==> Nat, data m : Nat, data n : Nat) ==> (q : Nat, r : Nat) {
@@ -188,7 +188,7 @@ fn a_many_out_frame_binds_every_port_and_roots_the_body()
 fn one_port_of_a_many_out_frame_is_refused_by_the_derivation()
 {
     let report = described(
-        "theory Wide { sort Nat : Type; oper tee : (a : Nat) --> (b : Nat, c : Nat); rule split : (data x : Nat) ==> (z : Nat) { node : tee(x) --> (z, w); }; }",
+        "theory Wide where { sort Nat : Type; oper tee : (a : Nat) --> (b : Nat, c : Nat); rule split : (data x : Nat) ==> (z : Nat) { node : tee(x) --> (z, w); }; }",
     );
     assert!(
         report.diagnostics.iter().any(|diagnostic| matches!(
@@ -205,7 +205,7 @@ fn one_port_of_a_many_out_frame_is_refused_by_the_derivation()
 fn a_two_output_operation_keeps_both_ports_in_order()
 {
     let report = described(
-        "theory Div { sort Nat : Type; oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat); }",
+        "theory Div where { sort Nat : Type; oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat); }",
     );
     assert_eq!(report.diagnostics, []);
     let [ref operation] = *report.declarations[0].description.opers
@@ -235,7 +235,7 @@ fn a_two_output_operation_keeps_both_ports_in_order()
 fn a_model_type_reads_as_a_nested_model_1226()
 {
     let report = described(
-        "theory Faceted { sort T : Type; oper inner : Model(Answering); oper total : Integer; oper step : (x : T) --> T; }",
+        "theory Faceted where { sort T : Type; oper inner : Model(Answering); oper total : Integer; oper step : (x : T) --> T; }",
     );
     assert_eq!(report.diagnostics, []);
     let Maybe::Present(ref presentation) = report.declarations[0].presentation
@@ -270,7 +270,7 @@ fn a_model_type_reads_as_a_nested_model_1226()
 fn a_port_name_on_both_sides_is_two_ports()
 {
     let report = described(
-        "theory S { sort Nat : Type; sort Bit : Type; oper narrow : (v : Nat) --> (v : Bit); oper split : (b : Bit) --> (_ : Bit, _ : Bit); }",
+        "theory S where { sort Nat : Type; sort Bit : Type; oper narrow : (v : Nat) --> (v : Bit); oper split : (b : Bit) --> (_ : Bit, _ : Bit); }",
     );
     assert_eq!(
         report
@@ -302,7 +302,7 @@ fn a_port_name_on_both_sides_is_two_ports()
 fn an_inert_operation_is_marked_on_its_presentation_3029()
 {
     let report = described(
-        "theory Released { @[ inert ] oper version : String; }\ntheory Named { include Released; @[ inert ] oper name : String; oper greeting : String; }",
+        "theory Released where { @[ inert ] oper version : String; }\ntheory Named where { include Released; @[ inert ] oper name : String; oper greeting : String; }",
     );
     assert_eq!(report.diagnostics, []);
     let marks = |at: usize| {
@@ -324,10 +324,13 @@ fn an_inert_operation_is_marked_on_its_presentation_3029()
         (String::from("greeting"), false),
     ]);
     for (source, name) in [
-        ("theory Sorted { @[ inert ] sort T : Type; }", "inert"),
-        ("theory Checked { @[ checks ] oper x : String; }", "checks"),
+        ("theory Sorted where { @[ inert ] sort T : Type; }", "inert"),
         (
-            "theory Twice { @[ inert, inert ] oper x : String; }",
+            "theory Checked where { @[ checks ] oper x : String; }",
+            "checks",
+        ),
+        (
+            "theory Twice where { @[ inert, inert ] oper x : String; }",
             "inert",
         ),
     ] {
@@ -360,7 +363,7 @@ fn an_inert_operation_is_marked_on_its_presentation_3029()
 fn a_thunk_type_reads_as_the_operation_it_curries_1226()
 {
     let report = described(
-        "theory Counting { sort T : Type; oper next : +U[ω] (T -> -F T); oper add : +U (T -> (T -> -F T)); oper read : +U[ω] (T -> -F Integer); }",
+        "theory Counting where { sort T : Type; oper next : +U[ω] (T -> -F T); oper add : +U (T -> (T -> -F T)); oper read : +U[ω] (T -> -F Integer); }",
     );
     assert_eq!(report.diagnostics, []);
     let Maybe::Present(ref presentation) = report.declarations[0].presentation
@@ -393,7 +396,7 @@ fn a_thunk_type_reads_as_the_operation_it_curries_1226()
         "next : T --> T; add : T T --> T; read : T --> Integer; "
     );
 
-    let graded = described("theory Graded { sort T : Type; oper next : +U[1] (T -> -F T); }");
+    let graded = described("theory Graded where { sort T : Type; oper next : +U[1] (T -> -F T); }");
     assert_eq!(
         graded
             .diagnostics
@@ -442,15 +445,15 @@ fn the_value_function_alias_reads_as_its_thunk_1329()
     };
     assert_eq!(
         operations(
-            "theory Counting { sort T : Type; oper next : T => T; oper read : T => Integer; }"
+            "theory Counting where { sort T : Type; oper next : T => T; oper read : T => Integer; }"
         ),
         operations(
-            "theory Counting { sort T : Type; oper next : +U (T -> -F T); oper read : +U (T -> -F Integer); }"
+            "theory Counting where { sort T : Type; oper next : +U (T -> -F T); oper read : +U (T -> -F Integer); }"
         ),
     );
     assert_eq!(
         operations(
-            "theory Counting { sort T : Type; oper next : T => T; oper read : T => Integer; }"
+            "theory Counting where { sort T : Type; oper next : T => T; oper read : T => Integer; }"
         ),
         "next : T --> T; read : T --> Integer; "
     );
@@ -459,7 +462,7 @@ fn the_value_function_alias_reads_as_its_thunk_1329()
 #[test]
 fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 {
-    let source = "theory R { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); rule face : b <=> c; }";
+    let source = "theory R where { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); rule face : b <=> c; }";
     let report = described(source);
     let reserved: Vec<_> = report
         .diagnostics
@@ -486,7 +489,7 @@ fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 fn the_cat_shape_laws_are_written_faces()
 {
     let report = described(
-        "theory CatShape {
+        "theory CatShape where {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   oper id : (a : Ob) --> Hom(a, a);
@@ -552,7 +555,7 @@ fn the_cat_shape_laws_are_written_faces()
 fn a_pinned_rewrite_endpoint_reads_as_a_variable()
 {
     let report = described(
-        "theory Labelled {
+        "theory Labelled where {
   sort Nat : Type;
   oper step : (i : Nat) --> (o : Nat);
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
@@ -575,7 +578,7 @@ fn a_pinned_rewrite_endpoint_reads_as_a_variable()
         target: FreeTerm::var("x′"),
     });
     let fixed = described(
-        "theory Labelled {
+        "theory Labelled where {
   sort Nat : Type;
   oper step : (i : Nat) --> (o : Nat);
   rule twice : (rule p : x ==> x, data x : Nat) ==> (o : Nat) {
@@ -690,7 +693,7 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
 fn a_refused_theory_block_states_its_refusal()
 {
     let source = r#"@[ refuses("BareFeedback") ]
-theory Wheel {
+theory Wheel where {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
   rule spin : (data stream : Nat) ==> (out : Nat) {
@@ -757,7 +760,7 @@ theory Wheel {
 #[test]
 fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
 {
-    let source = "theory Unbindable {
+    let source = "theory Unbindable where {
   sort Tm : Type;
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
 }
@@ -917,7 +920,7 @@ fn a_decorated_top_level_operation_is_refused_at_itself_3073()
 #[test]
 fn a_fed_port_no_node_reads_is_refused_at_the_feed()
 {
-    let source = "theory Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); rule spin : (data stream : Nat, data seed : Nat) ==> (out : Nat) { node : zip(stream, seed) --> (out); feed : (out) --> (state); }; }";
+    let source = "theory Wheel where { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); rule spin : (data stream : Nat, data seed : Nat) ==> (out : Nat) { node : zip(stream, seed) --> (out); feed : (out) --> (state); }; }";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -941,7 +944,7 @@ fn a_fed_port_no_node_reads_is_refused_at_the_feed()
 fn an_observed_feed_is_kept_beside_its_cut_open_wiring()
 {
     let report = described(
-        "theory Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); obs emit : (s : Nat, x : Nat) --> (y : Nat); rule spin : (data stream : Nat) ==> (out : Nat) { node : emit(state, stream) --> (out); feed : (out) --> (state); }; }",
+        "theory Wheel where { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); obs emit : (s : Nat, x : Nat) --> (y : Nat); rule spin : (data stream : Nat) ==> (out : Nat) { node : emit(state, stream) --> (out); feed : (out) --> (state); }; }",
     );
     assert_eq!(report.diagnostics, []);
     let [ref theory] = *report.declarations.as_slice()
@@ -993,7 +996,7 @@ fn an_observed_feed_is_kept_beside_its_cut_open_wiring()
 fn an_oper_filler_stays_declined_and_names_its_own_rung()
 {
     let report = described(
-        "theory Filled { sort Nat : Type; oper f : Nat --> Nat { node : f(x) --> (z); }; oper g : Nat --> Nat; }",
+        "theory Filled where { sort Nat : Type; oper f : Nat --> Nat { node : f(x) --> (z); }; oper g : Nat --> Nat; }",
     );
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::OperationFiller)));
@@ -1011,8 +1014,9 @@ fn an_oper_filler_stays_declined_and_names_its_own_rung()
 #[test]
 fn a_fillerless_rule_member_declines_to_the_higher_cells_lane()
 {
-    let report =
-        described("theory Higher { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat); }");
+    let report = described(
+        "theory Higher where { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat); }",
+    );
     assert!(
         report.diagnostics.iter().any(|diagnostic| diagnostic.fault
             == DescriptionFault::Signature(SignatureFault::HigherCell))
@@ -1023,7 +1027,8 @@ fn a_fillerless_rule_member_declines_to_the_higher_cells_lane()
 #[test]
 fn a_written_face_in_a_theory_block_declines_naming_the_block_form_that_holds_it()
 {
-    let source = "theory Written { sort Nat : Type; rule ident ==> add; oper neg : Nat --> Nat; }";
+    let source =
+        "theory Written where { sort Nat : Type; rule ident ==> add; oper neg : Nat --> Nat; }";
     let report = described(source);
     let refusal = report
         .diagnostics
@@ -1045,8 +1050,9 @@ fn a_written_face_in_a_theory_block_declines_naming_the_block_form_that_holds_it
 #[test]
 fn a_data_spelled_theory_oper_declines_before_no_output_can_be_fabricated()
 {
-    let report =
-        described("theory Old { sort Nat : Type; oper f(x : Nat) -> Nat; oper g : Nat --> Nat; }");
+    let report = described(
+        "theory Old where { sort Nat : Type; oper f(x : Nat) -> Nat; oper g : Nat --> Nat; }",
+    );
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::MissingJudgment)));
     assert_eq!(
@@ -1063,7 +1069,7 @@ fn a_data_spelled_theory_oper_declines_before_no_output_can_be_fabricated()
 #[test]
 fn a_declined_rule_member_leaves_the_members_after_it_intact()
 {
-    let source = "theory Adder { sort Nat : Type; oper add : (Nat, Nat) --> Nat; rule ident ==> add; rule swap ==> mul; oper neg : Nat --> Nat; }";
+    let source = "theory Adder where { sort Nat : Type; oper add : (Nat, Nat) --> Nat; rule ident ==> add; rule swap ==> mul; oper neg : Nat --> Nat; }";
     let report = described(source);
     let refused: Vec<_> = report
         .diagnostics
@@ -1091,7 +1097,7 @@ fn a_declined_rule_member_leaves_the_members_after_it_intact()
 fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
 {
     let declared = described(
-        "theory Scope { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : f(x) ==> (z); }; oper f : Nat --> Nat; }",
+        "theory Scope where { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : f(x) ==> (z); }; oper f : Nat --> Nat; }",
     );
     assert!(
         declared
@@ -1104,7 +1110,7 @@ fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
                 }))
     );
     let unknown = described(
-        "theory Scope { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : missing(x) ==> (z); }; }",
+        "theory Scope where { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : missing(x) ==> (z); }; }",
     );
     assert!(unknown.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::UndeclaredRewrite("missing".into()))));
@@ -1118,7 +1124,7 @@ fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
 fn an_out_of_signature_frame_head_earns_the_declaration_tables_refusal()
 {
     let report = described(
-        "theory Stray {\n  sort Nat : Type;\n  rule stray : (data x : Nat) ==> (z : Nat) {\n    node : mystery(x) --> (z);\n  };\n}\n",
+        "theory Stray where {\n  sort Nat : Type;\n  rule stray : (data x : Nat) ==> (z : Nat) {\n    node : mystery(x) --> (z);\n  };\n}\n",
     );
     assert!(report.diagnostics.iter().any(|diagnostic| matches!(
         diagnostic.fault,
@@ -1133,7 +1139,7 @@ fn an_out_of_signature_frame_head_earns_the_declaration_tables_refusal()
 fn a_redex_applying_an_undeclared_rewrite_earns_its_own_refusal()
 {
     let report = described(
-        "theory NoPort {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n\n  rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (z : Nat) {\n    node : p(x) ==> (m);\n    node : f(m) --> (z);\n  };\n}\n",
+        "theory NoPort where {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n\n  rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (z : Nat) {\n    node : p(x) ==> (m);\n    node : f(m) --> (z);\n  };\n}\n",
     );
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.circuits.len(), 1);
@@ -1143,7 +1149,7 @@ fn a_redex_applying_an_undeclared_rewrite_earns_its_own_refusal()
 fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 {
     let report = described(
-        "theory Loop {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n  oper g : (a : Nat) --> (b : Nat);\n\n  rule spin : (data x : Nat) ==> (z : Nat) {\n    node : f(w) --> (z);\n    node : g(z) --> (w);\n  };\n}\n",
+        "theory Loop where {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n  oper g : (a : Nat) --> (b : Nat);\n\n  rule spin : (data x : Nat) ==> (z : Nat) {\n    node : f(w) --> (z);\n    node : g(z) --> (w);\n  };\n}\n",
     );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -1162,7 +1168,7 @@ fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 fn a_doubling_body_declines_on_the_derivation_node_budget()
 {
     let mut source = alloc::string::String::from(
-        "theory Doubling {\n  sort Nat : Type;\n  oper l : (a : Nat) --> (b : Nat);\n  oper r : (a : Nat) --> (b : Nat);\n  oper add : (a : Nat, b : Nat) --> (c : Nat);\n  rule blow : (data w0 : Nat) ==> (w12 : Nat) {\n",
+        "theory Doubling where {\n  sort Nat : Type;\n  oper l : (a : Nat) --> (b : Nat);\n  oper r : (a : Nat) --> (b : Nat);\n  oper add : (a : Nat, b : Nat) --> (c : Nat);\n  rule blow : (data w0 : Nat) ==> (w12 : Nat) {\n",
     );
     for level in 1 ..= 12_u32 {
         let below = level.saturating_sub(1);
@@ -1247,7 +1253,7 @@ fn a_theory_block_defines_its_presentation()
     let tree = parse(
         &grammar,
         SourceText::from(
-            "theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }\ntheory Pointed { sort One : Type; oper pt : () --> (p : One); }\n",
+            "theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }\ntheory Pointed where { sort One : Type; oper pt : () --> (p : One); }\n",
         ),
     )
     .unwrap()
@@ -1367,7 +1373,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     let tree = parse(
         &grammar,
         SourceText::from(
-            "theory CircleShape { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\ntheory CatShape { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
+            "theory CircleShape where { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\ntheory CatShape where { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
         ),
     )
     .unwrap()
@@ -1471,7 +1477,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
 #[test]
 fn the_description_is_read_off_the_value()
 {
-    let source = "theory CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
+    let source = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let [ref theory] = *report.declarations.as_slice()
@@ -1740,9 +1746,9 @@ fn a_rendered_signature_reparses_to_itself()
             ),
         ],
     );
-    // An unnamed port under a binder renders as `_ : pi+ (x : S) . T`, which
-    // an input port does not read yet (#718); every port here is named or
-    // binds nothing.
+    // An unnamed port under a binder renders as `_ : (x : S) -> T`, which an
+    // input port does not read yet (#718); every port here is named or binds
+    // nothing.
     for original in [
         lambda,
         identity_return,
@@ -1799,13 +1805,13 @@ fn a_face_past_its_shape_is_refused_by_name()
 {
     for (source, kind, subjects, written) in [
         (
-            "theory Cells { boundary Square { a, b, c, d }; face far = { b, e }; sort A : Type; }",
+            "theory Cells where { boundary Square { a, b, c, d }; face far = { b, e }; sort A : Type; }",
             gandr_theory_levitation::WfKind::FaceOutsideShape,
             ["far", "Square"],
             "a face holding a name its boundary lacks",
         ),
         (
-            "theory Cells { boundary Square { a, b, c, d }; face left = { a }; face left = { c }; \
+            "theory Cells where { boundary Square { a, b, c, d }; face left = { a }; face left = { c }; \
              sort A : Type; }",
             gandr_theory_levitation::WfKind::DuplicateFaceName,
             ["Square", "left"],
@@ -1826,7 +1832,7 @@ fn a_face_past_its_shape_is_refused_by_name()
             "{written} is the description check's, by name: {diagnostic:?}"
         );
     }
-    let report = described("theory Cells { boundary Line { a, b, b }; sort A : Type; }");
+    let report = described("theory Cells where { boundary Line { a, b, b }; sort A : Type; }");
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("a repeated name is one refusal: {:?}", report.diagnostics)
@@ -1841,17 +1847,17 @@ fn a_face_past_its_shape_is_refused_by_name()
     );
     for (source, fault, written) in [
         (
-            "theory Cells { boundary Square { a, b, c, d }; boundary Line { a, b }; sort A : Type; }",
+            "theory Cells where { boundary Square { a, b, c, d }; boundary Line { a, b }; sort A : Type; }",
             DescriptionFault::Malformed,
             "a second boundary",
         ),
         (
-            "theory Cells { face left = { a }; sort A : Type; }",
+            "theory Cells where { face left = { a }; sort A : Type; }",
             DescriptionFault::Malformed,
             "a face with no boundary",
         ),
         (
-            "theory Cells { shape Square : 4 { left = {0, 2}; }; sort A : Type; }",
+            "theory Cells where { shape Square : 4 { left = {0, 2}; }; sort A : Type; }",
             DescriptionFault::Signature(SignatureFault::RetiredShapeMember),
             "the retired `shape`",
         ),
@@ -1869,7 +1875,7 @@ fn a_face_past_its_shape_is_refused_by_name()
 fn a_face_reads_its_points_in_the_boundary_s_name_order()
 {
     let report = described(
-        "theory Cells { boundary Square { tl, tr, bl, br }; face left = { tl, bl }; face top = { \
+        "theory Cells where { boundary Square { tl, tr, bl, br }; face left = { tl, bl }; face top = { \
          tr, tl }; sort A : Type; }",
     );
     assert_eq!(report.diagnostics, []);
@@ -1975,7 +1981,7 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
 fn a_port_at_a_sort_nothing_declares_is_refused_2410()
 {
     let source =
-        "theory FailNonsense { sort Reason : Type; oper raise : (r : Reason) --> Nonsense; }";
+        "theory FailNonsense where { sort Reason : Type; oper raise : (r : Reason) --> Nonsense; }";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -1993,14 +1999,14 @@ fn a_port_at_a_sort_nothing_declares_is_refused_2410()
         "a result no sort declares is refused at its name: {diagnostic:?}"
     );
     let report = described(
-        "theory Fail { sort Reason : Type; oper raise : (r : Reason) --> Void; oper test : (r : Reason) --> Bool; }",
+        "theory Fail where { sort Reason : Type; oper raise : (r : Reason) --> Void; oper test : (r : Reason) --> Bool; }",
     );
     assert_eq!(
         report.diagnostics,
         [],
         "a builtin type is a port's sort as a declared one is"
     );
-    let report = described("theory Fail { oper raise : (r : Reason) --> Void; }");
+    let report = described("theory Fail where { oper raise : (r : Reason) --> Void; }");
     assert!(
         matches!(
             *report.diagnostics.as_slice(),
@@ -2018,8 +2024,9 @@ fn a_port_at_a_sort_nothing_declares_is_refused_2410()
 #[test]
 fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 {
-    let report =
-        described("theory Bad { sort Tm : Type; oper lam : (t : pi+ (x : Tm) . Tm) --> Tm; }");
+    let report = described(
+        "theory Bad where { sort Tm : Type; oper lam : (t : pi+ (x : Tm) . Tm) --> Tm; }",
+    );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("one refusal: {:?}", report.diagnostics)
@@ -2033,7 +2040,7 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
         "a variable of an ordinary sort is not bound: {diagnostic:?}"
     );
     let report = described(
-        "theory Minting { sort Name : Atom; sort Tm : Type; oper fresh : (t : Tm) --> Name; }",
+        "theory Minting where { sort Name : Atom; sort Tm : Type; oper fresh : (t : Tm) --> Name; }",
     );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2047,8 +2054,9 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
         ),
         "an atom is taken, never returned: {diagnostic:?}"
     );
-    let report =
-        described("theory Opened { sort Tm : Type; oper nu : (t : bind (a : Tm) . Tm) --> Tm; }");
+    let report = described(
+        "theory Opened where { sort Tm : Type; oper nu : (t : bind (a : Tm) . Tm) --> Tm; }",
+    );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("one refusal: {:?}", report.diagnostics)
@@ -2065,24 +2073,29 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
     // sort's index and a circuit's wire bind nothing.
     for (source, refused, written) in [
         (
-            "theory Nested { sort Tm : Type+; oper lam : (t : pi+ (x : pi+ (y : Tm) . Tm) . Tm) --> Tm; }",
-            "Repaired",
+            "theory Nested where { sort Tm : Type+; oper lam : (t : (x : (y : Tm) -> Tm) -> Tm) --> Tm; }",
+            "Malformed",
             "a binder whose domain binds",
         ),
         (
-            "theory Result { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
-            "Repaired",
+            "theory Result where { sort Tm : Type+; oper lam : (t : Tm) --> (u : (x : Tm) -> Tm); }",
+            "Malformed",
             "a result that binds",
         ),
         (
-            "theory Indexed { sort Tm : Type+; sort S(i : pi+ (x : Tm) . Tm) : Type; }",
+            "theory Indexed where { sort Tm : Type+; sort S(i : (x : Tm) -> Tm) : Type; }",
             "Malformed",
             "an index that binds",
         ),
         (
-            "theory Wired { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : pi+ (x : Tm) . Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
-            "Repaired",
+            "theory Wired where { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : (x : Tm) -> Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
+            "Malformed",
             "a circuit port that binds",
+        ),
+        (
+            "theory Dotted where { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
+            "Repaired",
+            "a result under the dotted binder",
         ),
     ] {
         let report = described(source);
@@ -2102,7 +2115,7 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 fn an_abstraction_stands_outside_the_binders()
 {
     let report = described(
-        "theory Inner { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : pi+ (x : Val) . bind (c : Name) . Proc) --> Proc; }",
+        "theory Inner where { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : (x : Val) -> bind (c : Name) . Proc) --> Proc; }",
     );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2111,10 +2124,10 @@ fn an_abstraction_stands_outside_the_binders()
     assert_eq!(
         diagnostic.fault,
         DescriptionFault::Malformed,
-        "a `bind` inside a `pi+` is malformed"
+        "a `bind` inside a restricted binder is malformed"
     );
     let report = described(
-        "theory Outer { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : bind (c : Name) . bind (d : Name) . pi+ (x : Val) . Proc) --> Proc; }",
+        "theory Outer where { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : bind (c : Name) . bind (d : Name) . (x : Val) -> Proc) --> Proc; }",
     );
     assert_eq!(report.diagnostics, [], "abstractions outside the binders");
     let [ref theory] = *report.declarations.as_slice()
@@ -2148,7 +2161,7 @@ fn an_abstraction_stands_outside_the_binders()
 #[test]
 fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 {
-    let source = "theory Broken {\n  sort Nat : Type;\n  rule ;\n}\n";
+    let source = "theory Broken where {\n  sort Nat : Type;\n  rule ;\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2169,7 +2182,7 @@ fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 fn a_terminated_block_is_not_told_it_lacks_terminators()
 {
     let report = described(
-        "theory S {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Ob;\n}\n",
+        "theory S where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Ob;\n}\n",
     );
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
@@ -2179,7 +2192,7 @@ fn a_terminated_block_is_not_told_it_lacks_terminators()
 #[test]
 fn unseparated_members_are_declined_rather_than_dropped()
 {
-    let source = "theory S {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
+    let source = "theory S where {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2205,7 +2218,7 @@ fn unseparated_members_are_declined_rather_than_dropped()
 fn terminated_members_are_all_presented()
 {
     let report = described(
-        "theory S {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> Ob;\n}\n",
+        "theory S where {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> Ob;\n}\n",
     );
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
@@ -2215,7 +2228,7 @@ fn terminated_members_are_all_presented()
 #[test]
 fn an_unreadable_member_keeps_its_own_report()
 {
-    let source = "theory Adder {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule ident ==> add;\n}\n";
+    let source = "theory Adder where {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule ident ==> add;\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2234,7 +2247,7 @@ fn an_unreadable_member_keeps_its_own_report()
 #[test]
 fn a_coherence_between_composites_is_a_higher_cell()
 {
-    let source = "theory C {
+    let source = "theory C where {
   sort Ob : Type;
   oper id : (a : Ob) --> Ob;
   rule unitL : id(a) ==> a;
@@ -2287,7 +2300,7 @@ fn presented(declaration: &DescribedDeclaration) -> &Presentation
 #[test]
 fn an_included_theory_is_the_extension_restricted()
 {
-    let source = "theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));\n}\ntheory Pointed {\n  include Mag;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> x;\n}\ntheory Comm {\n  include Mag;\n  oper zero : () --> M;\n}\ntheory Both {\n  include Pointed;\n  include Comm;\n}\n";
+    let source = "theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));\n}\ntheory Pointed where {\n  include Mag;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> x;\n}\ntheory Comm where {\n  include Mag;\n  oper zero : () --> M;\n}\ntheory Both where {\n  include Pointed;\n  include Comm;\n}\n";
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let magma = presented(&report.declarations[0]).value.decode().unwrap();
@@ -2406,7 +2419,7 @@ fn the_include_subject_s_ways_round_compose_to_one_inclusion()
 #[test]
 fn an_include_is_refused_at_its_member()
 {
-    let source = "theory Pointed {\n  include Mag;\n  sort M : Type;\n}\ntheory Mag {\n  sort M : Type;\n  oper e : () --> M;\n}\ntheory Unary {\n  sort M : Type;\n  oper e : (x : M) --> M;\n}\ntheory Both {\n  include Mag;\n  include Unary;\n}\n";
+    let source = "theory Pointed where {\n  include Mag;\n  sort M : Type;\n}\ntheory Mag where {\n  sort M : Type;\n  oper e : () --> M;\n}\ntheory Unary where {\n  sort M : Type;\n  oper e : (x : M) --> M;\n}\ntheory Both where {\n  include Mag;\n  include Unary;\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2450,7 +2463,7 @@ fn an_include_is_refused_at_its_member()
 #[test]
 fn an_included_member_is_refused_at_its_include_2752()
 {
-    let source = "theory Monad {\n  sort V : Type+;\n  sort C : Type;\n  oper ret : (a : V) --> C;\n  oper ext : (m : C, k : pi+ (x : V) . C) --> C;\n  rule unitR : ext(m, bind x . ret(x)) <=> m;\n}\ntheory Ordered {\n  include Monad;\n  sort Below(w : C, v : C) : Type;\n  oper refl : (w : C) --> Below(w, w);\n}\n";
+    let source = "theory Monad where {\n  sort V : Type+;\n  sort C : Type;\n  oper ret : (a : V) --> C;\n  oper ext : (m : C, k : pi+ (x : V) . C) --> C;\n  rule unitR : ext(m, bind x . ret(x)) <=> m;\n}\ntheory Ordered where {\n  include Monad;\n  sort Below(w : C, v : C) : Type;\n  oper refl : (w : C) --> Below(w, w);\n}\n";
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -2509,7 +2522,7 @@ fn an_included_member_is_refused_at_its_include_2752()
 #[test]
 fn a_law_member_reads_its_statement_2356()
 {
-    let source = "theory Base {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path(Bool, eq(a, a), true);\n}\ntheory Same {\n  include Base;\n  law sym : (a : C, b : C) => Path(Bool, eq(a, b), eq(b, a));\n  law flat : (a : C) => Bool;\n  law late : (a : C, p : Path(Bool, eq(a, a), true), b : C) => Path(Bool, eq(a, b), true);\n  law eq : (a : C) => Path(Bool, eq(a, a), true);\n}\n";
+    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path(Bool, eq(a, a), true);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path(Bool, eq(a, b), eq(b, a));\n  law flat : (a : C) => Bool;\n  law late : (a : C, p : Path(Bool, eq(a, a), true), b : C) => Path(Bool, eq(a, b), true);\n  law eq : (a : C) => Path(Bool, eq(a, a), true);\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2577,7 +2590,7 @@ fn a_law_member_reads_its_statement_2356()
 #[test]
 fn two_joins_of_one_pair_are_refused_by_name()
 {
-    let source = "theory Pointed {\n  sort M : Type;\n  oper point : () --> M;\n}\ntheory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory UnitalMagma {\n  include Pointed;\n  include Magma;\n}\ntheory MagmaWithUnit {\n  include Pointed;\n  include Magma;\n}\ntheory Above {\n  include UnitalMagma;\n}\n";
+    let source = "theory Pointed where {\n  sort M : Type;\n  oper point : () --> M;\n}\ntheory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory UnitalMagma where {\n  include Pointed;\n  include Magma;\n}\ntheory MagmaWithUnit where {\n  include Pointed;\n  include Magma;\n}\ntheory Above where {\n  include UnitalMagma;\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2599,10 +2612,10 @@ fn two_joins_of_one_pair_are_refused_by_name()
             pair: [Name::from("Pointed"), Name::from("Magma")],
             joins: Vec::from([Name::from("UnitalMagma"), Name::from("MagmaWithUnit")]),
         })),
-        "theory MagmaWithUnit {"
+        "theory MagmaWithUnit where {"
     )]);
     let diamond = described(
-        "theory Base {\n  sort M : Type;\n}\ntheory Left {\n  include Base;\n  oper l : () --> M;\n}\ntheory Right {\n  include Base;\n  oper r : () --> M;\n}\ntheory Both {\n  include Left;\n  include Right;\n}\n",
+        "theory Base where {\n  sort M : Type;\n}\ntheory Left where {\n  include Base;\n  oper l : () --> M;\n}\ntheory Right where {\n  include Base;\n  oper r : () --> M;\n}\ntheory Both where {\n  include Left;\n  include Right;\n}\n",
     );
     assert_eq!(diamond.diagnostics, [], "one join over one base reads");
 }
@@ -2611,10 +2624,10 @@ fn two_joins_of_one_pair_are_refused_by_name()
 fn an_extension_generates_its_signature()
 {
     let generated = described(
-        "theory Gen {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
+        "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
     );
     let written = described(
-        "theory Gen {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (yq : Val) --> Cell;\n  oper outCellp : (e : Cell) --> Val;\n  oper outCellq : (e : Cell) --> Val;\n  rule boundaryCellp : outCellp(e) ==> zero();\n  rule betaCellq : outCellq(inCell(yq)) ==> yq;\n  rule etaCell : inCell(outCellq(e)) ==> e;\n}\n",
+        "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (yq : Val) --> Cell;\n  oper outCellp : (e : Cell) --> Val;\n  oper outCellq : (e : Cell) --> Val;\n  rule boundaryCellp : outCellp(e) ==> zero();\n  rule betaCellq : outCellq(inCell(yq)) ==> yq;\n  rule etaCell : inCell(outCellq(e)) ==> e;\n}\n",
     );
     assert_eq!(generated.diagnostics, []);
     assert_eq!(written.diagnostics, []);
@@ -2667,7 +2680,7 @@ fn an_extension_is_refused_by_name()
         ),
     ] {
         let source = format!(
-            "theory T {{\n{shape}  sort Val : Type;\n  oper zero : Val;\n  oper twice : (v : Val) --> Val;\n  {member};\n}}\n"
+            "theory T where {{\n{shape}  sort Val : Type;\n  oper zero : Val;\n  oper twice : (v : Val) --> Val;\n  {member};\n}}\n"
         );
         let report = described(source.as_str());
         let faults = report
@@ -2705,7 +2718,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
     let var = FreeTerm::var;
     assert_eq!(
         faces(
-            "theory Let { sort Tm : Type+; oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm; rule zeta : let(u, t) <=> t(u); }"
+            "theory Let where { sort Tm : Type+; oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm; rule zeta : let(u, t) <=> t(u); }"
         ),
         [(
             FreeTerm::op("let", [var("u"), var("t")]),
@@ -2715,7 +2728,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
     );
     assert_eq!(
         faces(
-            "theory Call { sort Tm : Type; oper t : (Tm) --> Tm; oper g : (Tm) --> Tm; rule r : g(u) <=> t(u); }"
+            "theory Call where { sort Tm : Type; oper t : (Tm) --> Tm; oper g : (Tm) --> Tm; rule r : g(u) <=> t(u); }"
         ),
         [(FreeTerm::op("g", [var("u")]), FreeTerm::op("t", [var("u")]),)],
         "a name the left side does not hold still calls its operation"
@@ -2724,7 +2737,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
 
 /// #2115: a name applied, on a left side, to the names abstracted above it
 /// reads as a metavariable's pattern, which the right side instantiates; an
-/// operation applied there stays a call. At `get`'s `pi+` port each
+/// operation applied there stays a call. At `get`'s binding port each
 /// abstraction is the port's binding field and each name its variable.
 #[test]
 fn an_applied_bound_name_reads_as_a_pattern_2115()
@@ -2745,7 +2758,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     let state = "sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C;";
     assert_eq!(
         faces(&format!(
-            "theory State {{ {state} rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s)); }}"
+            "theory State where {{ {state} rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s)); }}"
         )),
         [(
             get(bind("s", get(bind("t", pattern(["s", "t"]))))),
@@ -2756,7 +2769,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     );
     assert_eq!(
         faces(&format!(
-            "theory Call {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get(bind s . f(s)) <=> g(); }}"
+            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get(bind s . f(s)) <=> g(); }}"
         )),
         [(
             get(bind("s", FreeTerm::op("f", [bound("s")]))),
@@ -2773,7 +2786,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     let signature = format!("{restriction} oper out : (c : Name, p : Proc) --> Proc;");
     let report = described(
         format!(
-            "theory Scope {{ {restriction} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q; }}"
+            "theory Scope where {{ {restriction} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where {{ | a # q }}; }}"
         )
         .as_str(),
     );
@@ -2819,7 +2832,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Occurs {{ {signature} rule use : nu(bind a . out(a, nil())) ==> nil(); }}"
+                "theory Occurs where {{ {signature} rule use : nu(bind a . out(a, nil())) ==> nil(); }}"
             )
             .as_str()
         ),
@@ -2831,8 +2844,10 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     );
     assert_eq!(
         faces(
-            format!("theory Beside {{ {signature} rule use : par(nu(bind a . p), a) ==> nil(); }}")
-                .as_str()
+            format!(
+                "theory Beside where {{ {signature} rule use : par(nu(bind a . p), a) ==> nil(); }}"
+            )
+            .as_str()
         ),
         [FreeTerm::op("par", [
             FreeTerm::op("nu", [FreeTerm::abs("a", var("p"))]),
@@ -2848,7 +2863,7 @@ fn a_where_clause_states_each_condition_on_its_rule()
     let signature = "sort Name : Atom; sort Proc : Type; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
     let report = described(
         format!(
-            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q, a # p; }}"
+            "theory Scope where {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where {{ | a # q | a # p }}; }}"
         )
         .as_str(),
     );
@@ -2884,12 +2899,14 @@ fn a_where_clause_states_each_condition_on_its_rule()
         .collect();
     assert_eq!(
         printed,
-        ["rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q, a # p"],
+        [
+            "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where { | a # q | a # p }"
+        ],
         "the theory spelling closes on the clause"
     );
     let report = described(
         format!(
-            "theory Captured {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)); }}"
+            "theory Captured where {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)); }}"
         )
         .as_str(),
     );
@@ -2899,7 +2916,7 @@ fn a_where_clause_states_each_condition_on_its_rule()
     };
     assert!(
         matches!(diagnostic.fault, DescriptionFault::IllFormed(ref ill) if ill.kind == WfKind::Capture
-            && AsRef::<str>::as_ref(&ill.message).contains("where a # q")),
+            && AsRef::<str>::as_ref(&ill.message).contains("where { | a # q }")),
         "the rule capturing `a` is refused with the condition it lacks: {diagnostic:?}"
     );
 }
@@ -2909,12 +2926,13 @@ fn a_where_clause_states_each_condition_on_its_rule()
 #[test]
 fn an_under_row_names_each_theory_in_scope_once_2448()
 {
-    let theories = "theory State { sort S : Type; }\ntheory Console { sort C : Type; }\n";
+    let theories =
+        "theory State where { sort S : Type; }\ntheory Console where { sort C : Type; }\n";
     let signature =
         "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T; oper h : (x : T) --> T;";
     let report = described(
         format!(
-            "{theories}theory Logged {{ {signature} rule r1 : f(g(x)) <=> h(x) under [State | r]; rule r2 : f(g(x)) <=> x under [Console, State]; }}"
+            "{theories}theory Logged where {{ {signature} rule r1 : f(g(x)) <=> h(x) where {{ | under [State | r] }}; rule r2 : f(g(x)) <=> x where {{ | under [Console, State] }}; }}"
         )
         .as_str(),
     );
@@ -2960,13 +2978,13 @@ fn an_under_row_names_each_theory_in_scope_once_2448()
     assert_eq!(
         printed,
         [
-            "rule r1 : f(g(x)) <=> h(x) under [State | r]",
-            "rule r2 : f(g(x)) <=> x under [Console, State]",
+            "rule r1 : f(g(x)) <=> h(x) where { | under [State | r] }",
+            "rule r2 : f(g(x)) <=> x where { | under [Console, State] }",
         ],
         "the theory spelling closes on the row"
     );
     let source = format!(
-        "{theories}theory Unknown {{ {signature} rule r : f(x) <=> x under [State, Missing]; }}\ntheory Twice {{ {signature} rule r : f(x) <=> x under [State, Console, State | r]; }}\n"
+        "{theories}theory Unknown where {{ {signature} rule r : f(x) <=> x where {{ | under [State, Missing] }}; }}\ntheory Twice where {{ {signature} rule r : f(x) <=> x where {{ | under [State, Console, State | r] }}; }}\n"
     );
     let report = described(source.as_str());
     let at = |span: ByteSpan| {
@@ -3013,23 +3031,23 @@ fn each_malformed_member_is_refused_by_its_fault()
     let output = DescriptionFault::Signature(SignatureFault::MissingOutput);
     let rows = [
         (
-            "theory T { sort Tm : Type+; sort S : Kind; }",
+            "theory T where { sort Tm : Type+; sort S : Kind; }",
             DescriptionFault::TypeShape,
         ),
         (
-            "theory T { sort Tm : Type+; boundary Q { a, b }; face f = { a b }; }",
+            "theory T where { sort Tm : Type+; boundary Q { a, b }; face f = { a b }; }",
             DescriptionFault::Malformed,
         ),
         (
-            "theory T { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : Tm) ==> (u : Tm) { feed : (t) --> (); node n : f(t) --> (u); }; }",
+            "theory T where { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : Tm) ==> (u : Tm) { feed : (t) --> (); node n : f(t) --> (u); }; }",
             DescriptionFault::Malformed,
         ),
         (
-            "theory T { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : Tm) ==> (u : Tm) { node n : f(t) --> (); }; }",
+            "theory T where { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : Tm) ==> (u : Tm) { node n : f(t) --> (); }; }",
             output.clone(),
         ),
         (
-            "theory T { sort Tm : Type+; rule r : (t : Tm) ==> () { }; }",
+            "theory T where { sort Tm : Type+; rule r : (t : Tm) ==> () { }; }",
             output,
         ),
     ];

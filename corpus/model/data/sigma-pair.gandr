@@ -4,8 +4,8 @@
 // the second (the HoTT book, §2.7).
 
 /// A family indexed by an integer, with one element at each index.
-data Ix(n : Integer) : Type {
-  MkIx : Ix(n);
+data Ix(n : Integer) : Type where {
+  | MkIx : Ix(n)
 }
 
 /// A label a later entry names binds there: the type is a dependent pair.
@@ -13,7 +13,7 @@ def tagged : #{n : Integer, w : Ix(n)} = (3, (MkIx : Ix(3)));
 
 /// The first component of a dependent pair, by a match.
 def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
-  case p {
+  match p {
     #{m, w} => m
   }
 }
@@ -56,7 +56,7 @@ def rebuilt(p : #{
   n : Integer,
   v : Path(Integer, n, n)
 }) -> Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
-  case p {
+  match p {
     #{.n = m, .v = w} => here((m, w))
   }
 }
@@ -69,7 +69,7 @@ def againAt(
   b : Type,
   w : #{x : b, y : b, p : Path(b, x, y)}
 ) -> Path(#{x : b, y : b, p : Path(b, x, y)}, w, w) {
-  case w {
+  match w {
     #{.x = u, .y = v, .p = q} => here((u, (v, q)))
   }
 }
@@ -93,7 +93,7 @@ def selfEquiv(b : Type) -> #{x : b, y : b, p : Path(b, x, y)} ≃ #{
 /// A record of three nests its links; a labelled pattern binds the entries it
 /// names, the later one's type reading the earlier.
 def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> Integer {
-  case t {
+  match t {
     #{.a = x, .c = z} => x
   }
 }

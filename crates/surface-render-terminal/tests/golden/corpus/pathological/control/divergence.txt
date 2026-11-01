@@ -9,7 +9,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 11 │ │    run y <- loop {
    │ │┏━━━━━━━━━━━━┛
 12 │ │┃     run below <- 1 < 0;
-13 │ │┃     case below {
+13 │ │┃     match below {
 14 │ │┃       true => break(x),
    ‡ │┃
 17 │ │┃   };

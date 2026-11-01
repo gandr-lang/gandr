@@ -8,7 +8,7 @@
 // result stands at its argument's stage, which a definition with no recursion
 // otherwise opens none for; `sameAt` takes both arguments at the stage itself,
 // which a call solves from the bound each argument shows (#1227); a call may
-// supply a stage by its binder's name, `applyAt[i = j]`, which must be the
+// supply a stage by its binder's name, `applyAt[.i = j]`, which must be the
 // stage the arguments show (#1227), and so may a use passing the function as
 // a value, which stands as that call (#1498). What refuses is in
 // `../../pathological/data/sized-higher-order.gandr`.
@@ -25,7 +25,7 @@ pub def apply(a : Type, b : Type, f : a => b, x : a) -> b {
 /// instantiates `apply`'s parameter at the predecessor's stage, so `count[<]`
 /// takes it.
 def rec count(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(apply(Nat, Nat, count[<], p))
   }
@@ -33,7 +33,7 @@ def rec count(n : Nat) -> Nat {
 
 /// A function applied to a number below a stage `i`, which a call
 /// instantiates at the stage its arguments show.
-pub def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> Nat {
+pub def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> Nat {
   f(x)
 }
 
@@ -41,7 +41,7 @@ pub def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> Nat {
 /// predecessor stands one below the recursion's stage, so the call
 /// instantiates `i` at that stage and `helped[<]` takes the predecessor.
 def rec helped(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(applyAt(helped[<], p))
   }
@@ -54,8 +54,8 @@ def helpedTwo : () => Nat = helped(Succ(Succ(Zero)));
 /// The predecessor of a number at a stage `i`, zero's its own: the result
 /// stands at `i` too, as the signature states, the returner inserted over the
 /// staged type and never over its base (#2373).
-pub def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
-  case n {
+pub def predAt[i : Size](n : Nat[i]) -> Nat[i] {
+  match n {
     Zero => Zero,
     Succ(p) => p
   }
@@ -65,7 +65,7 @@ pub def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
 /// through `predAt`: the call instantiates `i` at the field's stage, below the
 /// recursion's, and the result stands there for `halvedAt[<]` to take.
 def rec halvedAt(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run q <- predAt(p); Succ(halvedAt[<](q)) }
   }
@@ -78,7 +78,7 @@ def halvedAtFour : () => Nat = halvedAt(Succ(three));
 /// A number below a stage `j` handed back, the stage `k` it stands at bounded
 /// below `j`: the result stands below `j`, as the body was checked with `k`
 /// there; written without its returner, as `predAt`'s is (#2373).
-pub def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> Nat[<j] {
+pub def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[<j] {
   y
 }
 
@@ -88,7 +88,7 @@ pub def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> Nat[<
 /// whose `k` is not below its `j` is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1241).
 def rec boundedHelped(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run q <- boundedAt(n, p); Succ(boundedHelped[<](q)) }
   }
@@ -99,7 +99,7 @@ def rec boundedHelped(n : Nat) -> Nat {
 def boundedTwo : () => Nat = boundedHelped(Succ(Succ(Zero)));
 
 /// A function applied to a number at a stage `i` itself, not below it.
-pub def sameAt @[i : Size] (f : Nat[i] => Nat, x : Nat[i]) -> Nat {
+pub def sameAt[i : Size](f : Nat[i] => Nat, x : Nat[i]) -> Nat {
   f(x)
 }
 
@@ -110,7 +110,7 @@ pub def sameAt @[i : Size] (f : Nat[i] => Nat, x : Nat[i]) -> Nat {
 /// arguments no stage fits is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1227).
 def rec agreed(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(sameAt(agreed[<], p))
   }
@@ -124,13 +124,13 @@ def agreedTwo : () => Nat = agreed(Succ(Succ(Zero)));
 /// stage supplied by name: the arguments show `i` at `j`, the stage the
 /// supply states. A supply the arguments do not show is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1227).
-def appliedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
-  applyAt[i = j](f, x)
+def appliedAt[j : Size](f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
+  applyAt[.i = j](f, x)
 }
 
 /// A function and a number below a stage `j`, handed to a third function
 /// that applies the one to the other.
-def handedAt @[j : Size] (
+def handedAt[j : Size](
   g : (Nat[<j] => Nat, Nat[<j]) => Nat,
   f : Nat[<j] => Nat,
   x : Nat[<j]
@@ -139,8 +139,8 @@ def handedAt @[j : Size] (
 }
 
 /// `applyAt` passed as a value with its stage supplied: a stage crosses only
-/// at a call's head, so the supply stands as `λ f. λ x. applyAt[i = j](f, x)`
+/// at a call's head, so the supply stands as `λ f. λ x. applyAt[.i = j](f, x)`
 /// (#1498).
-def passedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
-  handedAt[j = j](applyAt[i = j], f, x)
+def passedAt[j : Size](f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
+  handedAt[.j = j](applyAt[.i = j], f, x)
 }

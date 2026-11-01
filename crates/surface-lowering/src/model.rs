@@ -263,7 +263,7 @@ pub struct Port
     pub name: Name,
     /// Its sort.
     pub sort: SortTerm,
-    /// The `pi+` binders over it, each a named variable of a representable
+    /// The restricted binders over it, each a named variable of a representable
     /// sort; empty for a first-order port.
     pub binders: Vec<Binder>,
     /// The atoms `bind` abstracts over it, outside its binders, each of an
@@ -1039,7 +1039,7 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   port at a builtin type the theory does not declare reads it as a closed
 ///   sort; a constant whose type leaves no variable free derives that type
 ///   alone, and one whose type does derives as an operation of no inputs; a
-///   binding port's binder takes its `pi+` variables; a sort lands in the
+///   binding port's binder takes its bound variables; a sort lands in the
 ///   ground sort it is presented at; a component that cannot be stated keeps
 ///   its fault, a sort or an operation with a port at a computation sort keeps
 ///   [`ModelFault::Computation`], a law relating a term at a binding port keeps

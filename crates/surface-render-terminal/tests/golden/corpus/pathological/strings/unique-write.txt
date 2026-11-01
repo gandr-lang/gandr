@@ -1,4 +1,4 @@
-error[HeldShared]: `hold[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
+error[HeldShared]: `var[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
    ╭▸ corpus/pathological/strings/unique-write.gandr:20:15
    │
 17 │ ┌ def heldCopy() -> [Div] Integer {

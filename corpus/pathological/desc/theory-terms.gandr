@@ -15,7 +15,7 @@
 // - see: #4105 — not implemented: a stated law as a cell of the terms
 
 /// A monoid's signature: its associativity orients to no decreasing rule.
-theory Mon {
+theory Mon where {
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -39,7 +39,7 @@ def neutral : Terms(Mon) = Mon.one;
 def product : Terms(Mon) = Mon.mul(Mon.one, Mon.one);
 
 /// A signature of two sorts, a point and a pair of them.
-theory Pair {
+theory Pair where {
   /// The points.
   sort P : Type;
   /// The pairs.
@@ -55,7 +55,7 @@ theory Pair {
 def paired : Terms(Pair) = Pair.origin;
 
 /// A signature that states a law: `twice` twice equals `twice` once.
-theory Idem {
+theory Idem where {
   /// The carrier.
   sort M : Type;
   /// The one operation.

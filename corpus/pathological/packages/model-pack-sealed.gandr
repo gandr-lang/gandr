@@ -4,14 +4,14 @@
 // in front of it.
 
 /// A counter: a carrier, a zero and a step.
-theory Counter {
+theory Counter where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
 }
 
 /// Counting on the integers, sealed: its carrier is abstract outside.
-module Hidden :> Model(Counter) {
+module Hidden :> Model(Counter) where {
   type C = Integer;
   /// Zero.
   def zero = 0;

@@ -346,7 +346,7 @@ fn a_script_runs_through_what_it_imports_2970()
 #[test]
 fn a_script_passes_its_arguments_to_its_entry_1881()
 {
-    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  case xs {\n    [] => 0,\n    \
+    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    \
                    [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
                    List(String)) -> -F Integer { become count(args) }\n";
     let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
@@ -721,7 +721,7 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
         .join(", ");
     let text = format!(
         "pub world operator;\npub world seat;\npub world gate;\n\ndef rec size(xs : \
-         List(Integer)) -> Integer {{\n  case xs {{\n    [] => 0,\n    [x, ..rest] => 1 + \
+         List(Integer)) -> Integer {{\n  match xs {{\n    [] => 0,\n    [x, ..rest] => 1 + \
          size[<](rest)\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
          main() -> Integer {{\n  run listed : List(Integer) at seat <- migrate [seat] {{ (hold \
          [{listed}]) }};\n  leta xs = listed;\n  run edited : List(Integer) at seat <- migrate \

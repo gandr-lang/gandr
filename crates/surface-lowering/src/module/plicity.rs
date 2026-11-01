@@ -9,7 +9,7 @@
 //! stable topological sort: each parameter stands after every parameter its
 //! type mentions, and ties keep the written order, the telescope's entries
 //! before the parentheses'. An implicit's type may name an explicit parameter
-//! written after it, `@[i : Fin(n)] (n : Nat)`, which places the implicit
+//! written after it, `[i : Fin(n)] (n : Nat)`, which places the implicit
 //! after it; an explicit parameter's type reads the parameters before it as
 //! it always has, so a later explicit name it mentions orders nothing. A
 //! name a type binds itself — the key of a group's entry, `x` in `(x : A) =>
@@ -19,9 +19,9 @@
 //!
 //! Which parameters are implicit is the declaration's metadata
 //! ([`super::Collected::plicities`]), never type structure: the declared type
-//! is the merged telescope's ordinary function type, so `def f @[a : Type] (x
+//! is the merged telescope's ordinary function type, so `def f[a : Type](x
 //! : a) -> -F a` and `def f(a : Type, x : a) -> -F a` declare one type. A use
-//! supplies the implicits by name in the instantiation slot, `f[a = T](x)`,
+//! supplies the implicits by name in the instantiation slot, `f[.a = T](x)`,
 //! in any order.
 //!
 //! # An instance is a parameter its row's label binds
@@ -32,8 +32,8 @@
 //! also named `a`, so `at a` names its region and `a.print(…)` exercises it,
 //! and the row's `a : Console` is the instance at that region, apart from the
 //! default `Console`. A label naming a region binder of the telescope,
-//! `@[r : Region] … -> [r : I] B`, binds nothing: it is that binder's
-//! instance. A call supplies an instance by name, `f[a = c](…)`, or omits it
+//! `[r : Region] … -> [r : I] B`, binds nothing: it is that binder's
+//! instance. A call supplies an instance by name, `f[.a = c](…)`, or omits it
 //! and passes the one instance of the interface in scope where it stands, a
 //! capability scope's or a label of the caller's own row; none is
 //! [`LoweringRefusal::InstanceUnanswered`] and several
@@ -57,6 +57,7 @@ use quenchant_shape::shape::Maybe;
 use super::Collector;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
+use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -394,7 +395,7 @@ impl<'source> Collector<'_, 'source>
         // The names the implicit telescope binds that are no entry: a region
         // binder's, which a label of the result row names rather than binds.
         let mut staged: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
-        if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+        if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
                 if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
                     let Maybe::Present(Piece::Operand(sort)) = cursor.read()
@@ -585,7 +586,7 @@ impl<'source> Collector<'_, 'source>
     ///   label's tile and its declared tile the interface's name; nothing for a
     ///   result writing no row or a row writing no label. The sorts an entry
     ///   fixes, `with sort x = A`, are passed over. A label naming a region
-    ///   binder `@[r : Region]` is that binder's instance, bound already.
+    ///   binder `[r : Region]` is that binder's instance, bound already.
     /// - fails: a form fault reading the result's pieces.
     /// - panics: none.
     ///
@@ -682,10 +683,11 @@ impl<'source> Collector<'_, 'source>
     ///   lowercase or a capitalised name alike: `x : T` its `T`, or
     ///   [`unclosed::Absent::Dependent`] when `T` names an entry of the
     ///   telescope; a bare `x` [`unclosed::Absent::Unwritten`]; a receiver's
-    ///   mode word skipped. None when no parameter list follows, or one is out
-    ///   of shape. `header` is left where it was. A type naming a parameter
-    ///   before its own is kept: the arguments written for those replace them
-    ///   where the call is read.
+    ///   mode word skipped; then a clause tail's columns, as
+    ///   [`Self::column_parameters`] reads them. None from a list out of shape.
+    ///   `header` is left where it was. A type naming a parameter before its
+    ///   own is kept: the arguments written for those replace them where the
+    ///   call is read.
     /// - provides: [`super::Collected::parameters`], the type each argument of
     ///   a call checks against.
     /// - fails: never: a type whose pieces do not read counts as naming one.
@@ -699,6 +701,7 @@ impl<'source> Collector<'_, 'source>
     ///   argument's binder its parameter's domain, past capitalised binders.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
     /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     pub(super) fn explicit_parameters(
         &self,
@@ -707,7 +710,7 @@ impl<'source> Collector<'_, 'source>
     {
         let mut cursor = header.clone();
         let mut bound: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
-        if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+        if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             loop {
                 match cursor.read() {
                     Maybe::Present(Piece::Tile { label, .. })
@@ -723,11 +726,12 @@ impl<'source> Collector<'_, 'source>
                 }
             }
         }
-        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
-            return Vec::new();
-        }
         let mut parameters = Vec::new();
         let mut earlier: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+            self.column_parameters(cursor, &bound, &earlier, &mut parameters);
+            return parameters;
+        }
         // A binder is written lowercase, `x`, a type variable, or capitalised,
         // `A : Type`, as a type's name is (#3921).
         while let Maybe::Present(Piece::Tile { label, at: written }) = cursor.peek()
@@ -759,11 +763,96 @@ impl<'source> Collector<'_, 'source>
             });
             let _comma = cursor.tile(TileName::COMMA);
         }
-        if let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
             return Vec::new();
         }
+        self.column_parameters(cursor, &bound, &earlier, &mut parameters);
 
         parameters
+    }
+
+    /// Append to `parameters` one entry per column of the clause tail `: (A1,
+    /// …, An) => C where` that `cursor` stands at, its domain its type.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past a function's written parameter
+    ///   list, or past its name and telescope when it writes none; `bound`
+    ///   holds the telescope's names and `earlier` the written parameters'.
+    /// - ensures: for a tail `: T where` with `T` a value function space, one
+    ///   entry per domain `Ai` at its own node, typed `Ai`, or
+    ///   [`unclosed::Absent::Dependent`] when `Ai` names an entry of the
+    ///   telescope, and dependent when it names a written parameter; nothing
+    ///   for any other tail, or a domain list that does not read.
+    /// - provides: a clause column's type to the argument a call writes for it,
+    ///   as a written parameter's is.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the cursor offers no count of its pieces to bound
+    ///   the result by.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor argument of a call to a function of
+    ///   clauses takes its column's type, naming the parameter before it.
+    /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
+    fn column_parameters(
+        &self,
+        mut cursor: Cursor<'_>,
+        bound: &BTreeSet<SurfaceName<'source>>,
+        earlier: &BTreeSet<SurfaceName<'source>>,
+        parameters: &mut Vec<ExplicitParameter>,
+    )
+    {
+        let Maybe::Present(_) = cursor.tile(TileName::COLON)
+        else {
+            return;
+        };
+        let Maybe::Present(Piece::Operand(stated)) = cursor.read()
+        else {
+            return;
+        };
+        if let Maybe::Absent(_) = cursor.at(TileName::WHERE) {
+            return;
+        }
+        let Ok(Maybe::Present(Former::ValueFunctionType)) = self.root_former(stated)
+        else {
+            return;
+        };
+        let mut arrow = Pieces::new();
+        if read_pieces(self.pbg, self.tree, stated.node, &mut arrow).is_err() {
+            return;
+        }
+        let Some(&Piece::Operand(domain)) = arrow.pieces.first()
+        else {
+            return;
+        };
+        let mut listed = Pieces::new();
+        let grouped = matches!(
+            self.root_former(domain),
+            Ok(Maybe::Present(Former::ParenthesizedType))
+        ) && read_pieces(self.pbg, self.tree, domain.node, &mut listed).is_ok()
+            && listed.pieces.iter().any(
+                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::COMMA),
+            );
+        let domains: Vec<Placed> = if grouped {
+            listed
+                .pieces
+                .iter()
+                .filter_map(|piece| match *piece {
+                    Piece::Operand(each) => Some(each),
+                    Piece::Tile { .. } => None,
+                })
+                .collect()
+        }
+        else {
+            alloc::vec![domain]
+        };
+        for domain in domains {
+            parameters.push(ExplicitParameter {
+                binder: domain,
+                declared: self.closed(domain, bound),
+                dependent: matches!(self.closed(domain, earlier), Maybe::Absent(_)),
+            });
+        }
     }
 
     /// The type written at `typed`, when it names none of `names`, anywhere
@@ -886,7 +975,7 @@ impl<'source> Collector<'_, 'source>
     ///   written order; empty without a telescope or with none. `header` is
     ///   left where it was.
     /// - provides: the stage binders of [`super::Collected::stage_binders`],
-    ///   which a call's supply `f[i = s]` names.
+    ///   which a call's supply `f[.i = s]` names.
     /// - fails: a form fault reading an entry's sort.
     /// - panics: none.
     /// - executable: none — each entry's sort is read off the tree, and a
@@ -906,7 +995,7 @@ impl<'source> Collector<'_, 'source>
     {
         let mut binders = Vec::new();
         let mut cursor = header.clone();
-        if let Maybe::Absent(_) = cursor.tile(TileName::ATTRIBUTES) {
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
             return Ok(binders);
         }
         let mut scratch = Pieces::new();

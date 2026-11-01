@@ -5,7 +5,7 @@ error[LoopNotRespected]: this case might tell a loop apart from staying put: car
    │    │                ─ checked against `(x : Circle) -> -F Path(Circle, Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
- 9 │ │┏   case x {
+ 9 │ │┏   match x {
 10 │ │┃     Base => here(Base)
 11 │ │┃   }
    │ │┗━━━┛ a case its sort's loops do not admit

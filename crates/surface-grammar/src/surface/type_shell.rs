@@ -531,7 +531,7 @@ fn add_type_rules(
         ]),
     ));
     // A type at a stage, `Nat[i]`, or below one, `Nat[<i]`: the stage a
-    // declaration's implicit `@[i : Size]` binds. Postfix in the path band,
+    // declaration's implicit `[i : Size]` binds. Postfix in the path band,
     // so `Nat[<i] => Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
@@ -596,6 +596,9 @@ fn add_type_rules(
         AdaptationReason("folded into telescope_type: the `k : T` field is inlined with its key a type hole, not a placeholder tile nor a form tile that would outrank every type variable at the same token"),
     ));
     rules.push(telescope_type);
+    // A protocol step and the rest: `! T >> S` and `? T >> S`. The dotted
+    // spelling `! T . S` is read beside it until the corpus moves.
+    let step = || Regex::alt([tile(TileLabel(">>")), tile(TileLabel("."))]);
     rules.push(rule(
         RuleName("send_session_type"),
         ty,
@@ -603,7 +606,7 @@ fn add_type_rules(
         Regex::seq([
             tile(TileLabel("!")),
             Regex::sort(ty),
-            tile(TileLabel(".")),
+            step(),
             Regex::sort(ty),
         ]),
     ));
@@ -614,7 +617,7 @@ fn add_type_rules(
         Regex::seq([
             tile(TileLabel("?")),
             Regex::sort(ty),
-            tile(TileLabel(".")),
+            step(),
             Regex::sort(ty),
         ]),
     ));
@@ -672,14 +675,25 @@ fn add_type_rules(
         AdaptationReason("read, not repeated: the session offer is the lazy record over labels `&{ … }` whose entries are session types, one former read in the zone its type is written in"),
     ));
     rules.push(lazy_record);
+    // The recursive protocol `rec X => S`; `mu X . S` is read beside it until
+    // the corpus moves.
     rules.push(rule(
         RuleName("mu_session_type"),
         ty,
         type_arrow,
         Regex::seq([
-            tile(TileLabel("mu")),
-            tile(TileLabel("type_variable")),
-            tile(TileLabel(".")),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("rec")),
+                    tile(TileLabel("type_variable")),
+                    tile(TileLabel("=>")),
+                ]),
+                Regex::seq([
+                    tile(TileLabel("mu")),
+                    tile(TileLabel("type_variable")),
+                    tile(TileLabel(".")),
+                ]),
+            ]),
             Regex::sort(ty),
         ]),
     ));
@@ -743,7 +757,7 @@ fn add_type_rules(
         tile(TileLabel("type_variable")),
     ));
     // A type at a mode variable, `m List(Integer)`: a method's receiver
-    // `self : m T`, its mode the telescope's `@[m : Mode]`. The variable is
+    // `self : m T`, its mode the telescope's `[m : Mode]`. The variable is
     // also a whole type, `x : t`, so the two readings tie on the variable and
     // the token after it decides: a type continues this form, anything else
     // ends the variable. After the atom and the application, so `f(A)` keeps

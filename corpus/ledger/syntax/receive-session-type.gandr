@@ -1,5 +1,5 @@
 /// `receive_session_type`: a session that receives.
 @[ checks ]
-def inward(c : ?Integer. end) -> -F Unit {
+def inward(c : ?Integer >> end) -> -F Unit {
   pure unit
 }

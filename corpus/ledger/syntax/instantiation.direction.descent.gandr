@@ -1,12 +1,12 @@
 /// `instantiation.direction.descent`: a recursive call made on a smaller argument.
 @[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => down[<](p)
   }

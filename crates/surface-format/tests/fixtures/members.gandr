@@ -1,22 +1,22 @@
 /// The naturals.
-data Nat : Type {
+data Nat : Type where {
       /// The base.
-  Zero : Nat;
+  | Zero : Nat
   /// One more than `n`.
-        Succ : (n : Nat) --> Nat;
+        | Succ : (n : Nat) --> Nat
     /// The successor of zero is not zero.
-  rule Succ(Zero) <=> Succ(Zero);
+  rule : Succ(Zero) <=> Succ(Zero);
 }
 
 /// A state theory.
-theory T {
+theory T where {
      /// The state.
   sort S : Type+;
   /// Reading the state.
   oper get : (k : S) --> S; }
 
 /// A stream.
-codata Stream(a : Type) : Type[-] {
+codata Stream(a : Type) : Type[-] where {
   /// The head.
   head : a;
           /// The rest.
@@ -24,7 +24,7 @@ codata Stream(a : Type) : Type[-] {
 }
 
 /// A module.
-module M {
+module M where {
     /// One.
   @[ checks ]
   def one = 1;

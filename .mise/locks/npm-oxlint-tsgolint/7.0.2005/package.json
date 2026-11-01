@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "oxlint-tsgolint": "7.0.2004"
+    "oxlint-tsgolint": "7.0.2005"
   }
 }

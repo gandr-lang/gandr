@@ -2,13 +2,13 @@
 ///
 /// A unit: a carrier and a point.
 @[ checks ]
-theory Pointed {
+theory Pointed where {
   sort C : Type;
   oper point : C;
 }
 
 /// The point read as an integer.
-module Origin : Model(Pointed) {
+module Origin : Model(Pointed) where {
   type C = Integer;
   /// Zero.
   @[ checks ]
@@ -17,7 +17,7 @@ module Origin : Model(Pointed) {
 
 /// The point of any pointed model the slot names.
 @[ checks ]
-def pointOf @[s : Model(Pointed)] () -> s.C { s.point }
+def pointOf[s : Model(Pointed)]() -> s.C { s.point }
 
 @[ refuses("ModelImplicitValue") ]
-def packed() -> -F Integer { pointOf[s = pack Origin at Model(Pointed)]() }
+def packed() -> -F Integer { pointOf[.s = pack Origin at Model(Pointed)]() }

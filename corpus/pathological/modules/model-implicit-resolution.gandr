@@ -4,7 +4,7 @@
 // fixes (#2317), and when two are, naming both.
 
 /// A tally: a carrier, a zero, a step and a reading.
-theory Tally {
+theory Tally where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -12,14 +12,14 @@ theory Tally {
 }
 
 /// The reading after one step, over any tally the slot names.
-def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
+def stepped[s : Model(Tally)](c : s.C) -> Integer { s.read(s.incr(c)) }
 
 /// No module of `Tally` is in scope yet.
 @[ refuses("ModelUnanswered") ]
 def nothingYet() -> Integer { stepped(4) }
 
 /// Counting up by one.
-module Up : Model(Tally) {
+module Up : Model(Tally) where {
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -30,7 +30,7 @@ module Up : Model(Tally) {
 }
 
 /// Counting up by ten.
-module Tens : Model(Tally) {
+module Tens : Model(Tally) where {
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -50,10 +50,10 @@ def twin() -> Integer { stepped(4) }
 
 /// Naming one settles it.
 @[ runs("14") ]
-def named() -> Integer { stepped[s = Tens](4) }
+def named() -> Integer { stepped[.s = Tens](4) }
 
 /// The reading from zero over a tally of integers.
-def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
+def fromZero[s : Model(Tally) with sort C = Integer]() -> Integer {
   s.read(s.incr(s.zero))
 }
 
@@ -62,7 +62,7 @@ def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
 def manifest() -> Integer { fromZero() }
 
 /// The reading from zero over a tally of text.
-def fromText @[s : Model(Tally) with sort C = String] () -> Integer {
+def fromText[s : Model(Tally) with sort C = String]() -> Integer {
   s.read(s.incr(s.zero))
 }
 

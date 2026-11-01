@@ -1,12 +1,12 @@
 @[ checks, form(explicit) ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => become down[<](p)
   }
@@ -14,7 +14,7 @@ def rec down(n : Nat) -> -F Nat {
 
 @[ checks ]
 def rec down_elided(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => n,
     Succ(p) => down_elided[<](p)
   }
@@ -84,7 +84,7 @@ def named_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def rec stated(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => { return n; },
     Succ(p) => { become stated[<](p); }
   }
@@ -92,7 +92,7 @@ def rec stated(n : Nat) -> -F Nat {
 
 @[ checks ]
 def rec stated_elided(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => { n },
     Succ(p) => { stated_elided[<](p) }
   }
@@ -120,9 +120,9 @@ def sequenced_run(n : Nat) -> -F Nat {
   return run down(n)
 }
 
-/// A last statement discards its value and the block returns the unit, so a
-/// body answering a natural cannot end in one (#1205).
-@[ refuses("TypeMismatch") ]
+/// A last statement's value is the block's unit, so a body answering a
+/// natural cannot end in one (#1205).
+@[ refuses("ShapeMismatch") ]
 def discarded(n : Nat) -> -F Nat {
   run m <- down(n);
   down(m);
@@ -203,7 +203,7 @@ def returned = return Zero;
 
 @[ checks ]
 def predecessor(n : Nat) -> -F Nat {
-  run m <- case n {
+  run m <- match n {
     Zero => return n,
     Succ(p) => pure p,
   };
@@ -212,7 +212,7 @@ def predecessor(n : Nat) -> -F Nat {
 
 @[ checks ]
 def predecessor_elided(n : Nat) -> -F Nat {
-  run m <- case n {
+  run m <- match n {
     Zero => return n,
     Succ(p) => pure p,
   };
@@ -221,10 +221,10 @@ def predecessor_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def pick(n : Nat) -> -F Nat {
-  run m <- case n {
+  run m <- match n {
     Zero => return n,
     Succ(p) => {
-      run q <- case p {
+      run q <- match p {
         Zero => return n,
         Succ(r) => pure r,
       };
@@ -236,10 +236,10 @@ def pick(n : Nat) -> -F Nat {
 
 @[ checks ]
 def pick_elided(n : Nat) -> -F Nat {
-  run m <- case n {
+  run m <- match n {
     Zero => return n,
     Succ(p) => {
-      run q <- case p {
+      run q <- match p {
         Zero => return n,
         Succ(r) => pure r,
       };
@@ -269,7 +269,7 @@ def pick_three_elided() -> -F Nat { pick_elided(Succ(Succ(Succ(Zero)))) }
 
 @[ checks ]
 def handed(n : Nat) -> -F Nat {
-  run m <- case n {
+  run m <- match n {
     Zero => become down(n),
     Succ(p) => pure p,
   };
@@ -278,7 +278,7 @@ def handed(n : Nat) -> -F Nat {
 
 @[ checks ]
 def handed_elided(n : Nat) -> -F Nat {
-  run m <- case n {
+  run m <- match n {
     Zero => become down(n),
     Succ(p) => pure p,
   };
@@ -287,10 +287,10 @@ def handed_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def rec skim(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => {
-      run _ <- case p {
+      run _ <- match p {
         Zero => return p,
         Succ(r) => pure r,
       };
@@ -301,10 +301,10 @@ def rec skim(n : Nat) -> -F Nat {
 
 @[ checks ]
 def rec skim_elided(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => n,
     Succ(p) => {
-      run _ <- case p {
+      run _ <- match p {
         Zero => return p,
         Succ(r) => pure r,
       };
@@ -321,7 +321,7 @@ def skimmed_elided() -> -F Nat { skim_elided(Succ(Succ(Succ(Zero)))) }
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined(n : Nat) -> -F Nat {
-  run m <- case n -> -F Nat {
+  run m <- match n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
   };
@@ -330,7 +330,7 @@ def joined(n : Nat) -> -F Nat {
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined_elided(n : Nat) -> -F Nat {
-  run m <- case n -> -F Nat {
+  run m <- match n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
   };

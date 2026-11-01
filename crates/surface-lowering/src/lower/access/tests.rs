@@ -33,7 +33,7 @@ use crate::resolve::SurfaceName;
 /// The counter: a held count, one access that writes back its successor and
 /// one that aborts, then a read of the count, with a parameter between.
 const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
-  hold c = 0;
+  var c = 0;
   access c as v { resume(v, v + 1) };
   access c as v { abort(v) } unwind { pure unit };
   return c
@@ -156,12 +156,12 @@ fn a_shared_access_lowers_without_an_unwind()
 {
     let source = SourceText::from(
         r"def frozen() -> -F Integer {
-  hold c = 2;
+  var c = 2;
   access exclusive c as v { resume(v, v + 1) };
   access shared c as w { pure w }
 }
 def unwound() -> -F Unit {
-  hold c = 0;
+  var c = 0;
   access shared c as w { pure unit } unwind { pure unit }
 }
 ",
@@ -201,12 +201,12 @@ fn an_access_of_a_place_lowers_with_its_index()
         r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 def second() -> -F Integer {
-  hold xs = pair;
+  var xs = pair;
   access xs[1] as v { resume(v, v + 1) };
   access shared xs[1] as w { pure w }
 }
 def indexed(i : Integer) -> -F Integer {
-  hold xs = pair;
+  var xs = pair;
   access shared xs[i] as w { pure w }
 }
 ",
@@ -239,11 +239,11 @@ fn a_hold_lowers_at_its_grade()
 {
     let source = SourceText::from(
         r"def unique() -> -F Unit {
-  hold[1] c = 0;
+  var[1] c = 0;
   access c as v { resume(v, v + 1) }
 }
 def two() -> -F Unit {
-  hold[2] c = 0;
+  var[2] c = 0;
   pure unit
 }
 ",
@@ -254,12 +254,12 @@ def two() -> -F Unit {
     assert_eq!(
         forms(&arena, tail),
         ["hold[1]", "access @0", "resume @0"],
-        "`hold[1]` holds its value at grade one"
+        "`var[1]` holds its value at grade one"
     );
     assert_eq!(
         refusal_of(&module, SurfaceName::from("two")),
         LoweringRefusal::GradedBridge {
-            span: spelled_within(source, SourceText::from("hold[2]"), SourceText::from("2")),
+            span: spelled_within(source, SourceText::from("var[2]"), SourceText::from("2")),
             grade: SurfaceName::from("2"),
         },
         "a hold has no grade but one and the default ω"
@@ -312,17 +312,17 @@ def unbound(n : Integer) -> -F Unit { abort(missing) }
 fn an_exit_inside_an_access_is_refused()
 {
     let source = SourceText::from(
-        r"data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-def leaves(n : Integer) -> -F Unit { hold c = 0; access c as v { return unit } }
-def unwinds(n : Integer) -> -F Unit { hold c = 0; access c as v { abort(v) } unwind { return unit } }
+        r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+def leaves(n : Integer) -> -F Unit { var c = 0; access c as v { return unit } }
+def unwinds(n : Integer) -> -F Unit { var c = 0; access c as v { abort(v) } unwind { return unit } }
 def early(n : Nat) -> -F Integer {
-  hold c = 0;
-  run m <- case n { Zero => return 5, Succ(p) => pure 1 } ;
+  var c = 0;
+  run m <- match n { Zero => return 5, Succ(p) => pure 1 } ;
   return c
 }
 def early_by_hand(n : Nat) -> -F Integer {
-  hold c = 0;
-  case n { Zero => return 5, Succ(p) => return c }
+  var c = 0;
+  match n { Zero => return 5, Succ(p) => return c }
 }
 ",
     );
@@ -379,15 +379,15 @@ def early_by_hand(n : Nat) -> -F Integer {
 fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
     let source = SourceText::from(
-        r"data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+        r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def joined(n : Nat) -> -F Integer {
-  hold c = 100;
-  run m <- case n { Zero => return 7, Succ(p) => { hold c = unit; pure 1 } } ;
+  var c = 100;
+  run m <- match n { Zero => return 7, Succ(p) => { var c = unit; pure 1 } } ;
   pure c
 }
 def joined_by_hand(n : Nat) -> -F Integer {
-  hold c = 100;
-  case n { Zero => return 7, Succ(p) => { hold d = unit; pure c } }
+  var c = 100;
+  match n { Zero => return 7, Succ(p) => { var d = unit; pure c } }
 }
 ",
     );
@@ -401,5 +401,160 @@ def joined_by_hand(n : Nat) -> -F Integer {
             SurfaceName::from("joined"),
             SurfaceName::from("joined_by_hand"),
         ),
+    );
+}
+
+#[test]
+fn a_place_assignment_writes_through_an_exclusive_view()
+{
+    let source = SourceText::from(
+        r"def pair : List(Integer) ;
+def pair = cons(1, cons(2, nil)) ;
+def written() -> -F Integer {
+  var n = 1;
+  n = n + 1;
+  n *= 3;
+  var xs = pair;
+  xs.#[0] += n;
+  return n
+}
+def ended() -> -F Unit {
+  var n = 1;
+  n -= 1;
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("written")));
+    assert_eq!(
+        forms(&arena, tail),
+        [
+            "hold",
+            "access @0",
+            "resume @0",
+            "access @0",
+            "resume @0",
+            "hold",
+            "read @1",
+            "access @0[literal]",
+            "resume @0",
+            "read @1",
+        ],
+        "each assignment lends its slot exclusively at its place and resumes the view, the right \
+         side's value returned before the access, and the slot is read after them"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn an_assignment_writes_only_a_held_place()
+{
+    let source = SourceText::from(
+        r"def parameter(n : Integer) -> -F Unit { n = 3; }
+def viewed() -> -F Unit { var c = 0; access c as v { v = 1; resume(v, 2) } }
+def field(p : #{ a : Integer }) -> -F Unit { p.a += 1; }
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, written, named) in [("parameter", "n = 3", "n"), ("viewed", "v = 1", "v")] {
+        let named = SourceText::from(named);
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(written), named),
+                form: FormName::IDENTIFIER,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Held,
+            },
+            "`{name}`: only a slot a `var` holds is written, never a parameter or a view"
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("field")),
+            LoweringRefusal::OutOfFragment { span, boundary: FragmentBoundary::Held, .. }
+                if span == spelled_within(source, SourceText::from("p.a += 1"), SourceText::from("p.a"))
+        ),
+        "a field is no place an assignment writes"
+    );
+}
+
+#[test]
+fn a_stated_var_ascribes_its_value_or_holds_a_handle()
+{
+    let source = SourceText::from(
+        r"def listed() -> -F Integer {
+  var xs : List(Integer) = #[1, 2];
+  xs.#[0] += 1;
+  return 0
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let listed = tail_of(&arena, body_named(&module, SurfaceName::from("listed")));
+    let Some(&Computation::Memory(MemoryForm::Hold { value, .. })) = arena.computation(listed)
+    else {
+        panic!(
+            "a stated `var` still holds its value: {:?}",
+            arena.computation(listed)
+        );
+    };
+    assert!(
+        matches!(arena.value(value), Some(&Value::Ascribe { .. })),
+        "the held value is ascribed the stated type, so a list reads its type there"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    // A handle is held only where its world runs, so these are read, not
+    // judged: `pointing` in the worlds corpus is judged.
+    let source = SourceText::from(
+        r"world seat;
+def located() -> -F (Integer at seat) {
+  var h : Integer at seat = 3;
+  pure h
+}
+def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure unit }
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let located = tail_of(&arena, body_named(&module, SurfaceName::from("located")));
+    let Some(&Computation::Bind(bound, rest)) = arena.computation(located)
+    else {
+        panic!(
+            "a located `var` binds its handle: {:?}",
+            arena.computation(located)
+        );
+    };
+    let Some(&Computation::Ascribe { body, .. }) = arena.computation(bound)
+    else {
+        panic!(
+            "the handle is bound at the stated type: {:?}",
+            arena.computation(bound)
+        );
+    };
+    assert!(
+        matches!(
+            arena.computation(body),
+            Some(&Computation::World(
+                gandr_core_term::world::WorldForm::Hold { .. }
+            ))
+        ),
+        "the handle is the world's hold of the value, not a held slot"
+    );
+    assert!(
+        matches!(arena.computation(rest), Some(&Computation::Return(_))),
+        "the rest of the block reads the handle's name"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("graded")),
+            LoweringRefusal::MalformedForm { span, fault: FormFault::MisplacedTile, .. }
+                if span == spelled_within(source, SourceText::from("h : Integer at seat = 3; pure unit"), SourceText::from("Integer at seat"))
+        ),
+        "a handle binds no slot, so a grade has nothing to grade"
     );
 }

@@ -22,21 +22,21 @@ def sigma : #{k : Integer, v : k};
 
 @[ checks ]
 def nothing(t : #{}) -> -F Integer {
-  case t {
+  match t {
     #{} => return 0
   }
 }
 
 @[ checks ]
 def only(t : #{Integer}) -> -F Integer {
-  case t {
+  match t {
     #{x} => return x
   }
 }
 
 @[ checks ]
 def last(t : #{Integer, Integer, Integer}) -> -F Integer {
-  case t {
+  match t {
     #{x, y, z} => return z
   }
 }

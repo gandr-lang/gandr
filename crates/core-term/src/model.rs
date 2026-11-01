@@ -1,6 +1,6 @@
 //! A model slot a call omits, and the models that may answer it.
 //!
-//! A function quantifying over a model in its prefix block, `@[s : Model(S)]`,
+//! A function quantifying over a model in its prefix block, `[s : Model(S)]`,
 //! binds one implicit parameter per component of `S`'s signature, and a call
 //! omitting the slot nominates one hole per component. [`ModelSlot`] keeps
 //! those holes together with every model in scope whose theory is `S` or

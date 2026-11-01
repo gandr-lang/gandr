@@ -241,7 +241,7 @@ fn a_hole_is_declared_once()
 #[test]
 fn a_decoded_metavariable_takes_the_quote()
 {
-    // `same @[a : Type] (x : a) : a` called at an integer: the parameter's
+    // `same[a : Type] (x : a) : a` called at an integer: the parameter's
     // type `El(?a)` against the argument's.
     let mut arena = CoreArena::new();
     let mut metas = Metas::new();
@@ -267,7 +267,7 @@ fn a_decoded_metavariable_takes_the_quote()
 #[test]
 fn a_function_argument_solves_both_implicits()
 {
-    // `map @[a : Type, b : Type] (f : (x : a) -> b, …)` given a function
+    // `map[a : Type, b : Type] (f : (x : a) -> b, …)` given a function
     // from integers to strings: `U (El ?a -> F El ?b)` against `U (Integer
     // -> F String)`.
     let mut arena = CoreArena::new();

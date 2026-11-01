@@ -19,7 +19,7 @@ import "./conversion-base.gandr";
 
 /// Factorial by recursion, which forms the product on the way back.
 def rec fact(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Succ(Zero),
     Succ(m) => times(Succ(m), fact[<](m))
   }
@@ -27,7 +27,7 @@ def rec fact(n : Nat) -> Nat {
 
 /// Factorial by iteration, the product carried in an accumulator.
 def rec factFrom(n : Nat, acc : Nat) -> Nat {
-  case n {
+  match n {
     Zero => acc,
     Succ(m) => factFrom[<](m, times(acc, Succ(m)))
   }
@@ -35,9 +35,9 @@ def rec factFrom(n : Nat, acc : Nat) -> Nat {
 
 /// Whether a natural is even.
 def rec even(n : Nat) -> Bool {
-  case n {
+  match n {
     Zero => true,
-    Succ(m) => case even[<](m) {
+    Succ(m) => match even[<](m) {
       true => false,
       false => true
     }

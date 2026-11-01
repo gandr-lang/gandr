@@ -14,37 +14,37 @@
 // - see: #3481 — the spike that wrote these programs
 
 /// The object language's types.
-data Ty : Type {
+data Ty : Type where {
   /// Integers.
-  TInt : Ty;
+  | TInt : Ty
   /// Booleans.
-  TBool : Ty;
+  | TBool : Ty
 }
 
 /// The meaning of an object type, by a case on its code.
 def meaning(t : Ty) -> Type {
-  case t {
+  match t {
     TInt => return Integer,
     TBool => return Bool
   }
 }
 
 /// Expressions, indexed by the type they evaluate to.
-data Expr : Ty -> Type {
+data Expr : Ty -> Type where {
   /// An integer literal.
-  Lit : (i : Integer) --> Expr(TInt);
+  | Lit : (i : Integer) --> Expr(TInt)
   /// A boolean literal.
-  BoolLit : (b : Bool) --> Expr(TBool);
+  | BoolLit : (b : Bool) --> Expr(TBool)
   /// The sum of two integer expressions.
-  Add : (l : Expr(TInt), r : Expr(TInt)) --> Expr(TInt);
+  | Add : (l : Expr(TInt), r : Expr(TInt)) --> Expr(TInt)
   /// A choice between two expressions of one type.
-  If : (t : Ty, c : Expr(TBool), y : Expr(t), n : Expr(t)) --> Expr(t);
+  | If : (t : Ty, c : Expr(TBool), y : Expr(t), n : Expr(t)) --> Expr(t)
 }
 
 /// The evaluator, each arm's result the meaning of its index. The `Lit` arm
 /// solves its path from `TInt` to `t`, so its integer meets `meaning(TInt)`.
 def rec eval(t : Ty, e : Expr(t)) -> meaning(t) {
-  case e {
+  match e {
     Lit(i) => i,
     BoolLit(b) => b,
     Add(l, r) => eval[<](TInt, l) + eval[<](TInt, r),
@@ -55,7 +55,7 @@ def rec eval(t : Ty, e : Expr(t)) -> meaning(t) {
 /// The evaluator at integers alone. Its `If` branch `y` keeps its stage below
 /// `e` across the path from `u` to `TInt`.
 def rec evalInt(e : Expr(TInt)) -> Integer {
-  case e {
+  match e {
     Lit(i) => i,
     Add(l, r) => evalInt[<](l) + evalInt[<](r),
     If(u, _, y, _) => evalInt[<](y)

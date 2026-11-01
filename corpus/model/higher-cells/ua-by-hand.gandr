@@ -21,7 +21,7 @@
 import "./magma-base.gandr";
 
 /// `ua[1, 4]` and its directed twin, each derived and written by hand.
-module ByHand {
+module ByHand where {
   type Tel = Unit * (+{Unit} * Bool);
 
   /// The derived path, by the swap at the binary corolla.

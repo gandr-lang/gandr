@@ -5,11 +5,11 @@
 // own attribute states the family alone (#1462).
 
 /// Naturals with a subtraction whose rule copies its argument.
-data NatSub : Type {
-  Zero : NatSub;
-  Succ : (n : NatSub) --> NatSub;
-  oper minus(m : NatSub, n : NatSub) -> NatSub;
+data NatSub : Type where {
+  | Zero : NatSub
+  | Succ : (n : NatSub) --> NatSub
+  oper minus : (m : NatSub, n : NatSub) --> NatSub;
   /// The rule matches one variable twice, so it is held apart.
   @[ refuses("RulesNonLinear") ]
-  rule minus(x, x) ==> Zero;
+  rule : minus(x, x) ==> Zero;
 }

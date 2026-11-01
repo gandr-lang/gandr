@@ -1815,6 +1815,66 @@ fn a_bind_checks_against_the_expected_computation()
     );
 }
 
+/// A discarded statement `c ;` binds `c` into a split of the unit. Checked
+/// against `-F [ε] B`, a case there checks against the unit's returner at `ε`,
+/// so an `if` written as a statement checks with an effect in an arm, and only
+/// where the row holds it; a case whose result is kept still synthesises
+/// nothing.
+#[test]
+fn a_discarded_case_checks_at_the_expected_row()
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let choice = arena.value_type_sum(&[unit_type, unit_type]);
+    let row = effect_row("IO".into(), unit_type, unit_type);
+    let effectful = arena.comp_type_returner_with_effects(unit_type, row.clone());
+    let suspended = arena.value_type_thunk(effectful);
+    let flag = arena.value_constant(ConstantIndex::from(0_usize));
+    let act = arena.value_constant(ConstantIndex::from(1_usize));
+    let acted = arena.computation_force(act);
+    let unit = arena.value_unit();
+    let skipped = arena.computation_return(unit);
+    let case = arena.computation_case(flag, &[acted, skipped]);
+    let discarded = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let zero = arena.value_literal(integer_literal());
+    let returned = arena.computation_return(zero);
+    let split = arena.computation_split(
+        discarded,
+        gandr_core_term::ComponentCount::default(),
+        returned,
+    );
+    let statement = arena.computation_bind(case, split);
+    let kept = arena.computation_bind(case, returned);
+    let effectful_integer = arena.comp_type_returner_with_effects(integer, row);
+    let pure_integer = arena.comp_type_returner(integer);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[choice, suspended]);
+    let expected = form_comp_type(&mut context, effectful_integer).unwrap();
+    let pure = form_comp_type(&mut context, pure_integer).unwrap();
+
+    assert!(
+        check_comp(&mut context, statement, expected).is_ok(),
+        "the statement's case checks against the unit at the row the bind is checked at"
+    );
+    assert!(
+        check_comp(&mut context, statement, pure).is_err(),
+        "an effect in an arm is refused where the row does not hold it"
+    );
+    assert!(
+        matches!(
+            check_comp(&mut context, kept, expected),
+            Err(CheckRefusal::NotSynthesisable { .. })
+        ),
+        "a case whose result the bind keeps synthesises nothing"
+    );
+    assert_eq!(
+        context.binders().depth(Zone::Intuitionistic),
+        BinderDepth::from(0_usize),
+        "every binder the checks opened is closed"
+    );
+}
+
 #[test]
 fn a_bind_of_a_non_returner_is_a_shape_mismatch()
 {

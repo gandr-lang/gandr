@@ -8,7 +8,7 @@ import "../../model/strings/string-base.gandr";
 import "../../model/strings/methods.gandr";
 
 /// A byte list's methods: its own length.
-module Bytes {
+module Bytes where {
   /// The number of bytes in the list, read from a list lent for reading.
   def len(self : shared List(Integer)) -> Integer {
     count(self)

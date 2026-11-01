@@ -10,7 +10,7 @@ import "../../model/desc/function-field.gandr";
 /// stores and one tell the law's sides apart (#2511).
 @[ refuses("RuleNotRespected") ]
 def rec stores(p : Program) -> Integer {
-  case p {
+  match p {
     Done(_x) => 0,
     Get(k) => {
       run q <- k(0);

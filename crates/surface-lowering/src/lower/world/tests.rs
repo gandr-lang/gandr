@@ -81,7 +81,7 @@ fn a_world_declared_twice_is_refused()
 /// The effect theory a requirement row names under a label: values by key,
 /// each operation handing what it reads on.
 const STORE: &str = concat!(
-    "theory Store { sort V : Type+; sort C : Type;\n",
+    "theory Store where { sort V : Type+; sort C : Type;\n",
     "  oper get : (key : V, k : pi+ (v : V). C) --> C;\n",
     "  oper put : (key : V, value : V, k : C) --> C; }\n",
 );
@@ -97,7 +97,7 @@ fn a_world_s_requirement_is_a_row_3523()
     let text = alloc::format!(
         "{STORE}{}",
         concat!(
-            "theory Magma { sort M : Type; oper mul : (x : M, y : M) --> M; }\n",
+            "theory Magma where { sort M : Type; oper mul : (x : M, y : M) --> M; }\n",
             "world near;\n",
             "world far requires [Console, store : Store with sort V = String];\n",
             "world lost requires [Missing];\n",
@@ -193,10 +193,10 @@ fn a_world_s_requirement_is_a_row_3523()
 fn a_site_s_offer_answers_by_label_and_by_name_3523()
 {
     let echo = concat!(
-        "theory Kept { sort V : Type+; sort C : Type;\n",
+        "theory Kept where { sort V : Type+; sort C : Type;\n",
         "  oper get : (key : V, k : pi+ (v : V). C) --> C;\n",
         "  oper put : (key : V, value : V, k : C) --> C; }\n",
-        "module Echo : Model(Kept) with sort V = String {\n",
+        "module Echo : Model(Kept) with sort V = String where {\n",
         "  type C = String;\n",
         "  def get(key : String, k : String => String) -> String { k(key) }\n",
         "  def put(key : String, value : String, k : String) -> String { k }\n",
@@ -391,7 +391,7 @@ fn a_mobile_component_marks_its_sealing()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            r"module Pair :> #{ mobile type Mobile, type Kept, one : Mobile, two : Kept } {
+            r"module Pair :> #{ mobile type Mobile, type Kept, one : Mobile, two : Kept } where {
   type Mobile = Integer;
   type Kept = Integer;
   def one = 1;

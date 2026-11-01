@@ -1,0 +1,32 @@
+data Expr : Type where {
+  | Lit : (n : Integer) --> Expr
+  | Share : (e : Expr) --> (left : Expr, right : Expr)
+}
+
+def port : Expr = Expr.Share(Expr.Lit(1)).right;
+
+def ports : #{left : Expr, right : Expr} = Expr.Share(Expr.Lit(1));
+
+def rec size(e : Expr) -> -F Integer {
+  match e {
+    Expr.Lit(n) => return 1,
+    Expr.Share(x).left => size[<](x),
+    Expr.Share(x).right => size[<](x)
+  }
+}
+
+def partial(e : Expr) -> -F Integer {
+  match e {
+    Expr.Lit(n) => return 1,
+    Expr.Share(x).left => return 2
+  }
+}
+
+def joint(e : Expr) -> -F Integer {
+  match e {
+    Expr.Share(x) => return 1,
+    _ => return 0
+  }
+}
+
+def missing : Expr = Expr.Fork(Expr.Lit(1));

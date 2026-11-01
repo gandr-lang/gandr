@@ -1,5 +1,5 @@
 /// `UnlabelledRequirement`: a world requiring an effect theory under no label, so its code cannot perform it.
-pub theory Store {
+pub theory Store where {
   sort V : Type+;
   sort C : Type;
   oper get : (key : V, k : pi+ (v : V). C) --> C;

@@ -89,7 +89,7 @@ const COUNTED: &[&str] = &[
     "expression break_expression",
     "expression break_value_expression",
     "expression call_expression", // `?`
-    "expression case_expression",
+    "expression match_expression",
     "expression character",
     "expression close_expression",
     "expression co_expression",
@@ -135,6 +135,7 @@ const COUNTED: &[&str] = &[
     "expression projection_expression",
     "expression projection_expression name",
     "expression pure_expression",
+    "expression record_selection_expression",
     "expression redirection_operator",
     "expression resume_expression",
     "expression resume_expression name",
@@ -297,20 +298,20 @@ const SEEDS: [&str; 4] = [
     "",
     "def a : Integer ;\ndef a = 1 ;\n",
     "def f(x : Integer) -> -F Integer {\n  return x\n}\n",
-    "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  }\n}\n",
+    "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  }\n}\n",
 ];
 
 /// What a random script types, one token per step.
 const TOKENS: [&str; 34] = [
     "def", " ", "a", "x", "1", "\"", "(", ")", "{", "}", "[", "]", ":", ";", ",", "=", "->", "=>",
-    "<-", "-F", "+U", "Integer", "return", "become", "case", "thunk", "force", "run", "fn", "data",
-    "Type", "//", "é", "😀",
+    "<-", "-F", "+U", "Integer", "return", "become", "match", "thunk", "force", "run", "fn",
+    "data", "Type", "//", "é", "😀",
 ];
 
 /// What a random script pastes.
 const SNIPPETS: [&str; 4] = [
     "def b = a ;\n",
-    "case n {\n  Zero => return n\n}",
+    "match n {\n  Zero => return n\n}",
     "\"text\"",
     "thunk { return 1 }",
 ];
@@ -1419,7 +1420,7 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
 #[test]
 fn a_line_comment_holds_the_newline_closing_it_456()
 {
-    let text = "// a note\ndata Unit : Type { Tt : Unit; }\n";
+    let text = "// a note\ndata Unit : Type where { | Tt : Unit }\n";
     let source = Source {
         uri: String::from("file:///comment-line-end.gandr"),
         text: String::from(text),

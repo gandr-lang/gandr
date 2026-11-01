@@ -1,10 +1,10 @@
-module Schema {
+module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   type Count = Integer;
   @[ checks ]
   def toNew(old : Old) -> New {
-    case old {
+    match old {
       #{name, age} => (age, name)
     }
   }
@@ -16,7 +16,7 @@ module Schema {
   }
   @[ checks ]
   def age(record : Old) -> Count {
-    case record {
+    match record {
       #{name, years} => years
     }
   }

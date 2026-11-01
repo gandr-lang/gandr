@@ -2,5 +2,5 @@
 /// hole, which leaves the arm that runs undecided.
 @[ refuses("UndecidedCoverage") ]
 def head(xs : List(Integer)) -> -F Integer {
-  case xs { [x, ..?] => return x, [] => return 0 }
+  match xs { [x, ..?] => return x, [] => return 0 }
 }

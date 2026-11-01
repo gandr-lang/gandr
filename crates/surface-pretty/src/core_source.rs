@@ -259,7 +259,7 @@ impl<'text> Constructors<'text>
         let _first = self.consed.entry(family).or_insert(empty);
     }
 
-    /// The data case `case` eliminates a value of `family`.
+    /// The data case `match` eliminates a value of `family`.
     ///
     /// # Specification
     /// - requires: nothing.

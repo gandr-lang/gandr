@@ -20,28 +20,28 @@
 
 /// The dependent pairs over a family of types, as data.
 @[ checks, form(explicit) ]
-pub data Sig(a : Type, b : +U (a -> -F Type)) : Type {
+pub data Sig(a : Type, b : +U (a -> -F Type)) : Type where {
   /// A value of the first type with a value of the type it picks.
-  MkSig : (x : a, y : b(x)) --> Sig(a, b);
+  | MkSig : (x : a, y : b(x)) --> Sig(a, b)
 }
 
 /// The codes over a type of decodes `d`, a large type.
 @[ checks ]
-pub data IR(d : Type) : Type[+, 1] {
+pub data IR(d : Type) : Type[+, 1] where {
   /// No argument, the decode `e`.
-  Iota : (e : d) --> IR(d);
+  | Iota : (e : d) --> IR(d)
   /// A value of the type `a`, and the code the rest reads it by.
-  SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d);
+  | SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d)
   /// A function from `a` into the family. The rest reads it through its
   /// decodes.
-  DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d);
+  | DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d)
 }
 
 /// The arguments a code asks for over a family `x`. The function `t` decodes
 /// the family.
 @[ checks ]
 pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
-  case c {
+  match c {
     Iota(e) => return Unit,
     SigmaC(a, f) => return (Sig(a, thunk { fn (y) { args[<](d, f(y), x, t) } })),
     DeltaC(a, f) => return (Sig(
@@ -68,7 +68,7 @@ pub def rest(
   t : +U (x -> -F d),
   v : args(d, (SigmaC(a, f) : IR(d)), x, t)
 ) -> Unit {
-  case v {
+  match v {
     MkSig(y, r) => keep(d, f(y), x, t, r)
   }
 }
@@ -84,7 +84,7 @@ pub def restDelta(
   t : +U (x -> -F d),
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit {
-  case v {
+  match v {
     MkSig(h, r) => keep(d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
   }
 }

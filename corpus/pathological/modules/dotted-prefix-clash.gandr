@@ -4,28 +4,28 @@
 // refused as any top-level module named in lowercase is.
 
 /// A written module.
-module Kit {
+module Kit where {
   /// Its one member.
   def width = 4;
 }
 
 /// A theory declared through the written module's name.
 @[ refuses("DuplicateDefinition") ]
-theory Kit.Labelled {
+theory Kit.Labelled where {
   /// The label.
   oper label : String;
 }
 
 /// A model of a theory the path names in no module.
 @[ refuses("UnknownMember") ]
-module Tag : Model(Kit.Missing) {
+module Tag : Model(Kit.Missing) where {
   /// Its label.
   def label : String = "tag";
 }
 
 /// A dotted module whose top segment is lowercase.
 @[ refuses("LowercaseModuleName") ]
-module low.Tools {
+module low.Tools where {
   /// A value.
   def k = 1;
 }

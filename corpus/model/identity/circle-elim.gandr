@@ -16,7 +16,7 @@ import "./circle-base.gandr";
 /// reflexivity, and carried along the loop it is conjugated by the flip's
 /// image of its image, the loop again.
 def involutive(x : Circle) -> Path(Circle, invLooper(invLooper(x)), x) {
-  case x {
+  match x {
     Base => here(Base)
   }
 }
@@ -24,7 +24,7 @@ def involutive(x : Circle) -> Path(Circle, invLooper(invLooper(x)), x) {
 /// The map that collapses the circle to its point: no loop arm, so the loop's
 /// image is reflexivity.
 def collapse(x : Circle) -> Circle {
-  case x {
+  match x {
     Base => Base
   }
 }

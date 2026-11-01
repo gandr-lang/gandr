@@ -140,7 +140,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 113 │ │┌    handle r : Ring {
 114 │ ││      run b <- r.alloc(4096);
     │ ││      ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
-115 │ ││┌     case flag {
+115 │ ││┌     match flag {
 116 │ │││       true => r.free(b),
 117 │ │││       false => pure unit
     │ │││                ━━━━━━━━━ a buffer never handed back

@@ -5,9 +5,9 @@
 // written with no path type stated, that their operands refuse.
 
 /// The circle: one point and a loop at it.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 /// Every point joined to the point: reflexivity at `Base`, which the loop
@@ -15,7 +15,7 @@ data Circle : Type {
 /// between them. The circle is not contractible.
 @[ refuses("LoopNotRespected") ]
 def contractible(x : Circle) -> Path(Circle, Base, x) {
-  case x {
+  match x {
     Base => here(Base)
   }
 }
@@ -26,8 +26,8 @@ def contractible(x : Circle) -> Path(Circle, Base, x) {
 /// set leaves unowed, so the case is refused naming the fibre (#464).
 @[ refuses("LoopNotRespected") ]
 def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path(Circle, a, a)} {
-  case a {
-    Base => case b {
+  match a {
+    Base => match b {
       Base => #{centre = Base, around = loop}
     }
   }
@@ -37,7 +37,7 @@ def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path(Circle, 
 /// non-dependent case chooses any loop at the image of the point, so the map
 /// is admitted.
 def doubled(x : Circle) -> Circle {
-  case x {
+  match x {
     Base => Base,
     loop => loop ∷ loop ∷ here(Base)
   }
@@ -48,17 +48,17 @@ def doubled(x : Circle) -> Circle {
 /// answers reflexivity at reflexivity.
 @[ refuses("EndpointMismatch") ]
 def misjoined(x : Circle) -> Path(Circle, Base, x) {
-  case x {
+  match x {
     Base => here(Base),
     loop => here(here(Base))
   }
 }
 
 /// A point with a loop at it, and a second point the loop never reaches.
-data Marked : Type {
-  Mark : Marked;
-  Elsewhere : Marked;
-  turn : Mark <-> Mark;
+data Marked : Type where {
+  | Mark : Marked
+  | Elsewhere : Marked
+  | turn : Mark <-> Mark
 }
 
 /// A composite whose second path starts where the first does not end: the
@@ -70,7 +70,7 @@ def misjoined_then : Path(Marked, Mark, Elsewhere) = turn then here(Elsewhere);
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
 def kept(x : Marked) -> Marked {
-  case x {
+  match x {
     Mark => Mark,
     Elsewhere => Elsewhere
   }

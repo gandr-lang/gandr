@@ -8,7 +8,7 @@
 
 /// Cells over a square of four corners, top left to bottom right: its left
 /// and right sides, its top and bottom, one corner and the empty face.
-theory Cells {
+theory Cells where {
   boundary Square { tl, tr, bl, br };
   face left = {tl, bl};
   face right = {tr, br};
@@ -22,7 +22,7 @@ theory Cells {
 
 /// Structural recursion over a face chain: one per `Face`.
 def rec faces(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Face(name, points, rest) => { run r <- faces[<](rest); r + 1 },
     _ => 0
   }
@@ -30,8 +30,8 @@ def rec faces(chain : Theory) -> Integer {
 
 /// The square heads the sort chain of `Cells`, with its six faces.
 @[ runs("6") ]
-def squareFaces() -> Integer { case Cells {
-  Presents(sorts, opers, rules) => case sorts {
+def squareFaces() -> Integer { match Cells {
+  Presents(sorts, opers, rules) => match sorts {
     Shape(name, size, chain, rest) => faces(chain),
     _ => 0
   },

@@ -66,7 +66,7 @@ def nested() -> Integer {
 /// A `case` whose one arm returns and whose other arm continues the body.
 def branch(n : Integer) -> Integer {
   handle c : Proc {
-    run m <- case n {
+    run m <- match n {
       0 => return 8,
       _ => pure n,
     };
@@ -168,7 +168,7 @@ def resumed_on() -> Integer {
 /// A type member may abbreviate a continuation's type: a function stating the
 /// member resumes the continuation it is handed as one stating the stack does
 /// (#1651).
-module Conts {
+module Conts where {
   type K = Stack(-F Unit, -F Integer);
 
   /// `resume_stack`, through the member.

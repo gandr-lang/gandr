@@ -14,24 +14,24 @@
 //   scrutinee at each arm
 
 /// The naturals.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero : Nat
   /// One past a natural.
-  Succ : (n : Nat) --> Nat;
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A universe of two codes.
-data UQ : Type {
+data UQ : Type where {
   /// The code of the naturals.
-  NatQ : UQ;
+  | NatQ : UQ
   /// The code of the unit type.
-  UnitQ : UQ;
+  | UnitQ : UQ
 }
 
 /// The type each code decodes to.
 def elQ(u : UQ) -> Type {
-  case u {
+  match u {
     NatQ => return Nat,
     UnitQ => return Unit
   }
@@ -39,7 +39,7 @@ def elQ(u : UQ) -> Type {
 
 /// A value at each code: the goal reads the arm's code.
 def pick(u : UQ) -> elQ(u) {
-  case u {
+  match u {
     NatQ => Zero,
     UnitQ => unit
   }
@@ -48,7 +48,7 @@ def pick(u : UQ) -> elQ(u) {
 /// A value beside its code, read back as a natural. The `NatQ` arm reads `v`
 /// at `elQ(NatQ)`, which decodes to `Nat`.
 def back(u : UQ, v : elQ(u)) -> Nat {
-  case u {
+  match u {
     NatQ => v,
     UnitQ => Zero
   }
@@ -57,7 +57,7 @@ def back(u : UQ, v : elQ(u)) -> Nat {
 /// A value beside its code, at the code's decode. Each arm reads `v` at its
 /// own code.
 def same(u : UQ, v : elQ(u)) -> elQ(u) {
-  case u {
+  match u {
     NatQ => v,
     UnitQ => v
   }

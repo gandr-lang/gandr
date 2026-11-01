@@ -45,7 +45,8 @@ use crate::written::refusal;
 
 /// A payload-bearing family without parameters: `Nothing` is tag 0 and
 /// `Just(x)` tag 1.
-const MAYBE: &str = "data Maybe : Type { Nothing : Maybe; Just : (x : Integer) --> Maybe; }\n";
+const MAYBE: &str =
+    "data Maybe : Type where { | Nothing : Maybe | Just : (x : Integer) --> Maybe }\n";
 
 /// `pick` over `Color`, its arms `arms` written in source.
 ///
@@ -55,7 +56,7 @@ fn color_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
     let Text(arms) = arms.into();
     Written::new(
-        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"),
+        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ {arms} }} }}\n"),
         "pick",
     )
 }
@@ -68,7 +69,7 @@ fn outer_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
     let Text(arms) = arms.into();
     Written::new(
-        &alloc::format!("{NESTED}def pick(m : Outer) -> -F Integer {{ case m {{ {arms} }} }}\n"),
+        &alloc::format!("{NESTED}def pick(m : Outer) -> -F Integer {{ match m {{ {arms} }} }}\n"),
         "pick",
     )
 }
@@ -396,7 +397,7 @@ fn a_fill_turns_a_held_constructor_into_an_uncovered_one()
         "before the fill the match owes an unfinished test, not a missing arm"
     );
     let filled = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0, Green => return 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ Red => return 0, Green => return 1 }} }}\n"
     );
     assert!(
         matches!(
@@ -412,7 +413,7 @@ fn a_hole_in_a_payload_stops_only_its_own_constructor()
 {
     let mut written = Written::new(
         &alloc::format!(
-            "{MAYBE}def pick(m : Maybe) -> -F Integer {{ case m {{ Just(?) => return 0, Nothing => return 1 }} }}\n"
+            "{MAYBE}def pick(m : Maybe) -> -F Integer {{ match m {{ Just(?) => return 0, Nothing => return 1 }} }}\n"
         ),
         "pick",
     );
@@ -496,7 +497,7 @@ fn a_case_whose_first_arm_is_indeterminate_is_one_hole()
 fn the_sum_eliminator_stops_at_an_indeterminate_arm()
 {
     let mut written = Written::new(
-        "def pick(b : Bool) -> -F Integer { case b { true => return 1, ? => return 0 } }\n",
+        "def pick(b : Bool) -> -F Integer { match b { true => return 1, ? => return 0 } }\n",
         "pick",
     );
     let yes = written.boolean(Side::Left);
@@ -516,13 +517,13 @@ fn the_sum_eliminator_stops_at_an_indeterminate_arm()
 fn an_uncompiled_arm_is_declined_and_a_hole_is_not()
 {
     let text =
-        "def pick(s : String) -> -F Integer { case s { \"a\" => return 1, _ => return 2 } }\n";
+        "def pick(s : String) -> -F Integer { match s { \"a\" => return 1, _ => return 2 } }\n";
     assert!(
         refusal(text, "pick").is_some(),
         "a text column has no test this lowering compiles, and is declined by name"
     );
     let holed = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0, ? => return 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ Red => return 0, ? => return 1 }} }}\n"
     );
     assert_eq!(
         refusal(&holed, "pick"),
@@ -558,7 +559,7 @@ fn a_stuck_arm_and_a_missing_arm_carry_different_notes()
         arm: ArmIndex::from(1_usize)
     });
     let missing = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ Red => return 0 }} }}\n"
     );
     assert!(
         matches!(

@@ -1,7 +1,7 @@
 error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label` it finds no `pub` declaration of, so this source's declarations are not read
    ╭▸ corpus/pathological/modules/translated.gandr:35:74
    │
-15 │ theory Older {
+15 │ theory Older where {
    │        ───── declared here
    ‡
 35 │ import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
@@ -13,7 +13,7 @@ error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label`
 error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label` it finds no `pub` declaration of, so this source's declarations are not read
    ╭▸ corpus/pathological/modules/translated.gandr:35:74
    │
-22 │ theory Tagged {
+22 │ theory Tagged where {
    │        ────── declared here
    ‡
 35 │ import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;

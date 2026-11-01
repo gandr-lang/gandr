@@ -51,11 +51,12 @@ use crate::common::GRAMMAR;
 use crate::common::Text;
 
 /// A three-constructor enumeration: Red, Green and Blue are tags 0, 1 and 2.
-pub const COLOR: &str = "data Color : Type { Red : Color; Green : Color; Blue : Color; }\n";
+pub const COLOR: &str =
+    "data Color : Type where { | Red : Color | Green : Color | Blue : Color }\n";
 
 /// A payload-bearing pair of families: `No` and `Yes(n)` are tags 0 and 1 of
 /// `Inner`, `None` and `Some(i)` tags 0 and 1 of `Outer`.
-pub const NESTED: &str = "data Inner : Type { No : Inner; Yes : (n : Integer) --> Inner; }\ndata Outer : Type { None : Outer; Some : (i : Inner) --> Outer; }\n";
+pub const NESTED: &str = "data Inner : Type where { | No : Inner | Yes : (n : Integer) --> Inner }\ndata Outer : Type where { | None : Outer | Some : (i : Inner) --> Outer }\n";
 
 /// The live evaluator's allowance for one fixture run.
 const FUEL: u32 = 10_000;
@@ -144,7 +145,7 @@ impl Written
     ///
     /// # Specification
     /// - requires: `source` declares `function` with a body whose tail under
-    ///   its parameters is a `case`.
+    ///   its parameters is a `match`.
     /// - ensures: the rows are the lowering's alternatives, in source order,
     ///   over its own pattern table.
     /// - panics: if the source does not lower, `function` lowers no body or its

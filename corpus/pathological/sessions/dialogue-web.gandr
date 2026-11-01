@@ -7,7 +7,7 @@
 import "../../model/sessions/dialogue-web.gandr";
 
 /// A protocol that sends one string and ends.
-module Ask {
+module Ask where {
   type Asking = !String. end;
 }
 

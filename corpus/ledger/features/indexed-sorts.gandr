@@ -4,7 +4,7 @@
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
 @[ checks ]
-theory CatShape {
+theory CatShape where {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
 
@@ -14,7 +14,7 @@ theory CatShape {
 
 /// Types and the functions between them as a model of the shape: `Hom` is a
 /// function from its two indices into the universe.
-module SetoidCat : Model(CatShape) {
+module SetoidCat : Model(CatShape) where {
   type Ob = Type;
   type Hom(a : Ob, b : Ob) = a => b;
 
@@ -56,7 +56,7 @@ module SetoidCat : Model(CatShape) {
 /// A carrier indexed by the host's types: its index ranges over `Type`, the
 /// binder named as a definition's type parameter is, and an operation over it
 /// takes the index its port's sort names.
-theory Carrier {
+theory Carrier where {
   sort T(A : Type) : Type;
 
   oper same : (x : T(a)) --> T(a);
@@ -64,7 +64,7 @@ theory Carrier {
 
 /// Lists as a model of the carrier: `T` is a family from the host's types
 /// into the universe.
-module Lists : Model(Carrier) {
+module Lists : Model(Carrier) where {
   type T(a : Type) = List(a);
 
   /// The list unchanged.
@@ -73,12 +73,12 @@ module Lists : Model(Carrier) {
 
 /// A carrier into the computation types: `Type[-]` classifies the sort, so a
 /// model answers it with a family into the computation types.
-theory Computing {
+theory Computing where {
   sort T(A : Type) : Type[-];
 }
 
 /// Lists, returned: `T` is a family from the host's types into the
 /// computation types.
-module Returning : Model(Computing) {
+module Returning : Model(Computing) where {
   type T(a : Type) = -F List(a);
 }

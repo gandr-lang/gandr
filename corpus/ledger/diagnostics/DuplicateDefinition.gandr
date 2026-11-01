@@ -1,5 +1,5 @@
 /// `DuplicateDefinition`: a second definition for one name.
-module Bad {
+module Bad where {
   @[ refuses("DuplicateDefinition") ]
   def x = 1;
   def x = 2;

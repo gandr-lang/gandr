@@ -18,7 +18,7 @@
 //   into a model module
 
 /// A unital magma's signature.
-theory Mag {
+theory Mag where {
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -46,16 +46,16 @@ def cancelled : Path(
 def built() -> Terms(Mag) { Mag.mul(Mag.one, Mag.one) }
 
 /// Counts: no tick, then one more.
-data Ticks : Type {
+data Ticks : Type where {
   /// No tick.
-  NoTick : Ticks;
+  | NoTick : Ticks
   /// One tick more than `n`.
-  Tick : (n : Ticks) --> Ticks;
+  | Tick : (n : Ticks) --> Ticks
 }
 
 /// Joins two counts on the left.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
-  case m {
+  match m {
     NoTick => n,
     Tick(k) => Tick(joinLeft[<](k, n))
   }
@@ -66,14 +66,14 @@ def tick(n : Ticks) -> Ticks { Tick(n) }
 
 /// No tick on the right, by induction.
 def rec noTickRight(n : Ticks) -> Path(Ticks, joinLeft(n, NoTick), n) {
-  case n {
+  match n {
     NoTick => here(NoTick),
     Tick(k) => cong(tick, noTickRight[<](k))
   }
 }
 
 /// The counts as a model: the left unit by conversion, the right by induction.
-module Counts : Model(Mag) {
+module Counts : Model(Mag) where {
   /// The carrier, the counts.
   type M = Ticks;
   /// The unit, no tick.
@@ -89,7 +89,7 @@ module Counts : Model(Mag) {
 /// The fold into the counts, which respects the counts' laws.
 @[ respects((Counts.unitL, Counts.unitR)) ]
 def rec intoCounts(t : Terms(Mag)) -> Ticks {
-  case t {
+  match t {
     Mag.one => Counts.one(),
     Mag.mul(x, y) => Counts.mul(intoCounts[<](x), intoCounts[<](y))
   }

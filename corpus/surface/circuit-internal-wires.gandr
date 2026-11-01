@@ -1,5 +1,5 @@
 @[ refuses("UndescribedMember.ParallelRedexes") ]
-theory Cong {
+theory Cong where {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
@@ -16,7 +16,7 @@ theory Cong {
 }
 
 @[ refuses("UndescribedMember.OperationFiller") ]
-theory Chain {
+theory Chain where {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);

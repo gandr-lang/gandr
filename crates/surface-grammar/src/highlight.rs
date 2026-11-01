@@ -138,9 +138,13 @@ use crate::parity::NamedKind;
 /// stands inside it.
 const OPENERS: &[&str] = &[
     "#!{",
+    "#[",
     "#{",
     "${",
     "(",
+    ".#[",
+    ".#{",
+    "@![",
     "@[",
     "[",
     "command_substitution_start",
@@ -156,14 +160,14 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 /// compound bridge tiles and the binders' tiles included.
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "admitted", "as", "at", "become", "bind", "boundary",
-    "break", "case", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup",
-    "else", "end", "ext", "extern", "face", "feed", "flow", "fn", "for", "force", "fork", "from",
-    "glob", "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is",
-    "law", "leta", "loop", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers",
-    "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure", "rec",
-    "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send", "shape",
-    "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
-    "unwind", "val", "via", "where", "while", "with", "world",
+    "break", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else",
+    "end", "ext", "extern", "face", "feed", "flow", "fn", "for", "force", "fork", "from", "glob",
+    "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "law",
+    "let", "leta", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer",
+    "offers", "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure",
+    "rec", "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send",
+    "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
+    "unwind", "var", "via", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -187,7 +191,7 @@ const DEFINERS: &[&str] = &[
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
-    "as", "feed", "for", "handle", "hold", "leta", "module", "node", "unpack",
+    "as", "feed", "for", "handle", "hold", "leta", "module", "node", "unpack", "var",
 ];
 
 /// The bracket a tile occurrence stands inside within its own form.
@@ -852,15 +856,16 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///   label: a world, where a handle's type names it and where a declaration
 ///   declares it, the label a `select` names, and the label a site's offer
 ///   answers. A named instantiation argument and a staged type's stage are
-///   parameters, and an attribute name is [`HlRole::Other`]. The operation a
-///   circuit node applies, between `:` and `(`, is a call. A name after a
-///   defining keyword is a function definition and after a binding keyword a
-///   variable definition, either one a parameter inside a parenthesised list.
-///   Inside `@[…]` a binder before `:` is a parameter and any other name an
-///   attribute; inside `[…]` a grade word is a number, a migration's world a
-///   label, and a decoration [`HlRole::Other`]; a name an import's list names
-///   is a variable, and every other identifier inside a parenthesised list is a
-///   parameter. An identifier none of these reach is a variable.
+///   parameters, an as-pattern's name is a variable definition, and an
+///   attribute name is [`HlRole::Other`]. The operation a circuit node applies,
+///   between `:` and `(`, is a call. A name after a defining keyword is a
+///   function definition and after a binding keyword a variable definition,
+///   either one a parameter inside a parenthesised list. Inside `@[…]` a binder
+///   before `:` is a parameter and any other name an attribute; inside `[…]` a
+///   grade word is a number, a migration's world a label, and a decoration
+///   [`HlRole::Other`]; a name an import's list names is a variable, and every
+///   other identifier inside a parenthesised list is a parameter. An identifier
+///   none of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -877,6 +882,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
     "at_type" | "world_declaration" | "offers_declaration" => HlRole::Label,
     "attribute_block" => HlRole::Other,
     "instantiation_expression" | "staged_type" => HlRole::VariableParam,
+    "as_pattern" => HlRole::VariableDef,
     _ if facts.left.crosses(TileLabel(".")).0 => HlRole::Member,
     _ if facts.left.crosses(TileLabel(":")).0 && facts.right.crosses(TileLabel("(")).0 => HlRole::FunctionCall,
     _ if DEFINERS.iter().any(|&label| facts.left.crosses(TileLabel(label)).0) => if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) { HlRole::VariableParam } else { HlRole::FunctionDef },
@@ -885,10 +891,10 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
         Opener::Form => HlRole::Variable,
         Opener::Bracket { label, left } => match label.0 {
             "#{" | "{" => HlRole::Member,
-            "@[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
+            "@[" | "[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
             "[" if matches!(facts.kind.0, "u_type" | "thunk_expression") => HlRole::Number,
             "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
-            "@[" | "[" => HlRole::Other,
+            "@[" | "@![" | "[" => HlRole::Other,
             "(" if left.crosses(TileLabel("select")).0 => HlRole::Label,
             "(" if facts.kind.0 == "import_declaration" => HlRole::Variable,
             "(" => HlRole::VariableParam,
@@ -907,6 +913,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         "at_type" | "world_declaration" | "offers_declaration" => return HlRole::Label,
         "attribute_block" => return HlRole::Other,
         "instantiation_expression" | "staged_type" => return HlRole::VariableParam,
+        "as_pattern" => return HlRole::VariableDef,
         _ => {},
     }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));
@@ -941,8 +948,8 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         Opener::Form => HlRole::Variable,
         Opener::Bracket { label, left } => match label.0 {
             "#{" | "{" => HlRole::Member,
-            "@[" if right_crosses(":") => HlRole::VariableParam,
-            "@[" => HlRole::Other,
+            "@[" | "[" if right_crosses(":") => HlRole::VariableParam,
+            "@[" | "@![" => HlRole::Other,
             "[" => match kind {
                 "u_type" | "thunk_expression" => HlRole::Number,
                 "migrate_expression" => HlRole::Label,
@@ -1055,8 +1062,15 @@ mod tests
         assert_eq!(pbg.mold_count().0, walk.len(), "one occurrence per mold");
         let closes: &[(&str, &[&str])] = &[
             (")", &["(", "type("]),
-            ("]", &["@[", "["]),
-            ("}", &["#!{", "#{", "${", "command_substitution_start", "{"]),
+            ("]", &["#[", ".#[", "@![", "@[", "["]),
+            ("}", &[
+                "#!{",
+                "#{",
+                "${",
+                ".#{",
+                "command_substitution_start",
+                "{",
+            ]),
             ("subshell_close", &["subshell_open"]),
         ];
         for ((id, def), occurrence) in pbg.iter_molds().zip(&walk) {
@@ -1114,7 +1128,7 @@ mod tests
         let table = RoleTable::build(&pbg).expect("the role table builds");
         let classes: &[(&str, &str, HlRole)] = &[
             ("def", "def_value", HlRole::Keyword),
-            ("val", "block", HlRole::Keyword),
+            ("let", "block", HlRole::Keyword),
             ("->", "function_type", HlRole::Operator),
             ("<>", "redirection_operator", HlRole::Operator),
             (";", "list_operator", HlRole::Operator),
@@ -1189,7 +1203,7 @@ mod tests
             ("data_declaration", "op", None, HlRole::FunctionDef),
             ("lambda_expression", "(", Some(")"), HlRole::VariableParam),
             ("block", "(", None, HlRole::VariableParam),
-            ("def_value", "@[", Some(":"), HlRole::VariableParam),
+            ("def_value", "[", Some(":"), HlRole::VariableParam),
             ("attribute_block", "@[", Some("("), HlRole::Other),
             ("data_declaration", "[", None, HlRole::Other),
             ("import_declaration", "as", None, HlRole::VariableDef),

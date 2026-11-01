@@ -44,7 +44,7 @@ def defaulted() -> [o : Console] Unit { Console.print("defaulted") }
 @[ refuses("CapabilityAmplified") ]
 def misplaced() -> Integer {
   handle p : Proc {
-    say[out = p]();
+    say[.out = p]();
     pure 0
   } with {
     pure(x) => pure x,

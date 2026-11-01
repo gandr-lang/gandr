@@ -24,7 +24,7 @@ import "./loop-winding.gandr";
 /// successor is a loop and a predecessor an inverse. It recurses structurally
 /// and respects both rules as the winding number does.
 pub def rec spinWords(n : Int) -> Words {
-  case n {
+  match n {
     Z => Nil,
     S(x) => Loop(spinWords[<](x)),
     P(x) => Unloop(spinWords[<](x))
@@ -77,7 +77,7 @@ def unaround(c : Words) -> Words {
 /// Spinning undoes winding at every word, by induction over the presented
 /// words. Each arm carries the recursive path along its letter's function.
 def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
-  case c {
+  match c {
     Nil => here(Nil),
     Loop(x) => { run p <- sectWords[<](x); cong(around, p) },
     Unloop(x) => { run p <- sectWords[<](x); cong(unaround, p) }
@@ -88,7 +88,7 @@ def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
 /// integers. Each successor carries the path along the model's `turn`, each
 /// predecessor along its `unturn`.
 def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
-  case n {
+  match n {
     Z => here(Z),
     S(x) => { run p <- retrWords[<](x); cong(Winding.turn, p) },
     P(x) => { run p <- retrWords[<](x); cong(Winding.unturn, p) }

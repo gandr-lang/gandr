@@ -10,14 +10,14 @@
 // `../../pathological/metaprograms/derive-eq-over-codes.gandr`.
 
 /// Unary naturals: a unit and a recursive occurrence.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A natural with a flag: one product whose leaves name a builtin and `Nat`.
-data Tagged : Type {
-  Tagged : (shown : Bool, count : Nat) --> Tagged;
+data Tagged : Type where {
+  | Tagged : (shown : Bool, count : Nat) --> Tagged
 }
 
 /// Naturals compared constructor by constructor, recursing at `var Nat`.

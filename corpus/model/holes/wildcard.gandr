@@ -23,12 +23,12 @@ def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 def bothForced() -> Integer { firstAt(_, _, 5, unit) }
 
 /// The identity at a type supplied by name.
-def same @[a : Type] (y : a) -> a { y }
+def same[a : Type](y : a) -> a { y }
 
 /// The implicit supplied by name as a wildcard: the slot asks the solver for
 /// what an omitted implicit would leave it.
 @[ runs("3") ]
-def slotForced() -> Integer { same[a = _](3) }
+def slotForced() -> Integer { same[.a = _](3) }
 
 /// A path's right end left in an ascription's type: checking `here(3)`
 /// against it forces the end to `3`, and the path runs as its two maps, both

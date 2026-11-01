@@ -12,9 +12,9 @@ import "./utf8.gandr";
 
 /// What C reads of a byte list: the list itself, borrowed, when its one zero
 /// is its last byte; nothing when a zero comes earlier.
-data CView : Type {
-  Borrowed : (bytes : List(Integer)) --> CView;
-  Interior : CView;
+data CView : Type where {
+  | Borrowed : (bytes : List(Integer)) --> CView
+  | Interior : CView
 }
 
 /// An owned string's bytes: the code points encoded, then the terminating
@@ -26,25 +26,25 @@ pub def terminated(cs : List(Integer)) -> List(Integer) {
 /// The C reading of a byte list: borrowed whole when the only zero is the
 /// last byte, refused at an interior zero.
 def rec cView(bs : List(Integer)) -> CView {
-  case bs {
+  match bs {
     Nil => Interior,
     Cons(b, rest) => {
       run zero <- b == 0;
       run left <- count(rest);
       run last <- left == 0;
-      case last {
+      match last {
         true => {
-          case zero {
+          match zero {
             true => Borrowed(bs),
             false => Interior
           }
         },
         false => {
-          case zero {
+          match zero {
             true => Interior,
             false => {
               run tail <- cView[<](rest);
-              case tail {
+              match tail {
                 Borrowed(t) => Borrowed(bs),
                 Interior => Interior
               }
@@ -62,7 +62,7 @@ def hi() -> List(Integer) { terminated((Cons(104, Cons(105, Nil)) : List(Integer
 
 /// C reads `hi` as the bytes it is held in: it borrows them whole.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiForC() -> List(Integer) { run bs <- force hi; run v <- cView(bs); case v {
+def hiForC() -> List(Integer) { run bs <- force hi; run v <- cView(bs); match v {
   Borrowed(t) => t,
   Interior => Nil
 } }

@@ -5,16 +5,16 @@
 
 /// Natural numbers, free: every constructor term is its own value.
 @[ checks, form(explicit) ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A family that reads its argument: the naturals at zero, and the functions
 /// on them at every successor.
 @[ checks ]
 def pick(n : Nat) -> -F Type {
-  case n {
+  match n {
     Zero => return Nat,
     Succ(m) => return (+U (Nat -> -F Nat))
   }

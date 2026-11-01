@@ -121,7 +121,7 @@ fn function_of(
     arena.value_type_thunk(arrow)
 }
 
-/// `applyAt @[i : Size] (f : U (Nat[<i] → F Nat), x : Nat[<i]) : F Nat =
+/// `applyAt[i : Size] (f : U (Nat[<i] → F Nat), x : Nat[<i]) : F Nat =
 /// (force f) x` at position 1, each `<i` written as the stage below binder 0
 /// by `reach`, quantified over `bounds`.
 ///
@@ -280,7 +280,7 @@ fn a_call_handing_the_scrutinee_is_refused()
     );
 }
 
-/// `sameAt @[i : Size] (f : U (Nat[i] → F Nat), x : Nat[i]) : F Nat = (force
+/// `sameAt[i : Size] (f : U (Nat[i] → F Nat), x : Nat[i]) : F Nat = (force
 /// f) x` at position 1.
 ///
 /// # Specification
@@ -353,8 +353,8 @@ fn arguments_at_apart_stages_disagree_by_name_1227()
     );
 }
 
-/// `supplying @[j : Size, k : Size] (f : U (Nat[<a] → F Nat), x : Nat[<a]) :
-/// F Nat = (force applyAt[i = s]) f x` at position 2, `a` the stage `argued`
+/// `supplying[j : Size, k : Size] (f : U (Nat[<a] → F Nat), x : Nat[<a]) :
+/// F Nat = (force applyAt[.i = s]) f x` at position 2, `a` the stage `argued`
 /// names, each type plain for none, and `s` the stage `supplied`.
 ///
 /// # Specification
@@ -396,7 +396,7 @@ fn supplying(
 #[test]
 fn a_supplied_stage_is_held_to_the_arguments_1227()
 {
-    // #1227: `applyAt[i = k] f x` with both arguments below `k` reads `i` at
+    // #1227: `applyAt[.i = k] f x` with both arguments below `k` reads `i` at
     // `k`, the stage supplied, and checks.
     let k = Stage::At(StageId::from(1_usize));
     let mut arena = CoreArena::new();
@@ -417,7 +417,7 @@ fn a_supplied_stage_is_held_to_the_arguments_1227()
         outcomes[2]
     );
 
-    // `applyAt[i = j] f x`: the arguments show `k`, the supply states `j`,
+    // `applyAt[.i = j] f x`: the arguments show `k`, the supply states `j`,
     // refused by name at the call's head.
     let mut arena = CoreArena::new();
     let declarations = vec![
@@ -441,7 +441,7 @@ fn a_supplied_stage_is_held_to_the_arguments_1227()
         verdicts[2]
     );
 
-    // `applyAt[i = k] f x` with both arguments at no stage: nothing shows `i`
+    // `applyAt[.i = k] f x` with both arguments at no stage: nothing shows `i`
     // for the supply to agree with.
     let mut arena = CoreArena::new();
     let declarations = vec![
@@ -516,7 +516,7 @@ fn a_call_at_no_stage_reads_its_result_plain()
     );
 }
 
-/// `boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) : F
+/// `boundedAt[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) : F
 /// Nat[<j] = return y` at position 1.
 ///
 /// # Specification
@@ -649,7 +649,7 @@ fn a_bound_naming_a_later_binder_is_refused()
 #[test]
 fn a_stage_on_no_data_type_is_refused()
 {
-    // `intAt @[i : Size] (n : Integer[i]) -> -F Nat`: the kernel's mark would
+    // `intAt[i : Size] (n : Integer[i]) -> -F Nat`: the kernel's mark would
     // reach no data type, so the checker refuses the stage too.
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);

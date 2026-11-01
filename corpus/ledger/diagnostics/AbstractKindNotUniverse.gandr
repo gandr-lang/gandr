@@ -1,5 +1,5 @@
 /// `AbstractKindNotUniverse`: an abstract type whose stated kind is not a universe.
-module Kinded :> #{ type T : Integer } {
+module Kinded :> #{ type T : Integer } where {
   @[ refuses("AbstractKindNotUniverse") ]
   type T = Unit;
 }

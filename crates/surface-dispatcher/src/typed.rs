@@ -171,6 +171,7 @@ use gandr_surface_lowering::ClausePlace;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
+use gandr_surface_lowering::Exit;
 use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
@@ -750,7 +751,7 @@ struct Context
     recursive: Option<Recursive>,
 }
 
-/// A model implicit among a context's binders, `@[s : Model(S) with sort x =
+/// A model implicit among a context's binders, `[s : Model(S) with sort x =
 /// A]`: the binders from `at` on, one per component, are its components,
 /// each named by the path a body reads it by, `s.x`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -778,8 +779,8 @@ struct Under
     /// Each binder as a parameter, `name : type, `, outermost first, but for
     /// a model implicit's components.
     parameters: String,
-    /// The model implicits among the binders, each written whole, ` @[s :
-    /// Model(S), …] `; empty when there is none.
+    /// The model implicits among the binders, each written whole, `[s :
+    /// Model(S), …]`; empty when there is none.
     implicits: String,
     /// The binders' names the parameters declare, and the types they bind.
     context: Context,
@@ -879,6 +880,42 @@ pub enum ChosenDirection
     RightToLeft,
 }
 
+/// A shift or an exit the source leaves out and the elaboration writes, as
+/// an inlay draws it before the bytes it stands at.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Shift
+{
+    /// `return`, inferred where a path through a body ends in a value.
+    Return,
+    /// `become`, inferred where a path through a body ends in a computation.
+    Become,
+    /// `-F`, the returner over a value type written at a result.
+    Returner,
+}
+
+impl core::fmt::Display for Shift
+{
+    /// The keyword the explicit form writes for the shift.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Return => "return",
+            Self::Become => "become",
+            Self::Returner => "-F",
+        })
+    }
+}
+
 /// The type of every node of one source a face can point at, and of every
 /// declaration.
 ///
@@ -958,6 +995,9 @@ pub struct TypeTable
     /// declaration: one entry per parameter in the order the core applies
     /// them, an implicit's name and none for an explicit one.
     telescopes: BTreeMap<ConstantIndex, Vec<Option<String>>>,
+    /// Each shift and exit the source's own text leaves out, by the offset
+    /// the explicit form writes it at, ascending.
+    shifts: Vec<(ByteOffset, Shift)>,
 }
 
 /// The printer's root for `node`.
@@ -1557,6 +1597,28 @@ impl TypeTable
             levels,
         } = run;
         let origins = module.origins();
+        let mut shifts: Vec<(ByteOffset, Shift)> = module
+            .inferred_exits()
+            .iter()
+            .map(|inferred| {
+                (inferred.span, match inferred.exit {
+                    Exit::Return => Shift::Return,
+                    Exit::Become => Shift::Become,
+                })
+            })
+            .chain(
+                origins
+                    .comp_types()
+                    .iter()
+                    .filter(|&&(_, origin)| {
+                        origin.provenance() == Provenance::Inserted(Insertion::Returner)
+                    })
+                    .map(|&(_, origin)| (origin.span(), Shift::Returner)),
+            )
+            .filter_map(|(span, shift)| Some((own(span, base)?.start(), shift)))
+            .collect();
+        shifts.sort_unstable();
+        shifts.dedup();
         let universes: Vec<(Origin, TypeNode)> = levels
             .into_iter()
             .map(|(origin, sort, level)| {
@@ -1722,7 +1784,8 @@ impl TypeTable
             // relation, which writes the two types and nothing the record
             // holds, or a term of the words a data declaration's loops
             // present, located at the declaration; nor does a term of the
-            // access a method call is, below the call, located at the call; nor
+            // access a method call is, below the call, located at the call, or
+            // of the access a place assignment is, located at the place; nor
             // does a term of the bind a typed lambda parameter is read through,
             // located at the lambda; nor does a term of the law or the proof a
             // derived rule mints, located at the statement's name; nor does the
@@ -1735,6 +1798,7 @@ impl TypeTable
                             | Insertion::Relation
                             | Insertion::Words
                             | Insertion::Method
+                            | Insertion::Assignment
                             | Insertion::Parameter
                             | Insertion::Derived
                             | Insertion::Implicit
@@ -2701,6 +2765,7 @@ impl TypeTable
             crossings,
             slots,
             telescopes,
+            shifts,
         }
     }
 
@@ -3319,6 +3384,20 @@ impl TypeTable
         })
     }
 
+    /// Each shift and exit the source's own text leaves out, by the offset
+    /// the explicit form writes it at, ascending: the `return` or `become` the
+    /// lowering inferred at a tail, and the `-F` it wrote over a value type at
+    /// a result.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shifts(&self) -> &[(ByteOffset, Shift)]
+    {
+        &self.shifts
+    }
+
     /// The span of every entry, in table order, unspelled.
     ///
     /// # Specification
@@ -3794,8 +3873,8 @@ impl TypeTable
             .collect();
         models.sort_by_key(|&(modelled, _)| modelled);
         let constructors = self.families.naming();
-        // A call supplies its callee's implicits by name, `f[x = a](b)`, and a
-        // model implicit by the path its components read under, `f[s = M]`:
+        // A call supplies its callee's implicits by name, `f[.x = a](b)`, and a
+        // model implicit by the path its components read under, `f[.s = M]`:
         // the core applies every argument in place.
         let implicits: Vec<(ConstantIndex, Vec<Option<Name<'_>>>)> = self
             .telescopes
@@ -4101,7 +4180,7 @@ impl TypeTable
                 spelled.unspelled().is_empty().then_some(spelled)
             };
             if let Some(&slot) = starting.get(&at) {
-                let opener = if implicits.is_empty() { " @[" } else { ", " };
+                let opener = if implicits.is_empty() { "[" } else { ", " };
                 for part in [
                     opener,
                     slot.name.as_str(),
@@ -4146,7 +4225,7 @@ impl TypeTable
             at = at.saturating_add(1_usize);
         }
         if !implicits.is_empty() {
-            implicits.push_str("] ");
+            implicits.push(']');
         }
         Some(Under {
             parameters,
@@ -5792,10 +5871,7 @@ mod tests
 
     /// The source the referent witnesses read: a family, a function matching
     /// on it, and a numeral built of its constructors.
-    const REFERRED: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-                            def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero \
-                            => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef two : Nat ;\n\
-                            def two = Succ(Succ(Zero)) ;";
+    const REFERRED: &str = include_str!("typed/fixtures/referred.gandr");
 
     /// #1129: an `ext` member's keyword holds none of the members it
     /// generates, neither a binder nor a law's orientation, and the face and
@@ -5873,12 +5949,12 @@ mod tests
         assert_eq!(at("rule unitL"), None, "nor does a rule's keyword");
         assert_eq!(
             at("Semigroup;\n  oper one"),
-            named("Semigroup {", "Semigroup"),
+            named("Semigroup where {", "Semigroup"),
             "an include names the theory it includes"
         );
         assert_eq!(
-            at("Monoid) {"),
-            named("Monoid {", "Monoid"),
+            at("Monoid) where {"),
+            named("Monoid where {", "Monoid"),
             "a model ascription's argument names the theory, not a member of the module"
         );
         assert_eq!(
@@ -5931,12 +6007,12 @@ mod tests
         );
         assert_eq!(
             at("Succ(plus"),
-            named("Succ : (n", "Succ"),
+            named("Succ : (n :", "Succ"),
             "a constructor in a term, its name in the family"
         );
         assert_eq!(
             at("Succ(p)"),
-            named("Succ : (n", "Succ"),
+            named("Succ : (n :", "Succ"),
             "a constructor in a pattern, its name in the family"
         );
         assert_eq!(
@@ -5949,7 +6025,7 @@ mod tests
             named("Nat : Type", "Nat"),
             "a written family, its declaration"
         );
-        assert_eq!(at("case"), None, "a keyword refers to nothing");
+        assert_eq!(at("match"), None, "a keyword refers to nothing");
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
     }
 
@@ -6004,10 +6080,7 @@ mod tests
     #[test]
     fn a_loop_s_words_are_written_nowhere_in_its_declaration_1371()
     {
-        let source = SourceText::from(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef wound(p : \
-             Path(Circle, Base, Base)) -> -F Circle {\n  return Base\n}\n",
-        );
+        let source = SourceText::from(include_str!("typed/fixtures/circle-loop-words.gandr"));
         let table = table(source);
         let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
         let named = |needle: &'static str, name: &'static str| {
@@ -6021,7 +6094,7 @@ mod tests
             assert_eq!(at(declared), None, "a declared name `{declared}` is no use");
         }
         assert_eq!(
-            at("Circle;"),
+            at("Circle\n  | loop"),
             named("Circle : Type", "Circle"),
             "the point's result, its family"
         );
@@ -6031,7 +6104,7 @@ mod tests
             "the loop's source, the point it writes"
         );
         assert_eq!(
-            at("Base;\n}"),
+            at("Base\n}\ndef"),
             named("Base : Circle", "Base"),
             "the loop's target, the point it writes"
         );
@@ -6041,7 +6114,7 @@ mod tests
             "a use of the family outside its declaration"
         );
         assert_eq!(
-            at("Base\n}"),
+            at("Base, Base)"),
             named("Base : Circle", "Base"),
             "a use of the point outside its declaration"
         );
@@ -6052,11 +6125,7 @@ mod tests
     #[test]
     fn a_constructor_s_result_names_its_family_1360()
     {
-        let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndata Vec(a : \
-             Type) : Nat -> Type {\n  VNil : Vec(a, Zero);\n  VCons : (n : Nat, head : a, tail \
-             : Vec(a, n)) --> Vec(a, Succ(n));\n}\n",
-        );
+        let source = SourceText::from(include_str!("typed/fixtures/constructor-results.gandr"));
         let table = table(source);
         let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
         let named = |needle: &'static str, name: &'static str| {
@@ -6067,12 +6136,12 @@ mod tests
             ))
         };
         assert_eq!(
-            at("Nat;\n  Succ"),
+            at("Nat\n  | Succ"),
             named("Nat : Type", "Nat"),
             "a constant constructor's result, its family"
         );
         assert_eq!(
-            at("Nat;\n}"),
+            at("Nat\n}"),
             named("Nat : Type", "Nat"),
             "a constructor's result after its fields, its family"
         );
@@ -6082,18 +6151,18 @@ mod tests
             "an indexed constructor's result, its family"
         );
         assert_eq!(
-            at("Vec(a, Succ(n));"),
+            at("Vec(a, Succ(n))\n"),
             named("Vec(a : Type)", "Vec"),
             "an indexed result after its fields, its family"
         );
         assert_eq!(
-            at("Zero);"),
+            at("Zero)\n"),
             named("Zero : Nat", "Zero"),
             "a result's index, the constructor it writes"
         );
         assert_eq!(
-            at("Succ(n));"),
-            named("Succ : (n", "Succ"),
+            at("Succ(n))\n"),
+            named("Succ : (n :", "Succ"),
             "a result's index applying a constructor, that constructor"
         );
         assert_eq!(
@@ -6115,7 +6184,7 @@ mod tests
             refers(&table, referred, SourceText::from("Succ()")),
             Some(site(
                 referred,
-                SourceText::from("Succ : (n"),
+                SourceText::from("Succ : (n :"),
                 SourceText::from("Succ"),
             )),
             "the constructor's name in the family, though `two` is refused"
@@ -6180,7 +6249,7 @@ mod tests
             "a declaration: its recursive call"
         );
         assert_eq!(
-            uses("Succ : (n"),
+            uses("Succ : (n :"),
             [
                 at("Succ(p)"),
                 at("Succ(plus"),
@@ -6334,7 +6403,7 @@ mod tests
         use gandr_surface_lowering::UnitSource;
 
         let sibling = SourceText::from(
-            "pub data Point : Type {\n  Here : Point;\n}\npub def here : Point ;\ndef here = Here ;",
+            "pub data Point : Type where {\n  | Here : Point\n}\npub def here : Point ;\ndef here = Here ;",
         );
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
@@ -6395,10 +6464,7 @@ mod tests
 
         use super::NameKind;
 
-        let sibling = SourceText::from(
-            "pub data Point : Type {\n  Here : Point;\n  There : Point;\n}\npub def here : Point \
-             ;\ndef here = Here ;",
-        );
+        let sibling = SourceText::from(include_str!("typed/fixtures/point-sibling.gandr"));
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
         let laid = format!("{}\n{}", <&str>::from(sibling), <&str>::from(importer));
@@ -6464,7 +6530,7 @@ mod tests
 
         let sibling = SourceText::from("pub def here = 7 ;");
         let importer = SourceText::from(
-            "import \"./here.gandr\" ;\ndata Point : Type {\n  Origin : Point;\n}\ndef answer = 42 \
+            "import \"./here.gandr\" ;\ndata Point : Type where {\n  | Origin : Point\n}\ndef answer = 42 \
              ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { \
              return n + n }\ndef idAt(A : Type, x : A) -> -F A { x }\ndef opt : Type -> Type[-] \
              ;\ndef opt = \\A. -F A ;\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U \
@@ -6546,10 +6612,10 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type {\n  Here : Point;\n}\npub data Spot : Type {\n  \
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}\npub data Spot : Type where {\n  \
                        There : Spot;\n}";
-        let importer = "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef \
-                        a : Integer ;\ndef a = nope ;\ndata Spot : Type {\n  There : Spot;\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here : Point\n}\ndef \
+                        a : Integer ;\ndef a = nope ;\ndata Spot : Type where {\n  | There : Spot\n}";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
         let unit = Unit::new(vec![
@@ -6579,11 +6645,7 @@ mod tests
     #[test]
     fn the_binders_in_scope_are_spelled_in_the_source_s_text_831()
     {
-        let typing = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : \
-             Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(pl)\n  \
-             }\n}\n",
-        );
+        let typing = SourceText::from(include_str!("typed/fixtures/binders-in-scope.gandr"));
         let table = table(typing);
         let at = |needle: &'static str| {
             table
@@ -6619,7 +6681,7 @@ mod tests
             "a sibling arm never sees `p`"
         );
         assert_eq!(
-            at("Nat;"),
+            at("Nat) --> Nat\n}"),
             Vec::<String>::new(),
             "a family's constructor reads under no binder"
         );
@@ -6633,7 +6695,7 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type {\n  Here : Point;\n}\npub def here : Point ;\ndef here = Here ;";
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}\npub def here : Point ;\ndef here = Here ;";
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
         let laid = format!("{sibling}\n{}", <&str>::from(importer));
@@ -6696,7 +6758,7 @@ mod tests
         };
         assert_eq!(
             kept(
-                "//! Points.\ndata Point : Type {\n  Here : Point;\n}",
+                "//! Points.\ndata Point : Type where {\n  | Here : Point\n}",
                 "//! Uses [Point].\nimport \"./point.gandr\" ;\ndef there : Point ;\ndef there \
                  = Here ;"
             ),
@@ -6708,7 +6770,7 @@ mod tests
         );
         assert_eq!(
             kept(
-                "data Point : Type {\n  Here : Point;\n}",
+                "data Point : Type where {\n  | Here : Point\n}",
                 "//! Uses [Point].\nimport \"./point.gandr\" ;\ndef there : Point ;\ndef there \
                  = Here ;"
             ),
@@ -6733,7 +6795,7 @@ mod tests
         use super::reprinted;
         use super::signed;
 
-        let sibling = "pub data Point : Type {\n  Here : Point;\n}";
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}";
         let importer = "import \"./point.gandr\" ;\ndef there : +U (-F +{Point, Point}) ;\ndef \
                         there = thunk { return +{.1 = Here} } ;";
         let laid = format!("{sibling}\n{importer}");
@@ -6795,7 +6857,7 @@ mod tests
         use super::reprinted;
 
         let source = SourceText::from(
-            "theory Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
+            "theory Pointed where {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
              rule flipPt : flip(pt()) <=> pt();\n  rule flipFlip : flip(flip(p)) <=> p;\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -6846,7 +6908,7 @@ mod tests
         scratch.file(
             Path::new("fixture/base.gandr"),
             SourceText::from(
-                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+                "pub data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n",
             ),
         );
         scratch.file(
@@ -6858,12 +6920,7 @@ mod tests
         );
         scratch.file(
             Path::new("fixture/b-member.gandr"),
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndata List(a : Type) : Type {\n  Nil : List(a);\n  \
-                 Cons : (head : a, tail : List(a)) --> List(a);\n}\ndef joined : +U (-F \
-                 List(Nat)) ;\ndef joined = thunk { return (Cons(Zero, (Nil : List(Nat))) : \
-                 List(Nat)) } ;\n",
-            ),
+            SourceText::from(include_str!("typed/fixtures/member-list.gandr")),
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let mut reprinted = Vec::new();
@@ -6984,7 +7041,7 @@ mod tests
     #[test]
     fn a_called_name_runs_and_a_binder_binds()
     {
-        let written = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef id : \
+        let written = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef id : \
                        Nat => Nat ;\ndef id = thunk { fn (y) { pure y } } ;\ndef twice = thunk { fn \
                        (x) { run a <- id(x) ; id(a) } } ;\ndef same(n : Nat) -> -F Nat { n }\n";
         let table = table(SourceText::from(written));
@@ -7153,7 +7210,7 @@ mod tests
     fn a_printed_type_reads_back_to_its_certificate()
     {
         let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef f(x : Nat) -> \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef f(x : Nat) -> \
              -F Nat { return x }\ndef h(a : Type, y : a) -> -F a { return y }\ndef k(a : Type, y : \
              a) -> -F a { run z <- h(a, y) ; return z }\n",
         );
@@ -7195,15 +7252,15 @@ mod tests
     }
 
     /// A type naming a model implicit's components spells them by their
-    /// paths and reads back under the implicit declared whole, `@[s :
+    /// paths and reads back under the implicit declared whole, `[s :
     /// Model(Counter)]`, where every component's binder is written at the
     /// implicit's one name (#2364).
     #[test]
     fn a_type_under_a_model_implicit_reads_back_under_it_2364()
     {
         let source = SourceText::from(
-            "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read \
-             : (c : C) --> Integer; }\ndef stepped @[s : Model(Counter)] (c : s.C) -> -F Integer \
+            "theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read \
+             : (c : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer \
              { s.read(s.incr(c)) }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -7294,8 +7351,8 @@ mod tests
     fn a_crossed_model_names_the_reduct_the_checker_applies_2031()
     {
         let source = SourceText::from(
-            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory \
-             Monoid {\n  include Semigroup;\n  oper one : () --> M;\n}\ndef multiplies(s : \
+            "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory \
+             Monoid where {\n  include Semigroup;\n  oper one : () --> M;\n}\ndef multiplies(s : \
              Model(Semigroup)) -> -F Integer { 0 }\ndef asSemigroup(m : Model(Monoid)) -> -F \
              Integer { become multiplies(m) }\n",
         );
@@ -7341,14 +7398,14 @@ mod tests
     fn a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385()
     {
         let source = SourceText::from(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n\ndata Int : \
-             Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> Int;\n  rule \
-             S(P(x)) <=> x;\n  rule P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
-             -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
+            "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n\ndata Int : \
+             Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : \
+             S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
+             -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
              back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
-             Base, Base) {\n  case n {\n    Z => return here(Base),\n    S(x) => { run c <- \
+             Base, Base) {\n  match n {\n    Z => return here(Base),\n    S(x) => { run c <- \
              spin[<](x); return loop ∷ c },\n    P(x) => { run c <- spin[<](x); return \
-             back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  case x {\n    \
+             back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  match x {\n    \
              Base => Base,\n    loop => back(loop)\n  }\n}\n",
         );
         let table = table(source);
@@ -7379,10 +7436,10 @@ mod tests
         let pattern =
             |written: &str, ty: &str| (String::from(written), Subject::Binder, String::from(ty));
         assert_eq!(
-            at("case p"),
+            at("match p"),
             (
                 String::from(
-                    "case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    back(loop) ∷ q => return 2\n  }"
+                    "match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    back(loop) ∷ q => return 2\n  }"
                 ),
                 Subject::Term,
                 String::from("?")
@@ -7466,7 +7523,7 @@ mod tests
     fn an_unused_dependent_part_answers_in_its_arms_context()
     {
         let source = SourceText::from(
-            "data Vinf : Type[+, 1] {\n  Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;\n}\n\ndef members(v : Vinf) -> -F Type {\n  case v {\n    Sup(a, f) => return a\n  }\n}\n",
+            "data Vinf : Type[+, 1] where {\n  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf\n}\n\ndef members(v : Vinf) -> -F Type {\n  match v {\n    Sup(a, f) => return a\n  }\n}\n",
         );
         let table = table(source);
         assert_eq!(
@@ -7521,7 +7578,7 @@ mod tests
     fn a_pattern_on_a_computed_scrutinee_answers_1141()
     {
         let source = SourceText::from(
-            "def compared(n : Integer) -> -F Integer {\n  case n >= 5 {\n    true => return \
+            "def compared(n : Integer) -> -F Integer {\n  match n >= 5 {\n    true => return \
              2,\n    false => return 1\n  }\n}\n",
         );
         let table = table(source);
@@ -7547,9 +7604,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def last(t : #{Integer, Bool, Integer}) -> -F Integer {\n",
-            "  case t {\n    #{x, y, z} => return z\n  }\n}\n",
+            "  match t {\n    #{x, y, z} => return z\n  }\n}\n",
             "def side(c : Integer) -> -F Integer {\n  run small <- c < 128;\n",
-            "  case small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
+            "  match small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [("y, z}", "Bool"), ("u} =>", "Unit"), ("v} =>", "Unit")] {
@@ -7569,9 +7626,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def low(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
-            "  case r {\n    #{.high = h, .low = l} => return l\n  }\n}\n",
+            "  match r {\n    #{.high = h, .low = l} => return l\n  }\n}\n",
             "def first(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
-            "  case r {\n    #{p, q} => return p\n  }\n}\n",
+            "  match r {\n    #{p, q} => return p\n  }\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [("h, .low", "Bool"), ("q} =>", "Bool")] {
@@ -7591,14 +7648,14 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def shortLength(xs : List(Integer)) -> -F Integer {\n",
-            "  case xs {\n    [] => 0,\n    [a] => 1,\n    [c, d] => 2,\n    _ => 3\n  }\n}\n",
+            "  match xs {\n    [] => 0,\n    [a] => 1,\n    [c, d] => 2,\n    _ => 3\n  }\n}\n",
             "def secondOf(xs : List(Integer)) -> -F Integer {\n",
-            "  case xs {\n    [_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
+            "  match xs {\n    [_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
             "def headed(xs : List(Integer)) -> -F Integer {\n",
-            "  case xs {\n    [h, .._] as all => become shortLength(all),\n    [] => 0\n  }\n}\n",
-            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
+            "  match xs {\n    all @ [h, .._] => become shortLength(all),\n    [] => 0\n  }\n}\n",
+            "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
             "def multiplies(s : Model(Semigroup)) -> -F Integer {\n",
-            "  case s {\n    #{.mul = m} => 0\n  }\n}\n",
+            "  match s {\n    #{.mul = m} => 0\n  }\n}\n",
             "def bound() -> -F Integer {\n  run (p, n) <- pure ((true : Bool), 2);\n  n\n}\n",
             "def split() -> -F Integer {\n",
             "  run (y, z) : Integer * Integer <- pure (1, 2);\n  y\n}\n",
@@ -7611,7 +7668,7 @@ mod tests
             ("_, b, ..rest", "Integer"),
             ("rest] =>", "List(Integer)"),
             ("h, .._", "Integer"),
-            ("_] as all", "List(Integer)"),
+            ("all @ [h", "List(Integer)"),
             ("p, n)", "Bool"),
             ("z) :", "Integer"),
             ("m} =>", "+U (M -> M -> -F M)"),
@@ -7631,7 +7688,7 @@ mod tests
     fn a_model_parameter_in_a_later_parameter_type_answers_2182()
     {
         let source = SourceText::from(concat!(
-            "theory Counter {\n  sort C : Type;\n  oper zero : C;\n}\n",
+            "theory Counter where {\n  sort C : Type;\n  oper zero : C;\n}\n",
             "def shared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> \
              -F Integer { return 0 }\n",
             "def fixed(x : Type, f : Model(Counter) with sort C = x, c : f.C) -> -F x { c }\n",
@@ -7664,7 +7721,7 @@ mod tests
         let source = SourceText::from(concat!(
             "def twice : Type -> Type ;\ndef twice = \\Y. Y * Y ;\n\n",
             "def twiceFirst(p : twice(Integer)) -> -F Integer {\n",
-            "  case p {\n    #{c, d} => return c\n  }\n}\n",
+            "  match p {\n    #{c, d} => return c\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -7687,7 +7744,7 @@ mod tests
             "sect : (x : a) => Path(a, back(to(x)), x), retr : (y : b) => Path(b, to(back(y)), y)}) ",
             "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path(a, g(to(x)), x)}, ",
             "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path(b, to(h(y)), y)}} {\n",
-            "  case i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
+            "  match i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -7707,9 +7764,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def nested(p : #{x : Integer, inner : #{y : Integer, q : Path(Integer, x, y)}}) ",
-            "-> -F Integer {\n  case p {\n    #{x, #{y, q}} => y\n  }\n}\n",
+            "-> -F Integer {\n  match p {\n    #{x, #{y, q}} => y\n  }\n}\n",
             "def flat(p : #{x : Integer, y : Integer, q : Path(Integer, x, y)}) ",
-            "-> -F Integer {\n  case p {\n    #{x, y, q} => y\n  }\n}\n",
+            "-> -F Integer {\n  match p {\n    #{x, y, q} => y\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -7770,14 +7827,14 @@ mod tests
     fn a_functor_parameter_s_abstract_type_answers_at_its_kind_2183()
     {
         let source = SourceText::from(concat!(
-            "module Point :> #{ type T, z : T } {\n  type T = Integer;\n  def z = 0;\n}\n",
-            "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } {\n",
+            "module Point :> #{ type T, z : T } where {\n  type T = Integer;\n  def z = 0;\n}\n",
+            "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } where {\n",
             "  type U = S.T * S.T;\n  def w = (S.z, S.z);\n}\n",
             "module Squared = Square(Point) ;\n",
-            "module Pointed(R : #{ type V, y : V }) {\n  type At = Path(R.V, R.y, R.y);\n}\n",
+            "module Pointed(R : #{ type V, y : V }) where {\n  type At = Path(R.V, R.y, R.y);\n}\n",
         ));
         let table = table(source);
-        for needle in ["T }) :>", "V }) {"] {
+        for needle in ["T }) :>", "V }) where {"] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Type, SourceText::from("Type")),
@@ -7792,8 +7849,8 @@ mod tests
     fn a_module_refused_at_its_header_is_held_refused_2183()
     {
         let source = SourceText::from(concat!(
-            "theory Scaled {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
-            "module Misnamed : Model(Scaled) with sort Rate = Integer {\n",
+            "theory Scaled where {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
+            "module Misnamed : Model(Scaled) with sort Rate = Integer where {\n",
             "  type Ratio = Integer;\n  def scale = 2;\n}\n",
         ));
         let grammar = built_in().expect("the built-in grammar builds");
@@ -7864,10 +7921,7 @@ mod tests
     #[test]
     fn a_checker_refusal_is_held_by_its_declaration_1204()
     {
-        let source = SourceText::from(
-            "data Small : Type {\n  Pick : (a : Type, f : +U (a -> -F Small)) --> Small;\n}\ndata \
-             Flag : Type {\n  On : Flag;\n}\n",
-        );
+        let source = SourceText::from(include_str!("typed/fixtures/refused-universe.gandr"));
         let grammar = built_in().expect("the built-in grammar builds");
         let tree = gandr_surface_parser::parse(&grammar, source)
             .expect("the source parses")
@@ -7940,7 +7994,7 @@ mod tests
              close(peer)\n}\n",
         );
         let table = table(source);
-        for (needle, ty) in [("next =>", "!String. end"), ("retire =>", "end")] {
+        for (needle, ty) in [("next =>", "!String >> end"), ("retire =>", "end")] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Binder, SourceText::from(ty)),
@@ -7953,7 +8007,7 @@ mod tests
     fn a_sealed_export_is_typed_at_its_atom_by_path()
     {
         let source = SourceText::from(
-            "module Counter :> #{ type T, zero : T } { type T = Integer ; def zero = 0 ; }\ndef z = \
+            "module Counter :> #{ type T, zero : T } where { type T = Integer ; def zero = 0 ; }\ndef z = \
              Counter.zero ;",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -7991,7 +8045,7 @@ mod tests
     fn a_theory_member_answers_under_the_sorts_before_it()
     {
         let source = SourceText::from(
-            "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+            "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
              : Ob) --> Hom(a, a);\n  rule idem : id(a) ==> id(a);\n}\n",
         );
         let table = table(source);
@@ -8020,9 +8074,9 @@ mod tests
         // names; their terms once answered there, over binders the naming
         // fallback called after the theory (`CatShape => CatShape`).
         let source = SourceText::from(
-            "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
+            "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
              Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-             rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) {\n  type Ob = \
+             rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) where {\n  type Ob = \
              Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \
              t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t \
              -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    run y <- f(x);\n    become \
@@ -8035,7 +8089,7 @@ mod tests
         );
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("Cat) {")),
+            answer(&table, source, SourceText::from("Cat) where {")),
             Maybe::Absent(typing::Absent::Untyped)
         );
         assert_eq!(
@@ -8052,8 +8106,8 @@ mod tests
     fn a_data_family_is_keyed_at_its_own_type_past_its_operations()
     {
         let source = SourceText::from(
-            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n  oper twice(m : N) -> (o : N);\n  \
-             rule twice(Z) ==> Z;\n}\n",
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n  oper twice : (m : N) --> (o : N);\n  \
+             rule : twice(Z) ==> Z;\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let tree = gandr_surface_parser::parse(&grammar, source)
@@ -8078,7 +8132,7 @@ mod tests
             "the family's form, not its operation's type"
         );
         assert_eq!(
-            answer(&table, source, SourceText::from("S :")),
+            answer(&table, source, SourceText::from("S : (n")),
             agreed(Subject::Binder, SourceText::from("+U (N -> -F N)")),
             "a constructor at its declared type"
         );
@@ -8138,8 +8192,8 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type {\n  Here : Point;\n}";
-        let importer = "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef \
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here : Point\n}\ndef \
                         here : Point ;\ndef here = Here ;";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
@@ -8169,7 +8223,7 @@ mod tests
             "a name after the refused declaration still refers"
         );
         assert!(
-            matches!(table.referent(at("Point;")), Maybe::Absent(_)),
+            matches!(table.referent(at("Point\n}")), Maybe::Absent(_)),
             "a name inside the refused declaration refers to nothing"
         );
         let trips: Vec<(String, RoundTrip)> = table
@@ -8196,9 +8250,9 @@ mod tests
         use gandr_surface_lowering::UnitSource;
 
         let sibling = "pub def reply = 42 ;";
-        let importer = "theory Older {\n  oper answer : Integer;\n}\ntheory Tagged {\n  oper \
+        let importer = "theory Older where {\n  oper answer : Integer;\n}\ntheory Tagged where {\n  oper \
                         reply : Integer;\n  oper label : String;\n}\nflow retagged : Tagged ~~> \
-                        Older {\n  def answer = reply;\n}\nimport \"./newer.gandr\" as newer : \
+                        Older where {\n  def answer = reply;\n}\nimport \"./newer.gandr\" as newer : \
                         Older via retagged ;\ndef relayed() -> Integer { newer.answer }";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
@@ -8231,8 +8285,8 @@ mod tests
     fn a_run_binder_answers_at_what_its_computation_returns_298()
     {
         let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\ndef \
-             predecessor(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef \
+             predecessor(n : Nat) -> -F Nat {\n  run m <- match n {\n    Zero => return n,\n    \
              Succ(p) => pure p,\n  } ;\n  return m\n}\n\ndef first(n : Nat) -> -F Nat {\n  run k \
              <- loop { break(Succ(n)) } ;\n  return Succ(k)\n}\n\ndef same(n : Nat) -> -F Nat {\n  \
              return n\n}\n\ndef unused(n : Nat) -> -F Nat {\n  run u <- same(n) ;\n  run _ <- \
@@ -8261,7 +8315,7 @@ mod tests
     {
         let theory = |name: &str, law: &str| {
             format!(
-                "theory {name} {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s \
+                "theory {name} where {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s \
                  : S) . C) --> C;\n{law}}}\n\n"
             )
         };
@@ -8331,9 +8385,9 @@ mod tests
     fn a_run_bound_match_s_patterns_answer_298()
     {
         let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\ndef rec skim(n : \
-             Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
-             case p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec skim(n : \
+             Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
+             match p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
              become skim[<](p)\n    },\n  }\n}\n",
         );
         let table = table(source);
@@ -8377,7 +8431,7 @@ mod tests
     fn a_run_s_tuple_pattern_answers_at_the_tuple_298()
     {
         let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n}\n\ndef pair(n : Nat) -> -F (Nat * Nat) {\n  return \
+            "data Nat : Type where {\n  | Zero : Nat\n}\n\ndef pair(n : Nat) -> -F (Nat * Nat) {\n  return \
              (n, n)\n}\n\ndef first(n : Nat) -> -F Nat {\n  run (a, b) <- pair(n) ;\n  return \
              a\n}\n",
         );
@@ -8396,7 +8450,7 @@ mod tests
     fn an_unused_split_component_answers_by_its_written_name_665()
     {
         let spelled = spelled(SourceText::from(
-            "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {\n  case i {\n    #{t, k, s, r} => k\n  }\n}\n",
+            "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {\n  match i {\n    #{t, k, s, r} => k\n  }\n}\n",
         ));
         assert!(
             spelled
@@ -8430,7 +8484,7 @@ mod tests
             ),
         ] {
             let source = format!(
-                "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {{\n  case i {{\n    {pattern}\n  }}\n}}\n"
+                "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {{\n  match i {{\n    {pattern}\n  }}\n}}\n"
             );
             let spelled = spelled(SourceText::from(source.as_str()));
             assert!(
@@ -8456,7 +8510,7 @@ mod tests
     {
         let record = "#{ x : b, y : b, p : Path(b, x, y) }";
         let source = format!(
-            "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  case w {{\n    \
+            "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  match w {{\n    \
              #{{.x = u, .y = v, .p = q}} => here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
              Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fn (w) {{ w }} }},\n    \
              ((thunk {{ fn (w) {{ w }} }}, thunk {{ fn (w) {{ here(w) }} }}), (thunk {{ fn (w) \
@@ -8577,7 +8631,7 @@ mod tests
     fn a_family_decoded_at_a_nested_call_reads_back_768()
     {
         let source = SourceText::from(
-            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\n\ndata T : Type {\n  V : T;\n}\n\ndef \
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
              ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
              w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
              => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
@@ -8607,7 +8661,7 @@ mod tests
     fn a_record_whose_dependency_reads_away_reads_back_771()
     {
         let source = SourceText::from(
-            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\n\ndata T : Type {\n  V : T;\n}\n\ndef \
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
              ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
              w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
              => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
@@ -8637,7 +8691,7 @@ mod tests
     fn a_function_argument_in_a_path_type_reads_back_3947()
     {
         let source = SourceText::from(
-            "def first(b : Type, w : #{x : b, y : b}) -> b {\n  case w {\n    #{.x = u, .y = v} \
+            "def first(b : Type, w : #{x : b, y : b}) -> b {\n  match w {\n    #{.x = u, .y = v} \
              => u\n  }\n}\n\ndef pass(\n  b : Type,\n  s : #{x : b, y : b} => b,\n  e : Path(#{x \
              : b, y : b} => b, s, s)\n) -> Path(#{x : b, y : b} => b, s, s) {\n  e\n}\n\ndef \
              user(b : Type, e : Path(#{x : b, y : b} => b, thunk { fn (w) { first(b, w) } }, \
@@ -8979,19 +9033,7 @@ mod tests
     #[test]
     fn a_thunk_a_computed_type_writes_reprints_as_printed_3933()
     {
-        let source = SourceText::from(
-            "data Sig(a : Type, b : +U (a -> -F Type)) : Type {\n  MkSig : (x : a, y : b(x)) --> \
-             Sig(a, b);\n}\ndata IR(d : Type) : Type[+, 1] {\n  Iota : (e : d) --> IR(d);\n  \
-             DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d);\n}\ndef rec \
-             args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {\n  case c {\n    \
-             Iota(e) => return Unit,\n    DeltaC(a, f) => return (Sig(\n      +U (a -> -F x),\n      \
-             thunk { fn (h) { args[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t) } }\n    ))\n  }\n}\n\
-             def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> \
-             Unit {\n  return unit\n}\ndef delta(\n  d : Type,\n  a : Type,\n  f : +U (+U (a -> -F d) \
-             -> -F IR(d)),\n  x : Type,\n  t : +U (x -> -F d),\n  v : args(d, (DeltaC(a, f) : \
-             IR(d)), x, t)\n) -> Unit {\n  case v {\n    MkSig(h, r) => keep(d, f(thunk { fn (z) { \
-             t(h(z)) } }), x, t, r)\n  }\n}\n",
-        );
+        let source = SourceText::from(include_str!("typed/fixtures/computed-thunk.gandr"));
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
             .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
@@ -9271,17 +9313,15 @@ mod tests
         use super::RoundTrip;
 
         let source = SourceText::from(
-            "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; } data Both(a : Type, b : \
-             Type) : Type { MkBoth : (x : a, y : b) --> Both(a, b); } def apart(x : Nat, y : \
-             Nat) -> -F Type { return Unit } rec { data Fresh : Type { FNil : Fresh; FCons : (x \
-             : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh; } def rec fresh(x : Nat, xs : \
-             Fresh) -> -F Type { case xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
+            "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat } data Both(a : Type, b : \
+             Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } def apart(x : Nat, y : \
+             Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh } def rec fresh(x : Nat, xs : \
+             Fresh) -> -F Type { match xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
              apart(x, y); run r <- fresh[<](x, ys); return (Both(p, r)) } } } } rec { data \
-             UD(d : Type) : Type { BaseD : UD(d); PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
-             UD(d))) --> UD(d); } def rec elD(d : Type, u : UD(d)) -> -F Type { case u { BaseD \
+             UD(d : Type) : Type where { | BaseD : UD(d) | PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
+             UD(d))) --> UD(d) } def rec elD(d : Type, u : UD(d)) -> -F Type { match u { BaseD \
              => return d, PiD(a, b) => return (+U ((x : elD[<](d, a)) -> -F elD[<](d, b(x)))) \
-             } } } rec { data Loop : Type { Base : Loop; PiL : (a : Loop, b : +U (unloop(a) -> \
-             -F Loop)) --> Loop; } def rec unloop(u : Loop) -> -F Type { case u { Base => \
+             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop(a) ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { match u { Base => \
              return Nat, PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Nat)) } } }",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9436,8 +9476,8 @@ mod tests
     #[test]
     fn a_recursive_call_s_head_refers_to_the_name_it_calls()
     {
-        let text = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
-                    down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) \
+        let text = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
+                    down(n : Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) \
                     => become down[<](p)\n  }\n}\n";
         let table = table(SourceText::from(text));
         let declared = text.find("down(").expect("the name is declared");
@@ -9463,9 +9503,8 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type {\n  Here : Point;\n}";
-        let importer =
-            "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef two = 2 ;";
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here : Point\n}\ndef two = 2 ;";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
         let unit = Unit::new(vec![
@@ -9499,10 +9538,10 @@ mod tests
     fn only_a_stated_index_answers_under_its_frame_931()
     {
         let source = SourceText::from(
-            "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> \
-             Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); \
+            "data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }\ndata Vec(a : Type) : Nat -> \
+             Type where { | Nil : Vec(a, Z) | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)) \
              }\ndef g(k : Nat, v : Vec(Nat, k)) -> -F Vec(Nat, k) { return v }\ndata Fin : Nat \
-             -> Type { FZ : (m : Nat) --> Fin(S(m)); }\n",
+             -> Type where { | FZ : (m : Nat) --> Fin(S(m)) }\n",
         );
         let table = table(source);
         assert_eq!(
@@ -9517,8 +9556,7 @@ mod tests
     #[test]
     fn each_oriented_rule_notes_its_direction()
     {
-        let text = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> \
-                    Int;\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\n";
+        let text = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\n";
         let table = table(SourceText::from(text));
         let noted: Vec<&str> = table
             .orientations()
@@ -9543,16 +9581,14 @@ mod tests
     fn an_indexed_constructor_pattern_types_its_fields_and_name_3539()
     {
         let source = SourceText::from(
-            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\ndata Fin : N -> Type {\n  FZ : \
-             (n : N) --> Fin(S(n));\n  FS : (n : N, i : Fin(n)) --> Fin(S(n));\n}\ndata V(a : \
-             Type) : N -> Type {\n  VN : V(a, Z);\n  VC : (n : N, x : a, t : V(a, n)) --> V(a, \
-             S(n));\n}\ndata Box(a : Type) : Type {\n  MkBox : (x : a) --> Box(a);\n}\ndef rec \
-             toN(m : N, i : Fin(m)) -> N {\n  case i {\n    FZ(_) => Z,\n    FS(p, j) => \
-             S(toN[<](p, j))\n  }\n}\ndef vlen(m : N, v : V(N, m)) -> N {\n  case v {\n    VN \
-             => Z,\n    VC(k, _, t) => S(k)\n  }\n}\ndef vsnd(m : N, v : V(N, m)) -> N {\n  case \
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\ndata Fin : N -> Type where {\n  | FZ : (n : N) --> Fin(S(n))\n  | FS : (n : N, i : Fin(n)) --> Fin(S(n))\n}\ndata V(a : \
+             Type) : N -> Type where {\n  | VN : V(a, Z)\n  | VC : (n : N, x : a, t : V(a, n)) --> V(a,  S(n))\n}\ndata Box(a : Type) : Type where {\n  | MkBox : (x : a) --> Box(a)\n}\ndef rec \
+             toN(m : N, i : Fin(m)) -> N {\n  match i {\n    FZ(_) => Z,\n    FS(p, j) => \
+             S(toN[<](p, j))\n  }\n}\ndef vlen(m : N, v : V(N, m)) -> N {\n  match v {\n    VN \
+             => Z,\n    VC(k, _, t) => S(k)\n  }\n}\ndef vsnd(m : N, v : V(N, m)) -> N {\n  match \
              v {\n    VN => Z,\n    VC(k, y, _) => S(k)\n  }\n}\ndef vthd(m : N, v : V(N, m)) \
-             -> N {\n  case v {\n    VN => Z,\n    VC(_, y, _) => y\n  }\n}\ndef unbox(b : \
-             Box(N)) -> N {\n  case b {\n    MkBox(_) => Z\n  }\n}\n",
+             -> N {\n  match v {\n    VN => Z,\n    VC(_, y, _) => y\n  }\n}\ndef unbox(b : \
+             Box(N)) -> N {\n  match b {\n    MkBox(_) => Z\n  }\n}\n",
         );
         let table = table(source);
         let read: Vec<(&str, String)> = [
@@ -9602,7 +9638,7 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let refusals = |arms: &str| {
             let own = alloc::format!(
-                "data Color : Type {{ Red : Color; Green : Color; Blue : Color; }}\ndef pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"
+                "data Color : Type where {{ | Red : Color | Green : Color | Blue : Color }}\ndef pick(c : Color) -> -F Integer {{ match c {{ {arms} }} }}\n"
             );
             let text = SourceText::from(own.as_str());
             let alone = table(text);

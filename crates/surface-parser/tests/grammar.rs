@@ -56,10 +56,11 @@ fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Box<dyn Error>>
             "def rec n() { .head => 0, .tail => n[>]() }",
         ),
         ("combined recursion markers", "def rec f() { f[<, >]() }"),
-        ("reserved named measure", "def rec f() { f[n <]() }"),
-        ("reserved explicit resident", "def rec f() { f[n = 1]() }"),
-        ("reserved explicit size", "def rec f() { f[size = 1]() }"),
-        ("reserved cost bound", "def rec f() { f[cost = 1]() }"),
+        ("reserved named measure", "def rec f() { f[.n <]() }"),
+        ("reserved explicit resident", "def rec f() { f[.n = 1]() }"),
+        ("punned explicit resident", "def rec f() { f[.n]() }"),
+        ("reserved explicit size", "def rec f() { f[.size = 1]() }"),
+        ("reserved cost bound", "def rec f() { f[.cost = 1]() }"),
         ("reserved tail resident", "def rec f() { f[tail]() }"),
         ("qualified outer reference", "def rec f() { (outer.f)() }"),
     ];
@@ -140,7 +141,7 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
         ),
         (
             "case arm beside the alias",
-            "def f : A => B; def g(c : C) -> -F Integer { case c { Red => pure 0, _ => pure 1 } }",
+            "def f : A => B; def g(c : C) -> -F Integer { match c { Red => pure 0, _ => pure 1 } }",
         ),
         (
             "telescope as a call's argument",
@@ -208,9 +209,9 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
         ("def e : A ⇝ B;", "def e : A ~~> B;"),
         ("def w = loop ∷ here(Base);", "def w = loop :: here(Base);"),
         (
-            "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    loop ∷ q => \
+            "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  match p {\n    loop ∷ q => \
              1\n  }\n}",
-            "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    loop :: q => \
+            "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  match p {\n    loop :: q => \
              1\n  }\n}",
         ),
         ("def g : +U[ω] (A -> -F B);", "def g : +U[inf] (A -> -F B);"),

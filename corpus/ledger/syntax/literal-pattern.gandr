@@ -1,7 +1,7 @@
 /// `literal_pattern`: a literal pattern.
 @[ checks ]
 def sign(n : Integer) -> -F Integer {
-  case n {
+  match n {
     0 => return 0,
     _ => return 1
   }

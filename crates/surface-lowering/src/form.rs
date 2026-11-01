@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 75_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -206,7 +206,7 @@ impl FormName
         Self::ATTRIBUTE,
         Self::DECLARATION,
         Self::BIND_STATEMENT,
-        Self::VAL_STATEMENT,
+        Self::LET_STATEMENT,
         Self::UNPACK_STATEMENT,
         Self::LETA_STATEMENT,
         Self::HOLD_STATEMENT,
@@ -222,11 +222,10 @@ impl FormName
         Self::WORLD_DECLARATION,
         Self::OFFERS_DECLARATION,
         Self::DATA_GENERATOR,
-        Self::CONSTRUCTOR_BLOCK_MEMBER,
         Self::CELL_MEMBER,
         Self::RULE_MEMBER,
-        Self::CASE,
-        Self::CASE_WITH_VIEW,
+        Self::MATCH,
+        Self::MATCH_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
         Self::CONS_PATTERN,
         Self::WILDCARD,
@@ -293,7 +292,7 @@ impl FormName
     pub const GRADE: Self = Self("grade");
     /// The statement `hold x = e ;`, inlined into its block.
     pub const HOLD_STATEMENT: Self = Self("hold_statement");
-    /// The index `e[i]`, the place a view-answering method's body ends in.
+    /// The index `e.#[i]`, the place a view-answering method's body ends in.
     pub const INDEX: Self = Self("index_expression");
     /// An interpolation `${ e }`, folded into the string.
     pub const INTERPOLATION: Self = Self("string_interpolation");
@@ -342,38 +341,36 @@ impl FormName
     pub const UNIT: Self = Self("unit");
     /// The statement `unpack … = e ;`, inlined into its block.
     pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
-    /// The statement `val p = e ;`, inlined into its block.
-    pub const VAL_STATEMENT: Self = Self("val_statement");
-    /// The data declaration `data T(a : A) : U { … }`.
+    /// The statement `let p = e ;` or `let p : A = e ;`, inlined into its
+    /// block.
+    pub const LET_STATEMENT: Self = Self("let_statement");
+    /// The data declaration `data T(a : A) : U where { … }`.
     pub const DATA: Self = Self("data_declaration");
     /// The world declaration `world w ;`.
     pub const WORLD_DECLARATION: Self = Self("world_declaration");
     /// A site's offer `offers [ … ] ;`.
     pub const OFFERS_DECLARATION: Self = Self("offers_declaration");
-    /// The flow `flow f : V1 ~~> V2 { … }`, a translation from the models of
-    /// one theory to the models of another, read as a module form.
+    /// The flow `flow f : V1 ~~> V2 where { … }`, a translation from the models
+    /// of one theory to the models of another, read as a module form.
     pub const FLOW: Self = Self("flow_declaration");
     /// The derived rule `derive r : l <=> r in T`.
     pub const DERIVE_DECLARATION: Self = Self("derive_declaration");
-    /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
+    /// A data block's constructor member `| C : (x : A) --> T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");
     /// The mutual block `rec { … }`, whose members are items.
     pub const MUTUAL: Self = Self("rec_block");
-    /// The declined constructor member `C(fields) : T`, inlined into the data
-    /// block so it is declined by name.
-    pub const CONSTRUCTOR_BLOCK_MEMBER: Self = Self("constructor_block_member");
     /// A data block's cell member `name : a <-> b` between two terms,
     /// inlined into the declaration.
     pub const CELL_MEMBER: Self = Self("cell_member");
     /// A data block's rule member `rule l <=> r` between two terms, inlined
     /// into the declaration.
     pub const RULE_MEMBER: Self = Self("rule_member");
-    /// The match `case e -> T? { p => c, … }`.
-    pub const CASE: Self = Self("case_expression");
+    /// The match `match e -> T? { p => c, … }`.
+    pub const MATCH: Self = Self("match_expression");
     /// A match's view `with e`, folded into the match, and the absurd match
-    /// `case e {}` the same reserved adaptation admits.
-    pub const CASE_WITH_VIEW: Self = Self("case_with_view");
+    /// `match e {}` the same reserved adaptation admits.
+    pub const MATCH_WITH_VIEW: Self = Self("match_with_view");
     /// The constructor pattern `C(p, …)` or `C`.
     pub const CONSTRUCTOR_PATTERN: Self = Self("constructor_pattern");
     /// The word pattern `g ∷ p` or `back(g) ∷ p`: a loop's letter, or its
@@ -392,7 +389,7 @@ impl FormName
     pub const LITERAL_PATTERN: Self = Self("literal_pattern");
     /// The or-pattern `p | q`.
     pub const OR_PATTERN: Self = Self("or_pattern");
-    /// The as-pattern `p as x`.
+    /// The as-pattern `x @ p`, or `x .@ p`.
     pub const AS_PATTERN: Self = Self("as_pattern");
     /// The list pattern `[p, …]`.
     pub const LIST_PATTERN: Self = Self("list_pattern");
@@ -516,10 +513,19 @@ impl TileName
     pub const ADMITTED: Self = Self("admitted");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
+    /// The inner attribute-block opener `@![`, decorating the item it stands
+    /// in.
+    pub const INNER_ATTRIBUTES: Self = Self("@![");
+    /// The as-pattern's `@`, `x @ p`.
+    pub const AT_SIGN: Self = Self("@");
+    /// The as-pattern's dotted `.@`, `x .@ p`.
+    pub const DOT_AT: Self = Self(".@");
     /// The bang `!` marking a shared fork, and the send session type's lead.
     pub const BANG: Self = Self("!");
-    /// The bar `|` that may lead a case arm.
+    /// The bar `|` of a record update's base or a row's open tail.
     pub const BAR: Self = Self("|");
+    /// The arm bar `|` opening a constructor, a clause or a match arm.
+    pub const ARM_BAR: Self = Self("arm_bar");
     /// The bind arrow `<-` of a `run` statement.
     pub const BIND: Self = Self("<-");
     /// The theory member `boundary` naming a shape parameter's points.
@@ -528,6 +534,12 @@ impl TileName
     pub const BRACKET_CLOSE: Self = Self("]");
     /// A bracket opener `[`.
     pub const BRACKET_OPEN: Self = Self("[");
+    /// The sequence literal's opener `#[`, closed by `]`.
+    pub const SEQUENCE_OPEN: Self = Self("#[");
+    /// The index selector's opener `.#[`, closed by `]`.
+    pub const SELECT_OPEN: Self = Self(".#[");
+    /// The sub-record selector's opener `.#{`, closed by `}`.
+    pub const SUB_RECORD_OPEN: Self = Self(".#{");
     /// A brace closer `}`.
     pub const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
@@ -557,11 +569,23 @@ impl TileName
     pub const FROM: Self = Self("from");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
+    /// The compound assignment `+=`, writing a held place the sum of its value
+    /// and the right side.
+    pub const PLUS_EQUALS: Self = Self("+=");
+    /// The compound assignment `-=`, writing a held place the difference of
+    /// its value and the right side.
+    pub const MINUS_EQUALS: Self = Self("-=");
+    /// The compound assignment `*=`, writing a held place the product of its
+    /// value and the right side.
+    pub const TIMES_EQUALS: Self = Self("*=");
     /// The greater-than sign `>`: an instantiation's productivity claim, a
     /// self-call standing as a copattern arm.
     pub const GREATER_THAN: Self = Self(">");
     /// The value function space's `=>`.
     pub const FAT_ARROW: Self = Self("=>");
+    /// The protocol step `>>` between a send's or a receive's payload and the
+    /// rest of the protocol.
+    pub const SEQUENCE: Self = Self(">>");
     /// An escape sequence inside a string's own tiles.
     pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
     /// An identifier written as one of a form's own tiles.
@@ -611,8 +635,8 @@ impl TileName
     pub const AT: Self = Self("at");
     /// The capability scope's lead `handle`.
     pub const HANDLE: Self = Self("handle");
-    /// The keyword `hold`, opening a statement that holds a value, and the
-    /// located hold `hold v` that returns `v` held at the current world.
+    /// The keyword `hold`: the located hold `hold v` that returns `v` held at
+    /// the current world, and `var`'s former spelling until the corpus moves.
     pub const HOLD: Self = Self("hold");
     /// The keyword `migrate`, opening a migration `migrate [w] { t }`.
     pub const MIGRATE: Self = Self("migrate");
@@ -655,6 +679,9 @@ impl TileName
     pub const LOOP: Self = Self("loop");
     /// The conditional loop keyword `while`.
     pub const WHILE: Self = Self("while");
+    /// The keyword `where` that ends a declaration's head and opens its
+    /// members.
+    pub const WHERE: Self = Self("where");
     /// The list loop keyword `for`.
     pub const FOR: Self = Self("for");
     /// The `in` naming the list a `for` loop steps through.
@@ -702,10 +729,12 @@ impl TileName
     /// The mode word `consumed` of a method's receiver, which the call gives
     /// up.
     pub const CONSUMED: Self = Self("consumed");
-    /// The keyword `val`, opening a statement.
-    pub const VAL: Self = Self("val");
-    /// The match keyword `case`.
-    pub const CASE: Self = Self("case");
+    /// The keyword `let`, opening a statement.
+    pub const LET: Self = Self("let");
+    /// The keyword `var`, opening a statement that holds a value.
+    pub const VAR: Self = Self("var");
+    /// The match keyword `match`.
+    pub const MATCH: Self = Self("match");
     /// A constructor name written as one of a form's own tiles: a data
     /// declaration's generator or a constructor pattern's head.
     pub const CONSTRUCTOR: Self = Self("constructor");
@@ -753,7 +782,8 @@ impl TileName
     pub const DROP: Self = Self("drop");
     /// The closed session type `end`.
     pub const END: Self = Self("end");
-    /// The recursive session type's binder keyword `mu`.
+    /// The recursive session type's former keyword `mu`, read until the corpus
+    /// moves to `rec t => S`.
     pub const MU: Self = Self("mu");
     /// The session keyword `offer`.
     pub const OFFER: Self = Self("offer");
@@ -878,7 +908,7 @@ pub enum Former
     Run,
     /// The application `c(v)`.
     Call,
-    /// The match `case e -> T? { p => c, … }` over nominal data, integers,
+    /// The match `match e -> T? { p => c, … }` over nominal data, integers,
     /// booleans, products and sums over labels.
     Case,
     /// The conditional `if c -> T? { … } else { … }`, its false branch a block
@@ -973,7 +1003,7 @@ pub enum Former
     /// one below it, `Nat[<i]`.
     StagedType,
     /// A type at a mode variable, `m T`: a method's receiver at the mode its
-    /// telescope's `@[m : Mode]` binds, refused anywhere else.
+    /// telescope's `[m : Mode]` binds, refused anywhere else.
     ModedType,
     /// The capability scope `handle c : I { … } with { … }`: a deep handler
     /// for the host interface `I` whose body holds the capability it
@@ -992,7 +1022,8 @@ pub enum Former
     /// of its body — a definition or a nested module — which the grammar
     /// files under the same kind.
     Module,
-    /// The nominal data declaration `data T(a : A) : U { C : … ; … }`.
+    /// The nominal data declaration `data T(a : A) : U where { | C : (x : B)
+    /// --> T(a) … }`.
     Data,
     /// The mutual block `rec { … }`: its data declarations and definitions,
     /// each read as one at the root is, admitted as one block.
@@ -1000,8 +1031,9 @@ pub enum Former
     /// The instantiation `e[i, …]`: a recursive definition's descent claim
     /// `f[<]` at the head of its own call, and nothing else.
     Instantiation,
-    /// A session type's own forms, `!A. S`, `?A. S`, `end` and `mu t. S`:
-    /// the outermost form of a protocol, read whole down its continuations.
+    /// A session type's own forms, `!A >> S`, `?A >> S`, `end` and `rec t =>
+    /// S`: the outermost form of a protocol, read whole down its
+    /// continuations.
     SessionType,
     /// An action on an endpoint returning the unit: `send(c, v)`,
     /// `select(c, l)` or `close(c)`.
@@ -1012,7 +1044,7 @@ pub enum Former
     /// Temporary access to a held value: the access `access x as v { t }
     /// unwind { u }`, the eliminators `resume(v, e)` and `abort(v)` that end
     /// its view, the view block `e as v { t }` a call of a method answering a
-    /// place lends its place to, and that method's place `self[e]`.
+    /// place lends its place to, and that method's place `self.#[e]`.
     Access,
     /// A located form the world register reads: the hold `hold v`, returning
     /// `v` held at the current world, and the migration `migrate [w] { t }`,
@@ -1157,7 +1189,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 134_usize] = [
+pub const FORMERS: [(&str, Former); 136_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1185,7 +1217,7 @@ pub const FORMERS: [(&str, Former); 134_usize] = [
     ("force_expression", Former::Force),
     ("run_expression", Former::Run),
     ("call_expression", Former::Call),
-    ("case_expression", Former::Case),
+    ("match_expression", Former::Case),
     ("telescope_expression", Former::Telescope),
     ("list_expression", Former::List),
     ("labelled_sum_expression", Former::Injection),
@@ -1196,6 +1228,7 @@ pub const FORMERS: [(&str, Former); 134_usize] = [
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),
+    ("record_selection_expression", Former::Projection),
     ("primitive_type", Former::TypeHead),
     ("type_identifier", Former::TypeHead),
     ("type_variable", Former::TypeHead),
@@ -1284,6 +1317,10 @@ pub const FORMERS: [(&str, Former); 134_usize] = [
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
     ("if_expression", Former::If),
+    (
+        "inner_attribute_block",
+        Former::Unadmitted(Unbuilt::SourceAttribute),
+    ),
     (
         "labelled_sum_pattern",
         Former::Unadmitted(Unbuilt::LabelledSumPattern),

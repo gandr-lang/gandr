@@ -19,8 +19,8 @@ def path_app(n : Integer) -> Path(Integer, n + 1, n + 1) {
 }
 
 /// A family indexed by an integer, one element at each index.
-data Ix(n : Integer) : Type {
-  MkIx : Ix(n);
+data Ix(n : Integer) : Type where {
+  | MkIx : Ix(n)
 }
 
 /// The identity at every index of the family.

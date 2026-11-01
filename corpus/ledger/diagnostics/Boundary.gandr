@@ -1,10 +1,10 @@
 /// `Boundary`: a function flow's boundary that runs against its variance.
-module Schema {
+module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]
   def toNew(old : Old) -> -F New {
-    case old {
+    match old {
       #{name, age} => (age, name)
     }
   }

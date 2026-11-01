@@ -5,8 +5,8 @@
 
 /// A bit whose first constructor carries an expectation it cannot state.
 @[ refuses("MalformedForm") ]
-data Stray : Type {
+data Stray : Type where {
   @[ checks ]
-  Low : Stray;
-  High : Stray;
+  | Low : Stray
+  | High : Stray
 }

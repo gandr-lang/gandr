@@ -724,8 +724,8 @@ mod tests
 
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.
-    const BASE: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
-                        plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
+    const BASE: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
+                        plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
                         Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef double : +U (Nat -> -F \
                         Nat) ;\ndef double = thunk { fn (x) { return x } } ;\n";
 
@@ -892,7 +892,7 @@ mod tests
             "{value:?}"
         );
 
-        let computation = at("case m");
+        let computation = at("match m");
         assert_eq!(
             computation.names,
             named!([
@@ -919,7 +919,7 @@ mod tests
             "a body: the parameters, never a pattern's binder"
         );
         assert!(
-            has(&computation, "return") && has(&computation, "case"),
+            has(&computation, "return") && has(&computation, "match"),
             "{computation:?}"
         );
 
@@ -973,9 +973,9 @@ mod tests
         use CompletionItemKind as Kind;
 
         let far = declared(SourceText::from(
-            "pub data Shape : Type {\n  Circle : Shape;\n}\npub def faraway : Integer ;\ndef \
+            "pub data Shape : Type where {\n  | Circle : Shape\n}\npub def faraway : Integer ;\ndef \
              faraway = 7 ;\ndef farther : Integer ;\ndef farther = 3 ;\npub def far : Integer \
-             ;\ndef far = 2 ;\npub module Inner {\n  def fargone = 1 ;\n}\n",
+             ;\ndef far = 2 ;\npub module Inner where {\n  def fargone = 1 ;\n}\n",
         ));
         let import = [TextEdit {
             range: crate::position::Range::default(),
@@ -1114,7 +1114,8 @@ mod tests
             "a name typed in full still offers itself"
         );
 
-        let boxed = format!("{BASE}data Box : Type {{\n  Box : (x : Integer) --> Box;\n}}\n");
+        let boxed =
+            format!("{BASE}data Box : Type where {{\n  | Box : (x : Integer) --> Box\n}}\n");
         let hovering = hovered(SourceText::from(boxed.as_str()));
         let kinds: Vec<super::NameKind> = hovering
             .names()
@@ -1136,8 +1137,8 @@ mod tests
     {
         use CompletionItemKind as Kind;
 
-        let head = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec plus(n : \
-                    Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => ";
+        let head = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : \
+                    Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => ";
         let own = format!("{head}n,\n    Succ(p) => Succ(p");
         let own = offered(
             SourceText::from(own.as_str()),
@@ -1198,12 +1199,15 @@ mod tests
         let row = |label: &str, text: &str| (String::from(label), String::from(text), true);
         let item = [
             row("def", "def ${1:identifier} : ${2:type};"),
-            row("data", "data ${1:type_identifier} { \\}"),
-            row("codata", "codata ${1:type_identifier} { \\}"),
-            row("module", "module ${1:type_identifier} { ${2:member} \\}"),
+            row("data", "data ${1:type_identifier} where { \\}"),
+            row("codata", "codata ${1:type_identifier} where { \\}"),
+            row(
+                "module",
+                "module ${1:type_identifier} where { ${2:member} \\}",
+            ),
             row(
                 "flow",
-                "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}",
+                "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} where { ${4:member} \\}",
             ),
             row("import", "import ${1:identifier};"),
             row("world", "world ${1:identifier};"),
@@ -1211,9 +1215,9 @@ mod tests
             (String::from("pub"), String::from("pub"), false),
             row(
                 "extern",
-                "extern \"${1:string_fragment}\" from \"${2:string_fragment}\" { \\}",
+                "extern ${1:type_identifier} from \"${2:string_fragment}\" { \\}",
             ),
-            row("theory", "theory ${1:type_identifier} { \\}"),
+            row("theory", "theory ${1:type_identifier} where { \\}"),
             row("oper", "oper ${1:identifier} : (${2:type})"),
             row("rule", "rule ${1:identifier} : (${2:type})"),
         ];
@@ -1232,9 +1236,9 @@ mod tests
             row("run", "run ${1:computation}"),
             row("hold", "hold ${1:value}"),
             row("type(", "type(${1:type})"),
-            row("fn", "fn () { ${1:computation} \\}"),
+            row("fn", "fn { \\}"),
             row("thunk", "thunk { ${1:computation} \\}"),
-            row("case", "case ${1:value} { \\}"),
+            row("match", "match ${1:value} { \\}"),
             row(
                 "handle",
                 "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\}",
@@ -1449,7 +1453,7 @@ mod tests
                 shown("Succ : (n : Nat) --> Nat"),
                 Some((shown(" : (n : Nat) --> Nat"), None))
             )],
-            "a constructor carries its fields"
+            "a constructor carries its signature"
         );
         assert_eq!(
             details(
@@ -1486,12 +1490,9 @@ mod tests
     {
         use CompletionItemKind as Kind;
 
-        let hovering = hovered(SourceText::from(
-            "/// Natural numbers.\ndata Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ : (n \
-             : Nat) --> Nat;\n}\n/// Addition.\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  \
-             case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\n/// The \
-             answer.\ndef answer = 42 ;\n",
-        ));
+        let hovering = hovered(SourceText::from(include_str!(
+            "complete/fixtures/documented-nat.gandr"
+        )));
         let resolve = |label: &str, kind: CompletionItemKind| {
             let item = resolved(
                 CompletionItem {
@@ -1525,12 +1526,12 @@ mod tests
         assert_eq!(
             resolve("Succ", Kind::CONSTRUCTOR),
             read(Some("Succ : (n : Nat) --> Nat"), Some("One more.")),
-            "a constructor: its fields"
+            "a constructor: its signature"
         );
         assert_eq!(
             resolve("Zero", Kind::CONSTRUCTOR),
             read(Some("Zero : Nat"), None),
-            "an undocumented constructor: its head alone"
+            "an undocumented constant constructor: its head is its name and its result"
         );
         assert_eq!(
             resolve("Nat", Kind::ENUM),
@@ -1558,7 +1559,7 @@ mod tests
             "a binder: unchanged"
         );
         assert_eq!(
-            resolve("case", Kind::KEYWORD),
+            resolve("match", Kind::KEYWORD),
             read(None, None),
             "a keyword: unchanged"
         );

@@ -1,8 +1,8 @@
 error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:24:3
    │
-24 │ ┏   data Left : Type {
-25 │ ┃     MkL : (f : +U (right -> -F Two)) --> Left;
+24 │ ┏   data Left : Type where {
+25 │ ┃     | MkL : (f : +U (right -> -F Two)) --> Left
 26 │ ┃   }
    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
    │
@@ -12,8 +12,8 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 0 of constructor 0 where no stage reaches it
    ╭▸ corpus/pathological/universe/inductive-recursive.gandr:31:3
    │
-31 │ ┏   data Right : Type {
-32 │ ┃     MkR : (l : Left) --> Right;
+31 │ ┏   data Right : Type where {
+32 │ ┃     | MkR : (l : Left) --> Right
 33 │ ┃   }
    │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
    │
@@ -30,16 +30,16 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
    ╰ help: apply the datatype there only to its own parameters, one stage below its constructor
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:37
+   ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:39
    │
-49 │        Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd;
-   │                                        ━━━━ not below the stage its recursion wants
+49 │        | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
+   │                                          ━━━━ not below the stage its recursion wants
    ‡
 55 │      def rec decode(u : Odd) -> -F Type {
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
    │ │
-56 │ │┌     case u {
+56 │ │┌     match u {
 57 │ ││       TwoC => return Two,
 58 │ ││       Over(a, b) => decode[<](a)
 59 │ ││     }
@@ -55,16 +55,16 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:37
+   ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:39
    │
-49 │        Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd;
-   │                                        ━━━━ not below the stage its recursion wants
+49 │        | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
+   │                                          ━━━━ not below the stage its recursion wants
    ‡
 55 │      def rec decode(u : Odd) -> -F Type {
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
    │ │
-56 │ │┌     case u {
+56 │ │┌     match u {
 57 │ ││       TwoC => return Two,
 58 │ ││       Over(a, b) => decode[<](a)
 59 │ ││     }
@@ -80,16 +80,16 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:37
+   ╭▸ corpus/pathological/universe/inductive-recursive.gandr:49:39
    │
-49 │        Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd;
-   │                                        ━━━━ not below the stage its recursion wants
+49 │        | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
+   │                                          ━━━━ not below the stage its recursion wants
    ‡
 55 │      def rec decode(u : Odd) -> -F Type {
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
    │ │
-56 │ │┌     case u {
+56 │ │┌     match u {
 57 │ ││       TwoC => return Two,
 58 │ ││       Over(a, b) => decode[<](a)
 59 │ ││     }
@@ -111,7 +111,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │      │              ─ checked against `Loop -> -F Type`; while checking the body of this function; binds u : Loop
    │ ┌────┘
    │ │
-81 │ │┌     case u {
+81 │ │┌     match u {
 82 │ ││       Base => return Two,
 83 │ ││       PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
    │ ││                    ┬───────┬───┬────┬─────────┬───┯──────────────────
@@ -137,7 +137,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │      │              ─ checked against `Loop -> -F Type`; while checking the body of this function; binds u : Loop
    │ ┌────┘
    │ │
-81 │ │┌     case u {
+81 │ │┌     match u {
 82 │ ││       Base => return Two,
 83 │ ││       PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
    │ ││                    ┬───────┬───┬────┬─────────┬───┯──────────────────
@@ -171,12 +171,12 @@ error[CompoundEndpoint]: a path endpoint must compute a value without effects
 error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 2 of constructor 2 where no stage reaches it
     ╭▸ corpus/pathological/universe/inductive-recursive.gandr:100:3
     │
-100 │ ┏   data ULevel : Nat -> Type {
+100 │ ┏   data ULevel : Nat -> Type where {
 101 │ ┃     /// The naturals, at every level.
-102 │ ┃     NatV : (n : Nat) --> ULevel(n);
+102 │ ┃     | NatV : (n : Nat) --> ULevel(n)
 103 │ ┃     /// The universe a level down, a code one level up.
     ‡ ┃
-106 │ ┃     PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n);
+106 │ ┃     | PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n)
 107 │ ┃   }
     │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
     │
@@ -187,7 +187,7 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
     ╭▸ corpus/pathological/universe/inductive-recursive.gandr:112:3
     │
 112 │ ┏   def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type {
-113 │ ┃     case u {
+113 │ ┃     match u {
 114 │ ┃       NatV(m) => return Nat,
 115 │ ┃       TypeV(m) => return (ULevel(m)),
     ‡ ┃

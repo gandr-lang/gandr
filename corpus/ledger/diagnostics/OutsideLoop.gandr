@@ -1,8 +1,8 @@
 /// `OutsideLoop`: a `break` or a `continue` on no path through a loop's body.
 @[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ refuses("OutsideLoop") ]

@@ -400,8 +400,8 @@ fn a_row_stays_open_through_its_tail_2270()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def log @[r : Row] (s : String) -> -F [Console | r] Unit { Console.print(s) }\n",
-            "def alone @[r : Row] () -> -F [r] Unit { pure unit }\n",
+            "def log[r : Row](s : String) -> -F [Console | r] Unit { Console.print(s) }\n",
+            "def alone[r : Row]() -> -F [r] Unit { pure unit }\n",
         )),
         &mut arena,
     );
@@ -1114,7 +1114,7 @@ fn a_scope_handles_its_capability_and_resumes()
 /// The theory `State`, its value sort `S` and its carrier `C`, as a handled
 /// scope reads it.
 const STATE: &str = concat!(
-    "theory State {\n",
+    "theory State where {\n",
     "  sort S : Type+;\n",
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
@@ -1626,7 +1626,7 @@ fn a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881()
 
 /// The theory `StatePutLaws`: `State` with put-get and put-put stated.
 const PUT_LAWS: &str = concat!(
-    "theory StatePutLaws {\n",
+    "theory StatePutLaws where {\n",
     "  sort S : Type+;\n",
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
@@ -1697,7 +1697,7 @@ fn a_scope_owes_its_theory_s_laws_2272()
 /// The theory `StatePutSkip`: `State` with put-put a rule and put-skip a
 /// stated law, an equation no rule orients.
 const PUT_SKIP: &str = concat!(
-    "theory StatePutSkip {\n",
+    "theory StatePutSkip where {\n",
     "  sort S : Type+;\n",
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
@@ -1761,7 +1761,7 @@ fn a_scope_owes_its_theory_s_stated_laws_3966()
 
 /// The theory `StateGetGet`: `State`'s read with get-get stated.
 const GET_GET: &str = concat!(
-    "theory StateGetGet {\n",
+    "theory StateGetGet where {\n",
     "  sort S : Type+;\n",
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
@@ -1855,7 +1855,7 @@ fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
 
 /// The theory `StatePutPut`: `State` with put-put stated.
 const PUT_PUT: &str = concat!(
-    "theory StatePutPut {\n",
+    "theory StatePutPut where {\n",
     "  sort S : Type+;\n",
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
@@ -1867,7 +1867,7 @@ const PUT_PUT: &str = concat!(
 /// A state-passing model of `StatePutPut`, which proves put-put by
 /// conversion.
 const PASSING: &str = concat!(
-    "module Passing : Model(StatePutPut) with sort S = Integer {\n",
+    "module Passing : Model(StatePutPut) with sort S = Integer where {\n",
     "  type C = Integer => Integer;\n",
     "  def get(k : Integer => Integer => Integer) -> Integer => Integer {\n",
     "    thunk { fn (s) { run after <- k(s); after(s) } }\n",
@@ -2043,7 +2043,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
 /// A cost theory whose costs a scope fixes: a charge, and the cost monoid's
 /// unit and sum as value operations, with decalf's two laws.
 const COST: &str = concat!(
-    "theory Cost {\n",
+    "theory Cost where {\n",
     "  sort N : Type+;\n",
     "  sort C : Type;\n",
     "  oper charge : (c : N, k : C) --> C;\n",
@@ -2057,7 +2057,7 @@ const COST: &str = concat!(
 /// A model of `Cost` whose cost is the function adding it, so its unit is the
 /// identity and its sum composition, and both laws hold by conversion.
 const COUNTING: &str = concat!(
-    "module Counting : Model(Cost) with sort N = Integer => Integer {\n",
+    "module Counting : Model(Cost) with sort N = Integer => Integer where {\n",
     "  type C = (Integer => Integer) => Integer;\n",
     "  def charge(c : Integer => Integer, k : (Integer => Integer) => Integer) -> (Integer => Integer) => Integer {\n",
     "    thunk { fn (before) { k(thunk { fn (n) { run m <- c(n); before(m) } }) } }\n",
@@ -2164,12 +2164,12 @@ fn a_scope_records_the_model_answering_it_3196()
 /// Two models of `State` at an integer state: reading answers zero or one,
 /// and storing is forgotten.
 const ZERO_AND_ONE: &str = concat!(
-    "module Zero : Model(State) with sort S = Integer {\n",
+    "module Zero : Model(State) with sort S = Integer where {\n",
     "  type C = Integer => Integer;\n",
     "  def get(k : Integer => Integer => Integer) -> Integer => Integer { k(0) }\n",
     "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer { pure k }\n",
     "}\n",
-    "module One : Model(State) with sort S = Integer {\n",
+    "module One : Model(State) with sort S = Integer where {\n",
     "  type C = Integer => Integer;\n",
     "  def get(k : Integer => Integer => Integer) -> Integer => Integer { k(1) }\n",
     "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer { pure k }\n",
@@ -2306,7 +2306,7 @@ fn a_stated_stack_is_resumed_as_a_clause_resumes_1387()
     let source = concat!(
         "def later(j : Stack(-F Unit, -F Integer)) -> -F Integer { j(unit) }\n",
         "def apply(f : +U (Unit -> -F Integer)) -> -F Integer { f(unit) }\n",
-        "module Conts {\n",
+        "module Conts where {\n",
         "  type K = Stack(-F Unit, -F Integer) ;\n",
         "  def aliased(j : K) -> -F Integer { j(unit) }\n",
         "}\n",
@@ -2363,7 +2363,7 @@ fn a_member_abbreviating_no_stack_states_none()
 {
     let mut arena = CoreArena::new();
     let source = concat!(
-        "module Others {\n",
+        "module Others where {\n",
         "  type P = Integer ;\n",
         "  type A = List(Integer) ;\n",
         "}\n",
@@ -2594,7 +2594,7 @@ fn a_capability_at_a_scope_lives_in_its_region()
         "def regions() -> -F Unit {{ handle c : Proc {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure c ; run f : Cap {{exit}} at e <- pure e ; pure unit }} {clauses} }} {clauses} }}\n\
          def unbound(c : Integer) -> -F Unit {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure e ; pure unit }} {clauses} }}\n\
          def plain() -> -F Unit {{ handle c : Proc {{ run d : Integer at c <- pure 1 ; pure unit }} {clauses} }}\n\
-         def held() -> -F Unit {{ hold s = 1 ; handle c : Proc {{ run d : Integer at s <- pure 1 ; run e : Integer at c <- pure 2 ; pure unit }} {clauses} }}\n"
+         def held() -> -F Unit {{ var s = 1 ; handle c : Proc {{ run d : Integer at s <- pure 1 ; run e : Integer at c <- pure 2 ; pure unit }} {clauses} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let outer = tail_of(&module, &arena, "regions".into());
@@ -2718,7 +2718,7 @@ fn a_capability_at_a_scope_lives_in_its_region()
 }
 
 /// A kept type naming a region binder of its definition, `A at r` under
-/// `@[q : Region, r : Region]`, keeps its value at that binder's ordinal among
+/// `[q : Region, r : Region]`, keeps its value at that binder's ordinal among
 /// the telescope's region binders, and the binder named as a value is refused
 /// as one (#1221).
 #[test]
@@ -2729,9 +2729,9 @@ fn a_kept_type_at_a_region_binder_is_bound_to_it_1221()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def read @[q : Region, r : Region] (k : (() => Integer) at r) -> -F Integer { force \
+            "def read[q : Region, r : Region](k : (() => Integer) at r) -> -F Integer { force \
              k }\n",
-            "def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }\n",
+            "def named[r : Region](k : (() => Integer) at r) -> -F Integer { pure r }\n",
         )),
         &mut arena,
     );

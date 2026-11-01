@@ -10,7 +10,7 @@ import "../../../../../library/std/src/package.gandr";
 
 /// The package: its name, its version and the rest of what `gandr.toml`
 /// records.
-pub module Package : Model(Gandr.Package) {
+pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
   def name = "hello";
   /// The version, the workspace's.

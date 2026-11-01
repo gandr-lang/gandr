@@ -137,6 +137,9 @@ quenchant_shape::reason_enum! {
             /// The record was read before its match was minted: the table
             /// records a match only once its tree is minted, with the value.
             Unminted,
+            /// The match is a function's clauses: it scrutinises the
+            /// function's parameters, one per column, and no one value.
+            Columns,
         }
     }
 }
@@ -244,9 +247,14 @@ pub enum Insertion
     /// method and the arguments, never the view, the application to it, the
     /// split of a written-through result or the write-back. And a node of the
     /// hold and the pair a written-through method's body is wrapped in,
-    /// located at the declaration. And the view a bare index `s[e]` of a held
+    /// located at the declaration. And the view a bare index `s.#[e]` of a held
     /// slot reads its element through, located at the index.
     Method,
+    /// A node of the access a place assignment `p = e ;` or `p += e ;` is,
+    /// below the access itself, every one located at the place: the source
+    /// writes the place, the operator and the right side, never the bind of the
+    /// right side's value, the view, the operator's call or the write-back.
+    Assignment,
     /// A node of the bind a lambda's parameter written with its type is read
     /// through, every one located at the lambda: the source writes
     /// `fn (x : A)`, never the argument the lambda binds apart, its return,
@@ -974,12 +982,12 @@ impl OriginTable
         record(&mut self.seconds, id, label);
     }
 
-    /// Record that the data case `case` eliminates a value of the data
+    /// Record that the data case `match` eliminates a value of the data
     /// declaration `family`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Self::elimination`] answers `family` for `case`, the first
+    /// - ensures: [`Self::elimination`] answers `family` for `match`, the first
     ///   record winning.
     /// - fails: never.
     /// - panics: none.
@@ -1560,7 +1568,7 @@ impl OriginTable
             .map(|(&case, &family)| (case, family))
     }
 
-    /// The data declaration the data case `case` eliminates.
+    /// The data declaration the data case `match` eliminates.
     ///
     /// # Specification
     /// trivial.

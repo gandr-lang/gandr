@@ -10,7 +10,7 @@ import "./circle-base.gandr";
 /// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,
 /// x)))`, which the first rule reads as `plus(a, x)`.
 pub def rec plus(a : Int, b : Int) -> Int {
-  case b {
+  match b {
     Z => a,
     S(x) => S(plus[<](a, x)),
     P(x) => P(plus[<](a, x))
@@ -22,7 +22,7 @@ pub def rec plus(a : Int, b : Int) -> Int {
 /// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `cong(up, …)` and
 /// `cong(down, …)` arms as transports along the recursive path.
 pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
-  case b {
+  match b {
     Z => here(S(a)),
     S(x) => cong(up, plusS[<](a, x)),
     P(x) => cong(down, plusS[<](a, x))
@@ -32,7 +32,7 @@ pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
 /// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
 /// as `plusS`.
 pub def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
-  case b {
+  match b {
     Z => here(P(a)),
     S(x) => cong(up, plusP[<](a, x)),
     P(x) => cong(down, plusP[<](a, x))
@@ -41,7 +41,7 @@ pub def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
 
 /// Zero is a left unit of the sum, by induction on the right summand.
 pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
-  case b {
+  match b {
     Z => here(Z),
     S(x) => cong(up, plusZ[<](x)),
     P(x) => cong(down, plusZ[<](x))
@@ -54,7 +54,7 @@ pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
 /// answer at `x`, yet `Int` is a set, so its rules are respected by their
 /// endpoints alone (#427).
 pub def rec plusComm(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
-  case b {
+  match b {
     Z => back(plusZ(a)),
     S(x) => cong(up, plusComm[<](a, x)) then back(plusS(x, a)),
     P(x) => cong(down, plusComm[<](a, x)) then back(plusP(x, a))

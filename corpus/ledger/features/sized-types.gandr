@@ -25,8 +25,8 @@ import "../../model/data/recursive-lists.gandr" ;
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter (#517).
 @[ checks ]
-data Bush : Type {
-  Sprout : (kids : List(Bush)) --> Bush;
+data Bush : Type where {
+  | Sprout : (kids : List(Bush)) --> Bush
 }
 
 /// A node without children, written directly.
@@ -43,7 +43,7 @@ def shrub : Bush = Sprout((Cons(
 /// A list of numbers, summed.
 @[ checks ]
 def rec sum(xs : List(Nat)) -> Nat {
-  case xs {
+  match xs {
     Nil => Zero,
     Cons(x, rest) => plus(x, sum[<](rest))
   }
@@ -54,7 +54,7 @@ def rec sum(xs : List(Nat)) -> Nat {
 /// so `nodes[<]` takes each child (#393).
 @[ checks ]
 def rec nodes(t : Bush) -> Nat {
-  case t {
+  match t {
     Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
   }
 }
@@ -63,7 +63,7 @@ def rec nodes(t : Bush) -> Nat {
 /// children, each child grown through `map` at its stage.
 @[ checks ]
 def rec grow(t : Bush) -> Bush {
-  case t {
+  match t {
     Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
   }
 }
@@ -83,21 +83,21 @@ def grown_nodes : () => Nat = nodes(grow(shrub)) ;
 rec {
   /// A node over its forest of children.
   @[ checks ]
-  data Rose : Type {
-    Node : (kids : Forest) --> Rose;
+  data Rose : Type where {
+    | Node : (kids : Forest) --> Rose
   }
 
   /// The children of a node, in order.
   @[ checks ]
-  data Forest : Type {
-    Empty : Forest;
-    More : (head : Rose, tail : Forest) --> Forest;
+  data Forest : Type where {
+    | Empty : Forest
+    | More : (head : Rose, tail : Forest) --> Forest
   }
 
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
-    case t {
+    match t {
       Node(kids) => { run s <- forestSize[<](kids); Succ(s) }
     }
   }
@@ -105,7 +105,7 @@ rec {
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
   def rec forestSize(ts : Forest) -> Nat {
-    case ts {
+    match ts {
       Empty => Zero,
       More(t, rest) => { run a <- treeSize[<](t); run b <- forestSize[<](rest); plus(a, b) }
     }

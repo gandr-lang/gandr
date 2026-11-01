@@ -2,7 +2,7 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory T {
+theory T where {
   sort Nat : Type;
   sort Bit : Type;
   oper zero : () --> Nat;

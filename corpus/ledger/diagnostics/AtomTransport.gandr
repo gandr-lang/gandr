@@ -4,7 +4,7 @@
 def related(a : Unit, b : Unit) -> -F Type { return Unit }
 @[ checks ]
 def reflexive(a : Unit) -> -F related(a, a) { return unit }
-module Point :> #{ type T, origin : T, other : T } {
+module Point :> #{ type T, origin : T, other : T } where {
   @[ identity((related, reflexive)) ]
   type T = Unit;
   def origin = unit;

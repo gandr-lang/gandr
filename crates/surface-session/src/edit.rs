@@ -5059,10 +5059,10 @@ def body = 1 ;
     fn a_changed_nominal_declaration_is_replaced_and_an_unchanged_one_kept()
     {
         let two = snapshot_of(SourceText::from(
-            "data Color : Type { Red : Color; Green : Color; }\ndef a = 1 ;\n",
+            "data Color : Type where { | Red : Color | Green : Color }\ndef a = 1 ;\n",
         ));
         let three = snapshot_of(SourceText::from(
-            "data Color : Type { Red : Color; Green : Color; Blue : Color; }\ndef a = 1 ;\n",
+            "data Color : Type where { | Red : Color | Green : Color | Blue : Color }\ndef a = 1 ;\n",
         ));
         assert!(
             super::diff(&two, &two).actions().is_empty(),
@@ -5105,11 +5105,11 @@ def body = 1 ;
             (program, module)
         };
         let (first, first_module) = read(
-            "data Color : Type { Red : Color; Green : Color; }\ndef a = 1 ;\ndef b = thunk { \
+            "data Color : Type where { | Red : Color | Green : Color }\ndef a = 1 ;\ndef b = thunk { \
              return a } ;\ndef c = 2 ;\n",
         );
         let (second, second_module) = read(
-            "data Color : Type { Red : Color; Green : Color; }\ndef a = 1 ;\ndef b = thunk { \
+            "data Color : Type where { | Red : Color | Green : Color }\ndef a = 1 ;\ndef b = thunk { \
              return a } ;\ndef c = 3 ;\ndef d = c ;\n",
         );
         let shared = ItemOrdinal::from(3_usize);

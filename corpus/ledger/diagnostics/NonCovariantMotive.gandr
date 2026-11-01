@@ -1,10 +1,10 @@
 /// `NonCovariantMotive`: a ride whose motive uses the moving endpoint other than covariantly.
-module Schema {
+module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]
   def toNew(old : Old) -> -F New {
-    case old {
+    match old {
       #{name, age} => (age, name)
     }
   }

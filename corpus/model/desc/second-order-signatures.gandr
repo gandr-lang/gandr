@@ -8,7 +8,7 @@
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
-pub theory Nat {
+pub theory Nat where {
   sort Nat : Type;
   oper zero : () --> Nat;
   oper succ : (n : Nat) --> Nat;
@@ -16,7 +16,7 @@ pub theory Nat {
 
 /// Pure λ-calculus syntax: one representable sort of terms, an abstraction
 /// whose body binds a term, and an application.
-theory Lambda {
+theory Lambda where {
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
@@ -25,7 +25,7 @@ theory Lambda {
 /// The identity-return signature: value types and computation types, values
 /// representable and indexed by their type, and an abstraction whose body
 /// binds a value of its domain.
-theory IdentityReturn {
+theory IdentityReturn where {
   sort VTy : Type;
   sort CTy : Type;
   sort VTm(a : VTy) : Type+;
@@ -39,7 +39,7 @@ theory IdentityReturn {
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
 def rec representable(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Representable(name, indices, rest) => { run r <- representable[<](rest); r + 1 },
     Sort(name, indices, rest) => representable[<](rest),
     _ => 0
@@ -49,7 +49,7 @@ def rec representable(chain : Theory) -> Integer {
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
 def rec bound(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); r + 1 },
     Port(name, sort, indices, rest) => bound[<](rest),
     _ => 0
@@ -58,15 +58,15 @@ def rec bound(chain : Theory) -> Integer {
 
 /// The identity-return signature declares one representable sort, `VTm`.
 @[ runs("1") ]
-def representableSorts() -> Integer { case IdentityReturn {
+def representableSorts() -> Integer { match IdentityReturn {
   Presents(sorts, opers, rules) => representable(sorts),
   _ => 0
 } }
 
 /// The λ-calculus's first operation, `lam`, binds over its one input.
 @[ runs("1") ]
-def boundInputs() -> Integer { case Lambda {
-  Presents(sorts, opers, rules) => case opers {
+def boundInputs() -> Integer { match Lambda {
+  Presents(sorts, opers, rules) => match opers {
     Oper(name, inputs, outputs, rest) => bound(inputs),
     _ => 0
   },

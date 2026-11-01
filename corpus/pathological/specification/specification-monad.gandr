@@ -8,7 +8,7 @@ import "../../model/desc/relative-monad.gandr";
 /// continuation returns, an operation nested in producer position, which the
 /// description does not read beside an indexed sort yet (#4128).
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory LawfulSpecificationMonad {
+theory LawfulSpecificationMonad where {
   sort V : Type+;
   sort C : Type;
   sort Below(w : C, v : C) : Type;
@@ -25,7 +25,7 @@ theory LawfulSpecificationMonad {
 /// block that includes it rather than in `RelativeMonad`, which checks alone
 /// (#2752).
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory IncludedSpecificationMonad {
+theory IncludedSpecificationMonad where {
   include RelativeMonad;
   sort Below(w : C, v : C) : Type;
   oper refl : (w : C) --> Below(w, w);

@@ -1,4 +1,4 @@
-module Counter :> #{ type T, zero : T } {
+module Counter :> #{ type T, zero : T } where {
   type T = Integer;
   @[ runs("0") ]
   def zero = 0;

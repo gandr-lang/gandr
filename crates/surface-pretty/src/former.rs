@@ -902,7 +902,7 @@ pub enum Former<'source, Node>
     Fixpoint(Node),
     /// A sum elimination over its scrutinee and one branch per summand, which
     /// the source answers by [`Source::component`], each under one binder:
-    /// `case v { +{.0 = a} => c, … }`.
+    /// `match v { +{.0 = a} => c, … }`.
     Case
     {
         /// The scrutinee.
@@ -911,7 +911,7 @@ pub enum Former<'source, Node>
         arity: Arity,
     },
     /// A product elimination, its body under one binder per component:
-    /// `case v { #{a, b} => c }`.
+    /// `match v { #{a, b} => c }`.
     Split
     {
         /// The scrutinee.
@@ -923,8 +923,8 @@ pub enum Former<'source, Node>
     },
     /// A nominal elimination over its scrutinee and one branch per
     /// constructor, which the source answers by [`Source::component`] and
-    /// names by [`Source::constructor`]: `case n { Zero => c, Succ(m) => d }`,
-    /// or `case n -> C { … }` with its motive where nothing states its type.
+    /// names by [`Source::constructor`]: `match n { Zero => c, Succ(m) => d }`,
+    /// or `match n -> C { … }` with its motive where nothing states its type.
     DataCase
     {
         /// The scrutinee.
@@ -954,7 +954,7 @@ pub enum Former<'source, Node>
         /// The cell branch.
         cons: Node,
     },
-    /// A case on a native list: `case xs { nil => n, cons(h, t) => c }`,
+    /// A case on a native list: `match xs { nil => n, cons(h, t) => c }`,
     /// the cell branch under the head's and the tail's binders.
     ListCase
     {
@@ -1115,7 +1115,7 @@ pub enum Former<'source, Node>
         /// The continuation.
         parent: Node,
     },
-    /// A hold, `hold x = v ; t` or `hold[1] x = v ; t`: the scope under the
+    /// A hold, `var x = v ; t` or `var[1] x = v ; t`: the scope under the
     /// held slot's linear binder.
     Hold
     {
@@ -1288,7 +1288,7 @@ pub enum Notation
     Resume,
     /// A list fold, written `fold l { nil => …, cons(x, r) => … }`.
     ListFold,
-    /// A list case, written `case l { nil => …, cons(x, t) => … }`.
+    /// A list case, written `match l { nil => …, cons(x, t) => … }`.
     ListCase,
     /// A path between universes, written as a type application.
     PathUniverse,
@@ -1304,7 +1304,7 @@ pub enum Notation
     Row,
     /// A model implicit's components a call supplies by no one path, each
     /// written in place, `f(A, a, g)`: the surface supplies a model by a
-    /// module or a model implicit, `f[s = M]`, never by its components.
+    /// module or a model implicit, `f[.s = M]`, never by its components.
     Supply,
     /// A pasting past level two, written `tree(l, [[[]], [[]]])`: its level,
     /// then its tree as nested brackets. The source writes a pasting only
@@ -1933,8 +1933,8 @@ pub trait Source
     /// - ensures: the telescope the source records for `head`'s constant, or
     ///   the empty slice; the default records none, so every argument is
     ///   written in place.
-    /// - provides: the residents `f[x = v](…)` a printed call supplies its
-    ///   callee's implicits by, and a printed definition's `@[x : T]`.
+    /// - provides: the residents `f[.x = v](…)` a printed call supplies its
+    ///   callee's implicits by, and a printed definition's `[x : T]`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1966,8 +1966,8 @@ pub trait Source
     /// - ensures: the slots the source records for `head`'s constant, or the
     ///   empty slice; the default records none, so every component is written
     ///   as a parameter of its own.
-    /// - provides: the resident `f[s = M]` a printed call supplies a model by,
-    ///   and a printed definition's `@[s : Model(S)]`.
+    /// - provides: the resident `f[.s = M]` a printed call supplies a model by,
+    ///   and a printed definition's `[s : Model(S)]`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1989,7 +1989,7 @@ pub trait Source
     }
 }
 
-/// A model implicit a function's telescope writes, `@[s : Model(S) with sort
+/// A model implicit a function's telescope writes, `[s : Model(S) with sort
 /// x = A]`: the parameters from `at` on, one per component, bind its
 /// components, and a sort the type fixes binds none.
 #[derive(Clone, Debug, Eq, PartialEq)]

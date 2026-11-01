@@ -6,7 +6,7 @@
 // `../../model/codata/streams.gandr`.
 
 /// A stream of integers, the family every definition here builds.
-codata Stream : Type[-] {
+codata Stream : Type[-] where {
   head : Integer;
   tail : Stream;
 }
@@ -14,7 +14,7 @@ codata Stream : Type[-] {
 /// A point at the value universe: an observation is a computation, so the
 /// family's kind is a computation universe.
 @[ refuses("CodataKindNotUniverse") ]
-codata Point : Type {
+codata Point : Type where {
   x : Integer;
   depth : Integer;
 }
@@ -22,7 +22,7 @@ codata Point : Type {
 /// A pair of streams interleaved by swapping its parameters at the tail: a
 /// family names itself only at its own parameters in order (#2188).
 @[ refuses("CodataOccurrence") ]
-codata Swap(a : Type, b : Type) : Type[-] {
+codata Swap(a : Type, b : Type) : Type[-] where {
   head : a;
   tail : Swap(b, a);
 }
@@ -30,13 +30,13 @@ codata Swap(a : Type, b : Type) : Type[-] {
 /// A stream whose tail nests the family in its own argument: refused the same
 /// way (#2188).
 @[ refuses("CodataOccurrence") ]
-codata Twisted(a : Type) : Type[-] {
+codata Twisted(a : Type) : Type[-] where {
   head : a;
   tail : Twisted(Twisted(a));
 }
 
 /// Three readings of a position.
-codata Spot : Type[-] {
+codata Spot : Type[-] where {
   x : Integer;
   y : Integer;
   depth : Integer;

@@ -1114,8 +1114,8 @@ mod tests
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
         let once = "def once(n : Integer -> -F Integer {\n  return n\n}\n";
-        let glued = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> \
-                     Int;\n  rule S(P(x) <=> x;\n}\n";
+        let glued = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> \
+                     Int\n  rule : S(P(x) <=> x;\n}\n";
         let head = "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n";
         let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
         for (source, at, class, why) in [
@@ -1196,19 +1196,17 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let member = "data Circle : Type {\n  Base : Circle\n  loop : Base <-> Base;\n}\n";
-        let arm = "def classify(n : Integer) -> -F Integer {\n  case n {\n    ?branch  return \
+        let member = "data Circle : Type where {\n  | Base : Circle\n  | loop Base <-> Base\n}\n";
+        let arm = "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return \
                    1\n  }\n}\n";
         let branch = "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n";
         let last = "def twice : Integer ;\ndef twice = loop then loop \n";
-        let binder = "data Stack : Type {\n  Empty : Stack;\n  Push : (x  Integer, rest : Stack) --> \
-             Stack;\n}\n";
+        let binder = "data Stack : Type where {\n  | Empty : Stack\n  | Push : (x  Integer, rest : Stack) --> Stack\n}\n";
         for (source, at, why) in [
             (
                 member,
-                after(member, "Base : Circle"),
-                "a member's `;` left out is minted at the end of its line, and the member after \
-                 it reads as written",
+                after(member, "| loop"),
+                "a cell's `:` left out is minted after its name, and the cell reads as written",
             ),
             (
                 arm,
@@ -1400,8 +1398,8 @@ mod tests
             "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n",
             "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n",
             "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
-            "data Circle : Type {\n  Base : Circle\n  loop : Base <-> Base;\n}\n",
-            "def classify(n : Integer) -> -F Integer {\n  case n {\n    ?branch  return 1\n  }\n}\n",
+            "data Circle : Type where {\n  | Base : Circle\n  loop : Base <-> Base\n}\n",
+            "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return 1\n  }\n}\n",
             "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n",
         ] {
             let text = SourceText::from(source);

@@ -8,9 +8,9 @@
 /// ill-formed description. The law without it is
 /// `model/desc/binding-field.gandr`'s `Vacuous`.
 @[ refuses("IllFormedDescription") ]
-theory Unknown {
+theory Unknown where {
   sort Val : Type+;
   sort Proc : Type;
   oper new : (body : pi+ (x : Val). Proc) --> Proc;
-  rule gc : new(bind x. q) <=> q where x # q;
+  rule gc : new(bind x. q) <=> q where { | x # q };
 }

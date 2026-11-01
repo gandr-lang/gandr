@@ -93,7 +93,7 @@ def inScopeAtInteger() -> Integer {
 
 /// A second state-passing model at an integer state: reading answers zero,
 /// and storing is forgotten.
-module Forgetting : Model(State) with sort S = Integer {
+module Forgetting : Model(State) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands zero to what runs after.
@@ -126,7 +126,7 @@ def unansweredForConsole() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which a call's
 /// argument solves.
-def readGivenAt @[a : Type] (x : a) -> [st : State with sort S = a] a {
+def readGivenAt[a : Type](x : a) -> [st : State with sort S = a] a {
   st.get()
 }
 

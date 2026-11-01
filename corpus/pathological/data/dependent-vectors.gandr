@@ -23,8 +23,8 @@ import "../../model/data/vectors.gandr";
 
 /// The first element, its element type and length implicit. `VNil` stands at
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
-def head @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> a {
-  case v {
+def head[a : Type, n : Nat](v : Vec(a, Succ(n))) -> a {
+  match v {
     VCons(_, h, _) => h
   }
 }
@@ -32,8 +32,8 @@ def head @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> a {
 /// The rest of a vector at least one long. The arm binds the path from
 /// `Succ(m)` to `Succ(n)`, and the tail stands at `m` where the result reads `n`.
 @[ refuses("TypeMismatch") ]
-def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
-  case v {
+def tail[a : Type, n : Nat](v : Vec(a, Succ(n))) -> Vec(a, n) {
+  match v {
     VCons(m, _, t) => t
   }
 }
@@ -47,9 +47,9 @@ def firstOfPair() -> Integer { head(pair()) }
 /// arm's path between two `Succ`s.
 @[ refuses("TypeMismatch") ]
 def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) {
-  case xs {
-    VNil => case ys { VNil => VNil },
-    VCons(m, x, xt) => case ys {
+  match xs {
+    VNil => match ys { VNil => VNil },
+    VCons(m, x, xt) => match ys {
       VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
     }
   }

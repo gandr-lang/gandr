@@ -1,8 +1,8 @@
-error[OutOfFragment.case_expression]: the case expression is not supported yet
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Unadmitted.gandr:3:48
+error[OutOfFragment.match_expression]: the match expression is not supported yet
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Unadmitted.gandr:3:49
   │
-3 │ def stated(x : Void) -> -F Integer { case x -> -F Integer {} }
-  │                                                ━━━━━━━━━━ a form the fragment does not admit
+3 │ def stated(x : Void) -> -F Integer { match x -> -F Integer {} }
+  │                                                 ━━━━━━━━━━ a form the fragment does not admit
   │
-  ├ note: `stated` is refused with OutOfFragment.case_expression, as its expectation states
+  ├ note: `stated` is refused with OutOfFragment.match_expression, as its expectation states
   ╰ note: tracked by #1998 <https://github.com/gandr-lang/gandr/issues/1998>

@@ -3,7 +3,7 @@
 // constructors and no operation, the smallest description the route reads.
 
 /// One bit: off or on.
-data Bit : Type {
-  Off : Bit;
-  On : Bit;
+data Bit : Type where {
+  | Off : Bit
+  | On : Bit
 }

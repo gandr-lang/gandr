@@ -52,7 +52,7 @@ pub enum Part
     Computation(CompTypeId),
 }
 
-/// A stage a call supplies a binder of its callee at, written `f[i = s]`.
+/// A stage a call supplies a binder of its callee at, written `f[.i = s]`.
 ///
 /// It names the value the call forces, the binder by its position in the
 /// callee's signature, and the stage, one the caller's own signature mints.

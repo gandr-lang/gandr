@@ -1,6 +1,6 @@
 /// `UndescribedMember.NestedOperation`: a member the description does not read: a rule with an operation nested in producer position.
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory GradedChoice {
+theory GradedChoice where {
   sort Grade : Type;
   sort M(g : Grade) : Type;
 

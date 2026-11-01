@@ -1,0 +1,5 @@
+/// `record_selection_expression`: the record of the fields a value's labels select.
+@[ checks ]
+def pick(r : #{a : Integer, b : Integer, c : Integer}) -> -F #{c : Integer, a : Integer} {
+  r.#{.c, .a}
+}

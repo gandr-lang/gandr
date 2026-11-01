@@ -5,23 +5,23 @@
 // cancellation are two different paths.
 
 /// The circle: one point and a loop at it.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 /// The integers, presented by their two cancellations.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) ==> x;
+  rule : P(S(x)) ==> x;
 }
 
 /// The winding number: a loop counts one up, its inverse one down.
 def rec wind(p : Path(Circle, Base, Base)) -> Int {
-  case p {
+  match p {
     here => Z,
     loop ∷ q => S(wind[<](q)),
     back(loop) ∷ q => P(wind[<](q))
@@ -30,7 +30,7 @@ def rec wind(p : Path(Circle, Base, Base)) -> Int {
 
 /// Spinning: a successor is a loop, a predecessor its inverse.
 def rec spin(n : Int) -> Path(Circle, Base, Base) {
-  case n {
+  match n {
     Z => here(Base),
     S(x) => loop ∷ spin[<](x),
     P(x) => back(loop) ∷ spin[<](x)
@@ -57,7 +57,7 @@ def rec forged(p : Path(Circle, Base, Base)) -> Path(
   spin(wind(p)),
   p
 ) {
-  case p {
+  match p {
     here => here(here(Base)),
     loop ∷ q => forged[<](q),
     back(loop) ∷ q => { run ih <- forged[<](q); cong(unloopOn, ih) }
@@ -71,7 +71,7 @@ def rec forged(p : Path(Circle, Base, Base)) -> Path(
 /// the loops would identify the two; the words are not read as one.
 @[ refuses("RuleNotRespected") ]
 def rec rewound(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), p, p) {
-  case p {
+  match p {
     here => here(here(Base)),
     loop ∷ q => { run ih <- rewound[<](q); cong(loopOn, ih) },
     back(loop) ∷ q => here(back(loop) ∷ q)

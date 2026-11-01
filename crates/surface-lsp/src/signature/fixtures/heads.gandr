@@ -1,0 +1,17 @@
+/// Natural numbers.
+data Nat : Type where {
+  | Zero : Nat
+  /// One more.
+  | Succ : (n : Nat) --> Nat
+}
+/// Addition.
+@[ checks ]
+def rec plus(n : Nat,
+    m : Nat) -> -F Nat { n }
+def double : +U (Nat -> Nat -> -F Nat) ;
+data List(a : Type) : Type where {
+  | Nil : List(a)
+  | Cons : (head : a, tail : List(a)) --> List(a)
+}
+def ap(f : +U (Nat -> -F Nat), x : Nat) -> -F Nat { f(x) }
+def r : #{ sub : +U (Nat -> Nat -> -F Type), subTm : (g : Nat, t : sub(g, g)) => Nat } ;

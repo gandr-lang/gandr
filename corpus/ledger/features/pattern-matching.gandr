@@ -1,21 +1,21 @@
 /// `pattern-matching`: `case` matches a value against nested constructor patterns, a wildcard taking what the arms before it left.
 @[ checks ]
-data Inner : Type {
-  No : Inner;
-  Yes : (n : Integer) --> Inner;
+data Inner : Type where {
+  | No : Inner
+  | Yes : (n : Integer) --> Inner
 }
 
 /// An optional `Inner`, so a match reaches two constructors deep.
 @[ checks ]
-data Outer : Type {
-  None : Outer;
-  Some : (i : Inner) --> Outer;
+data Outer : Type where {
+  | None : Outer
+  | Some : (i : Inner) --> Outer
 }
 
 /// The integer two constructors down, or zero.
 @[ checks ]
 def depth(m : Outer) -> -F Integer {
-  case m {
+  match m {
     Some(Yes(n)) => return n,
     _ => return 0
   }

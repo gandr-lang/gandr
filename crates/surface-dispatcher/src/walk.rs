@@ -2432,7 +2432,7 @@ pub mod tests
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
             SourceText::from(
-                "module M : #{ x: Integer, z: Integer } { def x = 1; }\ndef broken = missing ;",
+                "module M : #{ x: Integer, z: Integer } where { def x = 1; }\ndef broken = missing ;",
             ),
         );
         scratch.file(
@@ -2747,7 +2747,7 @@ pub mod tests
                 })
                 .collect()
         };
-        let base = "@[ checks ]\npub data Point : Type {\n  Here : Point;\n}\n\n@[ checks ]\npub \
+        let base = "@[ checks ]\npub data Point : Type where {\n  | Here : Point\n}\n\n@[ checks ]\npub \
                     def here : Point ;\ndef here = Here ;\n";
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         for side in ["left", "right"] {
@@ -2945,7 +2945,7 @@ pub mod tests
     fn an_import_parses_its_importer_once_617()
     {
         let scratch = Scratch::new(Path::new("parsed-once"));
-        let floor = "/// One.\n@[ checks ]\ndata One : Type {\n  It : One;\n}\n";
+        let floor = "/// One.\n@[ checks ]\ndata One : Type where {\n  | It : One\n}\n";
         let body = (0_usize .. 150_usize).fold(String::new(), |mut body, n| {
             let _written = write!(
                 body,
@@ -3205,7 +3205,7 @@ pub mod tests
     {
         let scratch = Scratch::new(Path::new("regrouped"));
         let base = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
-        let nested = "module inner {\n  import \"./base.gandr\" ;\n}\n\n@[ checks ]\ndef three : \
+        let nested = "module inner where {\n  import \"./base.gandr\" ;\n}\n\n@[ checks ]\ndef three : \
                       Integer ;\ndef three = 3 ;\n";
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         scratch.file(Path::new("fixture/nested.gandr"), SourceText::from(nested));
@@ -3262,7 +3262,7 @@ pub mod tests
         let scratch = Scratch::new(Path::new("one-form-two-members"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("@[ checks ]\ndata One : Type {\n  Pt : One;\n}\n"),
+            SourceText::from("@[ checks ]\ndata One : Type where {\n  | Pt : One\n}\n"),
         );
         for (side, documentation) in [("left", "The left two."), ("right", "The right two.")] {
             scratch.file(
@@ -3270,7 +3270,7 @@ pub mod tests
                 SourceText::from(
                     format!(
                         "import \"./base.gandr\" ;\n\n/// {documentation}\n@[ checks ]\ndata Two \
-                         : Type {{\n  L : Two;\n  R : Two;\n}}\n"
+                         : Type where {{\n  | L : Two\n  | R : Two\n}}\n"
                     )
                     .as_str(),
                 ),

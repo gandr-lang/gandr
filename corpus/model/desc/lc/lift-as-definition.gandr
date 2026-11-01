@@ -16,7 +16,7 @@ def liftOf(s : Env) -> Env {
 
 /// Substitution lifting through `liftOf`.
 def rec substLifting(t : Term, s : Env) -> Term {
-  case t {
+  match t {
     Ix(n) => look(n, s, Z),
     Lam(b) => Lam(substLifting[<](b, liftOf(s))),
     Ap(f, a) => Ap(substLifting[<](f, s), substLifting[<](a, s))

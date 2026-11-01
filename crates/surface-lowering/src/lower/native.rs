@@ -58,7 +58,7 @@
 //! # The motive is the answer the source states
 //!
 //! A data case checks against a motive under one scrutinee binder. The
-//! lowering reads it from the match's own answer, `case e -> T { … }`, or
+//! lowering reads it from the match's own answer, `match e -> T { … }`, or
 //! from the result type of the function whose body ends in the match,
 //! relocated into the match's context; a match with neither is refused as
 //! unannotated when its tree eliminates native data. Reversal: a checker that
@@ -236,27 +236,26 @@
 //!
 //! `lower::native` lowers a `data` declaration at the root to the core's native
 //! `DataSignature`, a constructor to a native constructor value carrying its
-//! whole classifier, a `case` to a decision tree of native eliminations, and a
+//! whole classifier, a `match` to a decision tree of native eliminations, and a
 //! `def rec` function to one fixpoint over the parameter its matches take
 //! apart, recursive calls written with the descent claim `f[<](…)`.
 //!
-//! `data T(a : A) : Type { C : (x : X) --> T(a); … }` at the root lowers to the
-//! core's native `DataSignature`: the parameters as a telescope, each
+//! `data T(a : A) : Type where { | C : (x : X) --> T(a) … }` at the root lowers
+//! to the core's native `DataSignature`: the parameters as a telescope, each
 //! generator's fields as one constructor, in source order. A field may name the
 //! family it belongs to, applied to its own parameters, which is how `List(a)`
 //! holds its tail; whether every such occurrence is strictly positive is the
 //! checker's judgment, not the lowering's. `DeclarationOutcome::Data` carries a
 //! `DataIndex` into `LoweredModule::data`, so the outcome stays `Copy` and the
 //! signature is shared, not cloned, with the checker's declaration. A kind
-//! written as an arrow, `data V(a : A) : I -> Type { … }`, indexes the family:
-//! each domain is an index classifier read under the parameters, and each
-//! generator's result applies the family to its own parameters and then one
-//! term per index, the index its value stands at, read under the parameters
+//! written as an arrow, `data V(a : A) : I -> Type where { … }`, indexes the
+//! family: each domain is an index classifier read under the parameters, and
+//! each generator's result applies the family to its own parameters and then
+//! one term per index, the index its value stands at, read under the parameters
 //! and the generator's fields (`tests::an_indexed_family_lowers_its_indices`).
 //! A generator whose result applies the family to anything else, and a cell on
 //! an indexed family, are declined as `OutOfFragment` with the `Indexed`
-//! boundary; the constructor-block spelling and a field's attributes or grade
-//! are declined by name
+//! boundary; a field's attributes or grade are declined by name
 //! (`tests::members_outside_the_fragment_are_declined_by_name`); a constructor
 //! named twice is `DuplicateDefinition`. Each of these is decided while the
 //! declaration is collected, so the declaration records no half and its
@@ -269,7 +268,7 @@
 //! classifier, taken from the type its position states as the opening section
 //! reads it.
 //!
-//! `case e -> T? { p => c, … }` compiles to a decision tree of native
+//! `match e -> T? { p => c, … }` compiles to a decision tree of native
 //! eliminations by the pattern-matrix construction of Maranget's _Compiling
 //! Pattern Matching to Good Decision Trees_ (ML 2008): a data case per
 //! constructor column, a sum case per boolean column, the integer primitive
@@ -292,7 +291,7 @@
 //! Reversal: a join point earns its thunk once duplication costs more than
 //! binding the answer type at every join.
 //!
-//! A match of no arms, `case e {}`, names no family to compile against, so it
+//! A match of no arms, `match e {}`, names no family to compile against, so it
 //! reads its scrutinee's stated type, as a sum pattern reads its arity: a
 //! parameter's written type, or a lambda binder's where the lambda answers a
 //! written arrow `A -> C`, its domain `A`. Over a data type with no
@@ -302,12 +301,12 @@
 //! with a constructor it is `NonExhaustiveMatch`; over anything else, `Void`
 //! among them, it is the case of no branches, the empty sum's eliminator,
 //! which checks at any answer. The data case reads its answer as any match
-//! does, `case e -> T {}` or the enclosing result type; the empty sum's case
+//! does, `match e -> T {}` or the enclosing result type; the empty sum's case
 //! takes none written, since no branch would answer it.
 //!
 //! **Choice.** The empty match read by its scrutinee's written type, so `data
 //! Empty : Type {}` and a path between apart terms each have an eliminator.
-//! **Alternatives.** One reading of `case e {}`, the empty sum's eliminator,
+//! **Alternatives.** One reading of `match e {}`, the empty sum's eliminator,
 //! which leaves every empty nominal family without one; a reading by the
 //! checked type, which the lowering does not compute. **Reversal.** A
 //! scrutinee with no written type — a nested expression — takes the reading
@@ -448,6 +447,7 @@ use crate::module::DataIndex;
 use crate::module::Generators;
 use crate::module::Half;
 use crate::module::Operand;
+use crate::module::Ported;
 use crate::module::SlotIndex;
 use crate::module::TermsForm;
 use crate::module::WordsForm;
@@ -478,6 +478,8 @@ use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
 use crate::unbuilt::Unbuilt;
+
+mod clauses;
 
 #[cfg(test)]
 pub(super) mod tests;
@@ -865,7 +867,7 @@ pub(super) struct Recursion
 ///   claims inside it.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
-/// - executable: none — `case` records it and `claim` reads it.
+/// - executable: none — `match` records it and `claim` reads it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Recursion`].
@@ -1494,6 +1496,22 @@ enum Test
         /// The level that settled each arm variable.
         bindings: Vec<TreeLevel>,
     },
+    /// Run arm `arm` when its guard holds, its variables settled as a leaf's:
+    /// the guard bound and cased on, `yes` the arm's leaf and `no` the rows
+    /// after it, each under the guard's binder and its case's.
+    Guard
+    {
+        /// The guarded arm.
+        arm: ArmAt,
+        /// The tree binders above the guard.
+        depth: Depth,
+        /// The level that settled each arm variable.
+        bindings: Vec<TreeLevel>,
+        /// The child where the guard holds: the arm's leaf.
+        yes: TestAt,
+        /// The child where it fails: the rows after the arm's.
+        no: TestAt,
+    },
     /// The hole that decides whether the first surviving row matches.
     Stuck(HoleId),
     /// A branch whose constructor no row admits, at a family of one index:
@@ -1606,6 +1624,47 @@ enum Test
     },
 }
 
+/// What a decision tree's root stands over.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a match's root reads its scrutinee at level zero; clauses' root
+///   stands under one binder per column, the column at place `k` read at level
+///   `k + 1`.
+/// - executable: none — a plain tag its producer establishes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function's clauses and a matching lambda's lower under
+///   one lambda per column.
+/// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
+/// - witness: `lower::native::tests::a_matching_lambda_binds_one_lambda_per_column`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Roots
+{
+    /// A match's scrutinee, at level zero.
+    Scrutinee,
+    /// A function's clauses, under its parameters' lambdas, which the
+    /// function mints.
+    Parameters(Depth),
+    /// A matching lambda's clauses, under lambdas the tree mints itself.
+    Lambdas(Depth),
+}
+
+impl Roots
+{
+    /// The tree binders the root stands under.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn columns(self) -> Depth
+    {
+        match self {
+            Self::Scrutinee => Depth(0),
+            Self::Parameters(columns) | Self::Lambdas(columns) => columns,
+        }
+    }
+}
+
 /// One match, compiled to its decision tree.
 ///
 /// # Specification
@@ -1621,18 +1680,23 @@ enum Test
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CaseForm
 {
-    /// The scrutinee's syntax node.
+    /// The scrutinee's syntax node; for clauses, a node standing for their
+    /// columns, which no value is written at.
     scrutinee: NodeIndex,
+    /// What the tree's root stands over.
+    roots: Roots,
     /// The frame the match is read under.
     frame: Frame,
     /// The answer the motive is read from.
     answer: Maybe<Answer, answered::Absent>,
-    /// The answer written on the match itself, `case e -> C { … }`, which
+    /// The answer written on the match itself, `match e -> C { … }`, which
     /// the tree's root is ascribed; absent where only its position states
     /// one.
     ascribed: Maybe<Answer, answered::Absent>,
     /// Each constructor arm's body.
     bodies: Vec<NodeIndex>,
+    /// Each guarded clause's guard, `| p if g => c`.
+    guards: BTreeMap<ArmAt, NodeIndex>,
     /// The decision tree.
     tests: Vec<Test>,
     /// The loop arms, one per loop of the root's sort in the order its loop
@@ -2108,6 +2172,28 @@ struct Inverse(bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Width(usize);
 
+/// A port pattern `C(x, …).l` as read: the port and its field patterns.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `port` is the constructor of the port the pattern selects, and
+///   `fields` its field patterns in order.
+/// - executable: none — the record holds no constructor list.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm per port covers a two-output constructor.
+/// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PortPattern
+{
+    /// The constructor's name tile.
+    head: Placed,
+    /// The port selected.
+    port: Constructor,
+    /// The field patterns, in order.
+    fields: Vec<Placed>,
+}
+
 /// A pattern the reader has allocated and not yet read.
 ///
 /// # Specification
@@ -2175,6 +2261,8 @@ struct Compiling
     tests: Vec<Test>,
     /// The matrices still to reduce.
     work: Vec<Work>,
+    /// The arms whose clause is guarded.
+    guarded: BTreeSet<ArmAt>,
 }
 
 impl Compiling
@@ -2514,6 +2602,57 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(found)
     }
 
+    /// The multi-output constructor `name` names at `site`.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: the multi-output constructor entered under `name` in the
+    ///   site's source, or else the one its unqualified imports answer, when
+    ///   its family's admission position is strictly earlier than the site's
+    ///   declaration's; otherwise the unnamed absence, two imports answering
+    ///   included.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::constructor_named`], over the ports.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => matches!(
+            self.collected.owner_of(site.at.node),
+            Maybe::Present(own) if found.family < own
+        ),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn ported_named(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Maybe<Ported, constructed::Absent>
+    {
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        };
+        let source = self.collected.unit.source_at(site.at.span.start());
+        let (found, import) = match self.collected.ports.get(&(source, name)) {
+            Some(&found) => (found, None),
+            None => match self.collected.imported_ported(source, name) {
+                Ok(Maybe::Present((found, import))) => (found, Some(import)),
+                Ok(Maybe::Absent(_)) | Err(_) => {
+                    return Maybe::Absent(constructed::Absent::Unnamed);
+                },
+            },
+        };
+        if found.family >= own {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        }
+        if let Some(import) = import {
+            self.collected.reach(import);
+        }
+        Maybe::Present(found)
+    }
+
     /// The constructor `name` of the family `family` names, written
     /// qualified as `family.name` at `site`.
     ///
@@ -2555,18 +2694,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unnamed);
         };
-        // A tile has no owner of its own: the family is resolved from the
-        // site's node, at the family name's bytes.
-        let named = Site {
-            at: Placed {
-                node: site.at.node,
-                span: family.span,
-            },
-            ..site
-        };
-        let family_name = SurfaceName::from(self.text_at(family));
-        let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, Frame::Outermost, family_name)?
+        let Maybe::Present(constant) = self.qualified_family(site, family)?
         else {
             return Ok(unnamed);
         };
@@ -2586,7 +2714,10 @@ impl<'source> Lowerer<'_, 'source>
             form.generators
                 .iter()
                 .enumerate()
-                .find(|&(_, generator)| SurfaceName::from(self.text_at(generator.named)) == name)
+                .find(|&(_, generator)| {
+                    matches!(generator.port, Maybe::Absent(_))
+                        && SurfaceName::from(self.text_at(generator.named)) == name
+                })
                 .map(|(tag, generator)| Constructor {
                     family: form.slot,
                     form: Generators::Written(position),
@@ -2642,6 +2773,169 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// The declaration the family name `family` of a qualified constructor
+    /// written at `site` resolves to.
+    ///
+    /// # Specification
+    /// - requires: `site` is the qualified form or the form holding it.
+    /// - ensures: the declared constant the name resolves to as any global name
+    ///   at `site`, at the family name's bytes; the unnamed absence for any
+    ///   other resolution.
+    /// - fails: as [`Self::resolve_name`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's resolution refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::qualified_constructor`].
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(reason)) if reason != constructed::Absent::Unnamed))]
+    fn qualified_family(
+        &mut self,
+        site: Site,
+        family: Placed,
+    ) -> Result<Maybe<ConstantIndex, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        // A tile has no owner of its own: the family is resolved from the
+        // site's node, at the family name's bytes.
+        let named = Site {
+            at: Placed {
+                node: site.at.node,
+                span: family.span,
+            },
+            ..site
+        };
+        let family_name = SurfaceName::from(self.text_at(family));
+        Ok(
+            match self.resolve_name(named, Frame::Outermost, family_name)? {
+                Maybe::Present(Resolved::Declaration { constant, .. }) => Maybe::Present(constant),
+                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(constructed::Absent::Unnamed),
+            },
+        )
+    }
+
+    /// The multi-output constructor `name` of the data family `family` names,
+    /// written qualified as `family.name` at `site`.
+    ///
+    /// # Specification
+    /// - requires: `site` is the qualified form or the form holding it.
+    /// - ensures: the ports named `name` among the generators of the data
+    ///   family `family` resolves to, from the first port's tag over every port
+    ///   of that name, when the family's admission position is strictly earlier
+    ///   than the site's declaration's; otherwise the unnamed absence.
+    /// - fails: as [`Self::resolve_name`] at the family's name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The family name's resolution refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a qualified multi-output constructor constructs a
+    ///   port, its record and a port pattern as the bare one does.
+    /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    fn qualified_ported(
+        &mut self,
+        site: Site,
+        family: Placed,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Ported, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(unnamed);
+        };
+        let Maybe::Present(constant) = self.qualified_family(site, family)?
+        else {
+            return Ok(unnamed);
+        };
+        let Some((position, form)) = self.collected.data.iter().enumerate().find(|&(_, form)| {
+            self.collected
+                .slots
+                .get(usize::from(form.slot))
+                .is_some_and(|entry| entry.constant == constant)
+        })
+        else {
+            return Ok(unnamed);
+        };
+        let mut ports = form
+            .generators
+            .iter()
+            .enumerate()
+            .filter(|&(_, generator)| {
+                matches!(generator.port, Maybe::Present(_))
+                    && SurfaceName::from(self.text_at(generator.named)) == name
+            });
+        let Some((first, generator)) = ports.next()
+        else {
+            return Ok(unnamed);
+        };
+        let found = Ported {
+            family: form.slot,
+            form: Generators::Written(position),
+            first,
+            count: ports.count().saturating_add(1),
+            arity: generator.fields.len(),
+            named: generator.named,
+        };
+        Ok(if found.family < own {
+            Maybe::Present(found)
+        }
+        else {
+            unnamed
+        })
+    }
+
+    /// The multi-output constructor `head`, written at `site`, names: bare,
+    /// or qualified by its family as `Family.Constructor`.
+    ///
+    /// # Specification
+    /// - requires: `head` is the form at `site` or one of its operands.
+    /// - ensures: as [`Self::ported_named`] for a capitalised name; as
+    ///   [`Self::qualified_ported`] for a selection whose target is a
+    ///   capitalised name, the unnamed absence where that name's resolution
+    ///   refuses; the unnamed absence for any other form.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::qualified_ported`].
+    /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn ported_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Ported, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        match self.form_at(head)? {
+            Some((_, Former::Constructor)) => {
+                Ok(self.ported_named(site, SurfaceName::from(self.text_at(head))))
+            },
+            Some((_, Former::Projection)) => {
+                let Some((family, member)) = self.linked_selection(site, head)?
+                else {
+                    return Ok(unnamed);
+                };
+                if !matches!(self.form_at(family)?, Some((_, Former::Constructor))) {
+                    return Ok(unnamed);
+                }
+                let name = SurfaceName::from(self.text_at(member));
+                // A family name that does not resolve is the projection's to
+                // refuse.
+                Ok(self.qualified_ported(site, family, name).unwrap_or(unnamed))
+            },
+            Some(_) | None => Ok(unnamed),
+        }
+    }
+
     /// The constructor the selection `head`, written at `site`, names as
     /// `Family.Constructor`.
     ///
@@ -2653,17 +2947,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   a module's member, a record's field and a family's field keep their
     ///   own readings.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
-    ///   not hold.
+    ///   not hold; [`LoweringRefusal::UnknownMember`] for a capitalised member
+    ///   of a data family that declares no constructor of that name.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::qualified_constructor`]; a module's member
-    ///   selected off a capitalised name still reads as the member.
+    ///   selected off a capitalised name still reads as the member; a
+    ///   constructor a data family lacks is named as its unknown member.
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
     pub(super) fn selected_constructor(
         &mut self,
         site: Site,
@@ -2688,9 +2985,32 @@ impl<'source> Lowerer<'_, 'source>
         };
         let name = SurfaceName::from(self.text_at(member));
         // A family name that does not resolve is the projection's to refuse.
-        Ok(self
+        let found = self
             .qualified_constructor(site, family, name)
-            .unwrap_or(unnamed))
+            .unwrap_or(unnamed);
+        // A data family's capitalised member is one of its constructors or
+        // ports: any other name is a member the family lacks.
+        if let Maybe::Absent(_) = found
+            && name.as_ref().starts_with(char::is_uppercase)
+            && let Ok(Maybe::Present(constant)) = self.qualified_family(site, family)
+            && let Some(form) = self.collected.data.iter().find(|form| {
+                self.collected
+                    .slots
+                    .get(usize::from(form.slot))
+                    .is_some_and(|entry| entry.constant == constant)
+            })
+            && !form
+                .generators
+                .iter()
+                .any(|generator| SurfaceName::from(self.text_at(generator.named)) == name)
+        {
+            return Err(LoweringRefusal::UnknownMember {
+                span: member.span,
+                module: SurfaceName::from(self.text_at(family)),
+                member: name,
+            });
+        }
+        Ok(found)
     }
 
     /// The constructor `head`, the head of a call written at `site`, names.
@@ -2701,18 +3021,19 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::selected_constructor`] for a selection; the unnamed absence
     ///   for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
-    ///   not hold.
+    ///   not hold; [`LoweringRefusal::UnknownMember`] as
+    ///   [`Self::selected_constructor`] for a selection.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor head and a function head take their own
     ///   readings.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
     pub(super) fn constructor_head(
         &mut self,
         site: Site,
@@ -3996,17 +4317,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   a type application's head names, as [`Self::constructor_named`]
     ///   answers it, where the type grammar molds the parentheses; the unnamed
     ///   absence for any other form.
-    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - fails: [`LoweringRefusal::UnknownMold`];
+    ///   [`LoweringRefusal::UnknownMember`] as [`Self::constructor_head`].
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotated`].
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
     fn applied_constructor(
         &mut self,
         site: Site,
@@ -4383,11 +4705,11 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a match, `case e -> T? { p => c, … }`.
+    /// Classify a match, `match e -> T? { p => c, … }`.
     ///
     /// # Specification
     /// - requires: `site` is a match in term position.
-    /// - ensures: a match of no arms, `case e {}`, is planned as
+    /// - ensures: a match of no arms, `match e {}`, is planned as
     ///   [`Self::empty_case`] plans it: the data switch of no branches over a
     ///   scrutinee stated at a data type or a path type, and else the case of
     ///   no branches, the eliminator of the empty sum `Void`; otherwise the
@@ -4402,9 +4724,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   ([`ArmReading`]), and takes the paths through the match's position; a
     ///   match on a recursive function's parameter records that parameter for
     ///   its arm bodies ([`Self::scrutinise`]).
-    /// - provides: the reading of `case`.
+    /// - provides: the reading of `match`.
     /// - fails: the wrong-sort refusal outside computation position; the view
-    ///   form `case … with` by the view's name; a match of no arms as
+    ///   form `match … with` by the view's name; a match of no arms as
     ///   [`Self::empty_case`] refuses it; a written answer on a match whose
     ///   arms continue a block as joining it; a pattern the fragment does not
     ///   read by its own name; a pattern of another kind than the first tested
@@ -4437,14 +4759,14 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        let _case = cursor.tile(TileName::CASE);
+        let _case = cursor.tile(TileName::MATCH);
         let scrutinee = site.one(cursor.operands())?;
         if let Maybe::Present(with) = cursor.at(TileName::WITH) {
             return Err(LoweringRefusal::OutOfFragment {
                 span: with.span,
-                form: FormName::CASE_WITH_VIEW,
+                form: FormName::MATCH_WITH_VIEW,
                 sort: site.reading.sort(),
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::CaseView),
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::MatchView),
             });
         }
         let written = match cursor.tile(TileName::ARROW) {
@@ -4454,7 +4776,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut arms: Vec<(Placed, Placed)> = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-            let _bar = cursor.tile(TileName::BAR);
+            let _bar = cursor.tile(TileName::ARM_BAR);
             let pattern = site.one(cursor.operands())?;
             closed(site, &mut cursor, TileName::FAT_ARROW)?;
             let body = site.one(cursor.operands())?;
@@ -4473,7 +4795,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Err(LoweringRefusal::OutOfFragment {
                 span: stated.span,
-                form: FormName::CASE,
+                form: FormName::MATCH,
                 sort: site.reading.sort(),
                 boundary: FragmentBoundary::JoinsBlock,
             });
@@ -4548,7 +4870,7 @@ impl<'source> Lowerer<'_, 'source>
             variables.push(bound);
         }
         settle_unstated(&mut patterns, &roots)?;
-        let tests = self.compile(site, &patterns, rows)?;
+        let tests = self.compile(site, &patterns, (rows, Depth::default(), BTreeSet::new()))?;
         let loops = self.loop_arms(site, &tests, looped)?;
         let eliminates = tests.iter().any(|test| {
             matches!(
@@ -4667,10 +4989,12 @@ impl<'source> Lowerer<'_, 'source>
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
+            roots: Roots::Scrutinee,
             frame,
             answer,
             ascribed,
             bodies: arms.iter().map(|&(_pattern, body)| body.node).collect(),
+            guards: BTreeMap::new(),
             tests,
             loops,
             origin: kept,
@@ -4681,7 +5005,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a match of no arms, `case e -> T? {}`, over `scrutinee` under
+    /// Classify a match of no arms, `match e -> T? {}`, over `scrutinee` under
     /// `frame`, with the answer `written` when one is written.
     ///
     /// # Specification
@@ -4726,9 +5050,9 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(stated) = written {
                 return Err(LoweringRefusal::OutOfFragment {
                     span: stated.span,
-                    form: FormName::CASE,
+                    form: FormName::MATCH,
                     sort: site.reading.sort(),
-                    boundary: FragmentBoundary::Unadmitted(Unbuilt::EmptyCase),
+                    boundary: FragmentBoundary::Unadmitted(Unbuilt::EmptyMatch),
                 });
             }
             self.read(scrutinee.node, Reading::Value(frame));
@@ -4762,10 +5086,12 @@ impl<'source> Lowerer<'_, 'source>
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
+            roots: Roots::Scrutinee,
             frame,
             answer,
             ascribed,
             bodies: Vec::new(),
+            guards: BTreeMap::new(),
             tests: Vec::from([Test::Data {
                 level: TreeLevel::default(),
                 depth: Depth::default(),
@@ -5096,6 +5422,230 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Projected(index));
 
         Ok(arity::Planned(true))
+    }
+
+    /// Classify a selection `C(a, …).l` off a multi-output constructor as
+    /// the port `l` of `C` applied to `a, …`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a call whose head
+    ///   names a multi-output constructor as [`Self::ported_named`] reads it:
+    ///   the port of that output constructed from the call's arguments, as
+    ///   [`Self::construct`] constructs it. Nothing is planned for any other
+    ///   selection.
+    /// - fails: [`LoweringRefusal::PartialField`] at the member when the
+    ///   constructor has no output `l`; as [`Self::construct`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each output of a two-output constructor, and an
+    ///   output it lacks, separate the two ports from the refusal.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(_))))]
+    pub(super) fn port(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let unplanned = Ok(arity::Planned(false));
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return unplanned;
+        };
+        if !matches!(self.form_at(target)?, Some((_, Former::Call))) {
+            return unplanned;
+        }
+        let mut called = Pieces::new();
+        read_pieces(self.pbg, self.tree, target.node, &mut called)?;
+        if let Maybe::Present(repaired) = called.repair {
+            return Err(repaired.refusal(site.name));
+        }
+        let mut cursor = Cursor::new(&called.pieces, target.span);
+        let Run::One(head) = cursor.clone().operands()
+        else {
+            return unplanned;
+        };
+        let Maybe::Present(ported) = self.ported_head(site, head)?
+        else {
+            return unplanned;
+        };
+        let output = self.name_at(selected);
+        let Maybe::Present(constructor) = self.port_of(ported, output)
+        else {
+            return Err(LoweringRefusal::PartialField {
+                span: selected.span,
+                field: output,
+                constructor: self.name_at(ported.named),
+            });
+        };
+        self.constructed_at(head.span, constructor);
+        let _head = cursor.operands();
+        let start = self.operands.len();
+        arguments(site, &mut cursor, &mut self.operands)?;
+        let fields = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.construct(site, constructor, fields)?;
+
+        Ok(arity::Planned(true))
+    }
+
+    /// Classify a multi-output constructor `ported` applied to the fields
+    /// `fields` holds, no output named, as the record of its ports.
+    ///
+    /// # Specification
+    /// - requires: `fields` is a stretch of the operand store, each entry a
+    ///   field the site was written with, left to right.
+    /// - ensures: the record of every port labelled by its output, each port
+    ///   the constructor at its tag over the fields as [`Self::construct`]
+    ///   reads them; for a family of neither parameters nor indices its
+    ///   classifier is the family alone, and for any other the record type the
+    ///   position states, whose entry at each label the port takes.
+    /// - fails: as [`Self::construct`], the unannotated refusal for a family
+    ///   with arguments at a position that states no type included; the
+    ///   unresolved-name refusal for a constructor whose ports its family does
+    ///   not list.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The constructor's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the record of a two-output constructor destructures
+    ///   to its ports, and a parameterised family's takes its ports' types from
+    ///   the record type its definition states.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Ports(..))))]
+    pub(super) fn ports(
+        &mut self,
+        site: Site,
+        ported: Ported,
+        fields: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let name = self.name_at(ported.named);
+        let unresolved = || LoweringRefusal::UnresolvedName {
+            span: ported.named.span,
+            name,
+        };
+        let (labels, alone) = match ported.form {
+            Generators::Written(form) => match self.collected.data.get(form) {
+                Some(data) => (
+                    (ported.first .. ported.first.saturating_add(ported.count))
+                        .filter_map(|tag| match data.generators.get(tag)?.port {
+                            Maybe::Present(port) => Some((
+                                FieldLabel::from(String::from(self.name_at(port).as_ref())),
+                                ConstructorTag::from(tag),
+                            )),
+                            Maybe::Absent(_) => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    data.parameters.is_empty() && data.indices.is_empty(),
+                ),
+                None => return Err(unresolved()),
+            },
+            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => {
+                return Err(unresolved());
+            },
+        };
+        let first = Constructor {
+            family: ported.family,
+            form: ported.form,
+            tag: ported.first,
+            arity: ported.arity,
+            named: ported.named,
+        };
+        self.construct(site, first, fields)?;
+        let Some(&Plan::Constructor(constructed)) = self.plans.get(site.at.node)
+        else {
+            return Err(unresolved());
+        };
+        // A family without arguments classifies each port alone, whatever
+        // type the record is written at.
+        let constructed = if alone {
+            Constructed {
+                classifier: Classifier::Inserted,
+                ..constructed
+            }
+        }
+        else {
+            self.through_first_port(site, ported, fields);
+            constructed
+        };
+        self.plan(site, Plan::Ports(constructed, labels));
+
+        Ok(())
+    }
+
+    /// Hand each constructor written in a field of the record of ports
+    /// planned at `site` the field's declared type, read under the first
+    /// port's entry of the record type.
+    ///
+    /// # Specification
+    /// - requires: [`Self::construct`] read the fields `fields` holds for the
+    ///   first port of `ported` at `site`.
+    /// - ensures: every field holding an inherited classifier other than a
+    ///   field classifier around `site` holds instead the field's declared type
+    ///   around `site`, which [`Self::classifier_type`] reads under the first
+    ///   port's entry of the record type, never the record type itself.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field typed by the family over its own parameters
+    ///   is classified by a port's type, not by the record of the ports.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |()| (fields.start .. fields.end).all(|position| self.operands.get(position).and_then(|field| self.inherited.get(field)).is_none_or(|inherited| matches!(inherited, &Classifier::Field(of) if of.around == site.at.node))) || !matches!(ported.form, Generators::Written(form) if self.collected.data.get(form).and_then(|data| data.generators.get(ported.first)).is_some_and(|generator| generator.fields.len() >= (fields.start .. fields.end).count())))]
+    fn through_first_port(
+        &mut self,
+        site: Site,
+        ported: Ported,
+        fields: Stretch,
+    )
+    {
+        let Generators::Written(form) = ported.form
+        else {
+            return;
+        };
+        let Some(data) = self.collected.data.get(form)
+        else {
+            return;
+        };
+        let Some(generator) = data.generators.get(ported.first)
+        else {
+            return;
+        };
+        let parameters = data.parameters.len();
+        let declared: Vec<NodeIndex> = generator.fields.iter().map(|field| field.ty.node).collect();
+        for (index, position) in (fields.start .. fields.end).enumerate() {
+            let (Some(&field), Some(&declared)) =
+                (self.operands.get(position), declared.get(index))
+            else {
+                continue;
+            };
+            let Some(&inherited) = self.inherited.get(&field)
+            else {
+                continue;
+            };
+            if matches!(inherited, Classifier::Field(of) if of.around == site.at.node) {
+                continue;
+            }
+            let _replaced = self.inherited.insert(
+                field,
+                Classifier::Field(FieldOf {
+                    around: site.at.node,
+                    declared,
+                    parameters,
+                    index,
+                }),
+            );
+        }
     }
 
     /// Whether some leaf of the syntax under `node` spells one of `names`.
@@ -5494,7 +6044,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Err(LoweringRefusal::OutOfFragment {
                 span: stray.named.span,
-                form: FormName::CASE,
+                form: FormName::MATCH,
                 sort: site.reading.sort(),
                 boundary: FragmentBoundary::WrongSort,
             });
@@ -5664,7 +6214,7 @@ impl<'source> Lowerer<'_, 'source>
             Shape::Repair(repair) => {
                 return Err(LoweringRefusal::MalformedForm {
                     span: at.span,
-                    form: FormName::CASE,
+                    form: FormName::MATCH,
                     fault: FormFault::Repaired(repair),
                 });
             },
@@ -5730,12 +6280,22 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::AS_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
+            let alias = here.one(cursor.operands())?;
+            if !matches!(
+                self.tree
+                    .node(alias.node)
+                    .map(|node| shape_of(self.pbg, node)),
+                Some(Ok(Shape::Form {
+                    name: FormName::IDENTIFIER,
+                    ..
+                }))
+            ) {
+                return Err(here.fault(alias.span, FormFault::NotAName));
+            }
+            if let Maybe::Absent(_) = cursor.tile(TileName::AT_SIGN) {
+                closed(here, &mut cursor, TileName::DOT_AT)?;
+            }
             let inner = here.one(cursor.operands())?;
-            closed(here, &mut cursor, TileName::AS)?;
-            let Maybe::Present(alias) = cursor.tile(TileName::IDENTIFIER)
-            else {
-                return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
-            };
             exhausted(here, &cursor)?;
             let parts = allocated(patterns, work, &[
                 Queued {
@@ -5815,7 +6375,35 @@ impl<'source> Lowerer<'_, 'source>
                 Some(family) => self.qualified_constructor(site, family, name)?,
                 None => self.constructor_named(site, name),
             };
+            // A multi-output constructor is matched through one port at a
+            // time, `C(x).l`.
+            if let Maybe::Absent(_) = found {
+                let ported = match family {
+                    Some(family) => self.qualified_ported(site, family, name)?,
+                    None => self.ported_named(site, name),
+                };
+                if let Maybe::Present(_) = ported {
+                    return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::PortPattern)));
+                }
+            }
             let shape = self.constructor_pattern(here, head, found, &fields, patterns, work)?;
+            patterns
+                .spelled
+                .push((queued.slot, head.span, PatternReading::Constructor));
+            return Ok(shape);
+        }
+        if name == FormName::PROJECTION
+            && let Maybe::Present(PortPattern { head, port, fields }) =
+                self.port_pattern(here, pieces)?
+        {
+            let shape = self.constructor_pattern(
+                here,
+                head,
+                Maybe::Present(port),
+                &fields,
+                patterns,
+                work,
+            )?;
             patterns
                 .spelled
                 .push((queued.slot, head.span, PatternReading::Constructor));
@@ -5846,6 +6434,163 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Err(here.out(FragmentBoundary::Unadmitted(super::unread_pattern(name))))
+    }
+
+    /// The port a projection pattern `C(x, …).l` matches: the port `l` of the
+    /// multi-output constructor `C`, its field patterns `x, …`.
+    ///
+    /// # Specification
+    /// - requires: `here` is a projection pattern; `pieces` holds its reading.
+    /// - ensures: for a projection off a constructor applied to field patterns,
+    ///   or off a bare constructor, whose name [`Self::ported_named`] resolves,
+    ///   the constructor's tile, the port at the selected output's tag, and the
+    ///   field patterns in order; the unnamed absence for a projection off
+    ///   anything else.
+    /// - fails: [`LoweringRefusal::PartialField`] at the member when the
+    ///   constructor has no such output; a misplaced tile inside the
+    ///   parentheses.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm per port covers a two-output constructor, and
+    ///   an arm missing one port is refused for it.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        Ok(Maybe::Present(ref read)) => read.fields.len() == read.port.arity,
+        Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn port_pattern(
+        &mut self,
+        here: Site,
+        pieces: &Pieces,
+    ) -> Result<Maybe<PortPattern, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        let Ok((target, selected)) = Self::link(here, &pieces.pieces, here.at.span)
+        else {
+            return unnamed;
+        };
+        let mut written = Pieces::new();
+        read_pieces(self.pbg, self.tree, target.node, &mut written)?;
+        if let Maybe::Present(repaired) = written.repair {
+            return Err(repaired.refusal(here.name));
+        }
+        let mut cursor = Cursor::new(&written.pieces, target.span);
+        // The head is the constructor's tile of a constructor pattern, its
+        // family's tile before it when qualified, the operand of a call, or
+        // the target itself when it is a bare or a qualified name.
+        let (head, ported) = match cursor.tile(TileName::CONSTRUCTOR) {
+            Maybe::Present(first) => match cursor.tile(TileName::DOT) {
+                Maybe::Present(_) => {
+                    let Maybe::Present(head) = cursor.tile(TileName::CONSTRUCTOR)
+                    else {
+                        return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+                    };
+                    let name = SurfaceName::from(self.text_at(head));
+                    (head, self.qualified_ported(here, first, name)?)
+                },
+                Maybe::Absent(_) => (
+                    first,
+                    self.ported_named(here, SurfaceName::from(self.text_at(first))),
+                ),
+            },
+            Maybe::Absent(_) => match cursor.clone().operands() {
+                Run::One(head)
+                    if matches!(
+                        self.form_at(head)?,
+                        Some((_, Former::Constructor | Former::Projection))
+                    ) =>
+                {
+                    let _head = cursor.operands();
+                    (head, self.ported_head(here, head)?)
+                },
+                Run::One(_) | Run::Several { .. } | Run::Empty(_) => {
+                    if !matches!(
+                        self.form_at(target)?,
+                        Some((_, Former::Constructor | Former::Projection))
+                    ) {
+                        return unnamed;
+                    }
+                    cursor = Cursor::new(&[], target.span);
+                    (target, self.ported_head(here, target)?)
+                },
+            },
+        };
+        let mut fields = Vec::new();
+        if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
+            while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+                fields.push(here.one(cursor.operands())?);
+                if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                    closed(here, &mut cursor, TileName::PAREN_CLOSE)?;
+                    break;
+                }
+            }
+        }
+        exhausted(here, &cursor)?;
+        let Maybe::Present(ported) = ported
+        else {
+            return unnamed;
+        };
+        let output = self.name_at(selected);
+        let Maybe::Present(port) = self.port_of(ported, output)
+        else {
+            return Err(LoweringRefusal::PartialField {
+                span: selected.span,
+                field: output,
+                constructor: self.name_at(ported.named),
+            });
+        };
+
+        Ok(Maybe::Present(PortPattern { head, port, fields }))
+    }
+
+    /// The port of the multi-output constructor `ported` whose output is
+    /// named `output`, as a constructor of its family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the generator among `ported`'s ports whose output tile spells
+    ///   `output`, at its tag, with the constructor's arity and name tile; the
+    ///   unnamed absence when no port spells it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::port`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(port) => port.tag >= ported.first && port.tag < ported.first.saturating_add(ported.count),
+        Maybe::Absent(_) => true,
+    })]
+    fn port_of(
+        &self,
+        ported: Ported,
+        output: SurfaceName<'source>,
+    ) -> Maybe<Constructor, constructed::Absent>
+    {
+        let Generators::Written(form) = ported.form
+        else {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        };
+        let tag = self.collected.data.get(form).and_then(|data| {
+            (ported.first .. ported.first.saturating_add(ported.count)).find(|&tag| {
+                data.generators.get(tag).is_some_and(|generator| {
+                    matches!(generator.port, Maybe::Present(port) if self.name_at(port) == output)
+                })
+            })
+        });
+        tag.map_or(Maybe::Absent(constructed::Absent::Unnamed), |tag| {
+            Maybe::Present(Constructor {
+                family: ported.family,
+                form: ported.form,
+                tag,
+                arity: ported.arity,
+                named: ported.named,
+            })
+        })
     }
 
     /// The shape of the constructor pattern at `here`, `found` the constructor
@@ -5998,15 +6743,15 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// The shape of the list pattern `[p, …, q]` or `[p, …, q, ..r]` at
-    /// `here`, the pattern `queued` holds, read from `pieces`: the cell of
-    /// `p` over the rest of the list, each later cell and the closing empty
-    /// list allocated in turn, every element and the rest queued in source
-    /// order.
+    /// The shape of the list pattern `#[p, …, q]` or `#[p, …, q, ..r]`, or its
+    /// bare spelling `[p, …]` read until the corpus moves, at `here`, the
+    /// pattern `queued` holds, read from `pieces`: the cell of `p` over the
+    /// rest of the list, each later cell and the closing empty list allocated
+    /// in turn, every element and the rest queued in source order.
     ///
     /// # Specification
     /// - requires: `here` is a list pattern of a match, `pieces` its reading.
-    /// - ensures: the empty list for `[]`; for `[..r]`, `r` queued into the
+    /// - ensures: the empty list for `#[]`; for `#[..r]`, `r` queued into the
     ///   pattern's own slot and the wildcard it replaces; otherwise the cell of
     ///   the first element, whose tail is the cell of the next and so on, the
     ///   last tail the rest `r` or the empty list. Each element is queued at
@@ -6038,7 +6783,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let mut cursor = Cursor::new(&pieces.pieces, here.at.span);
-        closed(here, &mut cursor, TileName::BRACKET_OPEN)?;
+        if let Maybe::Absent(_) = cursor.tile(TileName::SEQUENCE_OPEN) {
+            closed(here, &mut cursor, TileName::BRACKET_OPEN)?;
+        }
         let mut elements = Vec::new();
         let mut rest = None;
         loop {
@@ -6713,14 +7460,18 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Compile `rows` to a decision tree over the scrutinee at level zero.
+    /// Compile `rows` to a decision tree over the scrutinee at level zero, or,
+    /// `rooted` under one binder per column, over clauses' columns at levels
+    /// one to their count.
     ///
     /// # Specification
-    /// - requires: every row has one column, its arm's alternative.
+    /// - requires: every row has one column, its arm's alternative, or one per
+    ///   column `rooted` counts.
     /// - ensures: the tree's nodes, its root first and every child after its
     ///   parent: a leaf where the first surviving row's columns all match
-    ///   anything, a stuck node where its leftmost tested column is a hole or a
-    ///   hole it passed decides it, and else a switch on that column.
+    ///   anything, a guard over that leaf and the rows after it where the row's
+    ///   arm is `guarded`, a stuck node where its leftmost tested column is a
+    ///   hole or a hole it passed decides it, and else a switch on that column.
     /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] at the match where no
     ///   row survives; the wrong-sort refusal at a pattern whose kind its
     ///   column does not switch on; [`LoweringRefusal::BudgetExceeded`].
@@ -6746,11 +7497,18 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         patterns: &Written,
-        rows: Vec<Row>,
+        (rows, rooted, guarded): (Vec<Row>, Depth, BTreeSet<ArmAt>),
     ) -> Result<Vec<Test>, LoweringRefusal<'source>>
     {
-        let mut tree = Compiling::default();
-        let _root = tree.queue(Depth::default(), Vec::from([TreeLevel::default()]), rows);
+        let levels = match rooted {
+            Depth(0) => Vec::from([TreeLevel::default()]),
+            Depth(columns) => (1 ..= columns).map(TreeLevel).collect(),
+        };
+        let mut tree = Compiling {
+            guarded,
+            ..Compiling::default()
+        };
+        let _root = tree.queue(rooted, levels, rows);
         while let Some(item) = tree.work.pop() {
             self.fuel.spend()?;
             let test = self.reduce(site, patterns, &item, &mut tree)?;
@@ -6818,7 +7576,33 @@ impl<'source> Lowerer<'_, 'source>
             });
         let Some((column, written, head)) = tested
         else {
-            return Ok(leaf(patterns, first, &item.levels, item.depth));
+            let settled = leaf(patterns, first, &item.levels, item.depth);
+            // The guard binds its result and cases on it: its children stand
+            // two binders lower, the rows after the arm's where it fails.
+            if let Test::Leaf {
+                arm,
+                depth,
+                ref bindings,
+            } = settled
+                && tree.guarded.contains(&arm)
+            {
+                let below = Depth(depth.0.saturating_add(2));
+                let yes = tree.place(Test::Leaf {
+                    arm,
+                    depth: below,
+                    bindings: bindings.clone(),
+                });
+                let rest = item.rows.get(1 ..).unwrap_or_default().to_vec();
+                let no = tree.queue(below, item.levels.clone(), rest);
+                return Ok(Test::Guard {
+                    arm,
+                    depth,
+                    bindings: bindings.clone(),
+                    yes,
+                    no,
+                });
+            }
+            return Ok(settled);
         };
         let switch = Switch {
             column,
@@ -7832,7 +8616,14 @@ impl<'source> Lowerer<'_, 'source>
             self.constructors.push(
                 form.generators
                     .iter()
-                    .map(|generator| String::from(<&str>::from(self.text_at(generator.named))))
+                    .map(|generator| {
+                        let mut name = String::from(<&str>::from(self.text_at(generator.named)));
+                        if let Maybe::Present(port) = generator.port {
+                            name.push('.');
+                            name.push_str(<&str>::from(self.text_at(port)));
+                        }
+                        name
+                    })
                     .collect(),
             );
             let _first = self.signatures.insert(position, index);
@@ -8554,6 +9345,31 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
+        self.mint_classified(constructed, fields, written, sink, origin)
+    }
+
+    /// Mint a constructor over its minted `fields` at the minted classifier
+    /// `written`.
+    ///
+    /// # Specification
+    /// - requires: `fields` are the constructor's fields, minted in order.
+    /// - ensures: as [`Self::mint_constructor`], past its classifier.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_constructor`].
+    /// - witness: `lower::native::tests::a_constructor_keeps_its_family_under_another_s_classifier_2075`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(Lowered::Value(_))))]
+    fn mint_classified(
+        &self,
+        constructed: Constructed,
+        fields: Vec<ValueId>,
+        written: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
         // A constructor's tag counts within its own family: under a classifier
         // of another family it would name that family's constructor of the
         // same place.
@@ -8593,6 +9409,107 @@ impl<'source> Lowerer<'_, 'source>
         let ascribed = sink.arena.value_ascribe(id, written);
 
         Maybe::Present(sink.value(ascribed, origin))
+    }
+
+    /// Mint a multi-output constructor applied with no output named: the
+    /// record of its ports.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_constructor`].
+    /// - ensures: the record keyed by each port's label, its value the port's
+    ///   constructor over the shared fields at that port's tag; for a family
+    ///   without arguments the port is classified as [`Self::mint_constructor`]
+    ///   classifies it, and for any other by its label's entry of the record
+    ///   type the classifier names; nothing when a field or the classifier did
+    ///   not lower, or the record type has no entry for a port.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::ports`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
+    pub(super) fn mint_ports(
+        &self,
+        constructed: Constructed,
+        ports: &[(FieldLabel, ConstructorTag)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut fields = Vec::new();
+        for position in constructed.fields.start .. constructed.fields.end {
+            let Some(&field) = self.operands.get(position)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            match self.value_at(field) {
+                Maybe::Present(value) => fields.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let written =
+            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        let first = ports.first().map(|&(ref label, _)| label);
+        let mut minted = BTreeMap::new();
+        for &(ref label, tag) in ports {
+            // A family without arguments classifies each port alone; any other
+            // port reads its entry of the record type.
+            let classifier = if constructed.classifier == Classifier::Inserted {
+                written
+            }
+            else {
+                Self::port_type(written, label, first, sink)
+            };
+            let port = Constructed { tag, ..constructed };
+            match self.mint_classified(port, fields.clone(), classifier, sink, origin) {
+                Maybe::Present(Lowered::Value(id)) => {
+                    let _first = minted.insert(label.clone(), id);
+                },
+                Maybe::Present(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_record(minted);
+
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// The type a port labelled `label` takes from `record`, the type its
+    /// record of ports is written at, `first` labelling the first port.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry at `label` when `record` is a record type holding
+    ///   it; else its entry at `first`; else `record` itself, so a record type
+    ///   missing a port, or a type that is no record, leaves the checker to
+    ///   refuse the record of ports against it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ports of a parameterised family read their
+    ///   classifiers off the record type at the value's position.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| ret == record || matches!(sink.arena.value_type(record), Some(&gandr_core_term::ValueType::Record(ref entries)) if entries.values().any(|&entry| entry == ret)))]
+    fn port_type(
+        record: ValueTypeId,
+        label: &FieldLabel,
+        first: Option<&FieldLabel>,
+        sink: &Sink<'_>,
+    ) -> ValueTypeId
+    {
+        match sink.arena.value_type(record) {
+            Some(&gandr_core_term::ValueType::Record(ref entries)) => entries
+                .get(label)
+                .or_else(|| entries.get(first?))
+                .copied()
+                .unwrap_or(record),
+            Some(_) | None => record,
+        }
     }
 
     /// The value type `classifier` names for a constructor of the family
@@ -8645,13 +9562,23 @@ impl<'source> Lowerer<'_, 'source>
         // constructor that owns it.
         let (mut classifier, mut family) = (classifier, family);
         let mut owner = origin.node();
+        // Each field followed out, with the label of the first port when the
+        // constructor around it is a record of ports: its classifier is the
+        // record's, and the field reads the first port's entry of it.
         let mut fields = Vec::new();
         while let Classifier::Field(field) = classifier {
-            let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
+            let (outer, port) = match self.plans.get(field.around) {
+                // A family without arguments classifies its ports alone; any
+                // other's ports read the record type their position states.
+                Some(&Plan::Ports(outer, ref ports))
+                    if outer.classifier != Classifier::Inserted =>
+                {
+                    (outer, ports.first().map(|&(ref label, _)| label.clone()))
+                },
+                Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) => (outer, None),
+                Some(_) | None => return Maybe::Absent(lowered::Absent::Unminted),
             };
-            fields.push(field);
+            fields.push((field, port));
             owner = field.around;
             (classifier, family) = (outer.classifier, outer.family);
         }
@@ -8741,7 +9668,10 @@ impl<'source> Lowerer<'_, 'source>
             Classifier::Field(_) => return Maybe::Absent(lowered::Absent::Unminted),
         };
         let mut ty = outermost;
-        for field in fields.into_iter().rev() {
+        for (field, port) in fields.into_iter().rev() {
+            if let Some(label) = port {
+                ty = Self::port_type(ty, &label, None, sink);
+            }
             ty = match self.field_type(field, ty, sink, origin) {
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -8783,7 +9713,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
+        let Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) =
+            self.plans.get(field.around)
         else {
             return unminted;
         };
@@ -9921,7 +10852,7 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Mint the match at `case`: its scrutinee bound once over its decision
+    /// Mint the match at `match`: its scrutinee bound once over its decision
     /// tree.
     ///
     /// # Specification
@@ -9932,6 +10863,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   answer, each branch a lambda per field and then one per index
     ///   equation, a pruned branch the case of no branches on its equation; a
     ///   sum case for a boolean; an integer comparison bound and cased on; a
+    ///   guard's condition, read as its arm's body is, bound and cased on, its
+    ///   true branch the arm's leaf and its false branch the rows after it; a
     ///   hole for a stuck node; and a leaf as its arm's body with each variable
     ///   replaced by what [`level_read`] reads the level that settled it at and
     ///   the case's context carried under the tree's binders, the scrutinee's
@@ -9973,15 +10906,28 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let Maybe::Present(scrutinee) = self.value_at(form.scrutinee)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
+        // Clauses scrutinise their columns, the tree's first binders, and no
+        // value at level zero.
+        let valued = match form.roots {
+            Roots::Scrutinee => match self.value_at(form.scrutinee) {
+                Maybe::Present(scrutinee) => Some(scrutinee),
+                Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
+            },
+            Roots::Parameters(_) | Roots::Lambdas(_) => None,
         };
         let mut bodies = Vec::with_capacity(form.bodies.len());
         for &body in &form.bodies {
             bodies.push(self.computation_at(body));
         }
+        let guards: Vec<Maybe<ComputationId, lowered::Absent>> = (0 .. form.bodies.len())
+            .map(|arm| match form.guards.get(&ArmAt(arm)) {
+                Some(&guard) => self.computation_at(guard),
+                None => Maybe::Absent(lowered::Absent::Unminted),
+            })
+            .collect();
         let mark = sink.arena.watermark();
+        // Level zero is never read under clauses: the unit stands for it.
+        let scrutinee = valued.unwrap_or_else(|| sink.arena.value_unit());
         // What each variable of the match's frame reads as at the arms its
         // answer was passed into.
         let armed = match form.answer {
@@ -9991,11 +10937,14 @@ impl<'source> Lowerer<'_, 'source>
         let motive = match form.answer {
             Maybe::Present(answer) => match self.answered_type(answer, sink) {
                 Maybe::Present(written) => {
+                    // Clauses' root stands under one binder per column, the
+                    // lambdas of the parameters it matches.
                     let gap = Depth(
                         self.scope
                             .telescope_binders(form.frame)
                             .count()
-                            .saturating_sub(self.scope.telescope_binders(answer.frame).count()),
+                            .saturating_sub(self.scope.telescope_binders(answer.frame).count())
+                            .saturating_add(form.roots.columns().0),
                     );
                     let base = self.relocate(
                         sink.arena,
@@ -10086,7 +11035,7 @@ impl<'source> Lowerer<'_, 'source>
             let id = mint_test(
                 test,
                 (scrutinised, readings),
-                (&bodies, match armed {
+                (&bodies, &guards, match armed {
                     Maybe::Present(ref read) => read,
                     Maybe::Absent(_) => &[],
                 }),
@@ -10106,7 +11055,7 @@ impl<'source> Lowerer<'_, 'source>
             Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
             Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
         };
-        let Maybe::Present(root) = minted_root
+        let Maybe::Present(tree) = minted_root
         else {
             record_copied_since(
                 sink,
@@ -10116,6 +11065,13 @@ impl<'source> Lowerer<'_, 'source>
                 &copies,
             );
             return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        // A matching lambda binds its columns itself, one lambda each.
+        let root = match form.roots {
+            Roots::Lambdas(Depth(columns)) => {
+                (0 .. columns).fold(tree, |body, _column| sink.arena.computation_lambda(body))
+            },
+            Roots::Scrutinee | Roots::Parameters(_) => tree,
         };
         if sink.arena.computations_since(mark).all(|id| id != root) {
             record_copied_since(
@@ -10135,8 +11091,11 @@ impl<'source> Lowerer<'_, 'source>
             &copies,
         );
         let mut kept = form.origin.clone();
-        kept.scrutinised = Maybe::Present(scrutinee);
-        sink.origins.record_case(root, kept);
+        kept.scrutinised = match valued {
+            Some(_) => Maybe::Present(scrutinee),
+            None => Maybe::Absent(scrutinised::Absent::Columns),
+        };
+        sink.origins.record_case(tree, kept);
 
         Maybe::Present(Lowered::Computation(root))
     }
@@ -10227,6 +11186,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Test::Stuck(_)
                 | Test::Absurd
                 | Test::Leaf { .. }
+                | Test::Guard { .. }
                 | Test::Boolean { .. }
                 | Test::Integer { .. }
                 | Test::Record { .. }
@@ -10309,7 +11269,11 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Some(&Test::Sum { ref branches, .. }) => pending.extend(branches.iter().copied()),
                 Some(&Test::List { nil, cell, .. }) => pending.extend([nil, cell]),
-                Some(&(Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. })) => {
+                Some(
+                    &(Test::Boolean { yes, no, .. }
+                    | Test::Integer { yes, no, .. }
+                    | Test::Guard { yes, no, .. }),
+                ) => {
                     pending.extend([yes, no]);
                 },
                 Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
@@ -10731,7 +11695,7 @@ fn tracked_motives(
                 under(arena, yes, 1_usize);
                 under(arena, no, 1_usize);
             },
-            Test::Integer { yes, no, .. } => {
+            Test::Integer { yes, no, .. } | Test::Guard { yes, no, .. } => {
                 under(arena, yes, 2_usize);
                 under(arena, no, 2_usize);
             },
@@ -10860,7 +11824,9 @@ fn refinings(tests: &[Test]) -> Refinings
                     stand(&mut refinings.under, at, above);
                 }
             },
-            Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
+            Test::Boolean { yes, no, .. }
+            | Test::Integer { yes, no, .. }
+            | Test::Guard { yes, no, .. } => {
                 stand(&mut refinings.under, yes, above);
                 stand(&mut refinings.under, no, above);
             },
@@ -11388,6 +12354,9 @@ fn environment_substituted(
     }
 }
 
+/// A computation the mint made, or why it made none.
+type Minted = Maybe<ComputationId, lowered::Absent>;
+
 /// Mint one node of a match's tree over its already minted children.
 ///
 /// # Specification
@@ -11421,8 +12390,8 @@ fn environment_substituted(
 fn mint_test(
     test: &Test,
     (scrutinised, readings): (Scrutinised, Readings<'_>),
-    (bodies, armed): (&[Maybe<ComputationId, lowered::Absent>], &[ValueId]),
-    minted: &[Maybe<ComputationId, lowered::Absent>],
+    (bodies, guards, armed): (&[Minted], &[Minted], &[ValueId]),
+    minted: &[Minted],
     (read, under, answered): (
         Maybe<CompTypeId, lowered::Absent>,
         Maybe<RefiningAt, refined::Absent>,
@@ -11466,75 +12435,62 @@ fn mint_test(
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let armed = armed_for(sink.arena, body, Depth(bindings.len()), armed);
-            let held = match (readings.held, readings.refines(under, TreeLevel::default())) {
-                (Maybe::Present(held), Maybe::Present(_)) => Maybe::Present(held),
-                (Maybe::Present(_), Maybe::Absent(reason)) | (Maybe::Absent(reason), _) => {
-                    Maybe::Absent(reason)
-                },
-            };
-            if depth == Depth::default()
-                && bindings.is_empty()
-                && matches!(held, Maybe::Absent(_))
-                && armed.is_empty()
-            {
-                return Maybe::Present(answered_at(sink, body, answered));
-            }
-            let mut environment =
-                Vec::with_capacity(bindings.len().saturating_add(scrutinised.outer.0));
-            for &level in bindings.iter().rev() {
-                environment.push(level_read(
-                    sink.arena,
-                    (scrutinised, readings),
-                    under,
-                    depth,
-                    level,
-                ));
-            }
-            for outer in 0 .. scrutinised.outer.0 {
-                let read = match held {
-                    Maybe::Present(Depth(held)) if held == outer => level_read(
-                        sink.arena,
-                        (scrutinised, readings),
-                        under,
-                        depth,
-                        TreeLevel::default(),
-                    ),
-                    Maybe::Present(_) | Maybe::Absent(_) => {
-                        variable(sink.arena, Depth(outer.saturating_add(depth.0)))
-                    },
-                };
-                environment.push(read);
-            }
-            // The arms the answer was passed into read the frame's variables
-            // first, the leaf's own reading of them after.
-            if !armed.is_empty() {
-                let reads = environment.split_off(bindings.len());
-                for &reading in armed {
-                    match gandr_core_term::substitute_environment(
-                        sink.arena,
-                        TermId::Value(reading),
-                        &reads,
-                    ) {
-                        TermId::Value(read) => environment.push(read),
-                        TermId::Computation(_) => return Maybe::Absent(lowered::Absent::Unminted),
-                    }
-                }
-            }
-            let mut carried = Vec::new();
-            match gandr_core_term::substitute_environment_traced(
-                sink.arena,
-                TermId::Computation(body),
-                &environment,
-                &mut carried,
+            match settled_at(
+                (scrutinised, readings),
+                (under, depth, bindings),
+                (body, armed),
+                sink,
+                copies,
             ) {
-                TermId::Computation(substituted) => {
-                    exits::mark_copies(sink, &carried);
-                    copies.extend_from_slice(&carried);
-                    Maybe::Present(answered_at(sink, substituted, answered))
-                },
-                TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Present(settled) => Maybe::Present(answered_at(sink, settled, answered)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             }
+        },
+        Test::Guard {
+            arm,
+            depth,
+            ref bindings,
+            yes,
+            no,
+        } => {
+            let (Maybe::Present(left), Maybe::Present(right)) = (child(yes), child(no))
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let Some(&Maybe::Present(guard)) = guards.get(arm.0)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let Maybe::Present(tested) = settled_at(
+                (scrutinised, readings),
+                (under, depth, bindings),
+                (guard, armed),
+                sink,
+                copies,
+            )
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            // `x ← g; case x { inl _ => yes, inr _ => no }`, as a conditional
+            // tests its condition; a guard returning a variable cases on it.
+            let bound = variable(sink.arena, Depth::default());
+            let case = sink.arena.computation_case(bound, &[left, right]);
+            if let Some(&Computation::Return(value)) = sink.arena.computation(tested)
+                && let Some(&Value::Variable { .. }) = sink.arena.value(value)
+            {
+                let mut carried = Vec::new();
+                let instantiated = gandr_core_term::instantiate_computation_traced(
+                    sink.arena,
+                    case,
+                    value,
+                    &mut carried,
+                );
+                exits::mark_copies(sink, &carried);
+                copies.extend_from_slice(&carried);
+                return Maybe::Present(answered_at(sink, instantiated, answered));
+            }
+            let bind = sink.arena.computation_bind(tested, case);
+            Maybe::Present(answered_at(sink, bind, answered))
         },
         Test::Data {
             level,
@@ -11756,6 +12712,110 @@ fn armed_for<'armed>(
         })
     });
     if changes { armed } else { &[] }
+}
+
+/// `term`, an arm's body or guard read under the case's frame and the arm's
+/// variables, placed where a leaf or a guard stands: under `depth` tree
+/// binders below the branch `under`, each variable read at the level in
+/// `bindings` that settled it.
+///
+/// # Specification
+/// - requires: `term` was minted under the case's frame and one binder per arm
+///   variable; `armed` reads the frame's variables at the arm.
+/// - ensures: `term` itself where no binder stands above it, no variable is
+///   settled, the scrutinee is not refined and no answer was passed; else
+///   `term` with each arm variable replaced by what [`level_read`] reads its
+///   level as, the scrutinee's variable by what it reads level zero as where
+///   the branch refines it, every other variable of the frame carried under the
+///   tree's binders and an answer's arms read so after; every copy is marked as
+///   its source is and reported in `copies`; nothing when an arm's reading does
+///   not substitute to a value.
+/// - provides: the one placing of an arm's term, shared by a leaf and a guard.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::mint_case`]; a guard reads its arm's
+///   variable where its leaf does.
+/// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+/// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
+fn settled_at(
+    (scrutinised, readings): (Scrutinised, Readings<'_>),
+    (under, depth, bindings): (Maybe<RefiningAt, refined::Absent>, Depth, &[TreeLevel]),
+    (term, armed): (ComputationId, &[ValueId]),
+    sink: &mut Sink<'_>,
+    copies: &mut Vec<Carried>,
+) -> Maybe<ComputationId, lowered::Absent>
+{
+    let armed = armed_for(sink.arena, term, Depth(bindings.len()), armed);
+    let held = match (readings.held, readings.refines(under, TreeLevel::default())) {
+        (Maybe::Present(held), Maybe::Present(_)) => Maybe::Present(held),
+        (Maybe::Present(_), Maybe::Absent(reason)) | (Maybe::Absent(reason), _) => {
+            Maybe::Absent(reason)
+        },
+    };
+    if depth == Depth::default()
+        && bindings.is_empty()
+        && matches!(held, Maybe::Absent(_))
+        && armed.is_empty()
+    {
+        return Maybe::Present(term);
+    }
+    let mut environment = Vec::with_capacity(bindings.len().saturating_add(scrutinised.outer.0));
+    for &level in bindings.iter().rev() {
+        environment.push(level_read(
+            sink.arena,
+            (scrutinised, readings),
+            under,
+            depth,
+            level,
+        ));
+    }
+    for outer in 0 .. scrutinised.outer.0 {
+        let read = match held {
+            Maybe::Present(Depth(held)) if held == outer => level_read(
+                sink.arena,
+                (scrutinised, readings),
+                under,
+                depth,
+                TreeLevel::default(),
+            ),
+            Maybe::Present(_) | Maybe::Absent(_) => {
+                variable(sink.arena, Depth(outer.saturating_add(depth.0)))
+            },
+        };
+        environment.push(read);
+    }
+    // The arms the answer was passed into read the frame's variables
+    // first, the leaf's own reading of them after.
+    if !armed.is_empty() {
+        let reads = environment.split_off(bindings.len());
+        for &reading in armed {
+            match gandr_core_term::substitute_environment(
+                sink.arena,
+                TermId::Value(reading),
+                &reads,
+            ) {
+                TermId::Value(read) => environment.push(read),
+                TermId::Computation(_) => return Maybe::Absent(lowered::Absent::Unminted),
+            }
+        }
+    }
+    let mut carried = Vec::new();
+    match gandr_core_term::substitute_environment_traced(
+        sink.arena,
+        TermId::Computation(term),
+        &environment,
+        &mut carried,
+    ) {
+        TermId::Computation(substituted) => {
+            exits::mark_copies(sink, &carried);
+            copies.extend_from_slice(&carried);
+            Maybe::Present(substituted)
+        },
+        TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
+    }
 }
 
 /// `id`, a match's root, ascribed `answered` when the match writes its
@@ -12611,7 +13671,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - provides: the refusal [`Self::instantiation`] raises for a claim on
     ///   another function.
     /// - fails: the refusals name resolution raises before an answer: an
-    ///   unmarked self reference, a forward member reference, the allowance.
+    ///   unmarked self reference, a forward member reference, a name an opened
+    ///   module and another scope answer distinctly, the allowance.
     /// - panics: none.
     ///
     /// # Errors

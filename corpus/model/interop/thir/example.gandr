@@ -18,40 +18,40 @@
 // specification at every value and postcondition given `identity`'s.
 
 /// A value the fragment computes: an integer or a boolean.
-pub data Value : Type {
+pub data Value : Type where {
   /// The integer `n`.
-  Int : (n : Integer) --> Value;
+  | Int : (n : Integer) --> Value
   /// The boolean true.
-  True : Value;
+  | True : Value
   /// The boolean false.
-  False : Value;
+  | False : Value
 }
 
 /// An item of the crate, which a call names.
-pub data Item : Type {
+pub data Item : Type where {
   /// `identity`, which answers its argument.
-  Identity : Item;
+  | Identity : Item
   /// `example`, the function under proof.
-  Example : Item;
+  | Example : Item
 }
 
 /// THIR's value expressions in the fragment: a literal, the parameter, a conditional, a return and a call.
-pub data Expr : Type {
+pub data Expr : Type where {
   /// The integer literal `n`.
-  Lit : (n : Integer) --> Expr;
+  | Lit : (n : Integer) --> Expr
   /// The function's parameter, read.
-  Param : Expr;
+  | Param : Expr
   /// `if c { t } else { f }`.
-  If : (c : Expr, t : Expr, f : Expr) --> Expr;
+  | If : (c : Expr, t : Expr, f : Expr) --> Expr
   /// `return e`.
-  Return : (e : Expr) --> Expr;
+  | Return : (e : Expr) --> Expr
   /// The item `g` called at the argument `e`.
-  Call : (g : Item, e : Expr) --> Expr;
+  | Call : (g : Item, e : Expr) --> Expr
 }
 
 /// The axioms as rules over THIR's nodes, each transformer an operation whose continuations bind a value: `example`'s guarded body at false normalizes to its postcondition at zero.
 @[ normalizes("body(ret(call(identity, cond(param, lit(succ(zero)), ret(lit(zero))))), ff, bind v . post(v)) ~> post(int(zero))") ]
-pub theory Thir.Wp {
+pub theory Thir.Wp where {
   /// A natural number, which a literal carries.
   sort Num : Type;
   /// A value the fragment computes, which a continuation binds.
@@ -119,7 +119,7 @@ pub theory Thir.Wp {
 
 /// The arm a condition's value picks; an integer condition needs what nothing meets.
 pub def branch(v : Value, t : Type, f : Type) -> Type {
-  case v {
+  match v {
     True => t,
     False => f,
     Int(_n) => return Void
@@ -134,7 +134,7 @@ pub def rec wp(
   k : Value => Type,
   r : Value => Type
 ) -> Type {
-  case e {
+  match e {
     Lit(n) => k(Int(n)),
     Param => k(x),
     If(c, t, f) => wp[<](
@@ -167,7 +167,7 @@ pub def exampleBody : Expr = Return(Call(Identity, If(Param, Lit(1), Return(Lit(
 
 /// `identity`'s specification as a table: its call continues at its argument, and nothing meets a call of `example`.
 pub def identitySpec(g : Item, v : Value, k : Value => Type) -> Type {
-  case g {
+  match g {
     Identity => k(v),
     Example => return Void
   }
@@ -183,7 +183,7 @@ pub def identityMeets(
 
 /// `example`'s specification: the postcondition at one for true and at zero for false.
 pub def exampleSpec(b : Value, post : Value => Type) -> Type {
-  case b {
+  match b {
     True => post(Int(1)),
     False => post(Int(0)),
     Int(_n) => return Void
@@ -195,7 +195,7 @@ pub def exampleMeets(b : Value, post : Value => Type) -> (exampleSpec(
   b,
   post
 )) => wpFn(identitySpec, exampleBody, b, post) {
-  case b {
+  match b {
     True => return fn (h) { h },
     False => return fn (h) { h },
     Int(_n) => return fn (h) { h }

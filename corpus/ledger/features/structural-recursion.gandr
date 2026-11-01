@@ -1,14 +1,14 @@
 /// `structural-recursion`: `def rec` recurses on a structurally smaller argument, each recursive call marked `[<]`.
 @[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Addition by recursion on the second argument.
 @[ checks ]
 def rec plus(n : Nat, m : Nat) -> -F Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
   }

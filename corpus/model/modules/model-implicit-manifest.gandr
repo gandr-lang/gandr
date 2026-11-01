@@ -1,12 +1,12 @@
 // An omitted model implicit at a manifest model type resolved (#2317):
-// `@[s : Model(Dial) with sort C = Integer]` binds no parameter for `C`, so
+// `[s : Model(Dial) with sort C = Integer]` binds no parameter for `C`, so
 // no argument forces it, and the sort the type fixes is what tells the
 // modules in scope apart. `Up` counts integers and `Flips` flags; only `Up`'s
 // carrier is the one the slot fixes, so a call leaving the slot out passes
 // `Up`.
 
 /// A dial: a carrier, a zero, a turn and a reading.
-theory Dial {
+theory Dial where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -14,7 +14,7 @@ theory Dial {
 }
 
 /// Counting up by one.
-module Up : Model(Dial) {
+module Up : Model(Dial) where {
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -25,7 +25,7 @@ module Up : Model(Dial) {
 }
 
 /// Flipping a flag.
-module Flips : Model(Dial) {
+module Flips : Model(Dial) where {
   type C = Bool;
   /// Down.
   def zero = (false : Bool);
@@ -36,12 +36,12 @@ module Flips : Model(Dial) {
 }
 
 /// The reading after one turn from zero, over any dial of integers.
-def upOnce @[s : Model(Dial) with sort C = Integer] () -> Integer {
+def upOnce[s : Model(Dial) with sort C = Integer]() -> Integer {
   s.read(s.incr(s.zero))
 }
 
 /// The reading after one turn from zero, over any dial of flags.
-def flipOnce @[s : Model(Dial) with sort C = Bool] () -> Integer {
+def flipOnce[s : Model(Dial) with sort C = Bool]() -> Integer {
   s.read(s.incr(s.zero))
 }
 

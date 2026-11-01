@@ -1,4 +1,4 @@
-error[OutOfFragment.Held]: an `access` lends a held value: a name a `hold` statement holds
+error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held value: a name a `var` statement holds
    ╭▸ corpus/ledger/diagnostics/OutOfFragment.Held.gandr:12:3
    │
 12 │   n.bump()

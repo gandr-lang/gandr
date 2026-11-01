@@ -1,7 +1,7 @@
 //! Generative functors, as the collection pass reads them: the declaration
-//! `module MkSet(Elt : #{ … }) :> #{ … } { … }`, collected once as a template,
-//! and each application `module IntSet = MkSet(IntOrd) ;`, collected as an
-//! instance of it. The minting half lives with the lowering
+//! `module MkSet(Elt : #{ … }) :> #{ … } where { … }`, collected once as a
+//! template, and each application `module IntSet = MkSet(IntOrd) ;`, collected
+//! as an instance of it. The minting half lives with the lowering
 //! (`crate::lower::functor`).
 //!
 //! # A functor is a template the stratum binds, never a kernel term
@@ -73,10 +73,10 @@
 //!
 //! # A flow is a functor between two theories
 //!
-//! `flow downgrade : Newer ~~> Older { def answer = reply ; }` is collected as
-//! a functor whose parameter is `Model(Newer)` and whose result is ascribed
-//! `Model(Older)`, under the flow's name. Its body reads the domain's members
-//! by their bare names, before its own, so `def tag = tag ;` reads the
+//! `flow downgrade : Newer ~~> Older where { def answer = reply ; }` is
+//! collected as a functor whose parameter is `Model(Newer)` and whose result is
+//! ascribed `Model(Older)`, under the flow's name. Its body reads the domain's
+//! members by their bare names, before its own, so `def tag = tag ;` reads the
 //! domain's `tag`. A flow is applied only by an import read through it, whose
 //! argument is the imported source: each component is the source's `pub`
 //! declaration of its name. The instance enters no module path. Its witnesses

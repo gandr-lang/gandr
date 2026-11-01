@@ -1,0 +1,25 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (
+    /// The predecessor.
+    n : Nat
+  ) --> Nat
+  | Two : Nat
+  /// Three.
+  | Three : Nat
+}
+def apply(
+  f : (
+    /// The argument.
+    x : Nat
+  ) -> -F Nat,
+  /// The pair.
+  p : (a : Nat, b : Nat),
+  y : Nat
+) -> -F Nat { y }
+def use(
+  h : (
+    /// The index.
+    i : Nat
+  ) => Nat
+) -> -F Nat { 0 }

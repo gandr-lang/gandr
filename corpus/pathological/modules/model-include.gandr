@@ -6,7 +6,7 @@
 
 /// An equality at the integers that holds of every pair, each law a
 /// reflexivity.
-module EqLoose : Model(Eq) with sort Carrier = Integer {
+module EqLoose : Model(Eq) with sort Carrier = Integer where {
   /// Every pair is equal.
   def eq(a : Integer, b : Integer) -> Bool { true }
   def refl(a : Integer) -> Path(Bool, eq(a, a), true) { here(true) }
@@ -19,21 +19,21 @@ def looselyEqual() -> Bool { 3 == 3 }
 
 /// No module is named `Nowhere`.
 @[ refuses("UnresolvedName") ]
-module Stray {
+module Stray where {
   include Nowhere;
   /// A member beside the include.
   def kept() -> Integer { 1 }
 }
 
 /// A grade's zero.
-module Zero {
+module Zero where {
   /// The least grade.
   def least() -> Integer { 0 }
 }
 
 /// `least` written beside an include that lends it.
 @[ refuses("DuplicateDefinition") ]
-module Shadowing {
+module Shadowing where {
   include Zero;
   /// A second `least`.
   def least() -> Integer { 1 }

@@ -20,7 +20,7 @@ import "./conversion-base.gandr";
 
 /// Two to the power `p`.
 def rec power(p : Nat) -> Nat {
-  case p {
+  match p {
     Zero => Succ(Zero),
     Succ(q) => times(power[<](q), two)
   }
@@ -29,12 +29,12 @@ def rec power(p : Nat) -> Nat {
 /// The remainder of `n` by `d + 1`: `r` counts up, and `left` counts the
 /// steps to the next wrap.
 def rec remainder(n : Nat, d : Nat, r : Nat, left : Nat) -> Nat {
-  case left {
-    Zero => case n {
+  match left {
+    Zero => match n {
       Zero => r,
       Succ(k) => remainder[<](k, d, Zero, d)
     },
-    Succ(l) => case n {
+    Succ(l) => match n {
       Zero => r,
       Succ(k) => remainder[<](k, d, Succ(r), l)
     }
@@ -43,7 +43,7 @@ def rec remainder(n : Nat, d : Nat, r : Nat, left : Nat) -> Nat {
 
 /// The sequence `k` steps on from `s`, each step `s * s - 2` modulo `d + 1`.
 def rec steps(k : Nat, d : Nat, s : Nat) -> Nat {
-  case k {
+  match k {
     Zero => s,
     Succ(j) => steps[<](j, d, remainder(monus(times(s, s), two), d, Zero, d))
   }
@@ -51,7 +51,7 @@ def rec steps(k : Nat, d : Nat, s : Nat) -> Nat {
 
 /// Whether `2^p - 1` is prime, for an odd prime `p`.
 def lucasLehmer(p : Nat) -> Bool {
-  case steps(monus(p, two), monus(power(p), two), four) {
+  match steps(monus(p, two), monus(power(p), two), four) {
     Zero => true,
     Succ(_) => false
   }

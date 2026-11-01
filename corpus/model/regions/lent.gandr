@@ -3,7 +3,7 @@
 // call places that region at the scope its argument is kept in.
 
 /// Reads the thunk it is lent, whatever region keeps it.
-def read @[r : Region] (k : (() => Integer) at r) -> Integer { force k }
+def read[r : Region](k : (() => Integer) at r) -> Integer { force k }
 
 /// Lends `read` a view kept in the handler's region, which the call reads it at.
 @[ runs("3") ]

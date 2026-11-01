@@ -3,7 +3,7 @@
 /// refused at that occurrence (#1031). The guarded twin is
 /// `model/circuit/circuit-feed-wheel.gandr`.
 @[ refuses("BareFeedback") ]
-theory Wheel {
+theory Wheel where {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
 

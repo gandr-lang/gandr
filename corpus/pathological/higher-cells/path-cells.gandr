@@ -14,7 +14,7 @@
 //   and the circle's paths, whose associator `here` fills
 
 /// The globular theory at dimension one, its associator a cell.
-theory Glob {
+theory Glob where {
   /// The objects.
   sort Ob : Type;
   /// The cells from one object to another.
@@ -38,22 +38,22 @@ theory Glob {
 }
 
 /// The one object.
-data One : Type {
+data One : Type where {
   /// The object.
-  Star : One;
+  | Star : One
 }
 
 /// The naturals.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero : Nat
   /// The natural after `n`.
-  Succ : (n : Nat) --> Nat;
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Addition, by recursion on its second argument.
 def rec plus(n : Nat, m : Nat) -> Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
   }
@@ -62,7 +62,7 @@ def rec plus(n : Nat, m : Nat) -> Nat {
 /// The naturals under addition as cells at one object, with no associator
 /// written.
 @[ refuses("NoFiller.Omitted") ]
-module Unwitnessed : Model(Glob) {
+module Unwitnessed : Model(Glob) where {
   /// The one object.
   type Ob = One;
   /// The numbers, each a cell from the object to itself.
@@ -76,7 +76,7 @@ module Unwitnessed : Model(Glob) {
 }
 
 /// A store whose write leaves the rest as it is, by a cell of the theory.
-theory Skipping {
+theory Skipping where {
   /// The stored value.
   sort S : Type+;
   /// The computation the store runs in.

@@ -3,7 +3,7 @@
 /// filled.
 @[ refuses("UndecidedCoverage") ]
 def classify(n : Integer) -> -F Integer {
-  case n {
+  match n {
     ?branch => return 1
   }
 }

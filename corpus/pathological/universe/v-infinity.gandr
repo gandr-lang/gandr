@@ -6,21 +6,21 @@
 
 /// Sets: a type of members, and the member at each of its elements.
 @[ checks, form(explicit) ]
-data Vinf : Type[+, 1] {
-  Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
+data Vinf : Type[+, 1] where {
+  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
 }
 
 /// Ordinals of the same shape: the limit of a family of smaller ordinals.
 @[ checks ]
-data Ord : Type[+, 1] {
-  Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord;
+data Ord : Type[+, 1] where {
+  | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
 }
 
 /// The member itself where its rank is expected: the limit's family wants
 /// ordinals, and `f(x)` is a set.
 @[ refuses("TypeMismatch") ]
 def rec unranked(v : Vinf) -> -F Ord {
-  case v {
+  match v {
     Sup(a, f) => Lim(a, thunk { fn (x) { f(x) } })
   }
 }
@@ -28,13 +28,13 @@ def rec unranked(v : Vinf) -> -F Ord {
 /// The set itself where a member is expected: it is not below its own stage.
 @[ refuses("StageNotBelow") ]
 def rec circular(v : Vinf) -> -F Ord {
-  case v {
+  match v {
     Sup(a, f) => Lim(a, thunk { fn (x) { circular[<](Sup(a, f)) } })
   }
 }
 
 /// Sets over the types of a universe, placed in that same universe.
 @[ refuses("DataFieldLevel") ]
-data Small : Type {
-  Pick : (a : Type, f : +U (a -> -F Small)) --> Small;
+data Small : Type where {
+  | Pick : (a : Type, f : +U (a -> -F Small)) --> Small
 }

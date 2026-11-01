@@ -7,7 +7,7 @@
 import "../../model/modules/phase.gandr";
 
 /// A module whose type member reads its own value member.
-module Counted {
+module Counted where {
   /// Three, a value.
   @[ runs("3") ]
   def count = 3;
@@ -18,7 +18,7 @@ module Counted {
 
 /// The same member under a transparent ascription: the component's witness
 /// reads the member's expectation, and the refusal is the member's alone.
-module Ascribed : #{ three : Integer, type R } {
+module Ascribed : #{ three : Integer, type R } where {
   /// Three, a value.
   @[ runs("3") ]
   def three = 3;
@@ -28,7 +28,7 @@ module Ascribed : #{ three : Integer, type R } {
 }
 
 /// A functor whose type member reads its argument's value.
-module Pointed(S : #{ type T, z : T }) {
+module Pointed(S : #{ type T, z : T }) where {
   /// A path at the argument's point.
   @[ refuses("PhaseDependence") ]
   type At = Path(S.T, S.z, S.z);

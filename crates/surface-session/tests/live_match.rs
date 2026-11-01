@@ -48,7 +48,7 @@ fn color_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
     let Text(arms) = arms.into();
     Written::new(
-        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"),
+        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ {arms} }} }}\n"),
         "pick",
     )
 }
@@ -503,7 +503,7 @@ fn the_eliminator_still_fires_on_a_hole_payload()
 fn a_missing_constructor_is_reported_by_name()
 {
     let unfinished = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0, Green => return 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ Red => return 0, Green => return 1 }} }}\n"
     );
     assert!(
         matches!(
@@ -541,7 +541,7 @@ fn an_inexhaustive_match_does_not_block_its_siblings()
 {
     let mut session = session(SourceRoot::Strict);
     let source = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0 }} }}\ndef sibling = 41 ;\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ Red => return 0 }} }}\ndef sibling = 41 ;\n"
     );
     let _submission = submit(&mut session, &source);
     assert!(
@@ -616,7 +616,7 @@ fn a_pattern_hole_is_named_by_its_place_among_the_holes()
 fn translation_covers_the_landed_pattern_grammar()
 {
     let source = alloc::format!(
-        "{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ case m {{ None => return 0, Some(Yes(y)) => return 1, ? => return 2, ?named => return 3, x => return 4, _ => return 5 }} }}\ndef literal(n : Integer) -> -F Integer {{ case n {{ 7 => return 0, _ => return 1 }} }}\ndef flag(b : Bool) -> -F Integer {{ case b {{ true => return 0, false => return 1 }} }}\ndef either(c : Color) -> -F Integer {{ case c {{ Red | Green => return 0, Blue => return 1 }} }}\n"
+        "{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ match m {{ None => return 0, Some(Yes(y)) => return 1, ? => return 2, ?named => return 3, x => return 4, _ => return 5 }} }}\ndef literal(n : Integer) -> -F Integer {{ match n {{ 7 => return 0, _ => return 1 }} }}\ndef flag(b : Bool) -> -F Integer {{ match b {{ true => return 0, false => return 1 }} }}\ndef either(c : Color) -> -F Integer {{ match c {{ Red | Green => return 0, Blue => return 1 }} }}\n"
     );
     for (function, expected) in [
         ("shapes", &["#0()", "#1(#1(x))", "?", "?", "x", "_"][..]),

@@ -21,7 +21,7 @@ use crate::form::Placed;
 
 /// The number of term-index positions declared by a family's classifier.
 #[repr(transparent)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) struct IndexArity(usize);
 
 impl Reader<'_, '_>

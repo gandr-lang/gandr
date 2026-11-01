@@ -1,0 +1,25 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+def rec plus : (Nat, Nat) => Nat where {
+  | Zero, k => k
+  | Succ(j), k => Succ(plus[<](j, k))
+}
+
+def rec add : (Nat, Nat) => Nat where {
+  | m, Zero => m
+  | m, Succ(n) => Succ(add[<](m, n))
+}
+
+def rec max : (Nat, Nat) => Nat where {
+  | Zero, n => n
+  | m, Zero => m
+  | Succ(m), Succ(n) => Succ(max[<](m, n))
+}
+
+def rec scale(by : Nat) : Nat => Nat where {
+  | Zero => Zero
+  | Succ(n) => plus(by, scale[<](by, n))
+}

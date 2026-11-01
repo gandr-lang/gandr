@@ -15,21 +15,21 @@ import "../data/data-base.gandr";
 
 /// Sets: a type of members, and the member at each of its elements.
 @[ checks, form(explicit) ]
-data Vinf : Type[+, 1] {
-  Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
+data Vinf : Type[+, 1] where {
+  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
 }
 
 /// Ordinals of the same shape: the limit of a family of smaller ordinals.
 @[ checks ]
-data Ord : Type[+, 1] {
-  Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord;
+data Ord : Type[+, 1] where {
+  | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
 }
 
 /// The rank of a set: the limit, over its members, of their ranks. Each
 /// member is reached through `f` and ranked one stage below the set.
 @[ checks ]
 def rec rank(v : Vinf) -> -F Ord {
-  case v {
+  match v {
     Sup(a, f) => Lim(a, thunk { fn (x) { rank[<](f(x)) } })
   }
 }
@@ -37,21 +37,21 @@ def rec rank(v : Vinf) -> -F Ord {
 /// The type a set's members are picked by.
 @[ checks ]
 def members(v : Vinf) -> -F Type {
-  case v {
+  match v {
     Sup(a, f) => return a
   }
 }
 
 /// The type with one element.
 @[ checks ]
-data Lone : Type {
-  Pt : Lone;
+data Lone : Type where {
+  | Pt : Lone
 }
 
 /// Any set follows from an element of the empty type.
 @[ checks ]
 def absurdSet(e : Empty) -> -F Vinf {
-  case e {}
+  match e {}
 }
 
 /// No member: the empty set's picking function has nothing to pick from.
@@ -72,7 +72,7 @@ def single(v : Vinf) -> -F Vinf {
 /// The set whose members are `v` and `w`.
 @[ checks ]
 def pair(v : Vinf, w : Vinf) -> -F Vinf {
-  Sup(Two, thunk { fn (x) { case x -> -F Vinf { L => v, R => w } } })
+  Sup(Two, thunk { fn (x) { match x -> -F Vinf { L => v, R => w } } })
 }
 
 /// The rank of the set whose one member is the empty set.

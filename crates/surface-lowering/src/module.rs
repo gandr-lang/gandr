@@ -68,11 +68,12 @@
 //!
 //! # A data declaration is one more slot
 //!
-//! `data T(a : A) : U { C : (x : B) --> T(a) ; … }` takes the next admission
-//! position under its family's name and files a definition half lowered at the
-//! declaration form itself, like a function tail. Its constructors go into one
-//! table by name, each with its family, tag and arity, so a term or a pattern
-//! naming one resolves it without searching the declarations.
+//! `data T(a : A) : U where { | C : (x : B) --> T(a) … }` takes the next
+//! admission position under its family's name and files a definition half
+//! lowered at the declaration form itself, like a function tail. Its
+//! constructors go into one table by name, each with its family, tag and arity,
+//! so a term or a pattern naming one resolves it without searching the
+//! declarations.
 //!
 //! # A `rec` block is one admission
 //!
@@ -87,18 +88,18 @@
 //!
 //! # A `theory` block defines a value of `Theory`
 //!
-//! `theory S { … }` takes the next admission position under `S` and files a
-//! definition half lowered at the block itself: `S : Theory`, whose body is the
-//! presentation's value the description route read (`crate::model`). `Theory`,
-//! the presentation code `gandr_theory_levitation::theory_desc` describes, is
-//! minted once per module as a slot of its own, just before the first block
-//! that refuses nothing, and its constructors enter the constructor table
-//! beside the written families'; a module with no such block declares neither,
-//! so a module that presents nothing loses no name to them. A block some member
-//! of which the description route or the cell gate refused still takes its
-//! slot, refused by its first refusal, and each further refusal is held at its
-//! member's span. The alternatives were `Theory` in a prelude every module
-//! imports, which the fragment has none of, and `Theory` minted in every
+//! `theory S where { … }` takes the next admission position under `S` and files
+//! a definition half lowered at the block itself: `S : Theory`, whose body is
+//! the presentation's value the description route read (`crate::model`).
+//! `Theory`, the presentation code `gandr_theory_levitation::theory_desc`
+//! describes, is minted once per module as a slot of its own, just before the
+//! first block that refuses nothing, and its constructors enter the constructor
+//! table beside the written families'; a module with no such block declares
+//! neither, so a module that presents nothing loses no name to them. A block
+//! some member of which the description route or the cell gate refused still
+//! takes its slot, refused by its first refusal, and each further refusal is
+//! held at its member's span. The alternatives were `Theory` in a prelude every
+//! module imports, which the fragment has none of, and `Theory` minted in every
 //! module, which takes eleven constructor names from modules that present
 //! nothing. The choice reverses with a prelude: `Theory` becomes one of its
 //! declarations.
@@ -151,8 +152,8 @@
 //!
 //! # A module declaration flattens to named members
 //!
-//! `module M { … }` declares no value of its own. Each member `def` is one
-//! declaration, admitted among every other declaration in source order — a
+//! `module M where { … }` declares no value of its own. Each member `def` is
+//! one declaration, admitted among every other declaration in source order — a
 //! nested module's members between the parent's members written before and
 //! after it — so `Config.limits.hard.detail.note` is one declaration at the
 //! position its place in the source gives it. Its structured name is the
@@ -192,26 +193,26 @@
 //! resolving paths against the collected modules directly, which would leave
 //! the namespace engine registering names that nothing consults.
 //!
-//! An inline signature `module M : #{ x : A, type T = τ } { … }` is matched
-//! coercively. A value component's type becomes its member's signature when the
-//! member has none, or only the type a function tail derives; a member already
-//! signed is checked by a witness — a declaration at the component's type whose
-//! body is the member's constant — so the checker refuses a disagreement as a
-//! type mismatch at the witness. The exports are reordered to signature order
-//! and narrowed to the components: a member the signature omits is admitted and
-//! checked, but absent from the namespace and from the module's stratum item. A
-//! nested module component takes a record type `#{ … }` and is matched against
-//! the nested module's own exports the same way, as is a member signature `def
-//! inner : #{ … } ;` written beside `module inner`. A manifest type component
-//! `type T = τ` lowers `τ` once, and a later component naming `T` stands for
-//! that type; an earlier one cannot name it. The alternatives were checking the
-//! whole module against one record type, declined with the record carrier, and
-//! refusing a second stated type, which loses the agreement check. A witness
-//! becomes an annotation on the member's body when the core has an annotation
-//! former. An abstract component `type T` or `type T : κ`, and the opaque
-//! ascription `:>` that seals it, are `sealing`'s: a type member of the body
-//! gives the component its meaning, and `:>` declares one abstract type per
-//! component.
+//! An inline signature `module M : #{ x : A, type T = τ } where { … }` is
+//! matched coercively. A value component's type becomes its member's signature
+//! when the member has none, or only the type a function tail derives; a member
+//! already signed is checked by a witness — a declaration at the component's
+//! type whose body is the member's constant — so the checker refuses a
+//! disagreement as a type mismatch at the witness. The exports are reordered to
+//! signature order and narrowed to the components: a member the signature omits
+//! is admitted and checked, but absent from the namespace and from the module's
+//! stratum item. A nested module component takes a record type `#{ … }` and is
+//! matched against the nested module's own exports the same way, as is a member
+//! signature `def inner : #{ … } ;` written beside `module inner`. A manifest
+//! type component `type T = τ` lowers `τ` once, and a later component naming
+//! `T` stands for that type; an earlier one cannot name it. The alternatives
+//! were checking the whole module against one record type, declined with the
+//! record carrier, and refusing a second stated type, which loses the agreement
+//! check. A witness becomes an annotation on the member's body when the core
+//! has an annotation former. An abstract component `type T` or `type T : κ`,
+//! and the opaque ascription `:>` that seals it, are `sealing`'s: a type member
+//! of the body gives the component its meaning, and `:>` declares one abstract
+//! type per component.
 //!
 //! A refusal that belongs to no member — a top-level module with a lowercase
 //! name, an unread module body, a missing component, an abstract component
@@ -379,6 +380,7 @@ pub use self::data::Constructor;
 pub use self::data::DataForm;
 pub use self::data::DataMember;
 pub use self::data::Generators;
+pub use self::data::Ported;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
 pub use self::derive::DerivedSlot;
@@ -1553,6 +1555,10 @@ pub struct Collected<'source>
     /// Every constructor a data declaration declares, by the source declaring
     /// it and its name.
     pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
+    /// Every multi-output constructor a data declaration declares, by the
+    /// source declaring it and its name: its ports, which are no constructor
+    /// of that name.
+    pub ports: BTreeMap<(SourceIndex, SurfaceName<'source>), Ported>,
     /// Each constructor of `Theory` a source's own constructor shadows, by
     /// the family's slot and the name the two share: the bare name is the
     /// source's, so `Theory`'s is written `Theory.Constructor`.
@@ -1588,7 +1594,9 @@ pub struct Collected<'source>
     /// member of its body in order: taken by the held refusals once the
     /// description route has run.
     pub data_members: BTreeMap<NodeIndex, Vec<DataMember>>,
-    /// Every top-level module an attribute block decorates, in source order.
+    /// Every module an attribute block decorates, from before it at the root
+    /// or from within its body: each module once, its outer attributes ahead
+    /// of its inner ones.
     pub decorated: Vec<DecoratedModule<'source>>,
     /// Every root declaration a `pub` mark precedes, by the first byte of its
     /// form, with the form's bytes: what its source exports, the
@@ -2596,6 +2604,48 @@ impl<'source> Collected<'source>
         )
     }
 
+    /// The multi-output constructor `source`'s unqualified imports answer
+    /// `name` with, and the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`], over the multi-output
+    ///   constructors each imported source declares, one answering only when
+    ///   its source exports its family.
+    /// - provides: the import fallback of port lookup.
+    /// - fails: [`Ambiguity`] for two imports binding one constructor name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::imported_constructor`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present((ported, _))) => ported.count > 0,
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    pub fn imported_ported(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(Ported, ByteSpan), imported::Absent>, Ambiguity>
+    {
+        self.through_imports(
+            source,
+            name,
+            |target| {
+                self.ports
+                    .get(&(target, name))
+                    .copied()
+                    .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
+            },
+            |_| None,
+        )
+    }
+
     /// The type member `source`'s unqualified imports answer `name` with, and
     /// the import that answers it.
     ///
@@ -3452,6 +3502,7 @@ pub fn begin_collection<'source>(
         words: Vec::new(),
         terms: Vec::new(),
         constructors: BTreeMap::new(),
+        ports: BTreeMap::new(),
         shadowed: BTreeSet::new(),
         operations: BTreeMap::new(),
         operation_names: BTreeMap::new(),
@@ -4789,9 +4840,10 @@ impl<'source> Collector<'_, 'source>
     ///   its structures and member slots, a type member written at the top
     ///   level into the source's [`Collected::top_types`], and an import into
     ///   the import list; a closer the layout shows was written once too often
-    ///   before the child refuses there ([`Self::closed_early`]); every other
-    ///   form refuses as a form of the wrong sort, and a repair the parser
-    ///   inserted as that repair.
+    ///   before the child refuses there ([`Self::closed_early`]); a form the
+    ///   description route refused refuses at its first description refusal
+    ///   ([`Self::described_refusals`]); every other form refuses as a form of
+    ///   the wrong sort, and a repair the parser inserted as that repair.
     /// - provides: the module-shape half of [`collect_source`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
     ///   a declaration, a module, a type member nor an import;
@@ -4812,6 +4864,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
+    /// - witness: `module::tests::a_torn_declaration_is_refused_where_it_stopped_2877`
     /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[spec(
         captures: before = (
@@ -4862,16 +4915,31 @@ impl<'source> Collector<'_, 'source>
                 name,
                 ..
             } => self.import(child, name),
-            Shape::Form { name, .. } => {
-                Err(self
-                    .closed_early(child)
-                    .unwrap_or(LoweringRefusal::OutOfFragment {
-                        span: child.span,
-                        form: name,
-                        sort: FragmentSort::Declaration,
-                        boundary: FragmentBoundary::WrongSort,
-                    }))
-            },
+            // An inner attribute block at the root decorates the source,
+            // which has no key of its own yet.
+            Shape::Form {
+                former: Former::Unadmitted(feature @ Unbuilt::SourceAttribute),
+                name,
+            } => Err(LoweringRefusal::OutOfFragment {
+                span: child.span,
+                form: name,
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::Unadmitted(feature),
+            }),
+            Shape::Form { name, .. } => Err(self
+                .closed_early(child)
+                .or_else(|| {
+                    self.described_refusals(child)
+                        .into_iter()
+                        .next()
+                        .map(|(_, refusal)| refusal)
+                })
+                .unwrap_or(LoweringRefusal::OutOfFragment {
+                    span: child.span,
+                    form: name,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::WrongSort,
+                })),
             Shape::Repair(_) => match repair_at(self.pbg, self.tree, child) {
                 Maybe::Present(found) => Err(found.refusal(FormName::ROOT)),
                 Maybe::Absent(_) => Ok(()),
@@ -5174,10 +5242,11 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `module` is a module form standing at the root, and
     ///   `decorations` the attribute blocks written before it.
     /// - ensures: the module is collected as an undecorated one is, and its
-    ///   attributes are kept with the slots its collection admitted, the blocks
-    ///   owned by the first of them so a fault in a payload refuses that
-    ///   member; a module whose collection admits no slot decorates nothing,
-    ///   and refuses the run as a stray attribute block does.
+    ///   attributes are kept with the slots its collection admitted, ahead of
+    ///   those its inner blocks wrote, the blocks owned by the first of them so
+    ///   a fault in a payload refuses that member; a module whose collection
+    ///   admits no slot decorates nothing, and refuses the run as a stray
+    ///   attribute block does.
     /// - provides: the decorated half of [`collect_source`]'s module reading.
     /// - fails: a block out of shape, and every fault [`Self::module`] raises.
     /// - panics: none.
@@ -5194,8 +5263,9 @@ impl<'source> Collector<'_, 'source>
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.decorated.len()),
         ensures: |ret| ret.is_err()
-            || self.collected.decorated.get(before.1).is_some_and(|decorated| {
-                decorated.first.0 == before.0
+            || self.collected.decorated.last().is_some_and(|decorated| {
+                self.collected.decorated.len() > before.1
+                    && decorated.first.0 == before.0
                     && decorated.end.0 == self.collected.slots.len()
                     && decorated.first < decorated.end
                     && decorated.attributes.iter().all(|attribute| attribute.decorates == module.node)
@@ -5224,12 +5294,20 @@ impl<'source> Collector<'_, 'source>
         for &written in decorations {
             self.collected.own(written.node, first);
         }
-        self.collected.decorated.push(DecoratedModule {
-            module,
-            attributes,
-            first,
-            end,
-        });
+        // The module's own inner blocks closed with its body, last: the outer
+        // blocks join them, written first, so a doubled attribute is one.
+        match self.collected.decorated.last_mut() {
+            Some(within) if within.module.node == module.node => {
+                attributes.append(&mut within.attributes);
+                within.attributes = attributes;
+            },
+            Some(_) | None => self.collected.decorated.push(DecoratedModule {
+                module,
+                attributes,
+                first,
+                end,
+            }),
+        }
 
         Ok(())
     }
@@ -5719,8 +5797,8 @@ impl<'source> Collector<'_, 'source>
     ///   name tile beside the slot owning the theory it includes; a block whose
     ///   slot stands unrefused takes its reducts' slots after it
     ///   ([`Self::reducts`]).
-    /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
-    ///   is the presentation's value.
+    /// - provides: `theory S where { … }` as the declaration `S : Theory` whose
+    ///   body is the presentation's value.
     /// - panics: none.
     /// - executable: none — the slot it takes is chosen by the name table,
     ///   which the call reads and writes in one step.
@@ -7157,7 +7235,7 @@ enum Header<'source>
 ///   resolves each nested level.
 /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
 #[derive(Clone, Debug)]
-struct Open
+struct Open<'source>
 {
     /// The module.
     structure: StructureIndex,
@@ -7168,7 +7246,22 @@ struct Open
     /// The modules its body includes, in source order, taken in when it
     /// closes.
     includes: Vec<Inclusion>,
+    /// The first slot its body admits.
+    first: SlotIndex,
+    /// The attributes of the inner blocks leading its body, `@![ … ]`, which
+    /// decorate the module when it closes.
+    inner: Vec<WrittenAttribute<'source>>,
+    /// Those inner blocks, owned by the module's first slot when it closes.
+    blocks: Vec<Placed>,
+    /// Whether every member read so far is an inner block.
+    leading: Leading,
 }
+
+/// Whether every member a module body has read so far is an inner attribute
+/// block.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Leading(bool);
 
 /// A module a body includes, `include M ;`.
 ///
@@ -7387,7 +7480,7 @@ impl<'source> Collector<'_, 'source>
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         let mut stack = Vec::new();
         let top = self.collected.top(module.span.start());
-        // A dotted name, `module Gandr.Workspace { … }`, declares the module in
+        // A dotted name, `module Gandr.Workspace where { … }`, declares the module in
         // the modules its prefix names; a functor or an application is bound
         // at the top level alone.
         let dotted = match Self::dotted_name(&pieces, module) {
@@ -7434,8 +7527,12 @@ impl<'source> Collector<'_, 'source>
             let structure = top.structure;
             let Some(&member) = top.members.get(top.next)
             else {
-                let includes = stack.pop().map(|open| open.includes).unwrap_or_default();
-                self.close(structure, &includes)?;
+                let Some(open) = stack.pop()
+                else {
+                    continue;
+                };
+                self.close(structure, &open.includes)?;
+                self.decorate_from_within(&open);
                 continue;
             };
             top.next = top.next.saturating_add(1_usize);
@@ -7656,6 +7753,9 @@ impl<'source> Collector<'_, 'source>
         else {
             Maybe::Absent(ascription::Absent::Unascribed)
         };
+        if let Maybe::Absent(_) = cursor.tile(TileName::WHERE) {
+            return refused(misplaced_in(FormName::MODULE, cursor.here()));
+        }
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
             return refused(misplaced_in(FormName::MODULE, cursor.here()));
         }
@@ -7751,6 +7851,9 @@ impl<'source> Collector<'_, 'source>
             Ok(path) => path,
             Err(refusal) => return refused(refusal),
         };
+        if let Maybe::Absent(_) = cursor.tile(TileName::WHERE) {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
             return refused(misplaced_in(FormName::FLOW, cursor.here()));
         }
@@ -8128,7 +8231,7 @@ impl<'source> Collector<'_, 'source>
         container: Container,
         form: Placed,
         opened: Opened<'source>,
-        stack: &mut Vec<Open>,
+        stack: &mut Vec<Open<'source>>,
     )
     {
         let key = (container, opened.name);
@@ -8187,6 +8290,10 @@ impl<'source> Collector<'_, 'source>
             members: opened.members,
             next: 0_usize,
             includes: Vec::new(),
+            first: SlotIndex(self.collected.slots.len()),
+            inner: Vec::new(),
+            blocks: Vec::new(),
+            leading: Leading(true),
         });
     }
 
@@ -8474,7 +8581,7 @@ impl<'source> Collector<'_, 'source>
         structure: StructureIndex,
         member: Placed,
         pieces: &Pieces,
-        stack: &mut Vec<Open>,
+        stack: &mut Vec<Open<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let container = Container::Module(structure);
@@ -8513,6 +8620,15 @@ impl<'source> Collector<'_, 'source>
             },
             Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(()),
         };
+        if let Some(&Piece::Tile { label, .. }) = pieces.pieces.first()
+            && label == TileName::INNER_ATTRIBUTES
+        {
+            self.inner_attributes(structure, member, pieces, stack);
+            return Ok(());
+        }
+        if let Some(open) = stack.last_mut().filter(|open| open.structure == structure) {
+            open.leading = Leading(false);
+        }
         let defines = pieces
             .pieces
             .iter()
@@ -8581,6 +8697,129 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// Read the inner attribute block `member`, `@![ … ]`, of the module
+    /// `structure`, open at the top of `stack`.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of `member`, a member form of
+    ///   `structure` whose first tile is `@![`.
+    /// - ensures: a block that only inner blocks precede in the body keeps its
+    ///   attributes, decorating the module's form, for the module's close
+    ///   ([`Self::decorate_from_within`]); a block after another member, or one
+    ///   out of shape, is refused under the module's name at the member.
+    /// - provides: the inner attribute half of [`Self::member`].
+    /// - fails: never; a refusal is filed at the member.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an inner block leading a module's body decorates the
+    ///   module as an outer block before it does, and one after a definition is
+    ///   refused at it.
+    /// - witness: `lower::exits::tests::an_inner_attribute_decorates_its_module`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() <= before.saturating_add(1),
+    )]
+    fn inner_attributes(
+        &mut self,
+        structure: StructureIndex,
+        member: Placed,
+        pieces: &Pieces,
+        stack: &mut [Open<'source>],
+    )
+    {
+        let form = self
+            .collected
+            .structures
+            .get(structure.0)
+            .map_or(member, |entry| entry.declared_by);
+        let Some(open) = stack.last_mut().filter(|open| open.structure == structure)
+        else {
+            return;
+        };
+        if !open.leading.0 {
+            self.fault_at(
+                structure,
+                member,
+                misplaced_in(FormName::MODULE, member.span),
+            );
+            return;
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, member.span);
+        let _opener = cursor.tile(TileName::INNER_ATTRIBUTES);
+        let start = open.inner.len();
+        let read = self
+            .read_block(&mut cursor, form.node, &mut open.inner)
+            .and_then(|()| match cursor.peek() {
+                Maybe::Present(_) => Err(misplaced(cursor.here())),
+                Maybe::Absent(_) => Ok(()),
+            });
+        if let Err(refusal) = read {
+            open.inner.truncate(start);
+            self.fault_at(structure, member, refusal);
+            return;
+        }
+        open.blocks.push(member);
+    }
+
+    /// Decorate the module `open` closes with the inner blocks leading its
+    /// body, as [`Self::decorated_module`] decorates one with the blocks
+    /// before it.
+    ///
+    /// # Specification
+    /// - requires: `open` is the frame of a module whose body was just read.
+    /// - ensures: with no inner block nothing changes; otherwise the module's
+    ///   attributes are kept with the slots its body admitted, the blocks owned
+    ///   by the first of them; a module whose body admits no slot decorates
+    ///   nothing, and its first inner block is refused under its name.
+    /// - provides: the closing half of [`Self::inner_attributes`].
+    /// - fails: never; a refusal is filed at the block.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::inner_attributes`].
+    /// - witness: `lower::exits::tests::an_inner_attribute_decorates_its_module`
+    #[spec(
+        captures: before = self.collected.decorated.len(),
+        ensures: self.collected.decorated.len() <= before.saturating_add(1),
+    )]
+    fn decorate_from_within(
+        &mut self,
+        open: &Open<'source>,
+    )
+    {
+        let Some(&block) = open.blocks.first()
+        else {
+            return;
+        };
+        let Some(module) = self
+            .collected
+            .structures
+            .get(open.structure.0)
+            .map(|entry| entry.declared_by)
+        else {
+            return;
+        };
+        let end = SlotIndex(self.collected.slots.len());
+        if open.first == end {
+            self.fault_at(
+                open.structure,
+                block,
+                misplaced_in(FormName::MODULE, block.span),
+            );
+            return;
+        }
+        for &written in &open.blocks {
+            self.collected.own(written.node, open.first);
+        }
+        self.collected.decorated.push(DecoratedModule {
+            module,
+            attributes: open.inner.clone(),
+            first: open.first,
+            end,
+        });
     }
 
     /// Read the law member `member`, `law name admitted ;` after any attribute
@@ -10371,9 +10610,10 @@ const fn misplaced_in<'source>(
 ///   whose hole holds exactly one form and which closes with `;` and nothing
 ///   after it, and both halves for a signature joined with its definition, `: T
 ///   = e ;`, each hole holding one form; a function tail, opening on `(` or on
-///   a telescope `@[ … ]` followed by `(`, with whether it is signed; every
-///   other tail yields its first fault — an implicit telescope declined by the
-///   folded form's own name, an empty or overfull hole, or a tile out of place.
+///   a telescope `@[ … ]` followed by `(`, with whether it is signed, and a
+///   clause tail, `: T where { | … }`, signed by `T`; every other tail yields
+///   its first fault — an implicit telescope declined by the folded form's own
+///   name, an empty or overfull hole, or a tile out of place.
 /// - provides: the tail half of a declaration form.
 /// - fails: never; a fault is yielded rather than raised.
 /// - panics: none.
@@ -10393,7 +10633,7 @@ const fn misplaced_in<'source>(
     captures: first = header.peek(),
     ensures: |ret| match ret {
         | Tail::Function(_) => {
-            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::ATTRIBUTES)
+            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::BRACKET_OPEN || label == TileName::COLON)
                 && header.peek() == first
         },
         | Tail::Wrote(kind, _) => {
@@ -10416,7 +10656,7 @@ fn read_tail<'source>(
 ) -> Tail<'source>
 {
     let mut past = header.clone();
-    if let Maybe::Present(_) = past.tile(TileName::ATTRIBUTES) {
+    if let Maybe::Present(_) = past.tile(TileName::BRACKET_OPEN) {
         while let Maybe::Present(piece) = past.read() {
             if let Piece::Tile { label, .. } = piece
                 && label == TileName::BRACKET_CLOSE
@@ -10427,6 +10667,15 @@ fn read_tail<'source>(
     }
     if let Maybe::Present(_) = past.at(TileName::PAREN_OPEN) {
         return Tail::Function(signing(past));
+    }
+    // Clauses after a stated function type, `: (A, …) => C where { | … }`,
+    // are a function tail of no written parameter, signed by that type.
+    let mut clausal = past.clone();
+    if let Maybe::Present(_) = clausal.tile(TileName::COLON)
+        && let Run::One(_) = clausal.operands()
+        && let Maybe::Present(_) = clausal.at(TileName::WHERE)
+    {
+        return Tail::Function(Signing::Signed);
     }
     let kind = if let Maybe::Present(_) = header.tile(TileName::COLON) {
         HalfKind::Signature
@@ -10477,10 +10726,11 @@ fn read_tail<'source>(
 /// # Specification
 /// - requires: `header` stands at the tail's `(`.
 /// - ensures: signed exactly when every binder tile before the parameter list's
-///   own `)` is followed by `:`, and the `)` by `->`; unsigned otherwise, a
-///   list with no `)` included. Only the tiles are read: whether each type and
-///   the result hold exactly one form is the function's own reading, decided
-///   where the classification reads the declaration.
+///   own `)` is followed by `:`, and the `)` by `->` or by the `:` stating a
+///   clause tail's type; unsigned otherwise, a list with no `)` included. Only
+///   the tiles are read: whether each type and the result hold exactly one form
+///   is the function's own reading, decided where the classification reads the
+///   declaration.
 /// - provides: which halves a function tail writes.
 /// - fails: never.
 /// - panics: none.
@@ -10493,7 +10743,9 @@ fn read_tail<'source>(
 /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
 #[spec(
     ensures: |ret| {
-        ret != Signing::Signed || matches!(header.at(TileName::ARROW), Maybe::Present(_))
+        ret != Signing::Signed
+            || matches!(header.at(TileName::ARROW), Maybe::Present(_))
+            || matches!(header.at(TileName::COLON), Maybe::Present(_))
     },
 )]
 fn signing(mut header: Cursor<'_>) -> Signing
@@ -10511,9 +10763,9 @@ fn signing(mut header: Cursor<'_>) -> Signing
             Maybe::Absent(_) => return Signing::Unsigned,
         }
     }
-    match header.at(TileName::ARROW) {
-        Maybe::Present(_) => Signing::Signed,
-        Maybe::Absent(_) => Signing::Unsigned,
+    match (header.at(TileName::ARROW), header.at(TileName::COLON)) {
+        (Maybe::Present(_), _) | (_, Maybe::Present(_)) => Signing::Signed,
+        (Maybe::Absent(_), Maybe::Absent(_)) => Signing::Unsigned,
     }
 }
 
@@ -10538,7 +10790,7 @@ fn signing(mut header: Cursor<'_>) -> Signing
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
 #[spec(
     ensures: |ret| {
-        ret == if matches!(header.at(TileName::ATTRIBUTES), Maybe::Present(_)) {
+        ret == if matches!(header.at(TileName::BRACKET_OPEN), Maybe::Present(_)) {
             LoweringRefusal::ImplicitTelescope { span: declaration.span }
         }
         else if let Maybe::Present(Piece::Operand(stray)) = header.peek() {
@@ -10554,7 +10806,7 @@ fn unadmitted_tail<'source>(
     declaration: Placed,
 ) -> LoweringRefusal<'source>
 {
-    if let Maybe::Present(_) = header.at(TileName::ATTRIBUTES) {
+    if let Maybe::Present(_) = header.at(TileName::BRACKET_OPEN) {
         return LoweringRefusal::ImplicitTelescope {
             span: declaration.span,
         };
@@ -11309,13 +11561,13 @@ pub struct Forgetting
     pub sorts: Vec<Name>,
 }
 
-/// A model implicit a function's telescope writes, `@[s : Model(S) with sort
+/// A model implicit a function's telescope writes, `[s : Model(S) with sort
 /// x = A]`, as a source writes it.
 ///
 /// The core binds one parameter per component of `S` and none for a sort the
 /// type fixes, so a printed telescope writes the slot whole in their place, a
 /// body reads each component as `s.x`, and a call supplies the slot by one
-/// path, `f[s = M]`.
+/// path, `f[.s = M]`.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -11496,7 +11748,7 @@ pub struct LoweredModule<'source>
     /// Each function written with a model implicit, each such slot of its
     /// merged telescope, by the function's position.
     model_slots: Layered<ConstantIndex, Vec<FlattenedSlot<'source>>>,
-    /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
+    /// Each stage a call supplies its callee's binder at, `f[.i = s]`, by the
     /// declaration whose body makes the call.
     supplies: Layered<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
     /// The laws each capability scope over a theory owes it, read through the
@@ -13050,7 +13302,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The names of the region binders the definition at `constant`
-    /// abstracts, `@[r : Region]`, by ordinal: what a type kept at
+    /// abstracts, `[r : Region]`, by ordinal: what a type kept at
     /// [`gandr_core_term::effect::capability::Region::Bound`] is spelled by.
     ///
     /// # Specification
@@ -13082,7 +13334,7 @@ impl<'source> LoweredModule<'source>
 
     /// The parameters of the function at `constant`, in the merged
     /// telescope's order, each implicit by the name a use supplies it by,
-    /// `f[x = v]`, and each explicit one as none: what a printed call writes
+    /// `f[.x = v]`, and each explicit one as none: what a printed call writes
     /// its arguments by, residents for the implicits and the rest in place.
     ///
     /// # Specification
@@ -13142,7 +13394,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The stages `declaration`'s calls supply their callees' binders at,
-    /// `f[i = s]`: what the checker's declaration carries for its judgement
+    /// `f[.i = s]`: what the checker's declaration carries for its judgement
     /// to hold each call to, and the kernel never reads.
     ///
     /// # Specification
@@ -13573,7 +13825,7 @@ mod tests
         let tree = parsed(
             &pbg,
             SourceText::from(
-                "module M { def first = 1 ; def last = 2 ; def dotted = 3 ; def hidden = 4 ; }",
+                "module M where { def first = 1 ; def last = 2 ; def dotted = 3 ; def hidden = 4 ; }",
             ),
         );
         let mut arena = gandr_core_term::CoreArena::new();
@@ -13623,7 +13875,7 @@ mod tests
         let tree = parsed(
             &pbg,
             SourceText::from(
-                "def before = 1 ; rec { data N : Type { Z : N ; } def f = 1 ; } def after = 2 ;",
+                "def before = 1 ; rec { data N : Type where { | Z : N  } def f = 1 ; } def after = 2 ;",
             ),
         );
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
@@ -13999,14 +14251,15 @@ mod tests
         let tree = repaired(&pbg, SourceText::from("@[ checks ] theory Sta"));
         assert_eq!(
             collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
-            LoweringRefusal::OutOfFragment {
-                span: span(ByteOffset::from(12_usize), ByteOffset::from(22_usize)),
+            LoweringRefusal::MalformedForm {
+                span: span(ByteOffset::from(22_usize), ByteOffset::from(22_usize)),
                 form: FormName::from(NamedKind("theory_declaration")),
-                sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::WrongSort,
+                fault: FormFault::Repaired(crate::Repair::GhostClose(
+                    gandr_surface_syntax::ClosingClass::Brace,
+                )),
             },
             "a theory the parser repaired declares nothing, and the source holding only it and \
-             the block before it is refused whole, at the theory"
+             the block before it is refused whole, at the repair the description route read"
         );
     }
 
@@ -14238,7 +14491,7 @@ mod tests
             "the stray is refused at the second `}}` of the access line"
         );
 
-        let nested = "module M {\n  def give_up() -> -F Unit {\n    hold c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
+        let nested = "module M where {\n  def give_up() -> -F Unit {\n    hold c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
         assert_eq!(
             refusals(nested),
             [LoweringRefusal::MalformedForm {
@@ -14332,7 +14585,7 @@ mod tests
     fn a_torn_declaration_is_refused_where_it_broke_2110()
     {
         let pbg = grammar();
-        let text = "theory Restriction {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . nil()) =>= nil();\n}\n";
+        let text = "theory Restriction where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . nil()) =>= nil();\n}\n";
         let tree = repaired(&pbg, SourceText::from(text));
         // The theory is the source's one item, so its refusal is the source's.
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
@@ -14363,12 +14616,14 @@ mod tests
 
     /// A declaration torn into its tiles because it stopped inside an operand
     /// is refused where it stopped. A universe missing its polarity is marked
-    /// just past its `[`, not at the close minted after the capture (#2877).
+    /// just past its `[`, not at the close minted after the capture (#2877):
+    /// the refusal names the universe the reading stopped in, not a form of the
+    /// wrong sort.
     #[test]
     fn a_torn_declaration_is_refused_where_it_stopped_2877()
     {
         let pbg = grammar();
-        let text = "codata Stream : Type[] {\n  head : Integer;\n}\n";
+        let text = "codata Stream : Type[] where {\n  head : Integer;\n}\n";
         let tree = repaired(&pbg, SourceText::from(text));
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
             Ok(collected) => collected
@@ -14390,7 +14645,7 @@ mod tests
                     form,
                     fault: FormFault::Repaired(_),
                 }] if usize::from(span.start()) == stop
-                    && *form == FormName::from(NamedKind("codata_declaration"))
+                    && *form == FormName::from(NamedKind("universe_type"))
             ),
             "the codata declaration is refused once, past its universe's `[`: {refused:?}"
         );
@@ -14427,7 +14682,7 @@ mod tests
 
         for (text, doubled, close) in [
             (
-                "codata Stream : Type[-]] {\n  ω head : Integer;\n}\ndef kept = 1 ;\n",
+                "codata Stream : Type[-]] {\n  head[ω] : Integer;\n}\ndef kept = 1 ;\n",
                 "]]",
                 ClosingClass::Bracket,
             ),
@@ -14498,7 +14753,7 @@ mod tests
     fn an_empty_module_beside_a_stray_declares()
     {
         let pbg = grammar();
-        let tree = parsed(&pbg, SourceText::from("3 ;\nmodule M { }"));
+        let tree = parsed(&pbg, SourceText::from("3 ;\nmodule M where { }"));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let read: Vec<_> = collected
             .slots
@@ -14569,7 +14824,7 @@ mod tests
         let pbg = grammar();
         let tree = parsed(
             &pbg,
-            SourceText::from("module M { @[ checks ] @[ owes ] def x = 3 ; }"),
+            SourceText::from("module M where { @[ checks ] @[ owes ] def x = 3 ; }"),
         );
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected
@@ -14593,7 +14848,7 @@ mod tests
         );
         assert_eq!(
             slot.introduced_by.span,
-            span(ByteOffset::from(11_usize), ByteOffset::from(44_usize)),
+            span(ByteOffset::from(17_usize), ByteOffset::from(50_usize)),
             "a member's blocks are inside its form"
         );
     }

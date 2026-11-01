@@ -119,7 +119,7 @@
 //! 4. a form before a closing, so a tier alternates the two.
 //!
 //! A form yields a computation when it opens with `return`, `pure`,
-//! `become`, `case`, `if`, `fn`, `force`, `while`, `for`, `loop`, `break`,
+//! `become`, `match`, `if`, `fn`, `force`, `while`, `for`, `loop`, `break`,
 //! `continue`, a block's `{`, `#!{` or `&`, and a value otherwise. A closing
 //! that differs from a better candidate only by separators, or holds a `,`
 //! right before a closer, is not offered.
@@ -340,7 +340,7 @@ impl Category
     ///
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] for the forms
-    ///   `return`, `pure`, `become`, `case`, `if`, `fn`, `force`, `while`,
+    ///   `return`, `pure`, `become`, `match`, `if`, `fn`, `force`, `while`,
     ///   `for`, `loop`, `break`, `continue`, a block `{`, a shell block `#!{`
     ///   and a lazy record `&` open, [`Category::Value`] for every other; every
     ///   other sort's own category.
@@ -360,7 +360,7 @@ impl Category
         match (sort, opener.0) {
             (
                 Sort::Expression,
-                "return" | "pure" | "become" | "case" | "if" | "fn" | "force" | "while" | "for"
+                "return" | "pure" | "become" | "match" | "if" | "fn" | "force" | "while" | "for"
                 | "loop" | "break" | "continue" | "{" | "#!{" | "&",
             ) => Self::Computation,
             (Sort::Expression, _) => Self::Value,
@@ -810,7 +810,8 @@ impl<'text> Labeled<'text>
     ///   labels it.
     /// - panics: none.
     /// - economy: copies the tokens and rescans from the cut's previous line
-    ///   ([`Labeling::relabel`]), never the whole text.
+    ///   ([`Labeling::relabel`]), never the whole text; the arm bars are marked
+    ///   in one pass over the tokens.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every cursor of a corpus source holding comments,
@@ -1180,6 +1181,7 @@ fn typed(tile: TileLabel) -> Spelled
         | Lexeme::SubshellOpen
         | Lexeme::SubshellClose
         | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
         | Lexeme::Space
         | Lexeme::Unknown => false,
     };
@@ -1297,8 +1299,8 @@ impl Forms
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an item slot offers `def` and `data`, a computation
-    ///   slot `return` and `case`; offering a bracket or another sort's keyword
-    ///   changes the completion witnesses.
+    ///   slot `return` and `match`; offering a bracket or another sort's
+    ///   keyword changes the completion witnesses.
     /// - witness: `complete::tests::each_slot_offers_its_own_names`
     pub fn keywords(
         &self,
@@ -2391,11 +2393,11 @@ mod tests
             ("def g : Integer ⇝", "", " ${1:type};"),
             ("def g : Integer ~~>", "", " ${1:type};"),
             (
-                "def f(x: Nat) -> -F Nat {\n  case x {",
+                "def f(x: Nat) -> -F Nat {\n  match x {",
                 " }\n}",
                 " ${1:pattern} => ${2:computation}",
             ),
-            ("module M {", "\n}", " ${1:member}"),
+            ("module M where {", "\n}", " ${1:member}"),
             ("", "", "def ${1:identifier} : ${2:type};"),
         ] {
             let found = between(&tools, SourceText::from(before), SourceText::from(after));
@@ -2499,8 +2501,8 @@ mod tests
             ("def f(x: Integer", ""),
             ("def x = (", ")"),
             ("def x = ", "answer;"),
-            ("def f(x: Nat) -> -F Nat {\n  case x {", " }\n}"),
-            ("data Nat : Type {\n  Zero : Nat;", "\n}"),
+            ("def f(x: Nat) -> -F Nat {\n  match x {", " }\n}"),
+            ("data Nat : Type where {\n  | Zero", "\n}"),
             ("def x = (", ") + 1;"),
             ("def x = (", "1 + 2)"),
             ("def x = (", "(1))"),
@@ -2527,11 +2529,11 @@ mod tests
               " ${1:computation}"
               " pure ${1:value}"
               " return ${1:value}"
-              " val ${1:pattern} = ${2:value};"
+              " import ${1:type_identifier};"
               " become ${1:computation}"
-              " run ${1:pattern} <- ${2:computation};"
+              " import ${1:identifier};"
               " force ${1:value}"
-              " leta ${1:identifier} = ${2:value};"
+              " ${1:computation} = ${2:value};"
             "def f(x: Integer" ‸ ""
               ") { ${1:computation} \\}"
               ") -> ${1:type} { ${2:computation} \\}"
@@ -2556,7 +2558,7 @@ mod tests
               "return "
               "become "
               "force "
-            "def f(x: Nat) -> -F Nat {\n  case x {" ‸ " }\n}"
+            "def f(x: Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
               " ${1:pattern} => ${2:computation}"
               " _ => ${1:computation}"
               " | ${1:pattern} => ${2:computation}"
@@ -2564,14 +2566,14 @@ mod tests
               " ${1:pattern} => ${2:computation}, ${3:pattern} => ${4:computation}"
               " + { . ${1:identifier} = ${2:pattern} \\} => ${3:computation}"
               " ${1:pattern} => ${2:computation}, | ${3:pattern} => ${4:computation}"
-              " [${1:pattern}] => ${2:computation}"
-            "data Nat : Type {\n  Zero : Nat;" ‸ "\n}"
-              " ${1:constructor}"
-              " ${1:constructor} : ${2:type}"
-              " rule ${1:value} ==> ${2:value}"
-              " rule ${1:value} <=> ${2:value}"
-              " rule ${1:value} ~> ${2:value}"
-              " ${1:constructor} [${2:identifier}]"
+              " #[${1:pattern}] => ${2:computation}"
+            "data Nat : Type where {\n  | Zero" ‸ "\n}"
+              " : ${1:type}"
+              " : ${1:type} --> ${2:type}"
+              " : (${1:type})"
+              " : ${1:type} [${2:identifier}]"
+              " : (${1:type}) --> ${2:type}"
+              " : (${1:identifier} : ${2:type})"
             "def x = (" ‸ ") + 1;"
               "${1:value}"
               "- ${1:value}"
@@ -2619,13 +2621,13 @@ mod tests
               "force "
             "def x = thunk {" ‸ " return 1 }"
               " pure"
-              " val"
+              " import ${1:type_identifier};"
               " return"
-              " run"
+              " import ${1:identifier};"
               " become"
-              " leta ${1:identifier} ="
+              " let"
               " force"
-              " hold ${1:identifier} ="
+              " -"
             "def x = thunk { return" ‸ " 1; }"
               " -"
               " run"
@@ -2700,10 +2702,10 @@ mod tests
               " type(${1:type})"
             "" ‸ ""
               "def ${1:identifier} : ${2:type};"
-              "data ${1:type_identifier} { \\}"
-              "codata ${1:type_identifier} { \\}"
-              "module ${1:type_identifier} { ${2:member} \\}"
-              "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}"
+              "data ${1:type_identifier} where { \\}"
+              "codata ${1:type_identifier} where { \\}"
+              "module ${1:type_identifier} where { ${2:member} \\}"
+              "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} where { ${4:member} \\}"
               "import ${1:identifier};"
               "world ${1:identifier};"
               "rec { ${1:item} \\}"

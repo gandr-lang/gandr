@@ -2,7 +2,7 @@
 ///
 /// The theory the model derives from.
 @[ refuses("IllFormedDescription") ]
-theory T {
+theory T where {
   sort Nat : Type;
   oper zero : () --> Nat;
   rule stray : succ(zero()) ==> zero();

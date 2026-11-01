@@ -31,7 +31,7 @@ use crate::fixture::grammar;
 use crate::unit::Unit;
 
 /// The theory the flagship model signature is derived from.
-const CAT_SHAPE: &str = r"theory CatShape {
+const CAT_SHAPE: &str = r"theory CatShape where {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
 
@@ -221,7 +221,7 @@ fn the_cat_shape_sorts_are_a_type_and_a_family()
 fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
 {
     let model = derived(
-        r"theory Carrier {
+        r"theory Carrier where {
   sort Ob : Type;
   sort T(A : Type) : Type;
   sort At(o : Ob, A : Type) : Type;
@@ -253,7 +253,7 @@ fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
 fn a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079()
 {
     let model = derived(
-        r"theory Counted {
+        r"theory Counted where {
   sort T(n : Integer) : Type;
   oper same : (x : T(n)) --> T(n);
 }",
@@ -278,7 +278,7 @@ fn a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079()
 fn a_computation_sort_derives_a_family_into_computation_types()
 {
     let model = derived(
-        r"theory Carrier {
+        r"theory Carrier where {
   sort C : Type[-];
   sort T(A : Type) : Type[-];
   sort V(A : Type) : Type;
@@ -320,7 +320,7 @@ fn a_computation_sort_derives_a_family_into_computation_types()
 fn a_stated_law_binds_its_written_variables_2356()
 {
     let model = derived(
-        "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n  law loose : (a : Carrier) => Path(Bool, same(a, b), true);\n  law odd : (a : Carrier) => Path(Carrier, a, true);\n}",
+        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n  law loose : (a : Carrier) => Path(Bool, same(a, b), true);\n  law odd : (a : Carrier) => Path(Carrier, a, true);\n}",
     );
     let names: Vec<&str> = model
         .components
@@ -357,7 +357,7 @@ fn a_stated_law_binds_its_written_variables_2356()
 fn a_constant_derives_its_type_alone()
 {
     let model = derived(
-        r"theory Pointed {
+        r"theory Pointed where {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   oper zero : Ob;
@@ -428,7 +428,7 @@ fn the_cat_shape_laws_relate_elaborated_terms()
 fn an_underivable_component_keeps_its_fault()
 {
     let model = derived(
-        r"theory Faulty {
+        r"theory Faulty where {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   sort Tm : Type+;
@@ -498,7 +498,7 @@ fn an_underivable_component_keeps_its_fault()
 fn a_binding_port_derives_the_function_from_its_variables_765()
 {
     let model = derived(
-        r"theory Typed {
+        r"theory Typed where {
   sort VTy : Type;
   sort CTy : Type;
   sort VTm(a : VTy) : Type+;
@@ -581,7 +581,7 @@ fn each_interface_fault_reads_as_its_own_clause()
 fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
 {
     let model = derived(
-        r"theory Mixed {
+        r"theory Mixed where {
   sort Ob : Type;
   sort Pt : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
@@ -618,7 +618,7 @@ fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
 fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
 {
     let model = derived(
-        r"theory Stepped {
+        r"theory Stepped where {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   oper next : (a : Ob) --> Ob;
@@ -647,7 +647,7 @@ fn an_implicit_object_past_the_last_free_letter_is_numbered()
         right = format!("comp({morphism}, {right})");
     }
     let model = derived(format!(
-        "theory Long {{\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper comp : (f : \
+        "theory Long where {{\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper comp : (f : \
          Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule chain : {left} ==> {right};\n}}"
     ).as_str());
     let law = spelled(&model, "chain");

@@ -15,7 +15,7 @@
 ///   1970, § 7 — completion
 
 /// A monoid's unit and associativity laws, each a rule.
-pub theory Monoid {
+pub theory Monoid where {
   /// The carrier.
   sort M : Type;
 
@@ -36,18 +36,18 @@ pub theory Monoid {
 derive assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d))) in Monoid
 
 /// A sign.
-pub data Sign : Type {
+pub data Sign : Type where {
   /// The positive sign.
-  Plus : Sign;
+  | Plus : Sign
   /// The negative sign.
-  Minus : Sign;
+  | Minus : Sign
 }
 
 /// The product of two signs.
 pub def times(a : Sign, b : Sign) -> Sign {
-  case a {
+  match a {
     Plus => b,
-    Minus => case b {
+    Minus => match b {
       Plus => Minus,
       Minus => Plus,
     },
@@ -56,7 +56,7 @@ pub def times(a : Sign, b : Sign) -> Sign {
 
 /// The signs under their product, plus the unit. The model writes its three
 /// rules' witnesses and nothing for the associator of four.
-module Signs : Model(Monoid) {
+module Signs : Model(Monoid) where {
   /// The carrier is the signs.
   type M = Sign;
   /// Plus is the unit.
@@ -69,7 +69,7 @@ module Signs : Model(Monoid) {
   /// The right unit law, case by case.
   @[ checks ]
   def unitR(x : Sign) -> Path(Sign, mul(x, e), x) {
-    case x {
+    match x {
       Plus => here(Plus),
       Minus => here(Minus),
     }
@@ -77,11 +77,11 @@ module Signs : Model(Monoid) {
   /// Binary associativity, case by case.
   @[ checks ]
   def assoc(x : Sign, y : Sign, z : Sign) -> Path(Sign, mul(mul(x, y), z), mul(x, mul(y, z))) {
-    case x {
+    match x {
       Plus => here(times(y, z)),
-      Minus => case y {
+      Minus => match y {
         Plus => here(times(Minus, z)),
-        Minus => case z {
+        Minus => match z {
           Plus => here(Plus),
           Minus => here(Minus),
         },

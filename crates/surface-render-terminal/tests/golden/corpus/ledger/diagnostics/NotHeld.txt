@@ -1,4 +1,4 @@
-error[NotHeld]: `access` needs a value opened by `hold`; this names something else
+error[NotHeld]: `access` needs a value opened by `var`; this names something else
   ╭▸ corpus/ledger/diagnostics/NotHeld.gandr:5:19
   │
 3 │ ┌ def nested() -> -F Unit {

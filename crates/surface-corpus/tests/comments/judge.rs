@@ -613,7 +613,11 @@ impl Walk<'_, '_>
     }
 
     /// Judge the members of a block of tiles, each the run of `body` up to a
-    /// `;` or a closing brace outside any inner brace.
+    /// `;` or a closing brace outside any inner brace, or up to the arm bar
+    /// opening the next member; a member a bar opens also ends before an
+    /// `oper`, `op` or `rule`, which writes no bar. The bar is no part of the
+    /// member it opens, and a comment after the last tile of the member before
+    /// it comments the member after it.
     ///
     /// # Specification
     /// trivial.
@@ -627,6 +631,7 @@ impl Walk<'_, '_>
         let mut comment_end: Option<usize> = None;
         let mut member: Vec<NodeIndex> = Vec::new();
         let mut commented = false;
+        let mut barred = false;
         let mut depth = 0_usize;
         for &child in body {
             let Some(node) = self.tree.node(child)
@@ -634,13 +639,23 @@ impl Walk<'_, '_>
                 continue;
             };
             if self.is_comment(child).0 {
-                if member.is_empty() {
-                    comment_end = Some(usize::from(node.span().end()));
-                }
+                comment_end = Some(usize::from(node.span().end()));
                 continue;
             }
             if matches!(node.label(), NodeLabel::Space) {
                 continue;
+            }
+            let label = self.tile_label(child)?.map(|held| held.0);
+            let opens = label == Some("arm_bar");
+            if depth == 0 && (opens || barred && matches!(label, Some("oper" | "op" | "rule"))) {
+                if !member.is_empty() && !commented {
+                    self.tile_member(&member, block, found)?;
+                }
+                member.clear();
+                barred = opens;
+                if opens {
+                    continue;
+                }
             }
             if member.is_empty() {
                 let start = usize::from(node.span().start());
@@ -652,8 +667,9 @@ impl Walk<'_, '_>
                     .0
                 });
             }
+            comment_end = None;
             member.push(child);
-            let ends = match self.tile_label(child)?.map(|held| held.0) {
+            let ends = match label {
                 Some("{") => {
                     depth = depth.saturating_add(1);
                     false
@@ -670,7 +686,7 @@ impl Walk<'_, '_>
                     self.tile_member(&member, block, found)?;
                 }
                 member.clear();
-                comment_end = None;
+                barred = false;
             }
         }
         if !member.is_empty() && !commented {
@@ -1191,36 +1207,11 @@ mod tests
     #[test]
     fn every_tile_member_owes_its_own_comment()
     {
-        let mut owed = lines(Text(concat!(
-            "// file\n\n",
-            "// the naturals\n",
-            "data Nat : Type {\n",
-            "  // the base\n",
-            "  Zero : Nat;\n",
-            "  Succ : (n : Nat) --> Nat;\n",
-            "\n",
-            "  // a comment cut off by a blank line\n",
-            "\n",
-            "  rule Succ(Zero) <=> Zero;\n",
-            "}\n\n",
-            "// a theory\n",
-            "theory T {\n",
-            "  /// the carrier\n",
-            "  sort S : Type+;\n",
-            "  oper get : (k : S) --> S;\n",
-            "  rule g : get(k) <=> k;\n",
-            "}\n\n",
-            "// a stream\n",
-            "codata Stream(a : Type) : Type[-] {\n",
-            "  head : a;\n",
-            "  /// what follows\n",
-            "  tail : Stream(a);\n",
-            "}\n",
-        )));
+        let mut owed = lines(Text(include_str!("judge/fixtures/tile-members.gandr")));
         owed.sort();
         let mut expected = vec![
-            key(Text("Nat.Succ"), Text("Succ : (n : Nat) --> Nat;")),
-            key(Text("Nat.rule"), Text("rule Succ(Zero) <=> Zero;")),
+            key(Text("Nat.Succ"), Text("Succ : (n : Nat) --> Nat")),
+            key(Text("Nat.rule"), Text("rule : Succ(Zero) <=> Zero;")),
             key(Text("T.get"), Text("oper get : (k : S) --> S;")),
             key(Text("T.g"), Text("rule g : get(k) <=> k;")),
             key(Text("Stream.head"), Text("head : a;")),
@@ -1237,33 +1228,16 @@ mod tests
     #[test]
     fn every_item_member_owes_its_own_comment()
     {
-        let mut owed = lines(Text(concat!(
-            "// file\n\n",
-            "// a module\n",
-            "module M {\n",
-            "  /// one\n",
-            "  @[ checks ]\n",
-            "  def one = 1;\n",
-            "  def two = 2;\n",
-            "  @[ checks ]\n",
-            "  def three = 3;\n",
-            "}\n\n",
-            "// a rec block\n",
-            "rec {\n",
-            "  data Rose : Type {\n",
-            "    Node : Rose;\n",
-            "  }\n",
-            "}\n",
-        )));
+        let mut owed = lines(Text(include_str!("judge/fixtures/item-members.gandr")));
         owed.sort();
         let mut expected = vec![
             key(Text("M.two"), Text("def two = 2;")),
             key(Text("M.three"), Text("def three = 3;")),
             key(
                 Text("rec_block.Rose"),
-                Text("data Rose : Type { Node : Rose; }"),
+                Text("data Rose : Type where { | Node : Rose }"),
             ),
-            key(Text("rec_block.Rose.Node"), Text("Node : Rose;")),
+            key(Text("rec_block.Rose.Node"), Text("Node : Rose")),
         ];
         expected.sort();
         assert_eq!(

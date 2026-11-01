@@ -1,12 +1,12 @@
 /// `constructor_pattern`: a constructor pattern with its fields.
 @[ checks ]
-data Stack : Type {
-  Empty : Stack;
-  Push : (x : Integer, rest : Stack) --> Stack;
+data Stack : Type where {
+  | Empty : Stack
+  | Push : (x : Integer, rest : Stack) --> Stack
 }
 @[ checks ]
 def first(xs : Stack) -> -F Integer {
-  case xs {
+  match xs {
     Push(x, rest) => return x,
     Empty => return 0
   }

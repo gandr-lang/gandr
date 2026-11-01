@@ -1,6 +1,6 @@
 /// `RulesUncompleted`: two rules of a block rewriting one term to two normal forms no rule the path order orients joins.
 @[ refuses("RulesUncompleted") ]
-theory Leaked {
+theory Leaked where {
   boundary Two { p, q };
   face left = {p};
   sort Val : Type;

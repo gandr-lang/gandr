@@ -9,7 +9,7 @@
 /// Choice with cut over a grade-indexed sort: `cutLeft` commits to the left
 /// branch whatever grade the right one stands at.
 @[ normalizes("orBot(cut, fail) ~> cut") ]
-theory GradedCut {
+theory GradedCut where {
   sort Grade : Type;
   sort M(g : Grade) : Type;
 
@@ -25,7 +25,7 @@ theory GradedCut {
 /// A category's shape: its laws over `Hom(dom, cod)` are read with the
 /// objects each composite stands at, so the unit laws agree at
 /// `comp(id(a), id(a))`.
-theory Category {
+theory Category where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
@@ -40,7 +40,7 @@ theory Category {
 /// 2-cells between homs: the laws rewrite homs, so a 2-cell carries no hom,
 /// and a whisker carries only the objects its hom stands between. A whisker
 /// distributes over vertical composition, which the laws decide (#1510).
-theory TwoCells {
+theory TwoCells where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
   sort Two(src : Hom(x, y), tgt : Hom(x, y)) : Type;
@@ -60,7 +60,7 @@ theory TwoCells {
 /// Views of an edited morphism: `fuse` and `step` rewrite `view(edit(f))`
 /// two ways, so completion derives `view(patch(f)) ==> fresh(f)` over the
 /// objects `f` stands at, and the kernel replays it from its peak.
-theory EditedViews {
+theory EditedViews where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
@@ -76,13 +76,13 @@ theory EditedViews {
 /// Addition with its associativity: the law nests `add` in a call, so `add`
 /// runs by its two other rules, and the kernel decides the three converge.
 @[ normalizes("add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
-data NatAssoc : Type {
-  Zero : NatAssoc;
-  Succ : (n : NatAssoc) --> NatAssoc;
-  oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
-  rule add(Zero, n) ==> n;
-  rule add(Succ(m), n) ==> Succ(add(m, n));
-  rule add(add(m, n), k) ==> add(m, add(n, k));
+data NatAssoc : Type where {
+  | Zero : NatAssoc
+  | Succ : (n : NatAssoc) --> NatAssoc
+  oper add : (m : NatAssoc, n : NatAssoc) --> NatAssoc;
+  rule : add(Zero, n) ==> n;
+  rule : add(Succ(m), n) ==> Succ(add(m, n));
+  rule : add(add(m, n), k) ==> add(m, add(n, k));
 }
 
 /// One plus one, plus one, runs to three.

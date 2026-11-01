@@ -786,7 +786,7 @@ impl<'source> Lowerer<'_, 'source>
                 .written
                 .constructors
                 .iter()
-                .any(|written| written.arguments.len() > entry.parameters.len())
+                .any(|written| written.result.arguments.len() > entry.parameters.len())
         {
             return Err(Uncovered::Applied(position));
         }
@@ -941,7 +941,6 @@ fn uncarried(
                 | DescriptionFault::Repaired { .. }
                 | DescriptionFault::FamilyHead
                 | DescriptionFault::NonUniformResult
-                | DescriptionFault::GeneratorJudgment
                 | DescriptionFault::MemberPolarity
                 | DescriptionFault::TypeShape
                 | DescriptionFault::RetiredRuleArrow

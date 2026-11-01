@@ -6,7 +6,7 @@
 import "../../std/src/package.gandr";
 
 /// The package: `math`, at the version `gandr.toml` records.
-pub module Package : Model(Gandr.Package) {
+pub module Package : Model(Gandr.Package) where {
   /// The package's name, `math`.
   def name = "math";
   /// The version `math` releases at.

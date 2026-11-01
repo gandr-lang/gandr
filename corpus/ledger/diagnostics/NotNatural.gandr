@@ -1,5 +1,5 @@
 /// `NotNatural`: translator tables that do not commute with a corolla's automorphisms.
-theory Rig {
+theory Rig where {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
@@ -7,7 +7,7 @@ theory Rig {
 
 @[ checks ]
 def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
-  case e {
+  match e {
     +{.0 = u} => +{.2 = u},
     +{.1 = u} => +{.1 = u},
     +{.2 = u} => +{.0 = u},

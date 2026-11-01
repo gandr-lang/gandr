@@ -14,7 +14,7 @@ import "./loop-shape.gandr";
 /// integers. At `Loop(Unloop(x))` it builds `S(P(windWords(x)))`, whose
 /// normal form is `windWords(x)`, so it respects both rules and is admitted.
 pub def rec windWords(c : Words) -> Int {
-  case c {
+  match c {
     Nil => Z,
     Loop(x) => S(windWords[<](x)),
     Unloop(x) => P(windWords[<](x))
@@ -46,7 +46,7 @@ def wound_never : Path(Int, windWords(Loop(Unloop(Nil))), Z) = here(Z);
 /// checks and owes what its two laws owe.
 @[ respects((NativeWinding.turnUnturn, NativeWinding.unturnTurn)), owes(2) ]
 def rec native_wind(c : Words) -> Integer {
-  case c {
+  match c {
     Nil => 0,
     Loop(x) => NativeWinding.turn(native_wind[<](x)),
     Unloop(x) => NativeWinding.unturn(native_wind[<](x))

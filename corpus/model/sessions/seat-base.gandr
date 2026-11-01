@@ -21,7 +21,7 @@ pub module Seat :> #{
   task : Dispatch,
   progress : Report,
   notes : Handoff
-} {
+} where {
   type Dispatch = String;
   type Report = String;
   type Handoff = String;

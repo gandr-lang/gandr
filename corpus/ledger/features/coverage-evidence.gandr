@@ -7,16 +7,16 @@
 
 /// Three colours, one arm each.
 @[ checks ]
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// Every colour has its arm.
 @[ checks ]
 def classify(c : Color) -> Integer {
-  case c {
+  match c {
     Red => 0,
     Green => 1,
     Blue => 2
@@ -27,7 +27,7 @@ def classify(c : Color) -> Integer {
 /// decided, only its result is not.
 @[ checks ]
 def sketch(c : Color) -> Integer {
-  case c {
+  match c {
     Red => 0,
     Green => ?,
     Blue => 2

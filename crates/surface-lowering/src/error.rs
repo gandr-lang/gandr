@@ -191,7 +191,7 @@ pub enum FragmentSort
     Computation,
     /// A pattern, the binder of a `run` statement.
     Pattern,
-    /// A session type's continuation: a session form, or a variable a `mu`
+    /// A session type's continuation: a session form, or a variable a `rec`
     /// around it binds.
     Continuation,
 }
@@ -314,7 +314,7 @@ pub enum FragmentBoundary
     /// function's, a lambda's or a thunk's body passes: a call's head, an
     /// operand, or outside any body.
     NotInTail,
-    /// The form is a match written with an answer, `case e -> T { … }`,
+    /// The form is a match written with an answer, `match e -> T { … }`,
     /// whose arms continue the block after the statement it is bound by,
     /// because one of them exits: each arm then answers what the block
     /// answers, so the written answer is not the match's.
@@ -326,11 +326,12 @@ pub enum FragmentBoundary
     /// a name a fork binds as one of its ends: a value, a declaration or an
     /// ordinary binder.
     Endpoint,
-    /// The form is a `mu` whose body is a `mu` or a recursion variable, so
+    /// The form is a `rec` whose body is a `rec` or a recursion variable, so
     /// the protocol recurses before any action: not contractive.
     NonContractive,
-    /// The name an access lends is no linear slot: a value, a declaration
-    /// or an ordinary binder, where only a name a `hold` holds can be lent.
+    /// The name an access lends, or the place an assignment writes, is no
+    /// held slot: a value, a declaration, an ordinary binder or a place other
+    /// than a name or its index, where only a name a `var` holds can be lent.
     Held,
     /// The name a `resume` or an `abort` ends is no linear slot: a value, a
     /// declaration or an ordinary binder, where only the view an `access`
@@ -425,11 +426,11 @@ impl fmt::Display for FragmentBoundary
                  ends",
             ),
             Self::NonContractive => f.write_str(
-                "recurses before any action: a `mu` body that is a `mu` or a variable unfolds \
+                "recurses before any action: a `rec` body that is a `rec` or a variable unfolds \
                  to itself",
             ),
             Self::Held => {
-                f.write_str("is no held value: an access lends a name a `hold` statement holds")
+                f.write_str("is no held value: an access lends, and an assignment writes, a name a `var` statement holds")
             },
             Self::View => f.write_str(
                 "is no view: `resume` and `abort` end the name an `access` binds after `as`",
@@ -492,6 +493,9 @@ pub enum FormFault
     /// A retired keyword standing where the form spells this one: the site
     /// names the keyword that replaces it.
     Retired(crate::form::TileName),
+    /// A pattern stands where the form binds a name: the left side of an
+    /// as-pattern, `x @ p`.
+    NotAName,
 }
 
 impl fmt::Display for FormFault
@@ -533,6 +537,7 @@ impl fmt::Display for FormFault
                     keyword.as_ref()
                 )
             },
+            Self::NotAName => f.write_str("binds a pattern where it takes a name"),
         }
     }
 }
@@ -1396,7 +1401,7 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A call omitting an instance where several instances of its interface
-    /// are in scope: the call names the one it means, `f[a = c](…)`.
+    /// are in scope: the call names the one it means, `f[.a = c](…)`.
     InstanceAmbiguous
     {
         /// The bytes of the call.
@@ -1416,7 +1421,7 @@ pub enum LoweringRefusal<'source>
     /// A model implicit standing as a value: named alone where a value is
     /// read, or supplied by what names neither a module nor a model implicit.
     /// A model implicit is its components, each read as `s.x`, and a slot
-    /// takes a module's name or a model implicit's, `f[s = M]`.
+    /// takes a module's name or a model implicit's, `f[.s = M]`.
     ModelImplicitValue
     {
         /// The bytes of the name or the supply.
@@ -3279,6 +3284,7 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Brace),
             &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
             &FormFault::Retired(crate::form::TileName::BOUNDARY),
+            &FormFault::NotAName,
         ]));
         assert_apart(&render(&[
             &FragmentBoundary::Reserved(Unbuilt::Dup),

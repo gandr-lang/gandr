@@ -98,12 +98,12 @@ const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Int
                          String { run m <- id(n) ; return m }\n";
 
 /// Unary naturals, addition, Fibonacci both ways and two closed points.
-const FIBONACCI: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
-                         plus(a : Nat, b : Nat) -> Nat {\n  case a {\n    Zero => b,\n    \
+const FIBONACCI: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
+                         plus(a : Nat, b : Nat) -> Nat {\n  match a {\n    Zero => b,\n    \
                          Succ(m) => Succ(plus[<](m, b))\n  }\n}\ndef rec fib(n : Nat) -> Nat {\n  \
-                         case n {\n    Zero => Zero,\n    Succ(m) => case m {\n      Zero => \
+                         match n {\n    Zero => Zero,\n    Succ(m) => match m {\n      Zero => \
                          Succ(Zero),\n      Succ(k) => plus(fib[<](m), fib[<](k))\n    }\n  }\n}\n\
-                         def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {\n  case n {\n    \
+                         def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {\n  match n {\n    \
                          Zero => a,\n    Succ(m) => fibFrom[<](m, b, plus(a, b))\n  }\n}\ndef \
                          five() -> Nat {\n  Succ(Succ(Succ(Succ(Succ(Zero)))))\n}\ndef nineteen() \
                          -> Nat {\n  Succ(Succ(Succ(Succ(plus(five(), plus(five(), five()))))))\n}\n";
@@ -592,7 +592,7 @@ fn a_mismatch_spells_the_constructors_its_type_mentions()
     let mismatch = only(
         Path::new("constructed.gandr"),
         SourceText::from(
-            "data Box : Type {\n  Wrap : (n : Integer) --> Box;\n}\ndef wrapped : Path(Box, \
+            "data Box : Type where {\n  | Wrap : (n : Integer) --> Box\n}\ndef wrapped : Path(Box, \
                  Wrap(4), Wrap(5)) ;\ndef wrapped = 1 ;\n",
         ),
     );
@@ -608,11 +608,7 @@ fn a_word_spells_by_its_letters()
 {
     let mismatch = only(
         Path::new("worded.gandr"),
-        SourceText::from(
-            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef wound : \
-                 Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base)) ;\ndef \
-                 wound = 1 ;\n",
-        ),
+        SourceText::from(include_str!("diagnostics/fixtures/worded.gandr")),
     );
     assert_eq!(
         mismatch.detail.compared.expected,
@@ -624,11 +620,7 @@ fn a_word_spells_by_its_letters()
     );
     let preceded = only(
         Path::new("preceded.gandr"),
-        SourceText::from(
-            "data Other : Type {\n  Spot : Other;\n}\ndata Circle : Type {\n  Base : Circle;\n  \
-                 loop : Base <-> Base;\n}\ndef wound : Path(Path(Circle, Base, Base), back(loop) \
-                 ∷ here(Base), here(Base)) ;\ndef wound = 1 ;\n",
-        ),
+        SourceText::from(include_str!("diagnostics/fixtures/preceded.gandr")),
     );
     assert_eq!(
         preceded.detail.compared.expected,
@@ -644,8 +636,8 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n}\ndef rec down(n : Nat) \
-         -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  \
+        "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n}\ndef rec down(n : Nat) \
+         -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  \
          }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -697,7 +689,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
             presentation.unspelled().iter().copied().collect::<Vec<_>>()
         ),
         (
-            String::from("rec a { fn (b) { case b { Zero => b, Succ(c) => a(c) } } }"),
+            String::from("rec a { fn (b) { match b { Zero => b, Succ(c) => a(c) } } }"),
             vec![Unspelled::Notation(Notation::Fixpoint)]
         ),
         "each arm is written under the constructor it matches: {:?}",
@@ -713,9 +705,8 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Term : Type {\n  Var : (n : Integer) --> Term;\n  App : (t : Term, u : Term) --> \
-         Term;\n}\ntheory Pointed {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
-         applies(link : Theory) -> Integer {\n  case link {\n    Theory.App(head, rest) => 1,\n    \
+        "data Term : Type where {\n  | Var : (n : Integer) --> Term\n  | App : (t : Term, u : Term) --> Term\n}\ntheory Pointed where {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
+         applies(link : Theory) -> Integer {\n  match link {\n    Theory.App(head, rest) => 1,\n    \
          _ => 0\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -781,8 +772,8 @@ fn a_declaration_s_binders_are_named_as_written_803()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n}\ndef rec down(n : Nat) \
-         -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(m) => become down[<](m)\n  \
+        "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n}\ndef rec down(n : Nat) \
+         -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(m) => become down[<](m)\n  \
          }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -836,8 +827,8 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
-         : C) --> Integer; }\ndef stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { \
+        "theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
+         : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer { \
          s.read(s.incr(c)) }\n",
     );
     let Lowered::Module { module, arena } =
@@ -1008,8 +999,8 @@ fn a_loop_arm_is_named_by_its_loop_823()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef invLooper(x : \
-         Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
+        "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\ndef invLooper(x : \
+         Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
@@ -1060,7 +1051,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fn (a) { case a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
+                "fn (a) { match a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
                  loop, here(Base)) } }"
             ),
             Fidelity::Faithful,
@@ -1282,7 +1273,7 @@ fn a_sealed_type_is_spelled_by_its_path()
         Path::new("sealed.gandr"),
         SourceRoot::Strict,
         SourceText::from(
-            "module Counter :> #{ type T, zero : T } { type T = Integer ; def zero = 0 ; }\ndef \
+            "module Counter :> #{ type T, zero : T } where { type T = Integer ; def zero = 0 ; }\ndef \
                  leaked : Integer ;\ndef leaked = Counter.zero ;\n",
         ),
     );
@@ -1487,8 +1478,8 @@ fn a_mismatch_under_a_binder_names_it()
 fn a_refusal_spells_its_binders_by_name_418()
 {
     let text = SourceText::from(
-        "data Theory : Type {\n  Monoid : Theory;\n  Group : Theory;\n}\ndef counted_at(s : Theory) -> \
-             -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
+        "data Theory : Type where {\n  | Monoid : Theory\n  | Group : Theory\n}\ndef counted_at(s : Theory) -> \
+             -F Type {\n  match s {\n    Monoid => return Integer,\n    Group => return \
              String\n  }\n}\ndef moved(presented : Theory, other : Theory, n : counted_at(presented)) \
              -> -F counted_at(other) {\n  n\n}\n",
     );
@@ -1538,34 +1529,34 @@ fn a_refusal_spells_its_binders_by_name_418()
 #[test]
 fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
 {
-    const BOUNDS: &str = r#"data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+    const BOUNDS: &str = r#"data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
-data Fin : Nat -> Type {
-  FZ : (n : Nat) --> Fin(Succ(n));
+data Fin : Nat -> Type where {
+  | FZ : (n : Nat) --> Fin(Succ(n))
 }
 "#;
     for (declaration, expected, found) in [
         (
-            r#"data Bad(n : Nat) : Type {
-  B : (i : Fin(n), j : Fin(i)) --> Bad(n);
+            r#"data Bad(n : Nat) : Type where {
+  | B : (i : Fin(n), j : Fin(i)) --> Bad(n)
 }
 "#,
             "Nat",
             "Fin(n)",
         ),
         (
-            r#"data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type {
-  Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j);
+            r#"data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type where {
+  | Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j)
 }
 "#,
             "Nat",
             "Fin(n)",
         ),
         (
-            r#"data Past : (n : Nat, i : Fin(n)) --> Type {
-  Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i);
+            r#"data Past : (n : Nat, i : Fin(n)) --> Type where {
+  | Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i)
 }
 "#,
             "Fin(Succ(n))",
@@ -1605,12 +1596,12 @@ data Fin : Nat -> Type {
 #[test]
 fn a_signature_s_refusal_spells_its_binders_by_name_4043()
 {
-    const BOUNDS: &str = r#"data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+    const BOUNDS: &str = r#"data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
-data Fin : Nat -> Type {
-  FZ : (n : Nat) --> Fin(Succ(n));
+data Fin : Nat -> Type where {
+  | FZ : (n : Nat) --> Fin(Succ(n))
 }
 "#;
     for (declaration, hypotheses) in [
@@ -1619,7 +1610,7 @@ data Fin : Nat -> Type {
             &["k : Nat", "x : Fin(k)"][..],
         ),
         (
-            "data Inner(n : Nat) : Type { C : (k : Nat, f : (x : Fin(k)) => Fin(x)) --> Inner(n); }\n",
+            "data Inner(n : Nat) : Type where { | C : (k : Nat, f : (x : Fin(k)) => Fin(x)) --> Inner(n) }\n",
             &["n : Nat", "k : Nat", "x : Fin(k)"][..],
         ),
     ] {
@@ -1686,15 +1677,15 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
     }
 }
 
-/// A type kept at a definition's own region binder, `@[r : Region]`, is spelled
+/// A type kept at a definition's own region binder, `[r : Region]`, is spelled
 /// by the binder's name, so a mismatch between two binders names both, never
 /// `?` (#2138).
 #[test]
 fn a_mismatch_between_two_region_binders_names_both_2138()
 {
     let text = SourceText::from(
-        "def read @[r : Region] (k : (() => Integer) at r) -> -F Integer { force k }\n\ndef crossed \
-         @[r : Region, s : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F \
+        "def read[r : Region](k : (() => Integer) at r) -> -F Integer { force k }\n\ndef crossed \
+         [r : Region, s : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F \
          Integer {\n  run m : (() => Integer) at s <- pure k ;\n  read(m)\n}\n",
     );
     let diagnostic = only(Path::new("crossed.gandr"), text);
@@ -1811,11 +1802,11 @@ fn repeated_equal_siblings_point_at_the_right_occurrence()
 #[test]
 fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
 {
-    let text = "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
-                C) --> Integer;\n}\ndef stepped @[s : Model(Tally)] (c : s.C) -> Integer { \
-                s.read(s.incr(c)) }\nmodule Up : Model(Tally) {\n  type C = Integer;\n  def \
+    let text = "theory Tally where {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
+                C) --> Integer;\n}\ndef stepped[s : Model(Tally)](c : s.C) -> Integer { \
+                s.read(s.incr(c)) }\nmodule Up : Model(Tally) where {\n  type C = Integer;\n  def \
                 incr(c : Integer) -> Integer { c + 1 }\n  def read(c : Integer) -> Integer { c \
-                }\n}\nmodule Tens : Model(Tally) {\n  type C = Integer;\n  def incr(c : Integer) \
+                }\n}\nmodule Tens : Model(Tally) where {\n  type C = Integer;\n  def incr(c : Integer) \
                 -> Integer { c + 10 }\n  def read(c : Integer) -> Integer { c }\n}\ndef twin() \
                 -> Integer { stepped(4) }\n";
     assert_eq!(
@@ -1823,7 +1814,7 @@ fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
             .message
             .text,
         "more than one module in scope answers the model implicit `s` this call to `stepped` \
-         omits: `Up` and `Tens`; supply the one meant as `stepped[s = …](…)`"
+         omits: `Up` and `Tens`; supply the one meant as `stepped[.s = …](…)`"
     );
 }
 
@@ -2581,8 +2572,7 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
 fn an_importer_keeps_the_marks_its_import_holds_1199()
 {
     let scratch = Scratch::new(Path::new("consumable"));
-    let base =
-        "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} {\n}\n";
+    let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
     let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork (kernel : \
                 P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } as ring;\n  \
                 close(ring)\n}\n";
@@ -3130,9 +3120,8 @@ fn a_words_point_spells_its_constructors_arguments()
 
     let grammar = built_in().expect("the grammar builds");
     let text = SourceText::from(
-        "data Nat : Type {\n  Zero : Nat;\n  Succ : (p : Nat) --> Nat;\n  Pair : (a : Nat, b : \
-         Nat) --> Nat;\n  step : Succ(Zero) <-> Succ(Zero);\n  both : Pair(Zero, Zero) <-> \
-         Pair(Zero, Zero);\n}\n",
+        "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n  | Pair : (a : Nat, b :  Nat) --> Nat\n  | step : Succ(Zero) <-> Succ(Zero)\n  | both : Pair(Zero, Zero) <-> \
+         Pair(Zero, Zero)\n}\n",
     );
     let Lowered::Module { module, .. } =
         lower_source(&grammar, text, &mut LoweringCount::default())
@@ -3230,10 +3219,10 @@ fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498(
 fn a_later_binder_of_one_split_spells_under_the_earlier()
 {
     let text = SourceText::from(
-        "data Theory : Type {\n  Monoid : Theory;\n  Group : Theory;\n}\ndef counted_at(s : \
-         Theory) -> -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
+        "data Theory : Type where {\n  | Monoid : Theory\n  | Group : Theory\n}\ndef counted_at(s : \
+         Theory) -> -F Type {\n  match s {\n    Monoid => return Integer,\n    Group => return \
          String\n  }\n}\ndef bad(p : #{s : Theory, n : counted_at(s)}, other : Theory) -> -F \
-         counted_at(other) {\n  case p {\n    #{s, n} => return n\n  }\n}\n",
+         counted_at(other) {\n  match p {\n    #{s, n} => return n\n  }\n}\n",
     );
     let diagnostic = only(Path::new("packed.gandr"), text);
     assert_eq!(
@@ -3258,7 +3247,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     );
     let split = contexts(text, &diagnostic)
         .into_iter()
-        .find(|&(ref at, _)| at.starts_with("case p"))
+        .find(|&(ref at, _)| at.starts_with("match p"))
         .map(|(_, note)| note)
         .expect("the split is a context");
     assert!(

@@ -1,8 +1,8 @@
 /// `reads`: states the items a declaration mentions, as the footprint its
 /// content table carries names them, in any order, `()` for none.
-data Flag : Type {
-  On : Flag;
-  Off : Flag;
+data Flag : Type where {
+  | On : Flag
+  | Off : Flag
 }
 
 @[ reads(Flag) ]

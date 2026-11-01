@@ -5,7 +5,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │    │                     ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-24 │ │┌   case n {
+24 │ │┌   match n {
 25 │ ││     Zero => Zero,
 26 │ ││     Succ(p) => Succ(apply(Nat, Nat, applied_again[<], n))
    │ ││                ┬────┬───────────────┯━━━━━━━━━━━━━━━─────
@@ -28,7 +28,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │    │                        ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-35 │ │┌   case n {
+35 │ │┌   match n {
 36 │ ││     Zero => Zero,
 37 │ ││     Succ(p) => Succ(applyAt(applied_at_again[<], n))
    │ ││                ┬────┬────────────────────────────┯──
@@ -45,18 +45,18 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
-   ╭▸ corpus/pathological/data/sized-higher-order.gandr:44:32
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:44:29
    │
-44 │ def integerAt @[i : Size] (n : Integer[i]) -> Integer {
-   │                                ━━━━━━━━━━ no rule for this former
+44 │ def integerAt[i : Size](n : Integer[i]) -> Integer {
+   │                             ━━━━━━━━━━ no rule for this former
    │
    ╰ note: `integerAt` is refused with OutOfFragment.Stage, as its expectation states
 
 error[OutOfFragment.staged_type]: the staged type is not supported yet
-   ╭▸ corpus/pathological/data/sized-higher-order.gandr:51:46
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:51:43
    │
-51 │ def carriedAt @[i : Size] (a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
-   │                                              ━━━━━━ a form the fragment does not admit
+51 │ def carriedAt[i : Size](a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
+   │                                           ━━━━━━ a form the fragment does not admit
    │
    ├ note: `carriedAt` is refused with OutOfFragment.staged_type, as its expectation states
    ╰ note: tracked by #1502 <https://github.com/gandr-lang/gandr/issues/1502>
@@ -68,7 +68,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                      ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-65 │ │┌   case n {
+65 │ │┌   match n {
 66 │ ││     Zero => Zero,
 67 │ ││     Succ(p) => Succ(applyNat(plainly_helped[<], p))
    │ ││                ┬────┬────────┯━━━━━━━━━━━━━━━━─────
@@ -91,7 +91,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                           ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-86 │ │┌   case n {
+86 │ │┌   match n {
 87 │ ││     Zero => Zero,
 88 │ ││     Succ(p) => { run q <- pred(p); Succ(halved_through_pred[<](q)) }
    │ ││                  ┬──               ┬────┬──────────────────────┯──
@@ -115,7 +115,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
     │    │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
     │ ┌──┘
     │ │
- 99 │ │┌   case n {
+ 99 │ │┌   match n {
 100 │ ││     Zero => Zero,
 101 │ ││     Succ(p) => { run q <- boundedAt(p, n); looping_through_bound[<](q) }
     │ ││                  ┬──      ┬────────────┯─
@@ -139,7 +139,7 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
     │    │                   ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
     │ ┌──┘
     │ │
-112 │ │┌   case n {
+112 │ │┌   match n {
 113 │ ││     Zero => Zero,
 114 │ ││     Succ(p) => Succ(sameAt(disagreeing[<], n))
     │ ││                ┬────┬──────┯━━━━━━━━━━━━━─────
@@ -158,13 +158,13 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
 error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:122:3
     │
-121 │   def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
-    │   │                                        ┬                   ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds x : Nat
-    │   │                                        │
-    │ ┌─┘                                        checked against `(Nat => Nat) -> Nat -> -F Nat`; while checking the body of this function; binds f : Nat => Nat
+121 │   def suppliedApart[j : Size, k : Size](f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
+    │   │                                     ┬                   ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds x : Nat
+    │   │                                     │
+    │ ┌─┘                                     checked against `(Nat => Nat) -> Nat -> -F Nat`; while checking the body of this function; binds f : Nat => Nat
     │ │
-122 │ │   applyAt[i = k](f, x)
-    │ │   ┯━━━━━━─────────────
+122 │ │   applyAt[.i = k](f, x)
+    │ │   ┯━━━━━━──────────────
     │ │   │
     │ │   a stage the call's earlier arguments exclude
     │ │   checked against `-F Nat`; while synthesising the function this applies
@@ -176,12 +176,12 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:129:12
     │
-128 │   def suppliedUnshown @[j : Size] (n : Nat) -> Nat {
-    │   │                                ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+128 │   def suppliedUnshown[j : Size](n : Nat) -> Nat {
+    │   │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
     │ ┌─┘
     │ │
-129 │ │   run m <- predAt[i = j](n);
-    │ │   ┬──      ┯━━━━━──────────
+129 │ │   run m <- predAt[.i = j](n);
+    │ │   ┬──      ┯━━━━━───────────
     │ │   │        │
     │ │   │        no rule for this former
     │ │   │        synthesised; while synthesising the function this applies

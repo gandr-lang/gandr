@@ -5,8 +5,8 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
    │   │         ─ checked against `Path(Int, S(P(Z)), Z) -> -F Empty`; while checking the body of this function; binds e : Path(Int, S(P(Z)), Z)
    │ ┌─┘
    │ │
-14 │ │   case e {}
-   │ │   ━━━━━━━━━ a path whose endpoints are not apart
+14 │ │   match e {}
+   │ │   ━━━━━━━━━━ a path whose endpoints are not apart
 15 │ │ }
    │ └─┘ checked against `Path(Int, S(P(Z)), Z) => Empty`; while checking the body of this thunk
    │

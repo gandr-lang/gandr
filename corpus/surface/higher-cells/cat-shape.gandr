@@ -6,7 +6,7 @@
 /// The category shape. Its laws over the dependent sort are read with the
 /// objects each composite stands at, so the unit laws agree at `comp(id(a),
 /// id(a))` (#1510).
-theory CatShape {
+theory CatShape where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 

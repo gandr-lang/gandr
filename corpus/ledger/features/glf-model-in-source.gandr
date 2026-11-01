@@ -17,14 +17,14 @@ import "../../model/desc/second-order-signatures.gandr" ;
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
 @[ checks ]
-data N : Type {
-  Z : N;
-  S : (n : N) --> N;
+data N : Type where {
+  | Z : N
+  | S : (n : N) --> N
 }
 
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and
 /// each operation its constructor.
-module SyntaxNat : Model(Nat) {
+module SyntaxNat : Model(Nat) where {
   type Nat = N;
   def zero() -> N { Z }
   def succ(n : N) -> N { S(n) }

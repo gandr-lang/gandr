@@ -35,16 +35,16 @@ use crate::namespace::Recognition;
 
 /// Division with remainder over unary naturals: a two-output operation over a
 /// five-input helper, with the divisor carried twice so no rule copies it.
-const NAT_DIV: &str = "data NatDiv : Type {
-    Zero : NatDiv;
-    Succ : (n : NatDiv) --> NatDiv;
-    oper walk(m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) -> (quot : NatDiv, rem : NatDiv);
-    oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);
-    rule walk(Zero, g, d, q, r) ==> (q, r);
-    rule walk(Succ(m), Zero, d, q, r) ==> walk(m, d, d, Succ(q), Zero);
-    rule walk(Succ(m), Succ(g), d, q, r) ==> walk(m, g, d, q, Succ(r));
-    rule divmod(m, Zero) ==> (Zero, m);
-    rule divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero);
+const NAT_DIV: &str = "data NatDiv : Type where {
+    | Zero : NatDiv
+    | Succ : (n : NatDiv) --> NatDiv
+    oper walk : (m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) --> (quot : NatDiv, rem : NatDiv);
+    oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);
+    rule : walk(Zero, g, d, q, r) ==> (q, r);
+    rule : walk(Succ(m), Zero, d, q, r) ==> walk(m, d, d, Succ(q), Zero);
+    rule : walk(Succ(m), Succ(g), d, q, r) ==> walk(m, g, d, q, Succ(r));
+    rule : divmod(m, Zero) ==> (Zero, m);
+    rule : divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero);
 }
 ";
 
@@ -273,12 +273,12 @@ fn an_operations_rules_read_in_pre_order_over_module_positions()
 #[test]
 fn a_call_reaches_the_operation_before_a_builtin_of_its_name()
 {
-    let source = "data NatAdd : Type {
-    Zero : NatAdd;
-    Succ : (n : NatAdd) --> NatAdd;
-    oper add(m : NatAdd, n : NatAdd) -> NatAdd;
-    rule add(Zero, n) ==> n;
-    rule add(Succ(m), n) ==> Succ(add(m, n));
+    let source = "data NatAdd : Type where {
+    | Zero : NatAdd
+    | Succ : (n : NatAdd) --> NatAdd
+    oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
+    rule : add(Zero, n) ==> n;
+    rule : add(Succ(m), n) ==> Succ(add(m, n));
 }
 def two : +U (-F NatAdd) ;
 def two = thunk { become add(Succ(Zero), Succ(Zero)) } ;
@@ -309,11 +309,11 @@ def two = thunk { become add(Succ(Zero), Succ(Zero)) } ;
 #[test]
 fn a_leaf_delivers_its_results_in_port_order()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
-    oper swap(a : Flag, b : Flag) -> (x : Flag, y : Flag);
-    rule swap(a, b) ==> (b, a);
+    let source = "data Flag : Type where {
+    | Down : Flag
+    | Up : Flag
+    oper swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);
+    rule : swap(a, b) ==> (b, a);
 }
 ";
     let mut arena = CoreArena::new();
@@ -371,11 +371,11 @@ fn a_leaf_delivers_its_results_in_port_order()
 #[test]
 fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 {
-    let source = "data NatOp : Type {
-    Zero : NatOp;
-    One : NatOp;
-    oper half(m : NatOp, n : NatOp) -> NatOp;
-    rule half(Zero, n) ==> n;
+    let source = "data NatOp : Type where {
+    | Zero : NatOp
+    | One : NatOp
+    oper half : (m : NatOp, n : NatOp) --> NatOp;
+    rule : half(Zero, n) ==> n;
 }
 ";
     let mut arena = CoreArena::new();
@@ -390,11 +390,11 @@ fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 #[test]
 fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
-    oper pick(x : Flag, y : Flag) -> Flag;
-    rule pick(x) ==> x;
+    let source = "data Flag : Type where {
+    | Down : Flag
+    | Up : Flag
+    oper pick : (x : Flag, y : Flag) --> Flag;
+    rule : pick(x) ==> x;
 }
 ";
     let mut arena = CoreArena::new();
@@ -409,14 +409,14 @@ fn a_rule_of_another_arity_than_its_operation_routes_nothing()
 #[test]
 fn an_operation_at_an_index_routes_nothing_2940()
 {
-    let source = "data N : Type {
-    Z : N;
-    S : (n : N) --> N;
+    let source = "data N : Type where {
+    | Z : N
+    | S : (n : N) --> N
 }
-data Skip : N -> Type {
-    Halt : Skip(Z);
-    oper skip(k : Skip(Z)) -> Skip(Z);
-    rule skip(k) ==> k;
+data Skip : N -> Type where {
+    | Halt : Skip(Z)
+    oper skip : (k : Skip(Z)) --> Skip(Z);
+    rule : skip(k) ==> k;
 }
 ";
     let mut arena = CoreArena::new();
@@ -431,13 +431,13 @@ data Skip : N -> Type {
 #[test]
 fn an_operation_calling_a_later_one_is_not_callable()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
-    oper first(x : Flag) -> Flag;
-    oper second(x : Flag) -> Flag;
-    rule first(x) ==> second(x);
-    rule second(x) ==> x;
+    let source = "data Flag : Type where {
+    | Down : Flag
+    | Up : Flag
+    oper first : (x : Flag) --> Flag;
+    oper second : (x : Flag) --> Flag;
+    rule : first(x) ==> second(x);
+    rule : second(x) ==> x;
 }
 ";
     let mut arena = CoreArena::new();
@@ -452,12 +452,12 @@ fn an_operation_calling_a_later_one_is_not_callable()
 #[test]
 fn an_operation_declared_twice_in_one_family_is_routed_once()
 {
-    let source = "data Flag : Type {
-    Down : Flag;
-    Up : Flag;
-    oper keep(x : Flag) -> Flag;
-    oper keep(x : Flag) -> Flag;
-    rule keep(x) ==> x;
+    let source = "data Flag : Type where {
+    | Down : Flag
+    | Up : Flag
+    oper keep : (x : Flag) --> Flag;
+    oper keep : (x : Flag) --> Flag;
+    rule : keep(x) ==> x;
 }
 ";
     let mut arena = CoreArena::new();
@@ -472,14 +472,14 @@ fn an_operation_declared_twice_in_one_family_is_routed_once()
 #[test]
 fn a_declined_rule_withholds_only_its_own_operation()
 {
-    let source = "data Bit : Type {
-    Off : Bit;
-    On : Bit;
-    oper not(a : Bit) -> Bit;
-    oper and(a : Bit, b : Bit) -> Bit;
-    rule not(Off) ==> On;
-    rule not(On) ==> Off;
-    rule and(x, x) ==> x;
+    let source = "data Bit : Type where {
+    | Off : Bit
+    | On : Bit
+    oper not : (a : Bit) --> Bit;
+    oper and : (a : Bit, b : Bit) --> Bit;
+    rule : not(Off) ==> On;
+    rule : not(On) ==> Off;
+    rule : and(x, x) ==> x;
 }
 ";
     let mut arena = CoreArena::new();
@@ -497,13 +497,13 @@ fn an_operation_with_a_law_runs_by_its_other_rules_1510()
     use gandr_kernel_term::FieldCount;
     use gandr_kernel_term::OperationNode;
     use gandr_kernel_term::RuleVariable;
-    let source = "data NatAssoc : Type {
-    Zero : NatAssoc;
-    Succ : (n : NatAssoc) --> NatAssoc;
-    oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
-    rule add(Zero, n) ==> n;
-    rule add(Succ(m), n) ==> Succ(add(m, n));
-    rule add(add(m, n), k) ==> add(m, add(n, k));
+    let source = "data NatAssoc : Type where {
+    | Zero : NatAssoc
+    | Succ : (n : NatAssoc) --> NatAssoc
+    oper add : (m : NatAssoc, n : NatAssoc) --> NatAssoc;
+    rule : add(Zero, n) ==> n;
+    rule : add(Succ(m), n) ==> Succ(add(m, n));
+    rule : add(add(m, n), k) ==> add(m, add(n, k));
 }
 def three : +U (-F NatAssoc) ;
 def three = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;

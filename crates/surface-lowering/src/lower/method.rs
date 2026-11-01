@@ -37,20 +37,20 @@
 //! # A deduced mode lends the place the method answers
 //!
 //! A method whose receiver is written at a mode its telescope binds, `def
-//! f @[m : Mode] (self : m T, …) -> -F View[m](a) { self[e] }`, answers the
-//! place `self[e]` of its receiver: never a value, and never a lens. It lowers
-//! to the function answering the place's index, which lends its receiver's
-//! place shared to judge the element there at `a`: `hold p = self ; access
-//! shared p[e] as v { run _ : a <- pure v ; pure e }`, declared `-F Integer`.
-//! Its body is that place alone; any other body, or a result other than
-//! `-F View[m](a)` over the receiver's own mode, is
+//! f[m : Mode] (self : m T, …) -> -F View[m](a) { self.#[e] }`, answers the
+//! place `self.#[e]` of its receiver: never a value, and never a lens. It
+//! lowers to the function answering the place's index, which lends its
+//! receiver's place shared to judge the element there at `a`: `hold p = self ;
+//! access shared p.#[e] as v { run _ : a <- pure v ; pure e }`, declared `-F
+//! Integer`. Its body is that place alone; any other body, or a result other
+//! than `-F View[m](a)` over the receiver's own mode, is
 //! [`LoweringRefusal::ViewNotPlace`]. A call lends the place of a held
 //! receiver at that index, the index computed reading the receiver shared:
 //!
 //! | call | lowers to |
 //! |---|---|
-//! | `s.f(a) as w { b }` | `i <- access shared s as v { f(v, a) } ; access[m] s[i] as w { b }` |
-//! | `s.f(a)` | `i <- access shared s as v { f(v, a) } ; access shared s[i] as w { pure w }` |
+//! | `s.f(a) as w { b }` | `i <- access shared s as v { f(v, a) } ; access[m] s.#[i] as w { b }` |
+//! | `s.f(a)` | `i <- access shared s as v { f(v, a) } ; access shared s.#[i] as w { pure w }` |
 //!
 //! where `m` is exclusive when `b` ends `w` by `resume` or `abort` and shared
 //! otherwise; an exclusive lend unwinds by `pure unit`. A receiver that is
@@ -210,7 +210,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The place a method answering a view ends in, `self[e]`.
+/// The place a method answering a view ends in, `self.#[e]`.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -974,7 +974,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(element.node)
     }
 
-    /// Classify an index `s[e]` at `site`, its pieces under `cursor`.
+    /// Classify an index `s.#[e]` at `site`, its pieces under `cursor`.
     ///
     /// # Specification
     /// - requires: `site` is an index; `cursor` stands at its head.
@@ -1016,7 +1016,7 @@ impl<'source> Lowerer<'_, 'source>
     /// as the binder its name resolves to where the form stands.
     ///
     /// # Specification
-    /// - requires: `site` is an index `s[e]` or an instantiation `s[0]`.
+    /// - requires: `site` is an index `s.#[e]` or an instantiation `s[0]`.
     /// - ensures: the binder of the innermost name the head spells, when the
     ///   head is a bare name, that binder is a slot a `hold` binds, and an
     ///   instantiation's bracket holds one number; nothing is planned or
@@ -1082,12 +1082,12 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Classify the element `s[e]` at `site` of the held slot `lent` names, its
-    /// pieces under `cursor`: a view of the place used without a block, a read
-    /// of it.
+    /// Classify the element `s.#[e]` at `site` of the held slot `lent` names,
+    /// its pieces under `cursor`: a view of the place used without a block,
+    /// a read of it.
     ///
     /// # Specification
-    /// - requires: `site` is an index `s[e]` or the instantiation a number in
+    /// - requires: `site` is an index `s.#[e]` or the instantiation a number in
     ///   the bracket molds as, `s[0]`; `lent` is the binder `s` resolves to
     ///   where the form stands, a held slot; `cursor` stands at its head.
     /// - ensures: the form stands as a computation, planned as the access that
@@ -1118,7 +1118,9 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::Computation)?;
         let indexed = matches!(self.form_at(site.at)?, Some((_, Former::Access)));
         let head = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        if let Maybe::Absent(_) = cursor.tile(TileName::SELECT_OPEN) {
+            closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        }
         let resident = site.one(cursor.operands())?;
         if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
             let unbuilt = if indexed {
@@ -1186,7 +1188,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   `element`.
     /// - fails: [`LoweringRefusal::ViewNotPlace`] at the block's last
     ///   computation when the block has statements before it or it is no place
-    ///   `s[e]`; a fault reading its form.
+    ///   `s.#[e]`; a fault reading its form.
     /// - panics: none.
     ///
     /// # Errors
@@ -1229,12 +1231,12 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify the body `self[e]` at `site` of a method answering a view
+    /// Classify the body `self.#[e]` at `site` of a method answering a view
     /// whose element type `place` names.
     ///
     /// # Specification
     /// - requires: `site` is the place a method answering a view ends in,
-    ///   recorded as its place: an index `self[e]`, or the instantiation a
+    ///   recorded as its place: an index `self.#[e]`, or the instantiation a
     ///   number in the bracket molds as, `self[0]`; `cursor` stands at its
     ///   head.
     /// - ensures: the place stands as a computation, planned as the receiver
@@ -1270,7 +1272,9 @@ impl<'source> Lowerer<'_, 'source>
         let refused = LoweringRefusal::ViewNotPlace { span: site.at.span };
         let indexed = matches!(self.form_at(site.at)?, Some((_, Former::Access)));
         let head = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        if let Maybe::Absent(_) = cursor.tile(TileName::SELECT_OPEN) {
+            closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        }
         let resident = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
         if let Maybe::Present(_) = cursor.peek() {
@@ -1785,22 +1789,19 @@ fn applied(
     applied
 }
 
-/// The operand `pieces` index when they read an index `s[e]`: an operand, then
-/// its bracket.
+/// The operand `pieces` index when they read an index `s.#[e]`, or its bare
+/// spelling `s[e]`: an operand, then its bracket.
 ///
 /// # Specification
 /// trivial.
 pub(super) fn indexed(pieces: &Pieces) -> Option<Placed>
 {
     match *pieces.pieces.as_slice() {
-        [
-            Piece::Operand(indexed),
-            Piece::Tile {
-                label: TileName::BRACKET_OPEN,
-                ..
-            },
-            ..,
-        ] => Some(indexed),
+        [Piece::Operand(indexed), Piece::Tile { label, .. }, ..]
+            if label == TileName::SELECT_OPEN || label == TileName::BRACKET_OPEN =>
+        {
+            Some(indexed)
+        },
         _ => None,
     }
 }

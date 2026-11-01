@@ -132,7 +132,7 @@ def step : +U[ω] (Integer -> -F Integer) ;
 def lazy : +U[inf] &{-F Integer, -F Integer} ;
 def noted : +U[/* every use */ ω] (-F Integer) ;
 def once : +U[1] (Integer -> -F Integer) ;
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper next : +U[ω] (T -> -F T);
   oper add : +U[ω] (T -> T -> -F T);
@@ -146,7 +146,7 @@ def step : Integer => Integer;
 def lazy : +U (-F Integer & -F Integer);
 def noted : +U[/* every use */ ω] (-F Integer);
 def once : +U[1] (Integer -> -F Integer);
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper next : T => T;
   oper add : +U (T -> T -> -F T);
@@ -160,7 +160,7 @@ def step : +U (Integer -> -F Integer);
 def lazy : +U &{-F Integer, -F Integer};
 def noted : +U[/* every use */ ω] (-F Integer);
 def once : +U[1] (Integer -> -F Integer);
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper next : +U (T -> -F T);
   oper add : +U (T -> T -> -F T);
@@ -184,14 +184,14 @@ fn a_law_keeps_its_statement_in_either_form_2384()
 {
     let grammar = grammar();
     let explicit = "\
-theory Lawful {
+theory Lawful where {
   sort C : Type;
   oper next : +U (C -> -F C);
   law trivial : (a : C) => Path(Bool, true, true);
 }
 ";
     let sugared = "\
-theory Lawful {
+theory Lawful where {
   sort C : Type;
   oper next : C => C;
   law trivial : (a : C) => Path(Bool, true, true);
@@ -219,17 +219,17 @@ fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
 {
     let grammar = grammar();
     let source = "\
-data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
 def succeeded(n : Nat) -> -F Nat {
   return Succ(n)
 }
 
 def early(k : Nat) -> -F Nat {
-  case k {
+  match k {
     Zero => return k,
     Succ(j) => {
-      run q <- case j {
+      run q <- match j {
         Zero => return j,
         Succ(r) => pure r,
       };
@@ -251,7 +251,7 @@ def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
 }
 
 def blocked(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => { run y <- succeeded(n); return y },
     Succ(p) => p,
   }
@@ -267,17 +267,17 @@ def asked(n : Nat) -> -F Nat {
 }
 ";
     let sugared = "\
-data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
 def succeeded(n : Nat) -> Nat {
   Succ(n)
 }
 
 def early(k : Nat) -> Nat {
-  case k {
+  match k {
     Zero => k,
     Succ(j) => {
-      run q <- case j {
+      run q <- match j {
         Zero => return j,
         Succ(r) => pure r,
       };
@@ -299,7 +299,7 @@ def nested(n : Nat) -> Nat => Nat {
 }
 
 def blocked(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => { run y <- succeeded(n); y },
     Succ(p) => p,
   }
@@ -336,12 +336,12 @@ fn a_result_at_a_region_keeps_its_returner_2325()
 {
     let grammar = grammar();
     let source = "\
-def pass @[r : Region] (k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
+def pass[r : Region](k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
   pure k
 }
 ";
     let sugared = "\
-def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
+def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
   pure k
 }
 ";
@@ -374,11 +374,11 @@ def apply(k : +U (Unit -> -F [Div] Unit)) -> -F [Div] Unit {
   k(unit)
 }
 
-def tailed @[r : Row] () -> -F [Div | r] Unit {
+def tailed[r : Row]() -> -F [Div | r] Unit {
   pure unit
 }
 
-def open @[r : Row] () -> -F [r] Unit {
+def open[r : Row]() -> -F [r] Unit {
   pure unit
 }
 ";
@@ -395,11 +395,11 @@ def apply(k : +U (Unit -> -F [Div] Unit)) -> [Div] Unit {
   k(unit)
 }
 
-def tailed @[r : Row] () -> [Div | r] Unit {
+def tailed[r : Row]() -> [Div | r] Unit {
   pure unit
 }
 
-def open @[r : Row] () -> [r] Unit {
+def open[r : Row]() -> [r] Unit {
   pure unit
 }
 ";
@@ -427,7 +427,7 @@ def both() -> -F [Div, out : Console] Unit {
   out.print(\"said\")
 }
 
-def tailed @[r : Row] () -> -F [d : Console, Div | r] Unit {
+def tailed[r : Row]() -> -F [d : Console, Div | r] Unit {
   pure unit
 }
 ";
@@ -440,7 +440,7 @@ def both() -> [Div, out : Console] Unit {
   out.print(\"said\")
 }
 
-def tailed @[r : Row] () -> [d : Console, Div | r] Unit {
+def tailed[r : Row]() -> [d : Console, Div | r] Unit {
   pure unit
 }
 ";
@@ -500,9 +500,9 @@ def noted : (/* the count */ Integer) => Integer;
 
 /// The circle the path-composite goldens compose its loop in.
 const CIRCLE: &str = "\
-pub data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+pub data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 ";
@@ -782,8 +782,8 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
 fn a_rule_s_outputs_are_not_a_tuple()
 {
     let grammar = grammar();
-    let rules = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
-                 oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  rule \
+    let rules = "data NatDiv : Type where {\n  | Zero : NatDiv\n  | Succ : (n : NatDiv) --> NatDiv\n  \
+                 oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);\n  rule : \
                  divmod(m, Zero) <=> (Zero, m);\n}\n\n";
     assert_eq!(
         spelled(
@@ -861,7 +861,7 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
 fn a_composite_of_flows_keeps_its_then()
 {
     let grammar = grammar();
-    let source = "module Evolution {\n  type Old = +{ report : !String. end };\n  type New = +{ \
+    let source = "module Evolution where {\n  type Old = +{ report : !String. end };\n  type New = +{ \
                   report : !String. end, pause : end };\n  def sub : Flow(Type, Old, New);\n  \
                   def sub = sim(Old, New);\n  def kept : Flow(Type, Old, Old);\n  def kept = \
                   stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {\n    become kept then \
@@ -929,9 +929,9 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
-        pub data Circle : Type {
-          Base : Circle;
-          loop : Base <-> Base;
+        pub data Circle : Type where {
+          | Base : Circle
+          | loop : Base <-> Base
         }
 
         def onward(x : Circle, q : Path(Circle, x, Base)) -> -F Path(Circle, x, Base) {
@@ -975,9 +975,9 @@ def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), q then
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
-        pub data Circle : Type {
-          Base : Circle;
-          loop : Base <-> Base;
+        pub data Circle : Type where {
+          | Base : Circle
+          | loop : Base <-> Base
         }
 
         def twice(q : Path(Circle, Base, Base)) -> -F Path(
@@ -1018,13 +1018,13 @@ def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), q then
 fn a_functor_s_composite_takes_no_motive_from_its_instantiation_2166()
 {
     let grammar = grammar();
-    let source = "theory Semi {
+    let source = "theory Semi where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
 }
 
-module Reassociating(S : Model(Semi)) {
+module Reassociating(S : Model(Semi)) where {
   def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path(
     S.M,
     S.mul(x, S.mul(y, z)),
@@ -1034,7 +1034,7 @@ module Reassociating(S : Model(Semi)) {
   }
 }
 
-module OnePoint : Model(Semi) {
+module OnePoint : Model(Semi) where {
   type M = Unit;
 
   def mul(a : Unit, b : Unit) -> -F Unit { unit }
@@ -1098,9 +1098,9 @@ fn the_value_function_alias_is_written_where_the_printer_writes_it()
 {
     let grammar = grammar();
     let argument = "\
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
@@ -1121,9 +1121,9 @@ def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
-        data Nat : Type {
-          Zero : Nat;
-          Succ : (n : Nat) --> Nat;
+        data Nat : Type where {
+          | Zero : Nat
+          | Succ : (n : Nat) --> Nat
         }
 
         def kept(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Nat, b, a) {
@@ -1166,7 +1166,7 @@ def suspended : Type -> Type = \\X. () => X;
 fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
 {
     let grammar = grammar();
-    let theory = "theory Pointed {\n  sort M : Type;\n  oper one : M;\n}\n\n";
+    let theory = "theory Pointed where {\n  sort M : Type;\n  oper one : M;\n}\n\n";
     let explicit =
         format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer);\n");
     let sugared =
@@ -1191,9 +1191,9 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
 {
     let grammar = grammar();
     let explicit = "\
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def onType(t: Type) -> -F Type {
@@ -1205,9 +1205,9 @@ def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
 }
 ";
     expect![[r#"
-        data Nat : Type {
-          Zero : Nat;
-          Succ : (n : Nat) --> Nat;
+        data Nat : Type where {
+          | Zero : Nat
+          | Succ : (n : Nat) --> Nat
         }
 
         def onType(t : Type) -> Type {
@@ -1304,7 +1304,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     let grammar = grammar();
     let matched = |stated: &str, exit: &str, result: &str| {
         format!(
-            "def pick(t : {stated}) -> {result} {{\n  case t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
+            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
         )
     };
     let source = format!(
@@ -1339,8 +1339,8 @@ fn a_match_over_a_stated_sum_is_sugared_791()
 fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 {
     let grammar = grammar();
-    let source = "data Color : Type {\n  Red : Color;\n  Green : Color;\n}\n\ndef sketch(c : \
-                  Color) -> -F Integer {\n  case c {\n    Red => return 0,\n    Green => ?\n  \
+    let source = "data Color : Type where {\n  | Red : Color\n  | Green : Color\n}\n\ndef sketch(c : \
+                  Color) -> -F Integer {\n  match c {\n    Red => return 0,\n    Green => ?\n  \
                   }\n}\n\ndef pair : #{Integer, String};\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
@@ -1423,9 +1423,9 @@ fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
 {
     let grammar = grammar();
     let source = "\
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def next(n : Nat) -> -F Nat {
@@ -1552,7 +1552,7 @@ impl Elaborate for Oracle
 fn a_linear_run_follows_the_checker_s_elaborations()
 {
     let grammar = grammar();
-    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\
@@ -1609,7 +1609,7 @@ fn a_linear_run_follows_the_checker_s_elaborations()
 fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
 {
     let grammar = grammar();
-    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\
@@ -1669,7 +1669,7 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
 fn the_runs_ending_a_block_are_written_away_together()
 {
     let grammar = grammar();
-    let head = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+    let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
                 def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                 \n\
@@ -1717,7 +1717,7 @@ fn the_runs_ending_a_block_are_written_away_together()
 fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
 {
     let grammar = grammar();
-    let head = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+    let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
                 def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                 \n\
@@ -1725,16 +1725,16 @@ fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
                 \n";
     for (body, written) in [
         (
-            "def armed(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => { run d <- twice(b) ; Succ(d) } } }\n",
-            "def armed(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
+            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run d <- twice(b) ; Succ(d) } } }\n",
+            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
         ),
         (
-            "def paired(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => { run e <- twice(b) ; run f <- twice(Zero) ; both(e, f) } } }\n",
-            "def paired(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
+            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run e <- twice(b) ; run f <- twice(Zero) ; both(e, f) } } }\n",
+            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
         ),
         (
-            "def reread(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => { run g <- twice(b) ; run h <- twice(g) ; both(h, g) } } }\n",
-            "def reread(a : Nat) -> Nat {\n  case a { Zero => Zero, Succ(b) => { run g <- twice(b); both(twice(g), g) } }\n}\n",
+            "def reread(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run g <- twice(b) ; run h <- twice(g) ; both(h, g) } } }\n",
+            "def reread(a : Nat) -> Nat {\n  match a { Zero => Zero, Succ(b) => { run g <- twice(b); both(twice(g), g) } }\n}\n",
         ),
     ] {
         let source = format!("{head}{body}");
@@ -1850,11 +1850,11 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
 fn a_rewrite_is_checked_beside_every_kind_of_declaration()
 {
     let grammar = grammar();
-    let source = "codata Stream(a : Type) : Type[-] {\n  head : a;\n  tail : Stream(a);\n}\n\
+    let source = "codata Stream(a : Type) : Type[-] where {\n  head : a;\n  tail : Stream(a);\n}\n\
                   \n\
                   world seat;\n\
                   \n\
-                  module Pair :> #{ type Kept, one : Kept } {\n  type Kept = Integer;\n  def \
+                  module Pair :> #{ type Kept, one : Kept } where {\n  type Kept = Integer;\n  def \
                   one = 1;\n}\n\
                   \n\
                   def lost() -> Integer { migrate [nowhere] { pure 1 } }\n\
@@ -1881,7 +1881,7 @@ fn a_rewrite_is_checked_beside_every_kind_of_declaration()
 fn an_inserted_thunk_follows_the_checker_s_elaborations()
 {
     let grammar = grammar();
-    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\
@@ -2271,7 +2271,7 @@ fn an_adjacent_pair_joins_into_one_definition_2228()
 fn a_module_member_pair_joins_as_a_top_level_one_2255()
 {
     let grammar = grammar();
-    let source = "module Outer {\n\
+    let source = "module Outer where {\n\
                   \x20 /// The one.\n\
                   \x20 def one : Integer ;\n\
                   \x20 def one = 1 ;\n\
@@ -2285,7 +2285,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
                   \x20 def four : () => Integer ;\n\
                   \x20 def four = thunk { 4 } ;\n\
                   \n\
-                  \x20 module Inner {\n\
+                  \x20 module Inner where {\n\
                   \x20   def five : Integer ;\n\
                   \x20   def five = 5 ;\n\
                   \x20 }\n\
@@ -2305,7 +2305,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
         formatted.into_text()
     };
     expect![[r#"
-        module Outer {
+        module Outer where {
           /// The one.
           def one : Integer = 1;
 
@@ -2317,14 +2317,14 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
 
           def four() -> Integer { 4 }
 
-          module Inner {
+          module Inner where {
             def five : Integer = 5;
           }
         }
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        module Outer {
+        module Outer where {
           /// The one.
           def one : Integer;
           def one = 1;
@@ -2338,7 +2338,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
 
           def four() -> -F Integer { 4 }
 
-          module Inner {
+          module Inner where {
             def five : Integer;
             def five = 5;
           }
@@ -2367,7 +2367,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
                   def four : () => Integer ;\n\
                   def four = thunk { 4 } ;\n\
                   \n\
-                  module Kept {\n\
+                  module Kept where {\n\
                   \x20 def five() -> -F Integer { 5 }\n\
                   }\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
@@ -2395,7 +2395,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def four() -> Integer { 4 }
 
-        module Kept {
+        module Kept where {
           def five() -> Integer { 5 }
         }
     "#]]
@@ -2411,7 +2411,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def four() -> -F Integer { 4 }
 
-        module Kept {
+        module Kept where {
           def five() -> -F Integer { 5 }
         }
     "#]]

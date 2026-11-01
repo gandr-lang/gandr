@@ -18,10 +18,10 @@ use crate::unit::Unit;
 
 /// A point, unary naturals and a declaration holding a function.
 const DATA: &str = "\
-data Point : Type { Point : (x : Integer, y : Integer) --> Point; }
-data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-data Shape : Type { Shape : (f : (Integer) => Integer) --> Shape; }
-data Box(a : Type) : Type { Box : (x : a) --> Box(a); }
+data Point : Type where { | Point : (x : Integer, y : Integer) --> Point }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data Shape : Type where { | Shape : (f : (Integer) => Integer) --> Shape }
+data Box(a : Type) : Type where { | Box : (x : a) --> Box(a) }
 ";
 
 /// `source`, after [`DATA`], laid out after the prelude.
@@ -98,7 +98,7 @@ fn a_leaf_reads_a_source_s_family_before_the_prelude_s_3287()
     // checks rather than meeting the prelude's at the field.
     let (text, unit) = laid(SourceText::from(
         "\
-data Tagged : Type { Tagged : (shown : Bool, count : Nat) --> Tagged; }
+data Tagged : Type where { | Tagged : (shown : Bool, count : Nat) --> Tagged }
 def eqTagged = Eq.generic(Tagged) ;
 ",
     ));
@@ -117,7 +117,7 @@ fn a_derived_law_lowers_to_its_proof_2302()
         "\
 def reflPoint = Eq.generic.refl(Point) ;
 def symPoint = Eq.generic.sym(Point) ;
-module EqPoint : Model(Eq) with sort Carrier = Point {
+module EqPoint : Model(Eq) with sort Carrier = Point where {
   def eq = Eq.generic(Point) ;
   def refl = Eq.generic.refl(Point) ;
   def sym = Eq.generic.sym(Point) ;
@@ -134,7 +134,7 @@ def same() -> Bool { Point(1, 2) == Point(1, 2) }
 }
 
 /// Each data case a derived equality holds names the declaration it
-/// eliminates, as a written `case` does, so a printer reads its branches as
+/// eliminates, as a written `match` does, so a printer reads its branches as
 /// that declaration's constructors (#2363): naturals case on the first side,
 /// then on the second under each of its two constructors.
 #[test]
@@ -167,7 +167,7 @@ fn a_source_s_own_eq_module_is_no_derivation_2302()
 {
     // With no prelude, `Eq.generic` is whatever the source declares.
     let source = "\
-module Eq { def generic(a : Integer) -> -F Integer { return a } }
+module Eq where { def generic(a : Integer) -> -F Integer { return a } }
 def one() -> -F Integer { Eq.generic(1) }
 ";
     let mut arena = CoreArena::new();

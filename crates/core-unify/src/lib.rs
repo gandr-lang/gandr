@@ -34,7 +34,7 @@
 //! use gandr_kernel_term::BaseType;
 //! use quenchant_shape::shape::Maybe;
 //!
-//! // `same @[a : Type] (x : a) : a` called at an integer: the parameter's
+//! // `same[a : Type] (x : a) : a` called at an integer: the parameter's
 //! // type is the decode of a metavariable, the argument's the integer type.
 //! let mut arena = CoreArena::new();
 //! let hole = HoleId::from(0_u32);

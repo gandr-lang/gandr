@@ -2365,7 +2365,7 @@ impl EdgeSource for TileGraph
 /// - **Terminals, not neighbours.** An occurrence's completions are the rule's
 ///   LAST tiles it reaches through the rule's own adjacency. A repeat is
 ///   interior by construction: going round a member list changes nothing about
-///   where the paths end, so a member's `=` inside `module M { … }` still
+///   where the paths end, so a member's `=` inside `module M where { … }` still
 ///   reaches only `}`.
 /// - **Alternatives intersect.** Reaching two families, or a terminal that
 ///   closes nothing, is divergence. This keeps `def name = E ;` unclassed: its

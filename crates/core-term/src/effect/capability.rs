@@ -33,7 +33,7 @@
 //! zero is the definition's own body, which every scope in it nests inside. A
 //! region a scope opens is named by its depth rather than by a fresh name, so
 //! two scopes at one depth are siblings whose capabilities never meet. A
-//! definition may abstract over a region its caller holds, `@[r : Region]`:
+//! definition may abstract over a region its caller holds, `[r : Region]`:
 //! [`Region::Bound`] names that binder by its ordinal, and each call
 //! instantiates it at a region of the caller's. A bound region is live
 //! throughout the call, so it outlives the body and every scope in it, and

@@ -137,12 +137,12 @@ fn the_tree_sum_names_each_pure_call()
 {
     let named = named_calls(SourceText::from(
         r#"
-data Tree : Type {
-  Leaf : (n : Integer) --> Tree;
-  Node : (l : Tree, r : Tree) --> Tree;
+data Tree : Type where {
+  | Leaf : (n : Integer) --> Tree
+  | Node : (l : Tree, r : Tree) --> Tree
 }
 def rec sum(t : Tree) -> Integer {
-  case t {
+  match t {
     Leaf(n) => n,
     Node(l, r) => { run a <- sum[<](l); run b <- sum[<](r); a + b }
   }

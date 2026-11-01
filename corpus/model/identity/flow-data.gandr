@@ -6,33 +6,33 @@
 // a flow, and riding it moves a value of the old type to the new.
 
 /// The old type: one constructor of one integer field.
-data Old : Type {
-  Mk : (n : Integer) --> Old;
+data Old : Type where {
+  | Mk : (n : Integer) --> Old
 }
 
 /// The new type: the same field under another constructor.
-data Other : Type {
-  Make : (n : Integer) --> Other;
+data Other : Type where {
+  | Make : (n : Integer) --> Other
 }
 
 /// The old shapes.
-pub data Shape : Type {
-  Circle : (r : Integer) --> Shape;
-  Rect : (w : Integer, h : Integer) --> Shape;
+pub data Shape : Type where {
+  | Circle : (r : Integer) --> Shape
+  | Rect : (w : Integer, h : Integer) --> Shape
 }
 
 /// The new shapes: the circle renamed, the rectangle's sides swapped.
-pub data Figure : Type {
-  Round : (r : Integer) --> Figure;
-  Box : (h : Integer, w : Integer) --> Figure;
+pub data Figure : Type where {
+  | Round : (r : Integer) --> Figure
+  | Box : (h : Integer, w : Integer) --> Figure
 }
 
 /// One field moved to a constructor of another name.
-module Rename {
+module Rename where {
   /// The translator: the field moved to the new constructor.
   @[ checks ]
   def toOther(old : Old) -> Other {
-    case old {
+    match old {
       Mk(n) => Make(n)
     }
   }
@@ -50,11 +50,11 @@ module Rename {
 }
 
 /// Each constructor moved to its twin, a constructor's fields swapped.
-pub module Shapes {
+pub module Shapes where {
   /// The translator: each shape to its figure, the sides swapped.
   @[ checks ]
   def toFigure(shape : Shape) -> Figure {
-    case shape {
+    match shape {
       Circle(r) => Round(r),
       Rect(w, h) => Box(h, w)
     }

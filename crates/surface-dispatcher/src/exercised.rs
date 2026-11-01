@@ -1219,8 +1219,8 @@ def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
                 &[(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
-                r#"@[ checks ] data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-@[ refuses("OutOfFragment.instantiation_expression.computation") ] def rec both(n : Nat) -> -F Nat { case n { Zero => return n, Succ(p) => become both[<, >](p) } }"#,
+                r#"@[ checks ] data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+@[ refuses("OutOfFragment.instantiation_expression.computation") ] def rec both(n : Nat) -> -F Nat { match n { Zero => return n, Succ(p) => become both[<, >](p) } }"#,
                 &[(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, &[(

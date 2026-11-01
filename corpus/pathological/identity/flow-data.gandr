@@ -6,21 +6,21 @@
 // itself are refused. Each refusal names #1835, whose steps take them.
 
 /// A box of any type: its field names the parameter.
-data Box(a : Type) : Type {
-  Boxed : (x : a) --> Box(a);
+data Box(a : Type) : Type where {
+  | Boxed : (x : a) --> Box(a)
 }
 
 /// The naturals: the successor's field holds the type itself.
-pub data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+pub data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A box of integers repacked as itself.
-module Repack {
+module Repack where {
   /// The translator: the field moved back into its constructor.
   def rebox(box : Box(Integer)) -> Box(Integer) {
-    case box {
+    match box {
       Boxed(x) => Boxed(x)
     }
   }
@@ -31,10 +31,10 @@ module Repack {
 }
 
 /// The naturals renumbered as themselves.
-pub module Renumber {
+pub module Renumber where {
   /// The translator: each constructor to itself, the predecessor moved.
   def step(n : Nat) -> Nat {
-    case n {
+    match n {
       Zero => Zero,
       Succ(m) => Succ(m)
     }

@@ -5,7 +5,7 @@
 
 /// The lower bound of a span, its upper bound bound by label and unread.
 def lower_bound(span : #{lower : Integer, upper : Integer}) -> Integer {
-  case span {
+  match span {
     #{.upper = stop, .lower = start} => start
   }
 }
@@ -16,7 +16,7 @@ def span_start : () => Integer = lower_bound(#{lower = 3, upper = 9});
 
 /// The same bound with both fields bound by position, the second unread.
 def first_bound(span : #{lower : Integer, upper : Integer}) -> Integer {
-  case span {
+  match span {
     #{start, stop} => start
   }
 }

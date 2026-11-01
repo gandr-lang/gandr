@@ -1,8 +1,8 @@
 /// `CrossBlockReference`: a data declaration's field names a family written past its block.
 rec {
   @[ refuses("CrossBlockReference") ]
-  data Front : Type {
-    Hold : (b : Back) --> Front;
+  data Front : Type where {
+    | Hold : (b : Back) --> Front
   }
 
   /// A definition between the two families ends the first one's block.
@@ -12,7 +12,7 @@ rec {
   }
 
   @[ checks ]
-  data Back : Type {
-    Only : Back;
+  data Back : Type where {
+    | Only : Back
   }
 }

@@ -1,0 +1,3 @@
+pub data Nat : Type where {
+  | Zero : Nat
+}

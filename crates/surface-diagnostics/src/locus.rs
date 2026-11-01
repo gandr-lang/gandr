@@ -1372,7 +1372,7 @@ impl fmt::Display for Checked
                 gandr_kernel_term::RuleFault::NotDecreasing => "its right side is not smaller than its left",
                 gandr_kernel_term::RuleFault::DependentSlot => "it binds a variable at a field, after its constructor's first, whose type is open",
             }),
-            CheckRefusal::RuleNotRespected { rule, .. } => write!(f, "the case is not shown to respect rule {} of its datatype", usize::from(rule)),
+            CheckRefusal::RuleNotRespected { rule, .. } => write!(f, "the match is not shown to respect rule {} of its datatype", usize::from(rule)),
             CheckRefusal::NotApart { reason, .. } => match reason {
                 gandr_kernel_term::Apartness::Apart => f.write_str("the path's endpoints are apart"),
                 gandr_kernel_term::Apartness::Agree => f.write_str("the path's endpoints have one normal form"),
@@ -1381,8 +1381,8 @@ impl fmt::Display for Checked
                 gandr_kernel_term::Apartness::Diverges { outer, inner } => write!(f, "rules {} and {} of the datatype do not converge", usize::from(outer), usize::from(inner)),
                 gandr_kernel_term::Apartness::Undecided => f.write_str("the endpoints were not decided within the rewrite budget"),
             },
-            CheckRefusal::LoopNotRespected { cell, reason: gandr_core_checker::LoopRespect::Apart, .. } => write!(f, "the case is not shown to respect loop {} of its sort: carried along the loop, its answer at the loop's point does not convert with that answer", usize::from(cell)),
-            CheckRefusal::LoopNotRespected { cell, reason: gandr_core_checker::LoopRespect::NotPresentedSet, .. } => write!(f, "the case is not shown to respect loop {} of its sort: its answer at the loop's point is a case over another looped scrutinee, and the fibre is not presented as a set, so the square between the two loops is owed", usize::from(cell)),
+            CheckRefusal::LoopNotRespected { cell, reason: gandr_core_checker::LoopRespect::Apart, .. } => write!(f, "the match is not shown to respect loop {} of its sort: carried along the loop, its answer at the loop's point does not convert with that answer", usize::from(cell)),
+            CheckRefusal::LoopNotRespected { cell, reason: gandr_core_checker::LoopRespect::NotPresentedSet, .. } => write!(f, "the match is not shown to respect loop {} of its sort: its answer at the loop's point is a match over another looped scrutinee, and the fibre is not presented as a set, so the square between the two loops is owed", usize::from(cell)),
             CheckRefusal::LoopUndecided { cell, .. } => write!(f, "the case's obligation for loop {} of its sort ran past its budget: unfolding the definitions its sides run neither met nor parted them", usize::from(cell)),
             CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
@@ -1966,7 +1966,7 @@ impl fmt::Display for Shape
             ExpectedShape::Path => "an element path type `Path(A, a, b)`",
             ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
             ExpectedShape::Session => {
-                "a session type `!A. S`, `?A. S`, `+{l : S}`, `&{l : S}` or `end`"
+                "a session type `!A >> S`, `?A >> S`, `+{l : S}`, `&{l : S}` or `end`"
             },
             ExpectedShape::Capability => "a capability `Cap {op, …}`",
             ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",

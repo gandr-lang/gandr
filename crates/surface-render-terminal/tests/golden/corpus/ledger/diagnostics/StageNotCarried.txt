@@ -6,7 +6,7 @@ error[StageNotCarried]: the transport moves a value of the recursion along a pat
    │    │                 │
    │ ┌──┘                 checked against `Nat -> Path(Circle, Base, Base) -> -F Nat`; while checking the body of this function; binds n : Nat
    │ │
-14 │ │┌   case n {
+14 │ │┌   match n {
 15 │ ││     Zero => Zero,
 16 │ ││     Succ(m) => Succ(alongLoop[<](transport(\x. Nat, q, m), q))
    │ ││                ┬────┬────────────┯━━━━━━━━━━━━━━━━━━━━━━━─────

@@ -4,19 +4,19 @@
 // incomparable joins, so it is refused naming the pair and both.
 
 /// A carrier with a unit.
-theory Pointed {
+theory Pointed where {
   sort M : Type;
   oper point : () --> M;
 }
 
 /// A carrier with a multiplication.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
 }
 
 /// The pair joined once.
-theory UnitalMagma {
+theory UnitalMagma where {
   include Pointed;
   include Magma;
 }
@@ -24,7 +24,7 @@ theory UnitalMagma {
 /// The pair joined again beside the first: `Pointed` and `Magma` now have
 /// two joins, neither reaching the other.
 @[ refuses("MalformedForm") ]
-theory MagmaWithUnit {
+theory MagmaWithUnit where {
   include Pointed;
   include Magma;
 }

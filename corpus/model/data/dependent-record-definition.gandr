@@ -12,15 +12,15 @@ import "./data-base.gandr";
 import "./stuck-arm-call.gandr";
 
 /// A tagged natural.
-data T : Type {
+data T : Type where {
   /// The tag over a natural.
-  Tg : (t : Nat) --> T;
+  | Tg : (t : Nat) --> T
 }
 
 /// What a tag owes of a heap: emptiness at zero, by a call of `emp`, and nothing else.
 def p(r : T, h : Heap) -> Type {
-  case r {
-    Tg(t) => case t {
+  match r {
+    Tg(t) => match t {
       Zero => emp(h),
       Succ(_s) => return Void
     }
@@ -39,8 +39,8 @@ def zeroTagged(e : p(Tg(Zero), Emp)) -> repr(Emp) {
 
 /// What a tag owes of the empty heap, the arm's call closed: `emp(Emp)`.
 def owedClosed(r : T) -> Type {
-  case r {
-    Tg(t) => case t {
+  match r {
+    Tg(t) => match t {
       Zero => emp(Emp),
       Succ(_s) => return Void
     }

@@ -168,11 +168,24 @@ fn a_bulleted_head_comment_keeps_its_lines_2918()
 fn a_rule_s_freshness_conditions_stay_on_its_line()
 {
     let grammar = grammar();
-    let source = "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where a # q, a # q;\n}\n";
+    let source = "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where { | a # q | a # q };\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu(bind a. q) <=> q where a # q, a # q;\n}\n",
+        "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu(bind a. q) <=> q where { | a # q | a # q };\n}\n",
         "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
+    );
+}
+
+#[test]
+fn a_clause_s_patterns_stay_on_its_line()
+{
+    let grammar = grammar();
+    let source =
+        "def both : (Bool, Bool) => Bool where {\n  | true, b if b => true\n  | _, _ => false\n}\n";
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "a bar opens each clause, so the comma between two patterns keeps them on the clause's line"
     );
 }
 
@@ -195,28 +208,28 @@ fn the_printer_decides_every_inner_space()
                   def  f ( x:Integer , y : Integer ) -> -F Integer{ return x+y ;}\n\
                   def p = #{ a = 1 , b = - 2 } ;\n\
                   def q : +{ A : Integer , B : Unit } ;\n\
-                  def g @[ r : Row ]( k : Integer ) -> [ Div | r ] Unit { pure unit }\n\
+                  def g[ r : Row ]( k : Integer ) -> [ Div | r ] Unit { pure unit }\n\
                   def l = \\ x . x ;\n\
                   def c = thunk { fn( x ) { x } } ;\n\
                   def m = r . a [ 0 ] ;\n\
-                  module M :> #{type T} { type T = Integer ; }\n\
-                  theory S { boundary Q {p,q} ; face left = { p , q } ; }\n\
-                  theory Kit . Shape { sort T : Type ; }\n\
-                  module Kit . Made : Model( Kit . Shape ) { type T = Integer ; }\n";
+                  module M :> #{type T} where { type T = Integer ; }\n\
+                  theory S where { boundary Q {p,q} ; face left = { p , q } ; }\n\
+                  theory Kit . Shape where { sort T : Type ; }\n\
+                  module Kit . Made : Model( Kit . Shape ) where { type T = Integer ; }\n";
     assert_eq!(
         text(&grammar, source, WIDE),
         "@[ checks ]\n\
          def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
          def p = #{a = 1, b = -2};\n\
          def q : +{A : Integer, B : Unit};\n\
-         def g @[r : Row] (k : Integer) -> [Div | r] Unit { pure unit }\n\
+         def g[r : Row](k : Integer) -> [Div | r] Unit { pure unit }\n\
          def l = \\x. x;\n\
          def c = thunk { fn (x) { x } };\n\
          def m = r.a[0];\n\
-         module M :> #{ type T } { type T = Integer; }\n\
-         theory S { boundary Q { p, q }; face left = {p, q}; }\n\
-         theory Kit.Shape { sort T : Type; }\n\
-         module Kit.Made : Model(Kit.Shape) { type T = Integer; }\n",
+         module M :> #{ type T } where { type T = Integer; }\n\
+         theory S where { boundary Q { p, q }; face left = {p, q}; }\n\
+         theory Kit.Shape where { sort T : Type; }\n\
+         module Kit.Made : Model(Kit.Shape) where { type T = Integer; }\n",
         "each space inside a line is the printer's, whatever the source wrote"
     );
 }
@@ -273,12 +286,12 @@ fn a_member_after_a_column_zero_comment_starts_a_statement_2950()
     let grammar = grammar();
     for (source, expected) in [
         (
-            "/// T.\ntheory T {\n/// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
-            "/// T.\ntheory T {\n  /// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
+            "/// T.\ntheory T where {\n/// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
+            "/// T.\ntheory T where {\n  /// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
         ),
         (
-            "/// N.\ndata N : Type {\n/// Zero.\n  Z : N;\n  S : (n : N) --> N;\n}\n",
-            "/// N.\ndata N : Type {\n  /// Zero.\n  Z : N;\n  S : (n : N) --> N;\n}\n",
+            "/// N.\ndata N : Type where {\n/// Zero.\n  | Z : N\n  | S : (n : N) --> N\n}\n",
+            "/// N.\ndata N : Type where {\n  /// Zero.\n  | Z : N\n  | S : (n : N) --> N\n}\n",
         ),
     ] {
         assert_eq!(

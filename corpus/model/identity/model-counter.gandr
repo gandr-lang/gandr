@@ -6,7 +6,7 @@
 // both alike by construction.
 
 /// A counter: a carrier, a zero, a step and a reading.
-pub theory Counter {
+pub theory Counter where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -14,7 +14,7 @@ pub theory Counter {
 }
 
 /// Counting up modulo three, read as it is.
-pub module Up : Model(Counter) {
+pub module Up : Model(Counter) where {
   type C = Unit + (Unit + Unit);
   /// Zero.
   @[ checks ]
@@ -22,7 +22,7 @@ pub module Up : Model(Counter) {
   /// One count more.
   @[ checks ]
   def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-    case c {
+    match c {
       +{.0 = u} => +{.1 = +{.0 = u}},
       +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
       +{.1 = +{.1 = u}} => +{.0 = u}
@@ -31,7 +31,7 @@ pub module Up : Model(Counter) {
   /// The count as an integer.
   @[ checks ]
   def read(c : Unit + (Unit + Unit)) -> Integer {
-    case c {
+    match c {
       +{.0 = u} => 0,
       +{.1 = +{.0 = u}} => 1,
       +{.1 = +{.1 = u}} => 2
@@ -40,7 +40,7 @@ pub module Up : Model(Counter) {
 }
 
 /// Counting down modulo three, read negated.
-module Down : Model(Counter) {
+module Down : Model(Counter) where {
   type C = Unit + (Unit + Unit);
   /// Zero.
   @[ checks ]
@@ -48,7 +48,7 @@ module Down : Model(Counter) {
   /// One count less.
   @[ checks ]
   def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-    case c {
+    match c {
       +{.0 = u} => +{.1 = +{.1 = u}},
       +{.1 = +{.0 = u}} => +{.0 = u},
       +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
@@ -57,7 +57,7 @@ module Down : Model(Counter) {
   /// The count negated, as an integer.
   @[ checks ]
   def read(c : Unit + (Unit + Unit)) -> Integer {
-    case c {
+    match c {
       +{.0 = u} => 0,
       +{.1 = +{.0 = u}} => 2,
       +{.1 = +{.1 = u}} => 1
@@ -73,7 +73,7 @@ pub def downModel : Model(Counter) = pack Down at Model(Counter);
 
 /// The count negated: zero stays, one and two swap.
 def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-  case c {
+  match c {
     +{.0 = u} => +{.0 = u},
     +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
     +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
@@ -108,7 +108,7 @@ pub def oneCounter : Path(Model(Counter), upModel, downModel) = (
 
 /// A consumer of any counter: the reading after one step from zero.
 pub def observe(m : Model(Counter)) -> Integer {
-  case m {
+  match m {
     #{.zero = z, .incr = i, .read = r} => r(i(z))
   }
 }

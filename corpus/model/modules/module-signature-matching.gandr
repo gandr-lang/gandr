@@ -3,7 +3,7 @@
 // signature leaves out stays inside.
 
 /// Metrics whose signature states a type member and three values.
-module Metrics : #{ type Ratio = Integer, base : Integer, double : Integer, scale : Ratio } {
+module Metrics : #{ type Ratio = Integer, base : Integer, double : Integer, scale : Ratio } where {
   /// A member the signature leaves out.
   def scratch = 2;
   /// The scratch value tripled. An operator in a value runs before the

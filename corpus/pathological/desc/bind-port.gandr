@@ -8,7 +8,7 @@ import "../../model/desc/bind-port.gandr";
 /// `bind` abstracts an atom, and `Tm` is an ordinary sort: the description
 /// check refuses the abstraction by name (`NonAtomAbstraction`).
 @[ refuses("IllFormedDescription") ]
-theory OrdinaryAbstraction {
+theory OrdinaryAbstraction where {
   sort Tm : Type;
   oper nu : (t : bind (a : Tm). Tm) --> Tm;
 }
@@ -16,7 +16,7 @@ theory OrdinaryAbstraction {
 /// A port's abstractions stand outside its `pi+` binders, so a `bind` written
 /// inside one is malformed.
 @[ refuses("MalformedForm") ]
-theory InnerAbstraction {
+theory InnerAbstraction where {
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;

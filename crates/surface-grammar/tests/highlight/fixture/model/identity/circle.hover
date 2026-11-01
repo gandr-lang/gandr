@@ -104,11 +104,11 @@
 48:84-48:84 ) ⇒ Path(Circle, Base, Base) @48:75-48:85
 48:85-48:85 ) ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) @48:70-48:86
 48:86-48:86 ; ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:1-48:87
-52:1-52:32 @[ refuses("RuleNotRespe… ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @52:1-53:1
-53:1-53:3 def ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
-53:5-53:9 tell( ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:5-53:9
+52:1-52:32 @[ refuses("RuleNotRespe… ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @52:1-53:1
+53:1-53:3 def ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
+53:5-53:9 tell( ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:5-53:9
 53:10-53:10 p ⇒ p : Path(Circle, Base, Base) @53:10-53:11
-53:12-53:12 : ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
+53:12-53:12 : ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
 53:14-53:18 Path( ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
 53:19-53:24 Circle ⇒ Circle : Type @53:19-53:25
 53:25-53:25 , ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
@@ -116,12 +116,12 @@
 53:31-53:31 , ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
 53:33-53:36 Base ⇒ Base : Circle @53:33-53:37
 53:37-53:37 ) ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
-53:38-53:41 ) -> ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
+53:38-53:41 ) -> ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
 53:43-53:49 Integer ⇒ Integer : Type @53:43-53:50
-53:51-53:51 { ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-59:2
-54:3-54:6 case ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-54:8-54:8 p ⇒ p : Path(Circle, Base, Base) @54:8-54:9
-54:10-54:10 { ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
+53:51-53:51 { ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-59:2
+54:3-54:7 match ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
+54:9-54:9 p ⇒ p : Path(Circle, Base, Base) @54:9-54:10
+54:11-54:11 { ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
 55:5-55:8 here ⇒ here : Path(Circle, Base, Base) @55:5-55:9
 55:10-55:11 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
 55:13-55:13 0 ⇒ Integer @55:13-55:14
@@ -140,7 +140,7 @@
 57:20-57:21 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
 57:23-57:23 2 ⇒ Integer @57:23-57:24
 58:3-58:3 } ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-59:1-59:1 } ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-59:2
+59:1-59:1 } ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-59:2
 63:1-63:3 def ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:1-67:36
 63:5-63:9 round ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:5-63:10
 63:11-63:11 : ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:1-67:36

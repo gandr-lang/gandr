@@ -12,7 +12,7 @@
 /// included; β reads an introduced cell's value at the point off the face; η
 /// rebuilds a cell from its value there.
 @[ normalizes("cells(outCellp(c), outCellq(inCell(one)), inCell(outCellq(c))) ~> cells(zero, one, c)") ]
-theory Generated {
+theory Generated where {
   boundary Two { p, q };
   face left = {p};
   sort Val : Type;
@@ -27,7 +27,7 @@ theory Generated {
 /// Over three points with one on the face, a cell holds two values: `inWide`
 /// takes both, β reads each back, and η rebuilds a cell from its two reads.
 @[ normalizes("cells(outWidep(d), outWider(inWide(one, zero)), inWide(outWideq(d), outWider(d))) ~> cells(zero, zero, d)") ]
-theory Wider {
+theory Wider where {
   boundary Three { p, q, r };
   face left = {p};
   sort Val : Type;

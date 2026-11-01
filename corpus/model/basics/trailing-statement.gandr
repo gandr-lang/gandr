@@ -16,7 +16,7 @@ def after(n : Integer) -> Unit {
 /// A match written as the last statement, each arm falling through to the
 /// unit the block returns.
 def armed(b : Bool) -> Unit {
-  case b {
+  match b {
     true => pure unit,
     false => pure unit
   };
@@ -25,7 +25,7 @@ def armed(b : Bool) -> Unit {
 /// A match written as the last statement whose arms all leave stays the end
 /// of the body.
 def left(b : Bool) -> Integer {
-  case b {
+  match b {
     true => return 1,
     false => return 2
   };
@@ -34,7 +34,7 @@ def left(b : Bool) -> Integer {
 /// A match written as the last statement, one arm leaving and the other
 /// falling through to the unit.
 def some(b : Bool) -> Unit {
-  case b {
+  match b {
     true => return unit,
     false => pure unit
   };

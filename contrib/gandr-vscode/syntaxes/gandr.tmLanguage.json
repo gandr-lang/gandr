@@ -46,11 +46,6 @@
     "keywords": {
       "patterns": [
         {
-          "comment": "case",
-          "name": "keyword.control.gandr",
-          "match": "\\b(case)\\b"
-        },
-        {
           "comment": "codata",
           "name": "keyword.declaration.codata.gandr storage.type.gandr",
           "match": "\\b(codata)\\b"
@@ -66,6 +61,11 @@
           "match": "\\b(def)\\b"
         },
         {
+          "comment": "match",
+          "name": "keyword.control.gandr",
+          "match": "\\b(match)\\b"
+        },
+        {
           "comment": "pure, return, become",
           "name": "keyword.control.gandr",
           "match": "\\b(pure|return|become)\\b"
@@ -76,9 +76,9 @@
           "match": "\\b(theory)\\b"
         },
         {
-          "comment": "val",
+          "comment": "let, var",
           "name": "keyword.other.gandr storage.type.gandr",
-          "match": "\\b(val)\\b"
+          "match": "\\b(let|var)\\b"
         },
         {
           "comment": "-F, the shift into computation types",

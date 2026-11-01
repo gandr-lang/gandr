@@ -10,7 +10,7 @@
 def spinPure(x : Bool) -> Bool {
   run y <- loop {
     run below <- 1 < 0;
-    case below {
+    match below {
       true => break(x),
       false => continue,
     }
@@ -22,7 +22,7 @@ def spinPure(x : Bool) -> Bool {
 def spin(x : Bool) -> [Div] Bool {
   run y <- loop {
     run below <- 1 < 0;
-    case below {
+    match below {
       true => break(x),
       false => continue,
     }

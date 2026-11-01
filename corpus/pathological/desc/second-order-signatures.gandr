@@ -6,7 +6,7 @@
 /// description check refuses the binder, and its refusal names the sort `Tm`
 /// and the port `t` (#1553).
 @[ refuses("IllFormedDescription") ]
-theory Unbindable {
+theory Unbindable where {
   sort Tm : Type;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
 }
@@ -14,7 +14,7 @@ theory Unbindable {
 /// A sort's index is a plain variable: an operation's input port binds, an
 /// index does not.
 @[ refuses("MalformedForm") ]
-theory BoundIndex {
+theory BoundIndex where {
   sort Tm : Type+;
   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
 }

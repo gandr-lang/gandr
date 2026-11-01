@@ -2,14 +2,14 @@
 import "./model-resolution-tally.gandr";
 
 /// Flipping a flag, and resetting it.
-module Flips : Model(ResetCount) {
+module Flips : Model(ResetCount) where {
   type C = Bool;
   /// Down.
   def zero = false;
   /// The other way.
-  def incr(c : Bool) -> Bool { case c { true => false, false => true } }
+  def incr(c : Bool) -> Bool { match c { true => false, false => true } }
   /// One when up.
-  def read(c : Bool) -> Integer { case c { true => 1, false => 0 } }
+  def read(c : Bool) -> Integer { match c { true => 1, false => 0 } }
   /// Down again.
   def reset(c : Bool) -> Bool { false }
 }

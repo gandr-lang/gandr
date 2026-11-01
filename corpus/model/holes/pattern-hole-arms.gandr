@@ -3,15 +3,15 @@
 // twin in `pathological/holes/` leaves an arm to a pattern hole.
 
 /// Three colours, one arm each.
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// Every colour has its arm.
 def classify(c : Color) -> Integer {
-  case c {
+  match c {
     Red => 0,
     Green => 1,
     Blue => 2
@@ -21,7 +21,7 @@ def classify(c : Color) -> Integer {
 /// `Green`'s arm is written and its body is a hole: the arm that runs is
 /// decided, only its result is not.
 def sketch(c : Color) -> Integer {
-  case c {
+  match c {
     Red => 0,
     Green => ?,
     Blue => 2

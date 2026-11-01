@@ -3,8 +3,8 @@
 // doi:10.1145/1863543.1863547).
 
 /// A traffic signal: stop, go or wait.
-data Traffic : Type {
-  Stop : Traffic;
-  Go : Traffic;
-  Wait : Traffic;
+data Traffic : Type where {
+  | Stop : Traffic
+  | Go : Traffic
+  | Wait : Traffic
 }

@@ -13,16 +13,16 @@ import "../data/data-base.gandr";
 
 /// The codes: the naturals, and the functions from one coded type to another.
 @[ checks, form(explicit) ]
-data U : Type {
-  NatC : U;
-  Arrow : (a : U, b : U) --> U;
+data U : Type where {
+  | NatC : U
+  | Arrow : (a : U, b : U) --> U
 }
 
 /// The decoder. An arm binds the type each side decodes to, a type-valued
 /// variable, and returns the function type between the two.
 @[ checks ]
 def rec el(u : U) -> -F Type {
-  case u {
+  match u {
     NatC => return Nat,
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (+U (x -> -F y)) }
   }
@@ -103,8 +103,8 @@ def appliedAbove() -> -F Nat { applyAt(Arrow(NatC, NatC), NatC, atOne, succ) }
 /// A value packed with its code: the second field's type is the decode of the
 /// first, so each constructor term carries its own type.
 @[ checks ]
-data Coded : Type {
-  Pack : (c : U, v : el(c)) --> Coded;
+data Coded : Type where {
+  | Pack : (c : U, v : el(c)) --> Coded
 }
 
 /// One, packed at the natural code.
@@ -120,7 +120,7 @@ def packedSucc = Pack(Arrow(NatC, NatC), succ);
 /// The code a packed value carries.
 @[ checks ]
 def codeOf(p : Coded) -> -F U {
-  case p {
+  match p {
     Pack(c, v) => return c
   }
 }

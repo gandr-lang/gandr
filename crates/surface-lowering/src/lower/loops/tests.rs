@@ -32,7 +32,7 @@ use crate::resolve::SurfaceName;
 
 /// The naturals every witness matches on, and a computation of unit a loop
 /// can run on every pass.
-const PRELUDE: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+const PRELUDE: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                        def tick(n : Nat) -> -F Unit { return unit }\n";
 
 /// The indices of every force of a variable reachable from the body of
@@ -148,9 +148,9 @@ fn a_loop_body_ends_by_its_exits_or_runs_again()
         "{PRELUDE}def ticking(n : Nat) -> -F [Div] Nat {{ loop {{ tick(n) }} }}\n\
          def ticking_stated(n : Nat) -> -F [Div] Nat {{ loop {{ tick(n); }} }}\n\
          def ticking_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ tick(n); continue }} }}\n\
-         def arms(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }} }} }}\n\
-         def arms_stated(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }}; }} }}\n\
-         def arms_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => {{ tick(p); continue }} }} }} }}\n\
+         def arms(n : Nat) -> -F [Div] Nat {{ loop {{ match n {{ Zero => break(n), Succ(p) => tick(p) }} }} }}\n\
+         def arms_stated(n : Nat) -> -F [Div] Nat {{ loop {{ match n {{ Zero => break(n), Succ(p) => tick(p) }}; }} }}\n\
+         def arms_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ match n {{ Zero => break(n), Succ(p) => {{ tick(p); continue }} }} }} }}\n\
          def inner(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ break }} }} }}\n\
          def inner_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ break }} ; continue }} }}\n\
          def endless(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ continue }} }} }}\n"
@@ -200,8 +200,8 @@ fn a_hole_ending_a_loop_body_is_left_to_be_filled()
 fn a_break_continues_what_follows_its_loop()
 {
     let source = format!(
-        "{PRELUDE}def pick(n : Nat) -> -F [Div] Nat {{ run m <- loop {{ case n {{ Zero => break(n), Succ(p) => break(p) }} }} ; return Succ(m) }}\n\
-         def pick_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => return Succ(n), Succ(p) => return Succ(p) }} }} }}\n\
+        "{PRELUDE}def pick(n : Nat) -> -F [Div] Nat {{ run m <- loop {{ match n {{ Zero => break(n), Succ(p) => break(p) }} }} ; return Succ(m) }}\n\
+         def pick_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ match n {{ Zero => return Succ(n), Succ(p) => return Succ(p) }} }} }}\n\
          def bare(n : Nat) -> -F [Div] Nat {{ run u <- loop {{ break }} ; return n }}\n\
          def bare_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ return n }} }}\n\
          def kept(n : Nat) -> -F [Div] Nat {{ run m <- loop {{ run k <- loop {{ break(n) }} ; break(Succ(k)) }} ; return Succ(m) }}\n\
@@ -228,8 +228,8 @@ fn a_continue_runs_its_own_loop_again()
 {
     let source = format!(
         "{PRELUDE}def bound(n : Nat) -> -F [Div] Nat {{ loop {{ run m <- tick(n) ; continue }} }}\n\
-         def armed(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => continue, Succ(p) => {{ run q <- tick(p) ; continue }} }} }} }}\n\
-         def nested(n : Nat) -> -F [Div] Nat {{ loop {{ run m <- loop {{ case n {{ Zero => continue, Succ(p) => break(p) }} }} ; continue }} }}\n"
+         def armed(n : Nat) -> -F [Div] Nat {{ loop {{ match n {{ Zero => continue, Succ(p) => {{ run q <- tick(p) ; continue }} }} }} }}\n\
+         def nested(n : Nat) -> -F [Div] Nat {{ loop {{ run m <- loop {{ match n {{ Zero => continue, Succ(p) => break(p) }} }} ; continue }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -311,10 +311,10 @@ fn linear(
 #[test]
 fn a_loop_threads_the_slots_it_names_through_its_passes()
 {
-    let source = "def one() -> -F [Div] Integer { hold n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
-                  def two() -> -F [Div] Integer { hold a = 10; hold b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
-                  def after() -> -F [Div] Integer { hold a = 4; hold b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
-                  def none() -> -F [Div] Integer { hold a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
+    let source = "def one() -> -F [Div] Integer { var n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
+                  def two() -> -F [Div] Integer { var a = 10; var b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
+                  def after() -> -F [Div] Integer { var a = 4; var b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
+                  def none() -> -F [Div] Integer { var a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     // Each name: the slots the first pass takes, where the loop stands, and
@@ -407,7 +407,7 @@ fn a_for_steps_through_its_list()
 {
     let source = format!(
         "{PRELUDE}def each(xs : List(Nat), n : Nat) -> -F Nat {{ for x in xs {{ tick(x) }} ; return n }}\n\
-         def skipped(xs : List(Nat)) -> -F Nat {{ for x in xs {{ case x {{ Zero => continue, Succ(p) => return p }} }} ; return Zero }}\n\
+         def skipped(xs : List(Nat)) -> -F Nat {{ for x in xs {{ match x {{ Zero => continue, Succ(p) => return p }} }} ; return Zero }}\n\
          def inner(xs : List(Nat)) -> -F [Div] Unit {{ for x in xs {{ loop {{ continue }} }} }}\n"
     );
     let mut arena = CoreArena::new();

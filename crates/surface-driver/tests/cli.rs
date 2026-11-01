@@ -429,19 +429,19 @@ fn a_run_spells_its_value_by_its_own_type_past_a_namesake_3125()
     let scratch = Scratch::new(Path::new("namesake"));
     let _shared = scratch.file(
         Path::new("d.gandr"),
-        Text::from("pub data U : Type {\n  One : U;\n}\n"),
+        Text::from("pub data U : Type where {\n  | One : U\n}\n"),
     );
     let other = scratch.file(
         Path::new("b.gandr"),
         Text::from(
-            "import \"./d.gandr\";\npub data P : Type {\n  Deref : P;\n  Field : P;\n}\n@[ \
+            "import \"./d.gandr\";\npub data P : Type where {\n  | Deref : P\n  | Field : P\n}\n@[ \
              runs(\"Field\") ]\ndef first() -> P {\n  Field\n}\n",
         ),
     );
     let own = scratch.file(
         Path::new("a.gandr"),
         Text::from(
-            "import \"./d.gandr\";\npub data P : Type {\n  Inside : P;\n  OnHeap : P;\n}\n@[ \
+            "import \"./d.gandr\";\npub data P : Type where {\n  | Inside : P\n  | OnHeap : P\n}\n@[ \
              runs(\"OnHeap\") ]\ndef second() -> P {\n  OnHeap\n}\n",
         ),
     );
@@ -658,8 +658,8 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
     let source = scratch.file(
         Path::new("six.gandr"),
         Text::from(
-            "pub theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
-             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  case b {\n    \
+            "pub theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
+             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  match b {\n    \
              true => +{.1 = unit},\n    false => +{.0 = unit}\n  }\n}\n\npub def keep(e : +{Unit}) \
              -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, #{.mul = exchange, .one = \
              keep}, #{.mul = exchange, .one = keep});\n",
@@ -908,11 +908,11 @@ fn check_reports_each_cell_a_source_discharges_4112()
     let source = scratch.file(
         Path::new("laws.gandr"),
         Text::from(
-            "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
+            "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
              Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : \
-             Type {\n  Only : One;\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  \
+             Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  \
              def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
-             Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+             Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
         ),
     );
     let cells = |output: &Output| -> Vec<String> {
@@ -1169,7 +1169,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
         Path::new("pick.gandr"),
         Text::from(
             "def pair : #{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer \
-             {\n  case t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
+             {\n  match t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
         ),
     );
     let (fmt, form) = (Path::new("fmt"), Path::new("--form=sugared"));
@@ -1181,7 +1181,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     );
     assert_eq!(
         std::fs::read_to_string(&source).expect("the source is readable"),
-        "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer {\n  case t \
+        "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer {\n  match t \
          {\n    +{.1 = x} => x,\n    _ => 0\n  }\n}\n",
         "both declarations are sugared"
     );
@@ -1208,12 +1208,12 @@ fn cells_reports_each_hole_s_count()
         format!(
             "{shown}:12:1: cell 0 frame, strictly linear: v 1, beta 1\n\
              {shown}:12:1: cell 1 frame, strictly linear: v 1, beta 1\n\
-             {shown}:19:21: cell 2 rule, strictly linear: $ret 1\n\
-             {shown}:20:27: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
-             {shown}:21:19: cell 4 rule, strictly linear: $ret 1\n\
-             {shown}:22:25: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
-             {shown}:23:17: cell 6 rule, duplicating 2: t 2, $ret 1\n\
-             {shown}:24:18: cell 7 rule, duplicating 3: t 3, $ret 1\n"
+             {shown}:19:23: cell 2 rule, strictly linear: $ret 1\n\
+             {shown}:20:29: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
+             {shown}:21:21: cell 4 rule, strictly linear: $ret 1\n\
+             {shown}:22:27: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
+             {shown}:23:19: cell 6 rule, duplicating 2: t 2, $ret 1\n\
+             {shown}:24:20: cell 7 rule, duplicating 3: t 3, $ret 1\n"
         )
     );
 
@@ -1823,7 +1823,7 @@ macro_rules! fields {
 /// A package's library declaring its model, `name`, `version` and the
 /// fields [`fields`] states, after [`STD_PACKAGE`].
 const LIBRARY: &str = concat!(
-    "/// The package.\npub module Package : Model(Gandr.Package) {\n  def name = \"hello\";\n  def \
+    "/// The package.\npub module Package : Model(Gandr.Package) where {\n  def name = \"hello\";\n  def \
      version = \"0.1.0\";\n",
     fields!(),
     "}\n"
@@ -2001,7 +2001,7 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     std::fs::write(
         &library,
         format!(
-            "{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name = \"hello\";\n}}\n"
+            "{STD_PACKAGE}pub module Package : Model(Gandr.Package) where {{\n  def name = \"hello\";\n}}\n"
         ),
     )
     .expect("the model loses its version");
@@ -2465,7 +2465,7 @@ fn a_workspace_checks_each_member_it_names_2687()
     let scratch = Scratch::new(Path::new("workspace"));
     let stated = |members: &str| {
         format!(
-            "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) {{\n  def version = \
+            "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) where {{\n  def version = \
              \"0.2.0\";\n  def gandr = \"\";\n  def features = \"\";\n  def systems = \
              \"\";\n}}\npub def members : List(String) = {members};\n"
         )
@@ -2483,7 +2483,7 @@ fn a_workspace_checks_each_member_it_names_2687()
             Text::from(
                 format!(
                     "{STD_PACKAGE}import \"{up}/workspace.gandr\";\npub module Package : \
-                     Model(Gandr.Package) {{\n  def name = \"{name}\";\n  def version = \
+                     Model(Gandr.Package) where {{\n  def name = \"{name}\";\n  def version = \
                      Workspace.version;\n{}}}\n",
                     fields!()
                 )
@@ -3580,7 +3580,7 @@ fn a_script_that_runs_its_main_leaves_successfully()
 fn a_program_leaves_with_its_entry_s_status_1881()
 {
     let scratch = Scratch::new(Path::new("program-entry"));
-    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  case xs {\n    [] => 0,\n    \
+    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    \
                    [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
                    List(String)) -> -F Integer { become count(args) }\n";
     for (name, text, arguments, status) in [

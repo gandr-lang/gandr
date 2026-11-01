@@ -3887,7 +3887,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_value_runs_to_its_spelling_in_either_spelling_782()
     {
         let mut words = program(
-            "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef once : +U (-F \
+            "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef once : +U (-F \
              Path(Circle, Base, Base)) ; def once = thunk { loop } ;",
         );
         for (spelling, spelled) in [
@@ -3911,10 +3911,10 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
     {
         let mut sealed = program(
-            "pub module Secret :> #{ type T, seal : String => T } {\n  type T = String;\n  def \
+            "pub module Secret :> #{ type T, seal : String => T } where {\n  type T = String;\n  def \
              seal(text : String) -> String { text }\n}\npub module Counter :> #{ type T, zero : \
-             T } {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
-             Report, progress : Report } {\n  type Report = String;\n  def progress = \
+             T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
+             Report, progress : Report } where {\n  type Report = String;\n  def progress = \
              \"progress\";\n}\ndef returned() -> Secret.T { Secret.seal(\"x\") }\ndef listed() \
              -> List(Secret.T) {\n  run s <- Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() \
              -> Seat.Report { pure Seat.progress }\n",
@@ -4201,11 +4201,11 @@ def kept : +U (-F (+U (-F (Type -> Type)))) ; def kept = thunk { return held } ;
     fn a_run_naming_a_declaration_outside_every_sealed_module_is_spelled()
     {
         let mut beside = program(
-            r"theory Pointed {
+            r"theory Pointed where {
   sort T : Type;
   oper z : T;
 }
-module ZeroPointed : Model(Pointed) {
+module ZeroPointed : Model(Pointed) where {
   type T = Integer;
   def z = 0;
 }
@@ -4226,11 +4226,11 @@ def wrap : Integer => Integer ; def wrap = fn (n) { become helper(n) } ;",
     fn a_run_naming_a_hidden_member_is_opaque_at_its_module()
     {
         let mut hiding = program(
-            r"theory Pointed {
+            r"theory Pointed where {
   sort T : Type;
   oper z : T;
 }
-module Stepped : Model(Pointed) {
+module Stepped : Model(Pointed) where {
   type T = Integer => Integer;
   def step(x : Integer) -> -F Integer { x }
   def z : T ; def z = fn (n) { become step(n) } ;
@@ -4334,7 +4334,7 @@ def bad : Integer ; def bad = "text" ;"#,
     fn a_member_is_named_by_its_whole_path_2687()
     {
         let mut package = program(
-            r#"def name = "outer" ; module Package { def name = "hello" ; def version = "0.1.0" ; }"#,
+            r#"def name = "outer" ; module Package where { def name = "hello" ; def version = "0.1.0" ; }"#,
         );
         let spelled =
             |package: &mut Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
@@ -4367,7 +4367,7 @@ def bad : Integer ; def bad = "text" ;"#,
     fn a_path_is_named_among_the_declarations_given_2687()
     {
         let mut package = program(
-            r#"module Package { def name = "hello" ; } def name = "outer" ; def version = "0.1.0" ;"#,
+            r#"module Package where { def name = "hello" ; } def name = "outer" ; def version = "0.1.0" ;"#,
         );
         let at = |package: &Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
             Maybe::Present(constant) => constant,
@@ -4522,7 +4522,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     fn a_skipped_admission_position_holds_no_declaration()
     {
         let mut program = program(
-            "module M { type T = Integer ; def seed : T ; def seed = 41 ; }\ndef copy : Integer \
+            "module M where { type T = Integer ; def seed : T ; def seed = 41 ; }\ndef copy : Integer \
              ;\ndef copy = M.seed ;",
         );
         assert_eq!(
@@ -4611,7 +4611,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// Four loops a pass of runs through: a statement, a bound statement, a
     /// bound inner loop that breaks, and a `while` whose test always holds.
-    const LOOPS: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+    const LOOPS: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
          def tick(n : Nat) -> -F Unit { return unit }\n\
          def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
          def bound : +U (-F Nat) ;\ndef bound = thunk { loop { run u <- tick(Zero) ; continue } } ;\n\
@@ -4672,11 +4672,11 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
-    const PICK: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-         def pick(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
-         Succ(p) => {\n      run q <- case p { Zero => return n, Succ(r) => pure r } ;\n      \
+    const PICK: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
+         def pick(n : Nat) -> -F Nat {\n  run m <- match n {\n    Zero => return n,\n    \
+         Succ(p) => {\n      run q <- match p { Zero => return n, Succ(r) => pure r } ;\n      \
          pure q\n    },\n  } ;\n  return Succ(m)\n}\n\
-         def bound(n : Nat) -> -F Nat {\n  run m <- case n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
+         def bound(n : Nat) -> -F Nat {\n  run m <- match n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
          return Succ(m)\n}\n\
          def zero : +U (-F Nat) ;\ndef zero = thunk { become pick(Zero) } ;\n\
          def one : +U (-F Nat) ;\ndef one = thunk { become pick(Succ(Zero)) } ;\n\
@@ -4868,10 +4868,10 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         let depth =
             (0_u32 .. 10_u32).fold(String::from("Zero"), |inner, _| format!("Succ({inner})"));
         format!(
-            "data Depth : Type {{\n  Zero : Depth;\n  Succ : (p : Depth) --> Depth;\n}}\n\
-             data Tree : Type {{\n  Leaf : (n : Integer) --> Tree;\n  Node : (l : Tree, r : Tree) --> Tree;\n}}\n\
-             def rec full(d : Depth) -> Tree {{ case d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
-             def rec sum(t : Tree) -> Integer {{ case t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
+            "data Depth : Type where {{\n  | Zero : Depth\n  | Succ : (p : Depth) --> Depth\n}}\n\
+             data Tree : Type where {{\n  | Leaf : (n : Integer) --> Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n}}\n\
+             def rec full(d : Depth) -> Tree {{ match d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
+             def rec sum(t : Tree) -> Integer {{ match t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
              def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\
              def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
              def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\

@@ -1,15 +1,15 @@
-data Either(a : Type, b : Type) : Type {
-  Left : (x : a) --> Either(a, b);
-  Right : (y : b) --> Either(a, b);
+data Either(a : Type, b : Type) : Type where {
+  | Left : (x : a) --> Either(a, b)
+  | Right : (y : b) --> Either(a, b)
 }
 
 def from_left() -> -F Integer {
-  case (Left(5) : Either(Integer, String)) { Left(x) => return x, Right(y) => return 0 }
+  match (Left(5) : Either(Integer, String)) { Left(x) => return x, Right(y) => return 0 }
 }
 
-module Facts : #{ inner : #{answer : Integer}, total : Integer } {
+module Facts : #{ inner : #{answer : Integer}, total : Integer } where {
   def base = 40;
-  module inner : #{ answer : Integer } {
+  module inner : #{ answer : Integer } where {
     def answer = base + 1;
   }
 

@@ -33,7 +33,7 @@
 //!   tile (an `Inl` atom vs an `Inl(x)` constructor pattern, a `List` type
 //!   identifier vs a `List(T)` application). It is settled by a bounded greedy
 //!   lookahead over the next tokens; the grammar factors the wider families
-//!   (`def`, `val`, `fn`, the `(` group, and the `#{` record) so they need
+//!   (`def`, `let`, `fn`, the `(` group, and the `#{` record) so they need
 //!   none.
 //! * **Determinism is HARD.** Candidates are visited in ascending [`MoldId`]
 //!   order under a strict `<`, so an exact tie keeps the smaller `MoldId`
@@ -313,7 +313,7 @@ const LABEL_CAPACITY: usize = MAX_LABELS + RESERVED_FALLBACK_LABELS.len();
 /// After the admissibility pre-filter collapses the menu, the only residual
 /// ambiguity is a shared-prefix form family whose opener molds tie on the local
 /// key — a `constructor` atom vs a `constructor(…)` pattern, a
-/// `type_identifier` vs a `type_identifier(T)` application (the `def` / `val` /
+/// `type_identifier` vs a `type_identifier(T)` application (the `def` / `let` /
 /// `fn` / `(` / `#{` families are factored, so they never reach here). Each is
 /// LL(k) decidable within a few tiles of the shared prefix, so the molder
 /// dry-runs each tied opener followed by a greedy molding of the next window
@@ -952,7 +952,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// The fold-in globally reserves the thirteen new
 /// keyword-led forms' leads — `data` / `codata` declarations, `def rec`
 /// (`rec`), `data` / `codata` operation and 2-cell members (`op` / `rule`),
-/// the `for … in` / `while` / `break` / `continue` control forms, the `case …
+/// the `for … in` / `while` / `break` / `continue` control forms, the `match …
 /// with …` view, the `import` declaration, and the `module` declaration. A
 /// corpus + fixture sweep found no collision with any existing identifier, so
 /// all reserve globally (the keyword table is provisional; a real collision
@@ -969,9 +969,10 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// deliberately NOT reserved: they mold as contextual tiles only where the
 /// `op`-led fixity form expects them, so they remain ordinary identifiers
 /// everywhere else.
-/// `run` and `val` are reserved as the distinct leads of computation-result
-/// and value-binding statements; neither enters the ordinary identifier menu.
-/// The retired standalone `let` spelling is deliberately not reserved.
+/// `run` is reserved as the lead of the computation-result statement and
+/// never enters the ordinary identifier menu. `let`, the binding statement's
+/// lead, stays contextual: a theory names an operation `let`, and the
+/// statement's slot is the only one where its tile stands.
 ///
 /// The circuit block form reserves exactly its two **item-position**
 /// leads, `theory` and `oper`: at a fresh top-level slot a lowercase word is
@@ -1003,19 +1004,22 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
 /// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
 /// tile against `identifier` there.
+///
+/// `where` is reserved: it ends a declaration's head, whose last slot is a
+/// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
-    "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
-    "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
+    "def", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
+    "thunk", "force", "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
     "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
-    "world", "mobile", "inf", "pub", "flow",
+    "world", "mobile", "inf", "pub", "flow", "where",
 ];
 
 /// The keywords that open a block's statements: one that no open form
 /// continues ends the statement it stands in, and starts the next.
 const STATEMENT_LEADS: &[&str] = &[
-    "val", "run", "unpack", "leta", "hold", "recv", "acquire", "release", "fork",
+    "let", "run", "unpack", "leta", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
@@ -1115,6 +1119,7 @@ pub fn candidate_labels<'text>(
         Lexeme::SubshellOpen => labels.push(CandidateLabel::from("subshell_open")),
         Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
         Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
+        Lexeme::ArmBar => labels.push(CandidateLabel::from("arm_bar")),
         Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
             // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
@@ -3474,7 +3479,7 @@ impl<'pbg> Molder<'pbg>
     /// decision with a unique minimum. What survives is a **shared-prefix**
     /// tie: a bare atom versus a form-start over the same lexeme (`Inl` alone
     /// versus `Inl(x)` opening a constructor pattern, `List` versus `List(T)`
-    /// opening a type application) — the wider form families (`def`, `val`,
+    /// opening a type application) — the wider form families (`def`, `let`,
     /// `fn`, the `(` group, the `#{` record) are factored at the grammar, so
     /// they tie on the local key (zero
     /// streaming delta, equal continuation and sort ranks). The completion
@@ -4389,6 +4394,7 @@ mod tests
             (Lexeme::SubshellOpen, "[", &["subshell_open"]),
             (Lexeme::SubshellClose, "]", &["subshell_close"]),
             (Lexeme::FileDescriptor, "2", &["file_descriptor"]),
+            (Lexeme::ArmBar, "|", &["arm_bar"]),
             (Lexeme::Punct, "#!sh{", &["#!sh{", "#!{"]),
             (Lexeme::Punct, "$!py{", &[
                 "$!py{",
@@ -4647,7 +4653,7 @@ mod tests
         // right after one only matches the whole stream when the first run's
         // window reads into the second run's tokens.
         let pbg = built()?;
-        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = case b { Inl(x) => x, Inr(y) => y };\n";
+        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = match b { Inl(x) => x, Inr(y) => y };\n";
         let source = SourceText::from(src);
         let tokens = label(SourceFragment::from(src));
         let mut molder = Molder::new(&pbg);
@@ -5362,7 +5368,10 @@ mod tests
             ("def x = 1 ;", "def_value"),
             ("def x : Integer ;", "def_value"),
             ("def f(y : Integer) -> -F Integer { return y }", "def_value"),
-            ("data Color : Type {\n  Red : Color;\n}", "data_declaration"),
+            (
+                "data Color : Type where {\n  | Red : Color\n}",
+                "data_declaration",
+            ),
         ];
         for count in 1_usize ..= 6 {
             let attributes = vec!["runs(\"1\")"; count].join(", ");
@@ -5451,8 +5460,8 @@ mod tests
             [CandidateLabel::from("def")]
         );
         assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("val")).as_slice(),
-            [CandidateLabel::from("val")]
+            candidate_labels(Lexeme::LowerWord, TokenText::from("leta")).as_slice(),
+            [CandidateLabel::from("leta")]
         );
         assert_eq!(
             candidate_labels(Lexeme::LowerWord, TokenText::from("let")).as_slice(),

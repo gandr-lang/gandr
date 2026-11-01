@@ -6,14 +6,14 @@
 // inhabit, and two corollas it relates must have as many elements.
 
 /// A rig's binary operations, two corollas of one shape.
-theory Rig {
+theory Rig where {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
 }
 
 /// A semigroup: one binary operation.
-theory Semi {
+theory Semi where {
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 }
@@ -21,7 +21,7 @@ theory Semi {
 /// A relabelling of the corolla's four elements, natural along its
 /// automorphisms.
 def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
-  case e {
+  match e {
     +{.0 = u} => +{.2 = u},
     +{.1 = u} => +{.3 = u},
     +{.2 = u} => +{.0 = u},
@@ -32,7 +32,7 @@ def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
 /// A relabelling of the corolla's four elements that is not natural along
 /// its automorphisms.
 def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
-  case e {
+  match e {
     +{.0 = u} => +{.2 = u},
     +{.1 = u} => +{.1 = u},
     +{.2 = u} => +{.0 = u},
@@ -60,7 +60,7 @@ def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = ren
 
 /// The booleans into the corolla's four elements.
 def widen(b : Bool) -> Unit + Unit + Unit + Unit {
-  case b {
+  match b {
     true => +{.0 = unit},
     false => +{.1 = unit}
   }
@@ -68,7 +68,7 @@ def widen(b : Bool) -> Unit + Unit + Unit + Unit {
 
 /// The corolla's four elements onto the booleans.
 def narrow(e : Unit + Unit + Unit + Unit) -> Bool {
-  case e {
+  match e {
     +{.0 = u} => +{.0 = u},
     +{.1 = u} => +{.1 = u},
     +{.2 = u} => +{.0 = u},

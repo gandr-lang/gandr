@@ -16,15 +16,15 @@
 // - see: `model-laws.gandr` — a law stated as its path type
 
 /// The naturals, apart from any theory.
-data Ticks : Type {
+data Ticks : Type where {
   /// No tick.
-  NoTick : Ticks;
+  | NoTick : Ticks
   /// One tick more.
-  Tick : (n : Ticks) --> Ticks;
+  | Tick : (n : Ticks) --> Ticks
 }
 
 /// A carrier with a unit and a product, and one rule: the unit is a left unit.
-theory LeftUnit {
+theory LeftUnit where {
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -40,7 +40,7 @@ def tick(n : Ticks) -> Ticks { Tick(n) }
 
 /// Joins two counts by recursion on the left one.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
-  case m {
+  match m {
     NoTick => n,
     Tick(k) => Tick(joinLeft[<](k, n))
   }
@@ -48,7 +48,7 @@ def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
 
 /// Joins two counts by recursion on the right one.
 def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
-  case n {
+  match n {
     NoTick => m,
     Tick(k) => Tick(joinRight[<](m, k))
   }
@@ -56,14 +56,14 @@ def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
 
 /// Joining no tick on the left leaves a count as it is, by induction on it.
 def rec noTickJoinsRight(n : Ticks) -> Path(Ticks, joinRight(NoTick, n), n) {
-  case n {
+  match n {
     NoTick => here(NoTick),
     Tick(k) => cong(tick, noTickJoinsRight[<](k))
   }
 }
 
 /// Joining on the left as a model: its carrier converts the rule's sides.
-module ByLeft : Model(LeftUnit) {
+module ByLeft : Model(LeftUnit) where {
   /// The naturals carry it.
   type M = Ticks;
 
@@ -78,7 +78,7 @@ module ByLeft : Model(LeftUnit) {
 }
 
 /// Joining on the right as a model: its carrier leaves the rule's sides apart.
-module ByRight : Model(LeftUnit) {
+module ByRight : Model(LeftUnit) where {
   /// The naturals carry it.
   type M = Ticks;
 

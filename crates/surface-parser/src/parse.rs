@@ -916,6 +916,7 @@ impl<'source> FormSplit<'source>
                 Lexeme::Space => 16,
                 Lexeme::Unknown => 17,
                 Lexeme::ShellStringFragment => 18,
+                Lexeme::ArmBar => 19,
             });
             spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
         }
@@ -1272,7 +1273,7 @@ mod tests
         };
         for (closure, document) in [
             (
-                "def a = 1;\nmodule M {\n  def b = (a, 2);\n}\n",
+                "def a = 1;\nmodule M where {\n  def b = (a, 2);\n}\n",
                 "def c = M.b;\ndef d = (c ;\n",
             ),
             ("def a = 1;\n", "  \n// c\n\ndef b = a;\n"),
@@ -1555,7 +1556,7 @@ pure greeting
         // before each top-level head and nowhere else; every seam holds but
         // the last, which follows a statement rather than a declaration.
         let pbg = built_in()?;
-        let src = "def a = 1;\n@[doc(\"b\")] def b = 2;\nmodule M {\n  def c = 3;\n  def d = 4;\n}\ndata Bit : Type {\n  Off : Bit;\n}\n1;\ndef e = 5;\n";
+        let src = "def a = 1;\n@[doc(\"b\")] def b = 2;\nmodule M where {\n  def c = 3;\n  def d = 4;\n}\ndata Bit : Type where {\n  | Off : Bit\n}\n1;\ndef e = 5;\n";
         let source = SourceText::from(src);
         let mut molder = Molder::new(&pbg);
         let split = FormSplit::new(&molder, source);
@@ -1777,7 +1778,7 @@ pure greeting
     fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let src = r#"def nth @[A : Type, i : Fin(length(xs))] (xs : List(A)) -> A {
+        let src = r#"def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
   pure xs
 }
 "#;
@@ -1829,7 +1830,7 @@ pure greeting
         let fragments = vec![
             "def x = 1;",
             "fn(a) { pure a }",
-            "case v { Inl(x) => x, Inr(y) => y }",
+            "match v { Inl(x) => x, Inr(y) => y }",
             "if c { pure 1 } else { pure 2 }",
             "#{ a = 1, b = \"s\" }",
             "[1, 2, 3] ++ [4]",

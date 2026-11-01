@@ -1,5 +1,5 @@
 /// `module_declaration`: a module: a named body of definitions.
-module Counter {
+module Counter where {
   @[ checks ]
   def zero = 0;
 }

@@ -6,20 +6,20 @@
 // is no type.
 
 /// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The codes: the naturals, and the functions from one coded type to another.
-data U : Type {
-  NatC : U;
-  Arrow : (a : U, b : U) --> U;
+data U : Type where {
+  | NatC : U
+  | Arrow : (a : U, b : U) --> U
 }
 
 /// The decoder: each arm returns the type its code names.
 def rec el(u : U) -> Type {
-  case u {
+  match u {
     NatC => return Nat,
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
   }
@@ -36,8 +36,8 @@ def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
 
 /// A value packed with its code: the second field's type is the decode of the
 /// first.
-data Coded : Type {
-  Pack : (c : U, v : el(c)) --> Coded;
+data Coded : Type where {
+  | Pack : (c : U, v : el(c)) --> Coded
 }
 
 /// A code packed where the natural code says a natural stands: the second

@@ -1,5 +1,5 @@
 /// `UncertifiedAllowance`: univalence over a bound past the largest a catalogue builds at.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
@@ -7,7 +7,7 @@ theory Magma {
 
 @[ checks ]
 def exchange(b : Bool) -> -F Bool {
-  case b {
+  match b {
     true => +{.1 = unit},
     false => +{.0 = unit}
   }

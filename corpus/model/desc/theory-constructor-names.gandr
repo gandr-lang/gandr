@@ -6,28 +6,28 @@
 
 /// λ-terms with de Bruijn indices, whose application is named as `Theory`'s
 /// is.
-data Bruijn : Type {
-  Ix : (n : Integer) --> Bruijn;
-  Abst : (t : Bruijn) --> Bruijn;
-  App : (t : Bruijn, u : Bruijn) --> Bruijn;
+data Bruijn : Type where {
+  | Ix : (n : Integer) --> Bruijn
+  | Abst : (t : Bruijn) --> Bruijn
+  | App : (t : Bruijn, u : Bruijn) --> Bruijn
 }
 
 /// A monoid's signature presented as data, in a source that already declares
 /// `App`.
-theory Mon {
+theory Mon where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 }
 
 /// One kind, named as `Theory`'s sort link is, declared after the block.
-data Kind : Type {
-  Sort : Kind;
+data Kind : Type where {
+  | Sort : Kind
 }
 
 /// One per `Oper` link of a presentation's operation chain, zero at its end.
 def rec opsOf(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Oper(name, inputs, outputs, rest) => { run r <- opsOf[<](rest); r + 1 },
     _ => 0
   }
@@ -36,7 +36,7 @@ def rec opsOf(chain : Theory) -> Integer {
 /// The block read by `Presents`: two operations, `mul` and `one`.
 @[ runs("2") ]
 def presentedOps() -> Integer {
-  case Mon {
+  match Mon {
     Presents(sorts, opers, rules) => opsOf(opers),
     _ => 0
   }
@@ -49,7 +49,7 @@ def applied() -> Bruijn { App(Ix(0), Ix(1)) }
 /// `Sort` matches a `Kind`.
 @[ runs("1") ]
 def sorted() -> Integer {
-  case Sort {
+  match Sort {
     Sort => 1
   }
 }

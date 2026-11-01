@@ -1,4 +1,4 @@
-//! A definition quantified over stages: `def applyAt @[i : Size] (f :
+//! A definition quantified over stages: `def applyAt[i : Size](f :
 //! Nat[<i] => Nat, x : Nat[<i])`.
 //!
 //! - **The signature is read off the declared type.** The lowering writes each
@@ -18,7 +18,7 @@
 //!   satisfies refused by name; a binder no argument shows leaves its
 //!   occurrences plain. The arguments then check against the re-staged type
 //!   ([`restaged`]) by the stage order.
-//! - **A supplied stage is held to the solved one.** A call writing `f[i = j]`
+//! - **A supplied stage is held to the solved one.** A call writing `f[.i = j]`
 //!   carries the stage beside its declaration, never into the kernel; the stage
 //!   solved for `i` must be `j`, and a supply for a binder no argument shows
 //!   leaves the fragment.
@@ -383,7 +383,7 @@ fn wrapped(
 ///   one step below its bound's stage, and no stage otherwise. A mark at `<i`
 ///   reads `i` off an argument bound `<s` at `s`, and off nothing at a stage
 ///   itself. The kernel reads the same stages. A stage `supplied` for a binder,
-///   `f[i = j]`, is the stage solved for it.
+///   `f[.i = j]`, is the stage solved for it.
 /// - fails: `found`'s refusal; [`CheckRefusal::StagesDisagree`] at the argument
 ///   whose reading the solved stage does not satisfy, naming the binder, and at
 ///   `head` for a supplied stage other than the solved one; the out-of-fragment

@@ -12,7 +12,7 @@ import "./circle-base.gandr";
 
 /// Doubling the free naturals by structural recursion.
 def rec doubleNat(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(Succ(doubleNat[<](p)))
   }

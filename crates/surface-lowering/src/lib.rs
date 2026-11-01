@@ -36,9 +36,9 @@
 //! outside a `rec { }` block, whose members are admitted as one.
 //!
 //! **A module declaration flattens to named members.** Each member of
-//! `module M { … }`, at every depth, is one declaration admitted in source
-//! order under its structured name, the enclosing modules' names then its
-//! own; a path is governed by the module that binds it, and an inline
+//! `module M where { … }`, at every depth, is one declaration admitted in
+//! source order under its structured name, the enclosing modules' names then
+//! its own; a path is governed by the module that binds it, and an inline
 //! signature reorders the exports and hides what it omits, checking each
 //! component at its member.
 //!
@@ -50,8 +50,8 @@
 //! module relates to nothing but itself; `:` keeps `τ` visible (the decisions
 //! are in `module::sealing`).
 //!
-//! **`Model(S)` is derived, never written.** `module M : Model(S) { … }` is
-//! checked against the signature the lowering derives from the presentation
+//! **`Model(S)` is derived, never written.** `module M : Model(S) where { … }`
+//! is checked against the signature the lowering derives from the presentation
 //! of the `theory S` declared before it: a type component per sort, a type
 //! family per indexed sort over its index telescope, a member per operation
 //! binding its free sorts first, and a `Path`-typed member per rule — node for
@@ -221,7 +221,7 @@
 //! `Nested`). A call at an application's head stands nested under the force
 //! the head takes, and the checker runs it when it returns a function (#3935).
 //! *Order*: runs bind in written order around the innermost
-//! enclosing computation, never out of a `thunk` or a `case` arm. *Where*:
+//! enclosing computation, never out of a `thunk` or a `match` arm. *Where*:
 //! the checker's elaboration, each minted bind carrying the nested call's
 //! span. `run c` is the written spelling of the same run, an expression
 //! wherever a value is read; first in a block's statement or at an

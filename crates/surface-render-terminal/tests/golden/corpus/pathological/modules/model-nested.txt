@@ -1,7 +1,7 @@
 error[OutOfFragment.WrongSort]: a module declaration cannot stand where a module is expected
    ╭▸ corpus/pathological/modules/model-nested.gandr:14:27
    │
-14 │ module Unascribed : Model(Faceted) {
+14 │ module Unascribed : Model(Faceted) where {
    │                           ━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `inner` is refused with OutOfFragment.WrongSort, as its expectation states

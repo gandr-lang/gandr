@@ -715,12 +715,12 @@ pub fn serialize_value<G>(
 ///
 /// # Specification
 /// - ensures: deterministic output for a given description: `theory` and the
-///   datatype's name, its parameters in parentheses when it has any, then the
-///   shape parameter, the sorts, operations, rule faces and circuit rules in
-///   declaration order, each terminated by `;`, or `{}` when there are none. A
-///   shape renders `boundary Name {p0, p1, …};` with its points' names padded
-///   to one width, then one `face name = {pi, …};` per face, its points
-///   ascending.
+///   datatype's name, its parameters in parentheses when it has any, then
+///   `where` and the shape parameter, the sorts, operations, rule faces and
+///   circuit rules in declaration order, each terminated by `;`, or `{}` when
+///   there are none. A shape renders `boundary Name {p0, p1, …};` with its
+///   points' names padded to one width, then one `face name = {pi, …};` per
+///   face, its points ascending.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -740,7 +740,7 @@ pub fn serialize_value<G>(
 #[must_use]
 #[spec(ensures: |ref text| text.as_ref().strip_prefix("theory ")
     .and_then(|body| body.strip_prefix(desc.id.name.as_ref()))
-    .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " {" } else { "(" }))
+    .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " where {" } else { "(" }))
     && text.as_ref().ends_with(if matches!(desc.shape, Maybe::Absent(_)) && desc.sorts.is_empty()
         && desc.opers.is_empty() && desc.rules.is_empty() && desc.circuits.is_empty() { "{}" } else { "; }" }))]
 pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
@@ -813,11 +813,11 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
         ));
     }
     let rendered = if members.is_empty() {
-        format!("theory {}{params} {{}}", desc.id.name)
+        format!("theory {}{params} where {{}}", desc.id.name)
     }
     else {
         format!(
-            "theory {}{params} {{ {}; }}",
+            "theory {}{params} where {{ {}; }}",
             desc.id.name,
             members.join("; ")
         )
@@ -856,7 +856,7 @@ fn render_oper_member(oper: &OperDesc) -> String
 
 /// Render one port (`m : Nat`), spelling the sort bare when the port carries
 /// no authored name, a restricted binder telescope as nested
-/// `pi+ (x : S) . T`, outermost binder first, and its atom abstractions as
+/// `(x : S) -> T`, outermost binder first, and its atom abstractions as
 /// `bind (a : N) .` outside them.
 ///
 /// A binder is a form of a named port, so an anonymous port under one renders
@@ -867,7 +867,7 @@ fn render_oper_member(oper: &OperDesc) -> String
 ///   bare sort, and under either renders as `_`, a colon separator and its
 ///   sort; authored names render as the name, a colon separator and their sort.
 ///   The sort ends with the port's own sort application, after one `bind`
-///   prefix per abstraction and then one `pi+` prefix per binder.
+///   prefix per abstraction and then one `(x : S) ->` prefix per binder.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -887,16 +887,18 @@ fn render_oper_member(oper: &OperDesc) -> String
 fn render_port(port: &SortRef) -> String
 {
     let mut sort = render_sort(&port.sort, &port.arguments);
-    let binders = port
-        .abstractions
-        .iter()
-        .map(|atom| ("bind", atom))
-        .chain(port.bindings.iter().map(|binder| ("pi+", binder)));
-    for (keyword, binder) in binders.rev() {
+    for binder in port.bindings.iter().rev() {
         sort = format!(
-            "{keyword} ({} : {}) . {sort}",
+            "({} : {}) -> {sort}",
             binder.name,
             render_sort(&binder.sort, &binder.arguments)
+        );
+    }
+    for atom in port.abstractions.iter().rev() {
+        sort = format!(
+            "bind ({} : {}) . {sort}",
+            atom.name,
+            render_sort(&atom.sort, &atom.arguments)
         );
     }
     match authored_name(port) {
@@ -1075,7 +1077,7 @@ mod tests
     fn desc_inspection_renders_the_structure()
     {
         assert_eq!(
-            "theory Maybe(a) { sort Maybe : Type; }",
+            "theory Maybe(a) where { sort Maybe : Type; }",
             serialize_desc(&maybe_desc()).as_ref(),
             "the inspection notation names the parameters and the sort set; constructors have \
              no item-level member spelling in the theory normal form"
@@ -1173,7 +1175,7 @@ mod tests
             Attrs::empty(),
         );
         assert_eq!(
-            "theory Vec(a) { sort Vec : Type; }",
+            "theory Vec(a) where { sort Vec : Type; }",
             serialize_desc(&desc).as_ref(),
             "constructors — graded, attributed, or right-nested — carry no member spelling: \
              the item-level `data` member is retired from the theory normal form"
@@ -1222,7 +1224,7 @@ mod tests
         )
         .with_circuits([rule]);
         assert_eq!(
-            "theory Nat { sort Nat : Type; rule cong1 : (rule p : Nat ==> Nat) add(x, y) ==> \
+            "theory Nat where { sort Nat : Type; rule cong1 : (rule p : Nat ==> Nat) add(x, y) ==> \
              add(x\u{2032}, y); }",
             serialize_desc(&desc).as_ref(),
             "a circuit member renders its telescope and its sphere"
@@ -1265,7 +1267,7 @@ mod tests
         .with_circuits(circuits);
         assert_eq!(
             serialize_desc(&desc).as_ref(),
-            "theory Ordered { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
+            "theory Ordered where { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
         );
     }
 
@@ -1295,7 +1297,7 @@ mod tests
             Attrs::empty(),
         )
         .with_sorts([]);
-        assert_eq!(serialize_desc(&desc).as_ref(), "theory Empty {}");
+        assert_eq!(serialize_desc(&desc).as_ref(), "theory Empty where {}");
     }
 
     #[test]
@@ -1328,7 +1330,7 @@ mod tests
             .with_shape(TheoryShape::new("Point", ShapeSize::from(1_usize), []));
         assert_eq!(
             serialize_desc(&bare).as_ref(),
-            "theory Cells { boundary Point {p0}; }",
+            "theory Cells where { boundary Point {p0}; }",
             "a boundary is a member: a description of nothing else is not empty"
         );
         let eleven =
@@ -1339,7 +1341,7 @@ mod tests
                 ]));
         assert_eq!(
             serialize_desc(&eleven).as_ref(),
-            "theory Cells { boundary Line {p00, p01, p02, p03, p04, p05, p06, p07, p08, p09, p10}; \
+            "theory Cells where { boundary Line {p00, p01, p02, p03, p04, p05, p06, p07, p08, p09, p10}; \
              face ends = {p00, p10}; }",
             "past ten points each name is padded, so the names sort in point order"
         );
@@ -1352,7 +1354,7 @@ mod tests
             ]));
         assert_eq!(
             serialize_desc(&square).as_ref(),
-            "theory Cells { boundary Square {p0, p1, p2, p3}; face left = {p0, p2}; face right = \
+            "theory Cells where { boundary Square {p0, p1, p2, p3}; face left = {p0, p2}; face right = \
              {p1, p3}; face none = {}; sort A : Type; }",
             "the boundary comes first, then each face, its names in point order"
         );
@@ -1380,7 +1382,7 @@ mod tests
             Attrs::empty(),
         );
         assert_eq!(
-            "theory Wrap { sort Wrap : Type; }",
+            "theory Wrap where { sort Wrap : Type; }",
             serialize_desc(&desc).as_ref(),
             "a primitive-field constructor renders no member spelling either"
         );
@@ -1472,7 +1474,7 @@ mod tests
         let bound = SortRef::new("", "T").pi_plus([SortIndex::new("x", "S")]);
         assert_eq!(
             render_port(&bound),
-            "_ : pi+ (x : S) . T",
+            "_ : (x : S) -> T",
             "an anonymous port under a binder renders under the placeholder name"
         );
         for (outputs, expected) in [

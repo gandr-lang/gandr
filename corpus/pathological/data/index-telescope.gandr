@@ -8,44 +8,44 @@
 import "../../model/data/data-base.gandr";
 
 /// Positions below a bound.
-data Fin : Nat -> Type {
+data Fin : Nat -> Type where {
   /// The first position below the successor of `n`.
-  FZ : (n : Nat) --> Fin(Succ(n));
+  | FZ : (n : Nat) --> Fin(Succ(n))
 }
 
 /// A constructor states the position before the bound, out of the telescope's
 /// order: the position stands where the bound `n : Nat` is stated.
 @[ refuses("TypeMismatch") ]
-data Swapped : (n : Nat, i : Fin(n)) --> Type {
+data Swapped : (n : Nat, i : Fin(n)) --> Type where {
   /// The two indices in the wrong order.
-  Turned : (n : Nat, i : Fin(n)) --> Swapped(i, n);
+  | Turned : (n : Nat, i : Fin(n)) --> Swapped(i, n)
 }
 
 /// A constructor states a position below `n` at a bound one past it.
 @[ refuses("TypeMismatch") ]
-data Past : (n : Nat, i : Fin(n)) --> Type {
+data Past : (n : Nat, i : Fin(n)) --> Type where {
   /// The position stands below `n`, not below its successor.
-  Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i);
+  | Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i)
 }
 
 /// The type of an index reads an earlier index at the wrong type: `i` is a
 /// position, and `Fin` asks for a bound.
 @[ refuses("TypeMismatch") ]
-data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type {
+data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type where {
   /// A mark at three indices.
-  Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j);
+  | Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j)
 }
 
 /// A telescope with no arrow after it states no universe.
 @[ refuses("MalformedForm") ]
-data Unended : (n : Nat) {
+data Unended : (n : Nat) where {
   /// The one constructor.
-  Only : Unended;
+  | Only : Unended
 }
 
 /// An index takes no grade.
 @[ refuses("MalformedForm") ]
-data Graded : (1 n : Nat) --> Type {
+data Graded : (n[1] : Nat) --> Type where {
   /// A mark at zero.
-  AtZero : Graded(Zero);
+  | AtZero : Graded(Zero)
 }

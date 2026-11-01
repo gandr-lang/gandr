@@ -16,8 +16,8 @@
 //! # The word
 //!
 //! The block presents a theory and `Theory` is the datatype of presentations,
-//! so `theory Monoid { … }` binds `Monoid : Theory` and `Model(Monoid)` is the
-//! signature of its models: the object theories of Kovács and Sattler's
+//! so `theory Monoid where { … }` binds `Monoid : Theory` and `Model(Monoid)`
+//! is the signature of its models: the object theories of Kovács and Sattler's
 //! generalised logical framework, presented by a signature in Kaposi and
 //! Xie's sense, and the word Clear, OBJ and Maude chose for the same construct
 //! (`th`, `fth`).

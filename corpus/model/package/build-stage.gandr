@@ -16,7 +16,7 @@ import "../data/data-base.gandr";
 
 /// Each module of a list, quoted on a line of its own, each line indented and ended by a comma.
 def rec lines(modules : List(String)) -> String {
-  case modules {
+  match modules {
     Nil => "",
     Cons(path, rest) => {
       run more <- lines[<](rest);
@@ -27,7 +27,7 @@ def rec lines(modules : List(String)) -> String {
 
 /// The `modules` array: `[]` when the list is empty, else one line per module between the brackets.
 def listed(modules : List(String)) -> String {
-  case modules {
+  match modules {
     Nil => "[]",
     Cons(_, _) => {
       run each <- lines(modules);

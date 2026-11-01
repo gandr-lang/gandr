@@ -12,14 +12,14 @@
 
 /// The older signature, as this importer wrote it.
 @[ refuses("SignatureMismatch.Missing") ]
-theory Older {
+theory Older where {
   /// The answer.
   oper answer : Integer;
 }
 
 /// A newer signature with a label, which the newer source does not keep.
 @[ refuses("SignatureMismatch.Missing") ]
-theory Tagged {
+theory Tagged where {
   /// The reply.
   oper reply : Integer;
   /// The label.
@@ -27,7 +27,7 @@ theory Tagged {
 }
 
 /// A flow that reads the tagged version at the older signature.
-flow retagged : Tagged ~~> Older {
+flow retagged : Tagged ~~> Older where {
   def answer = reply;
 }
 

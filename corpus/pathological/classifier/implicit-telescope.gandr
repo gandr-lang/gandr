@@ -41,7 +41,7 @@ def inParentheses = thunk { same(Integer, 3) };
 /// A resident naming no implicit of `same`.
 @[ refuses("UnresolvedName") ]
 def strayResident : () => Integer;
-def strayResident = thunk { same[b = Integer](3) };
+def strayResident = thunk { same[.b = Integer](3) };
 
 /// `same` named as a value, its implicit unsupplied.
 @[ refuses("ImplicitUnsupplied") ]
@@ -49,10 +49,10 @@ def sameNamed : +U (Integer -> -F Integer);
 def sameNamed = same;
 
 /// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, so the
-/// supply is `λ t. chosen(t)[x = 7]`, and `7` is no value of every `t`.
+/// supply is `λ t. chosen(t)[.x = 7]`, and `7` is no value of every `t`.
 @[ refuses("TypeMismatch") ]
-def chosenStanding : Type => Integer = chosen[x = 7];
+def chosenStanding : Type => Integer = chosen[.x = 7];
 
 /// Two implicits each typed by the other: no order binds either first.
 @[ refuses("TelescopeCycle") ]
-def tangled @[a : b, b : a] (x : a) -> -F a { return x }
+def tangled[a : b, b : a](x : a) -> -F a { return x }

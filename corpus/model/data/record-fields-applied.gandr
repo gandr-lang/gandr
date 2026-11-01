@@ -4,7 +4,7 @@
 
 /// A field bound once and applied twice.
 def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> Integer {
-  case m {
+  match m {
     #{.start = s, .step = t} => {
       run zero <- s();
       t(t(zero))
@@ -14,7 +14,7 @@ def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> Integer
 
 /// A field bound once and applied once.
 def oneStep(m : #{start : () => Integer, step : Integer => Integer}) -> Integer {
-  case m {
+  match m {
     #{.start = s, .step = t} => t(s())
   }
 }

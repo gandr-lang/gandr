@@ -18,9 +18,9 @@ import "./conversion-base.gandr";
 
 /// Fibonacci, the doubly recursive definition.
 def rec fib(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
-    Succ(m) => case m {
+    Succ(m) => match m {
       Zero => Succ(Zero),
       Succ(k) => plus(fib[<](m), fib[<](k))
     }
@@ -29,7 +29,7 @@ def rec fib(n : Nat) -> Nat {
 
 /// Fibonacci by iteration over a pair of accumulators.
 def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
-  case n {
+  match n {
     Zero => a,
     Succ(m) => fibFrom[<](m, b, plus(a, b))
   }

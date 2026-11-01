@@ -5,7 +5,7 @@ error[LoopNotRespected]: this case might tell a loop apart from staying put: car
    │    │                ─ checked against `(x : Circle) -> -F Path(Circle, Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-18 │ │┏   case x {
+18 │ │┏   match x {
 19 │ │┃     Base => here(Base)
 20 │ │┃   }
    │ │┗━━━┛ a case its sort's loops do not admit
@@ -22,8 +22,8 @@ error[LoopNotRespected]: this case answers at its loop's point by a case over an
    │    │           │
    │ ┌──┘           checked against `(a : Circle) -> Circle -> -F #{around : Path(Circle, a, a), centre : Circle}`; while checking the body of this function; binds a : Circle
    │ │
-29 │ │┏   case a {
-30 │ │┃     Base => case b {
+29 │ │┏   match a {
+30 │ │┃     Base => match b {
 31 │ │┃       Base => #{centre = Base, around = loop}
 32 │ │┃     }
 33 │ │┃   }
@@ -40,7 +40,7 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
    │    │             ─ checked against `(x : Circle) -> -F Path(Circle, Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-51 │ │┌   case x {
+51 │ │┌   match x {
 52 │ ││     Base => here(Base),
    │ ││             ────────── an endpoint the point does not convert to
 53 │ ││     loop => here(here(Base))

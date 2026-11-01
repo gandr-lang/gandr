@@ -5,7 +5,7 @@
 
 /// A theory law that collapses a product of equal factors.
 @[ refuses("RulesNonLinear") ]
-theory Idempotent {
+theory Idempotent where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule idem : mul(x, x) ==> x;

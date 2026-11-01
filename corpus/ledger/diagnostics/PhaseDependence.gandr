@@ -1,5 +1,5 @@
 /// `PhaseDependence`: a type member reads a value member of its own module.
-module Counted {
+module Counted where {
   @[ runs("3") ]
   def count = 3;
   @[ refuses("PhaseDependence") ]

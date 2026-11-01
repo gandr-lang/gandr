@@ -1,5 +1,5 @@
 @[ refuses("RulesNonLinear") ]
-theory Copy {
+theory Copy where {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (s : Nat);
 

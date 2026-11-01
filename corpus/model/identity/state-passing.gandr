@@ -10,16 +10,16 @@
 
 /// Programs that only store, quotiented by put-put: a store the next store
 /// overwrites is no store.
-pub data Stores : Type {
-  End : (x : Integer) --> Stores;
-  Store : (s : Integer, k : Stores) --> Stores;
-  rule Store(s, Store(u, k)) <=> Store(u, k);
+pub data Stores : Type where {
+  | End : (x : Integer) --> Stores
+  | Store : (s : Integer, k : Stores) --> Stores
+  rule : Store(s, Store(u, k)) <=> Store(u, k);
 }
 
 /// The final state from an initial one: each store hands its state to the
 /// rest of the program, and the end returns the state it is handed.
 def rec final(p : Stores, s : Integer) -> Integer {
-  case p {
+  match p {
     End(_x) => s,
     Store(t, k) => final[<](k, t)
   }

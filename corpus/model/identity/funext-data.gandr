@@ -10,7 +10,7 @@ import "./flow-data.gandr";
 
 /// A shape's width: a circle's radius, a rectangle's first side.
 pub def width(shape : Shape) -> Integer {
-  case shape {
+  match shape {
     Circle(r) => r,
     Rect(w, h) => w
   }
@@ -18,7 +18,7 @@ pub def width(shape : Shape) -> Integer {
 
 /// A figure's width: a round's radius, a box's second side.
 def figureWidth(figure : Figure) -> Integer {
-  case figure {
+  match figure {
     Round(r) => r,
     Box(h, w) => w
   }
@@ -36,7 +36,7 @@ def widths : Path(Shape => Integer, width, throughFigure) = funext(width, throug
 /// A shape drawn as its figure, the sides swapped in the other order of
 /// binding.
 def drawn(shape : Shape) -> Figure {
-  case shape {
+  match shape {
     Circle(r) => Round(r),
     Rect(a, b) => Box(b, a)
   }
@@ -47,14 +47,14 @@ def drawn(shape : Shape) -> Figure {
 def drawings : Path(Shape => Figure, Shapes.toFigure, drawn) = funext(Shapes.toFigure, drawn);
 
 /// A light's two states, neither holding a field.
-data Light : Type {
-  Stop : Light;
-  Go : Light;
+data Light : Type where {
+  | Stop : Light
+  | Go : Light
 }
 
 /// A light switched.
 def switch(light : Light) -> Light {
-  case light {
+  match light {
     Stop => Go,
     Go => Stop
   }

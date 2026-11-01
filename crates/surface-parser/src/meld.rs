@@ -2463,15 +2463,16 @@ impl<'pbg> MeldState<'pbg>
     /// the floor is the slope base.
     ///
     /// Known bound: a container whose own member carries the damage — the
-    /// `module M { def bad = ( 1 ; def good = 2; }` shape — force-closes the
-    /// container too, so `good` is emitted as a sibling of `M` rather than a
-    /// member of it. The member is tiles of the container's rule rather than a
-    /// form of its own, so there is no member-level ghost to close it with,
-    /// and telling a container apart from a declaration needs the rule a mold
-    /// was numbered for — which the grammar reads back
-    /// ([`Pbg::rule_of`](gandr_surface_grammar::Pbg::rule_of)) but this repair
-    /// does not yet consult. Both declarations survive as distinct items; what
-    /// the repair does not preserve is which one owns the later declaration.
+    /// `module M where { def bad = ( 1 ; def good = 2; }` shape — force-closes
+    /// the container too, so `good` is emitted as a sibling of `M` rather
+    /// than a member of it. The member is tiles of the container's rule
+    /// rather than a form of its own, so there is no member-level ghost to
+    /// close it with, and telling a container apart from a declaration
+    /// needs the rule a mold was numbered for — which the grammar reads
+    /// back ([`Pbg::rule_of`](gandr_surface_grammar::Pbg::rule_of)) but
+    /// this repair does not yet consult. Both declarations survive as
+    /// distinct items; what the repair does not preserve is which one owns
+    /// the later declaration.
     ///
     /// # Specification
     /// - requires: `candidates` are molds of this state's PBG.
@@ -2852,7 +2853,7 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// The molder ranks a fresh atom / form-start candidate by whether its sort
     /// matches this expectation, so `"hi"` reads as the expression string at an
-    /// expression slot and the pattern string in a `val`/`case` pattern slot,
+    /// expression slot and the pattern string in a `let`/`match` pattern slot,
     /// without a completion traversal. The expectation is the nearest
     /// unsaturated operator's right-hole sort, or the nearest open form
     /// frontier's right-hole sort, defaulting to [`Sort::Expression`] at the
@@ -3385,14 +3386,18 @@ impl<'pbg> MeldState<'pbg>
     /// form's closer (the `;` closing a `def` whose value is a bare hole)
     /// molds against the correct frontier. A completable frontier whose
     /// `≐`-successor shares a label with the upcoming token (a `?` before a
-    /// `hole_name` word) stays open so the name still attaches.
+    /// `hole_name` word) stays open so the name still attaches. A required
+    /// tail a closed hole leaves whole (`x @ ?` before an arm's `=>`) settles
+    /// too, so the enclosing form, not the tail, meets the token.
     ///
     /// # Specification
     /// - requires: `labels` are the upcoming token's candidate labels.
     /// - ensures: reduces to a clean operand meld every topmost completable
-    ///   frontier none of whose successors carries a label in `labels`; stops
-    ///   at the first non-completable or token-continuable frontier; introduces
-    ///   no obligation.
+    ///   frontier none of whose successors carries a label in `labels`, and
+    ///   every required tail so left whole that the token does not extend, in
+    ///   turn until neither closes a frontier; stops at the first
+    ///   non-completable or token-continuable frontier; introduces no
+    ///   obligation.
     /// - provides: the molder's pre-gather hole-settling pass.
     /// - fails: never.
     /// - panics: none.
@@ -3412,27 +3417,37 @@ impl<'pbg> MeldState<'pbg>
         labels: CandidateLabels<'_>,
     )
     {
-        self.settle_filled_required_tail(Incoming::Token(labels));
-        while let Some(frontier) = self.nearest_open_form() {
-            let Some(Role::FormTile {
-                mold: head_mold, ..
-            }) = self.stack.get(usize::from(frontier)).map(|cell| cell.role)
-            else {
-                break;
-            };
-            if bool::from(self.pbg.mold_has_required_tail(head_mold)) {
+        // Closing a completable hole can leave a required tail whole beneath
+        // it (`x @ ?` before `=>`), and settling that tail can expose another
+        // completable frontier, so the two settle in turn until neither
+        // closes a frontier.
+        loop {
+            self.settle_filled_required_tail(Incoming::Token(labels));
+            let before = self.frontiers.len();
+            while let Some(frontier) = self.nearest_open_form() {
+                let Some(Role::FormTile {
+                    mold: head_mold, ..
+                }) = self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+                else {
+                    break;
+                };
+                if bool::from(self.pbg.mold_has_required_tail(head_mold)) {
+                    break;
+                }
+                if !bool::from(FormTable::is_form_last(self.pbg, head_mold)) {
+                    break;
+                }
+                // Keep the frontier open when the upcoming token could be its
+                // `≐`-successor (a `?` before a `hole_name` word), so the name
+                // still attaches to the hole.
+                if bool::from(self.successor_label_in(head_mold, labels)) {
+                    break;
+                }
+                self.close_form(StackIndex::from(frontier));
+            }
+            if self.frontiers.len() == before {
                 break;
             }
-            if !bool::from(FormTable::is_form_last(self.pbg, head_mold)) {
-                break;
-            }
-            // Keep the frontier open when the upcoming token could be its
-            // `≐`-successor (a `?` before a `hole_name` word), so the name
-            // still attaches to the hole.
-            if bool::from(self.successor_label_in(head_mold, labels)) {
-                break;
-            }
-            self.close_form(StackIndex::from(frontier));
         }
     }
 
@@ -10949,9 +10964,9 @@ mod tests
             "#!{ echo a b c d e f; ls | grep x && echo y; }",
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
             "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
-            "data Tree(a) { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
+            "data Tree(a) where { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
             "def s = \"a ${ f(\"${x}\") } b\";",
-            "case v { Inl(x) => x, Inr(y) => y }",
+            "match v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
             ") } ] stray closers",
             "let p = (1, 2); if c { pure p } else { pure p }",
@@ -11267,13 +11282,13 @@ mod tests
                 "@[ checks ]\n/// x\ndef x = 1;\n",
             ],
             &[
-                "data D : Type { A : D; }\n",
-                "@[ doc(\"x\") ] data D : Type { A : D; }\n",
-                "/// x\ndata D : Type { A : D; }\n",
+                "data D : Type where { | A : D }\n",
+                "@[ doc(\"x\") ] data D : Type where { | A : D }\n",
+                "/// x\ndata D : Type where { | A : D }\n",
             ],
             &[
-                "@[ checks ] data D : Type { A : D; }\n",
-                "@[ doc(\"x\"), checks ] data D : Type { A : D; }\n",
+                "@[ checks ] data D : Type where { | A : D }\n",
+                "@[ doc(\"x\"), checks ] data D : Type where { | A : D }\n",
             ],
         ];
         let mut keys = Vec::new();

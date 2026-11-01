@@ -32,7 +32,7 @@ def overPadded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Succ(Zero))
 
 /// A family whose constructor states its element where its length goes.
 @[ refuses("TypeMismatch") ]
-data Misindexed(a : Type) : Nat -> Type {
+data Misindexed(a : Type) : Nat -> Type where {
   /// An element standing where its length goes.
-  Wrong : (x : a) --> Misindexed(a, x);
+  | Wrong : (x : a) --> Misindexed(a, x)
 }

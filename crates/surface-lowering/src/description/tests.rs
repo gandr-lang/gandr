@@ -14,9 +14,9 @@ use crate::fixture::parsed;
 fn data_lowering_preserves_constructor_fields()
 {
     let grammar = grammar();
-    let source = r#"data List(a : Type) : Type {
-        Nil : List(a);
-        Cons : (head : a, tail : List(a)) --> List(a);
+    let source = r#"data List(a : Type) : Type where {
+        | Nil : List(a)
+        | Cons : (head : a, tail : List(a)) --> List(a)
     }"#;
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
@@ -50,8 +50,8 @@ fn data_lowering_preserves_constructor_fields()
 fn a_graded_field_keeps_its_grade_in_the_code_1295()
 {
     let grammar = grammar();
-    let source = r#"data Pair(a : Type) : Type {
-        Both : (1 first : a, ω second : a) --> Pair(a);
+    let source = r#"data Pair(a : Type) : Type where {
+        | Both : (first[1] : a, second[ω] : a) --> Pair(a)
     }"#;
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
@@ -84,9 +84,9 @@ fn codata_observations_preserve_their_codes()
     let grammar = grammar();
     let tree = parsed(
         &grammar,
-        r#"codata Stream(a : Type) : Type {
-        1 head : a;
-        ω tail : Stream(a);
+        r#"codata Stream(a : Type) : Type where {
+        head[1] : a;
+        tail[ω] : Stream(a);
     }"#
         .into(),
     );
@@ -114,12 +114,12 @@ fn operations_and_rules_preserve_their_boundaries()
     let grammar = grammar();
     let tree = parsed(
         &grammar,
-        r#"data Nat : Type {
-        Zero : Nat;
-        Succ : Nat --> Nat;
-        oper add(m : Nat, n : Nat) -> Nat;
-        rule add(Zero, n) ==> n;
-        rule add(Succ(m), n) ==> Succ(add(m, n));
+        r#"data Nat : Type where {
+        | Zero : Nat
+        | Succ : (Nat) --> Nat
+        oper add : (m : Nat, n : Nat) --> Nat;
+        rule : add(Zero, n) ==> n;
+        rule : add(Succ(m), n) ==> Succ(add(m, n));
     }"#
         .into(),
     );
@@ -186,7 +186,7 @@ fn native_data_keeps_telescope_and_nominal_heads()
     use crate::namespace::Recognition;
 
     let grammar = grammar();
-    let source = "data Box(a : Type) : Type { Vacant : Box(a); Packed : a --> Box(a); } def xs : Box(Integer);";
+    let source = "data Box(a : Type) : Type where { | Vacant : Box(a) | Packed : (x : a) --> Box(a) } def xs : Box(Integer);";
     let tree = parsed(&grammar, source.into());
     let mut arena = CoreArena::new();
     let preexisting = arena.value_unit();
@@ -309,11 +309,11 @@ fn the_data_corpus_fixture_elaborates_to_its_descriptions()
 {
     let report = elaborated(SourceText::from(
         r#"
-    data Color : Type { Red : Color; Green : Color; Blue : Color; }
-    data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }
-    data Tree(a : Type) : Type { Leaf : Tree(a); Node : (l : Tree(a), x : a, r : Tree(a)) --> Tree(a); }
-    data Vec(a : Type) : Nat -> Type { Nil : Vec(a, 0); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, 1 + n); }
-    data Empty : Type {}
+    data Color : Type where { | Red : Color | Green : Color | Blue : Color }
+    data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }
+    data Tree(a : Type) : Type where { | Leaf : Tree(a) | Node : (l : Tree(a), x : a, r : Tree(a)) --> Tree(a) }
+    data Vec(a : Type) : Nat -> Type where { | Nil : Vec(a, 0) | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, 1 + n) }
+    data Empty : Type where {}
         "#,
     ));
     assert_eq!(report.diagnostics, []);
@@ -355,7 +355,7 @@ fn the_data_corpus_fixture_elaborates_to_its_descriptions()
 fn the_generator_ladder_elaborates_bare_sides_and_telescopes()
 {
     let report = elaborated(SourceText::from(
-        "data Nat : Type { Zero : Nat; Succ : Nat --> Nat; Pred : (n : Nat) --> Nat; }",
+        "data Nat : Type where { | Zero : Nat | Succ : (Nat) --> Nat | Pred : (n : Nat) --> Nat }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref entry] = *report.declarations.as_slice()
@@ -379,7 +379,7 @@ fn a_declared_datatype_drives_the_generic_consumer_end_to_end()
     use gandr_theory_levitation::Payload;
     use gandr_theory_levitation::generic_eq;
     let report = elaborated(SourceText::from(
-        "data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }",
+        "data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref entry] = *report.declarations.as_slice()
@@ -404,7 +404,7 @@ fn description_wrapper_boundaries_stay_observable_to_pipeline_consumers()
     use gandr_theory_levitation::generic_eq;
     use gandr_theory_levitation::serialize_desc;
     let report = elaborated(SourceText::from(
-        "data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }",
+        "data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }",
     ));
     let [ref entry] = *report.declarations.as_slice()
     else {
@@ -414,7 +414,7 @@ fn description_wrapper_boundaries_stay_observable_to_pipeline_consumers()
     assert_eq!(entry.description.id.name.as_ref(), "Maybe");
     assert_eq!(
         serialize_desc(&entry.description).as_ref(),
-        "theory Maybe(a) { sort Maybe : Type; }"
+        "theory Maybe(a) where { sort Maybe : Type; }"
     );
     assert!(bool::from(generic_eq(&entry.description, &none, &none)));
 }
@@ -424,9 +424,9 @@ fn operation_and_rule_members_elaborate_with_arities_and_faces()
 {
     let report = elaborated(SourceText::from(
         r#"
-    data NatOp : Type { Zero : NatOp; Succ : (n : NatOp) --> NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; }
-    data NatRule : Type { Zero : NatRule; Succ : (n : NatRule) --> NatRule; rule id(Zero) ==> Zero; }
-    data NatDiv : Type { Zero : NatDiv; oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); }
+    data NatOp : Type where { | Zero : NatOp | Succ : (n : NatOp) --> NatOp oper add : (m : NatOp, n : NatOp) --> NatOp; }
+    data NatRule : Type where { | Zero : NatRule | Succ : (n : NatRule) --> NatRule rule : id(Zero) ==> Zero; }
+    data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); }
         "#,
     ));
     let [ref operation, ref rule, ref division] = *report.declarations.as_slice()
@@ -481,7 +481,7 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
 {
     use gandr_theory_levitation::FreeTerm;
     let report = elaborated(SourceText::from(
-        "data NatDiv : Type { Zero : NatDiv; oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv); rule divmod(m, Zero) ==> (Zero, m); rule divmod(Zero, n) ==> (divmod(n, (n))); }",
+        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod(m, Zero) ==> (Zero, m); rule : divmod(Zero, n) ==> (divmod(n, (n))); }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref delivered, ref grouped] = *report.declarations[0].description.rules
@@ -504,11 +504,11 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
 fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respelling()
 {
     let ruled = elaborated(SourceText::from(
-        "data NatFace : Type { Zero : NatFace; oper id(x : NatFace) -> NatFace; rule id(Zero) ==> Zero; }",
+        "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id(Zero) ==> Zero; }",
     ));
     assert_eq!(ruled.diagnostics, []);
     assert_eq!(ruled.declarations[0].description.rules.len(), 1);
-    let source = "data NatFace : Type { Zero : NatFace; oper id(x : NatFace) -> NatFace; rule id(Zero) ~> Zero; }";
+    let source = "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id(Zero) ~> Zero; }";
     let retired = elaborated(SourceText::from(source));
     assert!(retired.declarations[0].description.rules.is_empty());
     let [ref diagnostic] = *retired.diagnostics.as_slice()
@@ -526,7 +526,7 @@ fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respell
 fn an_equation_states_no_direction()
 {
     let report = elaborated(SourceText::from(
-        "data NatEq : Type { Zero : NatEq; oper id(x : NatEq) -> NatEq; rule id(Zero) <=> Zero; }",
+        "data NatEq : Type where { | Zero : NatEq oper id : (x : NatEq) --> NatEq; rule : id(Zero) <=> Zero; }",
     ));
     assert_eq!(report.diagnostics, []);
     let rules: Vec<_> = report.declarations[0].rules().collect();
@@ -538,7 +538,7 @@ fn an_equation_states_no_direction()
         rule.written.orientation,
         crate::description::written::RuleOrientation::Unpinned
     );
-    assert_eq!(rule.print_data(), "rule id(Zero) <=> Zero");
+    assert_eq!(rule.print_data(), "rule : id(Zero) <=> Zero");
     assert_eq!(
         rule.print_theory(&gandr_theory_levitation::Name::from("id")),
         "rule id : id(Zero) <=> Zero"
@@ -548,8 +548,7 @@ fn an_equation_states_no_direction()
 #[test]
 fn the_retired_op_member_lead_declines_with_its_respelling()
 {
-    let source =
-        "data NatRetired : Type { Zero : NatRetired; op stale(x : NatRetired) -> NatRetired; }";
+    let source = "data NatRetired : Type where { | Zero : NatRetired op stale : (x : NatRetired) --> NatRetired; }";
     let report = elaborated(SourceText::from(source));
     assert!(report.declarations[0].description.opers.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
@@ -559,7 +558,7 @@ fn the_retired_op_member_lead_declines_with_its_respelling()
     assert_eq!(diagnostic.fault, DescriptionFault::RetiredOperation);
     assert_eq!(
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("op stale(x : NatRetired) -> NatRetired")
+        Some("op stale : (x : NatRetired) --> NatRetired")
     );
 }
 
@@ -567,7 +566,7 @@ fn the_retired_op_member_lead_declines_with_its_respelling()
 fn codata_declarations_elaborate_with_codata_polarity()
 {
     let report = elaborated(SourceText::from(
-        "codata Stream(a : Type) : Type { head : a; tail : Stream(a); }",
+        "codata Stream(a : Type) : Type where { head : a; tail : Stream(a); }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref entry] = *report.declarations.as_slice()
@@ -589,17 +588,17 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
 {
     for (source, what, result) in [
         (
-            "data Cell(a : Type) : Type { Mk : (get : a -> a) --> Cell(a); }",
+            "data Cell(a : Type) : Type where { | Mk : (get : a -> a) --> Cell(a) }",
             "a function field",
             "Cell(a)",
         ),
         (
-            "data Box : Type { Put : (a : Type) --> Box; }",
+            "data Box : Type where { | Put : (a : Type) --> Box }",
             "a universe field",
             "Box",
         ),
         (
-            "data Pack : Type { Mk : (c : Integer, v : c) --> Pack; }",
+            "data Pack : Type where { | Mk : (c : Integer, v : c) --> Pack }",
             "a field naming the one before it",
             "Pack",
         ),
@@ -618,15 +617,15 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
         else {
             panic!("{what}: its one generator is written")
         };
+        let stated = &generator.result;
         assert_eq!(
-            source
-                .get(usize::from(generator.result.start()) .. usize::from(generator.result.end())),
+            source.get(usize::from(stated.span.start()) .. usize::from(stated.span.end())),
             Some(result),
             "{what}: the result is kept past the field the code cannot carry"
         );
     }
     // An operation the description must carry keeps the field's refusal.
-    let source = "data Cell : Type { Mk : (get : Integer -> Integer) --> Cell; oper reset(c : Cell) -> Cell; }";
+    let source = "data Cell : Type where { | Mk : (get : Integer -> Integer) --> Cell oper reset : (c : Cell) --> Cell; }";
     let report = elaborated(SourceText::from(source));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -640,13 +639,51 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
 }
 
 #[test]
+fn a_multi_output_constructor_describes_one_constructor_per_port()
+{
+    let source = "data Tree : Type where { | Leaf : (n : Integer) --> Tree | Split : (t : Tree) --> (l : Tree, r : Tree) oper prune : (t : Tree) --> Tree; }";
+    let report = elaborated(SourceText::from(source));
+    assert_eq!(report.diagnostics, [], "the description reads every port");
+    let [ref entry] = *report.declarations.as_slice()
+    else {
+        panic!("one description")
+    };
+    let names: Vec<&str> = entry
+        .description
+        .ctors
+        .iter()
+        .map(|ctor| ctor.name.as_ref())
+        .collect();
+    assert_eq!(names, ["Leaf", "Split.l", "Split.r"]);
+    let [_, ref left, ref right] = *entry.description.ctors.as_ref()
+    else {
+        panic!("three constructors")
+    };
+    assert_eq!(left.code, right.code, "the ports share the input `t`");
+    let results: Vec<Option<&str>> = entry
+        .written
+        .constructors
+        .iter()
+        .map(|written| {
+            source.get(
+                usize::from(written.result.span.start()) .. usize::from(written.result.span.end()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        results,
+        [Some("Tree"), Some("Tree"), Some("Tree")],
+        "each port keeps its own result"
+    );
+}
+
+#[test]
 fn a_value_function_field_is_the_function_former()
 {
-    let source = "data Prog : Type { Done : (x : Integer) --> Prog; Get : (k : Integer => Prog) \
-                  --> Prog; Both : (k : (Integer, String) => Prog) --> Prog; Twice : (k : \
-                  Integer => Integer => Prog) --> Prog; Pure : (f : Integer => Integer) --> \
-                  Prog; Put : (s : Integer, k : Prog) --> Prog; rule Put(s, Put(u, k)) <=> \
-                  Put(u, k); }";
+    let source = "data Prog : Type where { | Done : (x : Integer) --> Prog | Get : (k : Integer => Prog) --> Prog | \
+                  Both : (k : (Integer, String) => Prog) --> Prog | Twice : (k : Integer => Integer => Prog) --> Prog \
+                  | Pure : (f : Integer => Integer) --> Prog | Put : (s : Integer, k : Prog) --> Prog rule : Put(s, \
+                  Put(u, k)) <=> Put(u, k); }";
     let report = elaborated(SourceText::from(source));
     assert_eq!(report.diagnostics, [], "every field is carried");
     assert!(
@@ -724,19 +761,20 @@ fn the_thunked_arrow_is_the_function_former_it_spells_3194()
         ("Pure", "Integer => Integer", "+U (Integer -> -F Integer)"),
     ];
     let source = |thunked: bool| {
-        let mut written = String::from("data Prog : Type { Done : (x : Integer) --> Prog; ");
+        let mut written = String::from("data Prog : Type where { | Done : (x : Integer) --> Prog ");
         for &(name, sugared, explicit) in &fields {
             for piece in [
+                "| ",
                 name,
                 " : (k : ",
                 if thunked { explicit } else { sugared },
-                ") --> Prog; ",
+                ") --> Prog ",
             ] {
                 written.push_str(piece);
             }
         }
         written.push_str(
-            "Put : (s : Integer, k : Prog) --> Prog; rule Put(s, Put(u, k)) <=> Put(u, k); }",
+            "| Put : (s : Integer, k : Prog) --> Prog rule : Put(s, Put(u, k)) <=> Put(u, k); }",
         );
         written
     };
@@ -770,7 +808,7 @@ fn the_thunked_arrow_is_the_function_former_it_spells_3194()
 fn the_declined_metadata_golden_is_declined()
 {
     let report = elaborated(SourceText::from(
-        "data Declared : Type { Mk : Declared [variance]; }",
+        "data Declared : Type where { | Mk : Declared [variance] }",
     ));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -782,7 +820,7 @@ fn the_declined_metadata_golden_is_declined()
         diagnostic.fault
     );
     let report = elaborated(SourceText::from(
-        "data Declared : Type { Mk : Declared [variance, strictness]; }",
+        "data Declared : Type where { | Mk : Declared [variance, strictness] }",
     ));
     assert!(
         report.diagnostics.iter().all(|diagnostic| matches!(diagnostic.fault, DescriptionFault::IllFormed(ref reason) if reason.kind == gandr_theory_levitation::WfKind::DeclaresDerivedMetadata)),
@@ -794,7 +832,7 @@ fn the_declined_metadata_golden_is_declined()
 #[test]
 fn a_block_left_open_keeps_the_member_before_its_missing_close()
 {
-    let report = elaborated(SourceText::from("data X : Type { A : X"));
+    let report = elaborated(SourceText::from("data X : Type where { | A : X"));
     assert_eq!(
         report
             .declarations
@@ -810,7 +848,7 @@ fn a_block_left_open_keeps_the_member_before_its_missing_close()
 fn a_result_must_repeat_each_parameter_by_its_own_name()
 {
     let report = elaborated(SourceText::from(
-        "data List(a : Type) : Type { Nil : List(b); }",
+        "data List(a : Type) : Type where { | Nil : List(b) }",
     ));
     assert!(
         !report.diagnostics.is_empty(),
@@ -821,7 +859,9 @@ fn a_result_must_repeat_each_parameter_by_its_own_name()
 #[test]
 fn a_bare_parameter_head_declines_the_whole_declaration_with_its_respelling()
 {
-    let report = elaborated(SourceText::from("data Maybe(a) { None : Maybe(a); }"));
+    let report = elaborated(SourceText::from(
+        "data Maybe(a) where { | None : Maybe(a) }",
+    ));
     assert!(report.declarations.is_empty());
     assert!(
         report
@@ -834,7 +874,7 @@ fn a_bare_parameter_head_declines_the_whole_declaration_with_its_respelling()
 #[test]
 fn a_missing_head_annotation_declines_the_whole_declaration_with_its_respelling()
 {
-    let report = elaborated(SourceText::from("data Color { Red : Color; }"));
+    let report = elaborated(SourceText::from("data Color  where { | Red : Color }"));
     assert!(report.declarations.is_empty());
     assert!(
         report
@@ -845,29 +885,9 @@ fn a_missing_head_annotation_declines_the_whole_declaration_with_its_respelling(
 }
 
 #[test]
-fn the_retired_field_tuple_member_declines_with_the_generator_respelling()
-{
-    let report = elaborated(SourceText::from(
-        "data Maybe(a : Type) : Type { None, Some(x : a) }",
-    ));
-    assert!(report.declarations[0].description.ctors.is_empty());
-    assert_eq!(
-        report
-            .diagnostics
-            .iter()
-            .map(|diagnostic| &diagnostic.fault)
-            .collect::<Vec<_>>(),
-        [
-            &DescriptionFault::GeneratorJudgment,
-            &DescriptionFault::GeneratorJudgment
-        ]
-    );
-}
-
-#[test]
 fn an_instantiated_result_head_declines_as_uninferable()
 {
-    let source = "data Bad(a : Type) : Type { Mk : Bad(Integer); }";
+    let source = "data Bad(a : Type) : Type where { | Mk : Bad(Integer) }";
     let report = elaborated(SourceText::from(source));
     assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
@@ -884,7 +904,7 @@ fn an_instantiated_result_head_declines_as_uninferable()
 #[test]
 fn a_result_head_of_the_wrong_arity_declines()
 {
-    let report = elaborated(SourceText::from("data Bad : Type { Mk : Bad(0); }"));
+    let report = elaborated(SourceText::from("data Bad : Type where { | Mk : Bad(0) }"));
     assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -899,9 +919,9 @@ fn a_result_head_of_the_wrong_arity_declines()
 #[test]
 fn a_named_index_telescope_counts_its_indices_4022()
 {
-    let source = "data N : Type { Z : N; }\ndata Two : (n : N, m : N) --> Type { Both : (n : N, m : \
-                  N) --> Two(n, m); }\ndata Short : (n : N, m : N) --> Type { One : (n : N) --> \
-                  Short(n); }";
+    let source = "data N : Type where { | Z : N }\ndata Two : (n : N, m : N) --> Type where { | Both : (n : N, m : \
+                  N) --> Two(n, m) }\ndata Short : (n : N, m : N) --> Type where { | One : (n : N) --> \
+                  Short(n) }";
     let report = elaborated(SourceText::from(source));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -917,7 +937,9 @@ fn a_named_index_telescope_counts_its_indices_4022()
 #[test]
 fn a_bare_result_head_over_a_parameterized_family_declines()
 {
-    let report = elaborated(SourceText::from("data Bad(a : Type) : Type { Mk : Bad; }"));
+    let report = elaborated(SourceText::from(
+        "data Bad(a : Type) : Type where { | Mk : Bad }",
+    ));
     assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -929,7 +951,7 @@ fn a_bare_result_head_over_a_parameterized_family_declines()
 #[test]
 fn a_foreign_result_head_declines()
 {
-    let report = elaborated(SourceText::from("data Bad : Type { Mk : Other; }"));
+    let report = elaborated(SourceText::from("data Bad : Type where { | Mk : Other }"));
     assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -941,7 +963,7 @@ fn a_foreign_result_head_declines()
 #[test]
 fn a_constructor_led_member_of_a_codata_block_declines()
 {
-    let data = elaborated(SourceText::from("data Boxed : Type { Mk : Boxed; }"));
+    let data = elaborated(SourceText::from("data Boxed : Type where { | Mk : Boxed }"));
     assert_eq!(data.diagnostics, []);
     assert_eq!(
         data.declarations[0]
@@ -952,7 +974,9 @@ fn a_constructor_led_member_of_a_codata_block_declines()
             .collect::<Vec<_>>(),
         ["Mk"]
     );
-    let report = elaborated(SourceText::from("codata Boxed : Type { Mk : Boxed; }"));
+    let report = elaborated(SourceText::from(
+        "codata Boxed : Type where { Mk : Boxed; }",
+    ));
     assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -970,7 +994,8 @@ fn a_constructor_led_member_of_a_codata_block_declines()
 #[test]
 fn a_codata_oper_declines_without_swallowing_observation_and_rule_siblings()
 {
-    let source = "codata S : Type { head : Nat; oper tail(s : S) -> S; rule head ==> head; }";
+    let source =
+        "codata S : Type where { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
     let report = elaborated(SourceText::from(source));
     let [ref entry] = *report.declarations.as_slice()
     else {
@@ -994,15 +1019,15 @@ fn a_codata_oper_declines_without_swallowing_observation_and_rule_siblings()
     assert_eq!(diagnostic.fault, DescriptionFault::MemberPolarity);
     assert_eq!(
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("oper tail(s : S) -> S")
+        Some("oper tail : (s : S) --> S")
     );
 }
 
 #[test]
 fn a_field_reads_each_primitive_and_each_applied_argument()
 {
-    let source = "data Box(a : Type) : Type {\n  Prims : (i : Integer, s : String, b : Boolean, \
-                  u : Unit) --> Box(a);\n  Nested : (inner : Pair(a, Pair(a, a))) --> Box(a);\n}";
+    let source = "data Box(a : Type) : Type where {\n  | Prims : (i : Integer, s : String, b : Boolean, \
+                  u : Unit) --> Box(a)\n  | Nested : (inner : Pair(a, Pair(a, a))) --> Box(a)\n}";
     let report = elaborated(SourceText::from(source));
     assert_eq!(report.diagnostics, Vec::new());
     let [ref entry] = *report.declarations.as_slice()
@@ -1055,7 +1080,8 @@ fn member_refusals_keep_their_spans_and_other_declarations()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "data Flag : Type { Off : Flag; rule bad(x) ~> x; On : Flag; } def later = 7;";
+    let source =
+        "data Flag : Type where { | Off : Flag rule : bad(x) ~> x; | On : Flag } def later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1107,9 +1133,9 @@ fn a_held_member_states_its_own_expectation_1462()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "@[ checks ] data Sub : Type { Zero : Sub; oper minus(m : Sub, n : Sub) -> Sub; \
-                  @[ refuses(\"RulesNonLinear\") ] rule minus(x, x) ==> Zero; oper same(m : Sub, \
-                  n : Sub) -> Sub; rule same(y, y) ==> Zero; }";
+    let source = "@[ checks ] data Sub : Type where { | Zero : Sub oper minus : (m : Sub, n : Sub) --> Sub; \
+                  @[ refuses(\"RulesNonLinear\") ] rule : minus(x, x) ==> Zero; oper same : (m : Sub, \
+                  n : Sub) --> Sub; rule : same(y, y) ==> Zero; }";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1165,7 +1191,7 @@ fn a_held_member_states_its_own_expectation_1462()
         "and, written without a block, reads none of the family's"
     );
 
-    let stray = "data Bit : Type { @[ checks ] Low : Bit; High : Bit; }";
+    let stray = "data Bit : Type where {\n  @[ checks ]\n  | Low : Bit\n  | High : Bit\n}";
     let tree = parsed(&grammar, stray.into());
     let module = lower_module(
         &grammar,
@@ -1198,11 +1224,11 @@ fn an_unended_family_is_refused_once_at_its_close()
     let grammar = grammar();
     for (source, why) in [
         (
-            "data Bit : Type {\n  Zero : Bit;\n  One : Bit;\n  rule and(x, x) ==> x;\n",
+            "data Bit : Type where {\n  | Zero : Bit\n  | One : Bit\n  rule : and(x, x) ==> x;\n",
             "a data family whose last member the cell gate refuses",
         ),
         (
-            "codata Point : Type {\n  x : Integer;\n",
+            "codata Point : Type where {\n  x : Integer;\n",
             "a codata family the decoder would refuse",
         ),
     ] {
@@ -1262,7 +1288,7 @@ fn a_codata_declaration_lowers_to_its_signature()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "data Flag : Type { Off : Flag; On : Flag; }\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef ones : +U Stream(Integer) ;\ndef later = 7;";
+    let source = "data Flag : Type where { | Off : Flag | On : Flag }\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef ones : +U Stream(Integer) ;\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1342,7 +1368,7 @@ fn a_codata_self_reference_keeps_its_written_arguments_2188()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "codata Swap(a : Type, b : Type) : Type[-] { head : a; tail : Swap(b, a); }\ncodata Twisted(a : Type) : Type[-] { head : a; tail : Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }";
+    let source = "codata Swap(a : Type, b : Type) : Type[-] where { head : a; tail : Swap(b, a); }\ncodata Twisted(a : Type) : Type[-] where { head : a; tail : Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1420,7 +1446,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     use crate::namespace::Recognition;
     use crate::resolve::SurfaceName;
     let grammar = grammar();
-    let source = "@[ checks ]\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef later = 7;";
+    let source = "@[ checks ]\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1453,7 +1479,7 @@ fn parameterized_observations_retain_both_port_boundaries()
 {
     use gandr_theory_levitation::SortRef;
     let report = elaborated(SourceText::from(
-        "codata Fun(a : Type, b : Type) : Type { get : b; ap(x : a) : b; }",
+        "codata Fun(a : Type, b : Type) : Type where { get : b; ap : (x : a) --> b; }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref entry] = *report.declarations.as_slice()

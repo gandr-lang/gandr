@@ -9,27 +9,27 @@
 import "./data-base.gandr";
 
 /// A program either reads, branches into a first part and its rest, or stops.
-data E : Type {
+data E : Type where {
   /// This program reads a natural.
-  Get : E;
+  | Get : E
   /// This program runs its first part, then its rest at a successor.
-  Br : (a : E, m : E) --> E;
+  | Br : (a : E, m : E) --> E
   /// This program stops at zero.
-  Stop : E;
+  | Stop : E
 }
 
 /// An outcome carries the natural a program ends at.
-data Out : Type {
+data Out : Type where {
   /// This outcome ends at the natural `v`.
-  Ends : (v : Nat) --> Out;
+  | Ends : (v : Nat) --> Out
 }
 
 /// This fold computes the type a program owes its postcondition `k`.
 def rec wp(e : E, k : Out => Type) -> Type {
-  case e {
+  match e {
     Get => return type(#{w : Nat, post : k(Ends(w))}),
-    Br(a, m) => wp[<](a, fn (o) { case o {
-      Ends(v) => case v {
+    Br(a, m) => wp[<](a, fn (o) { match o {
+      Ends(v) => match v {
         Zero => return Void,
         Succ(_x) => wp[<](m, k)
       }

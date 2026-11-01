@@ -74,7 +74,7 @@ fn a_main_of_another_type_is_refused_by_name_1881()
     for source in [
         "def main() -> -F Integer { return 0 }\n",
         "def main(args : List(String)) -> -F Integer { return 0 }\n",
-        "module Tool { def main() -> -F String { return \"x\" } }\n",
+        "module Tool where { def main() -> -F String { return \"x\" } }\n",
     ] {
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);

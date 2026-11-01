@@ -1,0 +1,7 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+def wound(p : Path(Circle, Base, Base)) -> -F Circle {
+  return Base
+}

@@ -828,7 +828,7 @@ mod tests
                 span: empty,
                 form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Reserved(Unbuilt::Val),
+                boundary: FragmentBoundary::Reserved(Unbuilt::TypeAbstraction),
             },
             LoweringRefusal::MalformedLiteral {
                 span: empty,
@@ -1141,7 +1141,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::VAL),
+            FailureClass::Unimplemented(TrackingIssue::TYPE_ABSTRACTION),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -1262,8 +1262,8 @@ mod tests
             (
                 "def_value",
                 FragmentSort::Declaration,
-                FragmentBoundary::Reserved(Unbuilt::Val),
-                FailureClass::Unimplemented(TrackingIssue::VAL),
+                FragmentBoundary::Reserved(Unbuilt::TypeAbstraction),
+                FailureClass::Unimplemented(TrackingIssue::TYPE_ABSTRACTION),
             ),
             (
                 "instantiation_expression",
@@ -1290,10 +1290,10 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::UNKNOWN_TYPE),
             ),
             (
-                "case_with_view",
+                "match_with_view",
                 FragmentSort::Computation,
-                FragmentBoundary::Reserved(Unbuilt::CaseView),
-                FailureClass::Unimplemented(TrackingIssue::CASE_VIEW),
+                FragmentBoundary::Reserved(Unbuilt::MatchView),
+                FailureClass::Unimplemented(TrackingIssue::MATCH_VIEW),
             ),
             (
                 "representable_universe_type",

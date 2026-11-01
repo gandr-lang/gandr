@@ -363,8 +363,8 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
     let committed: BTreeSet<&str> = TREE_SITTER_NAMED_KINDS.iter().copied().collect();
-    assert_eq!(122, TREE_SITTER_NAMED_KINDS.len());
-    assert_eq!(122, committed.len(), "named kinds are unique");
+    assert_eq!(121, TREE_SITTER_NAMED_KINDS.len());
+    assert_eq!(121, committed.len(), "named kinds are unique");
 
     let pbg_only: BTreeSet<&str> = PBG_ONLY_KINDS.iter().copied().collect();
     assert_eq!(
@@ -671,7 +671,7 @@ fn circuit_arrows_stay_inside_complete_declarations()
 fn module_member_repetition_preserves_siblings_and_nesting() -> Result<(), Box<dyn Error>>
 {
     let grammar = built_in()?;
-    let source = "module M { def one = 1; module N { def two = 2; } def three = 3; }";
+    let source = "module M where { def one = 1; module N where { def two = 2; } def three = 3; }";
     let parsed = parse(&grammar, SourceText::from(source))?;
     assert!(bool::from(parsed.is_clean()), "{:?}", parsed.obligations());
     let tree = parsed.tree();
@@ -725,7 +725,7 @@ fn module_member_repetition_preserves_siblings_and_nesting() -> Result<(), Box<d
     );
     for (position, expected) in [
         (first, "def one = 1;"),
-        (nested, "module N { def two = 2; }"),
+        (nested, "module N where { def two = 2; }"),
         (last, "def three = 3;"),
     ] {
         let span = tree.node(position).expect("member").span();

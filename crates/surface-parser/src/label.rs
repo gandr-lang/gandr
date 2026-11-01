@@ -38,12 +38,35 @@
 //!   projection spread over lines.
 //! - Reversal: a fraction written without its whole part that must read as a
 //!   number, which needs a lead the label does not take.
+//!
+//! # An arm's bar is told apart from the union's
+//!
+//! A `|` opens a clause, a constructor or a match arm when it is the first
+//! token on its line, when it follows a `,` directly inside a brace, or when
+//! it stands directly in a brace whose first token is a `|`; it is then a
+//! [`Lexeme::ArmBar`]. In such a brace, a `|` inside an arm's patterns is the
+//! or-pattern's, as OCaml's `function | A | B -> e` reads it: one standing
+//! before the arm's `=>` with a `=>` still to come before the next `:`, `;`,
+//! line-leading bar or the brace's close. Every other `|` is the union, an
+//! or-pattern or the pipeline. A union inside a
+//! bar block is parenthesised: `| C : (A | B)`. The marking reads brackets,
+//! line starts and the arm's `=>` only, so it runs over the labeled stream,
+//! never inside a scanner.
+//!
+//! - Alternatives: one `|` tile that the molder reads as either, which ties `|
+//!   true => 1 | false => 0` against the pipeline `1 | false`, a bracket stack
+//!   in the scanner, which leaves no ground to relabel from, and or-patterns in
+//!   a clause only in parentheses, which the pattern grammar holds no grouping
+//!   for.
+//! - Reversal: a context the bar reads that brackets, line starts and the arm's
+//!   `=>` do not carry.
 
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_syntax::SourceFragment;
 
+use crate::meld::primitive_copy_wrapper;
 use crate::mold::TokenIndex;
 
 /// The lexical class of one maximal lexeme.
@@ -122,6 +145,10 @@ pub enum Lexeme
     /// `file_descriptor`). A bare digit run NOT before a redirection stays an
     /// ordinary shell word.
     FileDescriptor,
+    /// A `|` that opens a clause, a constructor or a match arm: the first
+    /// token on its line, or one standing directly in a brace whose first
+    /// token is a `|`. Every other `|` stays [`Lexeme::Punct`].
+    ArmBar,
     /// Insignificant layout: whitespace, newlines, comments, or a shebang.
     Space,
     /// A byte the grammar has no tile for (the `UnmoldedTok` path).
@@ -787,9 +814,15 @@ impl Token
 /// keeps the discrimination lookahead-free. Nothing already written can change
 /// meaning: `:` is only ever followed by a type or a signature, and neither can
 /// begin with `>`, so no existing byte sequence re-munches.
+///
+/// **`+=`, `-=` and `*=` write a held place through its value**: `n += 1 ;`
+/// is the statement `n = n + 1 ;`. Each extends a live operator tile with
+/// `=`, and no slot takes `=` after an operator, so nothing written
+/// re-munches.
 const MULTI_PUNCT: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>", "==",
-    "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>", "::",
+    "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", "@![", ":>", "::",
+    "+=", "-=", "*=",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -855,7 +888,215 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
         tokens.push(token);
         pos = next;
     }
+    mark_arm_bars(source_bytes, &mut tokens);
     tokens
+}
+
+/// What a bracket opened, as the arm-bar marking reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opened
+{
+    /// A brace whose first token is a `|`: every `|` directly in it is an arm
+    /// bar, but one among an arm's patterns.
+    Bars
+    {
+        /// The current arm has written a token since its bar.
+        written: bool,
+        /// The current arm's `=>` has passed.
+        arrowed: bool,
+    },
+    /// Any other host brace: a `|` after its `,` opens the next arm.
+    Brace,
+    /// A host parenthesis or bracket.
+    Plain,
+    /// A shell block or a bracket inside one, where `|` is the shell's pipe.
+    Shell,
+}
+
+primitive_copy_wrapper!(
+    /// Whether an arm's `=>` follows a bar standing among its patterns.
+    struct ArrowAhead(bool);
+);
+
+/// Whether a `=>` stands directly in the bracket the token at `from` stands
+/// in, after it and before the next `:`, `;`, line-leading `|` or the
+/// bracket's close.
+///
+/// # Specification
+/// - requires: `tokens` are labeled tokens and `text` reads a token's bytes.
+/// - ensures: true exactly when such a `=>` is found at the starting depth.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mark_arm_bars`].
+/// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
+fn arrow_ahead<'bytes>(
+    tokens: &[Token],
+    from: TokenIndex,
+    text: impl Fn(&Token) -> &'bytes [u8],
+) -> ArrowAhead
+{
+    let mut depth = 0_usize;
+    let mut line_start = false;
+    let after = usize::from(from).saturating_add(1);
+    for token in tokens.get(after ..).unwrap_or_default() {
+        if token.lexeme == Lexeme::Space {
+            line_start |= text(token).contains(&b'\n');
+            continue;
+        }
+        let spelled = text(token);
+        if depth == 0 {
+            match spelled {
+                b"=>" => return ArrowAhead(true),
+                b":" | b";" | b")" | b"]" | b"}" => return ArrowAhead(false),
+                b"|" if line_start => return ArrowAhead(false),
+                _ => {},
+            }
+        }
+        if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+            depth = depth.saturating_add(1);
+        }
+        else if matches!(spelled, b")" | b"]" | b"}") {
+            depth = depth.saturating_sub(1);
+        }
+        line_start = false;
+    }
+    ArrowAhead(false)
+}
+
+/// Mark every `|` that opens an arm as [`Lexeme::ArmBar`], and every other
+/// as [`Lexeme::Punct`].
+///
+/// # Specification
+/// - requires: `tokens` are the labeled tokens of `bytes`.
+/// - ensures: a `|` outside a shell block is an arm bar exactly when no token
+///   but space stands between it and the line's start, when the innermost open
+///   bracket is a brace and the token before the bar is a `,`, or when the
+///   innermost open bracket is a brace whose first token after it is a `|`,
+///   unless the brace's current arm has met no `=>` and one follows before the
+///   next `:`, `;`, line-leading `|` or the brace's close, where it is an
+///   or-pattern's; no other token changes.
+/// - panics: none.
+/// - executable: none — the clause would walk every token twice per call; the
+///   witness checks each class.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a line-leading bar, bars on one line in a bar brace, a
+///   union in parentheses inside one, an or-pattern among a clause's patterns
+///   on one line and on its own, a bar after a plain brace's first token, a bar
+///   after a plain brace's comma and a shell pipe each take their class;
+///   marking by line alone, by brace alone or past the arm's `=>` changes one
+///   of them.
+/// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
+fn mark_arm_bars(
+    bytes: SourceBytes<'_>,
+    tokens: &mut [Token],
+)
+{
+    let text = |token: &Token| {
+        bytes
+            .0
+            .get(
+                usize::try_from(token.start).unwrap_or(usize::MAX)
+                    .. usize::try_from(token.end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default()
+    };
+    let is_bar = |token: &Token| {
+        matches!(token.lexeme, Lexeme::Punct | Lexeme::ArmBar) && text(token) == b"|"
+    };
+    let mut opened: Vec<Opened> = Vec::new();
+    let mut line_start = true;
+    let mut after_comma = false;
+    for index in 0 .. tokens.len() {
+        let Some(&token) = tokens.get(index)
+        else {
+            break;
+        };
+        if token.lexeme == Lexeme::Space {
+            if text(&token).contains(&b'\n') {
+                line_start = true;
+            }
+            continue;
+        }
+        let within = opened.last().copied();
+        if is_bar(&token) {
+            let arm = match within {
+                Some(Opened::Shell) => false,
+                Some(Opened::Bars { written, arrowed }) => {
+                    line_start
+                        || !written
+                        || arrowed
+                        || !bool::from(arrow_ahead(tokens, TokenIndex::from(index), text))
+                },
+                Some(Opened::Brace) => line_start || after_comma,
+                Some(Opened::Plain) | None => line_start,
+            };
+            if arm
+                && let Some(&mut Opened::Bars {
+                    ref mut written,
+                    ref mut arrowed,
+                }) = opened.last_mut()
+            {
+                *written = false;
+                *arrowed = false;
+            }
+            if let Some(bar) = tokens.get_mut(index) {
+                bar.lexeme = if arm { Lexeme::ArmBar } else { Lexeme::Punct };
+            }
+            line_start = false;
+            after_comma = false;
+            continue;
+        }
+        if let Some(&mut Opened::Bars {
+            ref mut written,
+            ref mut arrowed,
+        }) = opened.last_mut()
+        {
+            *written = true;
+            *arrowed |= token.lexeme == Lexeme::Punct && text(&token) == b"=>";
+        }
+        if matches!(
+            token.lexeme,
+            Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
+        ) {
+            let spelled = text(&token);
+            if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+                let shell = within == Some(Opened::Shell)
+                    || spelled.starts_with(b"#!")
+                    || spelled.starts_with(b"$!");
+                let bars = !shell
+                    && spelled.ends_with(b"{")
+                    && tokens
+                        .get(index.saturating_add(1) ..)
+                        .unwrap_or_default()
+                        .iter()
+                        .find(|next| next.lexeme != Lexeme::Space)
+                        .is_some_and(&is_bar);
+                opened.push(if shell {
+                    Opened::Shell
+                }
+                else if bars {
+                    Opened::Bars {
+                        written: false,
+                        arrowed: false,
+                    }
+                }
+                else if spelled.ends_with(b"{") {
+                    Opened::Brace
+                }
+                else {
+                    Opened::Plain
+                });
+            }
+            else if matches!(spelled, b")" | b"]" | b"}") {
+                let _closed = opened.pop();
+            }
+        }
+        line_start = false;
+        after_comma = token.lexeme == Lexeme::Punct && text(&token) == b",";
+    }
 }
 
 /// How far past the end of a token any scanner's decision about it reads,
@@ -1220,6 +1461,7 @@ impl Labeling
             labeling.tokens.push(token);
             pos = next;
         }
+        mark_arm_bars(source_bytes, &mut labeling.tokens);
         labeling.tokens.shrink_to_fit();
         labeling.within.shrink_to_fit();
         labeling
@@ -1254,7 +1496,8 @@ impl Labeling
     /// - ensures: the labeling of `after`, as [`new`](Self::new) labels it.
     /// - panics: none.
     /// - economy: scans from the restart to the resynchronizing boundary; the
-    ///   tokens past it are shifted in place.
+    ///   tokens past it are shifted in place, and the arm bars are marked over
+    ///   the whole stream in one pass over its brackets.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — hostile sources replaced at arbitrary byte ranges by
@@ -1391,6 +1634,7 @@ impl Labeling
         within.reserve_exact(fresh_within.len().saturating_add(tail.len()));
         within.extend(fresh_within);
         within.extend(tail);
+        mark_arm_bars(source_bytes, &mut tokens);
         Self { tokens, within }
     }
 }
@@ -1642,13 +1886,18 @@ fn scan_shell_interior(
         },
         b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
         // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
-        // punctuation is structural. The freshness relation's lone `#` is host
-        // syntax, so inside a shell block it stays unknown.
+        // punctuation is structural. The freshness relation's lone `#` and the
+        // sequence literal's `#[` are host syntax, so inside a shell block the
+        // `#` stays unknown.
         b'#' => match scan_hash(bytes, pos) {
             ScanResult {
                 lexeme: Lexeme::Punct,
                 next,
-            } if next == pos.advance(ByteWidth::ONE) => ScanResult::new(Lexeme::Unknown, next),
+            } if next == pos.advance(ByteWidth::ONE)
+                || bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'[')) =>
+            {
+                ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
+            },
             scanned => scanned,
         },
         b'$' => scan_dollar(bytes, pos),
@@ -1898,13 +2147,13 @@ fn scan_slash(
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan a lexeme led by `#`: shebang, shell/record start, the freshness
-/// relation, or a stray byte.
+/// Scan a lexeme led by `#`: shebang, shell/record start, the sequence
+/// literal's `#[`, the freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shebangs are layout, record and valid shell
-///   openers are punctuation, a `#` that opens neither is the one-byte
+/// - ensures: scanning advances; shebangs are layout, record, sequence and
+///   valid shell openers are punctuation, a `#` that opens none is the one-byte
 ///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
 ///   shell is unknown.
 /// - panics: none.
@@ -1933,8 +2182,8 @@ fn scan_hash(
             // `#!{` or `#!dialect{` shell-block start.
             _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
         },
-        // `#{` record / record-type / record-pattern open.
-        Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        // `#{` record / record-type / record-pattern open; `#[` a sequence.
+        Some(b'{' | b'[') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
         // `a # t`: the freshness relation.
         _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
     }
@@ -2245,7 +2494,7 @@ fn scan_shell_fd_or_word(
 ///   keeping the dialect after a rejected prefix changes the observation.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character | Lexeme::Quote | Lexeme::StringFragment | Lexeme::ShellStringFragment | Lexeme::EscapeSequence | Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::SingleQuotedContent | Lexeme::VariableName | Lexeme::SubshellOpen | Lexeme::SubshellClose | Lexeme::FileDescriptor | Lexeme::Space => false })]
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character | Lexeme::Quote | Lexeme::StringFragment | Lexeme::ShellStringFragment | Lexeme::EscapeSequence | Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::SingleQuotedContent | Lexeme::VariableName | Lexeme::SubshellOpen | Lexeme::SubshellClose | Lexeme::FileDescriptor | Lexeme::ArmBar | Lexeme::Space => false })]
 fn scan_shell_start(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2535,7 +2784,8 @@ fn suffix_len(
     None
 }
 
-/// Scan a lexeme led by `.`: the `..` rest token, or a bare `.`.
+/// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
+/// the selectors `.#[` and `.#{`, or a bare `.`.
 ///
 /// A dot before a digit stands alone too, so `.1` is the leading-dot label
 /// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
@@ -2544,16 +2794,17 @@ fn suffix_len(
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a pair is rest punctuation and every other
-///   dot, one before a digit included, stands alone.
+/// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
+///   a selector `.#[` or `.#{`, and every other dot, one before a digit
+///   included, stands alone.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; a pair is rest punctuation and a dot
-///   before a digit stands alone.
+///   and failure to advance change a row; a pair `..` or `.@` is one
+///   punctuation and a dot before a digit stands alone.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && ret.lexeme == Lexeme::Punct)]
 fn scan_dot(
@@ -2561,7 +2812,14 @@ fn scan_dot(
     pos: ByteOffset,
 ) -> ScanResult
 {
-    if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'.')) {
+    let second = bytes.byte(pos.advance(ByteWidth::ONE));
+    let third = bytes.byte(pos.advance(ByteWidth::TWO));
+    if second == Some(SourceByte::from(b'#'))
+        && (third == Some(SourceByte::from(b'[')) || third == Some(SourceByte::from(b'{')))
+    {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
+    }
+    else if second == Some(SourceByte::from(b'.')) || second == Some(SourceByte::from(b'@')) {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
     }
     else {
@@ -3112,8 +3370,8 @@ mod tests
         }
         for operator in [
             "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>",
-            "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
-            "::",
+            "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", "@![",
+            ":>", "::", "+=", "-=", "*=",
         ] {
             assert_eq!(
                 super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)
@@ -3195,6 +3453,7 @@ mod tests
                 ("[x", Lexeme::SubshellOpen, 1),
                 ("]x", Lexeme::SubshellClose, 1),
                 ("# q", Lexeme::Unknown, 1),
+                ("#[x", Lexeme::Unknown, 1),
                 ("word=ok;", Lexeme::EnvAssign, 7),
                 (" \t", Lexeme::Space, 2),
                 ("2>x", Lexeme::FileDescriptor, 1),
@@ -3217,6 +3476,7 @@ mod tests
                 ("#!/x\n", Lexeme::Space, 4),
                 ("#!sh{x", Lexeme::Punct, 5),
                 ("#{x", Lexeme::Punct, 2),
+                ("#[x", Lexeme::Punct, 2),
                 ("#!bad", Lexeme::Unknown, 1),
                 ("#", Lexeme::Punct, 1),
                 ("# q", Lexeme::Punct, 1),
@@ -3280,7 +3540,11 @@ mod tests
                 (".5!", Lexeme::Punct, 1),
                 (".0 =", Lexeme::Punct, 1),
                 ("..x", Lexeme::Punct, 2),
+                (".@ x", Lexeme::Punct, 2),
                 (".x", Lexeme::Punct, 1),
+                (".#[i]", Lexeme::Punct, 3),
+                (".#{.a}", Lexeme::Punct, 3),
+                (".# q", Lexeme::Punct, 1),
                 (".", Lexeme::Punct, 1),
             ]),
             (super::scan_word_or_underscore, &[
@@ -3449,6 +3713,7 @@ mod tests
             (" ", &[Space]),
             ("^", &[Unknown]),
             ("~a", &[Punct, LowerWord]),
+            ("{ | }", &[Punct, Space, ArmBar, Space, Punct]),
         ];
         for &(source, expected) in cases {
             let tokens = label(SourceFragment::from(source));
@@ -3464,6 +3729,51 @@ mod tests
     }
 
     #[test]
+    fn arm_bars_lead_lines_and_bar_braces()
+    {
+        let bars = |source: &str| {
+            label(SourceFragment::from(source))
+                .iter()
+                .filter(|token| {
+                    matches!(token.lexeme, Lexeme::Punct | Lexeme::ArmBar)
+                        && token.text(&SourceFragment::from(source)).as_ref() == "|"
+                })
+                .map(|token| token.lexeme == Lexeme::ArmBar)
+                .collect::<Vec<_>>()
+        };
+        let cases: &[(&str, &[bool])] = &[
+            // On one line in a bar brace, every bar is an arm's.
+            ("match b { | true => 1 | false => 0 }", &[true, true]),
+            // A union inside a bar brace stands in parentheses.
+            ("where { | C : (A | B) | D }", &[true, false, true]),
+            // A brace whose first token is no bar is plain.
+            ("{ A | B => x }", &[false]),
+            // A bar after a plain brace's comma opens the next arm.
+            ("match c { A | B => x, | C => y }", &[false, true]),
+            // A bar leading its line is an arm's wherever it stands.
+            ("f : T where\n  | x => a | b\n  | y => c", &[
+                true, false, true,
+            ]),
+            // A shell pipe is never an arm's, at a line's start or not.
+            ("#!{ a | b\n| c }", &[false, false]),
+            // A closed bar brace gives the bar after it back to the union.
+            ("({ | a } | b)", &[true, false]),
+            // A bar among a clause's patterns, before its `=>`, is an
+            // or-pattern's; the one after the body opens the next clause.
+            ("where { | Red | Green => 1 | Blue => 0 }", &[
+                true, false, true,
+            ]),
+            // A member whose `:` comes before any `=>` keeps its bar.
+            ("where { | K | D : Nat => Nat }", &[true, true]),
+            // A bar leading its line opens a clause even before a `=>`.
+            ("f : T where {\n  | Red\n  | Green => 1\n}", &[true, true]),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(bars(source), expected, "{source:?}");
+        }
+    }
+
+    #[test]
     fn span_tiling_is_total_and_gapless()
     {
         for src in [
@@ -3473,7 +3783,7 @@ mod tests
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
             "@[doc(\"d\")] def x = #{ a = 1 };",
-            "case v { Inl(x) => x, Inr(y) => y }",
+            "match v { Inl(x) => x, Inr(y) => y }",
             "\u{feff}def a = 1;",
         ] {
             let tokens = label(SourceFragment::from(src));

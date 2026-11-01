@@ -214,8 +214,8 @@ fn tiles(
 }
 
 /// The head of the form at `at` declaring `symbol`: from the form's own start
-/// to the first brace among its own tiles, or to the symbol's end when the form
-/// has none.
+/// to the first `where` or brace among its own tiles, or to the symbol's end
+/// when the form has neither.
 ///
 /// # Specification
 /// trivial.
@@ -232,7 +232,7 @@ fn head(
         else {
             return None;
         };
-        (tree.fragment(child).map(<&str>::from) == Some("{"))
+        matches!(tree.fragment(child).map(<&str>::from), Some("where" | "{"))
             .then(|| {
                 Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
             })

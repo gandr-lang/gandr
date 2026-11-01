@@ -1,7 +1,7 @@
 error[SignatureMismatch.Missing]: this import is read at `Wider`, whose `extra` it finds no `pub` declaration of, so this source's declarations are not read
    ╭▸ corpus/pathological/modules/translated-uncovered.gandr:24:64
    │
-16 │ theory Wider {
+16 │ theory Wider where {
    │        ───── declared here
    ‡
 24 │ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;

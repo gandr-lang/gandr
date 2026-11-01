@@ -6,12 +6,12 @@
 /// `nu(bind a . w())`, a normal form, while `outer` rewrites the whole term to
 /// `z()`. The completion orients the two reducts into a rule of their own, and
 /// the kernel replays it from the pair.
-theory Nested {
+theory Nested where {
   sort Name : Atom;
   sort P : Type;
   oper z : () --> P;
   oper w : () --> P;
   oper nu : (p : bind (a : Name). P) --> P;
   rule inner : nu(bind a. z()) ==> w();
-  rule outer : nu(bind a. nu(bind b. p)) ==> p where a # p, b # p;
+  rule outer : nu(bind a. nu(bind b. p)) ==> p where { | a # p | b # p };
 }

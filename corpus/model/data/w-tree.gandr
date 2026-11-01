@@ -10,15 +10,15 @@ import "./data-base.gandr";
 
 /// Binary trees with the branching written as a function: a node picks its
 /// subtree at each branch.
-data Tree : Type {
-  Leaf : Tree;
-  Node : (f : Two => Tree) --> Tree;
+data Tree : Type where {
+  | Leaf : Tree
+  | Node : (f : Two => Tree) --> Tree
 }
 
 /// The number of leaves: each subtree is reached through `f` and counted one
 /// stage below the node.
 def rec size(t : Tree) -> Nat {
-  case t {
+  match t {
     Leaf => Succ(Zero),
     Node(f) => {
       run l <- f(L);
@@ -35,7 +35,7 @@ def leaves(x : Two) -> Tree { Leaf }
 def cherry : Tree = Node(leaves);
 
 /// A node whose left branch is a cherry and whose right is a leaf.
-def lopsided : Tree = Node(fn (x) { case x -> -F Tree { L => cherry, R => Leaf } });
+def lopsided : Tree = Node(fn (x) { match x -> -F Tree { L => cherry, R => Leaf } });
 
 /// The cherry's two leaves, counted through its function.
 @[ runs("Succ(Succ(Zero))") ]

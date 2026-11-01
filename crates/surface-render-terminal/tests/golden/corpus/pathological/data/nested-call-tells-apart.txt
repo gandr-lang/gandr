@@ -5,7 +5,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │    │            ─ checked against `Int -> -F Int`; while checking the body of this function; binds n : Int
    │ ┌──┘
    │ │
-17 │ │┏   case n {
+17 │ │┏   match n {
 18 │ │┃     Z => Z,
 19 │ │┃     S(x) => S(tell[<](x)),
 20 │ │┃     P(x) => S(tell[<](x))

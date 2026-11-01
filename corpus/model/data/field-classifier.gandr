@@ -7,19 +7,19 @@
 import "./data-base.gandr";
 
 /// A representation holding its bytes as a list of integers.
-data Repr : Type {
-  Inline : (s : List(Integer)) --> Repr;
+data Repr : Type where {
+  | Inline : (s : List(Integer)) --> Repr
 }
 
 /// A box over a list of its parameter.
-data Box(a : Type) : Type {
-  Wrap : (xs : List(a)) --> Box(a);
+data Box(a : Type) : Type where {
+  | Wrap : (xs : List(a)) --> Box(a)
 }
 
 /// A list paired with the type of its elements, written as the field before
 /// it.
-data Packed : Type[+, 1] {
-  Pack : (a : Type, xs : List(a)) --> Packed;
+data Packed : Type[+, 1] where {
+  | Pack : (a : Type, xs : List(a)) --> Packed
 }
 
 /// Two bytes inline: the outer list is a `List(Integer)` by its field, the

@@ -3,8 +3,8 @@
 // between the boxes the constructor builds around them.
 
 /// A box holding one integer.
-data Box : Type {
-  Wrap : (n : Integer) --> Box;
+data Box : Type where {
+  | Wrap : (n : Integer) --> Box
 }
 
 /// The constructor as a function.

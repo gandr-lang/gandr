@@ -370,10 +370,10 @@ pub fn module(
             },
             7 => {
                 shape.push(format!(
-                    "data Box{i} : Type {{\n  Empty{i} : Box{i};\n  Full{i} : (n : Integer) --> Box{i};\n}}"
+                    "data Box{i} : Type where {{\n  | Empty{i}\n  | Full{i}(n : Integer)\n}}"
                 ));
                 shape.push(format!(
-                    "def unbox{i}(b : Box{i}) -> -F Integer {{\n  case b {{\n    Empty{i} => return 0,\n    Full{i}(n) => return n\n  }}\n}}"
+                    "def unbox{i}(b : Box{i}) -> -F Integer {{\n  match b {{\n    Empty{i} => return 0,\n    Full{i}(n) => return n\n  }}\n}}"
                 ));
             },
             _ => match root {
@@ -388,7 +388,7 @@ pub fn module(
                 SourceRoot::Fixture | SourceRoot::Pending => {
                     let boxed = i.saturating_sub(1);
                     shape.push(format!(
-                        "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  case b {{\n    Empty{boxed} => return {i}\n  }}\n}}"
+                        "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  match b {{\n    Empty{boxed} => return {i}\n  }}\n}}"
                     ));
                 },
             },

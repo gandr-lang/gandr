@@ -4,15 +4,15 @@
 // parameter's own stage, or at no stage, is refused by name.
 
 /// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The call at the scrutinee itself: `n` stands at the stage, not below it.
 @[ refuses("StageNotBelow") ]
 def rec same(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => n,
     Succ(p) => same[<](n)
   }
@@ -25,7 +25,7 @@ def rec counted(n : Integer) -> Integer { counted[<](n) }
 
 /// The call at the field the case opened, one stage below the parameter's.
 def rec down(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => n,
     Succ(p) => down[<](p)
   }

@@ -3,7 +3,7 @@
 import "../workspace.gandr";
 
 /// What this package reads of `hello`: its greeting, a string.
-pub theory Greeting {
+pub theory Greeting where {
   /// The greeting `hello` exports.
   oper welcome : String;
 }
@@ -17,7 +17,7 @@ import "../../../../library/std/src/package.gandr";
 
 /// The package: its name, the version its workspace states, and the rest of
 /// what `gandr.toml` records.
-pub module Package : Model(Gandr.Package) {
+pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
   def name = "tools";
   /// The version, the workspace's.

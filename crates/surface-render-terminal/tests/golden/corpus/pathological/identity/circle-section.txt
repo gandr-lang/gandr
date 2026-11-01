@@ -9,7 +9,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 57 │ │    spin(wind(p)),
 58 │ │    p
 59 │ │  ) {
-60 │ │┌   case p {
+60 │ │┌   match p {
 61 │ ││     here => here(here(Base)),
 62 │ ││     loop ∷ q => forged[<](q),
    │ ││                 ━━━━━━━━━━━━ its type does not convert: expected `-F Path(Path(Circle, Base, Base), spin(wind(loop ∷ q)), loop ∷ q)`, found `-F Path(Path(Circle, Base, Base), spin(wind(q)), q)`
@@ -29,7 +29,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │    │               ─ checked against `(a : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), a, a)`; while checking the body of this function; binds p : Path(Circle, Base, Base)
    │ ┌──┘
    │ │
-74 │ │┏   case p {
+74 │ │┏   match p {
 75 │ │┃     here => here(here(Base)),
 76 │ │┃     loop ∷ q => { run ih <- rewound[<](q); cong(loopOn, ih) },
 77 │ │┃     back(loop) ∷ q => here(back(loop) ∷ q)

@@ -6,7 +6,7 @@ import "../../../library/std/src/package.gandr";
 
 /// The package's model: every field but what it asks of the toolchain inert,
 /// so an edit to any of those leaves the address where it was.
-pub module Package : Model(Gandr.Package) {
+pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
   def name = "hello";
   /// The version the manifest records.

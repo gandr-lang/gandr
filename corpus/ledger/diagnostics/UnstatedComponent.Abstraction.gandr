@@ -2,7 +2,7 @@
 ///
 /// Restriction: a fresh name bound over a process.
 @[ checks ]
-theory Restriction {
+theory Restriction where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;

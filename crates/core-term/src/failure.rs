@@ -122,7 +122,7 @@ impl TrackingIssue
     /// The unknown type `?`.
     pub const UNKNOWN_TYPE: Self = Self(1503);
     /// A match on a view, `case e with v { … }`.
-    pub const CASE_VIEW: Self = Self(1506);
+    pub const MATCH_VIEW: Self = Self(1506);
     /// An operation written with a circuit body.
     pub const OPERATION_FILLER: Self = Self(1507);
     /// An operation declared outside a theory block, which no signature holds:
@@ -182,8 +182,6 @@ impl TrackingIssue
     pub const TYPE_GRADE: Self = Self(2650);
     /// The type abstraction `fn [T] { … }`.
     pub const TYPE_ABSTRACTION: Self = Self(2651);
-    /// The statement `val p = e ;`.
-    pub const VAL: Self = Self(2652);
     /// A stated type or a method call whose declaration the collection does
     /// not carry.
     pub const UNCARRIED_DECLARATION: Self = Self(2654);
@@ -218,6 +216,11 @@ impl TrackingIssue
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);
+    /// A multi-output constructor grading an input or an output `[1]`, whose
+    /// values are circuits, and a joint pattern over a node's outputs.
+    pub const LINEAR_PORTS: Self = Self(4288);
+    /// An inner attribute block at a source's root, decorating the source.
+    pub const SOURCE_ATTRIBUTE: Self = Self(4297);
     /// The terms of a theory of several sorts, of an indexed sort, or of an
     /// operation that binds, abstracts or returns several results.
     pub const SORTED_TERMS: Self = Self(4150);

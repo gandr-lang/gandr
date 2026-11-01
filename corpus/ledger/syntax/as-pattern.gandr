@@ -1,8 +1,9 @@
-/// `as_pattern`: an as-pattern: a pattern whose match is also bound.
+/// `as_pattern`: an as-pattern binds a name to the value its pattern matches,
+/// the name first, `x @ p`, or through the dotted alias, `x .@ p`.
 @[ checks ]
 def same(n : Integer) -> -F Integer {
-  case n {
-    0 as zero => return zero,
+  match n {
+    zero @ 0 => return zero,
     _ => return n
   }
 }

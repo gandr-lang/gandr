@@ -10,11 +10,11 @@
 /// - see: crates/core-sequent/src/closure.rs
 
 /// The naturals the closures return.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero : Nat
   /// The natural after `n`.
-  Succ : (n : Nat) --> Nat;
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The constant function at `n`, a closure over `n`.
@@ -36,7 +36,7 @@ def applied() -> -F Nat {
 /// A suspended choice: `b` when `a` is zero, `a` otherwise, a thunk over both.
 def either(a : Nat, b : Nat) -> -F (+U (-F Nat)) {
   return thunk {
-    case a -> -F Nat {
+    match a -> -F Nat {
       Zero => b,
       Succ(_p) => a
     }

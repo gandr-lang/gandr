@@ -6,13 +6,13 @@
 
 /// The old and the new schema, the translator between them and the flow it
 /// gives.
-pub module Schema {
+pub module Schema where {
   type Old = String * Integer;
   type New = Integer * String * (Unit + Unit);
   /// The translator: the fields swapped and a flag added.
   @[ checks ]
   def toNew(old : Old) -> New {
-    case old {
+    match old {
       #{name, age} => (age, name, +{.0 = unit})
     }
   }

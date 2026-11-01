@@ -682,7 +682,7 @@ fn a_declaration_shadowing_a_builtin_is_rejected_under_policy()
     );
 
     let member = lowered(
-        SourceText::from("module M { def list = 1 ; }"),
+        SourceText::from("module M where { def list = 1 ; }"),
         seeded(ShadowPolicy::Reject),
     );
     assert!(
@@ -704,9 +704,9 @@ fn a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy()
         }]))
     };
     for (written, at) in [
-        ("module Prim { def x = 1 ; }", site(7_usize, 11_usize)),
+        ("module Prim where { def x = 1 ; }", site(7_usize, 11_usize)),
         (
-            "module Prim(S : #{ x : Integer }) :> #{ y : Integer } { def y = S.x ; }",
+            "module Prim(S : #{ x : Integer }) :> #{ y : Integer } where { def y = S.x ; }",
             site(7_usize, 11_usize),
         ),
     ] {

@@ -95,3 +95,15 @@ echo 'clear ~/.dylint_drivers and target/dylint, then rerun the full gate wall'
 echo 'external consumers: mise run check'
 {% endraw %}
 '''
+
+# Every project pin but the compiler and the Dylint driver moves to its newest
+# release, and the lockfile with it. `mise upgrade --bump` would also rewrite
+# `rust-toolchain.toml` to the newest nightly, apart from the rust-clippy tag
+# the Dylint driver is built against; the channel moves only with
+# `toolchain:bump` above. The driver and its linker follow the library's
+# `dylint_linting`, and the CI image builds the driver against its pinned
+# rust-clippy clone, which 6.3's build script, reading a `main` branch, cannot
+# use. The global config's tools stay with the user.
+["tools:bump"]
+description = "Bump every project tool pin but the compiler and the Dylint driver, each moved with what it is built against"
+run = "mise upgrade --bump --no-global --exclude rust --exclude cargo:cargo-dylint --exclude cargo:dylint-link"

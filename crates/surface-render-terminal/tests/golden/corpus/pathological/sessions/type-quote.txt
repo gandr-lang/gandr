@@ -20,6 +20,6 @@ error[OpenSessionPayload]: a session type's payload names a variable bound outsi
 15 │ │   here(String),
 16 │ │   here(type(?String. end))
 17 │ │ );
-   │ └─┘ checked against `Path(Type, ?String. end, ?String. end)`; while forming this type under its binder; binds _ : Type
+   │ └─┘ checked against `Path(Type, ?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
    │
    ╰ note: `open_payload` is refused with OpenSessionPayload, as its expectation states

@@ -24,14 +24,14 @@
 /// the direction the order admits, `S(P(x))` to `x`. The operation's own rule
 /// unfolds it to a predecessor, which the directed rule then cancels.
 @[ normalizes("pred(S(S(Z))) ~> S(Z)") ]
-data IntOp : Type {
-  Z : IntOp;
-  S : (x : IntOp) --> IntOp;
-  P : (x : IntOp) --> IntOp;
-  oper pred(x : IntOp) -> IntOp;
-  rule P(S(x)) ==> x;
-  rule x <=> S(P(x));
-  rule pred(x) <=> P(x);
+data IntOp : Type where {
+  | Z : IntOp
+  | S : (x : IntOp) --> IntOp
+  | P : (x : IntOp) --> IntOp
+  oper pred : (x : IntOp) --> IntOp;
+  rule : P(S(x)) ==> x;
+  rule : x <=> S(P(x));
+  rule : pred(x) <=> P(x);
 }
 
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
@@ -40,9 +40,9 @@ def collapsed : Path(IntOp, S(P(Z)), Z) = here(Z);
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
 /// Path(Circle, Base, Base)`.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 /// A cell adds: the loop's inverse is `back(loop)`, and the cancellation

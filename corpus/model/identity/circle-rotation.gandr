@@ -27,8 +27,8 @@ def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = here(Base);
 /// The square of the two loops is not owed: the paths of the circle are its
 /// words, a set.
 def rotInv1(a : Circle, b : Circle) -> Path(Circle, mul(mul(b, a), invLooper(b)), a) {
-  case a {
-    Base => case b {
+  match a {
+    Base => match b {
       Base => here(Base)
     }
   }
@@ -37,8 +37,8 @@ def rotInv1(a : Circle, b : Circle) -> Path(Circle, mul(mul(b, a), invLooper(b))
 /// Rotating back by `b` and forth is the identity (cubical's `rotInv-2`),
 /// held as `rotInv1` is.
 def rotInv2(a : Circle, b : Circle) -> Path(Circle, mul(mul(invLooper(b), a), b), a) {
-  case a {
-    Base => case b {
+  match a {
+    Base => match b {
       Base => here(Base)
     }
   }
@@ -47,8 +47,8 @@ def rotInv2(a : Circle, b : Circle) -> Path(Circle, mul(mul(invLooper(b), a), b)
 /// Dividing by `b` after it undoes it (cubical's `rotInv-3`), held as
 /// `rotInv1` is.
 def rotInv3(a : Circle, b : Circle) -> Path(Circle, mul(b, invLooper(mul(invLooper(a), b))), a) {
-  case a {
-    Base => case b {
+  match a {
+    Base => match b {
       Base => here(Base)
     }
   }
@@ -57,8 +57,8 @@ def rotInv3(a : Circle, b : Circle) -> Path(Circle, mul(b, invLooper(mul(invLoop
 /// Dividing by `b` before it undoes it (cubical's `rotInv-4`), held as
 /// `rotInv1` is.
 def rotInv4(a : Circle, b : Circle) -> Path(Circle, mul(invLooper(mul(b, invLooper(a))), b), a) {
-  case a {
-    Base => case b {
+  match a {
+    Base => match b {
       Base => here(Base)
     }
   }
@@ -87,7 +87,7 @@ def toLoop(f : Circle => Int) -> #{point : Int, around : Path(Int, point, point)
 /// A point and a loop at it make a map out of the circle, at a point of it: a
 /// non-dependent case whose loop arm is the given loop.
 pub def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> Int {
-  case c {
+  match c {
     Base => x,
     loop => p
   }

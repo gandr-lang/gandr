@@ -11,7 +11,7 @@ import "../../model/data/data-base.gandr";
 /// `halvedThroughPlus[<]` does not take (#392).
 @[ refuses("StageNotBelow") ]
 def rec halvedThroughPlus(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run q <- plus(Zero, p); Succ(halvedThroughPlus[<](q)) }
   }

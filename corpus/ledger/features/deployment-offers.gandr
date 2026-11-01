@@ -13,7 +13,7 @@
 /// - see: crates/surface-driver/tests/cli.rs
 
 /// What a role at `far` reads and writes: values held by key.
-pub theory Store {
+pub theory Store where {
   /// The store holds values of this sort.
   sort V : Type+;
   /// What a computation over the store answers.

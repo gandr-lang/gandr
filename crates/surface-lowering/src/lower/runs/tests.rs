@@ -27,7 +27,7 @@ use crate::lower::native::tests::refusal_of;
 use crate::resolve::SurfaceName;
 
 /// The naturals every witness builds on, and a function to nest.
-const NAT: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                    def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n";
 
 #[test]
@@ -35,7 +35,7 @@ fn an_explicit_runs_attribute_asks_within_its_form()
 {
     let source = format!(
         "{NAT}@[ explicit_runs ]\n\
-         module Asked {{\n\
+         module Asked where {{\n\
          def every(n : Nat) -> -F Nat {{ Succ(twice(n)) }}\n\
          @[ explicit_runs(\"effects\") ]\n\
          def wider(n : Nat) -> -F Nat {{ Succ(twice(Succ(n))) }}\n\
@@ -269,9 +269,9 @@ fn a_run_in_a_match_branch_is_linear_1935()
 {
     let source = format!(
         "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
-         def armed(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run d <- twice(b) ; Succ(d) }} }} }}\n\
-         def chained(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run e <- twice(b) ; run f <- twice(e) ; Succ(f) }} }} }}\n\
-         def reread(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run g <- twice(b) ; second(g, g) }} }} }}\n"
+         def armed(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run d <- twice(b) ; Succ(d) }} }} }}\n\
+         def chained(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run e <- twice(b) ; run f <- twice(e) ; Succ(f) }} }} }}\n\
+         def reread(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run g <- twice(b) ; second(g, g) }} }} }}\n"
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();

@@ -10,12 +10,12 @@
 /// The loop's words as a presented type: its rules rewrite constructor
 /// terms, so a word normalizes to the loops it winds.
 @[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)") ]
-pub data Words : Type {
-  Nil : Words;
-  Loop : (x : Words) --> Words;
-  Unloop : (x : Words) --> Words;
-  rule Loop(Unloop(x)) <=> x;
-  rule Unloop(Loop(x)) <=> x;
+pub data Words : Type where {
+  | Nil : Words
+  | Loop : (x : Words) --> Words
+  | Unloop : (x : Words) --> Words
+  rule : Loop(Unloop(x)) <=> x;
+  rule : Unloop(Loop(x)) <=> x;
 }
 
 /// A function that builds a word: one more loop.
@@ -44,7 +44,7 @@ def loop_not_nil : Path(Words, Loop(Nil), Nil) = here(Nil);
 /// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
 @[ refuses("RuleNotRespected") ]
 def tell_words(c : Words) -> Integer {
-  case c {
+  match c {
     Nil => 0,
     Loop(x) => 1,
     Unloop(x) => 2
@@ -63,7 +63,7 @@ def two_is_one() -> Path(Integer, 2, 1) {
 /// `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
 /// rule reads as `mirror(x)`, so it respects both rules and is admitted.
 def rec mirror(c : Words) -> Words {
-  case c {
+  match c {
     Nil => Nil,
     Loop(x) => Unloop(mirror[<](x)),
     Unloop(x) => Loop(mirror[<](x))

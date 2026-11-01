@@ -16,7 +16,7 @@
 /// The record plane's content-addressed values: a put answers the value's
 /// digest, and the digest gets the value back. A put is idempotent, so the
 /// store commutes with every effect. One instance.
-theory Store {
+theory Store where {
   sort Value : Type;
   sort Digest : Type;
   oper put : (v : Value) --> Digest;
@@ -28,7 +28,7 @@ theory Store {
 /// index, and the index reads the entry back. Two appends do not commute,
 /// so a journal commutes with nothing of its own kind. One instance per
 /// task.
-theory Journal {
+theory Journal where {
   sort Entry : Type;
   sort Index : Type;
   oper append : (e : Entry) --> Index;
@@ -40,7 +40,7 @@ theory Journal {
 /// an outside endpoint: an answer repeats only under a pinned seed and
 /// model. A judge commutes with `Store` and `Trace`, not with `Clock`. One
 /// instance per endpoint.
-theory Judge {
+theory Judge where {
   sort Question : Type;
   sort Readout : Type;
   oper ask : (q : Question) --> Readout;
@@ -49,7 +49,7 @@ theory Judge {
 /// A read-only lookup of a name's claim, such as a host's address or a
 /// tree's identity. Reading twice is reading once, and a witness commutes
 /// with every effect but `Clock`. One instance.
-theory Witness {
+theory Witness where {
   sort Name : Type;
   sort Claim : Type;
   oper lookup : (n : Name) --> Claim;
@@ -58,7 +58,7 @@ theory Witness {
 /// The time now, and a token that expires after a duration. `now` does not
 /// commute with any operation that takes time, so a clock commutes with
 /// nothing. One instance.
-theory Clock {
+theory Clock where {
   sort Instant : Type;
   sort Duration : Type;
   sort Token : Type;
@@ -69,7 +69,7 @@ theory Clock {
 /// A draw from a distribution. No law holds of a draw; an instance under a
 /// fixed seed is deterministic, as a `Store` is. A draw commutes with every
 /// effect. One instance per seed.
-theory Random {
+theory Random where {
   sort Distribution : Type;
   sort Draw : Type;
   oper sample : (d : Distribution) --> Draw;
@@ -77,7 +77,7 @@ theory Random {
 
 /// A write-only sink of events. An emit commutes with every read, and two
 /// emits to one sink do not commute. One instance per sink.
-theory Trace {
+theory Trace where {
   sort Event : Type;
   oper emit : (e : Event) --> Unit;
 }
@@ -86,7 +86,7 @@ theory Trace {
 /// empty type `Void`, so nothing after it runs, and under linearity whatever
 /// unwinds releases its holds. A raise commutes with nothing. One instance
 /// per protocol.
-theory Fail {
+theory Fail where {
   sort Reason : Type;
   oper raise : (r : Reason) --> Void;
 }
@@ -94,13 +94,13 @@ theory Fail {
 /// An asynchronous interruption of the work a token names: the response is
 /// decoupled from the call, so an interrupt commutes with nothing. One
 /// instance per dispatch.
-theory Cancel {
+theory Cancel where {
   sort Token : Type;
   oper interrupt : (t : Token) --> Unit;
 }
 
 /// A put is idempotent: putting a value twice is putting it once.
-theory StoreIdempotent {
+theory StoreIdempotent where {
   sort Value : Type+;
   sort Digest : Type+;
   sort C : Type;
@@ -109,7 +109,7 @@ theory StoreIdempotent {
 }
 
 /// A lookup is read-only: looking a name up twice is looking it up once.
-theory WitnessIdempotent {
+theory WitnessIdempotent where {
   sort Name : Type+;
   sort Claim : Type+;
   sort C : Type;
@@ -119,7 +119,7 @@ theory WitnessIdempotent {
 
 /// The store commutes with every effect, a lookup among them: a put before
 /// a lookup is the lookup before the put.
-theory StoreWitness {
+theory StoreWitness where {
   sort Value : Type+;
   sort Digest : Type+;
   sort Name : Type+;
@@ -134,7 +134,7 @@ theory StoreWitness {
 }
 
 /// An emit commutes with every read, a lookup among them.
-theory TraceWitness {
+theory TraceWitness where {
   sort Event : Type+;
   sort Name : Type+;
   sort Claim : Type+;
@@ -145,7 +145,7 @@ theory TraceWitness {
 }
 
 /// An emit commutes with a journal's read, though appends do not commute.
-theory TraceJournal {
+theory TraceJournal where {
   sort Event : Type+;
   sort Index : Type+;
   sort Entry : Type+;
@@ -156,7 +156,7 @@ theory TraceJournal {
 }
 
 /// A judge commutes with the store: asking before a put is asking after it.
-theory JudgeStore {
+theory JudgeStore where {
   sort Question : Type+;
   sort Readout : Type+;
   sort Value : Type+;
@@ -172,7 +172,7 @@ theory JudgeStore {
 
 /// A judge commutes with a trace: an emit before the question is an emit
 /// after it.
-theory JudgeTrace {
+theory JudgeTrace where {
   sort Question : Type+;
   sort Readout : Type+;
   sort Event : Type+;
@@ -183,7 +183,7 @@ theory JudgeTrace {
 }
 
 /// A draw commutes with every effect, an emit among them.
-theory RandomTrace {
+theory RandomTrace where {
   sort Distribution : Type+;
   sort Draw : Type+;
   sort Event : Type+;

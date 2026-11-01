@@ -14,22 +14,22 @@ def shorthand = #{n = 3, s = "x"};
 def bumped = #{point | n = 4};
 def sigma : #{k : Integer, v : k};
 def last(t : #{Integer, Integer, Integer}) -> -F Integer {
-  case t { #{x, y, z} => return z }
+  match t { #{x, y, z} => return z }
 }
 def punned(r : #{n : Integer, s : String}) -> -F String {
-  case r { #{.n, .s} => return s }
+  match r { #{.n, .s} => return s }
 }
 def renamed(r : #{n : Integer, s : String}) -> -F Integer {
-  case r { #{.n = m} => return m }
+  match r { #{.n = m} => return m }
 }
-def absurd(x : +{}) -> -F Integer { case x {} }
+def absurd(x : +{}) -> -F Integer { match x {} }
 def only : +{Integer};
 def only = +{.0 = 1};
 def failed : +{ok : Integer, err : String};
 def failed = (+{.err = "no"} : +{ok : Integer, err : String});
 def either : Integer + String + Void;
 def pick(v : +{ok : Integer, err : String}) -> -F Integer {
-  case v { +{.ok = n} => return n, +{.err = e} => return 0 }
+  match v { +{.ok = n} => return n, +{.err = e} => return 0 }
 }
 def terminal : +U &{};
 def lazy() -> &{get : -F Integer, put : -F String} {

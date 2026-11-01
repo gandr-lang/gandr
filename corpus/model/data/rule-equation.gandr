@@ -6,10 +6,10 @@
 
 /// The integers with their first rule written smaller side first.
 @[ normalizes("S(P(Z)) ~> Z") ]
-data IntEq : Type {
-  Z : IntEq;
-  S : (x : IntEq) --> IntEq;
-  P : (x : IntEq) --> IntEq;
-  rule x <=> S(P(x));
-  rule P(S(x)) <=> x;
+data IntEq : Type where {
+  | Z : IntEq
+  | S : (x : IntEq) --> IntEq
+  | P : (x : IntEq) --> IntEq
+  rule : x <=> S(P(x));
+  rule : P(S(x)) <=> x;
 }

@@ -1,6 +1,6 @@
 /// `SignatureMismatch.Sort`: an import at a signature that states a member its source exports at another type.
 @[ refuses("SignatureMismatch.Sort") ]
-theory Spelled {
+theory Spelled where {
   oper answer : String;
 }
 

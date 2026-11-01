@@ -2368,7 +2368,7 @@ fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
-    // `@[i : Size, j < i]`, then `@[i : Size, j : Size]`.
+    // `[i : Size, j < i]`, then `[i : Size, j : Size]`.
     let bounded = checkpoints(vec![
         StageBound::Unbounded,
         StageBound::Below(StageBinder::from(0_usize)),
@@ -2438,8 +2438,8 @@ fn a_supplying_value_root_round_trips_and_its_supplies_are_content_1227()
             Stage::At(StageId::from(stage)),
         )
     };
-    // `f[i = j]` in a body quantified `@[j : Size, k : Size]`, then
-    // `f[i = k]`.
+    // `f[.i = j]` in a body quantified `[j : Size, k : Size]`, then
+    // `f[.i = k]`.
     let supplied = checkpoints(vec![supply(0)]);
     let bytes = encode_checkpoints(&supplied).expect("a supplying root encodes");
     assert_eq!(

@@ -3,13 +3,13 @@
 // _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 /// A colour as its three channels.
-data Color3 : Type {
-  RGB : (r : Integer, g : Integer, b : Integer) --> Color3;
+data Color3 : Type where {
+  | RGB : (r : Integer, g : Integer, b : Integer) --> Color3
 }
 
 /// The green channel of a colour, bound by its position in the constructor.
 def green_channel() -> Integer {
-  case (RGB(10, 20, 30) : Color3) {
+  match (RGB(10, 20, 30) : Color3) {
     RGB(r, g, b) => g
   }
 }

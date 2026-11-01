@@ -4,9 +4,9 @@
 // it in its own row, and an entry runs at `+U (-F [Div] T)`. A `for` over a
 // list descends on the list and needs no entry; each `become` is an exit.
 
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def tick(n : Nat) -> Unit {
@@ -31,7 +31,7 @@ def first_zero() -> [Div] Nat { become first(Zero) }
 /// Each arm of a case leaves the loop with its own value.
 def pick(n : Nat) -> [Div] Nat {
   run m <- loop {
-    case n {
+    match n {
       Zero => break(n),
       Succ(p) => break(p),
     }
@@ -46,7 +46,7 @@ def pick_two() -> [Div] Nat { become pick(Succ(Succ(Zero))) }
 /// A `return` inside the loop leaves the function; `continue` runs the loop again.
 def leave(n : Nat) -> [Div] Nat {
   loop {
-    case n {
+    match n {
       Zero => continue,
       Succ(p) => return p,
     }
@@ -83,7 +83,7 @@ def until_none() -> [Div] Integer { become until_done(0) }
 /// A bare `break` leaves the loop with unit, and what follows reads the binder.
 def sift(n : Nat) -> [Div] Nat {
   loop {
-    case n {
+    match n {
       Zero => { break; },
       Succ(p) => { tick(p); continue; },
     }
@@ -133,7 +133,7 @@ def held(n : Nat) -> -F Nat {
 /// the loop reads the binders around it (#283).
 def find_succ(xs : List(Nat), otherwise : Nat) -> Nat {
   for x in xs {
-    case x {
+    match x {
       Zero => continue,
       Succ(p) => return p,
     }

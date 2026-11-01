@@ -1,10 +1,10 @@
 error[DuplicateDefinition]: `Kit` is defined twice
    ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:14:8
    │
- 7 │ module Kit {
+ 7 │ module Kit where {
    │        ─── first written here
    ‡
-14 │ theory Kit.Labelled {
+14 │ theory Kit.Labelled where {
    │        ━━━ written again here
    │
    ├ note: `Labelled` is refused with DuplicateDefinition, as its expectation states
@@ -13,7 +13,7 @@ error[DuplicateDefinition]: `Kit` is defined twice
 error[UnknownMember]: the module `Kit` has no member `Missing`
    ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:21:24
    │
-21 │ module Tag : Model(Kit.Missing) {
+21 │ module Tag : Model(Kit.Missing) where {
    │                        ━━━━━━━ no member of this name
    │
    ├ note: `Tag` is refused with UnknownMember, as its expectation states
@@ -22,7 +22,7 @@ error[UnknownMember]: the module `Kit` has no member `Missing`
 error[LowercaseModuleName]: the module `low` must start with an uppercase letter at the top level
    ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:28:1
    │
-28 │ ┏ module low.Tools {
+28 │ ┏ module low.Tools where {
 29 │ ┃   /// A value.
 30 │ ┃   def k = 1;
 31 │ ┃ }

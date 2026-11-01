@@ -27,7 +27,7 @@ use crate::unit::Unit;
 
 /// The state theory: a value sort the handler fixes, the carrier, and an
 /// operation reading the value and one writing it.
-const STATE: &str = r"theory State {
+const STATE: &str = r"theory State where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
@@ -36,7 +36,7 @@ const STATE: &str = r"theory State {
 
 /// A cost theory: the cost sort the handler fixes, the carrier, a charge, and
 /// the cost monoid's unit and sum, with decalf's two laws.
-const COST: &str = r"theory Cost {
+const COST: &str = r"theory Cost where {
   sort N : Type+;
   sort C : Type;
   oper charge : (c : N, k : C) --> C;
@@ -153,7 +153,7 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
 {
     let cases: [(&str, &[&str], &str, InterfaceFault); 6] = [
         (
-            r"theory Ix {
+            r"theory Ix where {
   sort C : Type;
   sort V(c : C) : Type;
   oper get : (k : pi+ (s : C) . C) --> C;
@@ -165,7 +165,7 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
         (STATE, &["S", "C"], "C", InterfaceFault::Fixed),
         (STATE, &[], "S", InterfaceFault::Unfixed),
         (
-            r"theory Peek {
+            r"theory Peek where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
@@ -176,7 +176,7 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
             InterfaceFault::Carrier,
         ),
         (
-            r"theory Ends {
+            r"theory Ends where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
@@ -187,7 +187,7 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
             InterfaceFault::Continuation,
         ),
         (
-            r"theory Twice {
+            r"theory Twice where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
@@ -214,7 +214,7 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
 }
 
 /// The state theory with both store laws: put-get and put-put.
-const PUT_LAWS: &str = r"theory StatePutLaws {
+const PUT_LAWS: &str = r"theory StatePutLaws where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
@@ -246,7 +246,7 @@ fn a_theory_s_laws_read_for_its_handler_2272()
         ],
         "put-get over `s` and `k`, put-put over `s`, `u` and `k`, in order"
     );
-    let odd = r"theory Odd {
+    let odd = r"theory Odd where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
@@ -276,7 +276,7 @@ fn a_theory_s_laws_read_for_its_handler_2272()
 fn a_theory_s_laws_rewrite_its_scope_s_subject_2272()
 {
     let fixed = fixing([Name::from("S")]);
-    let laws_of = r"theory StateLaws {
+    let laws_of = r"theory StateLaws where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;

@@ -4,23 +4,23 @@
 // arm.
 
 /// Three colours, one arm each.
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// A colour, or none.
-data Chosen : Type {
-  Unchosen : Chosen;
-  Chose : (c : Color) --> Chosen;
+data Chosen : Type where {
+  | Unchosen : Chosen
+  | Chose : (c : Color) --> Chosen
 }
 
 /// `Green` reaches the hole between `Red` and `Blue`: possibly covered, and
 /// refused (#391).
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer {
-  case c {
+  match c {
     Red => 0,
     ? => 1,
     Blue => 2
@@ -31,7 +31,7 @@ def classify(c : Color) -> Integer {
 /// (#391).
 @[ refuses("UndecidedCoverage") ]
 def unwrap(m : Chosen) -> Integer {
-  case m {
+  match m {
     Unchosen => 0,
     Chose(?) => 1
   }

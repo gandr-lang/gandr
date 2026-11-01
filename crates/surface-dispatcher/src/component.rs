@@ -3325,7 +3325,7 @@ mod tests
         // An import inside a module is no import of the source's root: read
         // from its forms alone it names the base, and the source's parse
         // does not.
-        let nested = "module inner {\n  import \"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
+        let nested = "module inner where {\n  import \"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
                       three = 3 ;";
         let tree = Scratch::new(Path::new("formed"), &[
             (Path::new("base.gandr"), SourceText::from(base)),
@@ -3504,7 +3504,7 @@ mod tests
     fn an_import_with_its_quote_against_the_keyword_is_read_as_a_form()
     {
         let grammar = built_in().expect("the grammar builds");
-        let nested = "module inner {\n  import\"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
+        let nested = "module inner where {\n  import\"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
                       three = 3 ;";
         let tree = Scratch::new(Path::new("quoted"), &[]);
         assert_eq!(

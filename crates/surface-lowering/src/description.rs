@@ -166,8 +166,6 @@ pub enum DescriptionFault
     /// A field whose type names a field before it has no first-order
     /// description code: the code's fields are independent.
     DependentField,
-    /// A constructor must use the generator judgment spelling.
-    GeneratorJudgment,
     /// The member belongs to another declaration polarity.
     MemberPolarity,
     /// A type shape has no symbolic first-order reference.
@@ -324,14 +322,24 @@ enum Read
     Native(alloc::boxed::Box<NativeFamily>),
 }
 
-/// A generator judgment as read.
+/// A generator judgment as read: one constructor, or one per output of a
+/// multi-output constructor, its ports.
 struct Generator
 {
-    /// The constructor's description, or the first field its description
-    /// code cannot carry.
-    ctor: Result<CtorDesc<DescriptionGrade>, DescriptionDiagnostic>,
-    /// Where the judgment's name, fields and result are written.
-    written: written::WrittenConstructor,
+    /// Each port's description, in order, or the first field their
+    /// description code cannot carry.
+    ctors: Result<Vec<CtorDesc<DescriptionGrade>>, DescriptionDiagnostic>,
+    /// Where each port's name, fields and result are written, in order.
+    written: Vec<written::WrittenConstructor>,
+}
+
+/// What a constructor writes after its `-->`.
+enum After
+{
+    /// One result type.
+    Single(Placed),
+    /// An output group: each output's name and type, in order.
+    Outputs(Vec<(Placed, Placed)>),
 }
 
 /// A data family the native reading owns whole.
@@ -473,7 +481,6 @@ impl DescriptionDiagnostic
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
             | DescriptionFault::NonUniformResult
-            | DescriptionFault::GeneratorJudgment
             | DescriptionFault::MemberPolarity
             | DescriptionFault::RetiredRuleArrow
             | DescriptionFault::RetiredOperation
@@ -1248,6 +1255,9 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::FamilyHead));
         }
         let (indices, classifier) = self.kind_arity(run)?;
+        if !run.eat(Spelling("where")).0 {
+            return Err(run.fault(DescriptionFault::FamilyHead));
+        }
         if !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::FamilyHead));
         }
@@ -1263,7 +1273,11 @@ impl Reader<'_, '_>
         // Every generator as written, coded or not, for a family the native
         // reading owns whole.
         let mut generators = Vec::new();
-        for member in split_members(run.remaining(), MemberEnd::SemicolonOrComma) {
+        let end = match polarity {
+            DeclPolarity::Data => MemberEnd::BarOrSemicolon,
+            DeclPolarity::Codata => MemberEnd::SemicolonOrComma,
+        };
+        for member in split_members(run.remaining(), end) {
             // An attribute block before a member states the expectation of the
             // declaration the member is held apart as; the collection reads it.
             let member = self.unattributed(member);
@@ -1308,11 +1322,11 @@ impl Reader<'_, '_>
                     DeclPolarity::Data => self
                         .generator(&mut member, &family, &parameters, indices)
                         .map(|generator| {
-                            generators.push(generator.written.clone());
-                            match generator.ctor {
-                                Ok(ctor) => {
-                                    ctors.push(ctor);
-                                    written.constructors.push(generator.written);
+                            generators.extend(generator.written.iter().cloned());
+                            match generator.ctors {
+                                Ok(ported) => {
+                                    ctors.extend(ported);
+                                    written.constructors.extend(generator.written);
                                 },
                                 Err(diagnostic) => uncoded.push(diagnostic),
                             }
@@ -1385,17 +1399,21 @@ impl Reader<'_, '_>
         )))
     }
 
-    /// Read a generator judgment and require a uniform result head, keeping
-    /// where its name, each field and its result are written.
+    /// Read a constructor, `C : R`, `C : (fields) --> R` or
+    /// `C : (fields) --> (l : R, …)`, and require each result to be uniform,
+    /// keeping where its name, each field and each result are written.
     ///
     /// # Specification
     /// - ensures: each payload field keeps its type, grade and order; the
     ///   written constructor holds the name tile, one port per field, its name
-    ///   tile when written, the result's bytes and each of its arguments'. A
+    ///   tile when written, and the result's bytes and each of its arguments'.
+    ///   An output group reads as one constructor per output, its port, named
+    ///   `C.l`, over the same fields, each with its own written result. A
     ///   higher-order or universe field, or one whose type names a field before
     ///   it, leaves the constructor uncoded with the first such field's
-    ///   refusal, and the judgment is still read whole.
-    /// - fails: nonuniform results and incomplete judgments are located.
+    ///   refusal, and the constructor is still read whole.
+    /// - fails: nonuniform results, a member with no colon and incomplete
+    ///   constructors are located.
     /// - panics: none.
     ///
     /// # Errors
@@ -1404,11 +1422,12 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — reordered or instantiated parameters cannot pass head
     ///   uniformity, and an uncoded field keeps the fields and result after it
-    ///   written.
+    ///   written; a two-output constructor describes as its two ports.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.ctor.as_ref().map_or(true, |ctor| ctor.result == *family)))]
+    /// - witness: `description::tests::a_multi_output_constructor_describes_one_constructor_per_port`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |read| !read.written.is_empty() && read.ctors.as_ref().map_or(true, |ctors| ctors.len() == read.written.len() && ctors.iter().all(|ctor| ctor.result == *family))))]
     fn generator(
         &self,
         run: &mut Run<'_>,
@@ -1418,9 +1437,6 @@ impl Reader<'_, '_>
     ) -> Result<Generator, DescriptionDiagnostic>
     {
         let named = run.take()?;
-        if !run.eat(Spelling(":")).0 {
-            return Err(run.fault(DescriptionFault::GeneratorJudgment));
-        }
         let mut fields = Vec::new();
         let mut ports = Vec::new();
         // The first field the description code cannot carry.
@@ -1435,94 +1451,156 @@ impl Reader<'_, '_>
                 },
             }
         };
-        let result = if run.eat(Spelling("(")).0 {
-            let mut bound = Vec::new();
+        if !run.eat(Spelling(":")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let mut bound = Vec::new();
+        let mut field = |first: Placed, grade, label: Maybe<Placed, written::port_name::Absent>| {
+            match self.field(first, family, grade, &bound) {
+                Ok((field, _written)) => fields.push(field),
+                Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
+                    let _first = uncoded.get_or_insert(diagnostic);
+                },
+                Err(diagnostic) => return Err(diagnostic),
+            }
+            ports.push(port(label.map(|binder| binder.span), first));
+            if let Maybe::Present(binder) = label {
+                bound.push(binder);
+            }
+            Ok(())
+        };
+        let after = if run.eat(Spelling("(")).0 {
             while !run.eat(Spelling(")")).0 {
-                let grade = self.grade(run)?;
                 let first = run.take()?;
-                let (ty, label) = if run.eat(Spelling(":")).0 {
-                    (run.take()?, Maybe::Present(first))
+                let grade = self.grade(run)?;
+                if run.eat(Spelling(":")).0 {
+                    field(run.take()?, grade, Maybe::Present(first))?;
                 }
                 else {
-                    (first, Maybe::Absent(written::port_name::Absent::Unnamed))
-                };
-                match self.field(ty, family, grade, &bound) {
-                    Ok((field, _written)) => fields.push(field),
-                    Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
-                        let _first = uncoded.get_or_insert(diagnostic);
-                    },
-                    Err(diagnostic) => return Err(diagnostic),
-                }
-                ports.push(port(label.map(|binder| binder.span), ty));
-                if let Maybe::Present(binder) = label {
-                    bound.push(binder);
+                    field(
+                        first,
+                        grade,
+                        Maybe::Absent(written::port_name::Absent::Unnamed),
+                    )?;
                 }
                 if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                     return Err(run.fault(DescriptionFault::Malformed));
                 }
             }
             if !run.eat(Spelling("-->")).0 {
-                return Err(run.fault(DescriptionFault::GeneratorJudgment));
+                return Err(run.fault(DescriptionFault::Malformed));
             }
-            run.take()?
+            self.after_arrow(run)?
         }
         else {
-            let first = run.take()?;
+            let side = run.take()?;
             if run.eat(Spelling("-->")).0 {
-                match self.field(
-                    first,
-                    family,
+                field(
+                    side,
                     DescriptionGrade::Finite(Multiplicity::from(1_u64)),
-                    &[],
-                ) {
-                    Ok((field, _written)) => fields.push(field),
-                    Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
-                        let _first = uncoded.get_or_insert(diagnostic);
-                    },
-                    Err(diagnostic) => return Err(diagnostic),
-                }
-                ports.push(port(
                     Maybe::Absent(written::port_name::Absent::Unnamed),
-                    first,
-                ));
-                run.take()?
+                )?;
+                self.after_arrow(run)?
             }
             else {
-                first
+                After::Single(side)
             }
         };
-        let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
-        let repeated = arguments
-            .iter()
-            .zip(parameters)
-            .map(|(&span, parameter)| written::WrittenUse {
-                span,
-                named: parameter.named.span,
-            })
-            .collect();
+        // One result per port: the constructor's own, or each output's.
+        let results = match after {
+            After::Single(result) => {
+                alloc::vec![(alloc::string::String::from(self.text(named).0), result)]
+            },
+            After::Outputs(outputs) => outputs
+                .into_iter()
+                .map(|(label, result)| {
+                    (
+                        alloc::format!("{}.{}", self.text(named).0, self.text(label).0),
+                        result,
+                    )
+                })
+                .collect(),
+        };
         let attrs = self.attrs(run)?;
         run.end()?;
-        Ok(Generator {
-            ctor: uncoded.map_or_else(
-                || {
-                    Ok(CtorDesc::new(
-                        self.text(named).0,
-                        Code::product_of(fields),
-                        family.clone(),
-                        attrs,
-                    ))
-                },
-                Err,
-            ),
-            written: written::WrittenConstructor {
+        let mut ctors = Vec::with_capacity(results.len());
+        let mut written = Vec::with_capacity(results.len());
+        for (name, result) in results {
+            let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
+            let repeated = arguments
+                .iter()
+                .zip(parameters)
+                .map(|(&span, parameter)| written::WrittenUse {
+                    span,
+                    named: parameter.named.span,
+                })
+                .collect();
+            written.push(written::WrittenConstructor {
                 named: named.span,
-                fields: ports,
-                result: result.span,
-                head,
-                parameters: repeated,
-                arguments,
-            },
+                fields: ports.clone(),
+                result: written::WrittenResult {
+                    span: result.span,
+                    head,
+                    parameters: repeated,
+                    arguments,
+                },
+            });
+            ctors.push(CtorDesc::new(
+                name,
+                Code::product_of(fields.clone()),
+                family.clone(),
+                attrs.clone(),
+            ));
+        }
+        Ok(Generator {
+            ctors: uncoded.map_or_else(|| Ok(ctors), Err),
+            written,
         })
+    }
+
+    /// Read what a constructor writes after its `-->`: its result type, or an
+    /// output group `(l : T, …)`.
+    ///
+    /// # Specification
+    /// - requires: `run` stands just past the `-->`.
+    /// - ensures: [`After::Single`] over the result; [`After::Outputs`] over
+    ///   each output's name and type, in order.
+    /// - fails: an output with no colon or no type, an empty group, or a group
+    ///   left open, as malformed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`DescriptionFault::Malformed`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-output constructor describes as two ports.
+    /// - witness: `description::tests::a_multi_output_constructor_describes_one_constructor_per_port`
+    #[spec(ensures: |result| !matches!(result, Ok(After::Outputs(ref outputs)) if outputs.is_empty()))]
+    fn after_arrow(
+        &self,
+        run: &mut Run<'_>,
+    ) -> Result<After, DescriptionDiagnostic>
+    {
+        if !run.eat(Spelling("(")).0 {
+            return Ok(After::Single(run.take()?));
+        }
+        let mut outputs = Vec::new();
+        loop {
+            let label = run.take()?;
+            let _grade = self.grade(run)?;
+            if !run.eat(Spelling(":")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            outputs.push((label, run.take()?));
+            if run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                continue;
+            }
+            if run.eat(Spelling(")")).0 {
+                break;
+            }
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        Ok(After::Outputs(outputs))
     }
 
     /// Read a codata observation, retaining its declared input boundary.
@@ -1561,11 +1639,14 @@ impl Reader<'_, '_>
         if run.at(Spelling("oper")).0 || run.at(Spelling("constructor")).0 {
             return Err(run.fault(DescriptionFault::MemberPolarity));
         }
-        let grade = self.grade(run)?;
         let named = run.take()?;
+        let grade = self.grade(run)?;
+        if !run.eat(Spelling(":")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
         if run.eat(Spelling("(")).0 {
             let (inputs, _written) = self.ports(run)?;
-            if !run.eat(Spelling(":")).0 {
+            if !run.eat(Spelling("-->")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
             let result = run.take()?;
@@ -1580,9 +1661,6 @@ impl Reader<'_, '_>
                     attrs,
                 ),
             ));
-        }
-        if !run.eat(Spelling(":")).0 {
-            return Err(run.fault(DescriptionFault::Malformed));
         }
         let ty = run.take()?;
         let (code, written) = self.field(ty, family, grade, &[])?;
@@ -1609,16 +1687,19 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a finite or unrestricted field grade.
+    /// Read a finite or unrestricted field grade, written between brackets
+    /// after the field's name: `x[1] : A`.
     ///
     /// # Specification
+    /// - requires: `run` stands just past the field's name.
     /// - ensures: absent annotation denotes one; written annotations are
-    ///   retained.
-    /// - fails: a finite grade outside u64 is malformed.
+    ///   retained, and `run` stands past the `]`.
+    /// - fails: a finite grade outside u64, or a bracket left open, is
+    ///   malformed.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `Malformed` for an overflowing numeral.
+    /// Returns `Malformed` for an overflowing numeral or an unclosed bracket.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite and unrestricted observations distinguish
@@ -1630,19 +1711,25 @@ impl Reader<'_, '_>
         run: &mut Run<'_>,
     ) -> Result<DescriptionGrade, DescriptionDiagnostic>
     {
-        if run.eat(Spelling("ω")).0 {
-            return Ok(DescriptionGrade::Omega);
+        if !run.eat(Spelling("[")).0 {
+            return Ok(DescriptionGrade::Finite(Multiplicity::from(1_u64)));
         }
-        if run.at(Spelling("number")).0 {
+        let grade = if run.eat(Spelling("ω")).0 {
+            DescriptionGrade::Omega
+        }
+        else {
             let at = run.take()?;
             let value = self
                 .text(at)
                 .0
                 .parse::<u64>()
                 .map_err(|_error| run.fault(DescriptionFault::Malformed))?;
-            return Ok(DescriptionGrade::Finite(Multiplicity::from(value)));
+            DescriptionGrade::Finite(Multiplicity::from(value))
+        };
+        if !run.eat(Spelling("]")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
         }
-        Ok(DescriptionGrade::Finite(Multiplicity::from(1_u64)))
+        Ok(grade)
     }
 
     /// Interpret a field, recognizing the recursive family head and the value
@@ -2173,7 +2260,10 @@ enum TypeFrame
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MemberEnd
 {
-    /// A `;` or a `,`: a data block's generators.
+    /// An arm bar, which opens the next member, or a `;`: a data block's
+    /// constructors and cells, and its keyword-led members.
+    BarOrSemicolon,
+    /// A `;` or a `,`: a codata block's observations.
     SemicolonOrComma,
     /// A `;` alone: a theory's members, a rule among them listing its
     /// freshness conditions with commas.
@@ -2185,7 +2275,10 @@ enum MemberEnd
 /// # Specification
 /// - ensures: nested commas and semicolons stay within their member; a comma
 ///   outside any bracket ends a member only under
-///   [`MemberEnd::SemicolonOrComma`].
+///   [`MemberEnd::SemicolonOrComma`]; under [`MemberEnd::BarOrSemicolon`] an
+///   arm bar outside any bracket ends the member before it and is no member's,
+///   and an `oper`, `op` or `rule` outside any bracket opens a member of its
+///   own.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2220,8 +2313,13 @@ fn split_members(
                 }
                 return result;
             },
-            separator @ (";" | ",")
-                if depth == 0 && (separator == ";" || end == MemberEnd::SemicolonOrComma) =>
+            separator @ (";" | "," | "arm_bar")
+                if depth == 0
+                    && match end {
+                        MemberEnd::BarOrSemicolon => separator != ",",
+                        MemberEnd::SemicolonOrComma => separator != "arm_bar",
+                        MemberEnd::Semicolon => separator == ";",
+                    } =>
             {
                 let count = index.saturating_sub(start);
                 if let Some((member, suffix)) = rest.split_at_checked(count) {
@@ -2232,7 +2330,17 @@ fn split_members(
                 }
                 start = index.saturating_add(1);
             },
-            "(" | "[" | "{" | "#{" => depth = depth.saturating_add(1),
+            "oper" | "op" | "rule" if depth == 0 && end == MemberEnd::BarOrSemicolon => {
+                let count = index.saturating_sub(start);
+                if let Some((member, suffix)) = rest.split_at_checked(count) {
+                    if !member.is_empty() {
+                        result.push(member);
+                    }
+                    rest = suffix;
+                }
+                start = index;
+            },
+            "(" | "[" | "#[" | ".#[" | "{" | "#{" | ".#{" => depth = depth.saturating_add(1),
             ")" | "]" | "}" => depth = depth.saturating_sub(1),
             _ => {},
         }

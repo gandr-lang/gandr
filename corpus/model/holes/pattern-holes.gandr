@@ -4,16 +4,16 @@
 // `pathological/holes/` refuses each shape on its own.
 
 /// Three colours.
-data Shade : Type {
-  Crimson : Shade;
-  Olive : Shade;
-  Navy : Shade;
+data Shade : Type where {
+  | Crimson : Shade
+  | Olive : Shade
+  | Navy : Shade
 }
 
 /// A hole between two arms (#391).
 @[ refuses("UndecidedCoverage") ]
 def rank(c : Shade) -> Integer {
-  case c {
+  match c {
     Crimson => 0,
     ? => 1,
     Navy => 2
@@ -21,15 +21,15 @@ def rank(c : Shade) -> Integer {
 }
 
 /// An integer, or none.
-data Option : Type {
-  NoValue : Option;
-  Value : (x : Integer) --> Option;
+data Option : Type where {
+  | NoValue : Option
+  | Value : (x : Integer) --> Option
 }
 
 /// A hole inside a payload (#391).
 @[ refuses("UndecidedCoverage") ]
 def weigh(m : Option) -> Integer {
-  case m {
+  match m {
     Value(?) => 100,
     NoValue => 200
   }

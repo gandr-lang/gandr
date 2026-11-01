@@ -8,7 +8,7 @@
 /// - see: corpus/model/modules/model-laws.gandr
 
 /// A decision and the laws that make it an equivalence.
-theory Equivalence {
+theory Equivalence where {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
   law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
@@ -23,12 +23,12 @@ theory Equivalence {
 }
 
 /// One value.
-data Single : Type {
-  Only : Single;
+data Single : Type where {
+  | Only : Single
 }
 
 /// Every two values are alike, so each law's sides convert, and the checker discharges all three.
-module Omitting : Model(Equivalence) with sort Carrier = Single {
+module Omitting : Model(Equivalence) with sort Carrier = Single where {
   /// Every two values are alike.
   def alike(a : Single, b : Single) -> Bool { true }
 }

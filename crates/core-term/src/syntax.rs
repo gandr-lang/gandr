@@ -1255,7 +1255,7 @@ pub enum ValueType
     /// A value kept in a region: `A at c`, a value of `A` that may capture a
     /// shared view lent while the region lives, and so lives as long as the
     /// region rather than the access: a capability scope's or a hold's, or a
-    /// caller's region the definition abstracts, `A at r` under `@[r :
+    /// caller's region the definition abstracts, `A at r` under `[r :
     /// Region]`.
     Kept
     {

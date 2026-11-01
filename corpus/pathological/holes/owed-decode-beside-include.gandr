@@ -7,13 +7,13 @@
 // may run.
 
 /// A carrier with a test.
-theory Base {
+theory Base where {
   sort Carrier : Type;
   oper test : (a : Carrier) --> Bool;
 }
 
 /// A carrier with a test and another, over `Base`.
-theory Wider {
+theory Wider where {
   include Base;
   oper other : (a : Carrier) --> Bool;
 }

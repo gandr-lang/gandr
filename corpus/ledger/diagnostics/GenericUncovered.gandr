@@ -1,7 +1,7 @@
 /// `GenericUncovered`: `Eq.generic` over a data type with a function field, which has no equality the program decides.
 @[ checks ]
-data Shape : Type {
-  Shape : (f : (Integer) => Integer) --> Shape;
+data Shape : Type where {
+  | Shape : (f : (Integer) => Integer) --> Shape
 }
 
 @[ refuses("GenericUncovered") ]

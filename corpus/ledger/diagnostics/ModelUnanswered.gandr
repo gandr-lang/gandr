@@ -2,14 +2,14 @@
 ///
 /// A unit: a carrier and its one element.
 @[ checks ]
-theory Pointed {
+theory Pointed where {
   sort C : Type;
   oper point : C;
 }
 
 /// The point, over any pointed type the slot names.
 @[ checks ]
-def pointOf @[p : Model(Pointed)] (c : p.C) -> p.C { p.point }
+def pointOf[p : Model(Pointed)](c : p.C) -> p.C { p.point }
 
 @[ refuses("ModelUnanswered") ]
 def unanswered() -> Integer { pointOf(3) }

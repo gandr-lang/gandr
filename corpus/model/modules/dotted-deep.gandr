@@ -3,25 +3,25 @@
 // and a path as deep reads it.
 
 /// A shape three modules deep.
-theory Deep.Mid.Low.Shape {
+theory Deep.Mid.Low.Shape where {
   /// Its size.
   oper size : Integer;
 }
 
 /// Tools in the same three modules.
-module Deep.Mid.Low.Tools {
+module Deep.Mid.Low.Tools where {
   /// A step.
   def step = 1;
 }
 
 /// Tools under a lowercase segment below the top.
-module Top.inner.Tools {
+module Top.inner.Tools where {
   /// A lift.
   def lift = 10;
 }
 
 /// A model of the shape, read by its whole path.
-module Sized : Model(Deep.Mid.Low.Shape) {
+module Sized : Model(Deep.Mid.Low.Shape) where {
   /// Its size.
   def size = 3;
 }

@@ -4,8 +4,8 @@
 /// `seg : Start <-> End` joins two distinct terms, refused by name: only a
 /// cell from a point to itself mints its words.
 @[ refuses("CellNotALoop") ]
-data Interval : Type {
-  Start : Interval;
-  End : Interval;
-  seg : Start <-> End;
+data Interval : Type where {
+  | Start : Interval
+  | End : Interval
+  | seg : Start <-> End
 }

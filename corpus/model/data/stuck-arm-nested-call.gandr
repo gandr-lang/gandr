@@ -11,7 +11,7 @@ import "./stuck-arm-call.gandr";
 
 /// This function gives the heap past the first cell, or the empty heap.
 def tailOf(h : Heap) -> Heap {
-  case h {
+  match h {
     Emp => Emp,
     Cell(_l, rest) => rest
   }
@@ -19,7 +19,7 @@ def tailOf(h : Heap) -> Heap {
 
 /// At zero, the heap past the first cell is empty; at a successor, never.
 def viaTail(w : Nat, h : Heap) -> Type {
-  case w {
+  match w {
     Zero => emp(tailOf(h)),
     Succ(_n) => return Void
   }

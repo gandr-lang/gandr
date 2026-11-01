@@ -10,14 +10,14 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 error[IllFormedDescription]: the port `t` abstracts an atom of the sort `Tm`, which is not an atom sort
    ╭▸ corpus/pathological/desc/bind-port.gandr:11:1
    │
-11 │ ┏ theory OrdinaryAbstraction {
+11 │ ┏ theory OrdinaryAbstraction where {
 12 │ ┃   sort Tm : Type;
 13 │ ┃   oper nu : (t : bind (a : Tm). Tm) --> Tm;
 14 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
    ├ note: `OrdinaryAbstraction` is refused with IllFormedDescription, as its expectation states
-   ╰ help: abstract over an atom sort, or bind the variable with `pi+` instead
+   ╰ help: abstract over an atom sort, or bind the variable with `(x : S) ->` instead
 
 error[UnstatedComponent.Abstraction]: the model signature cannot state `nu`, which abstracts an atom over a port, whose models are nominal sets'
    ╭▸ corpus/pathological/desc/bind-port.gandr:30:30

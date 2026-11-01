@@ -1,7 +1,7 @@
-//! Implicit parameters in the lowering: a function whose telescope `@[a :
+//! Implicit parameters in the lowering: a function whose telescope `[a :
 //! Type]` binds a value binds every parameter in its merged telescope's order
 //! ([`crate::module::Plicity`]), and a call supplies the implicits by name,
-//! `f[a = T](x)`, or omits them, `f(x)`.
+//! `f[.a = T](x)`, or omits them, `f(x)`.
 //!
 //! # Supply by name
 //!
@@ -13,7 +13,7 @@
 //! never type structure, so the declared type and the application are the
 //! ones the function written with every parameter explicit would give.
 //!
-//! A supply where no call applies it, `apply(same[a = Integer], 3)`, is the
+//! A supply where no call applies it, `apply(same[.a = Integer], 3)`, is the
 //! function applied to its implicits alone, a function of the rest: the
 //! declaration taken as a value has every implicit determined where it is
 //! taken.
@@ -25,7 +25,7 @@
 //! every hole the text writes, and the application is otherwise the one the
 //! supply by name gives. The checker solves each nominated hole from the
 //! comparisons the call's explicit arguments force and supplies the
-//! solution, so the body it accepts is the one `same[a = Integer](3)` lowers
+//! solution, so the body it accepts is the one `same[.a = Integer](3)` lowers
 //! to; the lowering keeps which call nominated each hole, and for which
 //! implicit ([`Nomination`]), so a refusal names it.
 //!
@@ -38,10 +38,10 @@
 //!
 //! # Model implicits
 //!
-//! An implicit at a model type, `@[s : Model(S)]`, is one parameter per
+//! An implicit at a model type, `[s : Model(S)]`, is one parameter per
 //! component of `S`, and a call passes one argument per component in its
-//! place: the members of the module a resident names, `f[s = M]`, or of a
-//! model implicit of the caller's, `f[s = t]`, and one nominated hole per
+//! place: the members of the module a resident names, `f[.s = M]`, or of a
+//! model implicit of the caller's, `f[.s = t]`, and one nominated hole per
 //! component when the call omits it, each naming the slot. The flattening,
 //! its supply and its refusals live in [`super::model`]'s `flattened`.
 //!
@@ -61,12 +61,12 @@
 //! - A supply standing as a value whose merged telescope places an implicit
 //!   after an explicit parameter, whose type mentions it, opens a lambda for
 //!   each explicit parameter before the last implicit and applies the function
-//!   to their variables: `chosen[x = 7]`, for `chosen @[x : t] (t : Type)`,
-//!   lowers to `λ t. chosen(t)[x = 7]`. A supplied value is read where the
+//!   to their variables: `chosen[.x = 7]`, for `chosen[x : t] (t : Type)`,
+//!   lowers to `λ t. chosen(t)[.x = 7]`. A supplied value is read where the
 //!   supply stands and raised past those lambdas, so it names none of them.
 //! - A stage crosses only at a call's head, so a supply of one standing as a
 //!   value opens a lambda for every explicit parameter and stands as the call.
-//! - A recursive tail takes a telescope too, `def rec f @[a : Type] (…)`. Its
+//! - A recursive tail takes a telescope too, `def rec f[a : Type](…)`. Its
 //!   staging is read off the written list and counted over the merged telescope
 //!   ([`Lowerer::merged_staging`]), and its recursive call omits each implicit:
 //!   one before the fixpoint is the function's own, one past it a hole the call
@@ -261,8 +261,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   capability at a region binder of its own
     ///   ([`Self::instance_parameter`]), and a recursive tail's own name bound
     ///   before the entry after the kept ones ([`Self::bind_kept`]); the cursor
-    ///   then stands at the list's `)`, and the frame the last entry bound is
-    ///   returned. Otherwise nothing changes and `frame` is returned.
+    ///   then stands at the list's `)`, or at a clause tail's `:` when it
+    ///   writes no list, and the frame the last entry bound is returned.
+    ///   Otherwise nothing changes and `frame` is returned.
     /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
     ///   an instance's ([`Self::instance_parameter`]); a fault at the parameter
     ///   list when it ends before its `)`.
@@ -339,6 +340,10 @@ impl<'source> Lowerer<'_, 'source>
                 component: None,
             });
             frame = Frame::Inner(bound);
+        }
+        // A clause tail of no written list stands at its type's `:`.
+        if let Maybe::Present(_) = cursor.at(TileName::COLON) {
+            return Ok(frame);
         }
         while let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
             if let Maybe::Absent(_) = cursor.read() {
@@ -688,6 +693,9 @@ impl<'source> Lowerer<'_, 'source>
         // The residents are read before the head resolves: a recursive
         // call's claim, `f[<]`, is no supply, and its head names a binder.
         let mut supplied: BTreeMap<SurfaceName<'source>, (Placed, NodeIndex)> = BTreeMap::new();
+        // A pun `.a` supplies the variable `a`: its name tile stands as the
+        // value, planned as that name once the supply is known to apply.
+        let mut puns: Vec<Placed> = Vec::new();
         let mut scratch = core::mem::take(&mut self.scratch);
         let mut outcome = Ok(arity::Planned(true));
         for piece in residents {
@@ -705,26 +713,37 @@ impl<'source> Lowerer<'_, 'source>
                 ..site
             }
             .out(FragmentBoundary::Reserved(Unbuilt::CombinedSupply));
-            let [
-                Piece::Tile { label, at: written },
-                Piece::Tile { label: equals, .. },
-                Piece::Operand(value),
-            ] = *scratch.pieces.as_slice()
-            else {
-                outcome = if supplied.is_empty() {
-                    Ok(arity::Planned(false))
-                }
-                else {
-                    Err(reserved)
-                };
-                break;
+            let (written, value) = match *scratch.pieces.as_slice() {
+                [
+                    Piece::Tile { label: dot, .. },
+                    Piece::Tile { label, at: written },
+                    Piece::Tile { label: equals, .. },
+                    Piece::Operand(value),
+                ] if dot == TileName::DOT
+                    && label == TileName::IDENTIFIER
+                    && equals == TileName::EQUALS =>
+                {
+                    (written, value.node)
+                },
+                [
+                    Piece::Tile { label: dot, .. },
+                    Piece::Tile { label, at: written },
+                ] if dot == TileName::DOT && label == TileName::IDENTIFIER => {
+                    puns.push(written);
+                    (written, written.node)
+                },
+                _ => {
+                    outcome = if supplied.is_empty() {
+                        Ok(arity::Planned(false))
+                    }
+                    else {
+                        Err(reserved)
+                    };
+                    break;
+                },
             };
-            if label != TileName::IDENTIFIER || equals != TileName::EQUALS {
-                outcome = Err(reserved);
-                break;
-            }
             let implicit = self.name_at(written);
-            if supplied.insert(implicit, (written, value.node)).is_some() {
+            if supplied.insert(implicit, (written, value)).is_some() {
                 outcome = Err(site.fault(written.span, FormFault::MisplacedTile));
                 break;
             }
@@ -743,6 +762,9 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(arity::Planned(false));
         };
+        for pun in puns {
+            self.pun(pun, frame)?;
+        }
         self.supply_declared(
             site,
             frame,
@@ -964,10 +986,10 @@ impl<'source> Lowerer<'_, 'source>
         // Standing, the supply applies the function to its implicits and opens
         // a lambda for each explicit parameter the merged telescope places
         // before the last of them, whose types those implicits mention:
-        // `chosen[x = 7]` is `λ t. chosen(t)[x = 7]`, a function of the rest.
+        // `chosen[.x = 7]` is `λ t. chosen(t)[.x = 7]`, a function of the rest.
         // A supplied stage crosses only at a call's head, so a supply of one
         // opens a lambda for every explicit parameter and stands as the call:
-        // `applyAt[i = k]` is `λ f. λ x. applyAt[i = k](f, x)`.
+        // `applyAt[.i = k]` is `λ f. λ x. applyAt[.i = k](f, x)`.
         let mut opened = 0_usize;
         if standing {
             let _frame = self.require(site, Produced::Computation)?;

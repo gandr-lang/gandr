@@ -5173,9 +5173,8 @@ mod tests
         // The fold's nested calls and `told`'s are elaborated: the closure's
         // nodes are located before the document's lowering, the document's
         // after it.
-        let closure_text = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : \
-                            Int) --> Int;\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\ndef \
-                            rec tell(n : Int) -> -F Int {\n  case n {\n    Z => Z,\n    S(x) \
+        let closure_text = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x :  Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\ndef \
+                            rec tell(n : Int) -> -F Int {\n  match n {\n    Z => Z,\n    S(x) \
                             => S(tell[<](x)),\n    P(x) => P(tell[<](x))\n  }\n}\ndef one : \
                             Integer ;\ndef one = 1 ;\ndef owed : Integer ;\ndef lost = nowhere \
                             ;\ndef bad : Integer ;\ndef bad = \"bad\" ;\n";
@@ -5629,10 +5628,10 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;
+                r#"@[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;
-module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
+module M : #{ x: Integer, z: Integer } where { def x = 1; }"#,
             ),
             &mut lowerings,
         );
@@ -6297,7 +6296,7 @@ def delivered() -> -F Unit {
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; }\n\
+                "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }\n\
                  def held : Counter.T ;\n\
                  def held = Counter.seed ;\n\
                  def leak : Integer ;\n\
@@ -6381,7 +6380,7 @@ def delivered() -> -F Unit {
         let mut lowerings = LoweringCount::default();
         let sealed = |name: &str, identity: &str| {
             format!(
-                "module {name} :> #{{ type T, origin : T, other : T }} {{ {identity} type T = \
+                "module {name} :> #{{ type T, origin : T, other : T }} where {{ {identity} type T = \
                  Unit ; def origin = unit ; def other = unit ; }}\ndef evidence{name} : \
                  Path({name}.T, {name}.origin, {name}.other) ;\ndef evidence{name} = unit ;\n"
             )
@@ -6438,10 +6437,10 @@ def delivered() -> -F Unit {
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "module A : #{ x: Integer, p: Integer } { def x = 1; }\n\
+            "module A : #{ x: Integer, p: Integer } where { def x = 1; }\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             module B : #{ y: Integer, q: Integer } { def y = 1; }",
+             module B : #{ y: Integer, q: Integer } where { def y = 1; }",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
@@ -6885,25 +6884,7 @@ def delivered() -> -F Unit {
     fn a_nested_call_checks_to_the_certificate_of_its_bind()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "data Int : Type {\n\
-             Z : Int;\n\
-             S : (x : Int) --> Int;\n\
-             P : (x : Int) --> Int;\n\
-             rule S(P(x)) ==> x;\n\
-             rule P(S(x)) ==> x;\n\
-             }\n\
-             def rec dbl(n : Int) -> -F Int {\n\
-             case n { Z => Z, S(x) => S(S(dbl[<](x))), P(x) => P(P(dbl[<](x))) }\n\
-             }\n\
-             def rec bound(n : Int) -> -F Int {\n\
-             case n {\n\
-             Z => Z,\n\
-             S(x) => { run d <- bound[<](x) ; S(S(d)) },\n\
-             P(x) => { run d <- bound[<](x) ; P(P(d)) }\n\
-             }\n\
-             }\n",
-        );
+        let source = SourceText::from(include_str!("compose/fixtures/nested-int.gandr"));
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
             .expect("the module lowers")
@@ -7045,8 +7026,8 @@ def delivered() -> -F Unit {
         };
         assert_eq!(
             unused(
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef pick(n : Nat, \
-                 m : Nat) -> -F Nat {\n  run k <- pure Succ(n) ;\n  case n {\n    Zero => n,\n    \
+                "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef pick(n : Nat, \
+                 m : Nat) -> -F Nat {\n  run k <- pure Succ(n) ;\n  match n {\n    Zero => n,\n    \
                  Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fn (y) { Zero } } ;\n"
             ),
             ["5:m", "6:k", "9:p", "13:y"],
@@ -7056,7 +7037,7 @@ def delivered() -> -F Unit {
         );
         assert_eq!(
             unused(
-                "def chosen @[x : t] (t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
+                "def chosen[x : t](t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
                  -> Type ;\ndef apply = \\F. \\X. F(X) ;\n"
             ),
             [""; 0],
@@ -7856,11 +7837,11 @@ def delivered() -> -F Unit {
 
         let grammar = grammar();
         let source = SourceText::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\nrec {\n  data \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\nrec {\n  data \
              ULevel : Nat -> Type {\n    NatV : (n : Nat) --> ULevel(n);\n    TypeV : (n : Nat) \
              --> ULevel(Succ(n));\n    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> \
              -F ULevel(n))) --> ULevel(n);\n  }\n\n  def rec elLevel(n : Nat, u : ULevel(n)) -> \
-             -F Type {\n    case u {\n      NatV(m) => return Nat,\n      TypeV(m) => return \
+             -F Type {\n    match u {\n      NatV(m) => return Nat,\n      TypeV(m) => return \
              (ULevel(m)),\n      PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F \
              elLevel[<](m, b(x))))\n    }\n  }\n}\n",
         );

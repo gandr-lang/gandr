@@ -68,7 +68,7 @@ def substSquareLift(
   h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
   n : N
 ) -> Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
-  case n {
+  match n {
     Z => here(Ix(Z)),
     S(m) => compose[5, 7](chain(3), (
       substLookWeakenLift(s1, s2, m),
@@ -88,7 +88,7 @@ pub def rec substSquare(
   u2 : Env,
   h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2))
 ) -> Path(Term, subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
-  case t {
+  match t {
     Ix(n) => h(n),
     Lam(b) => cong(
       lamOf,

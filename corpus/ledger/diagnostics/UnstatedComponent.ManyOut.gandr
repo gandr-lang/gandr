@@ -2,7 +2,7 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory T {
+theory T where {
   sort Nat : Type;
   oper pair : (a : Nat, b : Nat) --> (c : Nat, d : Nat);
   rule swap : pair(x, y) ==> (y, x);

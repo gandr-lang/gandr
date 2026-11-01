@@ -8,7 +8,7 @@ def doubled = list.each(thunk { fn (x) { return x * 2 } }, [1, 2, 3]);
 
 /// The doubled elements over two.
 @[ refuses("OutOfFragment.projection_expression") ]
-def big = list.where(thunk { fn (x) { return x > 2 } }, doubled);
+def big = list.filter(thunk { fn (x) { return x > 2 } }, doubled);
 
 /// The large elements summed.
 @[ refuses("OutOfFragment.projection_expression") ]

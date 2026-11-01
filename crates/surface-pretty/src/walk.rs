@@ -839,7 +839,7 @@ struct Arm<'source, Node>
     pruned: bool,
 }
 
-/// Branch `index` of the data case `case`.
+/// Branch `index` of the data case `match`.
 ///
 /// # Specification
 /// - requires: nothing; a malformed source is admissible.
@@ -925,7 +925,7 @@ where
     }
 }
 
-/// The arity of the arms the printer writes of the data case `case` of
+/// The arity of the arms the printer writes of the data case `match` of
 /// `arity` branches: every branch but a pruned one.
 ///
 /// # Specification
@@ -2051,14 +2051,14 @@ fn protocol_template(
                 text.push('!');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
                 segments.push(Segment::Payload(payload));
-                text.push_str(". ");
+                text.push_str(" >> ");
                 pending.push(Spelling::State(next));
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "the receive session type's own `?A. S`, which \
+                    reason = "the receive session type's own `?A >> S`, which \
                               `receive_session_type` reads: an answer, not a placeholder"
                 )
             )]
@@ -2066,7 +2066,7 @@ fn protocol_template(
                 text.push('?');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
                 segments.push(Segment::Payload(payload));
-                text.push_str(". ");
+                text.push_str(" >> ");
                 pending.push(Spelling::State(next));
             },
             Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
@@ -2085,9 +2085,9 @@ fn protocol_template(
             },
             Ok(&ProtocolNode::End) => text.push_str("end"),
             Ok(&ProtocolNode::Mu(body)) => {
-                text.push_str("mu ");
+                text.push_str("rec ");
                 text.push_str(&Nesting(binders.len()).name());
-                text.push_str(". ");
+                text.push_str(" => ");
                 binders.push(at);
                 pending.push(Spelling::Leave);
                 pending.push(Spelling::State(body));
@@ -2096,7 +2096,7 @@ fn protocol_template(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     linear_search_in_loop,
-                    reason = "bounded: `binders` holds the `mu`s open around one session type, \
+                    reason = "bounded: `binders` holds the `rec`s open around one session type, \
                               innermost last"
                 )
             )]
@@ -4513,7 +4513,7 @@ enum Resident<Node>
 {
     /// The argument, walked where it stands.
     Node(Node),
-    /// The path, written as it reads: `M` in `f[s = M]`.
+    /// The path, written as it reads: `M` in `f[.s = M]`.
     Path(String),
 }
 
@@ -5047,7 +5047,7 @@ where
     Some(chosen)
 }
 
-/// Whether a case writes its type, `case n -> C { … }`: a data case its
+/// Whether a case writes its type, `match n -> C { … }`: a data case its
 /// motive, and a sum case, a split or a list case the answer it is ascribed.
 ///
 /// # Specification
@@ -5055,10 +5055,10 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Motive
 {
-    /// `case n -> C { … }`: nothing else states the case's type, or the case
+    /// `match n -> C { … }`: nothing else states the case's type, or the case
     /// is ascribed it.
     Written,
-    /// `case n { … }`: its position states the type, or the motive names
+    /// `match n { … }`: its position states the type, or the motive names
     /// the scrutinee its binder stands for, which no written motive can.
     Left,
 }
@@ -7323,7 +7323,7 @@ impl Walk<'_, '_>
     ///   list case; none when it reads as anything else or the walk's remaining
     ///   visits run out first. The read is one visit spent.
     /// - provides: the shape the lowering gives a match or a conditional that
-    ///   writes its answer, `case s -> C { … }` and `if c -> C { … }`, which
+    ///   writes its answer, `match s -> C { … }` and `if c -> C { … }`, which
     ///   the printer spells back with that answer.
     /// - fails: never.
     /// - panics: none.
@@ -8849,7 +8849,7 @@ impl Walk<'_, '_>
                 None
             },
             // A sum case, a split or a list case ascribed its answer is the
-            // match that writes it, `case s -> C { … }`: its slots are the
+            // match that writes it, `match s -> C { … }`: its slots are the
             // eliminator's, the answer after the scrutinee.
             Former::Ascription { body, ty }
                 if let Some(eliminator) = self.answered_case(source, body) =>
@@ -9395,7 +9395,7 @@ impl Walk<'_, '_>
     ///   (#1102). Where the head forces a constant whose telescope
     ///   ([`Source::implicits`]) names an implicit at the place of an argument
     ///   the call writes, and the spine is read whole, the join is instead the
-    ///   form `f[x = a, …](b, …)`: the head, then each such argument after its
+    ///   form `f[.x = a, …](b, …)`: the head, then each such argument after its
     ///   implicit's name in the telescope's order, then the rest in place, each
     ///   visited in that order. A forced function literal — a thunk, or a
     ///   computation nested where a value is read, which a force decides as a
@@ -9590,7 +9590,7 @@ impl Walk<'_, '_>
             }
         }
         // A callee whose telescope names an implicit at an argument's place
-        // takes that argument by name, `f[x = a](b)`, where the spine is read
+        // takes that argument by name, `f[.x = a](b)`, where the spine is read
         // whole: the core applies every argument in place, and the
         // parentheses admit only the explicit ones. A model implicit's
         // components are supplied by the one path each reads under, `f[s =
@@ -9680,11 +9680,11 @@ impl Walk<'_, '_>
                 match *resident {
                     Resident::Node(_) => {
                         let _ = parts
-                            .text(format!("{} = ", name.as_ref()))
+                            .text(format!(".{} = ", name.as_ref()))
                             .piece(Binding::ARGUMENT);
                     },
                     Resident::Path(ref path) => {
-                        let _ = parts.text(format!("{} = {path}", name.as_ref()));
+                        let _ = parts.text(format!(".{} = {path}", name.as_ref()));
                     },
                 }
             }
@@ -10467,7 +10467,7 @@ impl Walk<'_, '_>
     ///   as the call `I.op(v)` through its interface's name, but a string
     ///   append as the interpolated string `"…${ v }…"` that lowers to it;
     ///   `transport(…)` over its motive — `\a. M`, or `+U M` for a telescope —
-    ///   and operands; `v.l` and `v.i`; `case v { … }` with one arm per branch
+    ///   and operands; `v.l` and `v.i`; `match v { … }` with one arm per branch
     ///   but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
     ///   constructor's applied to its field binders, its equations unwritten,
     ///   `?` for a constructor the source cannot name; `handle { c } with {
@@ -10979,7 +10979,7 @@ impl Walk<'_, '_>
                 .eliminator(&mut parts, former, Motive::Left)
                 .unwrap_or(Binding::Prefix),
             Former::DataCase { motive, arity, .. } => {
-                let _ = parts.text("case ").piece(Binding::Prefix);
+                let _ = parts.text("match ").piece(Binding::Prefix);
                 if case_motive(source, motive, admits) == Motive::Written {
                     let _ = parts.text(" -> ").piece(Binding::Prefix);
                 }
@@ -11010,7 +11010,7 @@ impl Walk<'_, '_>
                 // binders when it has fields, or a letter of a word before
                 // the rest of the word.
                 writes(
-                    Production("case_expression"),
+                    Production("match_expression"),
                     writes(
                         Production("constructor_pattern"),
                         writes(Production("cons_pattern"), Binding::Prefix),
@@ -11250,8 +11250,8 @@ impl Walk<'_, '_>
             Former::Hold { grade, .. } => {
                 let _ = parts
                     .text(match grade {
-                        gandr_core_term::memory::HoldGrade::Many => "hold ",
-                        gandr_core_term::memory::HoldGrade::One => "hold[1] ",
+                        gandr_core_term::memory::HoldGrade::Many => "var ",
+                        gandr_core_term::memory::HoldGrade::One => "var[1] ",
                     })
                     .part(Part::Binder(0_usize))
                     .text(" = ")
@@ -11281,7 +11281,7 @@ impl Walk<'_, '_>
                 });
                 let _ = parts.part(Part::Endpoint(held));
                 if let gandr_core_term::memory::Place::At { .. } = place {
-                    let _ = parts.text("[").piece(Binding::Arrow).text("]");
+                    let _ = parts.text(".#[").piece(Binding::Arrow).text("]");
                 }
                 let _ = parts
                     .text(" as ")
@@ -11353,7 +11353,7 @@ impl Walk<'_, '_>
                 let _ = parts.text("migrate [").text(world).text("] {").body();
                 writes(Production("migrate_expression"), Binding::Prefix)
             },
-            // A sum case, a split or a list case ascribed its answer, `case s
+            // A sum case, a split or a list case ascribed its answer, `match s
             // -> C { … }`; otherwise `(return v : -F T)`, its value and type
             // shaped by the visit: bare where a body ends, which takes the
             // return, and under a `pure` anywhere else.
@@ -11490,14 +11490,14 @@ impl Walk<'_, '_>
     }
 
     /// The parts of the eliminator `former`, written with its answer when
-    /// `answer` is [`Motive::Written`]: `case s -> C { … }`.
+    /// `answer` is [`Motive::Written`]: `match s -> C { … }`.
     ///
     /// # Specification
     /// - requires: nothing; `former` may be any former.
-    /// - ensures: for a sum case `case v { +{.i = a} => c, … }`, one arm per
-    ///   branch; for a split `case v { #{a, b} => c }`, or `case v { unit => c
-    ///   }` binding nothing; for a list case `case l { nil => …, cons(x, t) =>
-    ///   … }`, noted as the printer's notation; each with ` -> ` and the
+    /// - ensures: for a sum case `match v { +{.i = a} => c, … }`, one arm per
+    ///   branch; for a split `match v { #{a, b} => c }`, or `match v { unit =>
+    ///   c }` binding nothing; for a list case `match l { nil => …, cons(x, t)
+    ///   => … }`, noted as the printer's notation; each with ` -> ` and the
     ///   answer's piece after the scrutinee's when the answer is written. None
     ///   for any other former, `parts` unchanged.
     /// - provides: the one spelling an eliminator and its ascription to its
@@ -11526,7 +11526,7 @@ impl Walk<'_, '_>
     ) -> Option<Binding>
     {
         let head = |parts: &mut Parts| {
-            let _ = parts.text("case ").piece(Binding::Prefix);
+            let _ = parts.text("match ").piece(Binding::Prefix);
             if answer == Motive::Written {
                 let _ = parts.text(" -> ").piece(Binding::Prefix);
             }
@@ -11544,7 +11544,7 @@ impl Walk<'_, '_>
             }
             let _ = parts.part(Part::Close);
             return Some(writes(
-                Production("case_expression"),
+                Production("match_expression"),
                 writes(
                     Production("labelled_sum_pattern"),
                     writes(Production("identifier.pattern"), Binding::Prefix),
@@ -11568,7 +11568,7 @@ impl Walk<'_, '_>
                 )
             };
             let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
-            return Some(writes(Production("case_expression"), pattern));
+            return Some(writes(Production("match_expression"), pattern));
         }
         let Former::ListCase { .. } = *former
         else {

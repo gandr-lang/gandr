@@ -4,19 +4,19 @@
 // member, and a model reads the theory by its path.
 
 /// A shape with a label, declared in `Kit`.
-theory Kit.Labelled {
+theory Kit.Labelled where {
   /// The label.
   oper label : String;
 }
 
 /// Tools beside the shape, in the same `Kit`.
-module Kit.Tools {
+module Kit.Tools where {
   /// A breadth.
   def breadth = 4;
 }
 
 /// A model of the shape, read by its path.
-module Tag : Model(Kit.Labelled) {
+module Tag : Model(Kit.Labelled) where {
   /// Its label.
   def label : String = "tag";
 }

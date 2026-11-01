@@ -33,16 +33,16 @@ def sameDigits : Bridge(List(Integer), [1, 2], [1, 2]) = (unit, (unit, unit));
 def sameFour : Bridge(Integer, 4, 4) = unit;
 
 /// A light's two states.
-data Signal : Type {
+data Signal : Type where {
   /// The light stops traffic.
-  Halt : Signal;
+  | Halt : Signal
   /// The light lets traffic pass.
-  Pass : Signal;
+  | Pass : Signal
 }
 
 /// `toggle` turns a signal into the other one.
 def toggle(signal : Signal) -> Signal {
-  case signal {
+  match signal {
     Halt => Pass,
     Pass => Halt
   }

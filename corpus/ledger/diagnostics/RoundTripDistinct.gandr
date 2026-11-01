@@ -1,7 +1,7 @@
 /// `RoundTripDistinct`: a universe equivalence whose round trip does not return its input.
 @[ checks ]
 def not(b : Unit + Unit) -> -F (Unit + Unit) {
-  case b {
+  match b {
     +{.0 = u} => +{.1 = u},
     +{.1 = u} => +{.0 = u}
   }

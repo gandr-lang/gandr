@@ -20,17 +20,17 @@ derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
 
 /// A bit.
 @[ checks ]
-data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+data Bit : Type where {
+  | Zero : Bit
+  | One : Bit
 }
 
 /// Exclusive or.
 @[ checks ]
 def xor(a : Bit, b : Bit) -> Bit {
-  case a {
+  match a {
     Zero => b,
-    One => case b {
+    One => match b {
       Zero => One,
       One => Zero,
     },
@@ -40,7 +40,7 @@ def xor(a : Bit, b : Bit) -> Bit {
 /// The group of order two: zero is the unit, exclusive or the product, and
 /// each bit its own inverse; the two elements the presentation names are one
 /// and zero.
-module Parity : Model(Group) {
+module Parity : Model(Group) where {
   type G = Bit;
   def e = Zero;
   def a = One;
@@ -51,18 +51,18 @@ module Parity : Model(Group) {
   def unitL(x : Bit) -> Path(Bit, mul(e, x), x) { here(x) }
   @[ checks ]
   def unitR(x : Bit) -> Path(Bit, mul(x, e), x) {
-    case x {
+    match x {
       Zero => here(Zero),
       One => here(One),
     }
   }
   @[ checks ]
   def assoc(x : Bit, y : Bit, z : Bit) -> Path(Bit, mul(mul(x, y), z), mul(x, mul(y, z))) {
-    case x {
+    match x {
       Zero => here(xor(y, z)),
-      One => case y {
+      One => match y {
         Zero => here(xor(One, z)),
-        One => case z {
+        One => match z {
           Zero => here(Zero),
           One => here(One),
         },
@@ -75,7 +75,7 @@ module Parity : Model(Group) {
   def invE() -> Path(Bit, inv(e), e) { here(Zero) }
   @[ checks ]
   def invL(x : Bit) -> Path(Bit, mul(inv(x), x), e) {
-    case x {
+    match x {
       Zero => here(Zero),
       One => here(Zero),
     }

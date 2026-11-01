@@ -1,6 +1,6 @@
 /// `manifest_type`: a model type with its sorts fixed, one `with` per sort.
 @[ checks ]
-theory Pair {
+theory Pair where {
   sort A : Type;
   sort B : Type;
 }

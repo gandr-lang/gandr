@@ -9,7 +9,7 @@
 // doi:10.1017/S0956796814000264) for sealing as opaque ascription.
 
 /// A counter: a carrier, a start and a step. No laws: an ML signature.
-pub theory Counter {
+pub theory Counter where {
   sort C : Type;
   oper start : () --> C;
   oper step : (c : C) --> C;
@@ -17,7 +17,7 @@ pub theory Counter {
 
 /// A counter on the integers, ascribed transparently: its carrier is
 /// `Integer` outside.
-module Open : Model(Counter) {
+module Open : Model(Counter) where {
   type C = Integer;
 
   def start() -> Integer { 0 }
@@ -27,7 +27,7 @@ module Open : Model(Counter) {
 
 /// The same counter sealed by the theory: its carrier is abstract outside,
 /// reachable only through `start` and `step`.
-module Sealed :> Model(Counter) {
+module Sealed :> Model(Counter) where {
   type C = Integer;
 
   def start() -> Integer { 0 }
@@ -43,25 +43,25 @@ def openTwice() -> Integer { run s <- Open.start(); Open.step(Open.step(s)) }
 def sealedTwice() -> Sealed.C { run s <- Sealed.start(); Sealed.step(Sealed.step(s)) }
 
 /// A toggle: a step that undoes itself. A law, so the models give its proof.
-theory Toggle {
+theory Toggle where {
   sort T : Type;
   oper flip : (t : T) --> T;
   rule twice : flip(flip(t)) <=> t;
 }
 
 /// Two states.
-data Bit : Type {
-  Low : Bit;
-  High : Bit;
+data Bit : Type where {
+  | Low : Bit
+  | High : Bit
 }
 
 /// The two states as a model of the toggle, ascribed transparently: the law
 /// holds by conversion at each state.
-module Bits : Model(Toggle) {
+module Bits : Model(Toggle) where {
   type T = Bit;
 
   def flip(b : Bit) -> Bit {
-    case b {
+    match b {
       Low => High,
       High => Low
     }
@@ -70,7 +70,7 @@ module Bits : Model(Toggle) {
   /// The law, by cases.
   @[ checks ]
   def twice(b : Bit) -> Path(Bit, flip(flip(b)), b) {
-    case b {
+    match b {
       Low => here(Low),
       High => here(High)
     }

@@ -22,19 +22,19 @@ import "../../model/universe/ir-codes.gandr";
 rec {
   /// The codes. They share their decoder's refusal.
   @[ refuses("TypeMismatch") ]
-  data USigRun : Type {
+  data USigRun : Type where {
     /// The naturals.
-    NatR : USigRun;
+    | NatR : USigRun
     /// The dependent pairs from a coded type to a family of codes over its
     /// decode.
-    SigR : (a : USigRun, b : elSigRun(a) => USigRun) --> USigRun;
+    | SigR : (a : USigRun, b : elSigRun(a) => USigRun) --> USigRun
   }
 
   /// The decoder. Its second family's binder stands at the bound type, not
   /// at the field's decode.
   @[ refuses("TypeMismatch") ]
   def rec elSigRun(u : USigRun) -> Type {
-    case u {
+    match u {
       NatR => return Nat,
       SigR(a, b) => {
         run t <- elSigRun[<](a);

@@ -1,6 +1,6 @@
 /// `BridgeAtSealedType`: a bridge at a sealed type stating no identity system, whose representation the seal hides.
 @[ checks ]
-module Hidden :> #{ type T, one : T } {
+module Hidden :> #{ type T, one : T } where {
   @[ checks ]
   type T = Unit;
 

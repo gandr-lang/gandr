@@ -14,19 +14,19 @@
 /// composition and restriction, scope extrusion moving `q` under the
 /// restriction fresh for its atom. The checker orients the law and the kernel
 /// replays the verdict.
-theory Pi {
+theory Pi where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where a # q;
+  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where { | a # q };
 }
 
 /// Structural recursion over a rule chain: one per `Fresh` link, the
 /// conditions its written rules state.
 def rec conditions(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Rule(name, lhs, rhs, rest) => conditions[<](rest),
     Turned(name, lhs, rhs, rest) => conditions[<](rest),
     Fresh(atom, term, rest) => {
@@ -39,7 +39,7 @@ def rec conditions(chain : Theory) -> Integer {
 
 /// `Pi` states one condition.
 @[ runs("1") ]
-def stated() -> Integer { case Pi {
+def stated() -> Integer { match Pi {
   Presents(sorts, opers, rules) => conditions(rules),
   _ => 0
 } }

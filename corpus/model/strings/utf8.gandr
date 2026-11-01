@@ -11,11 +11,11 @@ import "./string-base.gandr";
 /// 65536 and four up to the last code point.
 def encode(c : Integer) -> List(Integer) {
   run one <- c < 128;
-  case one {
+  match one {
     true => Cons(c, Nil),
     false => {
       run two <- c < 2048;
-      case two {
+      match two {
         true => {
           run lead <- int.div(c, 64);
           run low <- int.mod(c, 64);
@@ -23,7 +23,7 @@ def encode(c : Integer) -> List(Integer) {
         },
         false => {
           run three <- c < 65536;
-          case three {
+          match three {
             true => {
               run lead <- int.div(c, 4096);
               run rest <- int.mod(c, 4096);
@@ -49,7 +49,7 @@ def encode(c : Integer) -> List(Integer) {
 
 /// A run of code points, each encoded in turn.
 pub def rec encodeAll(cs : List(Integer)) -> List(Integer) {
-  case cs {
+  match cs {
     Nil => Nil,
     Cons(c, rest) => concat(encode(c), encodeAll[<](rest))
   }
