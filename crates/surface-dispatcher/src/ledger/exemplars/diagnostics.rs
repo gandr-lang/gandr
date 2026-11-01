@@ -714,7 +714,7 @@ mod tests
         );
         let admitted = written(
             "admitted.gandr",
-            "/// `OutOfFragment.Reserved`: refused at another boundary.\n@[ refuses(\"OutOfFragment.case_expression\") ]\ndef stated(x : Void) -> -F Integer { case x -> -F Integer {} }\n",
+            "/// `OutOfFragment.Reserved`: refused at another boundary.\n@[ refuses(\"OutOfFragment.match_expression\") ]\ndef stated(x : Void) -> -F Integer { match x -> -F Integer {} }\n",
         );
         let unnamed = written(
             "unnamed.gandr",

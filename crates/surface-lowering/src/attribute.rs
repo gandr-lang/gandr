@@ -438,7 +438,7 @@ impl RegisteredAttribute
     /// effect are asked for.
     pub const EFFECTS: &'static str = "effects";
     /// `respects`: the recursive definition it decorates is a fold, and the
-    /// laws it names, one per rule of the presented type the fold's `case`
+    /// laws it names, one per rule of the presented type the fold's `match`
     /// is over and in the rules' written order, are the evidence for each
     /// rule the fold does not respect by conversion alone.
     pub const RESPECTS: Self = Self("respects");

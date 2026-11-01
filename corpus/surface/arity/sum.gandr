@@ -19,12 +19,12 @@ def unstated = +{.err = "no"};
 
 @[ checks ]
 def absurd(x : +{}) -> -F Integer {
-  case x {}
+  match x {}
 }
 
 @[ checks ]
 def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer {
-  case v {
+  match v {
     +{.ok = n} => return n,
     +{.err = e} => return 20,
     +{.gone = u} => return 30
@@ -36,14 +36,14 @@ def gone() -> -F Integer { pick(+{.2 = unit}) }
 
 @[ checks ]
 def unwrap(v : +{only : Integer}) -> -F Integer {
-  case v {
+  match v {
     +{.only = n} => return n
   }
 }
 
 @[ checks ]
 def nested(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
-  case t {
+  match t {
     #{+{.1 = x}, y} => return x,
     #{_, y} => return y
   }
@@ -57,7 +57,7 @@ def inner() -> -F Integer { nested(#{+{.1 = 8}, 9}) }
 /// spelling (#791).
 @[ checks ]
 def chained(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
-  case t {
+  match t {
     #{+{.1 = x}, y} => return x,
     #{_, y} => return y
   }
@@ -72,8 +72,8 @@ def outer() -> -F Integer { chained(#{+{.1 = 8}, 9}) }
 /// that component states, the shape the printer writes `nested` in (#815).
 @[ checks ]
 def split(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
-  case t {
-    #{s, y} => case s {
+  match t {
+    #{s, y} => match s {
       +{.0 = x} => return y,
       +{.1 = x} => return x
     }

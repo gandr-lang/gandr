@@ -7,14 +7,14 @@ data Nat : Type where {
 rec {
   @[ checks ]
   def rec even(n : Nat) -> -F Integer {
-    case n {
+    match n {
       Zero => return 1,
       Succ(p) => odd[<](p)
     }
   }
   @[ checks ]
   def rec odd(n : Nat) -> -F Integer {
-    case n {
+    match n {
       Zero => return 0,
       Succ(p) => even[<](p)
     }

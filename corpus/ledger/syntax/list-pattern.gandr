@@ -1,7 +1,7 @@
 /// `list_pattern`: a list pattern.
 @[ checks ]
 def head(xs : List(Integer)) -> -F Integer {
-  case xs {
+  match xs {
     [x, ..rest] => return x,
     [] => return 0
   }

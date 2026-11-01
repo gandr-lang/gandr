@@ -156,10 +156,10 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 /// compound bridge tiles and the binders' tiles included.
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "admitted", "as", "at", "become", "bind", "boundary",
-    "break", "case", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup",
-    "else", "end", "ext", "extern", "face", "feed", "flow", "fn", "for", "force", "fork", "from",
-    "glob", "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is",
-    "law", "leta", "loop", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers",
+    "break", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else",
+    "end", "ext", "extern", "face", "feed", "flow", "fn", "for", "force", "fork", "from", "glob",
+    "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "law",
+    "leta", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers",
     "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure", "rec",
     "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send", "shape",
     "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",

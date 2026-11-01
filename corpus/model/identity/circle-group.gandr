@@ -38,7 +38,7 @@ def rec spinHom(
   a : Int,
   b : Int
 ) -> Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
-  case b {
+  match b {
     Z => here(spin(a)),
     S(x) => cong(loopOn, spinHom[<](a, x)),
     P(x) => cong(unloopOn, spinHom[<](a, x))
@@ -57,7 +57,7 @@ def rec windHom(
   q : Path(Circle, Base, Base),
   p : Path(Circle, Base, Base)
 ) -> Path(Int, wind(p then q), plus(wind(q), wind(p))) {
-  case p {
+  match p {
     here => here(wind(q)),
     loop ∷ r => cong(up, windHom[<](q, r)),
     back(loop) ∷ r => cong(down, windHom[<](q, r))

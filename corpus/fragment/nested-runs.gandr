@@ -6,7 +6,7 @@ data Nat : Type {
 
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => n,
     Succ(p) => down[<](p)
   }
@@ -22,7 +22,7 @@ def ran = down(Zero);
 
 @[ checks ]
 def scrutinised(n : Nat) -> -F Nat {
-  case down(n) {
+  match down(n) {
     Zero => n,
     Succ(p) => p
   }
@@ -31,7 +31,7 @@ def scrutinised(n : Nat) -> -F Nat {
 @[ checks ]
 def scrutinised_run(n : Nat) -> -F Nat {
   run m <- down(n);
-  case m {
+  match m {
     Zero => n,
     Succ(p) => p
   }
@@ -44,7 +44,7 @@ def kept(n : Nat) -> -F (+U (-F Nat)) {
 
 @[ checks ]
 def armed(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(down(p))
   }

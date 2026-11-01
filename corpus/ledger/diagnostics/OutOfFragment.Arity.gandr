@@ -12,7 +12,7 @@ data U : Type where {
 
 @[ checks ]
 def rec el(u : U) -> -F Type {
-  case u {
+  match u {
     NatC => return Nat,
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
   }

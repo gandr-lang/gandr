@@ -47,12 +47,12 @@ def rec wp(
   post : (Unit, Integer) => Type,
   s : Integer
 ) -> Type {
-  case p {
+  match p {
     Done(x) => post(x, s),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Get) => wp[<](k(s), post, s),
       Left(Put(t)) => wp[<](k(0), post, t),
-      Right(none) => case none {}
+      Right(none) => match none {}
     }
   }
 }

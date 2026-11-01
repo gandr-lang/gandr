@@ -22,9 +22,9 @@ pub data Outcome(a : Type) : Type {
 /// State answered at the front of the row from the state `s`, the rest of
 /// the row forwarded.
 pub def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Integer) -> Prog(e, a) {
-  case p {
+  match p {
     Done(x) => (Done(x) : Prog(e, a)),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Get) => runState[<](e, a, k(s), s),
       Left(Put(t)) => runState[<](e, a, k(0), t),
       Right(other) => (Op(other, fn (r) {
@@ -37,9 +37,9 @@ pub def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : In
 /// Exceptions answered at the front of the row, the rest of the row
 /// forwarded: a raise ends the program with its code.
 pub def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Outcome(a)) {
-  case p {
+  match p {
     Done(x) => (Done(Returned(x)) : Prog(e, Outcome(a))),
-    Op(o, k) => case o {
+    Op(o, k) => match o {
       Left(Raise(c)) => (Done(Raised(c)) : Prog(e, Outcome(a))),
       Right(other) => (Op(other, fn (r) {
         runExn[<](e, a, k(r))
@@ -50,9 +50,9 @@ pub def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e,
 
 /// A program with nothing left in its row is its result.
 pub def pureOf(a : Type, p : Prog(Void, a)) -> a {
-  case p {
+  match p {
     Done(x) => x,
-    Op(o, _k) => case o {}
+    Op(o, _k) => match o {}
   }
 }
 

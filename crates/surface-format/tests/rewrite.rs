@@ -226,10 +226,10 @@ def succeeded(n : Nat) -> -F Nat {
 }
 
 def early(k : Nat) -> -F Nat {
-  case k {
+  match k {
     Zero => return k,
     Succ(j) => {
-      run q <- case j {
+      run q <- match j {
         Zero => return j,
         Succ(r) => pure r,
       };
@@ -251,7 +251,7 @@ def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
 }
 
 def blocked(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => { run y <- succeeded(n); return y },
     Succ(p) => p,
   }
@@ -274,10 +274,10 @@ def succeeded(n : Nat) -> Nat {
 }
 
 def early(k : Nat) -> Nat {
-  case k {
+  match k {
     Zero => k,
     Succ(j) => {
-      run q <- case j {
+      run q <- match j {
         Zero => return j,
         Succ(r) => pure r,
       };
@@ -299,7 +299,7 @@ def nested(n : Nat) -> Nat => Nat {
 }
 
 def blocked(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => { run y <- succeeded(n); y },
     Succ(p) => p,
   }
@@ -1304,7 +1304,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     let grammar = grammar();
     let matched = |stated: &str, exit: &str, result: &str| {
         format!(
-            "def pick(t : {stated}) -> {result} {{\n  case t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
+            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
         )
     };
     let source = format!(
@@ -1340,7 +1340,7 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 {
     let grammar = grammar();
     let source = "data Color : Type where {\n  | Red : Color\n  | Green : Color\n}\n\ndef sketch(c : \
-                  Color) -> -F Integer {\n  case c {\n    Red => return 0,\n    Green => ?\n  \
+                  Color) -> -F Integer {\n  match c {\n    Red => return 0,\n    Green => ?\n  \
                   }\n}\n\ndef pair : #{Integer, String};\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
@@ -1725,16 +1725,16 @@ fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
                 \n";
     for (body, written) in [
         (
-            "def armed(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => { run d <- twice(b) ; Succ(d) } } }\n",
-            "def armed(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
+            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run d <- twice(b) ; Succ(d) } } }\n",
+            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
         ),
         (
-            "def paired(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => { run e <- twice(b) ; run f <- twice(Zero) ; both(e, f) } } }\n",
-            "def paired(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
+            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run e <- twice(b) ; run f <- twice(Zero) ; both(e, f) } } }\n",
+            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
         ),
         (
-            "def reread(a : Nat) -> Nat { case a { Zero => Zero, Succ(b) => { run g <- twice(b) ; run h <- twice(g) ; both(h, g) } } }\n",
-            "def reread(a : Nat) -> Nat {\n  case a { Zero => Zero, Succ(b) => { run g <- twice(b); both(twice(g), g) } }\n}\n",
+            "def reread(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run g <- twice(b) ; run h <- twice(g) ; both(h, g) } } }\n",
+            "def reread(a : Nat) -> Nat {\n  match a { Zero => Zero, Succ(b) => { run g <- twice(b); both(twice(g), g) } }\n}\n",
         ),
     ] {
         let source = format!("{head}{body}");

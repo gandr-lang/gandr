@@ -977,12 +977,12 @@ impl OriginTable
         record(&mut self.seconds, id, label);
     }
 
-    /// Record that the data case `case` eliminates a value of the data
+    /// Record that the data case `match` eliminates a value of the data
     /// declaration `family`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Self::elimination`] answers `family` for `case`, the first
+    /// - ensures: [`Self::elimination`] answers `family` for `match`, the first
     ///   record winning.
     /// - fails: never.
     /// - panics: none.
@@ -1563,7 +1563,7 @@ impl OriginTable
             .map(|(&case, &family)| (case, family))
     }
 
-    /// The data declaration the data case `case` eliminates.
+    /// The data declaration the data case `match` eliminates.
     ///
     /// # Specification
     /// trivial.

@@ -776,7 +776,7 @@ fn slot(
         Sort::Item => text.to_string(),
         Sort::ModuleMember => format!("module Probe {{ {text} }}"),
         Sort::Expression => format!("def probe = {text} ;"),
-        Sort::Pattern => format!("def probe = case x {{ {text} => 1 }} ;"),
+        Sort::Pattern => format!("def probe = match x {{ {text} => 1 }} ;"),
         Sort::Type => format!("def probe : {text} ;"),
         Sort::Instantiation => format!("def probe = f[{text}](1) ;"),
     }

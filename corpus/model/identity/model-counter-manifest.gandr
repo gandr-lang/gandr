@@ -63,7 +63,7 @@ pub theory ReadCounter {
 /// A consumer of any such counter: the reading after one step from zero,
 /// shown.
 pub def observeShown(m : Model(ReadCounter)) -> Integer {
-  case m {
+  match m {
     #{.zero = z, .incr = i, .read = r, .shown = s} => s(r(i(z)))
   }
 }
@@ -113,7 +113,7 @@ def observedNegatedBoth() -> Integer { observeShown(negatedBoth) }
 /// A count of one counter stepped and read by a second sharing its counts:
 /// `b`'s carrier is `a`'s, so a count of `a` is one `b` takes.
 def stepShared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> Integer {
-  case b {
+  match b {
     #{.zero = z, .incr = i, .read = r} => r(i(c))
   }
 }
@@ -208,7 +208,7 @@ def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit = #{
 /// A pairing's left beside a value of its second carrier, read off it where
 /// its type fixes the first.
 pub def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> Integer {
-  case m {
+  match m {
     #{.left = l, .right = r} => l
   }
 }
@@ -222,7 +222,7 @@ def rightBeside(
   m : Model(Pairing) with sort A = Integer,
   n : Model(Pairing) with sort A = Integer with sort B = m.B
 ) -> Integer {
-  case n {
+  match n {
     #{.left = l, .right = r} => leftBeside(m, r)
   }
 }

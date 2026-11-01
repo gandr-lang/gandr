@@ -40,7 +40,7 @@ pub data Packed : Type {
 
 /// A list laid out tagged, one cell per element.
 pub def rec tag(l : Ints) -> Tagged {
-  case l {
+  match l {
     Nil => TagNil,
     Cons(x, rest) => TagCons(x, tag[<](rest))
   }
@@ -48,7 +48,7 @@ pub def rec tag(l : Ints) -> Tagged {
 
 /// A tagged list read back as the list.
 pub def rec untag(l : Tagged) -> Ints {
-  case l {
+  match l {
     TagNil => Nil,
     TagCons(x, rest) => Cons(x, untag[<](rest))
   }
@@ -56,7 +56,7 @@ pub def rec untag(l : Tagged) -> Ints {
 
 /// Reading a tagged list back undoes laying it out, cell by cell.
 pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
-  case l {
+  match l {
     Nil => here(Nil),
     Cons(x, rest) => transport(
       \z. Path(Ints, Cons(x, untag(tag(rest))), Cons(x, z)),
@@ -68,7 +68,7 @@ pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
 
 /// Laying a list out tagged undoes reading it back, cell by cell.
 pub def rec tagged(l : Tagged) -> Path(Tagged, tag(untag(l)), l) {
-  case l {
+  match l {
     TagNil => here(TagNil),
     TagCons(x, rest) => transport(
       \z. Path(Tagged, TagCons(x, tag(untag(rest))), TagCons(x, z)),
@@ -80,7 +80,7 @@ pub def rec tagged(l : Tagged) -> Path(Tagged, tag(untag(l)), l) {
 
 /// A list laid out packed, two elements per pointer and a lone last element inline.
 pub def rec pack(l : Ints) -> Packed {
-  case l {
+  match l {
     Nil => Empty,
     Cons(x, Nil) => One(x),
     Cons(x, Cons(y, rest)) => Many(x, y, pack[<](rest))
@@ -89,7 +89,7 @@ pub def rec pack(l : Ints) -> Packed {
 
 /// A packed list read back as the list.
 pub def rec unpack(p : Packed) -> Ints {
-  case p {
+  match p {
     Empty => Nil,
     One(x) => Cons(x, Nil),
     Many(x, y, rest) => Cons(x, Cons(y, unpack[<](rest)))
@@ -98,7 +98,7 @@ pub def rec unpack(p : Packed) -> Ints {
 
 /// Reading a packed list back undoes packing it, two elements at a time.
 pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
-  case l {
+  match l {
     Nil => here(Nil),
     Cons(x, Nil) => here(Cons(x, Nil)),
     Cons(x, Cons(y, rest)) => transport(
@@ -111,7 +111,7 @@ pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
 
 /// Packing a list undoes reading it back, two elements at a time.
 pub def rec packed(p : Packed) -> Path(Packed, pack(unpack(p)), p) {
-  case p {
+  match p {
     Empty => here(Empty),
     One(x) => here(One(x)),
     Many(x, y, rest) => transport(
@@ -155,7 +155,7 @@ def movedNamed() -> Packed { transport(\X. X, taggedIsPacked, oneTwoThree) }
 
 /// The length of a list, written once over the list.
 pub def rec length(l : Ints) -> Integer {
-  case l {
+  match l {
     Nil => 0,
     Cons(x, rest) => {
       run n <- length[<](rest);

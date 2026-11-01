@@ -12,7 +12,7 @@
 /// A quasi-inverse is bi-invertible: its map back is both the left and the
 /// right inverse (cubical's `isoToEquiv`).
 pub def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
-  case i {
+  match i {
     #{t, k, s, r} => (t, ((k, s), (k, r)))
   }
 }
@@ -39,7 +39,7 @@ def leftRetraction(
 /// A bi-invertible map is a quasi-inverse: the forward map, the left inverse
 /// and its round trip, and the other round trip through the right inverse.
 def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b {
-  case e {
+  match e {
     #{t, #{g, s}, #{h, r}} => (
       t,
       (g, (s, fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) }))

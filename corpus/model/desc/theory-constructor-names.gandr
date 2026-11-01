@@ -27,7 +27,7 @@ data Kind : Type {
 
 /// One per `Oper` link of a presentation's operation chain, zero at its end.
 def rec opsOf(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Oper(name, inputs, outputs, rest) => { run r <- opsOf[<](rest); r + 1 },
     _ => 0
   }
@@ -36,7 +36,7 @@ def rec opsOf(chain : Theory) -> Integer {
 /// The block read by `Presents`: two operations, `mul` and `one`.
 @[ runs("2") ]
 def presentedOps() -> Integer {
-  case Mon {
+  match Mon {
     Presents(sorts, opers, rules) => opsOf(opers),
     _ => 0
   }
@@ -49,7 +49,7 @@ def applied() -> Bruijn { App(Ix(0), Ix(1)) }
 /// `Sort` matches a `Kind`.
 @[ runs("1") ]
 def sorted() -> Integer {
-  case Sort {
+  match Sort {
     Sort => 1
   }
 }

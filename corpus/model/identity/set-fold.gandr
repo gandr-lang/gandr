@@ -70,7 +70,7 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 /// chain through `flipP` and `flipS` against the call at `x`; both are paths
 /// in the integers between the same two sums, so they are one path (#427).
 def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
-  case b {
+  match b {
     Z => back(plusZ(a)),
     S(x) => upAlong(a, x, plusCommAlong[<](a, x)),
     P(x) => downAlong(a, x, plusCommAlong[<](a, x))
@@ -82,7 +82,7 @@ def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
 /// loops the circle tells apart, so the case is refused.
 @[ refuses("RuleNotRespected") ]
 def rec turned(b : Int) -> Path(Circle, Base, Base) {
-  case b {
+  match b {
     Z => here(Base),
     S(x) => turned[<](x) then loop,
     P(x) => turned[<](x)
@@ -94,7 +94,7 @@ def rec turned(b : Int) -> Path(Circle, Base, Base) {
 /// the rule's right side reads the path at `x`; the words form a set, so the
 /// two agree by their endpoints and the case respects its rules.
 def rec rewound(w : Words) -> Path(Words, w, w) {
-  case w {
+  match w {
     Nil => here(Nil),
     Loop(x) => cong(around, rewound[<](x)),
     Unloop(x) => here(Unloop(x))

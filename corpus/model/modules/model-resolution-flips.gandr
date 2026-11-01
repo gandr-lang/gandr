@@ -7,9 +7,9 @@ module Flips : Model(ResetCount) {
   /// Down.
   def zero = false;
   /// The other way.
-  def incr(c : Bool) -> Bool { case c { true => false, false => true } }
+  def incr(c : Bool) -> Bool { match c { true => false, false => true } }
   /// One when up.
-  def read(c : Bool) -> Integer { case c { true => 1, false => 0 } }
+  def read(c : Bool) -> Integer { match c { true => 1, false => 0 } }
   /// Down again.
   def reset(c : Bool) -> Bool { false }
 }

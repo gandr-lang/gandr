@@ -23,7 +23,7 @@ def observed(m : +U &{get : -F Bool}) -> Bool {
 @[ checks ]
 def measured(b : Bool) -> -F Bool {
   if observed(flag) {
-    case b {
+    match b {
       true => +{.1 = unit},
       false => +{.0 = unit}
     }

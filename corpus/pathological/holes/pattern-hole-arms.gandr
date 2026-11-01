@@ -20,7 +20,7 @@ data Chosen : Type {
 /// refused (#391).
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer {
-  case c {
+  match c {
     Red => 0,
     ? => 1,
     Blue => 2
@@ -31,7 +31,7 @@ def classify(c : Color) -> Integer {
 /// (#391).
 @[ refuses("UndecidedCoverage") ]
 def unwrap(m : Chosen) -> Integer {
-  case m {
+  match m {
     Unchosen => 0,
     Chose(?) => 1
   }

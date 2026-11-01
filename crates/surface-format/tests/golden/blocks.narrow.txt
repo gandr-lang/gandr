@@ -4,7 +4,7 @@ data Either(a : Type, b : Type) : Type {
 }
 
 def from_left() -> -F Integer {
-  case (Left(5) : Either(
+  match (Left(5) : Either(
     Integer,
     String
   )) {

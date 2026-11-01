@@ -10,7 +10,7 @@ module Schema {
   type New = Integer * String;
   /// The translator: the age moved, the name replaced by a literal.
   def anonymise(old : Old) -> New {
-    case old {
+    match old {
       #{name, age} => (age, "anonymous")
     }
   }

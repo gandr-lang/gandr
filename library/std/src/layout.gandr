@@ -150,7 +150,7 @@ data Fitted : Type {
 
 /// A scalar's size, which is its alignment.
 def bytes(s : Scalar) -> Integer {
-  case s {
+  match s {
     U8 => 1,
     U16 => 2,
     U32 => 4,
@@ -164,7 +164,7 @@ def bytes(s : Scalar) -> Integer {
 
 /// How many invalid values a scalar has.
 def niche(s : Scalar) -> Integer {
-  case s {
+  match s {
     U8 => 0,
     U16 => 0,
     U32 => 0,
@@ -178,7 +178,7 @@ def niche(s : Scalar) -> Integer {
 
 /// The larger of two integers.
 def bigger(a : Integer, b : Integer) -> Integer {
-  case a >= b {
+  match a >= b {
     true => a,
     false => b
   }
@@ -186,7 +186,7 @@ def bigger(a : Integer, b : Integer) -> Integer {
 
 /// The smaller of two integers.
 def smaller(a : Integer, b : Integer) -> Integer {
-  case a >= b {
+  match a >= b {
     true => b,
     false => a
   }
@@ -194,7 +194,7 @@ def smaller(a : Integer, b : Integer) -> Integer {
 
 /// Whether two integers are equal.
 def same(a : Integer, b : Integer) -> Bool {
-  case a >= b {
+  match a >= b {
     true => b >= a,
     false => false
   }
@@ -202,7 +202,7 @@ def same(a : Integer, b : Integer) -> Bool {
 
 /// One of two integers, by a condition.
 def pick(c : Bool, yes : Integer, no : Integer) -> Integer {
-  case c {
+  match c {
     true => yes,
     false => no
   }
@@ -220,20 +220,20 @@ def before(o : Order, a : Scalar, b : Scalar) -> Bool {
   run y <- bytes(b);
   run m <- niche(a);
   run n <- niche(b);
-  case o {
-    InStruct(bias) => case x >= y {
+  match o {
+    InStruct(bias) => match x >= y {
       false => false,
-      true => case y >= x {
+      true => match y >= x {
         false => true,
-        true => case bias {
+        true => match bias {
           NicheFirst => m >= n,
           NicheLast => n >= m
         }
       }
     },
-    AfterTag => case y >= x {
+    AfterTag => match y >= x {
       false => false,
-      true => case x >= y {
+      true => match x >= y {
         false => true,
         true => n >= m
       }
@@ -243,11 +243,11 @@ def before(o : Order, a : Scalar, b : Scalar) -> Bool {
 
 /// A field inserted into fields already in memory order, after every field it does not go before.
 def rec insert(sorted : Fields, o : Order, n : String, s : Scalar) -> Fields {
-  case sorted {
+  match sorted {
     Done => Field(n, s, Done),
     Field(m, t, rest) => {
       run first <- before(o, s, t);
-      case first {
+      match first {
         true => Field(n, s, Field(m, t, rest)),
         false => Field(m, t, insert[<](rest, o, n, s))
       }
@@ -257,7 +257,7 @@ def rec insert(sorted : Fields, o : Order, n : String, s : Scalar) -> Fields {
 
 /// Fields in memory order, by a stable insertion sort, as rustc's `sort_by_key` is stable.
 def rec order(fs : Fields, o : Order) -> Fields {
-  case fs {
+  match fs {
     Done => Done,
     Field(n, s, rest) => insert(order[<](rest, o), o, n, s)
   }
@@ -265,7 +265,7 @@ def rec order(fs : Fields, o : Order) -> Fields {
 
 /// How many fields there are.
 def rec count(fs : Fields) -> Integer {
-  case fs {
+  match fs {
     Done => 0,
     Field(n, s, rest) => {
       run c <- count[<](rest);
@@ -276,7 +276,7 @@ def rec count(fs : Fields) -> Integer {
 
 /// Fields placed from an offset, each rounded up to its alignment.
 def rec placeFrom(fs : Fields, o : Integer) -> Placed {
-  case fs {
+  match fs {
     Done => End,
     Field(n, s, rest) => {
       run b <- bytes(s);
@@ -288,7 +288,7 @@ def rec placeFrom(fs : Fields, o : Integer) -> Placed {
 
 /// Where the last field ends, placed from an offset.
 def rec endFrom(fs : Fields, o : Integer) -> Integer {
-  case fs {
+  match fs {
     Done => o,
     Field(n, s, rest) => {
       run b <- bytes(s);
@@ -300,7 +300,7 @@ def rec endFrom(fs : Fields, o : Integer) -> Integer {
 
 /// The largest alignment, one when there is none.
 def rec widest(fs : Fields) -> Integer {
-  case fs {
+  match fs {
     Done => 1,
     Field(n, s, rest) => bigger(bytes(s), widest[<](rest))
   }
@@ -308,7 +308,7 @@ def rec widest(fs : Fields) -> Integer {
 
 /// How many invalid values a niche has, none for no niche.
 def room(n : Niche) -> Integer {
-  case n {
+  match n {
     NoNiche => 0,
     NicheAt(off, width, available) => available
   }
@@ -316,14 +316,14 @@ def room(n : Niche) -> Integer {
 
 /// The largest niche of fields placed from an offset, the first in memory order among equals.
 def rec nicheFrom(fs : Fields, o : Integer, best : Niche) -> Niche {
-  case fs {
+  match fs {
     Done => best,
     Field(n, s, rest) => {
       run b <- bytes(s);
       run off <- up(o, b);
       run v <- niche(s);
       run held <- room(best);
-      case held >= v {
+      match held >= v {
         true => nicheFrom[<](rest, off + b, best),
         false => nicheFrom[<](rest, off + b, NicheAt(off, b, v))
       }
@@ -346,8 +346,8 @@ def biased(fs : Fields, bias : Bias) -> Laid {
 
 /// The niche's offset in a layout, zero for no niche.
 def nicheOffset(l : Laid) -> Integer {
-  case l {
-    Laid(size, a, placed, n) => case n {
+  match l {
+    Laid(size, a, placed, n) => match n {
       NoNiche => 0,
       NicheAt(off, width, available) => off
     }
@@ -358,21 +358,21 @@ def nicheOffset(l : Laid) -> Integer {
 def univariant(fs : Fields) -> Laid {
   run first <- biased(fs, NicheFirst);
   run c <- count(fs);
-  case first {
-    Laid(size, a, placed, n) => case n {
+  match first {
+    Laid(size, a, placed, n) => match n {
       NoNiche => first,
-      NicheAt(head, width, available) => case c >= 2 {
+      NicheAt(head, width, available) => match c >= 2 {
         false => first,
-        true => case head >= 1 {
+        true => match head >= 1 {
           false => first,
-          true => case size - head - width >= 1 {
+          true => match size - head - width >= 1 {
             false => first,
             true => {
               run alt <- biased(fs, NicheLast);
               run altHead <- nicheOffset(alt);
-              case altHead >= head + 1 {
+              match altHead >= head + 1 {
                 false => first,
-                true => case altHead >= size - head - width + 1 {
+                true => match altHead >= size - head - width + 1 {
                   false => first,
                   true => alt
                 }
@@ -388,14 +388,14 @@ def univariant(fs : Fields) -> Laid {
 /// A struct's layout: rustc's for a `repr(Rust)` struct of these fields.
 pub def structLayout(fs : Fields) -> Layout {
   run l <- univariant(fs);
-  case l {
+  match l {
     Laid(size, a, placed, n) => Layout(size, a, placed)
   }
 }
 
 /// Each variant laid out as a struct.
 def rec asStructs(vs : Variants) -> Laids {
-  case vs {
+  match vs {
     NoVariant => NoLaid,
     Variant(n, fs, rest) => OneLaid(n, univariant(fs), asStructs[<](rest))
   }
@@ -403,7 +403,7 @@ def rec asStructs(vs : Variants) -> Laids {
 
 /// Each variant laid out after a one-byte tag.
 def rec afterTag(vs : Variants) -> Laids {
-  case vs {
+  match vs {
     NoVariant => NoLaid,
     Variant(n, fs, rest) => {
       run sorted <- order(fs, AfterTag);
@@ -414,7 +414,7 @@ def rec afterTag(vs : Variants) -> Laids {
 
 /// How many variants there are.
 def rec variantCount(ls : Laids) -> Integer {
-  case ls {
+  match ls {
     NoLaid => 0,
     OneLaid(n, l, rest) => {
       run c <- variantCount[<](rest);
@@ -425,11 +425,11 @@ def rec variantCount(ls : Laids) -> Integer {
 
 /// The largest alignment of the variants, one when there is none.
 def rec widestOf(ls : Laids) -> Integer {
-  case ls {
+  match ls {
     NoLaid => 1,
     OneLaid(n, l, rest) => {
       run w <- widestOf[<](rest);
-      case l {
+      match l {
         Laid(size, a, placed, nn) => bigger(a, w)
       }
     }
@@ -438,11 +438,11 @@ def rec widestOf(ls : Laids) -> Integer {
 
 /// The largest size of the variants, zero when there is none.
 def rec largestSize(ls : Laids) -> Integer {
-  case ls {
+  match ls {
     NoLaid => 0,
     OneLaid(n, l, rest) => {
       run w <- largestSize[<](rest);
-      case l {
+      match l {
         Laid(size, a, placed, nn) => bigger(size, w)
       }
     }
@@ -451,10 +451,10 @@ def rec largestSize(ls : Laids) -> Integer {
 
 /// The index of the last largest variant, counting from `i`, as `max_by_key` keeps the last.
 def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Integer) -> Integer {
-  case ls {
+  match ls {
     NoLaid => bestIndex,
-    OneLaid(n, l, rest) => case l {
-      Laid(size, a, placed, nn) => case size >= bestSize {
+    OneLaid(n, l, rest) => match l {
+      Laid(size, a, placed, nn) => match size >= bestSize {
         true => largestFrom[<](rest, i + 1, i, size),
         false => largestFrom[<](rest, i + 1, bestIndex, bestSize)
       }
@@ -464,11 +464,11 @@ def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Int
 
 /// The variant at an index, counting from `i`; an empty layout past the end.
 def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid {
-  case ls {
+  match ls {
     NoLaid => Laid(0, 1, End, NoNiche),
     OneLaid(n, l, rest) => {
       run found <- same(i, want);
-      case found {
+      match found {
         true => l,
         false => laidAt[<](rest, i + 1, want)
       }
@@ -478,7 +478,7 @@ def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid {
 
 /// Fields moved by an offset.
 def rec shifted(p : Placed, by : Integer) -> Placed {
-  case p {
+  match p {
     End => End,
     At(n, off, rest) => {
       run tail <- shifted[<](rest, by);
@@ -496,21 +496,21 @@ def rec around(
   width : Integer,
   size : Integer
 ) -> Fitted {
-  case ls {
+  match ls {
     NoLaid => Fitted(NoArm),
     OneLaid(n, l, rest) => {
       run tail <- around[<](rest, i + 1, largest, off, width, size);
       run isLargest <- same(i, largest);
-      case tail {
+      match tail {
         Misfit => Misfit,
-        Fitted(arms) => case l {
-          Laid(s, a, placed, nn) => case isLargest {
+        Fitted(arms) => match l {
+          Laid(s, a, placed, nn) => match isLargest {
             true => Fitted(Arm(n, placed, arms)),
-            false => case off >= s {
+            false => match off >= s {
               true => Fitted(Arm(n, placed, arms)),
               false => {
                 run after <- up(off + width, a);
-                case size >= after + s {
+                match size >= after + s {
                   true => Fitted(Arm(n, shifted(placed, after), arms)),
                   false => Misfit
                 }
@@ -526,7 +526,7 @@ def rec around(
 /// The niche-filled layout: the largest variant's niche holds which of the variants around it is there.
 def nicheFilled(ls : Laids) -> Filled {
   run n <- variantCount(ls);
-  case n >= 2 {
+  match n >= 2 {
     false => NoFill,
     true => {
       run big <- largestFrom(ls, 0, 0, 0 - 1);
@@ -537,15 +537,15 @@ def nicheFilled(ls : Laids) -> Filled {
       run firstNeed <- pick(atStart, 1, 0);
       run lastNeed <- pick(atLast, n - 2, n - 1);
       run needed <- lastNeed - firstNeed + 1;
-      case l {
-        Laid(s, la, placed, nn) => case nn {
+      match l {
+        Laid(s, la, placed, nn) => match nn {
           NoNiche => NoFill,
-          NicheAt(off, width, available) => case available >= needed {
+          NicheAt(off, width, available) => match available >= needed {
             false => NoFill,
             true => {
               run size <- up(s, a);
               run fitted <- around(ls, 0, big, off, width, size);
-              case fitted {
+              match fitted {
                 Misfit => NoFill,
                 Fitted(arms) => Filled(EnumLayout(size, a, InNiche(off), arms), available - needed)
               }
@@ -559,12 +559,12 @@ def nicheFilled(ls : Laids) -> Filled {
 
 /// The smallest alignment of a variant's first field after the tag, 256 when no variant has a field.
 def rec firstAlign(ls : Laids) -> Integer {
-  case ls {
+  match ls {
     NoLaid => 256,
     OneLaid(n, l, rest) => {
       run r <- firstAlign[<](rest);
-      case l {
-        Laid(size, a, placed, nn) => case placed {
+      match l {
+        Laid(size, a, placed, nn) => match placed {
           End => r,
           At(m, off, t) => smaller(a, r)
         }
@@ -575,11 +575,11 @@ def rec firstAlign(ls : Laids) -> Integer {
 
 /// The variants' fields placed.
 def rec armsOf(ls : Laids) -> Arms {
-  case ls {
+  match ls {
     NoLaid => NoArm,
     OneLaid(n, l, rest) => {
       run t <- armsOf[<](rest);
-      case l {
+      match l {
         Laid(size, a, placed, nn) => Arm(n, placed, t)
       }
     }
@@ -588,11 +588,11 @@ def rec armsOf(ls : Laids) -> Arms {
 
 /// How many values a tag of a size holds.
 def tagRange(t : Integer) -> Integer {
-  case t >= 8 {
+  match t >= 8 {
     true => 18446744073709551616,
-    false => case t >= 4 {
+    false => match t >= 4 {
       true => 4294967296,
-      false => case t >= 2 {
+      false => match t >= 2 {
         true => 65536,
         false => 256
       }
@@ -617,7 +617,7 @@ def taggedFill(vs : Variants) -> Filled {
 
 /// An enum's size.
 def enumSize(l : EnumLayout) -> Integer {
-  case l {
+  match l {
     EnumLayout(size, a, d, arms) => size
   }
 }
@@ -627,18 +627,18 @@ pub def enumLayout(vs : Variants) -> EnumLayout {
   run ls <- asStructs(vs);
   run nl <- nicheFilled(ls);
   run tl <- taggedFill(vs);
-  case tl {
+  match tl {
     NoFill => EnumLayout(0, 1, Tag(0), NoArm),
-    Filled(tlay, tniche) => case nl {
+    Filled(tlay, tniche) => match nl {
       NoFill => tlay,
       Filled(nlay, nniche) => {
         run ts <- enumSize(tlay);
         run ns <- enumSize(nlay);
-        case ts >= ns + 1 {
+        match ts >= ns + 1 {
           true => nlay,
-          false => case ns >= ts + 1 {
+          false => match ns >= ts + 1 {
             true => tlay,
-            false => case nniche >= tniche + 1 {
+            false => match nniche >= tniche + 1 {
               true => nlay,
               false => tlay
             }

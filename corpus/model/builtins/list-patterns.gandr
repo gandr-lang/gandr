@@ -12,9 +12,9 @@ data Grade : Type {
 
 /// The grades composed: unmet as soon as one is, met when none is.
 def rec compose(grades : List(Grade)) -> Grade {
-  case grades {
+  match grades {
     [] => Met,
-    [grade, ..rest] => case grade {
+    [grade, ..rest] => match grade {
       Unmet => Unmet,
       Met => compose[<](rest)
     }
@@ -35,7 +35,7 @@ def passing() -> Grade {
 
 /// A list's length up to three, read off its shape.
 def shortLength(xs : List(Integer)) -> Integer {
-  case xs {
+  match xs {
     [] => 0,
     [a] => 1,
     [a, b] => 2,
@@ -57,7 +57,7 @@ def many() -> Integer {
 
 /// The second element, past the first, whatever the rest holds.
 def secondOf(xs : List(Integer)) -> Integer {
-  case xs {
+  match xs {
     [_, b, ..rest] => b,
     _ => 0
   }
@@ -72,7 +72,7 @@ def eight() -> Integer {
 /// A list's head added to its length up to three: the as-pattern binds the
 /// whole list the cell pattern matched.
 def headed(xs : List(Integer)) -> Integer {
-  case xs {
+  match xs {
     [a, .._] as all => {
       run counted <- shortLength(all);
       a + counted

@@ -14,7 +14,7 @@ data Nat : Type {
 /// one held before the match.
 def shadowed(rounds : Nat) -> Integer {
   hold c = 100;
-  run settled <- case rounds {
+  run settled <- match rounds {
     Zero => return 7,
     Succ(fewer) => { hold c = 1; access c as v { resume(v, v + 1) }; pure c }
   };
@@ -33,7 +33,7 @@ def shadowedExited : () => Integer = shadowed(Zero);
 /// the held count, not the end.
 def forked(rounds : Nat) -> Integer {
   hold c = 100;
-  run settled <- case rounds {
+  run settled <- match rounds {
     Zero => return 7,
     Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
   };
@@ -42,7 +42,7 @@ def forked(rounds : Nat) -> Integer {
 
 /// A fork in an arm whose block ends at the unit the match settles.
 def forkPastAnExit(rounds : Nat) -> Unit {
-  run settled <- case rounds {
+  run settled <- match rounds {
     Zero => return unit,
     Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
   };

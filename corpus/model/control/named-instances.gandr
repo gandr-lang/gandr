@@ -91,7 +91,7 @@ data Steps : Type {
 /// A recursion under its row: each level prints through `out`, and the
 /// recursive call passes `out` on, as a call that omits its instance does.
 def rec descend(s : Steps) -> [out : Console] Unit {
-  case s {
+  match s {
     Ground => pure unit,
     Step(rest) => {
       out.print("step");

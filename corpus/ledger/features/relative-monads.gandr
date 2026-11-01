@@ -62,7 +62,7 @@ def ret(A : Type, a : A) -> Maybe(A) { Some(a) }
 @[ checks ]
 def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> Maybe(B) {
   run r <- force m;
-  case r {
+  match r {
     None => None,
     Some(x) => k(x)
   }
@@ -77,7 +77,7 @@ def two() -> Integer {
     ret(Integer, 1),
     fn (x) { ret(Integer, x + 1) }
   );
-  case r {
+  match r {
     None => 0,
     Some(y) => y
   }

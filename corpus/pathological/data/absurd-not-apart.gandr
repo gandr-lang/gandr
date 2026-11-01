@@ -14,13 +14,13 @@ data Int : Type {
 /// `S(P(Z))` is `Z`: the normal forms agree, and the path is reflexivity.
 @[ refuses("NotApart") ]
 def agree(e : Path(Int, S(P(Z)), Z)) -> Empty {
-  case e {}
+  match e {}
 }
 
 /// `S(n)` is `Z` once `n` is `P(Z)`: an endpoint holds a variable of the type.
 @[ refuses("NotApart") ]
 def open(n : Int, e : Path(Int, S(n), Z)) -> Empty {
-  case e {}
+  match e {}
 }
 
 data Circle : Type {
@@ -35,11 +35,11 @@ def cancelled(e : Path(
   loop ∷ back(loop) ∷ here(Base),
   here(Base)
 )) -> Empty {
-  case e {}
+  match e {}
 }
 
 /// A match of no arm over a type with constructors misses them.
 @[ refuses("NonExhaustiveMatch") ]
 def unmatched(n : Int) -> -F Empty {
-  case n {}
+  match n {}
 }

@@ -6,7 +6,7 @@
 /// One for a value below 128 and two otherwise, cased on as the boolean.
 def written(c : Integer) -> Integer {
   run small <- c < 128;
-  case small {
+  match small {
     true => 1,
     false => 2
   }
@@ -16,7 +16,7 @@ def written(c : Integer) -> Integer {
 /// boolean stands for.
 def printed(c : Integer) -> Integer {
   run small <- c < 128;
-  case small {
+  match small {
     +{.0 = u} => 1,
     +{.1 = u} => 2
   }
@@ -27,7 +27,7 @@ def printed(c : Integer) -> Integer {
 @[ refuses("OutOfFragment.Unannotated") ]
 def open(c : Integer) -> -F Integer {
   run small <- c < 128;
-  case small {
+  match small {
     +{.0 = u} => return 1,
     _ => return 2
   }

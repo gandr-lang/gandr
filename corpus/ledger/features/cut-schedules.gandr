@@ -31,7 +31,7 @@ data Tree : Type where {
 
 /// The complete tree of depth `d` with a one at every leaf, each subtree built under a cut.
 def rec full(d : Depth) -> Tree {
-  case d {
+  match d {
     Zero => Leaf(1),
     Succ(p) => Node(full[<](p), full[<](p))
   }
@@ -39,7 +39,7 @@ def rec full(d : Depth) -> Tree {
 
 /// The sum of the leaves of `t`, each half summed under its own cut.
 def rec sum(t : Tree) -> Integer {
-  case t {
+  match t {
     Leaf(n) => n,
     Node(l, r) => {
       run a <- sum[<](l);

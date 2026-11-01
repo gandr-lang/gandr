@@ -16,7 +16,7 @@ pub def plusTwo(n : Nat) -> Nat {
 
 /// Doubling, its arm handing the recursive call to `plusTwo`.
 pub def rec double(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(m) => plusTwo(double[<](m))
   }

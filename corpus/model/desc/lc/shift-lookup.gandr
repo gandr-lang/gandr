@@ -10,7 +10,7 @@ import "./congruence.gandr";
 
 /// A shift by `k` sends `n` to `n + k`.
 pub def shiftAdds(n : N, k : N) -> Path(N, rlook(n, RShift(k)), plus(n, k)) {
-  case n {
+  match n {
     Z => here(plus(Z, k)),
     S(m) => here(plus(S(m), k))
   }
@@ -37,7 +37,7 @@ pub def shiftsCompose(
   i : N,
   n : N
 ) -> Path(N, rlook(rlook(n, RShift(S(i))), RShift(S(Z))), rlook(n, RShift(S(S(i))))) {
-  case n {
+  match n {
     Z => here(S(S(plus(Z, i)))),
     S(m) => here(S(S(plus(S(m), i))))
   }

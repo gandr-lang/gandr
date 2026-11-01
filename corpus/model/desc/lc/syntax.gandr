@@ -78,7 +78,7 @@ pub data Env : Type {
 
 /// Addition, by recursion on the second summand.
 pub def rec plus(n : N, k : N) -> N {
-  case k {
+  match k {
     Z => n,
     S(j) => S(plus[<](n, j))
   }
@@ -86,7 +86,7 @@ pub def rec plus(n : N, k : N) -> N {
 
 /// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
 pub def rec plusTwo(n : N, j : N, k : N) -> N {
-  case k {
+  match k {
     Z => plus(n, j),
     S(i) => S(plusTwo[<](n, j, i))
   }
@@ -95,9 +95,9 @@ pub def rec plusTwo(n : N, j : N, k : N) -> N {
 /// The index a renaming sends `n` to: a lift keeps zero and renames under
 /// it.
 pub def rec rlook(n : N, r : Ren) -> N {
-  case r {
+  match r {
     RShift(k) => plus(n, k),
-    RLift(q) => case n {
+    RLift(q) => match n {
       Z => Z,
       S(m) => S(rlook[<](m, q))
     }
@@ -106,7 +106,7 @@ pub def rec rlook(n : N, r : Ren) -> N {
 
 /// A renaming applied to a term, lifted under each abstraction.
 pub def rec rename(t : Term, r : Ren) -> Term {
-  case t {
+  match t {
     Ix(n) => Ix(rlook(n, r)),
     Lam(b) => Lam(rename[<](b, RLift(r))),
     Ap(f, a) => Ap(rename[<](f, r), rename[<](a, r))
@@ -120,7 +120,7 @@ pub def wk(t : Term) -> Term {
 
 /// A term under `k` more binders: itself under none.
 pub def shiftBy(a : Term, k : N) -> Term {
-  case k {
+  match k {
     Z => a,
     S(j) => rename(a, RShift(S(j)))
   }
@@ -129,13 +129,13 @@ pub def shiftBy(a : Term, k : N) -> Term {
 /// The term a substitution sends index `n` to, under `k` binders the lookup
 /// has crossed: each lift it passes adds one.
 pub def rec look(n : N, s : Env, k : N) -> Term {
-  case s {
+  match s {
     Shift(j) => Ix(plusTwo(n, j, k)),
-    Cons(a, r) => case n {
+    Cons(a, r) => match n {
       Z => shiftBy(a, k),
       S(m) => look[<](m, r, k)
     },
-    Lift(r) => case n {
+    Lift(r) => match n {
       Z => Ix(plus(Z, k)),
       S(m) => look[<](m, r, S(k))
     }
@@ -144,7 +144,7 @@ pub def rec look(n : N, s : Env, k : N) -> Term {
 
 /// A substitution applied to a term, lifted under each abstraction.
 pub def rec subst(t : Term, s : Env) -> Term {
-  case t {
+  match t {
     Ix(n) => look(n, s, Z),
     Lam(b) => Lam(subst[<](b, Lift(s))),
     Ap(f, a) => Ap(subst[<](f, s), subst[<](a, s))

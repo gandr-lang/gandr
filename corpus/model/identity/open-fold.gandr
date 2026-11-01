@@ -48,11 +48,11 @@ def base_case() -> Path(Words, spinWords(windWords(Nil)), Nil) {
 /// presented `Int` is refused before conversion as one its rules do not
 /// admit, so the twin that cases on its call counts here.
 def rec parity(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => {
       run q <- parity[<](p);
-      case q {
+      match q {
         Zero => Succ(Zero),
         Succ(r) => Zero
       }

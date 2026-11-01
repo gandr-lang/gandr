@@ -112,7 +112,7 @@ def receivedReturnedTwice() -> Unit {
 def freedInOneArm(flag : Bool) -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
-    case flag {
+    match flag {
       true => r.free(b),
       false => pure unit
     }

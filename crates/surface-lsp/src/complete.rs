@@ -725,7 +725,7 @@ mod tests
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.
     const BASE: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                        plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
+                        plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
                         Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef double : +U (Nat -> -F \
                         Nat) ;\ndef double = thunk { fn (x) { return x } } ;\n";
 
@@ -892,7 +892,7 @@ mod tests
             "{value:?}"
         );
 
-        let computation = at("case m");
+        let computation = at("match m");
         assert_eq!(
             computation.names,
             named!([
@@ -919,7 +919,7 @@ mod tests
             "a body: the parameters, never a pattern's binder"
         );
         assert!(
-            has(&computation, "return") && has(&computation, "case"),
+            has(&computation, "return") && has(&computation, "match"),
             "{computation:?}"
         );
 
@@ -1138,7 +1138,7 @@ mod tests
         use CompletionItemKind as Kind;
 
         let head = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : \
-                    Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => ";
+                    Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => ";
         let own = format!("{head}n,\n    Succ(p) => Succ(p");
         let own = offered(
             SourceText::from(own.as_str()),
@@ -1235,7 +1235,7 @@ mod tests
             row("type(", "type(${1:type})"),
             row("fn", "fn () { ${1:computation} \\}"),
             row("thunk", "thunk { ${1:computation} \\}"),
-            row("case", "case ${1:value} { \\}"),
+            row("match", "match ${1:value} { \\}"),
             row(
                 "handle",
                 "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\}",
@@ -1556,7 +1556,7 @@ mod tests
             "a binder: unchanged"
         );
         assert_eq!(
-            resolve("case", Kind::KEYWORD),
+            resolve("match", Kind::KEYWORD),
             read(None, None),
             "a keyword: unchanged"
         );

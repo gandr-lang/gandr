@@ -12,7 +12,7 @@ data Box : Type where {
 
 @[ refuses("MismatchedPattern") ]
 def mixed(b : Bit) -> -F Integer {
-  case b {
+  match b {
     Zero => return 0,
     Boxed(n) => return n
   }

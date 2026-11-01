@@ -42,7 +42,7 @@ data Signal : Type {
 
 /// `toggle` turns a signal into the other one.
 def toggle(signal : Signal) -> Signal {
-  case signal {
+  match signal {
     Halt => Pass,
     Pass => Halt
   }

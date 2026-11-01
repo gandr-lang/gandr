@@ -3746,7 +3746,7 @@ mod tests
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
             "@[doc(\"d\")] def x = #{ a = 1 };",
-            "case v { Inl(x) => x, Inr(y) => y }",
+            "match v { Inl(x) => x, Inr(y) => y }",
             "\u{feff}def a = 1;",
         ] {
             let tokens = label(SourceFragment::from(src));

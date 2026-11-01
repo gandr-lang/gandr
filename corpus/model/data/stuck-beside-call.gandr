@@ -17,7 +17,7 @@ pub def succ(n : Nat) -> Nat {
 /// A walk down its first argument, passing its accumulator through `succ`
 /// at every step.
 pub def rec walk(t : Nat, c : Nat) -> Nat {
-  case t {
+  match t {
     Zero => c,
     Succ(m) => Succ(walk[<](m, succ(c)))
   }

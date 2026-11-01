@@ -136,8 +136,8 @@ pub enum Unbuilt
     /// String interpolation where the prelude holds no `string.append` to
     /// fold it with.
     Interpolation,
-    /// A match on a view, `case e with v { … }`.
-    CaseView,
+    /// A match on a view, `match e with v { … }`.
+    MatchView,
     /// A bind expression standing where a term is read.
     Bind,
     /// A circuit declaration where a term is read.
@@ -213,7 +213,7 @@ pub enum Unbuilt
     PrefixOperator,
     /// A match of no arms over a type no data switch reads, such as the
     /// empty sum, written with its answer type.
-    EmptyCase,
+    EmptyMatch,
     /// A form where a pattern is read that no pattern reading takes and the
     /// table declines by no feature of its own.
     UnreadPattern,
@@ -295,7 +295,7 @@ impl Unbuilt
         Self::StagedType,
         Self::UnknownType,
         Self::Interpolation,
-        Self::CaseView,
+        Self::MatchView,
         Self::Bind,
         Self::Circuit,
         Self::Codata,
@@ -330,7 +330,7 @@ impl Unbuilt
         Self::Val,
         Self::InfixForm,
         Self::PrefixOperator,
-        Self::EmptyCase,
+        Self::EmptyMatch,
         Self::UnreadPattern,
         Self::StatedType,
         Self::Presentation,
@@ -400,7 +400,7 @@ impl Unbuilt
             Self::StagedType => "staged_type",
             Self::UnknownType => "unknown_type",
             Self::Interpolation => "string_interpolation",
-            Self::CaseView => "case_with_view",
+            Self::MatchView => "match_with_view",
             Self::Bind => "bind_expression",
             Self::Circuit => "circuit_declaration",
             Self::Codata => "codata_declaration",
@@ -435,7 +435,7 @@ impl Unbuilt
             Self::Val => "val_statement",
             Self::InfixForm => "binary_expression",
             Self::PrefixOperator => "unary_expression",
-            Self::EmptyCase => "case_expression",
+            Self::EmptyMatch => "match_expression",
             Self::UnreadPattern => "pattern",
             Self::StatedType => "stated_type",
             Self::Presentation => "presentation",
@@ -496,10 +496,10 @@ impl Unbuilt
             },
             Self::StagedType => TrackingIssue::PLACED_STAGE,
             Self::UnknownType => TrackingIssue::UNKNOWN_TYPE,
-            Self::CaseView => TrackingIssue::CASE_VIEW,
+            Self::MatchView => TrackingIssue::MATCH_VIEW,
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
-            Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
+            Self::EmptyMatch => TrackingIssue::EMPTY_CASE_ANSWER,
             Self::ExternBlock | Self::HostEscape => TrackingIssue::EXTERN_BLOCK,
             Self::ShellBlock
             | Self::CommandSubstitution

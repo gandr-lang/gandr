@@ -10,7 +10,7 @@ import "../../model/identity/circle-base.gandr";
 /// reads as `count(acc, x)`, so the case is refused at the first rule.
 @[ refuses("RuleNotRespected") ]
 def rec count(acc : Int, b : Int) -> Int {
-  case b {
+  match b {
     Z => acc,
     S(x) => count[<](S(acc), x),
     P(x) => count[<](S(acc), x)

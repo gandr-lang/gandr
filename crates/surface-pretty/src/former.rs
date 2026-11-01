@@ -902,7 +902,7 @@ pub enum Former<'source, Node>
     Fixpoint(Node),
     /// A sum elimination over its scrutinee and one branch per summand, which
     /// the source answers by [`Source::component`], each under one binder:
-    /// `case v { +{.0 = a} => c, … }`.
+    /// `match v { +{.0 = a} => c, … }`.
     Case
     {
         /// The scrutinee.
@@ -911,7 +911,7 @@ pub enum Former<'source, Node>
         arity: Arity,
     },
     /// A product elimination, its body under one binder per component:
-    /// `case v { #{a, b} => c }`.
+    /// `match v { #{a, b} => c }`.
     Split
     {
         /// The scrutinee.
@@ -923,8 +923,8 @@ pub enum Former<'source, Node>
     },
     /// A nominal elimination over its scrutinee and one branch per
     /// constructor, which the source answers by [`Source::component`] and
-    /// names by [`Source::constructor`]: `case n { Zero => c, Succ(m) => d }`,
-    /// or `case n -> C { … }` with its motive where nothing states its type.
+    /// names by [`Source::constructor`]: `match n { Zero => c, Succ(m) => d }`,
+    /// or `match n -> C { … }` with its motive where nothing states its type.
     DataCase
     {
         /// The scrutinee.
@@ -954,7 +954,7 @@ pub enum Former<'source, Node>
         /// The cell branch.
         cons: Node,
     },
-    /// A case on a native list: `case xs { nil => n, cons(h, t) => c }`,
+    /// A case on a native list: `match xs { nil => n, cons(h, t) => c }`,
     /// the cell branch under the head's and the tail's binders.
     ListCase
     {
@@ -1288,7 +1288,7 @@ pub enum Notation
     Resume,
     /// A list fold, written `fold l { nil => …, cons(x, r) => … }`.
     ListFold,
-    /// A list case, written `case l { nil => …, cons(x, t) => … }`.
+    /// A list case, written `match l { nil => …, cons(x, t) => … }`.
     ListCase,
     /// A path between universes, written as a type application.
     PathUniverse,

@@ -12,7 +12,7 @@ theory Semi {
 
 @[ checks ]
 def widen(b : Bool) -> -F (Unit + Unit + Unit + Unit) {
-  case b {
+  match b {
     true => +{.0 = unit},
     false => +{.1 = unit}
   }
@@ -20,7 +20,7 @@ def widen(b : Bool) -> -F (Unit + Unit + Unit + Unit) {
 
 @[ checks ]
 def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool {
-  case e {
+  match e {
     +{.0 = u} => +{.0 = u},
     +{.1 = u} => +{.1 = u},
     +{.2 = u} => +{.0 = u},

@@ -10,7 +10,7 @@
 /// The relabelling between the two allocation orders: the first two ids
 /// swap, the third stays.
 def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-  case i {
+  match i {
     +{.0 = u} => +{.1 = +{.0 = u}},
     +{.1 = +{.0 = u}} => +{.0 = u},
     +{.1 = +{.1 = u}} => +{.1 = +{.1 = u}},
@@ -25,7 +25,7 @@ def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv
 
 /// The ring `a → b → c → a` with `a` allocated first, then `b`, then `c`:
 /// each id links to the next one allocated.
-def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
+def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { match i {
   +{.0 = u} => +{.1 = +{.0 = u}},
   +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
   +{.1 = +{.1 = u}} => +{.0 = u},
@@ -33,7 +33,7 @@ def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
 
 /// The labels of `a`, `b` and `c`, at the ids allocated first, second and
 /// third.
-def labelABC(i : Unit + (Unit + Unit)) -> Integer { case i {
+def labelABC(i : Unit + (Unit + Unit)) -> Integer { match i {
   +{.0 = u} => 1,
   +{.1 = +{.0 = u}} => 2,
   +{.1 = +{.1 = u}} => 3,
@@ -41,7 +41,7 @@ def labelABC(i : Unit + (Unit + Unit)) -> Integer { case i {
 
 /// The same ring with `b` allocated first, then `a`, then `c`: `b` links to
 /// the third id, `a` to the first, `c` to the second.
-def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
+def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { match i {
   +{.0 = u} => +{.1 = +{.1 = u}},
   +{.1 = +{.0 = u}} => +{.0 = u},
   +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}},
@@ -49,7 +49,7 @@ def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
 
 /// The labels of `b`, `a` and `c`, at the ids allocated first, second and
 /// third.
-def labelBAC(i : Unit + (Unit + Unit)) -> Integer { case i {
+def labelBAC(i : Unit + (Unit + Unit)) -> Integer { match i {
   +{.0 = u} => 2,
   +{.1 = +{.0 = u}} => 1,
   +{.1 = +{.1 = u}} => 3,
@@ -92,7 +92,7 @@ def oneArena : Path(
 
 /// A consumer of any arena: the label two links on from the start.
 def walk(r : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer}) -> Integer {
-  case r {
+  match r {
     #{.start = s, .next = n, .label = l} => {
       run once <- n(s);
       l(n(once))

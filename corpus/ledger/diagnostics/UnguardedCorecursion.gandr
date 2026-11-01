@@ -7,7 +7,7 @@ data Nat : Type where {
 
 @[ refuses("UnguardedCorecursion") ]
 def rec ahead(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => ahead[>](p)
   }

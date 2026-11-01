@@ -27,12 +27,12 @@ pub data Both(a : Type, b : Type) : Type {
 /// and the empty type for equal ones.
 @[ checks ]
 pub def rec apart(x : Nat, y : Nat) -> -F Type {
-  case x {
-    Zero => case y {
+  match x {
+    Zero => match y {
       Zero => return Empty,
       Succ(n) => return Unit
     },
-    Succ(m) => case y {
+    Succ(m) => match y {
       Zero => return Unit,
       Succ(n) => apart[<](m, n)
     }
@@ -54,7 +54,7 @@ rec {
   /// apartness from each element.
   @[ checks ]
   pub def rec fresh(x : Nat, xs : Fresh) -> -F Type {
-    case xs {
+    match xs {
       FNil => return Unit,
       FCons(y, ys, q) => return (Both(apart(x, y), fresh[<](x, ys)))
     }

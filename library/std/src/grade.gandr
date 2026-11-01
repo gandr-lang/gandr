@@ -49,9 +49,9 @@ pub module Usage : Model(Grade) {
   def one = Once;
   /// Unused beside anything is that thing; any two uses are many.
   def plus(a : Use, b : Use) -> Use {
-    case a {
+    match a {
       Unused => b,
-      Once => case b {
+      Once => match b {
         Unused => Once,
         Once => Many,
         Many => Many,
@@ -62,10 +62,10 @@ pub module Usage : Model(Grade) {
   /// Repeating unused, or no times, is unused; once repeats the other;
   /// many repeats anything used to many.
   def times(a : Use, b : Use) -> Use {
-    case a {
+    match a {
       Unused => Unused,
       Once => b,
-      Many => case b {
+      Many => match b {
         Unused => Unused,
         Once => Many,
         Many => Many,
@@ -74,18 +74,18 @@ pub module Usage : Model(Grade) {
   }
   /// Each use is under itself and under many; unused and once are apart.
   def le(a : Use, b : Use) -> Bool {
-    case a {
-      Unused => case b {
+    match a {
+      Unused => match b {
         Unused => true,
         Once => false,
         Many => true,
       },
-      Once => case b {
+      Once => match b {
         Unused => false,
         Once => true,
         Many => true,
       },
-      Many => case b {
+      Many => match b {
         Unused => false,
         Once => false,
         Many => true,
@@ -106,7 +106,7 @@ data Comparison : Type {
 
 /// One past a positive.
 def rec succPos(p : Pos) -> Pos {
-  case p {
+  match p {
     One => Bit0(One),
     Bit0(q) => Bit1(q),
     Bit1(q) => Bit0(succPos[<](q)),
@@ -115,14 +115,14 @@ def rec succPos(p : Pos) -> Pos {
 
 /// The sum of two positives, digit by digit, a carry taken by `succPos`.
 def rec addPos(a : Pos, b : Pos) -> Pos {
-  case a {
+  match a {
     One => succPos(b),
-    Bit0(p) => case b {
+    Bit0(p) => match b {
       One => Bit1(p),
       Bit0(q) => Bit0(addPos[<](p, q)),
       Bit1(q) => Bit1(addPos[<](p, q)),
     },
-    Bit1(p) => case b {
+    Bit1(p) => match b {
       One => Bit0(succPos(p)),
       Bit0(q) => Bit1(addPos[<](p, q)),
       Bit1(q) => Bit0(succPos(addPos[<](p, q))),
@@ -133,7 +133,7 @@ def rec addPos(a : Pos, b : Pos) -> Pos {
 /// The product of two positives: `b` added once for each digit of `a` that is
 /// one, shifted to that digit's place.
 def rec mulPos(a : Pos, b : Pos) -> Pos {
-  case a {
+  match a {
     One => b,
     Bit0(p) => Bit0(mulPos[<](p, b)),
     Bit1(p) => addPos(b, Bit0(mulPos[<](p, b))),
@@ -143,18 +143,18 @@ def rec mulPos(a : Pos, b : Pos) -> Pos {
 /// How `a` compares with `b`, `r` the answer their lower digits gave: the
 /// higher digits decide where they differ.
 def rec comparePos(a : Pos, b : Pos, r : Comparison) -> Comparison {
-  case a {
-    One => case b {
+  match a {
+    One => match b {
       One => r,
       Bit0(_q) => Below,
       Bit1(_q) => Below,
     },
-    Bit0(p) => case b {
+    Bit0(p) => match b {
       One => Above,
       Bit0(q) => comparePos[<](p, q, r),
       Bit1(q) => comparePos[<](p, q, Below),
     },
-    Bit1(p) => case b {
+    Bit1(p) => match b {
       One => Above,
       Bit0(q) => comparePos[<](p, q, Above),
       Bit1(q) => comparePos[<](p, q, r),
@@ -164,9 +164,9 @@ def rec comparePos(a : Pos, b : Pos, r : Comparison) -> Comparison {
 
 /// The sum of two naturals.
 def addNat(a : Nat, b : Nat) -> Nat {
-  case a {
+  match a {
     Zero => b,
-    Positive(p) => case b {
+    Positive(p) => match b {
       Zero => a,
       Positive(q) => Positive(addPos(p, q)),
     },
@@ -175,9 +175,9 @@ def addNat(a : Nat, b : Nat) -> Nat {
 
 /// The product of two naturals.
 def mulNat(a : Nat, b : Nat) -> Nat {
-  case a {
+  match a {
     Zero => Zero,
-    Positive(p) => case b {
+    Positive(p) => match b {
       Zero => Zero,
       Positive(q) => Positive(mulPos(p, q)),
     },
@@ -186,11 +186,11 @@ def mulNat(a : Nat, b : Nat) -> Nat {
 
 /// Whether `a` is at most `b`.
 def leNat(a : Nat, b : Nat) -> Bool {
-  case a {
+  match a {
     Zero => true,
-    Positive(p) => case b {
+    Positive(p) => match b {
       Zero => false,
-      Positive(q) => case comparePos(p, q, Equal) {
+      Positive(q) => match comparePos(p, q, Equal) {
         Below => true,
         Equal => true,
         Above => false,
@@ -230,9 +230,9 @@ pub data Hom(a : Model(Grade), b : Model(Grade)) : Type {
 
 /// A count's usage: zero unused, one once, more many.
 def collapsed(n : Nat) -> Use {
-  case n {
+  match n {
     Zero => Unused,
-    Positive(p) => case p {
+    Positive(p) => match p {
       One => Once,
       Bit0(_q) => Many,
       Bit1(_q) => Many,
@@ -252,7 +252,7 @@ pub def fits(a : Model(Grade), need : a.G, have : a.G) -> Bool {
 /// Whether `have`, a grade of `a`, covers `need`, a grade of `b`, once `h`
 /// maps it into `b`.
 pub def covers(a : Model(Grade), b : Model(Grade), h : Hom(a, b), need : b.G, have : a.G) -> Bool {
-  case h {
+  match h {
     Map(m) => fits(b, need, m(have)),
   }
 }

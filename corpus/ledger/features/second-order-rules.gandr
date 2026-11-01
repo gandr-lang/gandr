@@ -61,9 +61,9 @@ theory LetOverlap {
 /// ζ's right side is the instantiation of `t`, which the presentation keeps
 /// as an `Inst` node.
 @[ runs("1") ]
-def instantiates() -> Integer { case Let {
-  Presents(sorts, opers, rules) => case rules {
-    Rule(name, left, right, rest) => case right {
+def instantiates() -> Integer { match Let {
+  Presents(sorts, opers, rules) => match rules {
+    Rule(name, left, right, rest) => match right {
       Inst(variable, arguments) => 1,
       _ => 0
     },

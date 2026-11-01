@@ -5946,7 +5946,7 @@ mod tests
             named("Nat : Type", "Nat"),
             "a written family, its declaration"
         );
-        assert_eq!(at("case"), None, "a keyword refers to nothing");
+        assert_eq!(at("match"), None, "a keyword refers to nothing");
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
     }
 
@@ -7322,11 +7322,11 @@ mod tests
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n\ndata Int : \
              Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : \
              S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
-             -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
+             -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
              back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
-             Base, Base) {\n  case n {\n    Z => return here(Base),\n    S(x) => { run c <- \
+             Base, Base) {\n  match n {\n    Z => return here(Base),\n    S(x) => { run c <- \
              spin[<](x); return loop ∷ c },\n    P(x) => { run c <- spin[<](x); return \
-             back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  case x {\n    \
+             back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  match x {\n    \
              Base => Base,\n    loop => back(loop)\n  }\n}\n",
         );
         let table = table(source);
@@ -7357,10 +7357,10 @@ mod tests
         let pattern =
             |written: &str, ty: &str| (String::from(written), Subject::Binder, String::from(ty));
         assert_eq!(
-            at("case p"),
+            at("match p"),
             (
                 String::from(
-                    "case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    back(loop) ∷ q => return 2\n  }"
+                    "match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    back(loop) ∷ q => return 2\n  }"
                 ),
                 Subject::Term,
                 String::from("?")
@@ -7444,7 +7444,7 @@ mod tests
     fn an_unused_dependent_part_answers_in_its_arms_context()
     {
         let source = SourceText::from(
-            "data Vinf : Type[+, 1] where {\n  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf\n}\n\ndef members(v : Vinf) -> -F Type {\n  case v {\n    Sup(a, f) => return a\n  }\n}\n",
+            "data Vinf : Type[+, 1] where {\n  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf\n}\n\ndef members(v : Vinf) -> -F Type {\n  match v {\n    Sup(a, f) => return a\n  }\n}\n",
         );
         let table = table(source);
         assert_eq!(
@@ -7499,7 +7499,7 @@ mod tests
     fn a_pattern_on_a_computed_scrutinee_answers_1141()
     {
         let source = SourceText::from(
-            "def compared(n : Integer) -> -F Integer {\n  case n >= 5 {\n    true => return \
+            "def compared(n : Integer) -> -F Integer {\n  match n >= 5 {\n    true => return \
              2,\n    false => return 1\n  }\n}\n",
         );
         let table = table(source);
@@ -7525,9 +7525,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def last(t : #{Integer, Bool, Integer}) -> -F Integer {\n",
-            "  case t {\n    #{x, y, z} => return z\n  }\n}\n",
+            "  match t {\n    #{x, y, z} => return z\n  }\n}\n",
             "def side(c : Integer) -> -F Integer {\n  run small <- c < 128;\n",
-            "  case small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
+            "  match small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [("y, z}", "Bool"), ("u} =>", "Unit"), ("v} =>", "Unit")] {
@@ -7547,9 +7547,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def low(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
-            "  case r {\n    #{.high = h, .low = l} => return l\n  }\n}\n",
+            "  match r {\n    #{.high = h, .low = l} => return l\n  }\n}\n",
             "def first(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
-            "  case r {\n    #{p, q} => return p\n  }\n}\n",
+            "  match r {\n    #{p, q} => return p\n  }\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [("h, .low", "Bool"), ("q} =>", "Bool")] {
@@ -7569,14 +7569,14 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def shortLength(xs : List(Integer)) -> -F Integer {\n",
-            "  case xs {\n    [] => 0,\n    [a] => 1,\n    [c, d] => 2,\n    _ => 3\n  }\n}\n",
+            "  match xs {\n    [] => 0,\n    [a] => 1,\n    [c, d] => 2,\n    _ => 3\n  }\n}\n",
             "def secondOf(xs : List(Integer)) -> -F Integer {\n",
-            "  case xs {\n    [_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
+            "  match xs {\n    [_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
             "def headed(xs : List(Integer)) -> -F Integer {\n",
-            "  case xs {\n    all @ [h, .._] => become shortLength(all),\n    [] => 0\n  }\n}\n",
+            "  match xs {\n    all @ [h, .._] => become shortLength(all),\n    [] => 0\n  }\n}\n",
             "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
             "def multiplies(s : Model(Semigroup)) -> -F Integer {\n",
-            "  case s {\n    #{.mul = m} => 0\n  }\n}\n",
+            "  match s {\n    #{.mul = m} => 0\n  }\n}\n",
             "def bound() -> -F Integer {\n  run (p, n) <- pure ((true : Bool), 2);\n  n\n}\n",
             "def split() -> -F Integer {\n",
             "  run (y, z) : Integer * Integer <- pure (1, 2);\n  y\n}\n",
@@ -7642,7 +7642,7 @@ mod tests
         let source = SourceText::from(concat!(
             "def twice : Type -> Type ;\ndef twice = \\Y. Y * Y ;\n\n",
             "def twiceFirst(p : twice(Integer)) -> -F Integer {\n",
-            "  case p {\n    #{c, d} => return c\n  }\n}\n",
+            "  match p {\n    #{c, d} => return c\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -7665,7 +7665,7 @@ mod tests
             "sect : (x : a) => Path(a, back(to(x)), x), retr : (y : b) => Path(b, to(back(y)), y)}) ",
             "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path(a, g(to(x)), x)}, ",
             "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path(b, to(h(y)), y)}} {\n",
-            "  case i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
+            "  match i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -7685,9 +7685,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def nested(p : #{x : Integer, inner : #{y : Integer, q : Path(Integer, x, y)}}) ",
-            "-> -F Integer {\n  case p {\n    #{x, #{y, q}} => y\n  }\n}\n",
+            "-> -F Integer {\n  match p {\n    #{x, #{y, q}} => y\n  }\n}\n",
             "def flat(p : #{x : Integer, y : Integer, q : Path(Integer, x, y)}) ",
-            "-> -F Integer {\n  case p {\n    #{x, y, q} => y\n  }\n}\n",
+            "-> -F Integer {\n  match p {\n    #{x, y, q} => y\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -8207,7 +8207,7 @@ mod tests
     {
         let source = SourceText::from(
             "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef \
-             predecessor(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
+             predecessor(n : Nat) -> -F Nat {\n  run m <- match n {\n    Zero => return n,\n    \
              Succ(p) => pure p,\n  } ;\n  return m\n}\n\ndef first(n : Nat) -> -F Nat {\n  run k \
              <- loop { break(Succ(n)) } ;\n  return Succ(k)\n}\n\ndef same(n : Nat) -> -F Nat {\n  \
              return n\n}\n\ndef unused(n : Nat) -> -F Nat {\n  run u <- same(n) ;\n  run _ <- \
@@ -8307,8 +8307,8 @@ mod tests
     {
         let source = SourceText::from(
             "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec skim(n : \
-             Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
-             case p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
+             Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
+             match p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
              become skim[<](p)\n    },\n  }\n}\n",
         );
         let table = table(source);
@@ -8371,7 +8371,7 @@ mod tests
     fn an_unused_split_component_answers_by_its_written_name_665()
     {
         let spelled = spelled(SourceText::from(
-            "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {\n  case i {\n    #{t, k, s, r} => k\n  }\n}\n",
+            "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {\n  match i {\n    #{t, k, s, r} => k\n  }\n}\n",
         ));
         assert!(
             spelled
@@ -8405,7 +8405,7 @@ mod tests
             ),
         ] {
             let source = format!(
-                "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {{\n  case i {{\n    {pattern}\n  }}\n}}\n"
+                "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {{\n  match i {{\n    {pattern}\n  }}\n}}\n"
             );
             let spelled = spelled(SourceText::from(source.as_str()));
             assert!(
@@ -8431,7 +8431,7 @@ mod tests
     {
         let record = "#{ x : b, y : b, p : Path(b, x, y) }";
         let source = format!(
-            "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  case w {{\n    \
+            "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  match w {{\n    \
              #{{.x = u, .y = v, .p = q}} => here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
              Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fn (w) {{ w }} }},\n    \
              ((thunk {{ fn (w) {{ w }} }}, thunk {{ fn (w) {{ here(w) }} }}), (thunk {{ fn (w) \
@@ -8612,7 +8612,7 @@ mod tests
     fn a_function_argument_in_a_path_type_reads_back_3947()
     {
         let source = SourceText::from(
-            "def first(b : Type, w : #{x : b, y : b}) -> b {\n  case w {\n    #{.x = u, .y = v} \
+            "def first(b : Type, w : #{x : b, y : b}) -> b {\n  match w {\n    #{.x = u, .y = v} \
              => u\n  }\n}\n\ndef pass(\n  b : Type,\n  s : #{x : b, y : b} => b,\n  e : Path(#{x \
              : b, y : b} => b, s, s)\n) -> Path(#{x : b, y : b} => b, s, s) {\n  e\n}\n\ndef \
              user(b : Type, e : Path(#{x : b, y : b} => b, thunk { fn (w) { first(b, w) } }, \
@@ -9237,12 +9237,12 @@ mod tests
             "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat } data Both(a : Type, b : \
              Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } def apart(x : Nat, y : \
              Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh } def rec fresh(x : Nat, xs : \
-             Fresh) -> -F Type { case xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
+             Fresh) -> -F Type { match xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
              apart(x, y); run r <- fresh[<](x, ys); return (Both(p, r)) } } } } rec { data \
              UD(d : Type) : Type where { | BaseD : UD(d) | PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
-             UD(d))) --> UD(d) } def rec elD(d : Type, u : UD(d)) -> -F Type { case u { BaseD \
+             UD(d))) --> UD(d) } def rec elD(d : Type, u : UD(d)) -> -F Type { match u { BaseD \
              => return d, PiD(a, b) => return (+U ((x : elD[<](d, a)) -> -F elD[<](d, b(x)))) \
-             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop(a) ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { case u { Base => \
+             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop(a) ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { match u { Base => \
              return Nat, PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Nat)) } } }",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9398,7 +9398,7 @@ mod tests
     fn a_recursive_call_s_head_refers_to_the_name_it_calls()
     {
         let text = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                    down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) \
+                    down(n : Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) \
                     => become down[<](p)\n  }\n}\n";
         let table = table(SourceText::from(text));
         let declared = text.find("down(").expect("the name is declared");
@@ -9504,12 +9504,12 @@ mod tests
         let source = SourceText::from(
             "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\ndata Fin : N -> Type where {\n  | FZ : (n : N) --> Fin(S(n))\n  | FS : (n : N, i : Fin(n)) --> Fin(S(n))\n}\ndata V(a : \
              Type) : N -> Type where {\n  | VN : V(a, Z)\n  | VC : (n : N, x : a, t : V(a, n)) --> V(a,  S(n))\n}\ndata Box(a : Type) : Type where {\n  | MkBox : (x : a) --> Box(a)\n}\ndef rec \
-             toN(m : N, i : Fin(m)) -> N {\n  case i {\n    FZ(_) => Z,\n    FS(p, j) => \
-             S(toN[<](p, j))\n  }\n}\ndef vlen(m : N, v : V(N, m)) -> N {\n  case v {\n    VN \
-             => Z,\n    VC(k, _, t) => S(k)\n  }\n}\ndef vsnd(m : N, v : V(N, m)) -> N {\n  case \
+             toN(m : N, i : Fin(m)) -> N {\n  match i {\n    FZ(_) => Z,\n    FS(p, j) => \
+             S(toN[<](p, j))\n  }\n}\ndef vlen(m : N, v : V(N, m)) -> N {\n  match v {\n    VN \
+             => Z,\n    VC(k, _, t) => S(k)\n  }\n}\ndef vsnd(m : N, v : V(N, m)) -> N {\n  match \
              v {\n    VN => Z,\n    VC(k, y, _) => S(k)\n  }\n}\ndef vthd(m : N, v : V(N, m)) \
-             -> N {\n  case v {\n    VN => Z,\n    VC(_, y, _) => y\n  }\n}\ndef unbox(b : \
-             Box(N)) -> N {\n  case b {\n    MkBox(_) => Z\n  }\n}\n",
+             -> N {\n  match v {\n    VN => Z,\n    VC(_, y, _) => y\n  }\n}\ndef unbox(b : \
+             Box(N)) -> N {\n  match b {\n    MkBox(_) => Z\n  }\n}\n",
         );
         let table = table(source);
         let read: Vec<(&str, String)> = [
@@ -9559,7 +9559,7 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let refusals = |arms: &str| {
             let own = alloc::format!(
-                "data Color : Type where {{ | Red : Color | Green : Color | Blue : Color }}\ndef pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"
+                "data Color : Type where {{ | Red : Color | Green : Color | Blue : Color }}\ndef pick(c : Color) -> -F Integer {{ match c {{ {arms} }} }}\n"
             );
             let text = SourceText::from(own.as_str());
             let alone = table(text);

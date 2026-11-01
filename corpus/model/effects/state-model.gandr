@@ -64,9 +64,9 @@ module Overwriting : Model(StatePutPut) with sort S = Integer {
 
 /// The counts read as integers, the first count zero.
 def shown(c : Unit + (Unit + Unit)) -> Integer {
-  case c {
+  match c {
     +{.0 = u} => 0,
-    +{.1 = rest} => case rest {
+    +{.1 = rest} => match rest {
       +{.0 = u} => 1,
       +{.1 = v} => 2
     }
@@ -92,7 +92,7 @@ def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 /// Storing the second count and then reading the state twice, from the first
 /// count.
 def putGet(m : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
-  case m {
+  match m {
     #{.get = g, .put = p} => {
       run read <- g(fn (s) {
         pure fn (t) { run a <- shown(s); run b <- shown(t); pure a * 10 + b }

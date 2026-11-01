@@ -19,7 +19,7 @@ import "./conversion-base.gandr";
 
 /// Apply `s` to `z` as many times as `n` counts.
 def rec iterate(n : Nat, s : Nat => Nat, z : Nat) -> Nat {
-  case n {
+  match n {
     Zero => z,
     Succ(m) => s(iterate[<](m, s, z))
   }

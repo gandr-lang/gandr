@@ -13,7 +13,7 @@ import "../../model/data/vectors.gandr";
 /// be left out.
 @[ refuses("NotApart") ]
 def vheadAny(n : Nat, v : Vec(Integer, n)) -> Integer {
-  case v {
+  match v {
     VCons(m, h, t) => h
   }
 }

@@ -6,7 +6,7 @@ def moved(x : Integer) -> #{x : Integer, y : Integer} { #{ .x, .y = x + 1 } }
 /// The punned field holds the argument.
 @[ runs("3") ]
 def movedX() -> Integer {
-  case moved(3) {
+  match moved(3) {
     #{ .x, .y } => x
   }
 }

@@ -224,8 +224,8 @@ impl FormName
         Self::DATA_GENERATOR,
         Self::CELL_MEMBER,
         Self::RULE_MEMBER,
-        Self::CASE,
-        Self::CASE_WITH_VIEW,
+        Self::MATCH,
+        Self::MATCH_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
         Self::CONS_PATTERN,
         Self::WILDCARD,
@@ -365,11 +365,11 @@ impl FormName
     /// A data block's rule member `rule l <=> r` between two terms, inlined
     /// into the declaration.
     pub const RULE_MEMBER: Self = Self("rule_member");
-    /// The match `case e -> T? { p => c, … }`.
-    pub const CASE: Self = Self("case_expression");
+    /// The match `match e -> T? { p => c, … }`.
+    pub const MATCH: Self = Self("match_expression");
     /// A match's view `with e`, folded into the match, and the absurd match
-    /// `case e {}` the same reserved adaptation admits.
-    pub const CASE_WITH_VIEW: Self = Self("case_with_view");
+    /// `match e {}` the same reserved adaptation admits.
+    pub const MATCH_WITH_VIEW: Self = Self("match_with_view");
     /// The constructor pattern `C(p, …)` or `C`.
     pub const CONSTRUCTOR_PATTERN: Self = Self("constructor_pattern");
     /// The word pattern `g ∷ p` or `back(g) ∷ p`: a loop's letter, or its
@@ -709,8 +709,8 @@ impl TileName
     pub const CONSUMED: Self = Self("consumed");
     /// The keyword `val`, opening a statement.
     pub const VAL: Self = Self("val");
-    /// The match keyword `case`.
-    pub const CASE: Self = Self("case");
+    /// The match keyword `match`.
+    pub const MATCH: Self = Self("match");
     /// A constructor name written as one of a form's own tiles: a data
     /// declaration's generator or a constructor pattern's head.
     pub const CONSTRUCTOR: Self = Self("constructor");
@@ -883,7 +883,7 @@ pub enum Former
     Run,
     /// The application `c(v)`.
     Call,
-    /// The match `case e -> T? { p => c, … }` over nominal data, integers,
+    /// The match `match e -> T? { p => c, … }` over nominal data, integers,
     /// booleans, products and sums over labels.
     Case,
     /// The conditional `if c -> T? { … } else { … }`, its false branch a block
@@ -1191,7 +1191,7 @@ pub const FORMERS: [(&str, Former); 134_usize] = [
     ("force_expression", Former::Force),
     ("run_expression", Former::Run),
     ("call_expression", Former::Call),
-    ("case_expression", Former::Case),
+    ("match_expression", Former::Case),
     ("telescope_expression", Former::Telescope),
     ("list_expression", Former::List),
     ("labelled_sum_expression", Former::Injection),

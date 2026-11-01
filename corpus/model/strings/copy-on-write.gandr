@@ -21,7 +21,7 @@ pub data Written : Type {
 /// The string a copy holds: the same inline bytes, or the same buffer with
 /// one more holder.
 pub def copy(s : Repr) -> Repr {
-  case s {
+  match s {
     Inline(bs) => Inline(bs),
     Shared(n, bs) => Shared(n + 1, bs)
   }
@@ -29,10 +29,10 @@ pub def copy(s : Repr) -> Repr {
 
 /// The bytes with `b` written before the terminating zero.
 pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) {
-  case bs {
+  match bs {
     Nil => Nil,
     Cons(x, rest) => {
-      case rest {
+      match rest {
         Nil => (Cons(b, Cons(x, Nil)) : List(Integer)),
         Cons(y, more) => (Cons(x, beforeZero[<](rest, b)) : List(Integer))
       }
@@ -44,11 +44,11 @@ pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) {
 /// heap when they outgrow it; a buffer held once written in place; a shared
 /// buffer copied first.
 pub def push(s : Repr, b : Integer) -> Written {
-  case s {
+  match s {
     Inline(bs) => {
       run grown <- beforeZero(bs, b);
       run stored <- store(grown);
-      case stored {
+      match stored {
         Inline(kept) => Written(stored, 0),
         Shared(n, moved) => Written(stored, 1)
       }
@@ -56,7 +56,7 @@ pub def push(s : Repr, b : Integer) -> Written {
     Shared(n, bs) => {
       run grown <- beforeZero(bs, b);
       run alone <- n == 1;
-      case alone {
+      match alone {
         true => Written(Shared(1, grown), 0),
         false => Written(Shared(1, grown), 1)
       }
@@ -66,14 +66,14 @@ pub def push(s : Repr, b : Integer) -> Written {
 
 /// The buffers a write filled anew.
 pub def copies(w : Written) -> Integer {
-  case w {
+  match w {
     Written(s, n) => n
   }
 }
 
 /// The written string.
 pub def written(w : Written) -> Repr {
-  case w {
+  match w {
     Written(s, n) => s
   }
 }

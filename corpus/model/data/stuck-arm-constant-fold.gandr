@@ -26,10 +26,10 @@ data Out : Type {
 
 /// This fold computes the type a program owes its postcondition `k`.
 def rec wp(e : E, k : Out => Type) -> Type {
-  case e {
+  match e {
     Get => return type(#{w : Nat, post : k(Ends(w))}),
-    Br(a, m) => wp[<](a, fn (o) { case o {
-      Ends(v) => case v {
+    Br(a, m) => wp[<](a, fn (o) { match o {
+      Ends(v) => match v {
         Zero => return Void,
         Succ(_x) => wp[<](m, k)
       }

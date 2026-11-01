@@ -53,7 +53,7 @@ data Nat : Type {
 
 /// Addition, by recursion on its second argument.
 def rec plus(n : Nat, m : Nat) -> Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
   }

@@ -10,7 +10,7 @@ data Parcel(a : Type) : Type {
 
 /// The value a parcel holds, at the type given first.
 def unwrap(a : Type, p : Parcel(a)) -> a {
-  case p {
+  match p {
     Enclosed(x) => x
   }
 }

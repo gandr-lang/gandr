@@ -117,7 +117,7 @@ const KINDS: &[(&str, Standing)] = &[
         ),
     ),
     ("Expression break", Standing::Design(EXIT)),
-    ("Expression case", Standing::Owed(0)),
+    ("Expression match", Standing::Owed(0)),
     ("Expression character", Standing::Owed(0)),
     ("Expression close", Standing::Owed(0)),
     ("Expression co", Standing::Owed(0)),

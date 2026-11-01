@@ -9,7 +9,7 @@ import "../../model/identity/state-passing.gandr";
 /// counts two onto the accumulator and at `Store(u, k)` one.
 @[ refuses("RuleNotRespected") ]
 def rec storesCounted(p : Stores, n : Integer) -> Integer {
-  case p {
+  match p {
     End(_x) => n,
     Store(_t, k) => storesCounted[<](k, n + 1)
   }
@@ -19,7 +19,7 @@ def rec storesCounted(p : Stores, n : Integer) -> Integer {
 /// than at its right.
 @[ refuses("RuleNotRespected") ]
 def rec storeCount(p : Stores) -> Integer {
-  case p {
+  match p {
     End(_x) => 0,
     Store(_t, k) => storeCount[<](k) + 1
   }

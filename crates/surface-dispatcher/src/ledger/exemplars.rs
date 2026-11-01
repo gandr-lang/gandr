@@ -1187,8 +1187,8 @@ mod tests
         let directory = copied(Path::new("checks"));
         for (file, text) in [
             (
-                "syntax/case-expression.gandr",
-                "// `case_expression`\ndef a = case x { y => y } ;\n",
+                "syntax/match-expression.gandr",
+                "// `match_expression`\ndef a = match x { y => y } ;\n",
             ),
             (
                 "syntax/block.gandr",
@@ -1212,7 +1212,7 @@ mod tests
         let report = verified(&directory);
         assert_eq!(named(&report), [
             "block.gandr: parses with 2 obligations left",
-            "case-expression.gandr: does not open with a `///` comment naming rule `case_expression`",
+            "match-expression.gandr: does not open with a `///` comment naming rule `match_expression`",
             "number.expression.gandr: holds 2 items of its rule where it shows 1",
             "doc.gandr: the attribute `doc` is filed on no declaration",
             "entry.gandr: the lowering refuses it: no declaration or binder answers `seat`",

@@ -19,7 +19,7 @@ pub module Str {
   /// The number of bytes the string holds, its zero included, read from a
   /// string lent for reading.
   def len(self : shared Repr) -> Integer {
-    case self {
+    match self {
       Inline(bs) => count(bs),
       Shared(n, bs) => count(bs)
     }
@@ -31,7 +31,7 @@ pub module Str {
   }
   /// The bytes of a string taken: nothing reads the string after.
   def bytes(self : consumed Repr) -> List(Integer) {
-    case self {
+    match self {
       Inline(bs) => bs,
       Shared(n, bs) => bs
     }
@@ -62,7 +62,7 @@ def taken() -> List(Integer) {
 /// match (#1488).
 def takenInOneArm(t : Repr) -> List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  case t {
+  match t {
     Inline(bs) => s.bytes(),
     Shared(n, bs) => bs
   }
@@ -86,7 +86,7 @@ def keptOnShared() -> List(Integer) {
 @[ runs("3") ]
 def readWhereNotTaken() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  case Shared(1, (Nil : List(Integer))) {
+  match Shared(1, (Nil : List(Integer))) {
     Inline(bs) => { count(s.bytes()) },
     Shared(n, bs) => s.len()
   }

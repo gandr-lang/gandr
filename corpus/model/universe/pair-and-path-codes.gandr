@@ -38,7 +38,7 @@ data UProd : Type {
 /// The decoder, with a pair code's two decodes as calls.
 @[ checks ]
 def rec elProd(u : UProd) -> -F Type {
-  case u {
+  match u {
     NatX => return Nat,
     ProdX(a, b) => return (Both(elProd[<](a), elProd[<](b)))
   }
@@ -61,7 +61,7 @@ rec {
   /// binder takes.
   @[ checks ]
   def rec elSig(u : USig) -> -F Type {
-    case u {
+    match u {
       NatS => return Nat,
       SigS(a, b) => return (Sig(elSig[<](a), thunk { fn (x) { elSig[<](b(x)) } }))
     }
@@ -84,7 +84,7 @@ rec {
   /// The carrier is the decoder's own marked call, read as a type.
   @[ checks ]
   def rec elPath(u : UPath) -> -F Type {
-    case u {
+    match u {
       NatP => return Nat,
       PathP(a, x, y) => return (Path(elPath[<](a), x, y))
     }

@@ -1830,7 +1830,7 @@ pure greeting
         let fragments = vec![
             "def x = 1;",
             "fn(a) { pure a }",
-            "case v { Inl(x) => x, Inr(y) => y }",
+            "match v { Inl(x) => x, Inr(y) => y }",
             "if c { pure 1 } else { pure 2 }",
             "#{ a = 1, b = \"s\" }",
             "[1, 2, 3] ++ [4]",

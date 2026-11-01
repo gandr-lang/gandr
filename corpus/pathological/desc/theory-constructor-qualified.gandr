@@ -10,7 +10,7 @@ data Tree : Type {
 /// `Tree` has no `Lam`, so `Tree.Lam` names nothing.
 @[ refuses("UnresolvedName") ]
 def lambda(t : Tree) -> Integer {
-  case t {
+  match t {
     Tree.Lam(body) => 1,
     _ => 0
   }

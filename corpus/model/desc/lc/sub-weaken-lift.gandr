@@ -33,7 +33,7 @@ def weakenLiftAgree(
   s : Env,
   n : N
 ) -> Path(Term, subst(look(n, Shift(S(Z)), Z), Lift(s)), subst(look(n, s, Z), Shift(S(Z)))) {
-  case n {
+  match n {
     Z => lookShiftedOnce(s, Z),
     S(j) => lookShiftedOnce(s, S(j))
   }

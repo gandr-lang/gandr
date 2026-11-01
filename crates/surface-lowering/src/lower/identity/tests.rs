@@ -375,7 +375,7 @@ fn funext_lowers_to_its_former()
 #[test]
 fn a_list_moves_along_a_universe_equivalence()
 {
-    let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\ndef negation : Path(Type, Bool, Bool);\ndef negation = equiv(not, not);\n";
+    let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\ndef negation : Path(Type, Bool, Bool);\ndef negation = equiv(not, not);\n";
     let mut arena = CoreArena::new();
     let source = format!(
         "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
@@ -488,7 +488,7 @@ fn a_list_moves_along_a_universe_equivalence()
 #[test]
 fn a_path_product_lowers_to_its_former()
 {
-    let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
+    let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
     let mut arena = CoreArena::new();
     let source = format!("{negation}def paired = pathProduct(here(Unit), equiv(not, not));\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -530,7 +530,7 @@ fn a_path_product_lowers_to_its_former()
 #[test]
 fn a_flow_product_lowers_to_its_former()
 {
-    let negation = "def not(b: Bool) -> -F Bool {\n  case b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
+    let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
     let mut arena = CoreArena::new();
     let source = format!("{negation}def paired = flowProduct(stay(Unit), forward(not));\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1634,13 +1634,13 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
     let module = lowered(
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
-            "def collapse(x : Circle) -> -F Circle {\n  case x {\n    Base => Base\n  }\n}\n",
+            "def collapse(x : Circle) -> -F Circle {\n  match x {\n    Base => Base\n  }\n}\n",
             "def two : Path(Circle, Base, Base);\ndef two = loop then loop;\n",
             "def undone : Path(Circle, Base, Base);\ndef undone = back(loop then loop);\n",
             "def collapsed : Path(Path(Circle, Base, Base), cong(collapse, loop), here(Base));\n",
             "def unread : Path(Integer, 1, 1);\ndef unread = back(here(1));\n",
             "def pointed : Path(Circle, Base, Base);\ndef pointed = cong(Base, loop);\n",
-            "def broken(x : Circle) -> -F Bogus {\n  case x {\n    Base => Base\n  }\n}\n",
+            "def broken(x : Circle) -> -F Bogus {\n  match x {\n    Base => Base\n  }\n}\n",
             "def over_broken : Path(Circle, Base, Base);\ndef over_broken = cong(broken, loop);\n",
             "def emptyFirst : Path(Circle, Base, Base);\ndef emptyFirst = here(Base) then loop;\n",
         )),
@@ -1781,7 +1781,7 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
             // A call of a signature, and a recursive call's descent.
             "def sig : (a : Int) => Path(Int, a, a) ;\n",
             "def overSig(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, sig(a)) then here(S(a))\n}\n",
-            "def rec descend(b : Int) -> -F Path(Int, b, b) {\n  case b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](x)) then here(S(x))\n  }\n}\n",
+            "def rec descend(b : Int) -> -F Path(Int, b, b) {\n  match b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](x)) then here(S(x))\n  }\n}\n",
             // `cong` over a parameter function.
             "def mapped(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
             // A parameter of no path type.
@@ -1946,7 +1946,7 @@ fn a_descent_reads_its_path_result_past_a_leading_parameter()
         SourceText::from(concat!(
             "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
-            "def rec descend(k : Int, b : Int) -> -F Path(Int, b, b) {\n  case b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](k, x)) then here(S(x))\n  }\n}\n",
+            "def rec descend(k : Int, b : Int) -> -F Path(Int, b, b) {\n  match b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](k, x)) then here(S(x))\n  }\n}\n",
         )),
         &mut arena,
     );
@@ -2172,7 +2172,7 @@ fn a_dependent_transport_lowers_to_its_telescope()
 #[test]
 fn matching_reflexivity_is_refused_as_k()
 {
-    let source = "def uip(n: Integer, p: Path(Integer, n, n)) -> -F Integer {\n  case p { here => return 0 }\n}\n";
+    let source = "def uip(n: Integer, p: Path(Integer, n, n)) -> -F Integer {\n  match p { here => return 0 }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let start = source.find("here =>").unwrap_or_default();
@@ -2381,7 +2381,7 @@ fn directed_statements_lower_to_their_formers()
             "  type New = #{Integer, String};\n",
             "  type ReadNew = +U (New -> -F Integer);\n",
             "  type ReadOld = +U (Old -> -F Integer);\n",
-            "  def toNew(old: Old) -> -F New {\n    case old { #{name, age} => return #{age, name} }\n  }\n",
+            "  def toNew(old: Old) -> -F New {\n    match old { #{name, age} => return #{age, name} }\n  }\n",
             "  def same(n: Integer) -> -F Integer {\n    return n\n  }\n",
             "  def upgrade : Flow(Type, Old, New);\n",
             "  def upgrade = forward(toNew);\n",
@@ -2678,10 +2678,10 @@ fn a_pattern_at_a_relation_splits_its_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { case i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { case e { #{t, #{g, s}, #{h, r}} => return t } }\n",
-            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { case e { #{.linv = #{.g = g, .sect = s}} => return g } }\n",
-            "def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) { case i { #{.back = k} => return k } }\n",
+            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
+            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { match e { #{.linv = #{.g = g, .sect = s}} => return g } }\n",
+            "def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) { match i { #{.back = k} => return k } }\n",
         )),
         &mut arena,
     );
@@ -2690,7 +2690,7 @@ fn a_pattern_at_a_relation_splits_its_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { case e { #{.rinv = #{.h = h}} => return h } }\n",
+            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{.rinv = #{.h = h}} => return h } }\n",
         ),
         &mut arena,
     );
@@ -2712,7 +2712,7 @@ fn a_pattern_at_a_relation_splits_its_record()
 fn a_relation_split_names_each_written_component_665()
 {
     let source = SourceText::from(
-        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { case i { #{t, k, s, r} => k } }\n",
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { match i { #{t, k, s, r} => k } }\n",
     );
     assert_eq!(
         component_names(source),
@@ -2734,10 +2734,10 @@ fn a_run_binder_splits_the_relation_its_call_returns_656()
     let module = lowered(
         SourceText::from(concat!(
             "def kept(i : Bool ≅ Integer) -> -F (Bool ≅ Integer) { return i }\n",
-            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { case i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { run j <- kept(i); case j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { run e <- made(i); case e { #{t, #{g, s}, #{h, r}} => return t } }\n",
-            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { run j <- kept(i); case j { #{.back = k} => return k } }\n",
+            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { run j <- kept(i); match j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { run e <- made(i); match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
+            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.back = k} => return k } }\n",
         )),
         &mut arena,
     );
@@ -2754,9 +2754,9 @@ fn a_run_binder_splits_the_relation_a_bare_result_returns_2255()
     let module = lowered(
         SourceText::from(concat!(
             "def kept(i : Bool ≅ Integer) -> Bool ≅ Integer { i }\n",
-            "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { case i { #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { run e <- made(i); case e { #{t, #{g, s}, #{h, r}} => t } }\n",
-            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { run j <- kept(i); case j { #{.back = k} => k } }\n",
+            "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { match i { #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { run e <- made(i); match e { #{t, #{g, s}, #{h, r}} => t } }\n",
+            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.back = k} => k } }\n",
         )),
         &mut arena,
     );
@@ -2770,7 +2770,7 @@ fn a_run_binder_splits_the_relation_a_bare_result_returns_2255()
 fn an_unwritten_field_is_named_by_its_label_670()
 {
     let source = SourceText::from(
-        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { case i { #{.back = k} => k } }\n",
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { match i { #{.back = k} => k } }\n",
     );
     assert_eq!(
         component_names(source),

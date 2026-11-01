@@ -41,7 +41,7 @@ def bufferReturned() -> Unit {
 def freedInEachArm(flag : Bool) -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
-    case flag {
+    match flag {
       true => r.free(b),
       false => r.free(b)
     }

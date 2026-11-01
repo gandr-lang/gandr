@@ -53,7 +53,7 @@ rec {
   /// stand below the code it was read from.
   @[ refuses("StageNotBelow") ]
   def rec decode(u : Odd) -> -F Type {
-    case u {
+    match u {
       TwoC => return Two,
       Over(a, b) => decode[<](a)
     }
@@ -78,7 +78,7 @@ rec {
   /// The decoder decoding a function code again where its domain is wanted.
   @[ refuses("StageNotBelow") ]
   def rec unloop(u : Loop) -> -F Type {
-    case u {
+    match u {
       Base => return Two,
       PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
     }
@@ -110,7 +110,7 @@ rec {
   /// itself, at the level under `n`.
   @[ refuses("NegativeOccurrence") ]
   def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type {
-    case u {
+    match u {
       NatV(m) => return Nat,
       TypeV(m) => return (ULevel(m)),
       PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))

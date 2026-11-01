@@ -1,333 +1,67 @@
 23:1-23:29 import "./circle-base.ga… ⇒ import "./circle-base.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`.⏎⏎The identity subject's shared declarations, written once and imported by⏎every source that reads them (`import "./circle-base.gandr";`): the empty⏎type, the circle, the presented integers and the free naturals, the⏎winding number and spinning with their round trips (the book's § 8.1), and⏎the maps out of the circle the circle sources state their laws over, after⏎cubical Agda's `Cubical/HITs/S1/Base.agda`. `circle.gandr` states the⏎equivalence `winding` the round trips make and what it computes; this⏎source states only what the others read. @23:1-23:30
 25:1-25:29 import "./equivalence.ga… ⇒ import "./equivalence.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/equivalence.gandr`. @25:1-25:30
-28:1-28:30 @[ runs("loop ∷ here(Bas… ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @28:1-29:1
-29:1-29:3 def ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:1-29:40
-29:5-29:9 once( ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:5-29:9
-29:10-29:13 ) -> ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:1-29:40
-29:15-29:19 Path( ⇒ Path(Circle, Base, Base) : Type @29:15-29:39
-29:20-29:25 Circle ⇒ Circle : Type @29:20-29:26
-29:26-29:26 , ⇒ Path(Circle, Base, Base) : Type @29:15-29:39
-29:28-29:31 Base ⇒ Base : Circle @29:28-29:32
-29:32-29:32 , ⇒ Path(Circle, Base, Base) : Type @29:15-29:39
-29:34-29:37 Base ⇒ Base : Circle @29:34-29:38
-29:38-29:38 ) ⇒ Path(Circle, Base, Base) : Type @29:15-29:39
-29:40-29:40 { ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:1-29:48
-29:42-29:45 loop ⇒ loop : Path(Circle, Base, Base) @29:42-29:46
-29:47-29:47 } ⇒ once : () => Path(Circle, Base, Base)⏎⏎The loop's word: one letter before the empty word. @29:1-29:48
-32:1-32:3 def ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @32:1-36:35
-32:5-32:11 unwound ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @32:5-32:12
-32:13-32:13 : ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @32:1-36:35
-32:15-32:19 Path( ⇒ Type @32:15-36:2
-33:3-33:7 Path( ⇒ Path(Circle, Base, Base) : Type @33:3-33:27
-33:8-33:13 Circle ⇒ Circle : Type @33:8-33:14
-33:14-33:14 , ⇒ Path(Circle, Base, Base) : Type @33:3-33:27
-33:16-33:19 Base ⇒ Base : Circle @33:16-33:20
-33:20-33:20 , ⇒ Path(Circle, Base, Base) : Type @33:3-33:27
-33:22-33:25 Base ⇒ Base : Circle @33:22-33:26
-33:26-33:26 ) ⇒ Path(Circle, Base, Base) : Type @33:3-33:27
-33:27-33:27 , ⇒ Type @32:15-36:2
-34:3-34:7 back( ⇒ -F Path(Circle, Base, Base) @34:3-34:13
-34:8-34:11 loop ⇒ loop : Path(Circle, Base, Base) @34:8-34:12
-34:12-34:12 ) ⇒ -F Path(Circle, Base, Base) @34:3-34:13
-34:13-34:13 , ⇒ Type @32:15-36:2
-35:3-35:7 back( ⇒ back(loop) : Path(Circle, Base, Base) @35:3-35:13
-35:8-35:11 loop ⇒ loop : Path(Circle, Base, Base) @35:8-35:12
-35:12-35:12 ) ⇒ back(loop) : Path(Circle, Base, Base) @35:3-35:13
-35:14-35:14 ∷ ⇒ Path(Circle, Base, Base) @35:3-35:26
-35:16-35:20 here( ⇒ Path(Circle, Base, Base) @35:16-35:26
-35:21-35:24 Base ⇒ Base : Circle @35:21-35:25
-35:25-35:25 ) ⇒ Path(Circle, Base, Base) @35:16-35:26
-36:1-36:1 ) ⇒ Type @32:15-36:2
-36:3-36:3 = ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @32:1-36:35
-36:5-36:9 here( ⇒ Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @36:5-36:34
-36:10-36:14 back( ⇒ back(loop) : Path(Circle, Base, Base) @36:10-36:20
-36:15-36:18 loop ⇒ loop : Path(Circle, Base, Base) @36:15-36:19
-36:19-36:19 ) ⇒ back(loop) : Path(Circle, Base, Base) @36:10-36:20
-36:21-36:21 ∷ ⇒ Path(Circle, Base, Base) @36:10-36:33
-36:23-36:27 here( ⇒ Path(Circle, Base, Base) @36:23-36:33
-36:28-36:31 Base ⇒ Base : Circle @36:28-36:32
-36:32-36:32 ) ⇒ Path(Circle, Base, Base) @36:23-36:33
-36:33-36:33 ) ⇒ Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) @36:5-36:34
-36:34-36:34 ; ⇒ unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base))⏎⏎The inverse of the loop is the letter `back(loop)`, by conversion. @32:1-36:35
-40:1-40:3 def ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-44:22
-40:5-40:13 cancelled ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:5-40:14
-40:15-40:15 : ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-44:22
-40:17-40:21 Path( ⇒ Type @40:17-44:2
-41:3-41:7 Path( ⇒ Path(Circle, Base, Base) : Type @41:3-41:27
-41:8-41:13 Circle ⇒ Circle : Type @41:8-41:14
-41:14-41:14 , ⇒ Path(Circle, Base, Base) : Type @41:3-41:27
-41:16-41:19 Base ⇒ Base : Circle @41:16-41:20
-41:20-41:20 , ⇒ Path(Circle, Base, Base) : Type @41:3-41:27
-41:22-41:25 Base ⇒ Base : Circle @41:22-41:26
-41:26-41:26 ) ⇒ Path(Circle, Base, Base) : Type @41:3-41:27
-41:27-41:27 , ⇒ Type @40:17-44:2
-42:3-42:6 loop ⇒ loop : Path(Circle, Base, Base) @42:3-42:7
-42:8-42:11 then ⇒ -F Path(Circle, Base, Base) @42:3-42:23
-42:13-42:17 back( ⇒ -F Path(Circle, Base, Base) @42:13-42:23
-42:18-42:21 loop ⇒ loop : Path(Circle, Base, Base) @42:18-42:22
-42:22-42:22 ) ⇒ -F Path(Circle, Base, Base) @42:13-42:23
-42:23-42:23 , ⇒ Type @40:17-44:2
-43:3-43:7 here( ⇒ Path(Circle, Base, Base) @43:3-43:13
-43:8-43:11 Base ⇒ Base : Circle @43:8-43:12
-43:12-43:12 ) ⇒ Path(Circle, Base, Base) @43:3-43:13
-44:1-44:1 ) ⇒ Type @40:17-44:2
-44:3-44:3 = ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-44:22
-44:5-44:9 here( ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @44:5-44:21
-44:10-44:14 here( ⇒ Path(Circle, Base, Base) @44:10-44:20
-44:15-44:18 Base ⇒ Base : Circle @44:15-44:19
-44:19-44:19 ) ⇒ Path(Circle, Base, Base) @44:10-44:20
-44:20-44:20 ) ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @44:5-44:21
-44:21-44:21 ; ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base))⏎⏎The loop then its inverse is the empty word: the minted cancellation, read⏎by conversion. @40:1-44:22
-47:1-47:32 @[ refuses("EndpointMism… ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @47:1-48:1
-48:1-48:3 def ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:1-48:87
-48:5-48:15 around_once ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:5-48:16
-48:17-48:17 : ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:1-48:87
-48:19-48:23 Path( ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) : Type @48:19-48:67
-48:24-48:28 Path( ⇒ Path(Circle, Base, Base) : Type @48:24-48:48
-48:29-48:34 Circle ⇒ Circle : Type @48:29-48:35
-48:35-48:35 , ⇒ Path(Circle, Base, Base) : Type @48:24-48:48
-48:37-48:40 Base ⇒ Base : Circle @48:37-48:41
-48:41-48:41 , ⇒ Path(Circle, Base, Base) : Type @48:24-48:48
-48:43-48:46 Base ⇒ Base : Circle @48:43-48:47
-48:47-48:47 ) ⇒ Path(Circle, Base, Base) : Type @48:24-48:48
-48:48-48:48 , ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) : Type @48:19-48:67
-48:50-48:53 loop ⇒ loop : Path(Circle, Base, Base) @48:50-48:54
-48:54-48:54 , ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) : Type @48:19-48:67
-48:56-48:60 here( ⇒ Path(Circle, Base, Base) @48:56-48:66
-48:61-48:64 Base ⇒ Base : Circle @48:61-48:65
-48:65-48:65 ) ⇒ Path(Circle, Base, Base) @48:56-48:66
-48:66-48:66 ) ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) : Type @48:19-48:67
-48:68-48:68 = ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:1-48:87
-48:70-48:74 here( ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) @48:70-48:86
-48:75-48:79 here( ⇒ Path(Circle, Base, Base) @48:75-48:85
-48:80-48:83 Base ⇒ Base : Circle @48:80-48:84
-48:84-48:84 ) ⇒ Path(Circle, Base, Base) @48:75-48:85
-48:85-48:85 ) ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) @48:70-48:86
-48:86-48:86 ; ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:1-48:87
-52:1-52:32 @[ refuses("RuleNotRespe… ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @52:1-53:1
-53:1-53:3 def ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
-53:5-53:9 tell( ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:5-53:9
-53:10-53:10 p ⇒ p : Path(Circle, Base, Base) @53:10-53:11
-53:12-53:12 : ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
-53:14-53:18 Path( ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
-53:19-53:24 Circle ⇒ Circle : Type @53:19-53:25
-53:25-53:25 , ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
-53:27-53:30 Base ⇒ Base : Circle @53:27-53:31
-53:31-53:31 , ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
-53:33-53:36 Base ⇒ Base : Circle @53:33-53:37
-53:37-53:37 ) ⇒ Path(Circle, Base, Base) : Type @53:14-53:38
-53:38-53:41 ) -> ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-53:51
-53:43-53:49 Integer ⇒ Integer : Type @53:43-53:50
-53:51-53:51 { ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-59:2
-54:3-54:6 case ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-54:8-54:8 p ⇒ p : Path(Circle, Base, Base) @54:8-54:9
-54:10-54:10 { ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-55:5-55:8 here ⇒ here : Path(Circle, Base, Base) @55:5-55:9
-55:10-55:11 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-55:13-55:13 0 ⇒ Integer @55:13-55:14
-55:14-55:14 , ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-56:5-56:8 loop ⇒ loop : Path(Circle, Base, Base) @56:5-56:9
-56:10-56:10 ∷ ⇒ loop ∷ q : Path(Circle, Base, Base) @56:5-56:13
-56:12-56:12 q ⇒ q : Path(Circle, Base, Base) @56:12-56:13
-56:14-56:15 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-56:17-56:17 1 ⇒ Integer @56:17-56:18
-56:18-56:18 , ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-57:5-57:8 back ⇒ back : Path(Circle, Base, Base) @57:5-57:9
-57:9-57:9 ( ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @57:5-57:19
-57:10-57:13 loop ⇒ loop : Path(Circle, Base, Base) @57:10-57:14
-57:14-57:16 ) ∷ ⇒ back(loop) ∷ q : Path(Circle, Base, Base) @57:5-57:19
-57:18-57:18 q ⇒ q : Path(Circle, Base, Base) @57:18-57:19
-57:20-57:21 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-57:23-57:23 2 ⇒ Integer @57:23-57:24
-58:3-58:3 } ⇒ ?⏎⏎checked against⏎⏎-F Integer @54:3-58:4
-59:1-59:1 } ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @53:1-59:2
-63:1-63:3 def ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:1-67:36
-63:5-63:9 round ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:5-63:10
-63:11-63:11 : ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:1-67:36
-63:13-63:17 Path( ⇒ Type @63:13-67:2
-64:3-64:7 Path( ⇒ Path(Circle, Base, Base) : Type @64:3-64:27
-64:8-64:13 Circle ⇒ Circle : Type @64:8-64:14
-64:14-64:14 , ⇒ Path(Circle, Base, Base) : Type @64:3-64:27
-64:16-64:19 Base ⇒ Base : Circle @64:16-64:20
-64:20-64:20 , ⇒ Path(Circle, Base, Base) : Type @64:3-64:27
-64:22-64:25 Base ⇒ Base : Circle @64:22-64:26
-64:26-64:26 ) ⇒ Path(Circle, Base, Base) : Type @64:3-64:27
-64:27-64:27 , ⇒ Type @63:13-67:2
-65:3-65:6 spin ⇒ spin : Int => Path(Circle, Base, Base) @65:3-65:7
-65:7-65:7 ( ⇒ -F Path(Circle, Base, Base) @65:3-65:29
-65:8-65:11 wind ⇒ wind : Path(Circle, Base, Base) => Int @65:8-65:12
-65:12-65:12 ( ⇒ -F Int @65:8-65:28
-65:13-65:16 loop ⇒ loop : Path(Circle, Base, Base) @65:13-65:17
-65:18-65:21 then ⇒ -F Path(Circle, Base, Base) @65:13-65:27
-65:23-65:26 loop ⇒ loop : Path(Circle, Base, Base) @65:23-65:27
-65:27-65:27 ) ⇒ -F Int @65:8-65:28
-65:28-65:28 ) ⇒ -F Path(Circle, Base, Base) @65:3-65:29
-65:29-65:29 , ⇒ Type @63:13-67:2
-66:3-66:6 loop ⇒ loop : Path(Circle, Base, Base) @66:3-66:7
-66:8-66:8 ∷ ⇒ Path(Circle, Base, Base) @66:3-66:27
-66:10-66:13 loop ⇒ loop : Path(Circle, Base, Base) @66:10-66:14
-66:15-66:15 ∷ ⇒ Path(Circle, Base, Base) @66:10-66:27
-66:17-66:21 here( ⇒ Path(Circle, Base, Base) @66:17-66:27
-66:22-66:25 Base ⇒ Base : Circle @66:22-66:26
-66:26-66:26 ) ⇒ Path(Circle, Base, Base) @66:17-66:27
-67:1-67:1 ) ⇒ Type @63:13-67:2
-67:3-67:3 = ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:1-67:36
-67:5-67:9 here( ⇒ Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base)) @67:5-67:35
-67:10-67:13 loop ⇒ loop : Path(Circle, Base, Base) @67:10-67:14
-67:15-67:15 ∷ ⇒ Path(Circle, Base, Base) @67:10-67:34
-67:17-67:20 loop ⇒ loop : Path(Circle, Base, Base) @67:17-67:21
-67:22-67:22 ∷ ⇒ Path(Circle, Base, Base) @67:17-67:34
-67:24-67:28 here( ⇒ Path(Circle, Base, Base) @67:24-67:34
-67:29-67:32 Base ⇒ Base : Circle @67:29-67:33
-67:33-67:33 ) ⇒ Path(Circle, Base, Base) @67:24-67:34
-67:34-67:34 ) ⇒ Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base)) @67:5-67:35
-67:35-67:35 ; ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @63:1-67:36
-70:1-70:3 def ⇒ twice : Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))⏎⏎The composite the round trip gives: the loop twice, by conversion. @70:1-74:36
-70:5-70:9 twice ⇒ twice : Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))⏎⏎The composite the round trip gives: the loop twice, by conversion. @70:5-70:10
-70:11-70:11 : ⇒ twice : Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))⏎⏎The composite the round trip gives: the loop twice, by conversion. @70:1-74:36
-70:13-70:17 Path( ⇒ Type @70:13-74:2
-71:3-71:7 Path( ⇒ Path(Circle, Base, Base) : Type @71:3-71:27
-71:8-71:13 Circle ⇒ Circle : Type @71:8-71:14
-71:14-71:14 , ⇒ Path(Circle, Base, Base) : Type @71:3-71:27
-71:16-71:19 Base ⇒ Base : Circle @71:16-71:20
-71:20-71:20 , ⇒ Path(Circle, Base, Base) : Type @71:3-71:27
-71:22-71:25 Base ⇒ Base : Circle @71:22-71:26
-71:26-71:26 ) ⇒ Path(Circle, Base, Base) : Type @71:3-71:27
-71:27-71:27 , ⇒ Type @70:13-74:2
-72:3-72:6 loop ⇒ loop : Path(Circle, Base, Base) @72:3-72:7
-72:8-72:11 then ⇒ -F Path(Circle, Base, Base) @72:3-72:17
-72:13-72:16 loop ⇒ loop : Path(Circle, Base, Base) @72:13-72:17
-72:17-72:17 , ⇒ Type @70:13-74:2
-73:3-73:6 loop ⇒ loop : Path(Circle, Base, Base) @73:3-73:7
-73:8-73:8 ∷ ⇒ Path(Circle, Base, Base) @73:3-73:27
-73:10-73:13 loop ⇒ loop : Path(Circle, Base, Base) @73:10-73:14
-73:15-73:15 ∷ ⇒ Path(Circle, Base, Base) @73:10-73:27
-73:17-73:21 here( ⇒ Path(Circle, Base, Base) @73:17-73:27
-73:22-73:25 Base ⇒ Base : Circle @73:22-73:26
-73:26-73:26 ) ⇒ Path(Circle, Base, Base) @73:17-73:27
-74:1-74:1 ) ⇒ Type @70:13-74:2
-74:3-74:3 = ⇒ twice : Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))⏎⏎The composite the round trip gives: the loop twice, by conversion. @70:1-74:36
-74:5-74:9 here( ⇒ Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base)) @74:5-74:35
-74:10-74:13 loop ⇒ loop : Path(Circle, Base, Base) @74:10-74:14
-74:15-74:15 ∷ ⇒ Path(Circle, Base, Base) @74:10-74:34
-74:17-74:20 loop ⇒ loop : Path(Circle, Base, Base) @74:17-74:21
-74:22-74:22 ∷ ⇒ Path(Circle, Base, Base) @74:17-74:34
-74:24-74:28 here( ⇒ Path(Circle, Base, Base) @74:24-74:34
-74:29-74:32 Base ⇒ Base : Circle @74:29-74:33
-74:33-74:33 ) ⇒ Path(Circle, Base, Base) @74:24-74:34
-74:34-74:34 ) ⇒ Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base)) @74:5-74:35
-74:35-74:35 ; ⇒ twice : Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))⏎⏎The composite the round trip gives: the loop twice, by conversion. @70:1-74:36
-77:1-77:20 @[ runs("S(S(Z))") ] ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @77:1-78:1
-78:1-78:3 def ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @78:1-78:47
-78:5-78:11 counted ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @78:5-78:12
-78:13-78:13 : ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @78:1-78:47
-78:15-78:19 () => ⇒ () => Int : Type[-] @78:15-78:24
-78:21-78:23 Int ⇒ Int : Type @78:21-78:24
-78:25-78:25 = ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @78:1-78:47
-78:27-78:30 wind ⇒ wind : Path(Circle, Base, Base) => Int @78:27-78:31
-78:31-78:31 ( ⇒ -F Int @78:27-78:46
-78:32-78:35 spin ⇒ spin : Int => Path(Circle, Base, Base) @78:32-78:36
-78:36-78:36 ( ⇒ -F Path(Circle, Base, Base) @78:32-78:45
-78:37-78:38 S( ⇒ S(S(Z)) : Int @78:37-78:44
-78:39-78:40 S( ⇒ S(Z) : Int @78:39-78:43
-78:41-78:41 Z ⇒ Z : Int @78:41-78:42
-78:42-78:42 ) ⇒ S(Z) : Int @78:39-78:43
-78:43-78:43 ) ⇒ S(S(Z)) : Int @78:37-78:44
-78:44-78:44 ) ⇒ -F Path(Circle, Base, Base) @78:32-78:45
-78:45-78:45 ) ⇒ -F Int @78:27-78:46
-78:46-78:46 ; ⇒ counted : () => Int⏎⏎Spinning two successors and winding the word counts two. @78:1-78:47
-82:1-82:3 def ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @82:1-82:80
-82:5-82:14 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @82:5-82:15
-82:16-82:16 : ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @82:1-82:80
-82:18-82:22 Path( ⇒ Path(Circle, Base, Base) : Type @82:18-82:42
-82:23-82:28 Circle ⇒ Circle : Type @82:23-82:29
-82:29-82:29 , ⇒ Path(Circle, Base, Base) : Type @82:18-82:42
-82:31-82:34 Base ⇒ Base : Circle @82:31-82:35
-82:35-82:35 , ⇒ Path(Circle, Base, Base) : Type @82:18-82:42
-82:37-82:40 Base ⇒ Base : Circle @82:37-82:41
-82:41-82:41 ) ⇒ Path(Circle, Base, Base) : Type @82:18-82:42
-82:43-82:43 ≅ ⇒ Path(Circle, Base, Base) ≅ Int : Type @82:18-82:48
-82:45-82:47 Int ⇒ Int : Type @82:45-82:48
-82:49-82:49 = ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @82:1-82:80
-82:51-82:51 ( ⇒ Path(Circle, Base, Base) ≅ Int @82:51-82:79
-82:52-82:55 wind ⇒ wind : Path(Circle, Base, Base) => Int @82:52-82:56
-82:56-82:56 , ⇒ Path(Circle, Base, Base) ≅ Int @82:51-82:79
-82:58-82:58 ( ⇒ #{a : Int => Path(Circle, Base, Base), b : ((b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)) * ((b : Int) => Path(Int,⏎  wind(a(b)), b))} @82:58-82:78
-82:59-82:62 spin ⇒ spin : Int => Path(Circle, Base, Base) @82:59-82:63
-82:63-82:63 , ⇒ #{a : Int => Path(Circle, Base, Base), b : ((b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)) * ((b : Int) => Path(Int,⏎  wind(a(b)), b))} @82:58-82:78
-82:65-82:65 ( ⇒ ((a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a)) * ((a : Int) => Path(Int, wind(spin(a)), a)) @82:65-82:77
-82:66-82:69 sect ⇒ sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(p)),⏎  p)⏎⏎checked against⏎⏎(a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a) @82:66-82:70
-82:70-82:70 , ⇒ ((a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a)) * ((a : Int) => Path(Int, wind(spin(a)), a)) @82:65-82:77
-82:72-82:75 retr ⇒ retr : (n : Int) => Path(Int, wind(spin(n)), n)⏎⏎checked against⏎⏎(a : Int) => Path(Int, wind(spin(a)), a) @82:72-82:76
-82:76-82:76 ) ⇒ ((a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a)) * ((a : Int) => Path(Int, wind(spin(a)), a)) @82:65-82:77
-82:77-82:77 ) ⇒ #{a : Int => Path(Circle, Base, Base), b : ((b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)) * ((b : Int) => Path(Int,⏎  wind(a(b)), b))} @82:58-82:78
-82:78-82:78 ) ⇒ Path(Circle, Base, Base) ≅ Int @82:51-82:79
-82:79-82:79 ; ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎The loops at the point and the presented integers are a quasi-inverse, by⏎`wind` and `spin` with the two round trips at a variable, nothing owed. @82:1-82:80
-88:1-88:3 pub ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @88:1-88:5
-88:5-88:7 def ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @88:5-88:89
-88:9-88:15 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @88:9-88:16
-88:17-88:17 : ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @88:5-88:89
-88:19-88:23 Path( ⇒ Path(Circle, Base, Base) : Type @88:19-88:43
-88:24-88:29 Circle ⇒ Circle : Type @88:24-88:30
-88:30-88:30 , ⇒ Path(Circle, Base, Base) : Type @88:19-88:43
-88:32-88:35 Base ⇒ Base : Circle @88:32-88:36
-88:36-88:36 , ⇒ Path(Circle, Base, Base) : Type @88:19-88:43
-88:38-88:41 Base ⇒ Base : Circle @88:38-88:42
-88:42-88:42 ) ⇒ Path(Circle, Base, Base) : Type @88:19-88:43
-88:44-88:44 ≃ ⇒ Path(Circle, Base, Base) ≃ Int : Type @88:19-88:49
-88:46-88:48 Int ⇒ Int : Type @88:46-88:49
-88:50-88:50 = ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @88:5-88:89
-88:52-88:52 ( ⇒ Path(Circle, Base, Base) ≃ Int @88:52-88:88
-88:53-88:56 wind ⇒ wind : Path(Circle, Base, Base) => Int @88:53-88:57
-88:57-88:57 , ⇒ Path(Circle, Base, Base) ≃ Int @88:52-88:88
-88:59-88:59 ( ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} * #{a : Int => Path(Circle,⏎  Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)} @88:59-88:87
-88:60-88:60 ( ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} @88:60-88:72
-88:61-88:64 spin ⇒ spin : Int => Path(Circle, Base, Base) @88:61-88:65
-88:65-88:65 , ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} @88:60-88:72
-88:67-88:70 sect ⇒ sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(p)),⏎  p)⏎⏎checked against⏎⏎(a : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), spin(wind(a)),⏎  a) @88:67-88:71
-88:71-88:71 ) ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} @88:60-88:72
-88:72-88:72 , ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} * #{a : Int => Path(Circle,⏎  Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)} @88:59-88:87
-88:74-88:74 ( ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)⏎} @88:74-88:86
-88:75-88:78 spin ⇒ spin : Int => Path(Circle, Base, Base) @88:75-88:79
-88:79-88:79 , ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)⏎} @88:74-88:86
-88:81-88:84 retr ⇒ retr : (n : Int) => Path(Int, wind(spin(n)), n)⏎⏎checked against⏎⏎(a : Int) => Path(Int, wind(spin(a)), a) @88:81-88:85
-88:85-88:85 ) ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)⏎} @88:74-88:86
-88:86-88:86 ) ⇒ #{a : Int => Path(Circle, Base, Base), b : (b : Path(Circle, Base, Base)) =>⏎  Path(Path(Circle, Base, Base), a(wind(b)), b)} * #{a : Int => Path(Circle,⏎  Base, Base), b : (b : Int) => Path(Int, wind(a(b)), b)} @88:59-88:87
-88:87-88:87 ) ⇒ Path(Circle, Base, Base) ≃ Int @88:52-88:88
-88:88-88:88 ; ⇒ winding : Path(Circle, Base, Base) ≃ Int⏎⏎The loops at the point and the presented integers are equivalent: the⏎book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made⏎bi-invertible, `spin` serving as both inverses. A value is a record, never⏎a call, so the equivalence is written as the record `isoToEquiv` builds. @88:5-88:89
-91:1-91:3 def ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:19
-91:5-91:16 windingByIso ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:5-91:17
-91:18-91:18 : ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:19
-91:20-91:24 Path( ⇒ Type @91:20-95:2
-92:3-92:7 Path( ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
-92:8-92:13 Circle ⇒ Circle : Type @92:8-92:14
-92:14-92:14 , ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
-92:16-92:19 Base ⇒ Base : Circle @92:16-92:20
-92:20-92:20 , ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
-92:22-92:25 Base ⇒ Base : Circle @92:22-92:26
-92:26-92:26 ) ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
-92:28-92:28 ≃ ⇒ Path(Circle, Base, Base) ≃ Int : Type @92:3-92:33
-92:30-92:32 Int ⇒ Int : Type @92:30-92:33
-92:33-92:33 , ⇒ Type @91:20-95:2
-93:3-93:9 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @93:3-93:10
-93:10-93:10 , ⇒ Type @91:20-95:2
-94:3-94:12 isoToEquiv ⇒ isoToEquiv : (a : Type, b : Type, a ≅ b) => a ≃ b @94:3-94:13
-94:13-94:13 ( ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
-94:14-94:18 Path( ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
-94:19-94:24 Circle ⇒ Circle : Type @94:19-94:25
-94:25-94:25 , ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
-94:27-94:30 Base ⇒ Base : Circle @94:27-94:31
-94:31-94:31 , ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
-94:33-94:36 Base ⇒ Base : Circle @94:33-94:37
-94:37-94:37 ) ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
-94:38-94:38 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
-94:40-94:42 Int ⇒ Int : Type @94:40-94:43
-94:43-94:43 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
-94:45-94:54 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎checked against⏎⏎#{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base, Base⏎), c : ((c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), b(a(c)⏎), c)) * ((c : Int) => Path(Int, a(b(c)), c))}} @94:45-94:55
-94:55-94:55 ) ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : (c : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base),⏎  b(a(c)), c)} * #{b : Int => Path(Circle, Base, Base), c : (c : Int) =>⏎  Path(Int, a(b(c)), c)}} @94:3-94:56
-95:1-95:1 ) ⇒ Type @91:20-95:2
-95:3-95:3 = ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:19
-95:5-95:9 here( ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @95:5-95:18
-95:10-95:16 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @95:10-95:17
-95:17-95:17 ) ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @95:5-95:18
-95:18-95:18 ; ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:19
+28:1-28:30 @[ runs("loop ∷ here(Bas… ⇒ def once() -> Path(Circle, Base, Base) @28:1-29:1
+29:1-29:3 def ⇒ def once() -> Path(Circle, Base, Base) @29:1-29:40
+29:5-29:9 once( ⇒ def once() -> Path(Circle, Base, Base) @29:5-29:9
+29:10-29:38 ) -> Path(Circle, Base, … ⇒ def once() -> Path(Circle, Base, Base) @29:1-29:40
+29:40-29:40 { ⇒ {⏎⏎A tile of `def_value`.⏎⏎The engine holds nothing for this source. @29:40-29:41
+29:42-29:45 loop ⇒ loop⏎⏎A tile of `identifier.expression`.⏎⏎The engine holds nothing for this source. @29:42-29:46
+29:47-29:47 } ⇒ }⏎⏎A tile of `def_value`.⏎⏎The engine holds nothing for this source. @29:47-29:48
+32:1-32:3 def ⇒ def unwound : Path(⏎  Path(Circle, Base, Base),⏎  back(loop),⏎  back(loop) ∷ here(Base)⏎) = here(back(loop) ∷ here(Base)) @32:1-36:35
+32:5-32:11 unwound ⇒ def unwound : Path(⏎  Path(Circle, Base, Base),⏎  back(loop),⏎  back(loop) ∷ here(Base)⏎) = here(back(loop) ∷ here(Base)) @32:5-32:12
+32:13-36:34 : Path(⏎  Path(Circle, B… ⇒ def unwound : Path(⏎  Path(Circle, Base, Base),⏎  back(loop),⏎  back(loop) ∷ here(Base)⏎) = here(back(loop) ∷ here(Base)) @32:1-36:35
+40:1-40:3 def ⇒ def cancelled : Path(⏎  Path(Circle, Base, Base),⏎  loop then back(loop),⏎  here(Base)⏎) = here(here(Base)) @40:1-44:22
+40:5-40:13 cancelled ⇒ def cancelled : Path(⏎  Path(Circle, Base, Base),⏎  loop then back(loop),⏎  here(Base)⏎) = here(here(Base)) @40:5-40:14
+40:15-44:21 : Path(⏎  Path(Circle, B… ⇒ def cancelled : Path(⏎  Path(Circle, Base, Base),⏎  loop then back(loop),⏎  here(Base)⏎) = here(here(Base)) @40:1-44:22
+47:1-47:32 @[ refuses("EndpointMism… ⇒ def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) @47:1-48:1
+48:1-48:3 def ⇒ def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) @48:1-48:87
+48:5-48:15 around_once ⇒ def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) @48:5-48:16
+48:17-48:86 : Path(Path(Circle, Base… ⇒ def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) @48:1-48:87
+52:1-52:32 @[ refuses("RuleNotRespe… ⇒ def tell(p : Path(Circle, Base, Base)) -> Integer @52:1-53:1
+53:1-53:3 def ⇒ def tell(p : Path(Circle, Base, Base)) -> Integer @53:1-53:51
+53:5-53:9 tell( ⇒ def tell(p : Path(Circle, Base, Base)) -> Integer @53:5-53:9
+53:10-53:49 p : Path(Circle, Base, B… ⇒ def tell(p : Path(Circle, Base, Base)) -> Integer @53:1-53:51
+53:51-53:51 { ⇒ {⏎⏎A tile of `def_value`.⏎⏎The engine holds nothing for this source. @53:51-53:52
+54:3-54:7 match ⇒ match⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @54:3-54:8
+54:9-54:9 p ⇒ p⏎⏎A tile of `identifier.expression`.⏎⏎The engine holds nothing for this source. @54:9-54:10
+54:11-54:11 { ⇒ {⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @54:11-54:12
+55:5-55:8 here ⇒ here⏎⏎A tile of `identifier.pattern`.⏎⏎The engine holds nothing for this source. @55:5-55:9
+55:10-55:11 => ⇒ =>⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @55:10-55:12
+55:13-55:13 0 ⇒ 0⏎⏎A tile of `number.expression`.⏎⏎The engine holds nothing for this source. @55:13-55:14
+55:14-55:14 , ⇒ ,⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @55:14-55:15
+56:5-56:8 loop ⇒ loop⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @56:5-56:9
+56:10-56:10 ∷ ⇒ ∷⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @56:10-56:11
+56:12-56:12 q ⇒ q⏎⏎A tile of `identifier.pattern`.⏎⏎The engine holds nothing for this source. @56:12-56:13
+56:14-56:15 => ⇒ =>⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @56:14-56:16
+56:17-56:17 1 ⇒ 1⏎⏎A tile of `number.expression`.⏎⏎The engine holds nothing for this source. @56:17-56:18
+56:18-56:18 , ⇒ ,⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @56:18-56:19
+57:5-57:8 back ⇒ back⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @57:5-57:9
+57:9-57:9 ( ⇒ (⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @57:9-57:10
+57:10-57:13 loop ⇒ loop⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @57:10-57:14
+57:14-57:14 ) ⇒ )⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @57:14-57:15
+57:16-57:16 ∷ ⇒ ∷⏎⏎A tile of `cons_pattern`.⏎⏎The engine holds nothing for this source. @57:16-57:17
+57:18-57:18 q ⇒ q⏎⏎A tile of `identifier.pattern`.⏎⏎The engine holds nothing for this source. @57:18-57:19
+57:20-57:21 => ⇒ =>⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @57:20-57:22
+57:23-57:23 2 ⇒ 2⏎⏎A tile of `number.expression`.⏎⏎The engine holds nothing for this source. @57:23-57:24
+58:3-58:3 } ⇒ }⏎⏎A tile of `match_expression`.⏎⏎The engine holds nothing for this source. @58:3-58:4
+59:1-59:1 } ⇒ }⏎⏎A tile of `def_value`.⏎⏎The engine holds nothing for this source. @59:1-59:2
+63:1-63:3 def ⇒ def round : Path(⏎  Path(Circle, Base, Base),⏎  spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base)⏎) = here(loop ∷ loop ∷ here(Base)) @63:1-67:36
+63:5-63:9 round ⇒ def round : Path(⏎  Path(Circle, Base, Base),⏎  spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base)⏎) = here(loop ∷ loop ∷ here(Base)) @63:5-63:10
+63:11-67:35 : Path(⏎  Path(Circle, B… ⇒ def round : Path(⏎  Path(Circle, Base, Base),⏎  spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base)⏎) = here(loop ∷ loop ∷ here(Base)) @63:1-67:36
+70:1-70:3 def ⇒ def twice : Path(⏎  Path(Circle, Base, Base),⏎  loop then loop,⏎  loop ∷ loop ∷ here(Base)⏎) = here(loop ∷ loop ∷ here(Base)) @70:1-74:36
+70:5-70:9 twice ⇒ def twice : Path(⏎  Path(Circle, Base, Base),⏎  loop then loop,⏎  loop ∷ loop ∷ here(Base)⏎) = here(loop ∷ loop ∷ here(Base)) @70:5-70:10
+70:11-74:35 : Path(⏎  Path(Circle, B… ⇒ def twice : Path(⏎  Path(Circle, Base, Base),⏎  loop then loop,⏎  loop ∷ loop ∷ here(Base)⏎) = here(loop ∷ loop ∷ here(Base)) @70:1-74:36
+77:1-77:20 @[ runs("S(S(Z))") ] ⇒ def counted : () => Int = wind(spin(S(S(Z)))) @77:1-78:1
+78:1-78:3 def ⇒ def counted : () => Int = wind(spin(S(S(Z)))) @78:1-78:47
+78:5-78:11 counted ⇒ def counted : () => Int = wind(spin(S(S(Z)))) @78:5-78:12
+78:13-78:46 : () => Int = wind(spin(… ⇒ def counted : () => Int = wind(spin(S(S(Z)))) @78:1-78:47
+82:1-82:3 def ⇒ def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr))) @82:1-82:80
+82:5-82:14 windingIso ⇒ def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr))) @82:5-82:15
+82:16-82:79 : Path(Circle, Base, Bas… ⇒ def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr))) @82:1-82:80
+88:1-88:3 pub ⇒ def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) @88:1-88:5
+88:5-88:7 def ⇒ def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) @88:5-88:89
+88:9-88:15 winding ⇒ def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) @88:9-88:16
+88:17-88:88 : Path(Circle, Base, Bas… ⇒ def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) @88:5-88:89
+91:1-91:3 def ⇒ def windingByIso : Path(⏎  Path(Circle, Base, Base) ≃ Int,⏎  winding,⏎  isoToEquiv(Path(Circle, Base, Base), Int, windingIso)⏎) = here(winding) @91:1-95:19
+91:5-91:16 windingByIso ⇒ def windingByIso : Path(⏎  Path(Circle, Base, Base) ≃ Int,⏎  winding,⏎  isoToEquiv(Path(Circle, Base, Base), Int, windingIso)⏎) = here(winding) @91:5-91:17
+91:18-95:18 : Path(⏎  Path(Circle, B… ⇒ def windingByIso : Path(⏎  Path(Circle, Base, Base) ≃ Int,⏎  winding,⏎  isoToEquiv(Path(Circle, Base, Base), Int, windingIso)⏎) = here(winding) @91:1-95:19

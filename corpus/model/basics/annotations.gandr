@@ -33,7 +33,7 @@ def signed : Integer = (3 : Integer);
 
 /// A scrutinee annotated with the sum it is matched at.
 def chosen(b : Bool) -> Integer {
-  case (b : Bool) {
+  match (b : Bool) {
     true => 1,
     false => 2
   }

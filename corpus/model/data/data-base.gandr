@@ -18,7 +18,7 @@ pub data Nat : Type where {
 /// Addition by recursion on the second argument, the recursive call nested
 /// in the successor it returns.
 pub def rec plus(n : Nat, m : Nat) -> Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
   }

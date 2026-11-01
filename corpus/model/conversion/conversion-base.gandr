@@ -16,7 +16,7 @@ import "../data/data-base.gandr";
 
 /// Multiplication by recursion on the second argument.
 pub def rec times(n : Nat, m : Nat) -> Nat {
-  case m {
+  match m {
     Zero => Zero,
     Succ(p) => plus(times[<](n, p), n)
   }
@@ -24,9 +24,9 @@ pub def rec times(n : Nat, m : Nat) -> Nat {
 
 /// Truncated subtraction: zero where `m` exceeds `n`.
 pub def rec monus(n : Nat, m : Nat) -> Nat {
-  case m {
+  match m {
     Zero => n,
-    Succ(p) => case monus[<](n, p) {
+    Succ(p) => match monus[<](n, p) {
       Zero => Zero,
       Succ(q) => q
     }

@@ -11,7 +11,7 @@ data Nat : Type where {
 
 @[ refuses("StageNotCarried") ]
 def rec alongLoop(n : Nat, q : Path(Circle, Base, Base)) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(m) => Succ(alongLoop[<](transport(\x. Nat, q, m), q))
   }

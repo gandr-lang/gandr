@@ -4,7 +4,7 @@ module Schema {
   type New = Integer * String;
   @[ checks ]
   def toNew(old : Old) -> -F New {
-    case old {
+    match old {
       #{name, age} => (age, name)
     }
   }

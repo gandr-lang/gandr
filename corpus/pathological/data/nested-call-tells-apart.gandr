@@ -14,7 +14,7 @@ data Int : Type {
 /// as the bound spelling is.
 @[ refuses("RuleNotRespected") ]
 def rec tell(n : Int) -> Int {
-  case n {
+  match n {
     Z => Z,
     S(x) => S(tell[<](x)),
     P(x) => S(tell[<](x))

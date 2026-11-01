@@ -47,10 +47,8 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the colon heads of a block's members, `| Succ : (n : Nat) --> Nat` and
-/// `rule : l <=> r`, the binder grade after its name, `x[ω] : A`, and a theory
-/// rule's conditions as a `where` block, `where { | a # q | under [S] }`.
-const BUILT_IN_FINGERPRINT: u64 = 0x3bc8_fa27_9bfd_855d;
+/// the match keyword, `match e { … }`, which replaces `case`.
+const BUILT_IN_FINGERPRINT: u64 = 0xfca2_c4e5_176c_1fbc;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -140,7 +138,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("bind", 9),
     ("boundary", 1),
     ("break", 2),
-    ("case", 1),
     ("character", 1),
     ("close", 1),
     ("co", 1),
@@ -190,6 +187,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("law", 3),
     ("leta", 20),
     ("loop", 1),
+    ("match", 1),
     ("migrate", 1),
     ("mobile", 10),
     ("module", 2),

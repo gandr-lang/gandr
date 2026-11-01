@@ -6,7 +6,7 @@ data Nat : Type where {
 }
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
-  case n {
+  match n {
     Zero => return n,
     Succ(p) => down[<](p)
   }

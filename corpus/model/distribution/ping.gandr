@@ -52,7 +52,7 @@ def pingAnswered() -> String {
 /// The entry: serve with no argument, ping the peer the first argument
 /// names otherwise, print what came back, and exit with 0.
 def main(args : List(String)) -> [Net, Console] Integer {
-  case args {
+  match args {
     [] => { run got <- serve(); Console.print(got); 0 },
     [peer, .._] => { run got <- ping(peer); Console.print(got); 0 }
   }

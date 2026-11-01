@@ -3842,7 +3842,7 @@ data NatUnits : Type where {{
                 }
                 module Bad : Model(Idem) {
                   type T = Bool;
-                  def f(x : Bool) -> Bool { case x { true => false, false => true } }
+                  def f(x : Bool) -> Bool { match x { true => false, false => true } }
                   @[ refuses("EndpointMismatch") ]
                   def idem(x : Bool) -> Path(Bool, f(f(x)), f(x)) { here(f(x)) }
                 }"#,

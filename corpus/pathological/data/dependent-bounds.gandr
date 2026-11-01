@@ -32,12 +32,12 @@ data Fin : Nat -> Type {
 /// from zero, so the match needs no arm.
 @[ refuses("NonExhaustiveMatch") ]
 def absurdFin(i : Fin(Zero)) -> Integer {
-  case i {}
+  match i {}
 }
 
 /// A bound read back as the natural it is.
 def rec toNat(n : Nat, i : Fin(n)) -> Nat {
-  case i {
+  match i {
     FZero(_) => Zero,
     FSucc(m, j) => Succ(toNat[<](m, j))
   }
@@ -47,9 +47,9 @@ def rec toNat(n : Nat, i : Fin(n)) -> Nat {
 /// apart the inner `FSucc` arm's path between two successors.
 @[ refuses("TypeMismatch") ]
 def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a {
-  case i {
-    FZero(m) => case v { VCons(_, h, _) => h },
-    FSucc(m, j) => case v { VCons(_, _, t) => lookup[<](a, m, t, j) }
+  match i {
+    FZero(m) => match v { VCons(_, h, _) => h },
+    FSucc(m, j) => match v { VCons(_, _, t) => lookup[<](a, m, t, j) }
   }
 }
 

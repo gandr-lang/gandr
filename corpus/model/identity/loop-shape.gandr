@@ -22,7 +22,7 @@ theory CircleShape {
 
 /// The number of laws in a presentation's rule chain.
 def rec laws(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Rule(name, left, right, rest) => { run r <- laws[<](rest); r + 1 },
     _ => 0
   }
@@ -30,7 +30,7 @@ def rec laws(chain : Theory) -> Integer {
 
 /// The number of laws a presentation states.
 def law_count(presented : Theory) -> Integer {
-  case presented {
+  match presented {
     Presents(sorts, opers, rules) => laws(rules),
     _ => 0
   }

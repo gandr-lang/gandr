@@ -10,7 +10,7 @@ data Maybe : Type {
 /// The hole stands for `Just`'s payload (#391).
 @[ refuses("UndecidedCoverage") ]
 def describe(m : Maybe) -> Integer {
-  case m {
+  match m {
     Just(?) => 100,
     Nothing => 200
   }

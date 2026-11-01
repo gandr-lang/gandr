@@ -968,8 +968,8 @@ module Up : Model(Counter) {
 module Flips : Model(ResetCounter) {
   type C = Bool;
   def zero = false;
-  def incr(c : Bool) -> -F Bool { case c { true => false, false => true } }
-  def read(c : Bool) -> -F Integer { case c { true => 1, false => 0 } }
+  def incr(c : Bool) -> -F Bool { match c { true => false, false => true } }
+  def read(c : Bool) -> -F Integer { match c { true => 1, false => 0 } }
   def reset(c : Bool) -> -F Bool { false }
 }
 def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }
@@ -999,8 +999,8 @@ module Up : Model(Counter) {
 module Flips : Model(Counter) {
   type C = Bool;
   def zero = false;
-  def incr(c : Bool) -> -F Bool { case c { true => false, false => true } }
-  def read(c : Bool) -> -F Integer { case c { true => 1, false => 0 } }
+  def incr(c : Bool) -> -F Bool { match c { true => false, false => true } }
+  def read(c : Bool) -> -F Integer { match c { true => 1, false => 0 } }
 }
 def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read(s.incr(s.zero)) }
 def counted() -> -F Integer { fromZero() }

@@ -20,7 +20,7 @@ data Ord : Type[+, 1] {
 /// ordinals, and `f(x)` is a set.
 @[ refuses("TypeMismatch") ]
 def rec unranked(v : Vinf) -> -F Ord {
-  case v {
+  match v {
     Sup(a, f) => Lim(a, thunk { fn (x) { f(x) } })
   }
 }
@@ -28,7 +28,7 @@ def rec unranked(v : Vinf) -> -F Ord {
 /// The set itself where a member is expected: it is not below its own stage.
 @[ refuses("StageNotBelow") ]
 def rec circular(v : Vinf) -> -F Ord {
-  case v {
+  match v {
     Sup(a, f) => Lim(a, thunk { fn (x) { circular[<](Sup(a, f)) } })
   }
 }

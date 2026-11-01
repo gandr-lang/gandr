@@ -1806,7 +1806,7 @@ mod tests
         let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\n\n";
         let fold = |arm: &str| {
             format!(
-                "{data}def rec tell(n : Int) -> -F Int {{\n  case n {{\n    Z => Z,\n    S(x) => \
+                "{data}def rec tell(n : Int) -> -F Int {{\n  match n {{\n    Z => Z,\n    S(x) => \
                  {arm},\n    P(x) => {arm}\n  }}\n}}\n"
             )
         };
@@ -1814,7 +1814,7 @@ mod tests
         // first run elaborated it to; the bound twin by the first run alone.
         for written in [fold("S(tell[<](x))"), fold("{ run t <- tell[<](x); S(t) }")] {
             let text = SourceText::from(written.as_str());
-            let start = written.find("case n").expect("the case");
+            let start = written.find("match n").expect("the match");
             let end = written.rfind("  }\n}").expect("the case's close") + "  }".len();
             let case = Maybe::Present(
                 ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered"),

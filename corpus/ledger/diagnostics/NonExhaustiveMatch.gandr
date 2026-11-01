@@ -9,5 +9,5 @@ data Int : Type where {
 
 @[ refuses("NonExhaustiveMatch") ]
 def unmatched(n : Int) -> -F Empty {
-  case n {}
+  match n {}
 }

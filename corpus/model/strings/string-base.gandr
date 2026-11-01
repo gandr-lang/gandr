@@ -20,7 +20,7 @@ pub data Repr : Type {
 
 /// The bytes a string holds, wherever they live.
 pub def bytes(s : Repr) -> List(Integer) {
-  case s {
+  match s {
     Inline(bs) => bs,
     Shared(n, bs) => bs
   }
@@ -28,7 +28,7 @@ pub def bytes(s : Repr) -> List(Integer) {
 
 /// The number of bytes in a list.
 pub def rec count(bs : List(Integer)) -> Integer {
-  case bs {
+  match bs {
     Nil => 0,
     Cons(b, rest) => { run n <- count[<](rest); n + 1 }
   }
@@ -36,7 +36,7 @@ pub def rec count(bs : List(Integer)) -> Integer {
 
 /// One byte list followed by another.
 pub def rec concat(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
-  case xs {
+  match xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, concat[<](rest, ys)) : List(Integer))
   }

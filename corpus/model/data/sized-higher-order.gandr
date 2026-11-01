@@ -25,7 +25,7 @@ pub def apply(a : Type, b : Type, f : a => b, x : a) -> b {
 /// instantiates `apply`'s parameter at the predecessor's stage, so `count[<]`
 /// takes it.
 def rec count(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(apply(Nat, Nat, count[<], p))
   }
@@ -41,7 +41,7 @@ pub def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> Nat {
 /// predecessor stands one below the recursion's stage, so the call
 /// instantiates `i` at that stage and `helped[<]` takes the predecessor.
 def rec helped(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(applyAt(helped[<], p))
   }
@@ -55,7 +55,7 @@ def helpedTwo : () => Nat = helped(Succ(Succ(Zero)));
 /// stands at `i` too, as the signature states, the returner inserted over the
 /// staged type and never over its base (#2373).
 pub def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => p
   }
@@ -65,7 +65,7 @@ pub def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
 /// through `predAt`: the call instantiates `i` at the field's stage, below the
 /// recursion's, and the result stands there for `halvedAt[<]` to take.
 def rec halvedAt(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run q <- predAt(p); Succ(halvedAt[<](q)) }
   }
@@ -88,7 +88,7 @@ pub def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> Nat[<
 /// whose `k` is not below its `j` is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1241).
 def rec boundedHelped(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => { run q <- boundedAt(n, p); Succ(boundedHelped[<](q)) }
   }
@@ -110,7 +110,7 @@ pub def sameAt @[i : Size] (f : Nat[i] => Nat, x : Nat[i]) -> Nat {
 /// arguments no stage fits is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1227).
 def rec agreed(n : Nat) -> Nat {
-  case n {
+  match n {
     Zero => Zero,
     Succ(p) => Succ(sameAt(agreed[<], p))
   }

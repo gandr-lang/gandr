@@ -11,14 +11,14 @@ data Color : Type {
 }
 
 def from_left() -> Integer {
-  case (Left(5,) : Either(Integer, String,)) {
+  match (Left(5,) : Either(Integer, String,)) {
     | Left(x,) => x,
     | Right(y) => 0,
   }
 }
 
 def warm(c : Color) -> Integer {
-  case c {
+  match c {
     | Red
     | Green => 1,
     Blue => 0
@@ -26,7 +26,7 @@ def warm(c : Color) -> Integer {
 }
 
 def cool(c : Color) -> Integer {
-  case c { Red | Green => 0, | Blue => 1, }
+  match c { Red | Green => 0, | Blue => 1, }
 }
 
 @[ runs("fn (a) { fn (b) { a } }") ]

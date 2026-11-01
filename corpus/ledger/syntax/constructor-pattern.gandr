@@ -6,7 +6,7 @@ data Stack : Type where {
 }
 @[ checks ]
 def first(xs : Stack) -> -F Integer {
-  case xs {
+  match xs {
     Push(x, rest) => return x,
     Empty => return 0
   }

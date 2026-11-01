@@ -4673,10 +4673,10 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
     const PICK: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
-         def pick(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
-         Succ(p) => {\n      run q <- case p { Zero => return n, Succ(r) => pure r } ;\n      \
+         def pick(n : Nat) -> -F Nat {\n  run m <- match n {\n    Zero => return n,\n    \
+         Succ(p) => {\n      run q <- match p { Zero => return n, Succ(r) => pure r } ;\n      \
          pure q\n    },\n  } ;\n  return Succ(m)\n}\n\
-         def bound(n : Nat) -> -F Nat {\n  run m <- case n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
+         def bound(n : Nat) -> -F Nat {\n  run m <- match n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
          return Succ(m)\n}\n\
          def zero : +U (-F Nat) ;\ndef zero = thunk { become pick(Zero) } ;\n\
          def one : +U (-F Nat) ;\ndef one = thunk { become pick(Succ(Zero)) } ;\n\
@@ -4870,8 +4870,8 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         format!(
             "data Depth : Type where {{\n  | Zero : Depth\n  | Succ : (p : Depth) --> Depth\n}}\n\
              data Tree : Type where {{\n  | Leaf : (n : Integer) --> Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n}}\n\
-             def rec full(d : Depth) -> Tree {{ case d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
-             def rec sum(t : Tree) -> Integer {{ case t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
+             def rec full(d : Depth) -> Tree {{ match d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
+             def rec sum(t : Tree) -> Integer {{ match t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
              def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\
              def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
              def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\

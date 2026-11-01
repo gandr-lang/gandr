@@ -119,7 +119,7 @@ pub theory Thir.Wp {
 
 /// The arm a condition's value picks; an integer condition needs what nothing meets.
 pub def branch(v : Value, t : Type, f : Type) -> Type {
-  case v {
+  match v {
     True => t,
     False => f,
     Int(_n) => return Void
@@ -134,7 +134,7 @@ pub def rec wp(
   k : Value => Type,
   r : Value => Type
 ) -> Type {
-  case e {
+  match e {
     Lit(n) => k(Int(n)),
     Param => k(x),
     If(c, t, f) => wp[<](
@@ -167,7 +167,7 @@ pub def exampleBody : Expr = Return(Call(Identity, If(Param, Lit(1), Return(Lit(
 
 /// `identity`'s specification as a table: its call continues at its argument, and nothing meets a call of `example`.
 pub def identitySpec(g : Item, v : Value, k : Value => Type) -> Type {
-  case g {
+  match g {
     Identity => k(v),
     Example => return Void
   }
@@ -183,7 +183,7 @@ pub def identityMeets(
 
 /// `example`'s specification: the postcondition at one for true and at zero for false.
 pub def exampleSpec(b : Value, post : Value => Type) -> Type {
-  case b {
+  match b {
     True => post(Int(1)),
     False => post(Int(0)),
     Int(_n) => return Void
@@ -195,7 +195,7 @@ pub def exampleMeets(b : Value, post : Value => Type) -> (exampleSpec(
   b,
   post
 )) => wpFn(identitySpec, exampleBody, b, post) {
-  case b {
+  match b {
     True => return fn (h) { h },
     False => return fn (h) { h },
     Int(_n) => return fn (h) { h }

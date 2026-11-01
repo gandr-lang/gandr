@@ -11,7 +11,7 @@ module Roster {
   /// The translator: the fields swapped, the scores moved unread.
   @[ checks ]
   def toNew(old : Old) -> New {
-    case old {
+    match old {
       #{name, scores} => (scores, name)
     }
   }

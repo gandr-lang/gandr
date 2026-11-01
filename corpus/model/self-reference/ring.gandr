@@ -8,11 +8,11 @@ import "../data/data-base.gandr";
 
 /// The node an arena holds at `i`.
 def rec node(nodes : List(Integer), i : Integer) -> Integer {
-  case nodes {
+  match nodes {
     Nil => pure 0,
     Cons(n, rest) => {
       run here <- i == 0;
-      case here { true => pure n, false => node[<](rest, i - 1) }
+      match here { true => pure n, false => node[<](rest, i - 1) }
     }
   }
 }

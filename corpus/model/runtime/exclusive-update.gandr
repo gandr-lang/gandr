@@ -29,14 +29,14 @@ pub module Pairs {
 
 /// The pair `q` with its first component one more.
 pub def bump(q : Pair) -> Pair {
-  case q {
+  match q {
     Pair(a, b) => Pair(a + 1, b)
   }
 }
 
 /// The first component of `q`.
 pub def first(q : Pair) -> Integer {
-  case q {
+  match q {
     Pair(a, b) => a
   }
 }

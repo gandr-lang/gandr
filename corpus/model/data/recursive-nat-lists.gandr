@@ -16,7 +16,7 @@ import "./recursive-lists.gandr";
 
 /// The length of a list of naturals, returned, the run written at its read.
 def rec length_nat(xs : List(Nat)) -> Nat {
-  case xs {
+  match xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_nat[<](rest))
   }
@@ -25,7 +25,7 @@ def rec length_nat(xs : List(Nat)) -> Nat {
 /// The length of a list of naturals, the `return`s elided, the run written
 /// at its read.
 def rec length_nat_elided(xs : List(Nat)) -> Nat {
-  case xs {
+  match xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_nat_elided[<](rest))
   }
@@ -33,7 +33,7 @@ def rec length_nat_elided(xs : List(Nat)) -> Nat {
 
 /// Appending lists of naturals, returned, the run written at its read.
 def rec append_nat(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
-  case xs {
+  match xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_nat[<](ys, rest)) : List(Nat))
   }
@@ -42,7 +42,7 @@ def rec append_nat(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
 /// Appending lists of naturals, the `return`s elided, the run written at its
 /// read.
 def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
-  case xs {
+  match xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_nat_elided[<](ys, rest)) : List(Nat))
   }
@@ -50,7 +50,7 @@ def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
 
 /// Mapping over a list of naturals, returned, the runs written at their reads.
 def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
-  case xs {
+  match xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(f(x), map_nat[<](f, rest)) : List(Nat))
   }
@@ -59,7 +59,7 @@ def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 /// Mapping over a list of naturals, the `return`s elided, the runs written at
 /// their reads.
 def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
-  case xs {
+  match xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(f(x), map_nat_elided[<](f, rest)) : List(Nat))
   }
@@ -67,7 +67,7 @@ def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 
 /// Mapping over a list of naturals, both calls nested.
 def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
-  case xs {
+  match xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(f(x), map_nat_nested[<](f, rest)) : List(Nat))
   }
@@ -75,7 +75,7 @@ def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 
 /// Mapping over a list of naturals, both calls written `run` in the fields.
 def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
-  case xs {
+  match xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(run f(x), run map_nat_run[<](f, rest)) : List(Nat))
   }

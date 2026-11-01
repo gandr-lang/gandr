@@ -72,7 +72,7 @@
 //! the form's adjacency.
 //!
 //! The walk starts from every reading of the frontier's tile, not only the
-//! one the molder kept: the molder reads `case x {` as the empty match, whose
+//! one the molder kept: the molder reads `match x {` as the empty match, whose
 //! `}` follows its `{` directly, and the arm block's `{` of the same text is
 //! what offers an arm. The readings are the molds of the frontier's label
 //! that a predecessor of the frontier is followed by, and, for a tile that
@@ -708,7 +708,7 @@ enum Next
 /// mold and each mold of the same label the same predecessor admits, or for a
 /// form's first tile each form-first mold of the same label and sort — since
 /// the molder kept one reading for the text so far and the next tile may yet
-/// choose another: `case x {` molds its `{` as the empty match's, and an arm
+/// choose another: `match x {` molds its `{` as the empty match's, and an arm
 /// is a closing of the arm block's `{`.
 ///
 /// # Specification
@@ -1309,11 +1309,11 @@ mod tests
                     "val <Pattern@val> = <Expression@=> ; }",
                 ],
             ),
-            // The molder reads `case x {` as the empty match, whose closer
+            // The molder reads `match x {` as the empty match, whose closer
             // faces only its opener, so that pair stays empty; the arm is a
             // closing of the arm block's reading of the same `{`.
             (
-                "def f(x: Nat) -> -F Nat { case x {",
+                "def f(x: Nat) -> -F Nat { match x {",
                 LeadingSlot::Empty,
                 2,
                 vec!["}", "<Pattern@{> => <Expression@=>> }"],

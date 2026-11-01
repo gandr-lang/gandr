@@ -18,7 +18,7 @@ def evidenced(h : Heap) -> Type {
 
 /// What a natural owes of a heap: nothing at zero, `evidenced` at a successor.
 def owe(h : Heap, x : Nat) -> Type {
-  case x {
+  match x {
     Zero => return Unit,
     Succ(_s) => evidenced(h)
   }
@@ -41,7 +41,7 @@ def write(h : Heap, k : Nat => Type) -> Type {
 
 /// What a read owes at the natural it reads: the rest at zero, a write at a successor.
 def matchRead(h : Heap, rest : Type, w : Nat) -> Type {
-  case w {
+  match w {
     Zero => rest,
     Succ(_s) => write(h, fn (_v) { return Unit })
   }
@@ -54,7 +54,7 @@ def read(h : Heap, rest : Type) -> Type {
 
 /// `n` reads in turn, a recursive fold.
 def rec fold(n : Nat, h : Heap) -> Type {
-  case n {
+  match n {
     Zero => return Unit,
     Succ(m) => read(h, fold[<](m, h))
   }

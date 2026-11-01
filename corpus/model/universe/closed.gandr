@@ -22,7 +22,7 @@ data U : Type {
 /// variable, and returns the function type between the two.
 @[ checks ]
 def rec el(u : U) -> -F Type {
-  case u {
+  match u {
     NatC => return Nat,
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (+U (x -> -F y)) }
   }
@@ -120,7 +120,7 @@ def packedSucc = Pack(Arrow(NatC, NatC), succ);
 /// The code a packed value carries.
 @[ checks ]
 def codeOf(p : Coded) -> -F U {
-  case p {
+  match p {
     Pack(c, v) => return c
   }
 }

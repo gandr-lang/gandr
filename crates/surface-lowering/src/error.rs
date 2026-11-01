@@ -314,7 +314,7 @@ pub enum FragmentBoundary
     /// function's, a lambda's or a thunk's body passes: a call's head, an
     /// operand, or outside any body.
     NotInTail,
-    /// The form is a match written with an answer, `case e -> T { … }`,
+    /// The form is a match written with an answer, `match e -> T { … }`,
     /// whose arms continue the block after the statement it is bound by,
     /// because one of them exits: each arm then answers what the block
     /// answers, so the written answer is not the match's.

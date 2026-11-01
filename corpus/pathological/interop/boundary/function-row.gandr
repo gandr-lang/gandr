@@ -29,7 +29,7 @@ import "../../../model/interop/boundary/function-row.gandr";
 /// A code's realisers, chosen by its layout: a niched enum's are the null
 /// niche over `u32`, any other code's an unboxed integer.
 def realiser(c : Code, w : Nat, h : Heap) -> Type {
-  case niched(c) {
+  match niched(c) {
     true => vOpt(vInt, w, h),
     false => vInt(w, h)
   }

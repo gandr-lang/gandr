@@ -2,7 +2,7 @@
 /// first, `x @ p`, or glued through the dotted alias, `x .@ p`.
 @[ checks ]
 def same(n : Integer) -> -F Integer {
-  case n {
+  match n {
     zero @ 0 => return zero,
     _ => return n
   }

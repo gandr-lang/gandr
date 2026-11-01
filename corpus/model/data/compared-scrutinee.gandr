@@ -9,7 +9,7 @@ import "./data-base.gandr";
 /// The comparison cased on where it is written: three is not five or more.
 @[ runs("1") ]
 def compared() -> Integer {
-  case 3 >= 5 {
+  match 3 >= 5 {
     true => 2,
     false => 1
   }
@@ -17,7 +17,7 @@ def compared() -> Integer {
 
 /// A comparison over a parameter, cased on where it is written.
 def sized(n : Integer) -> Integer {
-  case n < 128 {
+  match n < 128 {
     true => 1,
     false => 2
   }
@@ -26,7 +26,7 @@ def sized(n : Integer) -> Integer {
 /// A call cased on where it is written: `plus` answers three.
 @[ runs("1") ]
 def summed() -> Integer {
-  case plus(two, Succ(Zero)) {
+  match plus(two, Succ(Zero)) {
     Zero => 0,
     Succ(p) => 1
   }

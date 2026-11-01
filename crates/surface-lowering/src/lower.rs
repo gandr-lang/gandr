@@ -389,7 +389,7 @@
 //! This is the recorded design, a Tarski data universe: the codes are an
 //! ordinary datatype and the decoder a function written over them, both bound
 //! at the value level, and a decode is a type over a code that is a term. The
-//! alternative was a large elimination into `Type`, a `case` with types for
+//! alternative was a large elimination into `Type`, a `match` with types for
 //! arms standing in the type language and `Element` erased, declined in #353.
 //! The choice reverses for a universe that stops being a data universe, one
 //! whose codes are not values a function can case on.
@@ -24028,8 +24028,8 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(concat!(
-                "def g(x : Unit) -> -F Integer { case x { unit => return 1 } }\n",
-                "def h(x : Unit) -> -F Integer { case x { #{} => return 1 } }\n",
+                "def g(x : Unit) -> -F Integer { match x { unit => return 1 } }\n",
+                "def h(x : Unit) -> -F Integer { match x { #{} => return 1 } }\n",
             )),
             &mut arena,
         );
@@ -25271,7 +25271,7 @@ mod tests
             "def a = thunk { return zz } ;",
             "def a = thunk { run x <- pure zz ; return x } ;",
             "def a = thunk { fn (x) { return zz } } ;",
-            "def a = thunk { case 1 { 1 => return zz, _ => return 0 } } ;",
+            "def a = thunk { match 1 { 1 => return zz, _ => return 0 } } ;",
         ];
         for source in rows {
             let refused = refusal(SourceText::from(source));
@@ -26145,7 +26145,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let text = "data U : Type where { | NatU : U | PathU : (a : U, x : Integer, y : Integer) --> U } \
-                    def rec el(u : U) -> -F Type { case u { NatU => return Integer, PathU(a, x, \
+                    def rec el(u : U) -> -F Type { match u { NatU => return Integer, PathU(a, x, \
                     y) => return (Path(el[<](a), x, y)) } }";
         let module = lowered(SourceText::from(text), &mut arena);
         let lowered = outcomes(&module);
@@ -26676,20 +26676,20 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(
-                "def rank() -> -F Integer {\n  case (Green : Color) {\n    Red => return 0,\n",
+                "def rank() -> -F Integer {\n  match (Green : Color) {\n    Red => return 0,\n",
             ),
         );
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(72_usize, 72_usize),
-                form: FormName::CASE,
+                span: at(73_usize, 73_usize),
+                form: FormName::MATCH,
                 fault: FormFault::Repaired(Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Brace,
                 )),
             },
-            "the source ends with both the case and the definition open; the refusal names \
-             the case at the end of its last arm, not the definition at its opening brace"
+            "the source ends with both the match and the definition open; the refusal names \
+             the match at the end of its last arm, not the definition at its opening brace"
         );
     }
 
@@ -26859,14 +26859,14 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
-        let case = "def same(n : Integer) -> -F Integer {\n  case n {{\n    zero @ 0 => return \
+        let case = "def same(n : Integer) -> -F Integer {\n  match n {{\n    zero @ 0 => return \
                     zero,\n    _ => return n\n  }\n}\n";
         let access = "def bump() -> -F Integer {\n  hold c = 0;\n  access c as v { resume(v, v + \
                       1) ;\n  pure c\n}\n";
         let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
                       c.exit(1);\n    return n\n  with {\n    pure(x) => pure x,\n    oper \
                       exit(code, k) => k(unit)\n  }\n}\n";
-        let unopened = "def same(n : Integer) -> -F Integer {\n  case n\n    zero @ 0 => \
+        let unopened = "def same(n : Integer) -> -F Integer {\n  match n\n    zero @ 0 => \
                         return zero,\n    _ => return n\n  }\n}\n";
         let quoted = "def numbers : List((Integer) ;\ndef numbers = cons(1, nil) ;\n";
         let after = |source: &str, written: &str| {
@@ -26877,8 +26877,8 @@ mod tests
         for (source, point, form, fault, why) in [
             (
                 case,
-                at(after(case, "case n "), after(case, "case n {")),
-                "case_expression",
+                at(after(case, "match n "), after(case, "match n {")),
+                "match_expression",
                 FormFault::ExtraOpen(ClosingClass::Brace),
                 "a doubled `{` is refused at the first of the pair: its line opens two and is \
                  answered once",
@@ -26901,8 +26901,8 @@ mod tests
             ),
             (
                 unopened,
-                at(after(unopened, "case n"), after(unopened, "case n")),
-                "case_expression",
+                at(after(unopened, "match n"), after(unopened, "match n")),
+                "match_expression",
                 FormFault::MissingOpen(ClosingClass::Brace),
                 "a `}` beginning a line deeper than every waiting `{` answers one left out at \
                  the end of the line at its indentation",
@@ -28276,7 +28276,7 @@ mod tests
     fn an_unread_pattern_names_its_feature()
     {
         let source =
-            "def f(p : Integer * Integer) -> -F Integer { case p { (a, ..?) => return 0 } }";
+            "def f(p : Integer * Integer) -> -F Integer { match p { (a, ..?) => return 0 } }";
         let refused = refusal(SourceText::from(source));
         assert!(
             matches!(refused, LoweringRefusal::OutOfFragment {
@@ -29432,9 +29432,9 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig : (x : a, y : b(x)) --> Sig(a, b) } data IR(d : Type) : Type[+, 1] where { | Iota : (e : d) --> IR(d) | SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d) } def rec argsU(c : IR(Unit)) -> \
-                 -F Type { case c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk \
+                 -F Type { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk \
                  { fn (y) { argsU[<](f(y)) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
-                 { case c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fn (y) \
+                 { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fn (y) \
                  { argsD[<](d, f(y)) } })) } }",
             ),
             &mut arena,

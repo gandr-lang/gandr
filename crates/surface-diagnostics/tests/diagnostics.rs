@@ -99,11 +99,11 @@ const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Int
 
 /// Unary naturals, addition, Fibonacci both ways and two closed points.
 const FIBONACCI: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                         plus(a : Nat, b : Nat) -> Nat {\n  case a {\n    Zero => b,\n    \
+                         plus(a : Nat, b : Nat) -> Nat {\n  match a {\n    Zero => b,\n    \
                          Succ(m) => Succ(plus[<](m, b))\n  }\n}\ndef rec fib(n : Nat) -> Nat {\n  \
-                         case n {\n    Zero => Zero,\n    Succ(m) => case m {\n      Zero => \
+                         match n {\n    Zero => Zero,\n    Succ(m) => match m {\n      Zero => \
                          Succ(Zero),\n      Succ(k) => plus(fib[<](m), fib[<](k))\n    }\n  }\n}\n\
-                         def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {\n  case n {\n    \
+                         def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {\n  match n {\n    \
                          Zero => a,\n    Succ(m) => fibFrom[<](m, b, plus(a, b))\n  }\n}\ndef \
                          five() -> Nat {\n  Succ(Succ(Succ(Succ(Succ(Zero)))))\n}\ndef nineteen() \
                          -> Nat {\n  Succ(Succ(Succ(Succ(plus(five(), plus(five(), five()))))))\n}\n";
@@ -637,7 +637,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n}\ndef rec down(n : Nat) \
-         -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  \
+         -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  \
          }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -689,7 +689,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
             presentation.unspelled().iter().copied().collect::<Vec<_>>()
         ),
         (
-            String::from("rec a { fn (b) { case b { Zero => b, Succ(c) => a(c) } } }"),
+            String::from("rec a { fn (b) { match b { Zero => b, Succ(c) => a(c) } } }"),
             vec![Unspelled::Notation(Notation::Fixpoint)]
         ),
         "each arm is written under the constructor it matches: {:?}",
@@ -706,7 +706,7 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "data Term : Type where {\n  | Var : (n : Integer) --> Term\n  | App : (t : Term, u : Term) --> Term\n}\ntheory Pointed {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
-         applies(link : Theory) -> Integer {\n  case link {\n    Theory.App(head, rest) => 1,\n    \
+         applies(link : Theory) -> Integer {\n  match link {\n    Theory.App(head, rest) => 1,\n    \
          _ => 0\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -773,7 +773,7 @@ fn a_declaration_s_binders_are_named_as_written_803()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n}\ndef rec down(n : Nat) \
-         -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(m) => become down[<](m)\n  \
+         -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(m) => become down[<](m)\n  \
          }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -1000,7 +1000,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\ndef invLooper(x : \
-         Circle) -> -F Circle {\n  case x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
+         Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
@@ -1051,7 +1051,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fn (a) { case a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
+                "fn (a) { match a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
                  loop, here(Base)) } }"
             ),
             Fidelity::Faithful,
@@ -1479,7 +1479,7 @@ fn a_refusal_spells_its_binders_by_name_418()
 {
     let text = SourceText::from(
         "data Theory : Type where {\n  | Monoid : Theory\n  | Group : Theory\n}\ndef counted_at(s : Theory) -> \
-             -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
+             -F Type {\n  match s {\n    Monoid => return Integer,\n    Group => return \
              String\n  }\n}\ndef moved(presented : Theory, other : Theory, n : counted_at(presented)) \
              -> -F counted_at(other) {\n  n\n}\n",
     );
@@ -3221,9 +3221,9 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
 {
     let text = SourceText::from(
         "data Theory : Type where {\n  | Monoid : Theory\n  | Group : Theory\n}\ndef counted_at(s : \
-         Theory) -> -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
+         Theory) -> -F Type {\n  match s {\n    Monoid => return Integer,\n    Group => return \
          String\n  }\n}\ndef bad(p : #{s : Theory, n : counted_at(s)}, other : Theory) -> -F \
-         counted_at(other) {\n  case p {\n    #{s, n} => return n\n  }\n}\n",
+         counted_at(other) {\n  match p {\n    #{s, n} => return n\n  }\n}\n",
     );
     let diagnostic = only(Path::new("packed.gandr"), text);
     assert_eq!(
@@ -3248,7 +3248,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     );
     let split = contexts(text, &diagnostic)
         .into_iter()
-        .find(|&(ref at, _)| at.starts_with("case p"))
+        .find(|&(ref at, _)| at.starts_with("match p"))
         .map(|(_, note)| note)
         .expect("the split is a context");
     assert!(

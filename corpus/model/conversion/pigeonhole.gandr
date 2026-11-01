@@ -41,9 +41,9 @@ data Assignment : Type {
 
 /// The value of variable `i`, counted from the last one set.
 def rec lookup(i : Nat, a : Assignment) -> Bool {
-  case a {
+  match a {
     Unset => false,
-    Set(value, rest) => case i {
+    Set(value, rest) => match i {
       Zero => value,
       Succ(j) => lookup[<](j, rest)
     }
@@ -52,17 +52,17 @@ def rec lookup(i : Nat, a : Assignment) -> Bool {
 
 /// Whether a formula holds under an assignment of its variables.
 def rec holds(f : Formula, a : Assignment) -> Bool {
-  case f {
+  match f {
     Atom(i) => lookup(i, a),
-    Not(g) => case holds[<](g, a) {
+    Not(g) => match holds[<](g, a) {
       true => false,
       false => true
     },
-    And(l, r) => case holds[<](l, a) {
+    And(l, r) => match holds[<](l, a) {
       true => holds[<](r, a),
       false => false
     },
-    Or(l, r) => case holds[<](l, a) {
+    Or(l, r) => match holds[<](l, a) {
       true => true,
       false => holds[<](r, a)
     }
@@ -71,9 +71,9 @@ def rec holds(f : Formula, a : Assignment) -> Bool {
 
 /// Whether a formula holds under every assignment of `k` more variables.
 def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool {
-  case k {
+  match k {
     Zero => holds(f, a),
-    Succ(j) => case tautology[<](j, f, Set(true, a)) {
+    Succ(j) => match tautology[<](j, f, Set(true, a)) {
       true => tautology[<](j, f, Set(false, a)),
       false => false
     }

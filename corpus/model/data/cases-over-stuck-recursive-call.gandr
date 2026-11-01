@@ -11,7 +11,7 @@ import "./data-maybe.gandr";
 
 /// This function gives zero at a present natural.
 def first(m : Maybe(Nat)) -> Maybe(Nat) {
-  case m {
+  match m {
     None => None,
     Some(_x) => Some(Zero)
   }
@@ -19,7 +19,7 @@ def first(m : Maybe(Nat)) -> Maybe(Nat) {
 
 /// This function is `first`, written again.
 def second(m : Maybe(Nat)) -> Maybe(Nat) {
-  case m {
+  match m {
     None => None,
     Some(_x) => Some(Zero)
   }
@@ -27,7 +27,7 @@ def second(m : Maybe(Nat)) -> Maybe(Nat) {
 
 /// This function gives the successor of a present natural.
 def outer(n : Maybe(Nat)) -> Maybe(Nat) {
-  case n {
+  match n {
     None => None,
     Some(y) => Some(Succ(y))
   }
@@ -35,7 +35,7 @@ def outer(n : Maybe(Nat)) -> Maybe(Nat) {
 
 /// This function is `outer`, written again.
 def outerTwin(n : Maybe(Nat)) -> Maybe(Nat) {
-  case n {
+  match n {
     None => None,
     Some(y) => Some(Succ(y))
   }
@@ -43,9 +43,9 @@ def outerTwin(n : Maybe(Nat)) -> Maybe(Nat) {
 
 /// This function looks the natural `k` places below `n`, stuck until both are constructors.
 def rec look(n : Nat, k : Nat) -> Maybe(Nat) {
-  case n {
+  match n {
     Zero => None,
-    Succ(p) => case k {
+    Succ(p) => match k {
       Zero => Some(p),
       Succ(q) => look[<](p, q)
     }

@@ -9,7 +9,7 @@ data Nat : Type where {
 
 @[ refuses("OutOfFragment.NonUniform") ]
 def rec shadowed(n : Nat, m : Nat) -> -F Nat {
-  case m {
+  match m {
     Zero => return n,
     Succ(n) => shadowed[<](n, n)
   }

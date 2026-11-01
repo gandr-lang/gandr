@@ -15,7 +15,7 @@ def twice : Type -> Type = \Y. Y * Y;
 /// binders are used: an unused one has no type entry under a static
 /// application (#1080).
 def sum(p : apply(twice, Integer)) -> Integer {
-  case p {
+  match p {
     #{a, b} => a + b
   }
 }

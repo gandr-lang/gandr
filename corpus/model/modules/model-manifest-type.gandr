@@ -14,7 +14,7 @@ import "./model-ascription.gandr";
 
 /// Three states nested to the right, renested to the left.
 def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit {
-  case c {
+  match c {
     +{.0 = u} => +{.0 = +{.0 = u}},
     +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}},
     +{.1 = +{.1 = u}} => +{.1 = u}
@@ -23,7 +23,7 @@ def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit {
 
 /// Three states nested to the left, renested to the right.
 def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) {
-  case c {
+  match c {
     +{.0 = +{.0 = u}} => +{.0 = u},
     +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}},
     +{.1 = u} => +{.1 = +{.1 = u}}
@@ -48,7 +48,7 @@ def oneSharing() -> Path(
 
 /// One state on, modulo three, nested to the right.
 def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-  case c {
+  match c {
     +{.0 = u} => +{.1 = +{.0 = u}},
     +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
     +{.1 = +{.1 = u}} => +{.0 = u}
@@ -76,7 +76,7 @@ def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = transport(
 
 /// A counter over the right nesting stepped once from its start.
 def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-  case m {
+  match m {
     #{.start = s, .step = t} => t(s())
   }
 }
@@ -87,7 +87,7 @@ def second() -> Unit + (Unit + Unit) { stepOnce(rightward) }
 
 /// A counter over the left nesting stepped once from its start.
 def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit {
-  case m {
+  match m {
     #{.start = s, .step = t} => t(s())
   }
 }

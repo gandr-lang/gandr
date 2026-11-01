@@ -15,14 +15,14 @@ def diag(b : Type, v : b) -> #{x : b, y : b, p : Path(b, x, y)} {
 
 /// The first end of a path.
 def source(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> b {
-  case w {
+  match w {
     #{.x = u, .y = v, .p = q} => u
   }
 }
 
 /// The second end of a path.
 def target(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> b {
-  case w {
+  match w {
     #{.x = u, .y = v, .p = q} => v
   }
 }
@@ -33,7 +33,7 @@ def diagSource(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> Path(
   diag(b, source(b, w)),
   w
 ) {
-  case w {
+  match w {
     #{.x = u, .y = v, .p = q} => transport(
       (y : b, z : Path(b, u, y)) => Path(
         #{x : b, y : b, p : Path(b, x, y)},

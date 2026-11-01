@@ -28,7 +28,7 @@ theory Renaming {
 /// ordinary `Sort`.
 @[ checks ]
 def rec atoms(chain : Theory) -> Integer {
-  case chain {
+  match chain {
     Atom(name, indices, rest) => { run r <- atoms[<](rest); r + 1 },
     Sort(name, indices, rest) => atoms[<](rest),
     _ => 0
@@ -37,7 +37,7 @@ def rec atoms(chain : Theory) -> Integer {
 
 /// The renaming signature declares one atom sort, `Name`.
 @[ runs("1") ]
-def atomSorts() -> Integer { case Renaming {
+def atomSorts() -> Integer { match Renaming {
   Presents(sorts, opers, rules) => atoms(sorts),
   _ => 0
 } }

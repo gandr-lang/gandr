@@ -41,7 +41,7 @@ pub data IR(d : Type) : Type[+, 1] {
 /// the family.
 @[ checks ]
 pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
-  case c {
+  match c {
     Iota(e) => return Unit,
     SigmaC(a, f) => return (Sig(a, thunk { fn (y) { args[<](d, f(y), x, t) } })),
     DeltaC(a, f) => return (Sig(
@@ -68,7 +68,7 @@ pub def rest(
   t : +U (x -> -F d),
   v : args(d, (SigmaC(a, f) : IR(d)), x, t)
 ) -> Unit {
-  case v {
+  match v {
     MkSig(y, r) => keep(d, f(y), x, t, r)
   }
 }
@@ -84,7 +84,7 @@ pub def restDelta(
   t : +U (x -> -F d),
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit {
-  case v {
+  match v {
     MkSig(h, r) => keep(d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
   }
 }

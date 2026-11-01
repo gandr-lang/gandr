@@ -19,7 +19,7 @@ data U : Type {
 
 /// The decoder: each arm returns the type its code names.
 def rec el(u : U) -> Type {
-  case u {
+  match u {
     NatC => return Nat,
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
   }

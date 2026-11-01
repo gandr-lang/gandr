@@ -466,15 +466,15 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 {
     // The optional `-> T` slot sits after the scrutinee on both check-only
     // eliminators, on the nested `else if` tail as well as the head, and past
-    // the reserved `with` view on `case`. The bare spellings are unchanged.
+    // the reserved `with` view on `match`. The bare spellings are unchanged.
     let pbg = built();
     let annotated = [
         "if flag -> -F Integer { pure 1 } else { pure 2 }",
         "if flag -> -F Integer { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
         "if flag { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
-        "case subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
-        "case subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
-        "case subject -> -F Integer { }",
+        "match subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject -> -F Integer { }",
         "if flag -> +U[1] (-F Integer) -> -F Integer { pure f } else { pure g }",
     ];
     for src in annotated {
@@ -492,7 +492,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 
     let bare = [
         "if flag { pure 1 } else { pure 2 }",
-        "case subject { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject { Inl(x) => pure x, Inr(y) => pure y }",
     ];
     for src in bare {
         let result = parse(pbg, SourceText::from(src))?;
@@ -675,7 +675,7 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let unchanged: &[&str] = &[
-        "case x { A => 1, B => 2 }",
+        "match x { A => 1, B => 2 }",
         "def bind() -> -F Integer { run value <- action; pure value }",
         "def le() -> -F Boolean { return a <= b }",
         "def eq() -> -F Boolean { return a == b }",

@@ -17,7 +17,7 @@ pub theory Magma {
 /// The swap of the booleans, its own inverse: the binary corolla's
 /// translator.
 pub def exchange(b : Bool) -> Bool {
-  case b {
+  match b {
     true => +{.1 = unit},
     false => +{.0 = unit}
   }

@@ -1290,10 +1290,10 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::UNKNOWN_TYPE),
             ),
             (
-                "case_with_view",
+                "match_with_view",
                 FragmentSort::Computation,
-                FragmentBoundary::Reserved(Unbuilt::CaseView),
-                FailureClass::Unimplemented(TrackingIssue::CASE_VIEW),
+                FragmentBoundary::Reserved(Unbuilt::MatchView),
+                FailureClass::Unimplemented(TrackingIssue::MATCH_VIEW),
             ),
             (
                 "representable_universe_type",

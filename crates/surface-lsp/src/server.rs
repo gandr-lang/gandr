@@ -11666,7 +11666,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
-                     "text":"data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
+                     "text":"data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
             ),
         );
         let ask = |server: &mut Connected, character: u32| {
@@ -13863,8 +13863,8 @@ mod tests
                 r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
             )))
         };
-        let minus = "def rec minus(n : Nat, k : Nat) -> Nat {\n  case k {\n    Zero => n,\n    \
-                     Succ(j) => case n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
+        let minus = "def rec minus(n : Nat, k : Nat) -> Nat {\n  match k {\n    Zero => n,\n    \
+                     Succ(j) => match n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
                      }\n  }\n}";
         assert_eq!(
             copied(&mut server, &following, &[(
@@ -13889,7 +13889,7 @@ mod tests
             "a call of a declaration the copy holds answers nothing for it"
         );
         assert_eq!(
-            copied(&mut server, &following, &[("  case ", "k")]),
+            copied(&mut server, &following, &[("  match ", "k")]),
             answered(&[]),
             "a parameter's use answers nothing"
         );
@@ -14044,7 +14044,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/untidy.gandr","languageId":"gandr","version":1,
-                     "text":"def plus(n : Nat) -> -F Nat {   \ncase n {\nZero => n\n}\n}\n\n\n"}}}"#,
+                     "text":"def plus(n : Nat) -> -F Nat {   \nmatch n {\nZero => n\n}\n}\n\n\n"}}}"#,
             ),
         );
         let format = |server: &mut Connected, options: &str| {
@@ -14059,7 +14059,7 @@ mod tests
         let canonical = wire(Json(
             r#"[{"jsonrpc":"2.0","id":7,"result":[{
                 "range":{"start":{"line":0,"character":29},"end":{"line":6,"character":0}},
-                "newText":"\n  case n {\n    Zero => n\n  }\n}"}]}]"#,
+                "newText":"\n  match n {\n    Zero => n\n  }\n}"}]}]"#,
         ));
         assert_eq!(
             format(

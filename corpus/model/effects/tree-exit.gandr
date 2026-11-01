@@ -17,7 +17,7 @@ def exitThenOne : ProcTree(Integer) = Exit(5, fn (_u) { (Return(1) : ProcTree(In
 /// `resumed`'s handler as a fold: the result passes a hundred on, and `exit`
 /// resumes the body with the unit.
 def rec resuming(p : ProcTree(Integer)) -> Integer {
-  case p {
+  match p {
     Return(x) => x + 100,
     Exit(_code, k) => resuming[<](k(unit))
   }
@@ -29,7 +29,7 @@ def resumedByFold() -> Integer { resuming(exitThenOne) }
 
 /// `discarded`'s handler as a fold: `exit` answers nine and drops the rest.
 def rec discarding(p : ProcTree(Integer)) -> Integer {
-  case p {
+  match p {
     Return(x) => x + 100,
     Exit(_code, _k) => 9
   }

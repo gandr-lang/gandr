@@ -48,7 +48,7 @@ pub data Nat : Type {
 /// The winding number (cubical's `winding`): a loop counts one up, its
 /// inverse one down. It respects the cancellations by `Int`'s rules.
 pub def rec wind(p : Path(Circle, Base, Base)) -> Int {
-  case p {
+  match p {
     here => Z,
     loop ∷ q => S(wind[<](q)),
     back(loop) ∷ q => P(wind[<](q))
@@ -59,7 +59,7 @@ pub def rec wind(p : Path(Circle, Base, Base)) -> Int {
 /// predecessor one more inverse. It respects `Int`'s rules by the
 /// cancellations.
 pub def rec spin(n : Int) -> Path(Circle, Base, Base) {
-  case n {
+  match n {
     Z => here(Base),
     S(x) => loop ∷ spin[<](x),
     P(x) => back(loop) ∷ spin[<](x)
@@ -87,7 +87,7 @@ pub def unloopOn(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
 /// the identity under the words' rules, so the chain is `p` itself, the
 /// answer at `q`.
 pub def rec sect(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), spin(wind(p)), p) {
-  case p {
+  match p {
     here => here(here(Base)),
     loop ∷ q => cong(loopOn, sect[<](q)),
     back(loop) ∷ q => cong(unloopOn, sect[<](q))
@@ -98,7 +98,7 @@ pub def rec sect(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base),
 /// induction over the presented integers, a successor carried along `up` and
 /// a predecessor along `down`.
 pub def rec retr(n : Int) -> Path(Int, wind(spin(n)), n) {
-  case n {
+  match n {
     Z => here(Z),
     S(x) => cong(up, retr[<](x)),
     P(x) => cong(down, retr[<](x))
@@ -108,14 +108,14 @@ pub def rec retr(n : Int) -> Path(Int, wind(spin(n)), n) {
 /// Every point's loop (cubical's `rotLoop`; the book's Lemma 6.4.2 element):
 /// the loop at the point, carried along the loop by conjugation to itself.
 pub def selfloop(x : Circle) -> Path(Circle, x, x) {
-  case x {
+  match x {
     Base => loop
   }
 }
 
 /// Every point's reflexivity, which conjugation fixes as well.
 pub def selfrefl(x : Circle) -> Path(Circle, x, x) {
-  case x {
+  match x {
     Base => here(Base)
   }
 }
@@ -123,7 +123,7 @@ pub def selfrefl(x : Circle) -> Path(Circle, x, x) {
 /// The circle's flip (cubical's `invLooper`): the point to itself and the
 /// loop to its inverse, the loop arm choosing the image.
 pub def invLooper(x : Circle) -> Circle {
-  case x {
+  match x {
     Base => Base,
     loop => back(loop)
   }
@@ -133,7 +133,7 @@ pub def invLooper(x : Circle) -> Circle {
 /// point is the unit, and the loop rotates the other argument by its own
 /// loop.
 pub def mul(a : Circle, b : Circle) -> Circle {
-  case a {
+  match a {
     Base => b,
     loop => selfloop(b)
   }

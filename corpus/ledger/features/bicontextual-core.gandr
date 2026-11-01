@@ -42,7 +42,7 @@ data Either : Type where {
 /// Answers `n` whichever side `e` takes. The case reads `Either` through its constructors, and never the fields it binds.
 @[ reads((Either, Nat)) ]
 def side(n : Nat, e : Either) -> -F Nat {
-  case e -> -F Nat {
+  match e -> -F Nat {
     Count(_m) => n,
     Mark(_f) => n
   }

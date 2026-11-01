@@ -40,7 +40,7 @@ def tick(n : Ticks) -> Ticks { Tick(n) }
 
 /// Joins two counts by recursion on the left one.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
-  case m {
+  match m {
     NoTick => n,
     Tick(k) => Tick(joinLeft[<](k, n))
   }
@@ -48,7 +48,7 @@ def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
 
 /// Joins two counts by recursion on the right one.
 def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
-  case n {
+  match n {
     NoTick => m,
     Tick(k) => Tick(joinRight[<](m, k))
   }
@@ -56,7 +56,7 @@ def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
 
 /// Joining no tick on the left leaves a count as it is, by induction on it.
 def rec noTickJoinsRight(n : Ticks) -> Path(Ticks, joinRight(NoTick, n), n) {
-  case n {
+  match n {
     NoTick => here(NoTick),
     Tick(k) => cong(tick, noTickJoinsRight[<](k))
   }

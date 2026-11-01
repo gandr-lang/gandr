@@ -2852,7 +2852,7 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// The molder ranks a fresh atom / form-start candidate by whether its sort
     /// matches this expectation, so `"hi"` reads as the expression string at an
-    /// expression slot and the pattern string in a `val`/`case` pattern slot,
+    /// expression slot and the pattern string in a `val`/`match` pattern slot,
     /// without a completion traversal. The expectation is the nearest
     /// unsaturated operator's right-hole sort, or the nearest open form
     /// frontier's right-hole sort, defaulting to [`Sort::Expression`] at the
@@ -10965,7 +10965,7 @@ mod tests
             "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
             "data Tree(a) where { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
             "def s = \"a ${ f(\"${x}\") } b\";",
-            "case v { Inl(x) => x, Inr(y) => y }",
+            "match v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
             ") } ] stray closers",
             "let p = (1, 2); if c { pure p } else { pure p }",

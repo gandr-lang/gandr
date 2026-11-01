@@ -58,7 +58,7 @@
 //! # The motive is the answer the source states
 //!
 //! A data case checks against a motive under one scrutinee binder. The
-//! lowering reads it from the match's own answer, `case e -> T { … }`, or
+//! lowering reads it from the match's own answer, `match e -> T { … }`, or
 //! from the result type of the function whose body ends in the match,
 //! relocated into the match's context; a match with neither is refused as
 //! unannotated when its tree eliminates native data. Reversal: a checker that
@@ -236,7 +236,7 @@
 //!
 //! `lower::native` lowers a `data` declaration at the root to the core's native
 //! `DataSignature`, a constructor to a native constructor value carrying its
-//! whole classifier, a `case` to a decision tree of native eliminations, and a
+//! whole classifier, a `match` to a decision tree of native eliminations, and a
 //! `def rec` function to one fixpoint over the parameter its matches take
 //! apart, recursive calls written with the descent claim `f[<](…)`.
 //!
@@ -268,7 +268,7 @@
 //! classifier, taken from the type its position states as the opening section
 //! reads it.
 //!
-//! `case e -> T? { p => c, … }` compiles to a decision tree of native
+//! `match e -> T? { p => c, … }` compiles to a decision tree of native
 //! eliminations by the pattern-matrix construction of Maranget's _Compiling
 //! Pattern Matching to Good Decision Trees_ (ML 2008): a data case per
 //! constructor column, a sum case per boolean column, the integer primitive
@@ -291,7 +291,7 @@
 //! Reversal: a join point earns its thunk once duplication costs more than
 //! binding the answer type at every join.
 //!
-//! A match of no arms, `case e {}`, names no family to compile against, so it
+//! A match of no arms, `match e {}`, names no family to compile against, so it
 //! reads its scrutinee's stated type, as a sum pattern reads its arity: a
 //! parameter's written type, or a lambda binder's where the lambda answers a
 //! written arrow `A -> C`, its domain `A`. Over a data type with no
@@ -301,12 +301,12 @@
 //! with a constructor it is `NonExhaustiveMatch`; over anything else, `Void`
 //! among them, it is the case of no branches, the empty sum's eliminator,
 //! which checks at any answer. The data case reads its answer as any match
-//! does, `case e -> T {}` or the enclosing result type; the empty sum's case
+//! does, `match e -> T {}` or the enclosing result type; the empty sum's case
 //! takes none written, since no branch would answer it.
 //!
 //! **Choice.** The empty match read by its scrutinee's written type, so `data
 //! Empty : Type {}` and a path between apart terms each have an eliminator.
-//! **Alternatives.** One reading of `case e {}`, the empty sum's eliminator,
+//! **Alternatives.** One reading of `match e {}`, the empty sum's eliminator,
 //! which leaves every empty nominal family without one; a reading by the
 //! checked type, which the lowering does not compute. **Reversal.** A
 //! scrutinee with no written type — a nested expression — takes the reading
@@ -866,7 +866,7 @@ pub(super) struct Recursion
 ///   claims inside it.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
-/// - executable: none — `case` records it and `claim` reads it.
+/// - executable: none — `match` records it and `claim` reads it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Recursion`].
@@ -1688,7 +1688,7 @@ pub(super) struct CaseForm
     frame: Frame,
     /// The answer the motive is read from.
     answer: Maybe<Answer, answered::Absent>,
-    /// The answer written on the match itself, `case e -> C { … }`, which
+    /// The answer written on the match itself, `match e -> C { … }`, which
     /// the tree's root is ascribed; absent where only its position states
     /// one.
     ascribed: Maybe<Answer, answered::Absent>,
@@ -4448,11 +4448,11 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a match, `case e -> T? { p => c, … }`.
+    /// Classify a match, `match e -> T? { p => c, … }`.
     ///
     /// # Specification
     /// - requires: `site` is a match in term position.
-    /// - ensures: a match of no arms, `case e {}`, is planned as
+    /// - ensures: a match of no arms, `match e {}`, is planned as
     ///   [`Self::empty_case`] plans it: the data switch of no branches over a
     ///   scrutinee stated at a data type or a path type, and else the case of
     ///   no branches, the eliminator of the empty sum `Void`; otherwise the
@@ -4467,9 +4467,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   ([`ArmReading`]), and takes the paths through the match's position; a
     ///   match on a recursive function's parameter records that parameter for
     ///   its arm bodies ([`Self::scrutinise`]).
-    /// - provides: the reading of `case`.
+    /// - provides: the reading of `match`.
     /// - fails: the wrong-sort refusal outside computation position; the view
-    ///   form `case … with` by the view's name; a match of no arms as
+    ///   form `match … with` by the view's name; a match of no arms as
     ///   [`Self::empty_case`] refuses it; a written answer on a match whose
     ///   arms continue a block as joining it; a pattern the fragment does not
     ///   read by its own name; a pattern of another kind than the first tested
@@ -4502,14 +4502,14 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        let _case = cursor.tile(TileName::CASE);
+        let _case = cursor.tile(TileName::MATCH);
         let scrutinee = site.one(cursor.operands())?;
         if let Maybe::Present(with) = cursor.at(TileName::WITH) {
             return Err(LoweringRefusal::OutOfFragment {
                 span: with.span,
-                form: FormName::CASE_WITH_VIEW,
+                form: FormName::MATCH_WITH_VIEW,
                 sort: site.reading.sort(),
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::CaseView),
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::MatchView),
             });
         }
         let written = match cursor.tile(TileName::ARROW) {
@@ -4538,7 +4538,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Err(LoweringRefusal::OutOfFragment {
                 span: stated.span,
-                form: FormName::CASE,
+                form: FormName::MATCH,
                 sort: site.reading.sort(),
                 boundary: FragmentBoundary::JoinsBlock,
             });
@@ -4748,7 +4748,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a match of no arms, `case e -> T? {}`, over `scrutinee` under
+    /// Classify a match of no arms, `match e -> T? {}`, over `scrutinee` under
     /// `frame`, with the answer `written` when one is written.
     ///
     /// # Specification
@@ -4793,9 +4793,9 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(stated) = written {
                 return Err(LoweringRefusal::OutOfFragment {
                     span: stated.span,
-                    form: FormName::CASE,
+                    form: FormName::MATCH,
                     sort: site.reading.sort(),
-                    boundary: FragmentBoundary::Unadmitted(Unbuilt::EmptyCase),
+                    boundary: FragmentBoundary::Unadmitted(Unbuilt::EmptyMatch),
                 });
             }
             self.read(scrutinee.node, Reading::Value(frame));
@@ -5563,7 +5563,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Err(LoweringRefusal::OutOfFragment {
                 span: stray.named.span,
-                form: FormName::CASE,
+                form: FormName::MATCH,
                 sort: site.reading.sort(),
                 boundary: FragmentBoundary::WrongSort,
             });
@@ -5733,7 +5733,7 @@ impl<'source> Lowerer<'_, 'source>
             Shape::Repair(repair) => {
                 return Err(LoweringRefusal::MalformedForm {
                     span: at.span,
-                    form: FormName::CASE,
+                    form: FormName::MATCH,
                     fault: FormFault::Repaired(repair),
                 });
             },
@@ -10037,7 +10037,7 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Mint the match at `case`: its scrutinee bound once over its decision
+    /// Mint the match at `match`: its scrutinee bound once over its decision
     /// tree.
     ///
     /// # Specification

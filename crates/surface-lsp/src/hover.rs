@@ -2407,7 +2407,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Flag : Type where {\n  | On : Flag\n  | Off : Flag\n}\ndef decoded(f : Flag) -> -F \
-                 Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
+                 Type { match f { On => return Integer, Off => return Unit } }\ndef kept(f : \
                  Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
             )),
             Ok(fenced(SourceText::from("decoded(f) : Type")))
@@ -2420,7 +2420,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data U : Type where {\n  | NatC : U\n  | Arrow : (a : U, b : U) --> U\n}\ndef el(u : U) \
-                 -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
+                 -> -F Type { match u { NatC => return Integer, Arrow(a, b) => return Unit } \
                  }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
             )),
             Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U")))
@@ -2480,7 +2480,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef rec size(p : \
-                 Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    \
+                 Path(Circle, Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    \
                  loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from(
@@ -2494,7 +2494,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  case b {\n    +{.$00 = u} => \
+                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  match b {\n    +{.$00 = u} => \
                  return +{.1 = u},\n    +{.1 = u} => return +{.0 = u}\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from("0 : Unit")))

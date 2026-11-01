@@ -8,7 +8,7 @@ data Nat : Type where {
 /// Addition by recursion on the second argument.
 @[ checks ]
 def rec plus(n : Nat, m : Nat) -> -F Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
   }

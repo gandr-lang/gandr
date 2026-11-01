@@ -33,7 +33,7 @@ data Dot : Type {
 module CollapsedDot : Model(Collapsed) with sort Loop = Dot {
   /// Both loops are `Spot`, so reflexivity proves the law.
   def one(p : Dot, q : Dot) -> Path(Dot, p, q) {
-    case p { Spot => case q { Spot => here(Spot) } }
+    match p { Spot => match q { Spot => here(Spot) } }
   }
 }
 

@@ -10,7 +10,7 @@ import "./flow-data.gandr";
 
 /// The map back: each figure to its shape, the sides swapped back.
 def toShape(figure : Figure) -> Shape {
-  case figure {
+  match figure {
     Round(r) => Circle(r),
     Box(h, w) => Rect(w, h)
   }

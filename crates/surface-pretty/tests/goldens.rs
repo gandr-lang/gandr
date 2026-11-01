@@ -4550,17 +4550,17 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         (body(suspends), "thunk { (pure 1)(2) }", Fidelity::Faithful),
         (
             body(analysed),
-            "fn (a) { case a { +{.0 = b} => b, +{.1 = b} => b } }",
+            "fn (a) { match a { +{.0 = b} => b, +{.1 = b} => b } }",
             Fidelity::Faithful,
         ),
         (
             body(opened),
-            "fn (a) { case a { #{b, c} => c } }",
+            "fn (a) { match a { #{b, c} => c } }",
             Fidelity::Faithful,
         ),
         (
             body(matched),
-            "fn (a) { case a { Zero => Zero, Succ(b) => b } }",
+            "fn (a) { match a { Zero => Zero, Succ(b) => b } }",
             Fidelity::Faithful,
         ),
         (body(projected), "fn (a) { a.x }", Fidelity::Faithful),
@@ -4701,7 +4701,7 @@ fn a_pruned_arm_is_left_unwritten_1314()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
         (
-            "fn (a) { case a { VCons(b, c, d) => c } }".to_owned(),
+            "fn (a) { match a { VCons(b, c, d) => c } }".to_owned(),
             Fidelity::Faithful
         ),
         "the pruned `VNil` arm and the equation are not written"
@@ -5042,22 +5042,26 @@ fn a_recursive_definition_spells_as_written_941()
     let (wide, narrow) = (PageWidth::from(100_u32), PageWidth::from(30_u32));
     assert_eq!(
         declared_whole(&source, (ty, descending), wide),
-        written("def rec down(a : Nat) -> Nat {\n  case a { Zero => a, Succ(b) => down[<](b) }\n}"),
+        written(
+            "def rec down(a : Nat) -> Nat {\n  match a { Zero => a, Succ(b) => down[<](b) }\n}"
+        ),
         "a descending call writes its claim"
     );
     assert_eq!(
         declared_whole(&source, (ty, productive), wide),
-        written("def rec down(a : Nat) -> Nat {\n  case a { Zero => a, Succ(b) => down[>](b) }\n}"),
+        written(
+            "def rec down(a : Nat) -> Nat {\n  match a { Zero => a, Succ(b) => down[>](b) }\n}"
+        ),
         "a fixpoint claiming nothing writes its call productive"
     );
     assert_eq!(
         declared_whole(&source, (ty, descending), narrow),
         written(
-            "def rec down(a : Nat) -> Nat {\n  case a {\n    Zero => a,\n    Succ(b) => down[<](b)\n  }\n}"
+            "def rec down(a : Nat) -> Nat {\n  match a {\n    Zero => a,\n    Succ(b) => down[<](b)\n  }\n}"
         ),
         "the body breaks at the page two columns in"
     );
-    let both = "def rec down(a : Nat, b : Nat) -> Nat {\n  case a { Zero => b, Succ(c) => down[<](c, b) }\n}";
+    let both = "def rec down(a : Nat, b : Nat) -> Nat {\n  match a { Zero => b, Succ(c) => down[<](c, b) }\n}";
     assert_eq!(
         declared_whole(&source, (ty_two, on_first), wide),
         written(both),
@@ -5115,21 +5119,27 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         declared_whole(&source, (unnamed, mentioning), wide),
-        written("def rec down(b : Nat) -> Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"),
+        written(
+            "def rec down(b : Nat) -> Nat {\n  match b { Zero => a, Succ(c) => down[<](c) }\n}"
+        ),
         "the parameter passes over a constant the body mentions"
     );
     let arrows = [(pi, Name::from("n"))];
     let named = source.naming_arrows(&arrows);
     assert_eq!(
         declared_whole(&named, (dependent, quiet), wide),
-        written("def rec down(n : Nat) -> Nat {\n  case n { Zero => n, Succ(a) => down[<](a) }\n}"),
+        written(
+            "def rec down(n : Nat) -> Nat {\n  match n { Zero => n, Succ(a) => down[<](a) }\n}"
+        ),
         "the parameter takes the name its arrow writes"
     );
     let mentioned_arrows = [(pi, Name::from("a"))];
     let shadowing = source.naming_arrows(&mentioned_arrows);
     assert_eq!(
         declared_whole(&shadowing, (dependent, mentioning), wide),
-        written("def rec down(b : Nat) -> Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"),
+        written(
+            "def rec down(b : Nat) -> Nat {\n  match b { Zero => a, Succ(c) => down[<](c) }\n}"
+        ),
         "an arrow's name the body mentions is passed over"
     );
 }
@@ -5178,14 +5188,14 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     assert_eq!(
         declared_whole(&source, (ty_one, one), wide),
         written(
-            "def rec down(a : Nat, b : Nat) -> Nat {\n  case b { Zero => a, Succ(c) => down[<](a, c) }\n}"
+            "def rec down(a : Nat, b : Nat) -> Nat {\n  match b { Zero => a, Succ(c) => down[<](a, c) }\n}"
         ),
         "a call passes the uniform parameter before its argument"
     );
     assert_eq!(
         declared_whole(&source, (ty_two, two), wide),
         written(
-            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat {\n  case c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
+            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat {\n  match c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
         ),
         "a call passes both uniform parameters in order, a call of one passes nothing more"
     );
@@ -5269,7 +5279,7 @@ fn a_recursive_call_omits_the_instance_it_passes_as_itself_4102()
     assert_eq!(
         declared_whole(&source, (ty, kept), wide),
         written(
-            "def rec down[x : Nat](a : Nat) -> Nat {\n  case a { Zero => x, Succ(b) => down[<](b) }\n}"
+            "def rec down[x : Nat](a : Nat) -> Nat {\n  match a { Zero => x, Succ(b) => down[<](b) }\n}"
         ),
         "the implicit bound outside the fixpoint goes unwritten"
     );
@@ -5283,14 +5293,14 @@ fn a_recursive_call_omits_the_instance_it_passes_as_itself_4102()
     assert_eq!(
         declared_whole(&source, (ty, own), wide),
         written(
-            "def rec down[o : Nat](a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b) }\n}"
+            "def rec down[o : Nat](a : Nat) -> Nat {\n  match a { Zero => o, Succ(b) => down[<](b) }\n}"
         ),
         "the instance passed as itself goes unwritten"
     );
     assert_eq!(
         declared_whole(&source, (ty, other), wide),
         written(
-            "def rec down[o : Nat](a : Nat) -> Nat {\n  case a { Zero => o, Succ(b) => down[<](b, a) }\n}"
+            "def rec down[o : Nat](a : Nat) -> Nat {\n  match a { Zero => o, Succ(b) => down[<](b, a) }\n}"
         ),
         "a parameter passed in the instance's place is written with the rest"
     );
@@ -5746,8 +5756,8 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
         ),
         (
             branched,
-            "case 1 { +{.0 = a} => g(f(1), f(2)) }",
-            "case 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
+            "match 1 { +{.0 = a} => g(f(1), f(2)) }",
+            "match 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -5909,21 +5919,21 @@ fn a_case_nothing_types_writes_its_motive_815()
     for (root, expected) in [
         (
             running,
-            "fn (a) { run b <- case a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fn (a) { run b <- match a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
         ),
         (
             holding,
-            "Succ(thunk { fn (a) { case a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
+            "Succ(thunk { fn (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
         ),
-        (matched, "fn (a) { case a { Zero => Zero, Succ(b) => b } }"),
+        (matched, "fn (a) { match a { Zero => Zero, Succ(b) => b } }"),
         (
             holding_nested,
-            "Succ(fn (a) { case a -> -F Nat { Zero => Zero, Succ(b) => b } })",
+            "Succ(fn (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } })",
         ),
         (returns_nested, "pure (pure Zero)"),
         (
             depending,
-            "fn (a) { run b <- case a { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fn (a) { run b <- match a { Zero => pure Zero, Succ(b) => pure b } ; b }",
         ),
     ] {
         assert_eq!(
@@ -5964,7 +5974,7 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
     assert!(
-        text.contains("case a {\n    Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
+        text.contains("match a {\n    Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
         "the branch binds its fields under the constructor: {text}"
     );
 }
@@ -6009,7 +6019,7 @@ fn a_family_spells_by_its_declaration_past_a_namesake_3125()
         (Root::Value(CoreNode::Value(on_heap)), "OnHeap"),
         (
             Root::Computation(CoreNode::Computation(matched)),
-            "fn (a) { case a { Inside => OnHeap, OnHeap => Inside } }",
+            "fn (a) { match a { Inside => OnHeap, OnHeap => Inside } }",
         ),
     ] {
         assert_eq!(
@@ -6168,7 +6178,7 @@ fn a_loop_arm_is_written_under_its_loop_813()
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
-        faithful(Written("fn (a) { case a { Base => unit, loop => unit } }"))
+        faithful(Written("fn (a) { match a { Base => unit, loop => unit } }"))
     );
 }
 
@@ -7529,7 +7539,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(whiled)),
         faithful(Written(
-            "fn (a) {\n  while force a { run e <- force a ; case e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
+            "fn (a) {\n  while force a { run e <- force a ; match e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
         )),
         "a while a rest follows writes its exits"
     );
@@ -7623,17 +7633,17 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     assert_eq!(
         spelled(&source, body(armed)),
         faithful(Written(
-            "fn (a) { loop { case a { +{.0 = c} => break, +{.1 = c} => continue } } ; a }"
+            "fn (a) { loop { match a { +{.0 = c} => break, +{.1 = c} => continue } } ; a }"
         )),
         "a break in an arm goes on with the rest under the arm's binder"
     );
     let (text, fidelity) = spelled(&source, body(apart));
     assert!(
-        text.matches("case unit { unit => break(a")
+        text.matches("match unit { unit => break(a")
             .nth(1_usize)
             .is_some()
             && text
-                .matches("case unit { unit => break(a")
+                .matches("match unit { unit => break(a")
                 .nth(2_usize)
                 .is_none()
             && !text.contains("break }")
@@ -7893,7 +7903,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
 }
 
 /// A sum case and a split ascribed their answer write it after the scrutinee,
-/// `case a -> -F Integer { … }`, the match that writes its answer lowering to
+/// `match a -> -F Integer { … }`, the match that writes its answer lowering to
 /// that ascription, from the arena as from its content (#2089).
 #[test]
 fn an_ascribed_case_writes_its_answer_2089()
@@ -7916,9 +7926,9 @@ fn an_ascribed_case_writes_its_answer_2089()
     for (root, expected) in [
         (
             analysed,
-            "fn (a) { case a -> -F Integer { +{.0 = b} => 1, +{.1 = b} => 2 } }",
+            "fn (a) { match a -> -F Integer { +{.0 = b} => 1, +{.1 = b} => 2 } }",
         ),
-        (opened, "fn (a) { case a -> -F Integer { #{b, c} => 1 } }"),
+        (opened, "fn (a) { match a -> -F Integer { #{b, c} => 1 } }"),
     ] {
         agrees(&core, &[], CoreNode::Computation(root));
         assert_eq!(

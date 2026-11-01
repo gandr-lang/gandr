@@ -145,7 +145,7 @@ impl Written
     ///
     /// # Specification
     /// - requires: `source` declares `function` with a body whose tail under
-    ///   its parameters is a `case`.
+    ///   its parameters is a `match`.
     /// - ensures: the rows are the lowering's alternatives, in source order,
     ///   over its own pattern table.
     /// - panics: if the source does not lower, `function` lowers no body or its

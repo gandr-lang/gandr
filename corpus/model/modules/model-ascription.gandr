@@ -61,7 +61,7 @@ module Bits : Model(Toggle) {
   type T = Bit;
 
   def flip(b : Bit) -> Bit {
-    case b {
+    match b {
       Low => High,
       High => Low
     }
@@ -70,7 +70,7 @@ module Bits : Model(Toggle) {
   /// The law, by cases.
   @[ checks ]
   def twice(b : Bit) -> Path(Bit, flip(flip(b)), b) {
-    case b {
+    match b {
       Low => here(Low),
       High => here(High)
     }

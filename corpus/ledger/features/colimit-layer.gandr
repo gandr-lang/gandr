@@ -76,7 +76,7 @@ def kept_beta : Path(List(Bool), transport(\X. X, lists, both), both) = here(bot
 /// A flag beside a list of booleans, negated, the list left as it is.
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
-  case entry {
+  match entry {
     #{b, xs} => (not(b), xs)
   }
 }

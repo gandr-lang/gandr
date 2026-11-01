@@ -10,7 +10,7 @@ data Shape : Type where {
 /// The length of a line, zero for a dot, each matched by its qualified name.
 @[ checks ]
 def length(s : Shape) -> Integer {
-  case s {
+  match s {
     Shape.Dot => 0,
     Shape.Line(n) => n
   }

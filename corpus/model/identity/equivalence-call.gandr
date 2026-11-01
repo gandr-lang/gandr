@@ -16,7 +16,7 @@ def kept(a : Type, b : Type, i : a ≅ b) -> a ≅ b {
 /// splits its parameter (#656).
 def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
   run j <- kept(a, b, i);
-  case j {
+  match j {
     #{t, k, s, r} => (t, ((k, s), (k, r)))
   }
 }
@@ -25,7 +25,7 @@ def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
 /// together (#656).
 def madeAgain(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
   run e <- isoToEquiv(a, b, i);
-  case e {
+  match e {
     #{t, #{g, s}, #{h, r}} => (t, ((g, s), (h, r)))
   }
 }

@@ -8,7 +8,7 @@
 /// Negation on the booleans, `+{Unit, Unit}`.
 @[ checks ]
 def not(b : Unit + Unit) -> Unit + Unit {
-  case b {
+  match b {
     +{.0 = u} => +{.1 = u},
     +{.1 = u} => +{.0 = u}
   }

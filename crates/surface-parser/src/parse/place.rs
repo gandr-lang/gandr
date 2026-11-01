@@ -1197,7 +1197,7 @@ mod tests
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
         let member = "data Circle : Type where {\n  | Base : Circle\n  | loop Base <-> Base\n}\n";
-        let arm = "def classify(n : Integer) -> -F Integer {\n  case n {\n    ?branch  return \
+        let arm = "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return \
                    1\n  }\n}\n";
         let branch = "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n";
         let last = "def twice : Integer ;\ndef twice = loop then loop \n";
@@ -1399,7 +1399,7 @@ mod tests
             "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n",
             "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
             "data Circle : Type where {\n  | Base : Circle\n  loop : Base <-> Base\n}\n",
-            "def classify(n : Integer) -> -F Integer {\n  case n {\n    ?branch  return 1\n  }\n}\n",
+            "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return 1\n  }\n}\n",
             "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n",
         ] {
             let text = SourceText::from(source);

@@ -221,7 +221,7 @@
 //! `Nested`). A call at an application's head stands nested under the force
 //! the head takes, and the checker runs it when it returns a function (#3935).
 //! *Order*: runs bind in written order around the innermost
-//! enclosing computation, never out of a `thunk` or a `case` arm. *Where*:
+//! enclosing computation, never out of a `thunk` or a `match` arm. *Where*:
 //! the checker's elaboration, each minted bind carrying the nested call's
 //! span. `run c` is the written spelling of the same run, an expression
 //! wherever a value is read; first in a block's statement or at an

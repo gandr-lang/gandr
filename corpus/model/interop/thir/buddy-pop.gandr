@@ -44,9 +44,9 @@ rec {
 
 /// The element at an index, if there is one.
 pub def rec nth(vs : Vals, i : Nat) -> Maybe(Val) {
-  case vs {
+  match vs {
     VNil => None,
-    VCons(v, rest) => case i {
+    VCons(v, rest) => match i {
       Zero => Some(v),
       Succ(j) => nth[<](rest, j)
     }
@@ -55,9 +55,9 @@ pub def rec nth(vs : Vals, i : Nat) -> Maybe(Val) {
 
 /// The elements with the one at `i` replaced by `x`.
 pub def rec setN(vs : Vals, i : Nat, x : Val) -> Vals {
-  case vs {
+  match vs {
     VNil => VNil,
-    VCons(v, rest) => case i {
+    VCons(v, rest) => match i {
       Zero => VCons(x, rest),
       Succ(j) => VCons(v, setN[<](rest, j, x))
     }
@@ -74,7 +74,7 @@ pub data Steps : Type {
 
 /// The field or element of a tree at a position.
 pub def fieldAt(v : Val, i : Nat) -> Maybe(Val) {
-  case v {
+  match v {
     Tree(fs) => nth(fs, i),
     IntV(_n) => None,
     PtrV(_l) => None,
@@ -86,7 +86,7 @@ pub def fieldAt(v : Val, i : Nat) -> Maybe(Val) {
 
 /// A tree with its field or element at `i` replaced by `y`.
 pub def setField(v : Val, i : Nat, y : Val) -> Maybe(Val) {
-  case v {
+  match v {
     Tree(fs) => Some(Tree(setN(fs, i, y))),
     IntV(_n) => None,
     PtrV(_l) => None,
@@ -98,9 +98,9 @@ pub def setField(v : Val, i : Nat, y : Val) -> Maybe(Val) {
 
 /// The value below `v` at a path.
 pub def rec below(p : Steps, v : Val) -> Maybe(Val) {
-  case p {
+  match p {
     Here => Some(v),
-    Down(i, rest) => case fieldAt(v, i) {
+    Down(i, rest) => match fieldAt(v, i) {
       None => None,
       Some(w) => below[<](rest, w)
     }
@@ -109,11 +109,11 @@ pub def rec below(p : Steps, v : Val) -> Maybe(Val) {
 
 /// `v` with the value at a path replaced by `w`, where the path is there.
 pub def rec setAt(p : Steps, v : Val, w : Val) -> Maybe(Val) {
-  case p {
+  match p {
     Here => Some(w),
-    Down(i, rest) => case fieldAt(v, i) {
+    Down(i, rest) => match fieldAt(v, i) {
       None => None,
-      Some(x) => case setAt[<](rest, x, w) {
+      Some(x) => match setAt[<](rest, x, w) {
         None => None,
         Some(y) => setField(v, i, y)
       }
@@ -123,12 +123,12 @@ pub def rec setAt(p : Steps, v : Val, w : Val) -> Maybe(Val) {
 
 /// Whether two naturals are one.
 pub def rec same(a : Nat, b : Nat) -> Bool {
-  case a {
-    Zero => case b {
+  match a {
+    Zero => match b {
       Zero => true,
       Succ(_q) => false
     },
-    Succ(p) => case b {
+    Succ(p) => match b {
       Zero => false,
       Succ(q) => same[<](p, q)
     }
@@ -193,7 +193,7 @@ pub data Loc : Type {
 
 /// The root a pointer value points to.
 pub def ptrOf(v : Val) -> Maybe(Nat) {
-  case v {
+  match v {
     PtrV(l) => Some(l),
     IntV(_n) => None,
     NoneV => None,
@@ -205,7 +205,7 @@ pub def ptrOf(v : Val) -> Maybe(Nat) {
 
 /// The index an integer value names.
 pub def indexOf(v : Val) -> Maybe(Nat) {
-  case v {
+  match v {
     IntV(n) => Some(n),
     PtrV(_l) => None,
     NoneV => None,
@@ -217,9 +217,9 @@ pub def indexOf(v : Val) -> Maybe(Nat) {
 
 /// The root a local points to, with `acc` below it.
 pub def derefAt(m : Maybe(Val), acc : Steps) -> Maybe(Loc) {
-  case m {
+  match m {
     None => None,
-    Some(v) => case ptrOf(v) {
+    Some(v) => match ptrOf(v) {
       None => None,
       Some(l) => Some(At(l, acc))
     }
@@ -228,12 +228,12 @@ pub def derefAt(m : Maybe(Val), acc : Steps) -> Maybe(Loc) {
 
 /// The location the place `p` names at the locals `env`, `acc` the path already below it.
 pub def rec locate(p : PlaceExpr, env : Vals, acc : Steps) -> Maybe(Loc) {
-  case p {
+  match p {
     Deref(x) => derefAt(nth(env, x), acc),
     Field(q, i) => locate[<](q, env, Down(i, acc)),
-    Index(q, x) => case nth(env, x) {
+    Index(q, x) => match nth(env, x) {
       None => None,
-      Some(v) => case indexOf(v) {
+      Some(v) => match indexOf(v) {
         None => None,
         Some(n) => locate[<](q, env, Down(n, acc))
       }
@@ -244,16 +244,16 @@ pub def rec locate(p : PlaceExpr, env : Vals, acc : Steps) -> Maybe(Loc) {
 /// The core transformer: what `e` needs at the locals `env` and the state `s` to end in `k` or return into `r`.
 /// A read needs the root at any fraction and a value its place holds, a write the whole root and the root it makes.
 pub def rec wpMem(e : MemExpr, env : Vals, k : Out => Type, r : Out => Type, s : State) -> Type {
-  case e {
-    Var(x) => case nth(env, x) {
+  match e {
+    Var(x) => match nth(env, x) {
       None => return Void,
       Some(v) => k(Ends(v, s))
     },
-    Read(p) => case locate(p, env, Here) {
+    Read(p) => match locate(p, env, Here) {
       None => return Void,
-      Some(loc) => case loc {
-        At(l, path) => case s {
-          Own(m, q, v) => case same(l, m) {
+      Some(loc) => match loc {
+        At(l, path) => match s {
+          Own(m, q, v) => match same(l, m) {
             true => return type(#{
               w : Val,
               holds : Path(Maybe(Val), (Some(w) : Maybe(Val)), below(path, v)),
@@ -265,16 +265,16 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out => Type, r : Out => Type, s :
       }
     },
     NoneE => k(Ends(NoneV, s)),
-    SomeE(a) => wpMem[<](a, env, fn (o) { case o {
+    SomeE(a) => wpMem[<](a, env, fn (o) { match o {
       Ends(v, t) => k(Ends(SomeV(v), t))
     } }, r, s),
-    Assign(p, a) => wpMem[<](a, env, fn (o) { case o {
-      Ends(w, t) => case locate(p, env, Here) {
+    Assign(p, a) => wpMem[<](a, env, fn (o) { match o {
+      Ends(w, t) => match locate(p, env, Here) {
         None => return Void,
-        Some(loc) => case loc {
-          At(l, path) => case t {
-            Own(m, q, v) => case q {
-              Whole => case same(l, m) {
+        Some(loc) => match loc {
+          At(l, path) => match t {
+            Own(m, q, v) => match q {
+              Whole => match same(l, m) {
                 true => return type(#{
                   v1 : Val,
                   made : Path(Maybe(Val), (Some(v1) : Maybe(Val)), setAt(path, v, w)),
@@ -288,11 +288,11 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out => Type, r : Out => Type, s :
         }
       }
     } }, r, s),
-    Seq(a, b) => wpMem[<](a, env, fn (o) { case o {
+    Seq(a, b) => wpMem[<](a, env, fn (o) { match o {
       Ends(_v, t) => wpMem[<](b, env, k, r, t)
     } }, r, s),
-    MatchOpt(a, n, m) => wpMem[<](a, env, fn (o) { case o {
-      Ends(v, t) => case v {
+    MatchOpt(a, n, m) => wpMem[<](a, env, fn (o) { match o {
+      Ends(v, t) => match v {
         NoneV => wpMem[<](n, env, k, r, t),
         SomeV(x) => wpMem[<](m, VCons(x, env), k, r, t),
         IntV(_n) => return Void,
@@ -341,9 +341,9 @@ pub data Ixs : Type {
 
 /// Whether a block index is absent from a list.
 pub def rec notIn(xs : Ixs, b : Nat) -> Type {
-  case xs {
+  match xs {
     INil => return Unit,
-    ICons(x, rest) => case same(b, x) {
+    ICons(x, rest) => match same(b, x) {
       true => return Void,
       false => notIn[<](rest, b)
     }
@@ -352,7 +352,7 @@ pub def rec notIn(xs : Ixs, b : Nat) -> Type {
 
 /// The head a free list starts at: `None`, or its first block.
 pub def headOf(ixs : Ixs) -> Val {
-  case ixs {
+  match ixs {
     INil => NoneV,
     ICons(b, _rest) => SomeV(IntV(b))
   }
@@ -373,7 +373,7 @@ pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type {
 
 /// Each listed block links to the next through the blocks, and no block repeats.
 pub def rec chain(ixs : Ixs, blocks : Vals) -> Type {
-  case ixs {
+  match ixs {
     INil => return Unit,
     ICons(b, rest) => linked(b, rest, blocks, chain[<](rest, blocks))
   }
@@ -389,8 +389,8 @@ pub def freeAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Type {
 
 /// `pop`'s postcondition at the free list `ixs`: empty answers `None` and keeps the state.
 pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> Type {
-  case o {
-    Ends(res, s) => case ixs {
+  match o {
+    Ends(res, s) => match ixs {
       INil => return type(#{
         none : Path(Val, res, NoneV),
         kept : Path(State, s, Own(Zero, Whole, buddy(blocks, heads)))
@@ -418,7 +418,7 @@ pub def popEnv(order : Nat) -> Vals {
 
 /// The place read's last step: an option keeps the value it holds.
 pub def keepSome(m : Maybe(Val)) -> Maybe(Val) {
-  case m {
+  match m {
     None => None,
     Some(x) => Some(x)
   }
@@ -426,7 +426,7 @@ pub def keepSome(m : Maybe(Val)) -> Maybe(Val) {
 
 /// Whether an option holds a value.
 pub def isSome(m : Maybe(Val)) -> Type {
-  case m {
+  match m {
     None => return Void,
     Some(_x) => return Unit
   }
@@ -452,12 +452,12 @@ pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path(
     i
   )
 )) => Path(Maybe(Val), (Some(x) : Maybe(Val)), nth(setN(vs, i, x), i)) {
-  case vs {
-    VNil => case i {
-      Zero => return fn (h) { case (noneHeld(y, h) : Void) {} },
-      Succ(_j) => return fn (h) { case (noneHeld(y, h) : Void) {} }
+  match vs {
+    VNil => match i {
+      Zero => return fn (h) { match (noneHeld(y, h) : Void) {} },
+      Succ(_j) => return fn (h) { match (noneHeld(y, h) : Void) {} }
     },
-    VCons(_v, rest) => case i {
+    VCons(_v, rest) => match i {
       Zero => return fn (_h) { here((Some(x) : Maybe(Val))) },
       Succ(j) => nthSet[<](rest, j, x, y)
     }
@@ -466,7 +466,7 @@ pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path(
 
 /// The heads the write to `heads[order]` makes, given what they held there.
 pub def headsAt(heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val) {
-  case m {
+  match m {
     None => None,
     Some(_x) => Some(Tree(setN(heads, order, w)))
   }
@@ -474,7 +474,7 @@ pub def headsAt(heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val
 
 /// The root the write to `self.heads[order]` makes, given what the heads held there.
 pub def setHeadsAt(blocks : Vals, heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val) {
-  case headsAt(heads, order, w, m) {
+  match headsAt(heads, order, w, m) {
     None => None,
     Some(hs) => setField(buddy(blocks, heads), Succ(Zero), hs)
   }
@@ -628,7 +628,7 @@ pub def popSome(
   popPost(blocks, heads, order, ICons(b, rest)),
   Own(Zero, Whole, buddy(blocks, heads))
 ) {
-  case wf {
+  match wf {
     #{held, link, apart} => (
       SomeV(IntV(b)),
       (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
@@ -661,7 +661,7 @@ pub def popFrom(
   popPost(blocks, heads, order, ICons(b, rest)),
   Own(Zero, Whole, buddy(blocks, heads))
 ) {
-  case fl {
+  match fl {
     #{head, wf} => popSome(blocks, heads, order, b, rest, head, wf)
   }
 }
@@ -678,7 +678,7 @@ pub def popFromEmpty(
   popPost(blocks, heads, order, INil),
   Own(Zero, Whole, buddy(blocks, heads))
 ) {
-  case fl {
+  match fl {
     #{head, wf} => popNone(blocks, heads, order, head)
   }
 }
@@ -696,7 +696,7 @@ pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt
   popPost(blocks, heads, order, ixs),
   Own(Zero, Whole, buddy(blocks, heads))
 ) {
-  case ixs {
+  match ixs {
     INil => return fn (fl) { popFromEmpty(blocks, heads, order, fl) },
     ICons(b, rest) => return fn (fl) { popFrom(blocks, heads, order, b, rest, fl) }
   }

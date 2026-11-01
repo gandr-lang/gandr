@@ -269,9 +269,9 @@ fn a_run_in_a_match_branch_is_linear_1935()
 {
     let source = format!(
         "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
-         def armed(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run d <- twice(b) ; Succ(d) }} }} }}\n\
-         def chained(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run e <- twice(b) ; run f <- twice(e) ; Succ(f) }} }} }}\n\
-         def reread(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run g <- twice(b) ; second(g, g) }} }} }}\n"
+         def armed(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run d <- twice(b) ; Succ(d) }} }} }}\n\
+         def chained(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run e <- twice(b) ; run f <- twice(e) ; Succ(f) }} }} }}\n\
+         def reread(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run g <- twice(b) ; second(g, g) }} }} }}\n"
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();

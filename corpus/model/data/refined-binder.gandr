@@ -18,7 +18,7 @@ import "../universe/decoded-descent.gandr";
 
 /// The family that is `Nat` at zero and `Unit` past it.
 pub def natOr(n : Nat) -> Type {
-  case n {
+  match n {
     Zero => return Nat,
     Succ(_m) => return Unit
   }
@@ -26,8 +26,8 @@ pub def natOr(n : Nat) -> Type {
 
 /// The predecessor under the arm `Zero`, where the binder is a natural.
 pub def refinedPred(n : Nat) -> (natOr(n)) => Nat {
-  case n {
-    Zero => return fn (v) { case v -> -F Nat { Zero => return Zero, Succ(m) => return m } },
+  match n {
+    Zero => return fn (v) { match v -> -F Nat { Zero => return Zero, Succ(m) => return m } },
     Succ(_m) => return fn (_u) { return Zero }
   }
 }
@@ -42,10 +42,10 @@ def predTwo() -> Nat {
 /// One for a decoded list with an entry, zero for an empty list, a natural itself, and zero for a function.
 /// Under the arm `ListL(a)`, the binder is a list of the decodes of `a`.
 pub def occupied(c : UL) -> elL(c) => Nat {
-  case c {
+  match c {
     NatL => thunk { fn (v) { v } },
     ListL(_a) => thunk { fn (v) {
-      case v -> -F Nat {
+      match v -> -F Nat {
         Nil => Zero,
         Cons(_h, _t) => Succ(Zero)
       }

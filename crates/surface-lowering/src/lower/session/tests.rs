@@ -796,12 +796,12 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
         "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def joined(n : Nat) -> -F Integer {\n\
            hold c = 100;\n\
-           run m <- case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
+           run m <- match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
            pure c\n\
          }\n\
          def joined_by_hand(n : Nat) -> -F Integer {\n\
            hold c = 100;\n\
-           case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
+           match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();
@@ -825,21 +825,21 @@ fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
          def forked(n : Nat) -> -F Unit {\n\
            fork (c : end) { close(c) } as d ;\n\
            close(d) ;\n\
-           run m <- case n { Zero => return unit, Succ(p) => pure unit } ;\n\
+           run m <- match n { Zero => return unit, Succ(p) => pure unit } ;\n\
            return m\n\
          }\n\
          def forked_by_hand(n : Nat) -> -F Unit {\n\
            fork (c : end) { close(c) } as d ;\n\
            close(d) ;\n\
-           case n { Zero => return unit, Succ(p) => return unit }\n\
+           match n { Zero => return unit, Succ(p) => return unit }\n\
          }\n\
          def offered(n : Nat) -> -F Unit {\n\
            fork (c : +{ go : end }) { select(c, go) ; close(c) } as d ;\n\
-           offer(d) { go => { close(d) ; run m <- case n { Zero => return unit, Succ(p) => pure unit } ; return m } }\n\
+           offer(d) { go => { close(d) ; run m <- match n { Zero => return unit, Succ(p) => pure unit } ; return m } }\n\
          }\n\
          def offered_by_hand(n : Nat) -> -F Unit {\n\
            fork (c : +{ go : end }) { select(c, go) ; close(c) } as d ;\n\
-           offer(d) { go => { close(d) ; case n { Zero => return unit, Succ(p) => return unit } } }\n\
+           offer(d) { go => { close(d) ; match n { Zero => return unit, Succ(p) => return unit } } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();

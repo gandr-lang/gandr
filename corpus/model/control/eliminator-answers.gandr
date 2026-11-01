@@ -17,7 +17,7 @@ def boundIf() -> Integer {
 /// comparison it tests, answers what the match writes.
 @[ runs("10") ]
 def boundCase() -> Integer {
-  run m <- case 3 -> -F Integer { 0 => pure 0, _ => pure 5 };
+  run m <- match 3 -> -F Integer { 0 => pure 0, _ => pure 5 };
   pure (m + m)
 }
 

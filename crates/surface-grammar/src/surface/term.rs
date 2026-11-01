@@ -1860,7 +1860,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 63 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_expression" | "pack_model_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 63 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_expression" | "pack_model_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -4030,7 +4030,7 @@ fn h(sort: Sort) -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 33 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 33 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "co_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -4216,48 +4216,48 @@ fn primary_expressions(
         ]),
     ));
     // The `arm` (`PAT => E`) helper is inline-only — it appears solely inside a
-    // `case` / `offer` body. A standalone rule additionally gives its first tile
+    // `match` / `offer` body. A standalone rule additionally gives its first tile
     // (a pattern atom: `identifier`, `constructor`, …) a form-first
     // Expression-sort mold that ties with every operand, a spurious competitor
-    // the molder must break by lookahead. It is folded into `case_expression`
+    // the molder must break by lookahead. It is folded into `match_expression`
     // (recorded as an adaptation); the inlined arms still realise its shape.
-    // The case body's arms are `opt`-wrapped so an empty/absurd match `case x
+    // The match body's arms are `opt`-wrapped so an empty/absurd match `match x
     // {}` over an uninhabited type parses; the reserved
-    // with-view `case e with e { … }` adds an optional `with`
+    // with-view `match e with e { … }` adds an optional `with`
     // scrutinee, the `with` tile separating the two Expression holes.
     // The answer type `-> T` sits after everything being eliminated — past the
     // `with` view rather than between it and the scrutinee — because a motive
     // quantifies over the whole target, so a later dependent motive occupies
     // this same position without moving the view.
-    let mut case = r(
-        RuleName("case_expression"),
-        Provenance("case_expression"),
+    let mut matching = r(
+        RuleName("match_expression"),
+        Provenance("match_expression"),
         s,
         p,
         seq([
-            t(TileLabel("case")),
+            t(TileLabel("match")),
             h(s),
             opt(seq([t(TileLabel("with")), h(s)])),
             opt(answer_type()),
             alt([seq([t(TileLabel("{")), t(TileLabel("}"))]), arm_block()]),
         ]),
     );
-    case.adaptations.push(Adaptation::new(
-        RuleName("case_expression"),
+    matching.adaptations.push(Adaptation::new(
+        RuleName("match_expression"),
         SurfaceForm("arm"),
-        AdaptationReason("folded into case_expression / offer_expression: the `PAT => E` arm is inlined in the body, not a standalone form-first pattern atom competing with a bare operand"),
+        AdaptationReason("folded into match_expression / offer_expression: the `PAT => E` arm is inlined in the body, not a standalone form-first pattern atom competing with a bare operand"),
     ));
-    case.adaptations.push(Adaptation::new(
-        RuleName("case_expression"),
-        SurfaceForm("case_with_view"),
-        AdaptationReason("reserved parse-and-decline: the optional `with e` scrutinee view; the empty-arm option additionally admits the absurd match `case x {}`"),
+    matching.adaptations.push(Adaptation::new(
+        RuleName("match_expression"),
+        SurfaceForm("match_with_view"),
+        AdaptationReason("reserved parse-and-decline: the optional `with e` scrutinee view; the empty-arm option additionally admits the absurd match `match x {}`"),
     ));
-    case.adaptations.push(Adaptation::new(
-        RuleName("case_expression"),
-        SurfaceForm("case_answer_type"),
-        AdaptationReason("folded into case_expression: the optional `-> T` answer type is an inline slot after the scrutinee and the reserved `with` view, not a standalone form; it is the constant motive `[_. T]`, and the later dependent motive replaces its contents rather than its position"),
+    matching.adaptations.push(Adaptation::new(
+        RuleName("match_expression"),
+        SurfaceForm("match_answer_type"),
+        AdaptationReason("folded into match_expression: the optional `-> T` answer type is an inline slot after the scrutinee and the reserved `with` view, not a standalone form; it is the constant motive `[_. T]`, and the later dependent motive replaces its contents rather than its position"),
     ));
-    out.push(case);
+    out.push(matching);
     // The capability scope `handle c : I { … } with { pure(x) => e, oper
     // op(p, k) => e, … }`: a deep handler for the interface `I` whose body is
     // handed the capability `c` it introduces, the only form that brings a
@@ -4329,7 +4329,7 @@ fn primary_expressions(
     out.push(if_expression);
     // Control-flow atoms.
     // Each is keyword-led — a fresh first-token discriminator, siblings of
-    // `if` / `case` at `expression.atom`, flowing into `expression_statement`
+    // `if` / `match` at `expression.atom`, flowing into `expression_statement`
     // for `;`-terminated statement position. `for` binds a single identifier
     // (the MVP; a full pattern binder is a later widening); `break` / `continue`
     // are bare single-tile atoms (unlabeled, unit payload). `break(v)` leaves

@@ -34,7 +34,7 @@ rec {
   /// at the field's decode.
   @[ refuses("TypeMismatch") ]
   def rec elSigRun(u : USigRun) -> Type {
-    case u {
+    match u {
       NatR => return Nat,
       SigR(a, b) => {
         run t <- elSigRun[<](a);

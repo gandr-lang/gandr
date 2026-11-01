@@ -21,7 +21,7 @@ pub data Place : Type {
 pub def store(bs : List(Integer)) -> Repr {
   run n <- count(bs);
   run fits <- n <= inlineCapacity;
-  case fits {
+  match fits {
     true => Inline(bs),
     false => Shared(1, bs)
   }
@@ -34,7 +34,7 @@ pub def own(cs : List(Integer)) -> Repr {
 
 /// Where a string's bytes live.
 pub def place(s : Repr) -> Place {
-  case s {
+  match s {
     Inline(bs) => Inside,
     Shared(n, bs) => OnHeap
   }

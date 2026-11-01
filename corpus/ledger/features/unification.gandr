@@ -20,7 +20,7 @@ data Code : Type where {
 /// The type each code decodes to.
 @[ checks ]
 def decode(c : Code) -> Type {
-  case c {
+  match c {
     CInt => return Integer,
     CUnit => return Unit
   }
@@ -39,7 +39,7 @@ data Tagged : Code -> Type where {
 /// constructor's code.
 @[ checks ]
 def untag(c : Code, v : Tagged(c)) -> decode(c) {
-  case v {
+  match v {
     AnInt(i) => i,
     AUnit => unit
   }

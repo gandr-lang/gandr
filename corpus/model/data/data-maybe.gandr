@@ -11,7 +11,7 @@ pub data Maybe(a : Type) : Type {
 
 /// The value inside a present option, or zero for an absent one.
 def unwrap_or_zero() -> Integer {
-  case (Some(3) : Maybe(Integer)) {
+  match (Some(3) : Maybe(Integer)) {
     None => 0,
     Some(x) => x
   }
@@ -20,7 +20,7 @@ def unwrap_or_zero() -> Integer {
 /// A match over a family of parameters whose answer names its scrutinee:
 /// each arm answers the type as written, `m` read as itself (#616).
 def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
-  case m {
+  match m {
     None => here(m),
     Some(x) => here(m)
   }

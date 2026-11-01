@@ -25,7 +25,7 @@ data Repr : Type where {
 /// The bytes a string holds, wherever they live.
 @[ checks ]
 def bytes(s : Repr) -> List(Integer) {
-  case s {
+  match s {
     Inline(bs) => bs,
     Shared(n, bs) => bs
   }
@@ -34,7 +34,7 @@ def bytes(s : Repr) -> List(Integer) {
 /// The number of bytes in a list.
 @[ checks ]
 def rec count(bs : List(Integer)) -> Integer {
-  case bs {
+  match bs {
     Nil => 0,
     Cons(b, rest) => { run n <- count[<](rest); n + 1 }
   }
@@ -43,7 +43,7 @@ def rec count(bs : List(Integer)) -> Integer {
 /// One byte list followed by another.
 @[ checks ]
 def rec concat(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
-  case xs {
+  match xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, concat[<](rest, ys)) : List(Integer))
   }

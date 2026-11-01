@@ -4,7 +4,7 @@
 /// `Inl` and `Inr` here, names this surface does not define.
 @[ refuses("UnresolvedName") ]
 def pick() -> -F Integer {
-  case (Inl(42) : Integer + String) {
+  match (Inl(42) : Integer + String) {
     Inl(x) => return (x + 1),
     Inr(s) => return 0
   }

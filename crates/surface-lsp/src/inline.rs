@@ -119,7 +119,7 @@
 //! 4. a form before a closing, so a tier alternates the two.
 //!
 //! A form yields a computation when it opens with `return`, `pure`,
-//! `become`, `case`, `if`, `fn`, `force`, `while`, `for`, `loop`, `break`,
+//! `become`, `match`, `if`, `fn`, `force`, `while`, `for`, `loop`, `break`,
 //! `continue`, a block's `{`, `#!{` or `&`, and a value otherwise. A closing
 //! that differs from a better candidate only by separators, or holds a `,`
 //! right before a closer, is not offered.
@@ -340,7 +340,7 @@ impl Category
     ///
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] for the forms
-    ///   `return`, `pure`, `become`, `case`, `if`, `fn`, `force`, `while`,
+    ///   `return`, `pure`, `become`, `match`, `if`, `fn`, `force`, `while`,
     ///   `for`, `loop`, `break`, `continue`, a block `{`, a shell block `#!{`
     ///   and a lazy record `&` open, [`Category::Value`] for every other; every
     ///   other sort's own category.
@@ -360,7 +360,7 @@ impl Category
         match (sort, opener.0) {
             (
                 Sort::Expression,
-                "return" | "pure" | "become" | "case" | "if" | "fn" | "force" | "while" | "for"
+                "return" | "pure" | "become" | "match" | "if" | "fn" | "force" | "while" | "for"
                 | "loop" | "break" | "continue" | "{" | "#!{" | "&",
             ) => Self::Computation,
             (Sort::Expression, _) => Self::Value,
@@ -1298,8 +1298,8 @@ impl Forms
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an item slot offers `def` and `data`, a computation
-    ///   slot `return` and `case`; offering a bracket or another sort's keyword
-    ///   changes the completion witnesses.
+    ///   slot `return` and `match`; offering a bracket or another sort's
+    ///   keyword changes the completion witnesses.
     /// - witness: `complete::tests::each_slot_offers_its_own_names`
     pub fn keywords(
         &self,
@@ -2392,7 +2392,7 @@ mod tests
             ("def g : Integer ⇝", "", " ${1:type};"),
             ("def g : Integer ~~>", "", " ${1:type};"),
             (
-                "def f(x: Nat) -> -F Nat {\n  case x {",
+                "def f(x: Nat) -> -F Nat {\n  match x {",
                 " }\n}",
                 " ${1:pattern} => ${2:computation}",
             ),
@@ -2500,7 +2500,7 @@ mod tests
             ("def f(x: Integer", ""),
             ("def x = (", ")"),
             ("def x = ", "answer;"),
-            ("def f(x: Nat) -> -F Nat {\n  case x {", " }\n}"),
+            ("def f(x: Nat) -> -F Nat {\n  match x {", " }\n}"),
             ("data Nat : Type where {\n  | Zero", "\n}"),
             ("def x = (", ") + 1;"),
             ("def x = (", "1 + 2)"),
@@ -2557,7 +2557,7 @@ mod tests
               "return "
               "become "
               "force "
-            "def f(x: Nat) -> -F Nat {\n  case x {" ‸ " }\n}"
+            "def f(x: Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
               " ${1:pattern} => ${2:computation}"
               " _ => ${1:computation}"
               " | ${1:pattern} => ${2:computation}"

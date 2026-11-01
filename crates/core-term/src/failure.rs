@@ -122,7 +122,7 @@ impl TrackingIssue
     /// The unknown type `?`.
     pub const UNKNOWN_TYPE: Self = Self(1503);
     /// A match on a view, `case e with v { … }`.
-    pub const CASE_VIEW: Self = Self(1506);
+    pub const MATCH_VIEW: Self = Self(1506);
     /// An operation written with a circuit body.
     pub const OPERATION_FILLER: Self = Self(1507);
     /// An operation declared outside a theory block, which no signature holds:

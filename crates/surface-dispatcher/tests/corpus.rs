@@ -835,7 +835,7 @@ data Flag : Type where { | On : Flag | Off : Flag }
 @[ reads((Flag, Nat)) ]
 data Either : Type where { | Count : (m : Nat) --> Either | Mark : (f : Flag) --> Either }
 @[ reads((Either, Nat)) ]
-def side(n : Nat, e : Either) -> -F Nat { case e -> -F Nat { Count(_m) => n, Mark(_f) => n } }
+def side(n : Nat, e : Either) -> -F Nat { match e -> -F Nat { Count(_m) => n, Mark(_f) => n } }
 @[ reads((side, Nat, Flag, Either)) ]
 def marked() -> -F Nat { side(Succ(Zero), Mark(On)) }
 def answer : Integer ;

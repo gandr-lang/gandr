@@ -136,7 +136,7 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
 {
     let source = format!(
         "{INCLUDED}def endo : Model(Monoid) ;\ndef endo = pack Endo at Model(Monoid) ;\ndef \
-         multiplies(s : Model(Semigroup)) -> -F Integer {{\n  case s {{ #{{.mul = m}} => 0 }}\n}}\ndef \
+         multiplies(s : Model(Semigroup)) -> -F Integer {{\n  match s {{ #{{.mul = m}} => 0 }}\n}}\ndef \
          asked() -> -F Integer {{ become multiplies(endo) }}\ndef named() -> -F Integer {{\n  run s \
          <- Monoid.Semigroup(endo) ;\n  become multiplies(s)\n}}\n"
     );
@@ -442,7 +442,7 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
     let stepped = |second: &str, count: &str| {
         let source = format!(
             "{counter}def step(a : Model(Counter), b : {second}, c : a.C) -> -F Integer {{\n  \
-             case b {{\n    #{{.zero = z, .incr = i, .read = r}} => become r(i({count}))\n  \
+             match b {{\n    #{{.zero = z, .incr = i, .read = r}} => become r(i({count}))\n  \
              }}\n}}\n"
         );
         let mut lowered = lower(source.as_str());
@@ -540,7 +540,7 @@ fn a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158()
     let handed = |second: &str| {
         let source = format!(
             "{pairing}def hand(m : Model(Pairing) with sort A = Integer, n : {second}) -> -F \
-             m.B {{\n  case n {{\n    #{{.left = l, .right = r}} => become keep(m, r)\n  \
+             m.B {{\n  match n {{\n    #{{.left = l, .right = r}} => become keep(m, r)\n  \
              }}\n}}\n"
         );
         let mut lowered = lower(source.as_str());
@@ -1088,7 +1088,7 @@ fn a_written_family_of_the_wrong_telescope_is_refused()
 fn a_refused_member_of_a_model_is_refused_once_1081()
 {
     let source = "theory Toggle {\n  sort T : Type;\n  oper flip : (t : T) --> T;\n}\nmodule Bits : \
-                  Model(Toggle) {\n  type T = Bool;\n  def flip(b : Bool) -> -F Bool {\n    case b \
+                  Model(Toggle) {\n  type T = Bool;\n  def flip(b : Bool) -> -F Bool {\n    match b \
                   {\n      true => return 0.5f32,\n      false => return true\n    }\n  }\n}\n";
     let found = rows(&lower(source));
     let refusals: Vec<LoweringRefusal<'_>> = found
@@ -1822,7 +1822,7 @@ fn a_pack_of_a_module_missing_a_component_is_refused_naming_it()
 fn a_pattern_at_a_model_type_splits_its_fields()
 {
     let source = format!(
-        "{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{\n  case m {{\n    #{{.start = s, \
+        "{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{\n  match m {{\n    #{{.start = s, \
          .step = f, .read = r}} => {{\n      run z <- s();\n      run once <- f(z);\n      become \
          r(once)\n    }}\n  }}\n}}\ndef packed : Model(Counter) ;\ndef packed = pack Open at \
          Model(Counter) ;\ndef observed : () => Integer ;\ndef observed = thunk {{ become \

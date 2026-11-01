@@ -19,7 +19,7 @@ pub data Stores : Type {
 /// The final state from an initial one: each store hands its state to the
 /// rest of the program, and the end returns the state it is handed.
 def rec final(p : Stores, s : Integer) -> Integer {
-  case p {
+  match p {
     End(_x) => s,
     Store(t, k) => final[<](k, t)
   }

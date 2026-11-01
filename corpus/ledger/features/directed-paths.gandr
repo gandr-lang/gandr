@@ -14,14 +14,14 @@ module Versions {
   /// The first translator: the fields swapped.
   @[ checks ]
   def toV2(record : V1) -> V2 {
-    case record {
+    match record {
       #{name, age} => (age, name)
     }
   }
   /// The second translator: a flag added.
   @[ checks ]
   def toV3(record : V2) -> V3 {
-    case record {
+    match record {
       #{age, name} => (+{.1 = unit}, age, name)
     }
   }

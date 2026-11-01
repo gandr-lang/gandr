@@ -12,7 +12,7 @@ pub module Schema {
   /// The translator: the fields swapped and a flag added.
   @[ checks ]
   def toNew(old : Old) -> New {
-    case old {
+    match old {
       #{name, age} => (age, name, +{.0 = unit})
     }
   }

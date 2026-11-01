@@ -28,7 +28,7 @@ use crate::resolve::SurfaceName;
 const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n";
 
 /// A function applied at a stage, and a recursion handing its claim to it.
-const APPLIED: &str = "def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\ndef rec helped(n : Nat) -> -F Nat {\n  case n {\n    Zero => Zero,\n    Succ(p) => Succ(applyAt(helped[<], p))\n  }\n}\n";
+const APPLIED: &str = "def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\ndef rec helped(n : Nat) -> -F Nat {\n  match n {\n    Zero => Zero,\n    Succ(p) => Succ(applyAt(helped[<], p))\n  }\n}\n";
 
 /// The bounds `name`'s telescope files.
 ///
@@ -147,7 +147,7 @@ fn a_definition_s_region_binders_are_named_by_ordinal_2138()
 fn a_call_handing_the_scrutinee_is_refused()
 {
     let source = format!(
-        "{NAT}{APPLIED}def rec again(n : Nat) -> -F Nat {{\n  case n {{\n    Zero => Zero,\n    Succ(p) => Succ(applyAt(again[<], n))\n  }}\n}}\n"
+        "{NAT}{APPLIED}def rec again(n : Nat) -> -F Nat {{\n  match n {{\n    Zero => Zero,\n    Succ(p) => Succ(applyAt(again[<], n))\n  }}\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -274,7 +274,7 @@ fn a_stage_outside_a_signature_leaves_the_fragment()
 fn a_case_under_a_staged_result_answers_plainly()
 {
     let source = format!(
-        "{NAT}def predAt[i : Size](n : Nat[i]) -> -F Nat[i] {{\n  case n {{\n    Zero => Zero,\n    Succ(p) => p\n  }}\n}}\n"
+        "{NAT}def predAt[i : Size](n : Nat[i]) -> -F Nat[i] {{\n  match n {{\n    Zero => Zero,\n    Succ(p) => p\n  }}\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

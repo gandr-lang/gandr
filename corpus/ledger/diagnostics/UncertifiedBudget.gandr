@@ -7,7 +7,7 @@ theory Magma {
 
 @[ checks ]
 def exchange(b : Bool) -> -F Bool {
-  case b {
+  match b {
     true => +{.1 = unit},
     false => +{.0 = unit}
   }

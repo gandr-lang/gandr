@@ -659,7 +659,7 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
         Path::new("six.gandr"),
         Text::from(
             "pub theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
-             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  case b {\n    \
+             oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  match b {\n    \
              true => +{.1 = unit},\n    false => +{.0 = unit}\n  }\n}\n\npub def keep(e : +{Unit}) \
              -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, #{.mul = exchange, .one = \
              keep}, #{.mul = exchange, .one = keep});\n",
@@ -1169,7 +1169,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
         Path::new("pick.gandr"),
         Text::from(
             "def pair : #{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer \
-             {\n  case t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
+             {\n  match t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
         ),
     );
     let (fmt, form) = (Path::new("fmt"), Path::new("--form=sugared"));
@@ -1181,7 +1181,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     );
     assert_eq!(
         std::fs::read_to_string(&source).expect("the source is readable"),
-        "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer {\n  case t \
+        "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer {\n  match t \
          {\n    +{.1 = x} => x,\n    _ => 0\n  }\n}\n",
         "both declarations are sugared"
     );
@@ -3580,7 +3580,7 @@ fn a_script_that_runs_its_main_leaves_successfully()
 fn a_program_leaves_with_its_entry_s_status_1881()
 {
     let scratch = Scratch::new(Path::new("program-entry"));
-    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  case xs {\n    [] => 0,\n    \
+    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    \
                    [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
                    List(String)) -> -F Integer { become count(args) }\n";
     for (name, text, arguments, status) in [

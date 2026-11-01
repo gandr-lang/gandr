@@ -1669,7 +1669,7 @@ fn the_prelude_offers_no_presentation_constructor_2302()
     let pbg = grammar();
     let source = "data Shape : Type where {\n  | Circle : (r : Integer) --> Shape\n}\ndata Figure : \
                   Type where {\n  | Round : (r : Integer) --> Figure\n}\ndef toFigure(shape : Shape) \
-                  -> Figure {\n  case shape {\n    Circle(r) => Round(r)\n  }\n}\ndef redrawn : \
+                  -> Figure {\n  match shape {\n    Circle(r) => Round(r)\n  }\n}\ndef redrawn : \
                   Flow(Type, Shape, Figure) = forward(toFigure) ;\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
@@ -2299,7 +2299,7 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
     let first =
         SourceText::from("theory Magma {\n  sort M : Type;\n  oper one : () --> (z : M);\n}");
     let counting = "theory Monoid {\n  sort M : Type;\n  oper one : () --> (z : M);\n}\ndef \
-                    count(presented : Theory) -> -F Integer {\n  case presented {\n    \
+                    count(presented : Theory) -> -F Integer {\n  match presented {\n    \
                     Presents(sorts, opers, rules) => return 1,\n    _ => return 0\n  }\n}";
     let importing = format!("import \"./base.gandr\" ;\n{counting}");
     let both = SourceText::from(
@@ -2374,7 +2374,7 @@ fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
          () --> (z : M);\n}",
     );
     let stating = "theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
-                   oper one : () --> (z : M);\n}\ndef exchange(b : Bool) -> -F Bool {\n  case b \
+                   oper one : () --> (z : M);\n}\ndef exchange(b : Bool) -> -F Bool {\n  match b \
                    {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  \
                    }\n}\ndef keep(e : +{Unit}) -> -F +{Unit} {\n  return e\n}\ndef unnamed = \
                    ua[1, 4](Monoid, Magma, #{mul = exchange, one = keep}, #{mul = exchange, one \

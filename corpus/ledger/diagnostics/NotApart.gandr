@@ -11,5 +11,5 @@ data Int : Type where {
 
 @[ refuses("NotApart") ]
 def agree(e : Path(Int, S(P(Z)), Z)) -> -F Empty {
-  case e {}
+  match e {}
 }

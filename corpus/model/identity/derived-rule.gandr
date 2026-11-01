@@ -22,9 +22,9 @@ data Bit : Type {
 
 /// Exclusive or.
 def xor(a : Bit, b : Bit) -> Bit {
-  case a {
+  match a {
     Zero => b,
-    One => case b {
+    One => match b {
       Zero => One,
       One => Zero,
     },
@@ -45,18 +45,18 @@ module Parity : Model(Group) {
   def unitL(x : Bit) -> Path(Bit, mul(e, x), x) { here(x) }
   @[ checks ]
   def unitR(x : Bit) -> Path(Bit, mul(x, e), x) {
-    case x {
+    match x {
       Zero => here(Zero),
       One => here(One),
     }
   }
   @[ checks ]
   def assoc(x : Bit, y : Bit, z : Bit) -> Path(Bit, mul(mul(x, y), z), mul(x, mul(y, z))) {
-    case x {
+    match x {
       Zero => here(xor(y, z)),
-      One => case y {
+      One => match y {
         Zero => here(xor(One, z)),
-        One => case z {
+        One => match z {
           Zero => here(Zero),
           One => here(One),
         },
@@ -69,7 +69,7 @@ module Parity : Model(Group) {
   def invE() -> Path(Bit, inv(e), e) { here(Zero) }
   @[ checks ]
   def invL(x : Bit) -> Path(Bit, mul(inv(x), x), e) {
-    case x {
+    match x {
       Zero => here(Zero),
       One => here(Zero),
     }

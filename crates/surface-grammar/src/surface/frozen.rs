@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0x01df_0954_8348_b8ef),
+    rules: RulesDigest(0xc02e_ba67_1b0f_cfed),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -1662,7 +1662,7 @@ static MOLDS: [FrozenMold; 3343] = [
     FrozenMold(";", 1633, 72, Some(ClosingClass::Brace), 0, &[1578, 1581, 1585, 1590, 1594, 1601, 1607, 1613, 1619, 1627, 1634, 1635], 1633),
     FrozenMold(";", 1634, 72, Some(ClosingClass::Brace), 0, &[1578, 1581, 1585, 1590, 1594, 1601, 1607, 1613, 1619, 1627, 1634, 1635], 1634),
     FrozenMold("}", 1635, 72, Some(ClosingClass::Brace), 6, &[], 1635),
-    FrozenMold("case", 1636, 73, Some(ClosingClass::Brace), 1, &[1637, 1638, 1639, 1641, 1650], 1636),
+    FrozenMold("match", 1636, 73, Some(ClosingClass::Brace), 1, &[1637, 1638, 1639, 1641, 1650], 1636),
     FrozenMold("with", 1637, 73, Some(ClosingClass::Brace), 0, &[1638, 1639, 1641, 1650], 1637),
     FrozenMold("->", 1638, 73, Some(ClosingClass::Brace), 0, &[1639, 1641, 1650], 1638),
     FrozenMold("{", 1639, 73, Some(ClosingClass::Brace), 0, &[1640], 1639),

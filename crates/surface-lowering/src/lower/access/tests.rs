@@ -317,12 +317,12 @@ def leaves(n : Integer) -> -F Unit { hold c = 0; access c as v { return unit } }
 def unwinds(n : Integer) -> -F Unit { hold c = 0; access c as v { abort(v) } unwind { return unit } }
 def early(n : Nat) -> -F Integer {
   hold c = 0;
-  run m <- case n { Zero => return 5, Succ(p) => pure 1 } ;
+  run m <- match n { Zero => return 5, Succ(p) => pure 1 } ;
   return c
 }
 def early_by_hand(n : Nat) -> -F Integer {
   hold c = 0;
-  case n { Zero => return 5, Succ(p) => return c }
+  match n { Zero => return 5, Succ(p) => return c }
 }
 ",
     );
@@ -382,12 +382,12 @@ fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
         r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def joined(n : Nat) -> -F Integer {
   hold c = 100;
-  run m <- case n { Zero => return 7, Succ(p) => { hold c = unit; pure 1 } } ;
+  run m <- match n { Zero => return 7, Succ(p) => { hold c = unit; pure 1 } } ;
   pure c
 }
 def joined_by_hand(n : Nat) -> -F Integer {
   hold c = 100;
-  case n { Zero => return 7, Succ(p) => { hold d = unit; pure c } }
+  match n { Zero => return 7, Succ(p) => { hold d = unit; pure c } }
 }
 ",
     );

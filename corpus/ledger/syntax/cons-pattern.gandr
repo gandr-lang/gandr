@@ -14,7 +14,7 @@ data Int : Type where {
 }
 @[ checks ]
 def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
-  case p {
+  match p {
     here => Z,
     loop ∷ q => S(wind[<](q)),
     back(loop) ∷ q => P(wind[<](q))
@@ -22,7 +22,7 @@ def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
 }
 @[ checks ]
 def rec windAscii(p : Path(Circle, Base, Base)) -> -F Int {
-  case p {
+  match p {
     here => Z,
     loop :: q => S(windAscii[<](q)),
     back(loop) :: q => P(windAscii[<](q))

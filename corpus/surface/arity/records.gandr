@@ -8,14 +8,14 @@ def shorthand = #{n = 3, s = "x"};
 
 @[ checks ]
 def punned(r : #{n : Integer, s : String}) -> -F String {
-  case r {
+  match r {
     #{.n, .s} => return s
   }
 }
 
 @[ checks ]
 def renamed(r : #{n : Integer, s : String}) -> -F Integer {
-  case r {
+  match r {
     #{.n = m} => return m
   }
 }

@@ -9,7 +9,7 @@ data Shape : Type where {
 /// Each arm takes values the arms before it left: the literal `0` before the variable that takes every other length, and a pair split on its left part.
 @[ checks ]
 def weight(s : Shape) -> -F Integer {
-  case s {
+  match s {
     Dot => return 0,
     Line(0) => return 0,
     Line(n) => return n,

@@ -11,7 +11,7 @@ data List(a : Type) : Type {
 
 /// The first of a list of integers, or zero.
 def first(xs : List(Integer)) -> Integer {
-  case xs {
+  match xs {
     Nil => 0,
     Cons(x, _) => x
   }
@@ -24,7 +24,7 @@ def mistyped() -> Integer { first(Cons("no", Nil)) }
 
 /// How many elements a list of any type holds.
 def rec size(a : Type, xs : List(a)) -> Integer {
-  case xs {
+  match xs {
     Nil => 0,
     Cons(_, rest) => {
       run n <- size[<](a, rest);

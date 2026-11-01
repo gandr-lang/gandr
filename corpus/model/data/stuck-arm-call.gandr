@@ -17,7 +17,7 @@ pub data Heap : Type {
 
 /// The heap is empty: inhabited at `Emp` alone.
 pub def emp(h : Heap) -> Type {
-  case h {
+  match h {
     Emp => return Unit,
     Cell(_l, _r) => return Void
   }
@@ -25,7 +25,7 @@ pub def emp(h : Heap) -> Type {
 
 /// At zero, the heap is empty; at a successor, never.
 pub def viaZero(w : Nat, h : Heap) -> Type {
-  case w {
+  match w {
     Zero => emp(h),
     Succ(_n) => return Void
   }
@@ -33,7 +33,7 @@ pub def viaZero(w : Nat, h : Heap) -> Type {
 
 /// One arm more: at zero, `viaZero` at the same natural.
 pub def viaZeroAgain(w : Nat, h : Heap) -> Type {
-  case w {
+  match w {
     Zero => viaZero(w, h),
     Succ(_n) => return Void
   }

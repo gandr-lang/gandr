@@ -4,7 +4,7 @@
 
 /// Forty-two, read off the one arm a unit takes.
 def answer(u : Unit) -> Integer {
-  case u {
+  match u {
     unit => 42
   }
 }

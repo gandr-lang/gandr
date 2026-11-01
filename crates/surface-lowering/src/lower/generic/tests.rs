@@ -134,7 +134,7 @@ def same() -> Bool { Point(1, 2) == Point(1, 2) }
 }
 
 /// Each data case a derived equality holds names the declaration it
-/// eliminates, as a written `case` does, so a printer reads its branches as
+/// eliminates, as a written `match` does, so a printer reads its branches as
 /// that declaration's constructors (#2363): naturals case on the first side,
 /// then on the second under each of its two constructors.
 #[test]

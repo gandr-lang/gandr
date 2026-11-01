@@ -106,7 +106,7 @@ module SetoidCat : Model(CatShape) {
     comp(p, p, q, id(p), f),
     f
   ) {
-    case b {
+    match b {
       true => unitL(p, q, f),
       false => unitR(p, q, f)
     }

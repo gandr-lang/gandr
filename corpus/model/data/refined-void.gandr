@@ -14,7 +14,7 @@ import "./data-base.gandr";
 
 /// The family that is `Void` at zero and `Unit` past it.
 pub def isVoid(n : Nat) -> Type {
-  case n {
+  match n {
     Zero => return Void,
     Succ(_m) => return Unit
   }
@@ -22,8 +22,8 @@ pub def isVoid(n : Nat) -> Type {
 
 /// A function from the family at `n` to the naturals, whose arm at zero cases on no value.
 pub def absurdArm(n : Nat) -> (isVoid(n)) => Nat {
-  case n {
-    Zero => return fn (u) { case u {} },
+  match n {
+    Zero => return fn (u) { match u {} },
     Succ(_m) => return fn (_u) { return Zero }
   }
 }

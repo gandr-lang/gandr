@@ -1,13 +1,13 @@
 def absurd(x : Void) -> Integer {
-  case x {}
+  match x {}
 }
 
-@[ refuses("OutOfFragment.case_with_view") ]
+@[ refuses("OutOfFragment.match_with_view") ]
 def classify(xs : List(Integer)) -> -F Integer {
-  case xs with len(xs) { 0 => return 0, _ => return 1 }
+  match xs with len(xs) { 0 => return 0, _ => return 1 }
 }
 
-@[ refuses("OutOfFragment.case_with_view") ]
+@[ refuses("OutOfFragment.match_with_view") ]
 def classify_annotated(xs : List(Integer)) -> -F Integer {
-  case xs with len(xs) -> -F Integer { 0 => return 0, _ => return 1 }
+  match xs with len(xs) -> -F Integer { 0 => return 0, _ => return 1 }
 }

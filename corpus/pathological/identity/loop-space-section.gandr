@@ -22,7 +22,7 @@ data Int : Type {
 
 /// The winding number: a loop counts one up, an inverse one down.
 def rec wind(c : Circle) -> Int {
-  case c {
+  match c {
     Base => Z,
     Loop(x) => S(wind[<](x)),
     Unloop(x) => P(wind[<](x))
@@ -31,7 +31,7 @@ def rec wind(c : Circle) -> Int {
 
 /// Spinning: a successor is a loop, a predecessor an inverse.
 def rec spin(n : Int) -> Circle {
-  case n {
+  match n {
     Z => Base,
     S(x) => Loop(spin[<](x)),
     P(x) => Unloop(spin[<](x))
@@ -49,7 +49,7 @@ def unaround(c : Circle) -> Circle {
 /// convert, and the arm is refused.
 @[ refuses("TypeMismatch") ]
 def rec forged(c : Circle) -> Path(Circle, spin(wind(c)), c) {
-  case c {
+  match c {
     Base => here(Base),
     Loop(x) => forged[<](x),
     Unloop(x) => { run p <- forged[<](x); cong(unaround, p) }

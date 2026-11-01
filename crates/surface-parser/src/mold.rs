@@ -952,7 +952,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// The fold-in globally reserves the thirteen new
 /// keyword-led forms' leads — `data` / `codata` declarations, `def rec`
 /// (`rec`), `data` / `codata` operation and 2-cell members (`op` / `rule`),
-/// the `for … in` / `while` / `break` / `continue` control forms, the `case …
+/// the `for … in` / `while` / `break` / `continue` control forms, the `match …
 /// with …` view, the `import` declaration, and the `module` declaration. A
 /// corpus + fixture sweep found no collision with any existing identifier, so
 /// all reserve globally (the keyword table is provisional; a real collision
@@ -1008,7 +1008,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
-    "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
+    "thunk", "force", "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
     "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
@@ -4652,7 +4652,7 @@ mod tests
         // right after one only matches the whole stream when the first run's
         // window reads into the second run's tokens.
         let pbg = built()?;
-        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = case b { Inl(x) => x, Inr(y) => y };\n";
+        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = match b { Inl(x) => x, Inr(y) => y };\n";
         let source = SourceText::from(src);
         let tokens = label(SourceFragment::from(src));
         let mut molder = Molder::new(&pbg);

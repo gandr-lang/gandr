@@ -3,7 +3,7 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 def rec plus(n : Nat, m : Nat) -> -F Nat {
-  case m {
+  match m {
     Zero => n,
     Succ(p) => Succ(pl)
   }

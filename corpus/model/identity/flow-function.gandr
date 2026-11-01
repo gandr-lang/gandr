@@ -12,7 +12,7 @@ module ReaderSchema {
   /// The translator: the old record's fields swapped.
   @[ checks ]
   def toNew(old : Old) -> New {
-    case old {
+    match old {
       #{name, age} => (age, name)
     }
   }
@@ -25,7 +25,7 @@ module ReaderSchema {
   /// The new schema's reader of ages.
   @[ checks ]
   def age(record : New) -> Integer {
-    case record {
+    match record {
       #{years, name} => years
     }
   }
