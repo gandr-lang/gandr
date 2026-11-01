@@ -33,7 +33,7 @@ use crate::resolve::SurfaceName;
 /// The counter: a held count, one access that writes back its successor and
 /// one that aborts, then a read of the count, with a parameter between.
 const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
-  hold c = 0;
+  var c = 0;
   access c as v { resume(v, v + 1) };
   access c as v { abort(v) } unwind { pure unit };
   return c
@@ -156,12 +156,12 @@ fn a_shared_access_lowers_without_an_unwind()
 {
     let source = SourceText::from(
         r"def frozen() -> -F Integer {
-  hold c = 2;
+  var c = 2;
   access exclusive c as v { resume(v, v + 1) };
   access shared c as w { pure w }
 }
 def unwound() -> -F Unit {
-  hold c = 0;
+  var c = 0;
   access shared c as w { pure unit } unwind { pure unit }
 }
 ",
@@ -201,12 +201,12 @@ fn an_access_of_a_place_lowers_with_its_index()
         r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 def second() -> -F Integer {
-  hold xs = pair;
+  var xs = pair;
   access xs[1] as v { resume(v, v + 1) };
   access shared xs[1] as w { pure w }
 }
 def indexed(i : Integer) -> -F Integer {
-  hold xs = pair;
+  var xs = pair;
   access shared xs[i] as w { pure w }
 }
 ",
@@ -239,11 +239,11 @@ fn a_hold_lowers_at_its_grade()
 {
     let source = SourceText::from(
         r"def unique() -> -F Unit {
-  hold[1] c = 0;
+  var[1] c = 0;
   access c as v { resume(v, v + 1) }
 }
 def two() -> -F Unit {
-  hold[2] c = 0;
+  var[2] c = 0;
   pure unit
 }
 ",
@@ -254,12 +254,12 @@ def two() -> -F Unit {
     assert_eq!(
         forms(&arena, tail),
         ["hold[1]", "access @0", "resume @0"],
-        "`hold[1]` holds its value at grade one"
+        "`var[1]` holds its value at grade one"
     );
     assert_eq!(
         refusal_of(&module, SurfaceName::from("two")),
         LoweringRefusal::GradedBridge {
-            span: spelled_within(source, SourceText::from("hold[2]"), SourceText::from("2")),
+            span: spelled_within(source, SourceText::from("var[2]"), SourceText::from("2")),
             grade: SurfaceName::from("2"),
         },
         "a hold has no grade but one and the default ω"
@@ -313,15 +313,15 @@ fn an_exit_inside_an_access_is_refused()
 {
     let source = SourceText::from(
         r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def leaves(n : Integer) -> -F Unit { hold c = 0; access c as v { return unit } }
-def unwinds(n : Integer) -> -F Unit { hold c = 0; access c as v { abort(v) } unwind { return unit } }
+def leaves(n : Integer) -> -F Unit { var c = 0; access c as v { return unit } }
+def unwinds(n : Integer) -> -F Unit { var c = 0; access c as v { abort(v) } unwind { return unit } }
 def early(n : Nat) -> -F Integer {
-  hold c = 0;
+  var c = 0;
   run m <- match n { Zero => return 5, Succ(p) => pure 1 } ;
   return c
 }
 def early_by_hand(n : Nat) -> -F Integer {
-  hold c = 0;
+  var c = 0;
   match n { Zero => return 5, Succ(p) => return c }
 }
 ",
@@ -381,13 +381,13 @@ fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
     let source = SourceText::from(
         r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def joined(n : Nat) -> -F Integer {
-  hold c = 100;
-  run m <- match n { Zero => return 7, Succ(p) => { hold c = unit; pure 1 } } ;
+  var c = 100;
+  run m <- match n { Zero => return 7, Succ(p) => { var c = unit; pure 1 } } ;
   pure c
 }
 def joined_by_hand(n : Nat) -> -F Integer {
-  hold c = 100;
-  match n { Zero => return 7, Succ(p) => { hold d = unit; pure c } }
+  var c = 100;
+  match n { Zero => return 7, Succ(p) => { var d = unit; pure c } }
 }
 ",
     );

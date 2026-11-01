@@ -614,8 +614,8 @@ impl TileName
     pub const AT: Self = Self("at");
     /// The capability scope's lead `handle`.
     pub const HANDLE: Self = Self("handle");
-    /// The keyword `hold`, opening a statement that holds a value, and the
-    /// located hold `hold v` that returns `v` held at the current world.
+    /// The keyword `hold`: the located hold `hold v` that returns `v` held at
+    /// the current world, and `var`'s former spelling until the corpus moves.
     pub const HOLD: Self = Self("hold");
     /// The keyword `migrate`, opening a migration `migrate [w] { t }`.
     pub const MIGRATE: Self = Self("migrate");
@@ -710,6 +710,8 @@ impl TileName
     pub const CONSUMED: Self = Self("consumed");
     /// The keyword `let`, opening a statement.
     pub const LET: Self = Self("let");
+    /// The keyword `var`, opening a statement that holds a value.
+    pub const VAR: Self = Self("var");
     /// The match keyword `match`.
     pub const MATCH: Self = Self("match");
     /// A constructor name written as one of a form's own tiles: a data

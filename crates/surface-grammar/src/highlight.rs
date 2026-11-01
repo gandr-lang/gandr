@@ -163,7 +163,7 @@ const KEYWORDS: &[&str] = &[
     "offers", "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure",
     "rec", "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send",
     "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
-    "unwind", "via", "where", "while", "with", "world",
+    "unwind", "var", "via", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -187,7 +187,7 @@ const DEFINERS: &[&str] = &[
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
-    "as", "feed", "for", "handle", "hold", "leta", "module", "node", "unpack",
+    "as", "feed", "for", "handle", "hold", "leta", "module", "node", "unpack", "var",
 ];
 
 /// The bracket a tile occurrence stands inside within its own form.

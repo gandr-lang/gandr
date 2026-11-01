@@ -11250,8 +11250,8 @@ impl Walk<'_, '_>
             Former::Hold { grade, .. } => {
                 let _ = parts
                     .text(match grade {
-                        gandr_core_term::memory::HoldGrade::Many => "hold ",
-                        gandr_core_term::memory::HoldGrade::One => "hold[1] ",
+                        gandr_core_term::memory::HoldGrade::Many => "var ",
+                        gandr_core_term::memory::HoldGrade::One => "var[1] ",
                     })
                     .part(Part::Binder(0_usize))
                     .text(" = ")

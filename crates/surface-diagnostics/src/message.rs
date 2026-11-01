@@ -422,7 +422,7 @@ fn lowered(
                      receive or a choice under its `mu`",
                 ),
                 FragmentBoundary::Held => {
-                    f.write_str("an `access` lends a held value: a name a `hold` statement holds")
+                    f.write_str("an `access` lends a held value: a name a `var` statement holds")
                 },
                 FragmentBoundary::View => f.write_str(
                     "`resume` and `abort` end a view: the name an `access` binds after `as`",
@@ -1330,7 +1330,7 @@ fn checked(
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => {
-                f.write_str("`access` needs a value opened by `hold`; this names something else")
+                f.write_str("`access` needs a value opened by `var`; this names something else")
             },
             AccessDefect::Lent => f.write_str(
                 "the held value is lent to an `access` here, which ends before it can be read",
@@ -1363,11 +1363,11 @@ fn checked(
                 "an access at a place reads an element at an index; the held value is no list",
             ),
             AccessDefect::HeldShared => f.write_str(
-                "`hold[1]` enters a value made in place — a constructor, a literal, a tuple, a \
+                "`var[1]` enters a value made in place — a constructor, a literal, a tuple, a \
                  record or a list; this one may have another holder",
             ),
             AccessDefect::HeldCopied => f.write_str(
-                "a value held with `hold[1]` is never copied: read it once through an exclusive \
+                "a value held with `var[1]` is never copied: read it once through an exclusive \
                  `access` and write it back with `resume`",
             ),
             AccessDefect::Moved => f.write_str(

@@ -2594,7 +2594,7 @@ fn a_capability_at_a_scope_lives_in_its_region()
         "def regions() -> -F Unit {{ handle c : Proc {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure c ; run f : Cap {{exit}} at e <- pure e ; pure unit }} {clauses} }} {clauses} }}\n\
          def unbound(c : Integer) -> -F Unit {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure e ; pure unit }} {clauses} }}\n\
          def plain() -> -F Unit {{ handle c : Proc {{ run d : Integer at c <- pure 1 ; pure unit }} {clauses} }}\n\
-         def held() -> -F Unit {{ hold s = 1 ; handle c : Proc {{ run d : Integer at s <- pure 1 ; run e : Integer at c <- pure 2 ; pure unit }} {clauses} }}\n"
+         def held() -> -F Unit {{ var s = 1 ; handle c : Proc {{ run d : Integer at s <- pure 1 ; run e : Integer at c <- pure 2 ; pure unit }} {clauses} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let outer = tail_of(&module, &arena, "regions".into());

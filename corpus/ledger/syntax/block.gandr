@@ -13,3 +13,11 @@ def three() -> -F Path(Integer, 3, 3) {
   let x = 3;
   return here(x)
 }
+
+/// A `var` holds a value over the rest of its block; an access writes it.
+@[ checks ]
+def counted() -> -F Integer {
+  var c = 1;
+  access c as v { resume(v, v + 1) };
+  pure c
+}

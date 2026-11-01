@@ -3400,7 +3400,7 @@ struct Lowerer<'run, 'source>
     /// The conditions of `while` loops, read where a computation is: a value
     /// written there is returned, so the loop binds what it tests.
     tested: BTreeSet<NodeIndex>,
-    /// The linear binders that hold a slot: each `hold` statement's, and each
+    /// The linear binders that hold a slot: each `var` statement's, and each
     /// slot a threading loop holds again for its passes and for what follows
     /// it.
     held: BTreeSet<ScopeId>,
@@ -10690,7 +10690,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     else if label == TileName::LETA {
                         self.leta(cursor, at, frame)?
                     }
-                    else if label == TileName::HOLD {
+                    else if label == TileName::HOLD || label == TileName::VAR {
                         self.hold(cursor, at, frame)?
                     }
                     else {
@@ -17764,11 +17764,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   pattern writes recorded as the name of the split's binder at its place
     ///   ([`OriginTable::component`]); a fork `fork (c : S) t as d ;` mints as
     ///   the fork of `t` at `S` whose parent is the rest of the block, at its
-    ///   `fork` tile's origin; a hold `hold x = e ;` mints as the hold of `e`
-    ///   whose scope is the rest of the block, at its `hold` tile's origin; a
-    ///   `leta x = v ;` mints as the opening of `v` whose body is the rest of
-    ///   the block, at its `leta` tile's origin, binding the name; a block of
-    ///   no statements is its last computation; nothing is minted when any
+    ///   `fork` tile's origin; a hold `var x = e ;` mints as the hold of `e`
+    ///   whose scope is the rest of the block, at its keyword's origin; a `leta
+    ///   x = v ;` mints as the opening of `v` whose body is the rest of the
+    ///   block, at its `leta` tile's origin, binding the name; a block of no
+    ///   statements is its last computation; nothing is minted when any
     ///   computation, value or protocol of the block did not lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
@@ -21847,8 +21847,8 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
 /// - requires: `cursor` stands at the tile `label`, in a block, at a place a
 ///   statement may start.
 /// - ensures: `fork` followed by `!` is the shared fork, reserved; a keyword of
-///   the table its form and boundary; `run`, `let`, `recv`, `hold`, `leta` and
-///   `fork` without `!` open statements the block reads,
+///   the table its form and boundary; `run`, `let`, `recv`, `var`, `hold`,
+///   `leta` and `fork` without `!` open statements the block reads,
 ///   [`statement::Absent::Read`].
 /// - provides: the names a block's refused statements are written as;
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
@@ -21873,7 +21873,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
                 FragmentBoundary::Reserved(Unbuilt::SharedFork),
             ))
         }
-        else if label == TileName::FORK || label == TileName::RUN || label == TileName::LET || label == TileName::RECV || label == TileName::HOLD || label == TileName::LETA {
+        else if label == TileName::FORK || label == TileName::RUN || label == TileName::LET || label == TileName::RECV || label == TileName::HOLD || label == TileName::VAR || label == TileName::LETA {
             Maybe::Absent(statement::Absent::Read)
         }
         else {
@@ -21907,6 +21907,7 @@ fn statement_form(
         || label == TileName::LET
         || label == TileName::RECV
         || label == TileName::HOLD
+        || label == TileName::VAR
         || label == TileName::LETA
     {
         return Maybe::Absent(statement::Absent::Read);

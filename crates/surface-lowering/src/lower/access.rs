@@ -4,9 +4,9 @@
 //!
 //! # A held value and a view are names in the linear zone
 //!
-//! `hold x = e ;` holds the value `e` in the linear slot `x` over the rest of
+//! `var x = e ;` holds the value `e` in the linear slot `x` over the rest of
 //! its block, as `fork` binds an endpoint over the rest of its block: the
-//! core hold, whose scope is that rest, at grade `ω`. `hold[1] x = e ;` holds
+//! core hold, whose scope is that rest, at grade `ω`. `var[1] x = e ;` holds
 //! it at grade one; any other numeral is [`LoweringRefusal::GradedBridge`], as
 //! on a thunk type. `access x as v { t }
 //! unwind { u }` lends the slot `x` names exclusively and binds the view `v`,
@@ -156,13 +156,13 @@ pub(super) enum Accessed
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read one `hold x = e ;` or `hold[g] x = e ;` statement, its `hold`
-    /// tile already read.
+    /// Read one `var x = e ;` or `var[g] x = e ;` statement, its keyword tile
+    /// already read; `hold` is read as `var` until the corpus moves.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the statement's tile `hold`;
-    ///   `frame` is the frame the statement reads under.
-    /// - ensures: the grade is read when a bracket follows `hold`, `ω`
+    /// - requires: `cursor` stands just past the statement's tile `var` or
+    ///   `hold`; `frame` is the frame the statement reads under.
+    /// - ensures: the grade is read when a bracket follows the keyword, `ω`
     ///   otherwise; `e` is read as a value under `frame`; the statement is
     ///   recorded as the hold of `e` at the grade over the rest of the block,
     ///   and the frame binding `x` linearly over `frame`, which the rest of the

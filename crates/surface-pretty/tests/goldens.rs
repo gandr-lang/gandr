@@ -7281,7 +7281,7 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
     agrees(&core, &[], CoreNode::Computation(holds));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(holds))),
-        faithful(Written("hold a = unit ; run b : Unit at a <- pure a ; b"))
+        faithful(Written("var a = unit ; run b : Unit at a <- pure a ; b"))
     );
 }
 
@@ -7805,25 +7805,25 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(continuing)),
-        faithful(Written("fn (a) { hold b = a ; loop { continue } }")),
+        faithful(Written("fn (a) { var b = a ; loop { continue } }")),
         "the loop's own binder applied to the slot held again is `continue`"
     );
     assert_eq!(
         spelled(&source, body(breaking)),
-        faithful(Written("fn (a) { hold b = a ; loop { break(b) } }")),
+        faithful(Written("fn (a) { var b = a ; loop { break(b) } }")),
         "a pass reads the slot held again by the slot's own name"
     );
     assert_eq!(
         spelled(&source, body(continuing_both)),
         faithful(Written(
-            "fn (a) { hold b = a ; hold c = a ; loop { continue } }"
+            "fn (a) { var b = a ; var c = a ; loop { continue } }"
         )),
         "two slots are handed on as their tuple, in order"
     );
     assert_eq!(
         spelled(&source, body(swapping)),
         approximate(Written(
-            "fn (a) { hold b = a ; hold c = a ; loop { become d(#{c, b}) } }"
+            "fn (a) { var b = a ; var c = a ; loop { become d(#{c, b}) } }"
         )),
         "a pass handing the slots on out of order names the unwritten loop"
     );

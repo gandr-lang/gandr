@@ -330,7 +330,7 @@ pub enum FragmentBoundary
     /// the protocol recurses before any action: not contractive.
     NonContractive,
     /// The name an access lends is no linear slot: a value, a declaration
-    /// or an ordinary binder, where only a name a `hold` holds can be lent.
+    /// or an ordinary binder, where only a name a `var` holds can be lent.
     Held,
     /// The name a `resume` or an `abort` ends is no linear slot: a value, a
     /// declaration or an ordinary binder, where only the view an `access`
@@ -429,7 +429,7 @@ impl fmt::Display for FragmentBoundary
                  to itself",
             ),
             Self::Held => {
-                f.write_str("is no held value: an access lends a name a `hold` statement holds")
+                f.write_str("is no held value: an access lends a name a `var` statement holds")
             },
             Self::View => f.write_str(
                 "is no view: `resume` and `abort` end the name an `access` binds after `as`",

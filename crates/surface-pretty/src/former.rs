@@ -1115,7 +1115,7 @@ pub enum Former<'source, Node>
         /// The continuation.
         parent: Node,
     },
-    /// A hold, `hold x = v ; t` or `hold[1] x = v ; t`: the scope under the
+    /// A hold, `var x = v ; t` or `var[1] x = v ; t`: the scope under the
     /// held slot's linear binder.
     Hold
     {

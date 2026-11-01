@@ -1019,7 +1019,7 @@ pub const KEYWORDS: &[&str] = &[
 /// The keywords that open a block's statements: one that no open form
 /// continues ends the statement it stands in, and starts the next.
 const STATEMENT_LEADS: &[&str] = &[
-    "let", "run", "unpack", "leta", "hold", "recv", "acquire", "release", "fork",
+    "let", "run", "unpack", "leta", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.

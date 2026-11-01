@@ -795,12 +795,12 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
     let source = SourceText::from(
         "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def joined(n : Nat) -> -F Integer {\n\
-           hold c = 100;\n\
+           var c = 100;\n\
            run m <- match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
            pure c\n\
          }\n\
          def joined_by_hand(n : Nat) -> -F Integer {\n\
-           hold c = 100;\n\
+           var c = 100;\n\
            match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
          }\n",
     );

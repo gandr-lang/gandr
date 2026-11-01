@@ -1723,14 +1723,14 @@ fn a_method_of_a_source_not_imported_is_out_of_scope()
         ),
         (
             SourceText::from(
-                "import \"./str.gandr\" ;\ndef measured() -> -F Integer { hold s = 1; s.len() }",
+                "import \"./str.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len() }",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
         (
             SourceText::from(
                 "import \"./str.gandr\" ;\nimport \"./bytes.gandr\" ;\ndef both() -> -F Integer \
-                 { hold s = 1; s.len() }",
+                 { var s = 1; s.len() }",
             ),
             &[
                 ImportTarget::Source(SourceIndex::from(0_usize)),
@@ -5127,7 +5127,7 @@ fn each_import_a_name_is_read_through_is_reached()
         ),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\ndef measured() -> -F Integer { hold s = 1; s.len() }",
+                "import \"./base.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len() }",
             ),
             &first,
         ),
@@ -5232,7 +5232,7 @@ fn a_pub_declaration_is_read_by_its_importer_2687()
          = hidden ;\ndef c : Integer ;\ndef c = checked ;\ndef d : Integer ;\ndef d = early ;\ndef \
          e : Bit ;\ndef e = O ;\ndef f : Integer ;\ndef f = Open.x ;\nmodule Pointing : \
          Model(Pointed) where {\n  type P = Integer;\n  def pt() -> -F Integer { return 0 }\n}\ndef \
-         g() -> -F Integer { hold s = 1; s.width() }",
+         g() -> -F Integer { var s = 1; s.width() }",
     ));
     let refused: Vec<_> = outcomes
         .iter()
@@ -5257,7 +5257,7 @@ fn a_private_declaration_is_refused_to_its_importer_2687()
         "import \"./base.gandr\" ;\ndef g : Integer ;\ndef g = secret ;\ndef h : Hid ;\ndef h = \
          1 ;\ndef i = H ;\ndef j : Integer ;\ndef j = Shut.y ;\nmodule Closing : Model(Closed) \
          where {\n  type Q = Integer;\n  def qt() -> -F Integer { return 0 }\n}\ndef k() -> -F Integer \
-         { hold s = 1; s.depth() }\ndef secret = 8 ;",
+         { var s = 1; s.depth() }\ndef secret = 8 ;",
     ));
     let private = |name: &str| format!("name: SurfaceName(SourceFragment(\"{name}\"))");
     let refused_as = |declaration: &str, name: &str| {

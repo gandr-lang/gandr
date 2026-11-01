@@ -311,10 +311,10 @@ fn linear(
 #[test]
 fn a_loop_threads_the_slots_it_names_through_its_passes()
 {
-    let source = "def one() -> -F [Div] Integer { hold n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
-                  def two() -> -F [Div] Integer { hold a = 10; hold b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
-                  def after() -> -F [Div] Integer { hold a = 4; hold b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
-                  def none() -> -F [Div] Integer { hold a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
+    let source = "def one() -> -F [Div] Integer { var n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
+                  def two() -> -F [Div] Integer { var a = 10; var b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
+                  def after() -> -F [Div] Integer { var a = 4; var b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
+                  def none() -> -F [Div] Integer { var a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     // Each name: the slots the first pass takes, where the loop stands, and

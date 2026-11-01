@@ -76,9 +76,9 @@
           "match": "\\b(theory)\\b"
         },
         {
-          "comment": "let",
+          "comment": "let, var",
           "name": "keyword.other.gandr storage.type.gandr",
-          "match": "\\b(let)\\b"
+          "match": "\\b(let|var)\\b"
         },
         {
           "comment": "-F, the shift into computation types",

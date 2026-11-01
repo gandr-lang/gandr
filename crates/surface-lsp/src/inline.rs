@@ -2626,7 +2626,7 @@ mod tests
               " become"
               " leta ${1:identifier} ="
               " force"
-              " hold ${1:identifier} ="
+              " var ${1:identifier} ="
             "def x = thunk { return" ‸ " 1; }"
               " -"
               " run"
