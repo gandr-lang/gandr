@@ -2555,7 +2555,7 @@ fn session_stmt(keyword: TileLabel) -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the eleven statement alternatives, each carrying its own
+/// - ensures: the twelve statement alternatives, each carrying its own
 ///   terminating semicolon.
 /// - panics: none.
 ///
@@ -2566,7 +2566,7 @@ fn session_stmt(keyword: TileLabel) -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 11 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 12 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn statement_alt() -> Regex
 {
     alt([
@@ -2608,6 +2608,39 @@ fn statement_alt() -> Regex
             t(TileLabel(";")),
         ]),
         seq([h(Sort::Expression), t(TileLabel(";"))]),
+        assignment_statement(),
+    ])
+}
+
+/// Build the statement that writes a held place: `p = E ;`, or `p op= E ;`
+/// with the operator `+`, `-` or `*` over the place's value.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an expression hole, then `=`, `+=`, `-=` or `*=`, then an
+///   expression hole and a semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref operators) if operators.len() == 4 && operators.iter().zip(["=", "+=", "-=", "*="]).all(|(operator, label)| matches!(operator.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+fn assignment_statement() -> Regex
+{
+    seq([
+        h(Sort::Expression),
+        alt([
+            t(TileLabel("=")),
+            t(TileLabel("+=")),
+            t(TileLabel("-=")),
+            t(TileLabel("*=")),
+        ]),
+        h(Sort::Expression),
+        t(TileLabel(";")),
     ])
 }
 
@@ -4230,6 +4263,7 @@ fn primary_expressions(
         "fork_statement",
         "fork_shared_statement",
         "expression_statement",
+        "assignment_statement",
     ] {
         block_rule.adaptations.push(Adaptation::new(
             RuleName("block"),

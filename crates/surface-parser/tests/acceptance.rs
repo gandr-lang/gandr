@@ -424,15 +424,6 @@ fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
                 .collect::<Vec<_>>()
         );
     }
-
-    let retired = parse(
-        pbg,
-        SourceText::from("def use() -> -F Integer { val value = expression; pure value }"),
-    )?;
-    assert!(
-        !bool::from(retired.is_clean()),
-        "the retired `val PAT = E;` spelling must require repair"
-    );
     Ok(())
 }
 

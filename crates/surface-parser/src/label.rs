@@ -813,9 +813,15 @@ impl Token
 /// keeps the discrimination lookahead-free. Nothing already written can change
 /// meaning: `:` is only ever followed by a type or a signature, and neither can
 /// begin with `>`, so no existing byte sequence re-munches.
+///
+/// **`+=`, `-=` and `*=` write a held place through its value**: `n += 1 ;`
+/// is the statement `n = n + 1 ;`. Each extends a live operator tile with
+/// `=`, and no slot takes `=` after an operator, so nothing written
+/// re-munches.
 const MULTI_PUNCT: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>", "==",
-    "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>", "::",
+    "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>", "::", "+=", "-=",
+    "*=",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -3353,7 +3359,7 @@ mod tests
         for operator in [
             "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>",
             "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
-            "::",
+            "::", "+=", "-=", "*=",
         ] {
             assert_eq!(
                 super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)

@@ -43,11 +43,14 @@
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::Value;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
+use gandr_core_term::primitive::Arguments;
+use gandr_core_term::primitive::Primitive;
 use gandr_core_term::shift_value;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
@@ -73,14 +76,17 @@ use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
 use crate::form::FormName;
+use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Run;
 use crate::form::TileName;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::ScopeId;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 pub(in crate::lower) mod tests;
@@ -152,7 +158,52 @@ pub(super) enum Accessed
         /// The index `e`, read as a value where the index stands.
         index: NodeIndex,
     },
+    /// A place assignment `p = e ;`, or `p += e ;` with the operator's row:
+    /// `e`'s value bound first, then the place lent exclusively and written
+    /// that value, or the row over the view and that value.
+    Assign
+    {
+        /// The held slot written, a linear index where the statement stands.
+        held: DeBruijnIndex,
+        /// The place of the held value written, its index read where the
+        /// statement stands.
+        place: Place<NodeIndex>,
+        /// The right side, read as a value where the statement stands.
+        value: NodeIndex,
+        /// The row a compound assignment applies to the view and the right
+        /// side's value.
+        combined: Maybe<Primitive, assigned::Absent>,
+    },
 }
+
+/// A place assignment a block read, by its place's node.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `operator` is the assignment's tile, `=`, `+=`, `-=` or `*=`;
+///   `value` is read as a value where the statement stands.
+/// - executable: none — the record names nodes the classification reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a plain and a compound assignment each lower to the
+///   access they write.
+/// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Assignment
+{
+    /// The operator tile written after the place.
+    operator: TileName,
+    /// The right side.
+    value: NodeIndex,
+}
+
+/// The tiles that write a place after it: `=`, `+=`, `-=` and `*=`.
+pub(super) const ASSIGNING: [TileName; 4] = [
+    TileName::EQUALS,
+    TileName::PLUS_EQUALS,
+    TileName::MINUS_EQUALS,
+    TileName::TIMES_EQUALS,
+];
 
 impl<'source> Lowerer<'_, 'source>
 {
@@ -527,6 +578,147 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// Read a place assignment's operator and right side after its place,
+    /// `run`, in the block `site` reads under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the assignment's operator tile, just past
+    ///   the place `run`.
+    /// - ensures: the place is one operand, recorded as an assignment of the
+    ///   operator and the right side, which reads as a value under `frame`; the
+    ///   cursor stands past the right side.
+    /// - fails: the block's fault for a place or a right side that is not one
+    ///   operand.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The statement's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain and a compound assignment each lower to the
+    ///   access they write.
+    /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| self.assignments.contains_key(&place.node)))]
+    pub(super) fn assignment(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        run: Run,
+        frame: Frame,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let place = site.one(run)?;
+        let Maybe::Present(Piece::Tile {
+            label: operator, ..
+        }) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let value = site.one(cursor.operands())?;
+        self.read(value.node, Reading::Value(frame));
+        let _first = self.assignments.insert(place.node, Assignment {
+            operator,
+            value: value.node,
+        });
+
+        Ok(place)
+    }
+
+    /// Classify the place assignment whose place stands at `site`: the place a
+    /// held slot's name, or an index of one, and `assignment` its operator and
+    /// right side.
+    ///
+    /// # Specification
+    /// - requires: `site` is the place a block read an assignment at; `pieces`
+    ///   are its own.
+    /// - ensures: the place stands as a computation, planned as the exclusive
+    ///   access that writes the slot at the place, the index of an indexed
+    ///   place read as a value under the statement's frame, and a compound
+    ///   operator's row found by its spelling without the `=`; the head's name
+    ///   keeps the slot it names.
+    /// - fails: [`FragmentBoundary::Held`] at a place that is neither a name
+    ///   nor an index of one, and at a name that resolves to no held slot;
+    ///   [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
+    ///   [`FragmentBoundary::Unadmitted`] for an operator no row spells.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The assignment's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held name and a held list's index written plainly
+    ///   and by a compound operator, and a parameter written, refused at its
+    ///   name.
+    /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+    /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(Accessed::Assign { .. }))))]
+    pub(super) fn assign(
+        &mut self,
+        site: Site,
+        former: Former,
+        pieces: &Pieces,
+        assignment: Assignment,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        use gandr_core_term::primitive::Operator;
+        use gandr_core_term::primitive::PRELUDE;
+        let frame = self.require(site, Produced::Computation)?;
+        let (head, place) = match (former, pieces.pieces.as_slice()) {
+            (Former::Name, _) => (site.at, Place::Whole),
+            (
+                Former::Access,
+                &[
+                    Piece::Operand(head),
+                    Piece::Tile { label: opener, .. },
+                    Piece::Operand(index),
+                    Piece::Tile {
+                        label: TileName::BRACKET_CLOSE,
+                        ..
+                    },
+                ],
+            ) if (opener == TileName::SELECT_OPEN || opener == TileName::BRACKET_OPEN)
+                && matches!(self.form_at(head)?, Some((_, Former::Name))) =>
+            {
+                self.read(index.node, Reading::Value(frame));
+                (head, Place::At { index: index.node })
+            },
+            _ => return Err(site.out(FragmentBoundary::Held)),
+        };
+        let (held, binder) = self.linear_slot(frame, head, FragmentBoundary::Held)?;
+        if !self.held.contains(&binder) {
+            let named = Site {
+                at: head,
+                name: FormName::IDENTIFIER,
+                reading: Reading::Value(frame),
+            };
+            return Err(named.out(FragmentBoundary::Held));
+        }
+        let combined = if assignment.operator == TileName::EQUALS {
+            Maybe::Absent(assigned::Absent::Plain)
+        }
+        else {
+            let spelled = assignment.operator.as_ref().strip_suffix('=');
+            let Some(&row) = PRELUDE.iter().find(|primitive| {
+                matches!(primitive.operator(), Operator::Infix(spelling) if Some(spelling) == spelled)
+            })
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::InfixForm)));
+            };
+            Maybe::Present(row)
+        };
+        self.plan(
+            site,
+            Plan::Access(Accessed::Assign {
+                held,
+                place,
+                value: assignment.value,
+                combined,
+            }),
+        );
+
+        Ok(())
+    }
+
     /// Mint the temporary-access form `accessed` plans.
     ///
     /// # Specification
@@ -677,10 +869,142 @@ impl<'source> Lowerer<'_, 'source>
                     body,
                 }
             },
+            Accessed::Assign {
+                held,
+                place,
+                value,
+                combined,
+            } => return self.mint_assign((held, place), (value, combined), sink, origin),
         };
         let id = sink.arena.computation_memory(form);
 
         Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Mint the place assignment of `value` to the slot `held` at `place`:
+    /// `run t <- pure e ; access x as v { resume(v, t) }`, or with a row `op`,
+    /// `run t <- pure e ; access x as v { run w <- op(v, t) ; resume(v, w) }`;
+    /// a computation `e` is bound itself, `run t <- e`.
+    ///
+    /// # Specification
+    /// - requires: the right side and the place's index are minted or absent.
+    /// - ensures: the bind of the right side's return, or of the computation a
+    ///   nested right side holds, over the exclusive access of the slot at the
+    ///   place, its index raised past the bind, whose body resumes the view
+    ///   with the right side or with the row's result over the view and the
+    ///   right side, and whose unwind is `pure unit`; the bind at `origin`,
+    ///   every node below it inserted for the assignment.
+    /// - fails: never; the first absence among the parts is answered.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain and a compound assignment of a name and of an
+    ///   index, each asserted as the access it mints and judged.
+    /// - witness: `lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_assign(
+        &self,
+        (held, place): (DeBruijnIndex, Place<NodeIndex>),
+        (value, combined): (NodeIndex, Maybe<Primitive, assigned::Absent>),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let value = match self.value_at(value) {
+            Maybe::Present(value) => value,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let inner = origin.inserted(Insertion::Assignment);
+        let place = match place {
+            Place::Whole => Place::Whole,
+            Place::At { index } => match self.value_at(index) {
+                Maybe::Present(index) => {
+                    // Past the right side's binder the index's free variables
+                    // are one deeper.
+                    let raised =
+                        shift_value(sink.arena, index, Binders::from(1_u32)).settle(sink.arena);
+                    if raised != index {
+                        sink.origins.record_value(raised, inner);
+                    }
+                    Place::At { index: raised }
+                },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+        };
+        let view = DeBruijnIndex::from(0_u32);
+        let right = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        sink.origins.record_value(right, inner);
+        let body = match combined {
+            Maybe::Present(row) => {
+                let viewed = sink.arena.value_variable(Zone::Linear, view);
+                sink.origins.record_value(viewed, inner);
+                let call = sink
+                    .arena
+                    .computation_primitive(row, Arguments::Binary([viewed, right]));
+                sink.origins.record_computation(call, inner);
+                let written = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(written, inner);
+                let resumed = sink.arena.computation_memory(MemoryForm::Resume {
+                    view,
+                    value: written,
+                });
+                sink.origins.record_computation(resumed, inner);
+                let body = sink.arena.computation_bind(call, resumed);
+                sink.origins.record_computation(body, inner);
+                body
+            },
+            Maybe::Absent(assigned::Absent::Plain) => {
+                let resumed = sink
+                    .arena
+                    .computation_memory(MemoryForm::Resume { view, value: right });
+                sink.origins.record_computation(resumed, inner);
+                resumed
+            },
+        };
+        let unit = sink.arena.value_unit();
+        sink.origins.record_value(unit, inner);
+        let unwind = sink.arena.computation_return(unit);
+        sink.origins.record_computation(unwind, inner);
+        let lent = sink.arena.computation_memory(MemoryForm::Access {
+            mode: AccessMode::Exclusive { unwind },
+            held,
+            place,
+            body,
+        });
+        sink.origins.record_computation(lent, inner);
+        // A computation written as the right side has no type to decide its
+        // nesting by; it runs once, before the access, as a `let` runs it.
+        let returned = if let Some(&Value::Nested(nested)) = sink.arena.value(value) {
+            nested
+        }
+        else {
+            let returned = sink.arena.computation_return(value);
+            sink.origins.record_computation(returned, inner);
+            returned
+        };
+        let id = sink.arena.computation_bind(returned, lent);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an assignment applies no operator's row.
+    pub mod assigned {
+        /// The assignment is written `=`.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The place is written the right side's value itself.
+            Plain,
+        }
     }
 }
 

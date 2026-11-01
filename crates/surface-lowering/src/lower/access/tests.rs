@@ -403,3 +403,80 @@ def joined_by_hand(n : Nat) -> -F Integer {
         ),
     );
 }
+
+#[test]
+fn a_place_assignment_writes_through_an_exclusive_view()
+{
+    let source = SourceText::from(
+        r"def pair : List(Integer) ;
+def pair = cons(1, cons(2, nil)) ;
+def written() -> -F Integer {
+  var n = 1;
+  n = n + 1;
+  n *= 3;
+  var xs = pair;
+  xs.#[0] += n;
+  return n
+}
+def ended() -> -F Unit {
+  var n = 1;
+  n -= 1;
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("written")));
+    assert_eq!(
+        forms(&arena, tail),
+        [
+            "hold",
+            "access @0",
+            "resume @0",
+            "access @0",
+            "resume @0",
+            "hold",
+            "read @1",
+            "access @0[literal]",
+            "resume @0",
+            "read @1",
+        ],
+        "each assignment lends its slot exclusively at its place and resumes the view, the right \
+         side's value returned before the access, and the slot is read after them"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn an_assignment_writes_only_a_held_place()
+{
+    let source = SourceText::from(
+        r"def parameter(n : Integer) -> -F Unit { n = 3; }
+def viewed() -> -F Unit { var c = 0; access c as v { v = 1; resume(v, 2) } }
+def field(p : #{ a : Integer }) -> -F Unit { p.a += 1; }
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, written, named) in [("parameter", "n = 3", "n"), ("viewed", "v = 1", "v")] {
+        let named = SourceText::from(named);
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(written), named),
+                form: FormName::IDENTIFIER,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Held,
+            },
+            "`{name}`: only a slot a `var` holds is written, never a parameter or a view"
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("field")),
+            LoweringRefusal::OutOfFragment { span, boundary: FragmentBoundary::Held, .. }
+                if span == spelled_within(source, SourceText::from("p.a += 1"), SourceText::from("p.a"))
+        ),
+        "a field is no place an assignment writes"
+    );
+}

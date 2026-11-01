@@ -3539,6 +3539,9 @@ struct Lowerer<'run, 'source>
     /// The body a method answering a view ends in, by its node: the place of
     /// the receiver the body answers, `self.#[e]`.
     view_places: BTreeMap<NodeIndex, method::ViewPlace>,
+    /// The place assignments a block read, by the place's node: the place
+    /// stands as the access that writes it.
+    assignments: BTreeMap<NodeIndex, access::Assignment>,
     /// The view types, `View[m](a)`, a method answering a place declares its
     /// result at, by node: each stands as the place's index.
     view_types: BTreeSet<NodeIndex>,
@@ -5393,6 +5396,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             region_binders: BTreeMap::new(),
             mode_binders: BTreeMap::new(),
             view_places: BTreeMap::new(),
+            assignments: BTreeMap::new(),
             view_types: BTreeSet::new(),
             ended_views: BTreeSet::new(),
             planned_supplies: BTreeMap::new(),
@@ -7080,6 +7084,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && (self.stated.contains_key(&site.at.node) || iterating(former) == Ending::Inferred)
         {
             self.reenter(site)?;
+        }
+        if let Some(&assignment) = self.assignments.get(&site.at.node) {
+            return self.assign(site, former, pieces, assignment);
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
@@ -10591,7 +10598,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         loop {
             match cursor.peek() {
                 Maybe::Present(Piece::Operand(_)) => {
-                    let run = cursor.operands();
+                    let mut run = cursor.operands();
+                    if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
+                        && access::ASSIGNING.contains(&label)
+                    {
+                        run = Run::One(self.assignment(site, cursor, run, frame)?);
+                    }
                     if let Maybe::Present(semicolon) = cursor.at(TileName::SEMICOLON) {
                         let first = match run {
                             Run::One(written) | Run::Several { first: written, .. } => written.span,
@@ -21538,6 +21550,7 @@ impl Sink<'_>
                 | Insertion::Words
                 | Insertion::Terms
                 | Insertion::Method
+                | Insertion::Assignment
                 | Insertion::Parameter
                 | Insertion::Derived
                 | Insertion::Implicit

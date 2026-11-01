@@ -1306,7 +1306,7 @@ mod tests
                 vec![
                     "<Expression@{> }",
                     "<Expression@{> ; }",
-                    "let <Pattern@let> = <Expression@=> ; }",
+                    "<Expression@{> = <Expression@=> ; }",
                 ],
             ),
             // The molder reads `match x {` as the empty match, whose closer

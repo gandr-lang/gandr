@@ -422,7 +422,10 @@ fn lowered(
                      receive or a choice under its `rec`",
                 ),
                 FragmentBoundary::Held => {
-                    f.write_str("an `access` lends a held value: a name a `var` statement holds")
+                    f.write_str(
+                        "an `access` lends, and an assignment writes, a held value: a name a `var` \
+                         statement holds",
+                    )
                 },
                 FragmentBoundary::View => f.write_str(
                     "`resume` and `abort` end a view: the name an `access` binds after `as`",

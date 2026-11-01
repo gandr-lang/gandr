@@ -21,3 +21,15 @@ def counted() -> -F Integer {
   access c as v { resume(v, v + 1) };
   pure c
 }
+
+/// An assignment writes a held place: `=` the right side's value, `+=`, `-=`
+/// and `*=` the operator over the place's value and it, the right side read
+/// before the place is lent.
+@[ checks ]
+def assigned() -> -F Integer {
+  var n = 1;
+  n = n + 1;
+  n *= 3;
+  n -= 1;
+  return n
+}

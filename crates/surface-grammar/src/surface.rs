@@ -430,6 +430,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     // construct kinds (new rule provenances)
     "abort_expression",
     "access_expression",
+    "assignment_statement",
     "become_expression",
     "bind_expression",
     "break_expression",

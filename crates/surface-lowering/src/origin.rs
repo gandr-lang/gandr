@@ -250,6 +250,11 @@ pub enum Insertion
     /// located at the declaration. And the view a bare index `s.#[e]` of a held
     /// slot reads its element through, located at the index.
     Method,
+    /// A node of the access a place assignment `p = e ;` or `p += e ;` is,
+    /// below the access itself, every one located at the place: the source
+    /// writes the place, the operator and the right side, never the bind of the
+    /// right side's value, the view, the operator's call or the write-back.
+    Assignment,
     /// A node of the bind a lambda's parameter written with its type is read
     /// through, every one located at the lambda: the source writes
     /// `fn (x : A)`, never the argument the lambda binds apart, its return,

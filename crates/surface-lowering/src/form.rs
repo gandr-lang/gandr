@@ -566,6 +566,15 @@ impl TileName
     pub const FROM: Self = Self("from");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
+    /// The compound assignment `+=`, writing a held place the sum of its value
+    /// and the right side.
+    pub const PLUS_EQUALS: Self = Self("+=");
+    /// The compound assignment `-=`, writing a held place the difference of
+    /// its value and the right side.
+    pub const MINUS_EQUALS: Self = Self("-=");
+    /// The compound assignment `*=`, writing a held place the product of its
+    /// value and the right side.
+    pub const TIMES_EQUALS: Self = Self("*=");
     /// The greater-than sign `>`: an instantiation's productivity claim, a
     /// self-call standing as a copattern arm.
     pub const GREATER_THAN: Self = Self(">");
