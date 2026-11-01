@@ -12,9 +12,9 @@
 @[ checks ]
 data Code : Type where {
   /// The integers.
-  | CInt
+  | CInt : Code
   /// The unit type.
-  | CUnit
+  | CUnit : Code
 }
 
 /// The type each code decodes to.
@@ -30,7 +30,7 @@ def decode(c : Code) -> Type {
 @[ checks ]
 data Tagged : Code -> Type where {
   /// An integer.
-  | AnInt(i : Integer) : Tagged(CInt)
+  | AnInt : (i : Integer) --> Tagged(CInt)
   /// The unit value.
   | AUnit : Tagged(CUnit)
 }

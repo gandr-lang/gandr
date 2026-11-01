@@ -1,5 +1,5 @@
 data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base <-> Base
 }
 def wound : Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base)) ;

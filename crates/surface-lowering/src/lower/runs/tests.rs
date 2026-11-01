@@ -27,7 +27,7 @@ use crate::lower::native::tests::refusal_of;
 use crate::resolve::SurfaceName;
 
 /// The naturals every witness builds on, and a function to nest.
-const NAT: &str = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                    def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n";
 
 #[test]

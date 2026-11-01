@@ -77,12 +77,12 @@ theory EditedViews {
 /// runs by its two other rules, and the kernel decides the three converge.
 @[ normalizes("add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
 data NatAssoc : Type where {
-  | Zero
-  | Succ(n : NatAssoc)
-  oper add(m : NatAssoc, n : NatAssoc) -> NatAssoc;
-  rule add(Zero, n) ==> n;
-  rule add(Succ(m), n) ==> Succ(add(m, n));
-  rule add(add(m, n), k) ==> add(m, add(n, k));
+  | Zero : NatAssoc
+  | Succ : (n : NatAssoc) --> NatAssoc
+  oper add : (m : NatAssoc, n : NatAssoc) --> NatAssoc;
+  rule : add(Zero, n) ==> n;
+  rule : add(Succ(m), n) ==> Succ(add(m, n));
+  rule : add(add(m, n), k) ==> add(m, add(n, k));
 }
 
 /// One plus one, plus one, runs to three.

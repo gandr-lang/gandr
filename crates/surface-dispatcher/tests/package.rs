@@ -602,7 +602,7 @@ fn a_manifest_reads_the_package_model_2687()
 fn a_manifest_renders_the_dependencies_its_library_lists_3072()
 {
     let read = manifest_of(SourceText::from(concat!(
-        "data Coordinate : Type where { | Path(path : String) } ",
+        "data Coordinate : Type where { | Path : (path : String) --> Coordinate } ",
         "type Dependency = #{ alias : String, coordinate : Coordinate }; ",
         "module Package { def name = \"tools\" ; def version = \"0.1.0\" ; ",
         rest!(),
@@ -1792,7 +1792,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
         ),
         (
             "src/shapes/point.gandr",
-            "pub data Point : Type where {\n  | Here\n}\n",
+            "pub data Point : Type where {\n  | Here : Point\n}\n",
         ),
         (
             "src/shapes/here.gandr",
@@ -1895,7 +1895,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
         ),
         (
             "src/shapes/point.gandr",
-            "pub data Point : Type where {\n  | Here\n}\n",
+            "pub data Point : Type where {\n  | Here : Point\n}\n",
         ),
         (
             "src/shapes/here.gandr",

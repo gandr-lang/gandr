@@ -2747,7 +2747,7 @@ pub mod tests
                 })
                 .collect()
         };
-        let base = "@[ checks ]\npub data Point : Type where {\n  | Here\n}\n\n@[ checks ]\npub \
+        let base = "@[ checks ]\npub data Point : Type where {\n  | Here : Point\n}\n\n@[ checks ]\npub \
                     def here : Point ;\ndef here = Here ;\n";
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         for side in ["left", "right"] {
@@ -2945,7 +2945,7 @@ pub mod tests
     fn an_import_parses_its_importer_once_617()
     {
         let scratch = Scratch::new(Path::new("parsed-once"));
-        let floor = "/// One.\n@[ checks ]\ndata One : Type where {\n  | It\n}\n";
+        let floor = "/// One.\n@[ checks ]\ndata One : Type where {\n  | It : One\n}\n";
         let body = (0_usize .. 150_usize).fold(String::new(), |mut body, n| {
             let _written = write!(
                 body,
@@ -3262,7 +3262,7 @@ pub mod tests
         let scratch = Scratch::new(Path::new("one-form-two-members"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("@[ checks ]\ndata One : Type where {\n  | Pt\n}\n"),
+            SourceText::from("@[ checks ]\ndata One : Type where {\n  | Pt : One\n}\n"),
         );
         for (side, documentation) in [("left", "The left two."), ("right", "The right two.")] {
             scratch.file(
@@ -3270,7 +3270,7 @@ pub mod tests
                 SourceText::from(
                     format!(
                         "import \"./base.gandr\" ;\n\n/// {documentation}\n@[ checks ]\ndata Two \
-                         : Type where {{\n  | L\n  | R\n}}\n"
+                         : Type where {{\n  | L : Two\n  | R : Two\n}}\n"
                     )
                     .as_str(),
                 ),

@@ -1389,19 +1389,19 @@ impl Reader<'_, '_>
         )))
     }
 
-    /// Read a constructor, `C`, `C(fields)`, `C : R` or `C(fields) : R`, and
-    /// require a stated result to be uniform, keeping where its name, each
-    /// field and its result are written.
+    /// Read a constructor, `C : R` or `C : (fields) --> R`, and require its
+    /// result to be uniform, keeping where its name, each field and its
+    /// result are written.
     ///
     /// # Specification
     /// - ensures: each payload field keeps its type, grade and order; the
     ///   written constructor holds the name tile, one port per field, its name
-    ///   tile when written, and the result's bytes and each of its arguments'
-    ///   when it states one. A higher-order or universe field, or one whose
-    ///   type names a field before it, leaves the constructor uncoded with the
-    ///   first such field's refusal, and the constructor is still read whole.
-    /// - fails: nonuniform results, a result left unstated in an indexed family
-    ///   and incomplete constructors are located.
+    ///   tile when written, and the result's bytes and each of its arguments'.
+    ///   A higher-order or universe field, or one whose type names a field
+    ///   before it, leaves the constructor uncoded with the first such field's
+    ///   refusal, and the constructor is still read whole.
+    /// - fails: nonuniform results, a member with no colon and incomplete
+    ///   constructors are located.
     /// - panics: none.
     ///
     /// # Errors
@@ -1438,59 +1438,75 @@ impl Reader<'_, '_>
                 },
             }
         };
-        if run.eat(Spelling("(")).0 {
-            let mut bound = Vec::new();
+        if !run.eat(Spelling(":")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let mut bound = Vec::new();
+        let mut field = |first: Placed, grade, label: Maybe<Placed, written::port_name::Absent>| {
+            match self.field(first, family, grade, &bound) {
+                Ok((field, _written)) => fields.push(field),
+                Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
+                    let _first = uncoded.get_or_insert(diagnostic);
+                },
+                Err(diagnostic) => return Err(diagnostic),
+            }
+            ports.push(port(label.map(|binder| binder.span), first));
+            if let Maybe::Present(binder) = label {
+                bound.push(binder);
+            }
+            Ok(())
+        };
+        let result = if run.eat(Spelling("(")).0 {
             while !run.eat(Spelling(")")).0 {
-                let grade = self.grade(run)?;
                 let first = run.take()?;
-                let (ty, label) = if run.eat(Spelling(":")).0 {
-                    (run.take()?, Maybe::Present(first))
+                let grade = self.grade(run)?;
+                if run.eat(Spelling(":")).0 {
+                    field(run.take()?, grade, Maybe::Present(first))?;
                 }
                 else {
-                    (first, Maybe::Absent(written::port_name::Absent::Unnamed))
-                };
-                match self.field(ty, family, grade, &bound) {
-                    Ok((field, _written)) => fields.push(field),
-                    Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
-                        let _first = uncoded.get_or_insert(diagnostic);
-                    },
-                    Err(diagnostic) => return Err(diagnostic),
-                }
-                ports.push(port(label.map(|binder| binder.span), ty));
-                if let Maybe::Present(binder) = label {
-                    bound.push(binder);
+                    field(
+                        first,
+                        grade,
+                        Maybe::Absent(written::port_name::Absent::Unnamed),
+                    )?;
                 }
                 if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                     return Err(run.fault(DescriptionFault::Malformed));
                 }
             }
-        }
-        let result = if run.eat(Spelling(":")).0 {
-            let result = run.take()?;
-            let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
-            let repeated = arguments
-                .iter()
-                .zip(parameters)
-                .map(|(&span, parameter)| written::WrittenUse {
-                    span,
-                    named: parameter.named.span,
-                })
-                .collect();
-            Maybe::Present(written::WrittenResult {
-                span: result.span,
-                head,
-                parameters: repeated,
-                arguments,
-            })
-        }
-        else if indices == family::IndexArity::UNINDEXED {
-            Maybe::Absent(written::stated_result::Absent::Unstated)
+            if !run.eat(Spelling("-->")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            run.take()?
         }
         else {
-            return Err(DescriptionDiagnostic {
-                span: named.span,
-                fault: DescriptionFault::NonUniformResult,
-            });
+            let side = run.take()?;
+            if run.eat(Spelling("-->")).0 {
+                field(
+                    side,
+                    DescriptionGrade::Finite(Multiplicity::from(1_u64)),
+                    Maybe::Absent(written::port_name::Absent::Unnamed),
+                )?;
+                run.take()?
+            }
+            else {
+                side
+            }
+        };
+        let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
+        let repeated = arguments
+            .iter()
+            .zip(parameters)
+            .map(|(&span, parameter)| written::WrittenUse {
+                span,
+                named: parameter.named.span,
+            })
+            .collect();
+        let result = written::WrittenResult {
+            span: result.span,
+            head,
+            parameters: repeated,
+            arguments,
         };
         let attrs = self.attrs(run)?;
         run.end()?;
@@ -1550,11 +1566,14 @@ impl Reader<'_, '_>
         if run.at(Spelling("oper")).0 || run.at(Spelling("constructor")).0 {
             return Err(run.fault(DescriptionFault::MemberPolarity));
         }
-        let grade = self.grade(run)?;
         let named = run.take()?;
+        let grade = self.grade(run)?;
+        if !run.eat(Spelling(":")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
         if run.eat(Spelling("(")).0 {
             let (inputs, _written) = self.ports(run)?;
-            if !run.eat(Spelling(":")).0 {
+            if !run.eat(Spelling("-->")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
             let result = run.take()?;
@@ -1569,9 +1588,6 @@ impl Reader<'_, '_>
                     attrs,
                 ),
             ));
-        }
-        if !run.eat(Spelling(":")).0 {
-            return Err(run.fault(DescriptionFault::Malformed));
         }
         let ty = run.take()?;
         let (code, written) = self.field(ty, family, grade, &[])?;
@@ -1598,16 +1614,19 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a finite or unrestricted field grade.
+    /// Read a finite or unrestricted field grade, written between brackets
+    /// after the field's name: `x[1] : A`.
     ///
     /// # Specification
+    /// - requires: `run` stands just past the field's name.
     /// - ensures: absent annotation denotes one; written annotations are
-    ///   retained.
-    /// - fails: a finite grade outside u64 is malformed.
+    ///   retained, and `run` stands past the `]`.
+    /// - fails: a finite grade outside u64, or a bracket left open, is
+    ///   malformed.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `Malformed` for an overflowing numeral.
+    /// Returns `Malformed` for an overflowing numeral or an unclosed bracket.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite and unrestricted observations distinguish
@@ -1619,19 +1638,25 @@ impl Reader<'_, '_>
         run: &mut Run<'_>,
     ) -> Result<DescriptionGrade, DescriptionDiagnostic>
     {
-        if run.eat(Spelling("ω")).0 {
-            return Ok(DescriptionGrade::Omega);
+        if !run.eat(Spelling("[")).0 {
+            return Ok(DescriptionGrade::Finite(Multiplicity::from(1_u64)));
         }
-        if run.at(Spelling("number")).0 {
+        let grade = if run.eat(Spelling("ω")).0 {
+            DescriptionGrade::Omega
+        }
+        else {
             let at = run.take()?;
             let value = self
                 .text(at)
                 .0
                 .parse::<u64>()
                 .map_err(|_error| run.fault(DescriptionFault::Malformed))?;
-            return Ok(DescriptionGrade::Finite(Multiplicity::from(value)));
+            DescriptionGrade::Finite(Multiplicity::from(value))
+        };
+        if !run.eat(Spelling("]")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
         }
-        Ok(DescriptionGrade::Finite(Multiplicity::from(1_u64)))
+        Ok(grade)
     }
 
     /// Interpret a field, recognizing the recursive family head and the value

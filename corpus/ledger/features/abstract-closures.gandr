@@ -12,9 +12,9 @@
 /// The naturals the closures return.
 data Nat : Type where {
   /// Zero.
-  | Zero
+  | Zero : Nat
   /// The natural after `n`.
-  | Succ(n : Nat)
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The constant function at `n`, a closure over `n`.

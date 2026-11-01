@@ -11,8 +11,8 @@
 
 /// Natural numbers, free: every constructor term is its own value.
 pub data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Addition by recursion on the second argument, the recursive call nested
@@ -36,30 +36,30 @@ pub def three : Nat = Succ(two);
 /// cancel, each rule invertible.
 @[ normalizes("S(P(S(Z))) ~> S(Z)") ]
 pub data Int : Type where {
-  | Z
-  | S(x : Int)
-  | P(x : Int)
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) <=> x;
+  rule : P(S(x)) <=> x;
 }
 
 /// Three colours: an enumeration, a data type whose constructors take no
 /// field.
 pub data Color : Type where {
-  | Red
-  | Green
-  | Blue
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// The two branches of a binary node.
 pub data Two : Type where {
-  | L
-  | R
+  | L : Two
+  | R : Two
 }
 
 /// Lists of elements of a type `a`. The element stands only where a list
 /// holds it, strictly positive, so a family nests through it.
 pub data List(a : Type) : Type where {
-  | Nil
-  | Cons(head : a, tail : List(a))
+  | Nil : List(a)
+  | Cons : (head : a, tail : List(a)) --> List(a)
 }

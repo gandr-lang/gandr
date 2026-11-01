@@ -1,8 +1,8 @@
 /// Natural numbers.
 data Nat : Type where {
-  | Zero
+  | Zero : Nat
   /// One more.
-  | Succ(n : Nat)
+  | Succ : (n : Nat) --> Nat
 }
 /// Addition.
 def rec plus(n : Nat, m : Nat) -> -F Nat {

@@ -37,8 +37,8 @@ fn a_ruled_theory_block_lowers_its_members_into_a_description()
 {
     let report = described(
         r#"data Nat : Type where {
-        | Zero
-        | Succ(n : Nat)
+        | Zero : Nat
+        | Succ : (n : Nat) --> Nat
     }
     theory Nat {
         sort Nat : Type;
@@ -2773,7 +2773,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     let signature = format!("{restriction} oper out : (c : Name, p : Proc) --> Proc;");
     let report = described(
         format!(
-            "theory Scope {{ {restriction} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q; }}"
+            "theory Scope {{ {restriction} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where {{ | a # q }}; }}"
         )
         .as_str(),
     );
@@ -2848,7 +2848,7 @@ fn a_where_clause_states_each_condition_on_its_rule()
     let signature = "sort Name : Atom; sort Proc : Type; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
     let report = described(
         format!(
-            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q, a # p; }}"
+            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where {{ | a # q | a # p }}; }}"
         )
         .as_str(),
     );
@@ -2884,7 +2884,9 @@ fn a_where_clause_states_each_condition_on_its_rule()
         .collect();
     assert_eq!(
         printed,
-        ["rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q, a # p"],
+        [
+            "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where { | a # q | a # p }"
+        ],
         "the theory spelling closes on the clause"
     );
     let report = described(
@@ -2899,7 +2901,7 @@ fn a_where_clause_states_each_condition_on_its_rule()
     };
     assert!(
         matches!(diagnostic.fault, DescriptionFault::IllFormed(ref ill) if ill.kind == WfKind::Capture
-            && AsRef::<str>::as_ref(&ill.message).contains("where a # q")),
+            && AsRef::<str>::as_ref(&ill.message).contains("where { | a # q }")),
         "the rule capturing `a` is refused with the condition it lacks: {diagnostic:?}"
     );
 }
@@ -2914,7 +2916,7 @@ fn an_under_row_names_each_theory_in_scope_once_2448()
         "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T; oper h : (x : T) --> T;";
     let report = described(
         format!(
-            "{theories}theory Logged {{ {signature} rule r1 : f(g(x)) <=> h(x) under [State | r]; rule r2 : f(g(x)) <=> x under [Console, State]; }}"
+            "{theories}theory Logged {{ {signature} rule r1 : f(g(x)) <=> h(x) where {{ | under [State | r] }}; rule r2 : f(g(x)) <=> x where {{ | under [Console, State] }}; }}"
         )
         .as_str(),
     );
@@ -2960,13 +2962,13 @@ fn an_under_row_names_each_theory_in_scope_once_2448()
     assert_eq!(
         printed,
         [
-            "rule r1 : f(g(x)) <=> h(x) under [State | r]",
-            "rule r2 : f(g(x)) <=> x under [Console, State]",
+            "rule r1 : f(g(x)) <=> h(x) where { | under [State | r] }",
+            "rule r2 : f(g(x)) <=> x where { | under [Console, State] }",
         ],
         "the theory spelling closes on the row"
     );
     let source = format!(
-        "{theories}theory Unknown {{ {signature} rule r : f(x) <=> x under [State, Missing]; }}\ntheory Twice {{ {signature} rule r : f(x) <=> x under [State, Console, State | r]; }}\n"
+        "{theories}theory Unknown {{ {signature} rule r : f(x) <=> x where {{ | under [State, Missing] }}; }}\ntheory Twice {{ {signature} rule r : f(x) <=> x where {{ | under [State, Console, State | r] }}; }}\n"
     );
     let report = described(source.as_str());
     let at = |span: ByteSpan| {

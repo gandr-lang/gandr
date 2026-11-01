@@ -4367,7 +4367,7 @@ fn a_funext_returning_a_pair_or_a_constant_crosses_with_it()
 #[test]
 fn a_funext_returning_a_constructor_crosses_with_it()
 {
-    // data Two : Type where { | Both(a : Integer, b : Integer) } ;
+    // data Two : Type where { | Both : (a : Integer, b : Integer) --> Two } ;
     // def f, g : U (() -> F Two) = λ_. return Both(0, 0) ;
     // def same : Path(U (…), f, g) = funext(f, g) ;
     use alloc::sync::Arc;

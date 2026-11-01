@@ -1225,7 +1225,8 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         "a block of one clause is the lazy product of one"
     );
     assert_eq!(lazy("none"), ["with0"], "`&{{}}` is the empty lazy product");
-    let maybe = "data Maybe(a : Type) : Type where { | None | Some(x : a) }\n";
+    let maybe =
+        "data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{maybe}def some(n : Integer) -> &{{-F Maybe(Integer), -F String}} {{ &{{.0 => return \

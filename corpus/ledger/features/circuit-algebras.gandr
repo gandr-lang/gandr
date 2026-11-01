@@ -10,8 +10,8 @@
 /// A data family whose constructors are written with the circuit arrow.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then

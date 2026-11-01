@@ -2575,7 +2575,7 @@ fn a_type_member_names_a_computation_type_3080()
 #[test]
 fn a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142()
 {
-    let source = "data Maybe(a : Type) : Type where {\n  | None\n  | Some(x : a)\n}\nmodule Loose { type R(a : Type) = Maybe(a); }\ntype Top(a : \
+    let source = "data Maybe(a : Type) : Type where {\n  | None : Maybe(a)\n  | Some : (x : a) --> Maybe(a)\n}\nmodule Loose { type R(a : Type) = Maybe(a); }\ntype Top(a : \
                   Type) = Maybe(a);\ndef g(a : Type, m : Maybe(a)) -> Integer { 0 }\n";
     let argument = |declared: &str| {
         let start = source.find(declared).expect("the family is written") + declared.len() - 2;
@@ -3852,7 +3852,7 @@ fn a_forward_member_reference_is_refused_by_position()
     );
     forward("module M { def a = a; }", "M.a", "a", 1_usize, 0_usize);
     forward(
-        "data Circle : Type where { | Base | loop : Base <-> Base }\nmodule M { def w : \
+        "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\nmodule M { def w : \
              Path(Circle, Base, Base) ; def w = loop ∷ here(Base) ; def loop = 1 ; }",
         "M.w",
         "loop",
@@ -3932,7 +3932,7 @@ fn a_type_member_reads_types_and_never_values()
         "z",
         ("z", 1_usize),
     );
-    let static_only = "data Bit : Type where { | Low | High }\nmodule M {\n  type Three = \
+    let static_only = "data Bit : Type where { | Low : Bit | High : Bit }\nmodule M {\n  type Three = \
                        Path(Integer, 3, 3);\n  type Lowered = Path(Bit, Low, Low);\n  def three \
                        : Three ;\n  def three = here(3);\n}\n";
     let mut lowered = lower(static_only);

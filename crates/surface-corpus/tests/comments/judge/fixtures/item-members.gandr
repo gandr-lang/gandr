@@ -13,6 +13,6 @@ module M {
 // a rec block
 rec {
   data Rose : Type where {
-    | Node
+    | Node : Rose
   }
 }

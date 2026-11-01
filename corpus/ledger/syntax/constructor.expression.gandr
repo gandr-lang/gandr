@@ -1,7 +1,7 @@
 /// `constructor.expression`: a constructor.
 @[ checks ]
 data Colour : Type where {
-  | Blue
+  | Blue : Colour
 }
 @[ checks ]
 def colour : Colour ;

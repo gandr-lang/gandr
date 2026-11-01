@@ -277,7 +277,9 @@ mod tests
     {
         let mut session = session();
         let _submitted = session
-            .submit(SourceText::from("data Two : Type where {\n  | L\n  | R\n}"))
+            .submit(SourceText::from(
+                "data Two : Type where {\n  | L : Two\n  | R : Two\n}",
+            ))
             .expect("the session does not fault");
         let page = PageWidth::from(100_u32);
         assert!(

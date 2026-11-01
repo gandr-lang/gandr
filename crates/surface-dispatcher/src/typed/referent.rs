@@ -529,10 +529,7 @@ impl Referents
                 continue;
             };
             for constructor in *constructors {
-                let Maybe::Present(ref result) = constructor.result
-                else {
-                    continue;
-                };
+                let result = &constructor.result;
                 keep(result.head, declared(declaration.constant()), true);
                 for repeated in &result.parameters {
                     let binder = placed(unit, repeated.named).map(|(source, named)| Referent {

@@ -786,10 +786,7 @@ impl<'source> Lowerer<'_, 'source>
                 .written
                 .constructors
                 .iter()
-                .any(|written| match written.result {
-                    Maybe::Present(ref result) => result.arguments.len() > entry.parameters.len(),
-                    Maybe::Absent(_) => false,
-                })
+                .any(|written| written.result.arguments.len() > entry.parameters.len())
         {
             return Err(Uncovered::Applied(position));
         }

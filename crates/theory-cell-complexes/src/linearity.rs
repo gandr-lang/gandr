@@ -279,7 +279,7 @@ mod tests
         )
     }
 
-    /// `⟨x | and(x; α)⟩`: the elaborated shape of `rule and(x, x) ==> x`.
+    /// `⟨x | and(x; α)⟩`: the elaborated shape of `rule : and(x, x) ==> x`.
     ///
     /// # Specification
     /// trivial.

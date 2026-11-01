@@ -1,8 +1,8 @@
 /// `UnmarkedSelfReference`: a recursive definition's own name written without a descent claim.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ refuses("UnmarkedSelfReference") ]

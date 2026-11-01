@@ -1050,9 +1050,9 @@ fn a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not()
                 .collect::<Vec<_>>(),
         )
     };
-    // `nu(bind a . p) ==> p where a # p`
+    // `nu(bind a . p) ==> p where { | a # p }`
     let collect = face(nu("a", p()), p(), &[("a", "p")]);
-    // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where a # q`
+    // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where { | a # q }`
     let extrude = face(par(nu("a", p()), q()), nu("a", par(p(), q())), &[(
         "a", "q",
     )]);

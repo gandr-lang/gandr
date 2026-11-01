@@ -38,8 +38,9 @@ use crate::form::Placed;
 
 impl Reader<'_, '_>
 {
-    /// Read an operation's named input and output ports, and where each is
-    /// written.
+    /// Read an operation's named input and output ports, `oper f : (ports)
+    /// --> R`, `--> (ports)` for several outputs, or `oper f : R` for none
+    /// in, and where each is written.
     ///
     /// # Specification
     /// - ensures: the bridge has one monomial per output, each using all
@@ -63,26 +64,30 @@ impl Reader<'_, '_>
     ) -> Result<(OperDesc, WrittenOperation), DescriptionDiagnostic>
     {
         let named = run.take()?;
-        if !run.eat(Spelling("(")).0 {
+        if !run.eat(Spelling(":")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let (inputs, written_inputs) = self.ports(run)?;
-        let (outputs, written_outputs) = if run.eat(Spelling("->")).0 {
-            if run.eat(Spelling("(")).0 {
-                self.ports(run)?
+        let (inputs, written_inputs) = if run.eat(Spelling("(")).0 {
+            let read = self.ports(run)?;
+            if !run.eat(Spelling("-->")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
             }
-            else {
-                let result = run.take()?;
-                let (port, sort) = self.family_sort(Name::from("result"), result)?;
-                (vec![port], vec![WrittenPort {
-                    named: Maybe::Absent(port_name::Absent::Unnamed),
-                    binders: Vec::new(),
-                    sort,
-                }])
-            }
+            read
         }
         else {
             (Vec::new(), Vec::new())
+        };
+        let (outputs, written_outputs) = if run.eat(Spelling("(")).0 {
+            self.ports(run)?
+        }
+        else {
+            let result = run.take()?;
+            let (port, sort) = self.family_sort(Name::from("result"), result)?;
+            (vec![port], vec![WrittenPort {
+                named: Maybe::Absent(port_name::Absent::Unnamed),
+                binders: Vec::new(),
+                sort,
+            }])
         };
         let input_count =
             u32::try_from(inputs.len()).map_err(|_error| run.fault(DescriptionFault::Malformed))?;
@@ -212,16 +217,19 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a written rewrite face, derive its variable metadata, and keep
-    /// where each of its sides' nodes is written.
+    /// Read a written rewrite face, `rule name? : lhs <=> rhs`, derive its
+    /// variable metadata, and keep where its name and each of its sides'
+    /// nodes are written.
     ///
     /// # Specification
+    /// - requires: `run` stands just past the `rule` keyword.
     /// - ensures: the face keeps both terms and the member's exact byte span;
-    ///   the written face is anonymous and holds each side's nodes. `<=>`
-    ///   states [`RuleOrientation::Unpinned`]; `==>` states
+    ///   the written face holds its name tile when one is written, and each
+    ///   side's nodes. `<=>` states [`RuleOrientation::Unpinned`]; `==>` states
     ///   [`RuleOrientation::Pinned`] left to right.
-    /// - fails: only `==>` and `<=>` are written face arrows; `~>` is the
-    ///   retired spelling; unsupported terms are located.
+    /// - fails: a member with no colon is malformed; only `==>` and `<=>` are
+    ///   written face arrows; `~>` is the retired spelling; unsupported terms
+    ///   are located.
     /// - panics: none.
     ///
     /// # Errors
@@ -239,6 +247,16 @@ impl Reader<'_, '_>
         run: &mut Run<'_>,
     ) -> Result<(RuleFace, WrittenFace), DescriptionDiagnostic>
     {
+        let named = if run.eat(Spelling(":")).0 {
+            Maybe::Absent(member_name::Absent::Anonymous)
+        }
+        else {
+            let name = run.take()?;
+            if !run.eat(Spelling(":")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            Maybe::Present(name.span)
+        };
         let lhs = run.take()?;
         if run.at(Spelling("~>")).0 {
             let arrow = run.take()?;
@@ -267,7 +285,7 @@ impl Reader<'_, '_>
             usize::from(run.span.end()).into(),
         );
         Ok((RuleFace::new(lhs, rhs, variables, span), WrittenFace {
-            named: Maybe::Absent(member_name::Absent::Anonymous),
+            named,
             left,
             right,
             arrow: Maybe::Present(arrow),

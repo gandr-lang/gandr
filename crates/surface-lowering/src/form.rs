@@ -354,7 +354,7 @@ impl FormName
     pub const FLOW: Self = Self("flow_declaration");
     /// The derived rule `derive r : l <=> r in T`.
     pub const DERIVE_DECLARATION: Self = Self("derive_declaration");
-    /// A data block's constructor member `| C(x : A) : T(a)`, inlined into
+    /// A data block's constructor member `| C : (x : A) --> T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");
     /// The mutual block `rec { … }`, whose members are items.
@@ -997,7 +997,8 @@ pub enum Former
     /// of its body — a definition or a nested module — which the grammar
     /// files under the same kind.
     Module,
-    /// The nominal data declaration `data T(a : A) : U where { | C(x : B) … }`.
+    /// The nominal data declaration `data T(a : A) : U where { | C : (x : B)
+    /// --> T(a) … }`.
     Data,
     /// The mutual block `rec { … }`: its data declarations and definitions,
     /// each read as one at the root is, admitted as one block.

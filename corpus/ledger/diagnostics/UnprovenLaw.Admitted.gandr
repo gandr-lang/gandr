@@ -11,7 +11,7 @@ theory Reflexive {
 /// One value, of a type the source writes.
 @[ checks ]
 data Lone : Type where {
-  | Alone
+  | Alone : Lone
 }
 
 /// The model at `Lone`.

@@ -1,15 +1,15 @@
 /// `pattern-matching`: `case` matches a value against nested constructor patterns, a wildcard taking what the arms before it left.
 @[ checks ]
 data Inner : Type where {
-  | No
-  | Yes(n : Integer)
+  | No : Inner
+  | Yes : (n : Integer) --> Inner
 }
 
 /// An optional `Inner`, so a match reaches two constructors deep.
 @[ checks ]
 data Outer : Type where {
-  | None
-  | Some(i : Inner)
+  | None : Outer
+  | Some : (i : Inner) --> Outer
 }
 
 /// The integer two constructors down, or zero.

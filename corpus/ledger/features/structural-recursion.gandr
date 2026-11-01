@@ -1,8 +1,8 @@
 /// `structural-recursion`: `def rec` recurses on a structurally smaller argument, each recursive call marked `[<]`.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Addition by recursion on the second argument.

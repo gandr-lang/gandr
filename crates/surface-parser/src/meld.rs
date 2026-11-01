@@ -11281,13 +11281,13 @@ mod tests
                 "@[ checks ]\n/// x\ndef x = 1;\n",
             ],
             &[
-                "data D : Type where { | A }\n",
-                "@[ doc(\"x\") ] data D : Type where { | A }\n",
-                "/// x\ndata D : Type where { | A }\n",
+                "data D : Type where { | A : D }\n",
+                "@[ doc(\"x\") ] data D : Type where { | A : D }\n",
+                "/// x\ndata D : Type where { | A : D }\n",
             ],
             &[
-                "@[ checks ] data D : Type where { | A }\n",
-                "@[ doc(\"x\"), checks ] data D : Type where { | A }\n",
+                "@[ checks ] data D : Type where { | A : D }\n",
+                "@[ doc(\"x\"), checks ] data D : Type where { | A : D }\n",
             ],
         ];
         let mut keys = Vec::new();

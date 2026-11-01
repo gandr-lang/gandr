@@ -24,12 +24,6 @@ use crate::form::Placed;
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) struct IndexArity(usize);
 
-impl IndexArity
-{
-    /// The arity of a family that declares no index position.
-    pub(super) const UNINDEXED: Self = Self(0);
-}
-
 impl Reader<'_, '_>
 {
     /// Count the right-associated index telescope without interpreting its

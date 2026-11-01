@@ -24,7 +24,7 @@ theory Equivalence {
 
 /// One value.
 data Single : Type where {
-  | Only
+  | Only : Single
 }
 
 /// Every two values are alike, so each law's sides convert, and the checker discharges all three.

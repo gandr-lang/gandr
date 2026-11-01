@@ -102,18 +102,18 @@ pub def ge[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
 /// `num`: one, or twice a positive, or twice a positive and one.
 pub data Pos : Type where {
   /// One.
-  | One
+  | One : Pos
   /// Twice `p`.
-  | Bit0(p : Pos)
+  | Bit0 : (p : Pos) --> Pos
   /// Twice `p`, and one.
-  | Bit1(p : Pos)
+  | Bit1 : (p : Pos) --> Pos
 }
 
 /// A natural number in binary: zero, or a positive. A numeral annotated
 /// `(n : Nat)` is its constructor term.
 pub data Nat : Type where {
   /// Zero.
-  | Zero
+  | Zero : Nat
   /// A positive number.
-  | Positive(p : Pos)
+  | Positive : (p : Pos) --> Nat
 }

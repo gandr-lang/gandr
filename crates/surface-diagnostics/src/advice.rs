@@ -367,7 +367,7 @@ fn ill_formed(kind: WfKind) -> String
             "name in the condition an atom that the rule abstracts and a variable that its left \
              side binds"
         },
-        WfKind::Capture => "state the atom fresh for the variable with `where a # q`",
+        WfKind::Capture => "state the atom fresh for the variable with `where { | a # q }`",
         WfKind::MisplacedAtom => {
             "name the atom only inside `bind a . t`, at a port of the sort that it abstracts"
         },

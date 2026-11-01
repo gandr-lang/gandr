@@ -1,6 +1,6 @@
 /// `DirectedCell`: a directed cell `-->` between two terms of a `data` block.
 @[ refuses("DirectedCell") ]
 data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base --> Base
 }

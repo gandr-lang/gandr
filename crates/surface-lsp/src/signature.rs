@@ -22,7 +22,7 @@
 //! | --- | --- | --- |
 //! | `def plus(n : Nat, m : Nat) -> -F Nat` | `plus(n : Nat, m : Nat) -> -F Nat` | `n : Nat`, `m : Nat` |
 //! | `def double : +U (Nat -> -F Nat)` | `double : +U (Nat -> -F Nat)` | each domain of the arrow: `Nat` |
-//! | `\| Cons(head : a, tail : List(a))` | as written, past its bar | `head : a`, `tail : List(a)` |
+//! | `\| Cons : (head : a, tail : List(a)) --> List(a)` | as written, past its bar | `head : a`, `tail : List(a)` |
 //! | `data List(a : Type) : Type where` | `List(a : Type) : Type` | `a : Type` |
 //!
 //! The pieces of a head are joined with one space wherever the source leaves
@@ -2105,8 +2105,13 @@ mod tests
         };
         assert_eq!(read, [
             head("Nat", "Nat : Type", &[], Some("Natural numbers.")),
-            head("Zero", "Zero", &[], None),
-            head("Succ", "Succ(n : Nat)", &["n : Nat"], Some("One more.")),
+            head("Zero", "Zero : Nat", &[], None),
+            head(
+                "Succ",
+                "Succ : (n : Nat) --> Nat",
+                &["n : Nat"],
+                Some("One more.")
+            ),
             head(
                 "plus",
                 "plus(n : Nat, m : Nat) -> -F Nat",
@@ -2120,10 +2125,10 @@ mod tests
                 None
             ),
             head("List", "List(a : Type) : Type", &["a : Type"], None),
-            head("Nil", "Nil", &[], None),
+            head("Nil", "Nil : List(a)", &[], None),
             head(
                 "Cons",
-                "Cons(head : a, tail : List(a))",
+                "Cons : (head : a, tail : List(a)) --> List(a)",
                 &["head : a", "tail : List(a)"],
                 None
             ),
@@ -2214,10 +2219,15 @@ mod tests
                 Vec::new(),
                 None
             ),
-            (String::from("Zero"), String::from("Zero"), Vec::new(), None),
+            (
+                String::from("Zero"),
+                String::from("Zero : Nat"),
+                Vec::new(),
+                None
+            ),
             (
                 String::from("Succ"),
-                String::from("Succ(n : Nat)"),
+                String::from("Succ : (n : Nat) --> Nat"),
                 Vec::from([documented("n : Nat", Some("The predecessor."))]),
                 Some(String::from("One more.")),
             ),
@@ -2278,15 +2288,15 @@ mod tests
             .collect();
         assert_eq!(read, [
             ("Nat", "Nat : Type", Vec::new(), None),
-            ("Zero", "Zero", Vec::new(), None),
+            ("Zero", "Zero : Nat", Vec::new(), None),
             (
                 "Succ",
-                "Succ(n : Nat)",
+                "Succ : (n : Nat) --> Nat",
                 Vec::from([("n : Nat", Some("The predecessor."))]),
                 None
             ),
-            ("Two", "Two", Vec::new(), None),
-            ("Three", "Three", Vec::new(), Some("Three.")),
+            ("Two", "Two : Nat", Vec::new(), None),
+            ("Three", "Three : Nat", Vec::new(), Some("Three.")),
             (
                 "apply",
                 "apply(f : (x : Nat) -> -F Nat, p : (a : Nat, b : Nat), y : Nat) -> -F Nat",

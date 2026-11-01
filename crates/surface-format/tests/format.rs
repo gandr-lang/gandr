@@ -168,10 +168,10 @@ fn a_bulleted_head_comment_keeps_its_lines_2918()
 fn a_rule_s_freshness_conditions_stay_on_its_line()
 {
     let grammar = grammar();
-    let source = "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where a # q, a # q;\n}\n";
+    let source = "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where { | a # q | a # q };\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu(bind a. q) <=> q where a # q, a # q;\n}\n",
+        "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu(bind a. q) <=> q where { | a # q | a # q };\n}\n",
         "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
     );
 }
@@ -290,8 +290,8 @@ fn a_member_after_a_column_zero_comment_starts_a_statement_2950()
             "/// T.\ntheory T {\n  /// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
         ),
         (
-            "/// N.\ndata N : Type where {\n/// Zero.\n  | Z\n  | S(n : N)\n}\n",
-            "/// N.\ndata N : Type where {\n  /// Zero.\n  | Z\n  | S(n : N)\n}\n",
+            "/// N.\ndata N : Type where {\n/// Zero.\n  | Z : N\n  | S : (n : N) --> N\n}\n",
+            "/// N.\ndata N : Type where {\n  /// Zero.\n  | Z : N\n  | S : (n : N) --> N\n}\n",
         ),
     ] {
         assert_eq!(

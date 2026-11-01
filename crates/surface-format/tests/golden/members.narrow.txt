@@ -1,11 +1,11 @@
 /// The naturals.
 data Nat : Type where {
   /// The base.
-  | Zero
+  | Zero : Nat
   /// One more than `n`.
-  | Succ(n : Nat)
+  | Succ : (n : Nat) --> Nat
   /// The successor of zero is not zero.
-  rule Succ(Zero) <=> Succ(Zero);
+  rule : Succ(Zero) <=> Succ(Zero);
 }
 
 /// A state theory.

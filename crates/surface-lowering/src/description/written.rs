@@ -53,7 +53,7 @@ quenchant_shape::reason_enum! {
         /// The reason a member is unnamed.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// A `data` family's rule, `rule add(Zero, n) ==> n`, which names
+            /// A `data` family's rule, `rule : add(Zero, n) ==> n`, which names
             /// its operation rather than itself.
             Anonymous,
             /// A member an `ext` member generates, an operation or a law,
@@ -84,19 +84,6 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The observation returns a value type its family does not head.
             Returned,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a constructor writes no result.
-    pub mod stated_result {
-        /// The reason the result is unwritten.
-        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-        pub enum Absent {
-            /// The constructor of an unindexed family leaves its result to
-            /// the family at its parameters, `| Cons(head : a, tail : List(a))`.
-            Unstated,
         }
     }
 }
@@ -149,7 +136,7 @@ pub struct SurfaceRule<'rule>
 
 impl SurfaceRule<'_>
 {
-    /// The data spelling, `rule lhs <=> rhs`.
+    /// The data spelling, `rule : lhs <=> rhs`.
     ///
     /// # Specification
     /// - ensures: the written sides in written order, separated by the arrow
@@ -160,13 +147,13 @@ impl SurfaceRule<'_>
     /// - hypothesis: L3 — an unpinned face prints `<=>` between its written
     ///   sides.
     /// - witness: `description::tests::an_equation_states_no_direction`
-    #[spec(ensures: |ref text| text.contains("<=>") || text.contains("==>"))]
+    #[spec(ensures: |ref text| text.starts_with("rule : ") && (text.contains("<=>") || text.contains("==>")))]
     #[inline]
     #[must_use]
     pub fn print_data(&self) -> String
     {
         format!(
-            "rule {} {} {}",
+            "rule : {} {} {}",
             self.face.lhs,
             match self.written.orientation {
                 RuleOrientation::Unpinned => "<=>",
@@ -177,15 +164,15 @@ impl SurfaceRule<'_>
     }
 
     /// The theory spelling, `rule name : lhs <=> rhs`, closed on the `where`
-    /// clause of its freshness conditions when it states any, then on the
-    /// `under` clause of its row when it fires under one.
+    /// block of its conditions when it states any: each freshness condition,
+    /// then the row it fires under.
     ///
     /// # Specification
     /// - ensures: `name`, then the written sides in written order, separated by
-    ///   the arrow the orientation states, then each condition `a # q` in
-    ///   written order after `where`, separated by commas, then the row's
-    ///   theories in written order after `under [`, separated by commas, with
-    ///   `| r` before the `]` when the row is open.
+    ///   the arrow the orientation states, then, when the face states a
+    ///   condition or a row, `where {`, one `| a # q` item per condition in
+    ///   written order, one `| under [ … ]` item naming the row's theories in
+    ///   written order with `| r` before the `]` when the row is open, and `}`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -195,7 +182,7 @@ impl SurfaceRule<'_>
     /// - witness: `description::tests::an_equation_states_no_direction`
     /// - witness: `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`
     /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
-    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")) && text.contains(" where ") != self.face.fresh.is_empty() && text.contains(" under [") == matches!(self.face.under, Maybe::Present(_)))]
+    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")) && text.contains(" where { ") == (!self.face.fresh.is_empty() || matches!(self.face.under, Maybe::Present(_))) && text.contains("| under [") == matches!(self.face.under, Maybe::Present(_)))]
     #[inline]
     #[must_use]
     pub fn print_theory(
@@ -203,32 +190,37 @@ impl SurfaceRule<'_>
         name: &Name,
     ) -> String
     {
-        let conditions: Vec<String> = self
+        let mut items: Vec<String> = self
             .face
             .fresh
             .iter()
-            .map(|condition| format!("{} # {}", condition.atom, condition.term))
+            .map(|condition| format!("| {} # {} ", condition.atom, condition.term))
             .collect();
-        let row = match self.face.under {
-            Maybe::Present(ref under) => {
-                let theories: Vec<&str> = under.theories.iter().map(AsRef::as_ref).collect();
-                format!(" under [{}{}]", theories.join(", "), match under.tail {
+        if let Maybe::Present(ref under) = self.face.under {
+            let theories: Vec<&str> = under.theories.iter().map(AsRef::as_ref).collect();
+            items.push(format!(
+                "| under [{}{}] ",
+                theories.join(", "),
+                match under.tail {
                     RowTail::Closed => "",
                     RowTail::Open => " | r",
-                })
-            },
-            Maybe::Absent(_) => String::new(),
+                }
+            ));
+        }
+        let conditions = if items.is_empty() {
+            String::new()
+        }
+        else {
+            format!(" where {{ {}}}", items.concat())
         };
         format!(
-            "rule {name} : {} {} {}{}{}{row}",
+            "rule {name} : {} {} {}{conditions}",
             self.face.lhs,
             match self.written.orientation {
                 RuleOrientation::Unpinned => "<=>",
                 RuleOrientation::Pinned(_) => "==>",
             },
             self.face.rhs,
-            if conditions.is_empty() { "" } else { " where " },
-            conditions.join(", ")
         )
     }
 }
@@ -437,7 +429,7 @@ pub struct WrittenCircuit
 }
 
 /// Where a `data` constructor's signature is written:
-/// `| Succ(n : Nat) : Nat`.
+/// `| Succ : (n : Nat) --> Nat`.
 ///
 /// # Specification
 /// trivial.
@@ -449,8 +441,8 @@ pub struct WrittenConstructor
     /// Each field, in written order; a field written as its type alone is
     /// unnamed.
     pub fields: Vec<WrittenPort>,
-    /// The result the constructor states, when it states one.
-    pub result: Maybe<WrittenResult, stated_result::Absent>,
+    /// The result the constructor states after its colon or its arrow.
+    pub result: WrittenResult,
 }
 
 /// Where a constructor's stated result is written: `Vec(a, Succ(n))`.

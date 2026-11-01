@@ -5928,17 +5928,17 @@ mod tests
         );
         assert_eq!(
             at("Succ(plus"),
-            named("Succ(n :", "Succ"),
+            named("Succ : (n :", "Succ"),
             "a constructor in a term, its name in the family"
         );
         assert_eq!(
             at("Succ(p)"),
-            named("Succ(n :", "Succ"),
+            named("Succ : (n :", "Succ"),
             "a constructor in a pattern, its name in the family"
         );
         assert_eq!(
             at("Zero))"),
-            named("Zero\n", "Zero"),
+            named("Zero : Nat", "Zero"),
             "a constructor inside another's argument answers itself"
         );
         assert_eq!(
@@ -6083,7 +6083,7 @@ mod tests
         );
         assert_eq!(
             at("Succ(n))\n"),
-            named("Succ(n :", "Succ"),
+            named("Succ : (n :", "Succ"),
             "a result's index applying a constructor, that constructor"
         );
         assert_eq!(
@@ -6105,7 +6105,7 @@ mod tests
             refers(&table, referred, SourceText::from("Succ()")),
             Some(site(
                 referred,
-                SourceText::from("Succ(n :"),
+                SourceText::from("Succ : (n :"),
                 SourceText::from("Succ"),
             )),
             "the constructor's name in the family, though `two` is refused"
@@ -6170,7 +6170,7 @@ mod tests
             "a declaration: its recursive call"
         );
         assert_eq!(
-            uses("Succ(n :"),
+            uses("Succ : (n :"),
             [
                 at("Succ(p)"),
                 at("Succ(plus"),
@@ -6324,7 +6324,7 @@ mod tests
         use gandr_surface_lowering::UnitSource;
 
         let sibling = SourceText::from(
-            "pub data Point : Type where {\n  | Here\n}\npub def here : Point ;\ndef here = Here ;",
+            "pub data Point : Type where {\n  | Here : Point\n}\npub def here : Point ;\ndef here = Here ;",
         );
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
@@ -6417,11 +6417,11 @@ mod tests
                     NameKind::Family
                 ),
                 (
-                    in_source(sibling, 0, "Here\n", "Here"),
+                    in_source(sibling, 0, "Here : Point", "Here"),
                     NameKind::Constructor
                 ),
                 (
-                    in_source(sibling, 0, "There\n", "There"),
+                    in_source(sibling, 0, "There : Point", "There"),
                     NameKind::Constructor
                 ),
                 (
@@ -6451,7 +6451,7 @@ mod tests
 
         let sibling = SourceText::from("pub def here = 7 ;");
         let importer = SourceText::from(
-            "import \"./here.gandr\" ;\ndata Point : Type where {\n  | Origin\n}\ndef answer = 42 \
+            "import \"./here.gandr\" ;\ndata Point : Type where {\n  | Origin : Point\n}\ndef answer = 42 \
              ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { \
              return n + n }\ndef idAt(A : Type, x : A) -> -F A { x }\ndef opt : Type -> Type[-] \
              ;\ndef opt = \\A. -F A ;\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U \
@@ -6533,10 +6533,10 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type where {\n  | Here\n}\npub data Spot : Type where {\n  \
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}\npub data Spot : Type where {\n  \
                        There : Spot;\n}";
-        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here\n}\ndef \
-                        a : Integer ;\ndef a = nope ;\ndata Spot : Type where {\n  | There\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here : Point\n}\ndef \
+                        a : Integer ;\ndef a = nope ;\ndata Spot : Type where {\n  | There : Spot\n}";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
         let unit = Unit::new(vec![
@@ -6602,7 +6602,7 @@ mod tests
             "a sibling arm never sees `p`"
         );
         assert_eq!(
-            at("Nat)\n}"),
+            at("Nat) --> Nat\n}"),
             Vec::<String>::new(),
             "a family's constructor reads under no binder"
         );
@@ -6616,8 +6616,7 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling =
-            "pub data Point : Type where {\n  | Here\n}\npub def here : Point ;\ndef here = Here ;";
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}\npub def here : Point ;\ndef here = Here ;";
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
         let laid = format!("{sibling}\n{}", <&str>::from(importer));
@@ -6680,7 +6679,7 @@ mod tests
         };
         assert_eq!(
             kept(
-                "//! Points.\ndata Point : Type where {\n  | Here\n}",
+                "//! Points.\ndata Point : Type where {\n  | Here : Point\n}",
                 "//! Uses [Point].\nimport \"./point.gandr\" ;\ndef there : Point ;\ndef there \
                  = Here ;"
             ),
@@ -6692,7 +6691,7 @@ mod tests
         );
         assert_eq!(
             kept(
-                "data Point : Type where {\n  | Here\n}",
+                "data Point : Type where {\n  | Here : Point\n}",
                 "//! Uses [Point].\nimport \"./point.gandr\" ;\ndef there : Point ;\ndef there \
                  = Here ;"
             ),
@@ -6717,7 +6716,7 @@ mod tests
         use super::reprinted;
         use super::signed;
 
-        let sibling = "pub data Point : Type where {\n  | Here\n}";
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}";
         let importer = "import \"./point.gandr\" ;\ndef there : +U (-F +{Point, Point}) ;\ndef \
                         there = thunk { return +{.1 = Here} } ;";
         let laid = format!("{sibling}\n{importer}");
@@ -6829,7 +6828,9 @@ mod tests
         let scratch = Scratch::new(Path::new("member-reprint"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("pub data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n"),
+            SourceText::from(
+                "pub data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n",
+            ),
         );
         scratch.file(
             Path::new("fixture/a-sibling.gandr"),
@@ -6961,7 +6962,7 @@ mod tests
     #[test]
     fn a_called_name_runs_and_a_binder_binds()
     {
-        let written = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef id : \
+        let written = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef id : \
                        Nat => Nat ;\ndef id = thunk { fn (y) { pure y } } ;\ndef twice = thunk { fn \
                        (x) { run a <- id(x) ; id(a) } } ;\ndef same(n : Nat) -> -F Nat { n }\n";
         let table = table(SourceText::from(written));
@@ -7130,7 +7131,7 @@ mod tests
     fn a_printed_type_reads_back_to_its_certificate()
     {
         let source = SourceText::from(
-            "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef f(x : Nat) -> \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef f(x : Nat) -> \
              -F Nat { return x }\ndef h(a : Type, y : a) -> -F a { return y }\ndef k(a : Type, y : \
              a) -> -F a { run z <- h(a, y) ; return z }\n",
         );
@@ -7318,9 +7319,9 @@ mod tests
     fn a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385()
     {
         let source = SourceText::from(
-            "data Circle : Type where {\n  | Base\n  | loop : Base <-> Base\n}\n\ndata Int : \
-             Type where {\n  | Z\n  | S(x : Int)\n  | P(x : Int)\n  rule \
-             S(P(x)) <=> x;\n  rule P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
+            "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n\ndata Int : \
+             Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : \
+             S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
              -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
              back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
              Base, Base) {\n  case n {\n    Z => return here(Base),\n    S(x) => { run c <- \
@@ -7443,7 +7444,7 @@ mod tests
     fn an_unused_dependent_part_answers_in_its_arms_context()
     {
         let source = SourceText::from(
-            "data Vinf : Type[+, 1] where {\n  | Sup(a : Type, f : +U (a -> -F Vinf))\n}\n\ndef members(v : Vinf) -> -F Type {\n  case v {\n    Sup(a, f) => return a\n  }\n}\n",
+            "data Vinf : Type[+, 1] where {\n  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf\n}\n\ndef members(v : Vinf) -> -F Type {\n  case v {\n    Sup(a, f) => return a\n  }\n}\n",
         );
         let table = table(source);
         assert_eq!(
@@ -8026,8 +8027,8 @@ mod tests
     fn a_data_family_is_keyed_at_its_own_type_past_its_operations()
     {
         let source = SourceText::from(
-            "data N : Type where {\n  | Z\n  | S(n : N)\n  oper twice(m : N) -> (o : N);\n  \
-             rule twice(Z) ==> Z;\n}\n",
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n  oper twice : (m : N) --> (o : N);\n  \
+             rule : twice(Z) ==> Z;\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let tree = gandr_surface_parser::parse(&grammar, source)
@@ -8052,7 +8053,7 @@ mod tests
             "the family's form, not its operation's type"
         );
         assert_eq!(
-            answer(&table, source, SourceText::from("S(n")),
+            answer(&table, source, SourceText::from("S : (n")),
             agreed(Subject::Binder, SourceText::from("+U (N -> -F N)")),
             "a constructor at its declared type"
         );
@@ -8112,8 +8113,8 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type where {\n  | Here\n}";
-        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here\n}\ndef \
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here : Point\n}\ndef \
                         here : Point ;\ndef here = Here ;";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
@@ -8143,7 +8144,7 @@ mod tests
             "a name after the refused declaration still refers"
         );
         assert!(
-            matches!(table.referent(at("Here\n}")), Maybe::Absent(_)),
+            matches!(table.referent(at("Point\n}")), Maybe::Absent(_)),
             "a name inside the refused declaration refers to nothing"
         );
         let trips: Vec<(String, RoundTrip)> = table
@@ -8205,7 +8206,7 @@ mod tests
     fn a_run_binder_answers_at_what_its_computation_returns_298()
     {
         let source = SourceText::from(
-            "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n\ndef \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef \
              predecessor(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
              Succ(p) => pure p,\n  } ;\n  return m\n}\n\ndef first(n : Nat) -> -F Nat {\n  run k \
              <- loop { break(Succ(n)) } ;\n  return Succ(k)\n}\n\ndef same(n : Nat) -> -F Nat {\n  \
@@ -8305,7 +8306,7 @@ mod tests
     fn a_run_bound_match_s_patterns_answer_298()
     {
         let source = SourceText::from(
-            "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n\ndef rec skim(n : \
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec skim(n : \
              Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
              case p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
              become skim[<](p)\n    },\n  }\n}\n",
@@ -8351,7 +8352,7 @@ mod tests
     fn a_run_s_tuple_pattern_answers_at_the_tuple_298()
     {
         let source = SourceText::from(
-            "data Nat : Type where {\n  | Zero\n}\n\ndef pair(n : Nat) -> -F (Nat * Nat) {\n  return \
+            "data Nat : Type where {\n  | Zero : Nat\n}\n\ndef pair(n : Nat) -> -F (Nat * Nat) {\n  return \
              (n, n)\n}\n\ndef first(n : Nat) -> -F Nat {\n  run (a, b) <- pair(n) ;\n  return \
              a\n}\n",
         );
@@ -8551,7 +8552,7 @@ mod tests
     fn a_family_decoded_at_a_nested_call_reads_back_768()
     {
         let source = SourceText::from(
-            "data N : Type where {\n  | Z\n  | S(n : N)\n}\n\ndata T : Type where {\n  | V\n}\n\ndef \
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
              ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
              w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
              => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
@@ -8581,7 +8582,7 @@ mod tests
     fn a_record_whose_dependency_reads_away_reads_back_771()
     {
         let source = SourceText::from(
-            "data N : Type where {\n  | Z\n  | S(n : N)\n}\n\ndata T : Type where {\n  | V\n}\n\ndef \
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
              ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
              w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
              => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
@@ -9233,15 +9234,15 @@ mod tests
         use super::RoundTrip;
 
         let source = SourceText::from(
-            "data Nat : Type where { | Zero | Succ(n : Nat) } data Both(a : Type, b : \
-             Type) : Type where { | MkBoth(x : a, y : b) } def apart(x : Nat, y : \
-             Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil | FCons(x  : Nat, xs : Fresh, p : fresh(x, xs)) } def rec fresh(x : Nat, xs : \
+            "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat } data Both(a : Type, b : \
+             Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } def apart(x : Nat, y : \
+             Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh } def rec fresh(x : Nat, xs : \
              Fresh) -> -F Type { case xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
              apart(x, y); run r <- fresh[<](x, ys); return (Both(p, r)) } } } } rec { data \
-             UD(d : Type) : Type where { | BaseD | PiD(a : UD(d), b : +U (elD(d, a) -> -F \
-             UD(d))) } def rec elD(d : Type, u : UD(d)) -> -F Type { case u { BaseD \
+             UD(d : Type) : Type where { | BaseD : UD(d) | PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
+             UD(d))) --> UD(d) } def rec elD(d : Type, u : UD(d)) -> -F Type { case u { BaseD \
              => return d, PiD(a, b) => return (+U ((x : elD[<](d, a)) -> -F elD[<](d, b(x)))) \
-             } } } rec { data Loop : Type where { | Base | PiL(a : Loop, b : +U (unloop(a) ->  -F Loop)) } def rec unloop(u : Loop) -> -F Type { case u { Base => \
+             } } } rec { data Loop : Type where { | Base : Loop | PiL : (a : Loop, b : +U (unloop(a) ->  -F Loop)) --> Loop } def rec unloop(u : Loop) -> -F Type { case u { Base => \
              return Nat, PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Nat)) } } }",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9396,7 +9397,7 @@ mod tests
     #[test]
     fn a_recursive_call_s_head_refers_to_the_name_it_calls()
     {
-        let text = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef rec \
+        let text = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
                     down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) \
                     => become down[<](p)\n  }\n}\n";
         let table = table(SourceText::from(text));
@@ -9423,9 +9424,8 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "pub data Point : Type where {\n  | Here\n}";
-        let importer =
-            "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here\n}\ndef two = 2 ;";
+        let sibling = "pub data Point : Type where {\n  | Here : Point\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type where {\n  | Here : Point\n}\ndef two = 2 ;";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
         let unit = Unit::new(vec![
@@ -9459,10 +9459,10 @@ mod tests
     fn only_a_stated_index_answers_under_its_frame_931()
     {
         let source = SourceText::from(
-            "data Nat : Type where { | Z | S(n : Nat) }\ndata Vec(a : Type) : Nat -> \
-             Type where { | Nil : Vec(a, Z) | Cons(n : Nat, x : a, xs : Vec(a, n)) : Vec(a, S(n)) \
+            "data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }\ndata Vec(a : Type) : Nat -> \
+             Type where { | Nil : Vec(a, Z) | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)) \
              }\ndef g(k : Nat, v : Vec(Nat, k)) -> -F Vec(Nat, k) { return v }\ndata Fin : Nat \
-             -> Type where { | FZ(m : Nat) : Fin(S(m)) }\n",
+             -> Type where { | FZ : (m : Nat) --> Fin(S(m)) }\n",
         );
         let table = table(source);
         assert_eq!(
@@ -9477,7 +9477,7 @@ mod tests
     #[test]
     fn each_oriented_rule_notes_its_direction()
     {
-        let text = "data Int : Type where {\n  | Z\n  | S(x : Int)\n  | P(x : Int)\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\n";
+        let text = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\n";
         let table = table(SourceText::from(text));
         let noted: Vec<&str> = table
             .orientations()
@@ -9502,8 +9502,8 @@ mod tests
     fn an_indexed_constructor_pattern_types_its_fields_and_name_3539()
     {
         let source = SourceText::from(
-            "data N : Type where {\n  | Z\n  | S(n : N)\n}\ndata Fin : N -> Type where {\n  | FZ(n : N) : Fin(S(n))\n  | FS(n : N, i : Fin(n)) : Fin(S(n))\n}\ndata V(a : \
-             Type) : N -> Type where {\n  | VN : V(a, Z)\n  | VC(n : N, x : a, t : V(a, n)) : V(a,  S(n))\n}\ndata Box(a : Type) : Type where {\n  | MkBox(x : a)\n}\ndef rec \
+            "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\ndata Fin : N -> Type where {\n  | FZ : (n : N) --> Fin(S(n))\n  | FS : (n : N, i : Fin(n)) --> Fin(S(n))\n}\ndata V(a : \
+             Type) : N -> Type where {\n  | VN : V(a, Z)\n  | VC : (n : N, x : a, t : V(a, n)) --> V(a,  S(n))\n}\ndata Box(a : Type) : Type where {\n  | MkBox : (x : a) --> Box(a)\n}\ndef rec \
              toN(m : N, i : Fin(m)) -> N {\n  case i {\n    FZ(_) => Z,\n    FS(p, j) => \
              S(toN[<](p, j))\n  }\n}\ndef vlen(m : N, v : V(N, m)) -> N {\n  case v {\n    VN \
              => Z,\n    VC(k, _, t) => S(k)\n  }\n}\ndef vsnd(m : N, v : V(N, m)) -> N {\n  case \
@@ -9559,7 +9559,7 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let refusals = |arms: &str| {
             let own = alloc::format!(
-                "data Color : Type where {{ | Red | Green | Blue }}\ndef pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"
+                "data Color : Type where {{ | Red : Color | Green : Color | Blue : Color }}\ndef pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"
             );
             let text = SourceText::from(own.as_str());
             let alone = table(text);

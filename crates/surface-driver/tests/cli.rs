@@ -429,19 +429,19 @@ fn a_run_spells_its_value_by_its_own_type_past_a_namesake_3125()
     let scratch = Scratch::new(Path::new("namesake"));
     let _shared = scratch.file(
         Path::new("d.gandr"),
-        Text::from("pub data U : Type where {\n  | One\n}\n"),
+        Text::from("pub data U : Type where {\n  | One : U\n}\n"),
     );
     let other = scratch.file(
         Path::new("b.gandr"),
         Text::from(
-            "import \"./d.gandr\";\npub data P : Type where {\n  | Deref\n  | Field\n}\n@[ \
+            "import \"./d.gandr\";\npub data P : Type where {\n  | Deref : P\n  | Field : P\n}\n@[ \
              runs(\"Field\") ]\ndef first() -> P {\n  Field\n}\n",
         ),
     );
     let own = scratch.file(
         Path::new("a.gandr"),
         Text::from(
-            "import \"./d.gandr\";\npub data P : Type where {\n  | Inside\n  | OnHeap\n}\n@[ \
+            "import \"./d.gandr\";\npub data P : Type where {\n  | Inside : P\n  | OnHeap : P\n}\n@[ \
              runs(\"OnHeap\") ]\ndef second() -> P {\n  OnHeap\n}\n",
         ),
     );
@@ -910,7 +910,7 @@ fn check_reports_each_cell_a_source_discharges_4112()
         Text::from(
             "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
              Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : \
-             Type where {\n  | Only\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  \
+             Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  \
              def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
              Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
         ),

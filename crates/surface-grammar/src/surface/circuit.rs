@@ -424,18 +424,18 @@ fn rule_judgment_tail() -> Regex
 
 /// Build a rewrite rule signature from expression endpoints.
 ///
-/// A rule between two terms may close on a `where` clause of freshness
-/// conditions, `where a # q, …`: each names an atom the rule abstracts and a
-/// metavariable whose instance must not mention it. It may then close on an
-/// `under` clause, `under [State, Console | r]`, the row the rule fires
-/// under, spelt as a returner's row is: theories, then an optional tail that
-/// leaves the row open.
+/// A rule between two terms may close on a `where` block of side conditions,
+/// `where { | a # q | under [State, Console | r] }`, every item holding
+/// jointly: a freshness condition `a # q` names an atom the rule abstracts and
+/// a metavariable whose instance must not mention it, and an `under` item the
+/// row the rule fires under, spelt as a returner's row is: theories, then an
+/// optional tail that leaves the row open.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the direct-telescope and expression-endpoint signature
-///   alternatives, the second closing on an optional `where` clause and then an
-///   optional `under` clause.
+///   alternatives, the second closing on an optional `where` block of bar
+///   items, each a freshness condition or an `under` row.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -447,7 +447,7 @@ fn rule_judgment_tail() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.get(3 ..).is_some_and(|clauses| clauses.iter().all(|clause| matches!(clause.shape(), RegexShape::Optional(_))))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.get(3).is_some_and(|clause| matches!(clause.shape(), RegexShape::Optional(_)))))))]
 fn rule_signature() -> Regex
 {
     alt([
@@ -462,18 +462,25 @@ fn rule_signature() -> Regex
             h(Sort::Expression),
             opt(seq([
                 t(TileLabel("where")),
-                comma1(seq([
-                    t(TileLabel("identifier")),
-                    t(TileLabel("#")),
-                    t(TileLabel("identifier")),
+                t(TileLabel("{")),
+                repeat(seq([
+                    t(TileLabel("arm_bar")),
+                    alt([
+                        seq([
+                            t(TileLabel("identifier")),
+                            t(TileLabel("#")),
+                            t(TileLabel("identifier")),
+                        ]),
+                        seq([
+                            t(TileLabel("under")),
+                            t(TileLabel("[")),
+                            comma1(t(TileLabel("type_identifier"))),
+                            opt(seq([t(TileLabel("|")), t(TileLabel("identifier"))])),
+                            t(TileLabel("]")),
+                        ]),
+                    ]),
                 ])),
-            ])),
-            opt(seq([
-                t(TileLabel("under")),
-                t(TileLabel("[")),
-                comma1(t(TileLabel("type_identifier"))),
-                opt(seq([t(TileLabel("|")), t(TileLabel("identifier"))])),
-                t(TileLabel("]")),
+                t(TileLabel("}")),
             ])),
         ]),
     ])

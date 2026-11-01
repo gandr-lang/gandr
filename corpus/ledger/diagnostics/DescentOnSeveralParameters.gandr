@@ -1,8 +1,8 @@
 /// `DescentOnSeveralParameters`: a recursive definition whose claims descend on two parameters.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ refuses("DescentOnSeveralParameters") ]

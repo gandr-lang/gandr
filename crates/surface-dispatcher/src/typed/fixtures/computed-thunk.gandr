@@ -1,9 +1,9 @@
 data Sig(a : Type, b : +U (a -> -F Type)) : Type where {
-  | MkSig(x : a, y : b(x))
+  | MkSig : (x : a, y : b(x)) --> Sig(a, b)
 }
 data IR(d : Type) : Type[+, 1] where {
-  | Iota(e : d)
-  | DeltaC(a : Type, f : +U (+U (a -> -F d) -> -F IR(d)))
+  | Iota : (e : d) --> IR(d)
+  | DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d)
 }
 def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
   case c {

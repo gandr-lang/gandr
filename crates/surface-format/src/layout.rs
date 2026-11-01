@@ -770,7 +770,7 @@ enum Continuation
 /// comment follows on the separator's line, and before an element the source
 /// wrote on a new line. A separator is a `;`, or a `,` in a group no `;`
 /// separates and no bar opens, so the commas inside a statement, as in a
-/// rule's `where a # q, b # q` or a clause's `| m, Zero => m`, stay on its
+/// row's `under [State, Console]` or a clause's `| m, Zero => m`, stay on its
 /// line. An item the source started on a new line, after no separator and
 /// indented deeper than the statement before it, continues that statement,
 /// unless a bar leads it: a `|` at the head of a line is an arm bar, which

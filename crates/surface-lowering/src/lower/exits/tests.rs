@@ -44,7 +44,7 @@ use crate::resolve::SurfaceName;
 use crate::unit::Unit;
 
 /// The naturals every witness matches on.
-const NAT: &str = "data Nat : Type where { | Zero | Succ(n : Nat) }\n";
+const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n";
 
 /// The bytes `needle` spells in `source`, which spells it once.
 ///

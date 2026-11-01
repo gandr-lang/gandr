@@ -1,6 +1,6 @@
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 rec {
   def rec ping(n : Nat) -> -F Nat { become pong(n) }

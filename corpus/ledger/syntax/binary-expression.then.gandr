@@ -1,7 +1,7 @@
 /// `binary_expression.then`: path composition: one path, then another.
 @[ checks ]
 data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base <-> Base
 }
 @[ checks ]

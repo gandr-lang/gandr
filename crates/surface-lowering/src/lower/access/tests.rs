@@ -312,7 +312,7 @@ def unbound(n : Integer) -> -F Unit { abort(missing) }
 fn an_exit_inside_an_access_is_refused()
 {
     let source = SourceText::from(
-        r"data Nat : Type where { | Zero | Succ(n : Nat) }
+        r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def leaves(n : Integer) -> -F Unit { hold c = 0; access c as v { return unit } }
 def unwinds(n : Integer) -> -F Unit { hold c = 0; access c as v { abort(v) } unwind { return unit } }
 def early(n : Nat) -> -F Integer {
@@ -379,7 +379,7 @@ def early_by_hand(n : Nat) -> -F Integer {
 fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
     let source = SourceText::from(
-        r"data Nat : Type where { | Zero | Succ(n : Nat) }
+        r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def joined(n : Nat) -> -F Integer {
   hold c = 100;
   run m <- case n { Zero => return 7, Succ(p) => { hold c = unit; pure 1 } } ;

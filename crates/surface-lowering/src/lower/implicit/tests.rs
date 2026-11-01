@@ -475,7 +475,7 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
 {
     // A stage crosses only at a call's head: `applyAt[.i = k]` passed as a
     // value is `λ f. λ x. applyAt[.i = k](f, x)`.
-    let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\ndef applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat { f(x) }\ndef apply2[j : Size](g : (f : Nat[<j] => Nat, x : Nat[<j]) => Nat, f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat { become g(f, x) }\ndef passAt[k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat { become apply2[.j = k](applyAt[.i = k], f, x) }\n";
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndef applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat { f(x) }\ndef apply2[j : Size](g : (f : Nat[<j] => Nat, x : Nat[<j]) => Nat, f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat { become g(f, x) }\ndef passAt[k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat { become apply2[.j = k](applyAt[.i = k], f, x) }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let report = judged(&module, &mut arena);

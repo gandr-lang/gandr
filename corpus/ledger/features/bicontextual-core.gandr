@@ -16,27 +16,27 @@
 @[ reads(Nat) ]
 data Nat : Type where {
   /// Zero.
-  | Zero
+  | Zero : Nat
   /// The natural after `n`.
-  | Succ(n : Nat)
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A flag, whose constructors read nothing.
 @[ reads(()) ]
 data Flag : Type where {
   /// On.
-  | On
+  | On : Flag
   /// Off.
-  | Off
+  | Off : Flag
 }
 
 /// A natural or a flag, whose fields read `Nat` and `Flag`.
 @[ reads((Flag, Nat)) ]
 data Either : Type where {
   /// A natural.
-  | Count(m : Nat)
+  | Count : (m : Nat) --> Either
   /// A flag.
-  | Mark(f : Flag)
+  | Mark : (f : Flag) --> Either
 }
 
 /// Answers `n` whichever side `e` takes. The case reads `Either` through its constructors, and never the fields it binds.

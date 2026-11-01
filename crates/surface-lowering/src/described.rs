@@ -2218,10 +2218,8 @@ impl Typer<'_>
                     self.emit(port.sort.span, DescribedRole::Type, universe, closed);
                 }
             }
-            if let Some(universe) = universe_of(self.arena, family)
-                && let Maybe::Present(ref result) = member.result
-            {
-                self.emit(result.span, DescribedRole::Type, universe, closed);
+            if let Some(universe) = universe_of(self.arena, family) {
+                self.emit(member.result.span, DescribedRole::Type, universe, closed);
             }
         }
         let mut operations: BTreeMap<Name, Operation> = BTreeMap::new();
@@ -2562,10 +2560,7 @@ impl Typer<'_>
                     self.emit(named, DescribedRole::Name, outside, context);
                 }
             }
-            let Maybe::Present(ref result) = member.result
-            else {
-                continue;
-            };
+            let result = &member.result;
             self.emit(result.span, DescribedRole::Type, signature.kind(), context);
             for (&argument, &classifier) in result.arguments.iter().zip(&classifiers) {
                 self.emit(argument, DescribedRole::Type, classifier, context);

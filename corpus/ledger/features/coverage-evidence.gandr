@@ -8,9 +8,9 @@
 /// Three colours, one arm each.
 @[ checks ]
 data Color : Type where {
-  | Red
-  | Green
-  | Blue
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// Every colour has its arm.

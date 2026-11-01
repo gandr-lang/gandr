@@ -219,7 +219,7 @@ fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
 {
     let grammar = grammar();
     let source = "\
-data Nat : Type where { | Zero | Succ(n : Nat) }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
 def succeeded(n : Nat) -> -F Nat {
   return Succ(n)
@@ -267,7 +267,7 @@ def asked(n : Nat) -> -F Nat {
 }
 ";
     let sugared = "\
-data Nat : Type where { | Zero | Succ(n : Nat) }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
 def succeeded(n : Nat) -> Nat {
   Succ(n)
@@ -501,7 +501,7 @@ def noted : (/* the count */ Integer) => Integer;
 /// The circle the path-composite goldens compose its loop in.
 const CIRCLE: &str = "\
 pub data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base <-> Base
 }
 
@@ -782,8 +782,8 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
 fn a_rule_s_outputs_are_not_a_tuple()
 {
     let grammar = grammar();
-    let rules = "data NatDiv : Type where {\n  | Zero\n  | Succ(n : NatDiv)\n  \
-                 oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  rule \
+    let rules = "data NatDiv : Type where {\n  | Zero : NatDiv\n  | Succ : (n : NatDiv) --> NatDiv\n  \
+                 oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);\n  rule : \
                  divmod(m, Zero) <=> (Zero, m);\n}\n\n";
     assert_eq!(
         spelled(
@@ -930,7 +930,7 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
         pub data Circle : Type where {
-          | Base
+          | Base : Circle
           | loop : Base <-> Base
         }
 
@@ -976,7 +976,7 @@ def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), q then
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
         pub data Circle : Type where {
-          | Base
+          | Base : Circle
           | loop : Base <-> Base
         }
 
@@ -1099,8 +1099,8 @@ fn the_value_function_alias_is_written_where_the_printer_writes_it()
     let grammar = grammar();
     let argument = "\
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
@@ -1122,8 +1122,8 @@ def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
         data Nat : Type where {
-          | Zero
-          | Succ(n : Nat)
+          | Zero : Nat
+          | Succ : (n : Nat) --> Nat
         }
 
         def kept(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Nat, b, a) {
@@ -1192,8 +1192,8 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
     let grammar = grammar();
     let explicit = "\
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def onType(t: Type) -> -F Type {
@@ -1206,8 +1206,8 @@ def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
 ";
     expect![[r#"
         data Nat : Type where {
-          | Zero
-          | Succ(n : Nat)
+          | Zero : Nat
+          | Succ : (n : Nat) --> Nat
         }
 
         def onType(t : Type) -> Type {
@@ -1339,7 +1339,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
 fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 {
     let grammar = grammar();
-    let source = "data Color : Type where {\n  | Red\n  | Green\n}\n\ndef sketch(c : \
+    let source = "data Color : Type where {\n  | Red : Color\n  | Green : Color\n}\n\ndef sketch(c : \
                   Color) -> -F Integer {\n  case c {\n    Red => return 0,\n    Green => ?\n  \
                   }\n}\n\ndef pair : #{Integer, String};\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
@@ -1424,8 +1424,8 @@ fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
     let grammar = grammar();
     let source = "\
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def next(n : Nat) -> -F Nat {
@@ -1552,7 +1552,7 @@ impl Elaborate for Oracle
 fn a_linear_run_follows_the_checker_s_elaborations()
 {
     let grammar = grammar();
-    let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\
@@ -1609,7 +1609,7 @@ fn a_linear_run_follows_the_checker_s_elaborations()
 fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
 {
     let grammar = grammar();
-    let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\
@@ -1669,7 +1669,7 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
 fn the_runs_ending_a_block_are_written_away_together()
 {
     let grammar = grammar();
-    let head = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+    let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
                 def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                 \n\
@@ -1717,7 +1717,7 @@ fn the_runs_ending_a_block_are_written_away_together()
 fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
 {
     let grammar = grammar();
-    let head = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+    let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
                 def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                 \n\
@@ -1881,7 +1881,7 @@ fn a_rewrite_is_checked_beside_every_kind_of_declaration()
 fn an_inserted_thunk_follows_the_checker_s_elaborations()
 {
     let grammar = grammar();
-    let source = "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\

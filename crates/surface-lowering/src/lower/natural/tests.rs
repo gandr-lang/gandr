@@ -141,7 +141,7 @@ fn a_numeral_at_a_source_s_own_nat_stays_an_integer_3287()
     // A source's own `Nat` shadows the prelude's where the annotation is
     // written, so the numeral stays the integer its lexeme is.
     let source = "\
-data Nat : Type where { | Zero | Succ(n : Nat) }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def five = (5 : Nat) ;
 ";
     let (text, unit) = crate::prelude::lay(SourceText::from(source), &Unit::single()).unwrap();

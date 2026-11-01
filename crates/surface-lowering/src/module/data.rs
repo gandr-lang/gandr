@@ -1,7 +1,7 @@
 //! Data declarations, as the collection pass reads them.
 //!
-//! `data T(a : A, …) : U where { | C(x : B, …) : T(a, …) … }` is read into a
-//! [`DataForm`]: the parameter telescope, the universe and each generator's
+//! `data T(a : A, …) : U where { | C : (x : B, …) --> T(a, …) … }` is read into
+//! a [`DataForm`]: the parameter telescope, the universe and each generator's
 //! fields, every type kept as the syntax node the lowering reads later. A
 //! generator's result is checked here and dropped: the family applied to its
 //! own parameters, in order, is the only result a nominal family without
@@ -156,7 +156,7 @@ quenchant_shape::reason_enum! {
         /// The source wrote the entry's type alone.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The entry is written bare, as in `| Succ(Nat)` or
+            /// The entry is written bare, as in `| Succ : (Nat) --> Nat` or
             /// `data Vec(a : Type) : Nat -> Type`.
             Unnamed,
         }
@@ -1222,20 +1222,20 @@ impl<'source> Collector<'_, 'source>
         Ok(cells)
     }
 
-    /// Read one constructor, `| C`, `| C(x : B, …)`, `| C : T(a, …)` or
-    /// `| C(x : B, …) : T(a, …)`, its name tile `named` already read, of a
+    /// Read one constructor, `| C : T(a, …)` or `| C : (x : B, …) --> T(a, …)`,
+    /// its name tile `named` already read, of a
     /// family over `parameters` and indexed by `kinds`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the constructor's name tile.
     /// - ensures: the constructor's fields, named or bare, in order, each past
-    ///   its grade `1` or `ω` where one is written, and the indices its result
-    ///   states; a constructor that states no result has the family over its
-    ///   parameters as its result; the cursor stands past the member.
-    /// - fails: an attribute slot by name; any other grade by name; a stated
-    ///   result other than the family over its parameters then one index per
-    ///   entry of `kinds`, as an indexed family; no result in an indexed
-    ///   family, as a missing operand.
+    ///   its grade `[1]` or `[ω]` where one is written, read off the signature
+    ///   after its colon, `: (fields) --> R` or `: R` for none, and the indices
+    ///   its result states; the cursor stands past the member.
+    /// - fails: a member with no colon as a missing operand; an attribute slot
+    ///   by name; any other grade by name; a stated result other than the
+    ///   family over its parameters then one index per entry of `kinds`, as an
+    ///   indexed family.
     /// - panics: none.
     ///
     /// # Errors
@@ -1257,13 +1257,18 @@ impl<'source> Collector<'_, 'source>
         (parameters, kinds): (&[DataParameter], &[FieldForm]),
     ) -> Result<GeneratorForm, LoweringRefusal<'source>>
     {
-        let fields = match cursor.tile(TileName::PAREN_OPEN) {
-            Maybe::Present(_) => self.entries(cursor, FormName::DATA_GENERATOR)?.0,
-            Maybe::Absent(_) => Vec::new(),
-        };
-        let result = match cursor.tile(TileName::COLON) {
-            Maybe::Present(_) => Some(one_in(FormName::DATA_GENERATOR, cursor.operands())?),
-            Maybe::Absent(_) => None,
+        if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+            return Err(LoweringRefusal::MalformedForm {
+                span: named.span.join(cursor.here()),
+                form: FormName::DATA_GENERATOR,
+                fault: FormFault::MissingOperand,
+            });
+        }
+        let (fields, result) = match self.generator_signature(cursor, FormName::DATA_GENERATOR)? {
+            Signature::Bare(result) => (Vec::new(), result),
+            Signature::Arrow {
+                entries, result, ..
+            } => (entries, result),
         };
         if let Maybe::Present(attributes) = cursor.tile(TileName::ATTRIBUTES) {
             return Err(declined(
@@ -1272,17 +1277,7 @@ impl<'source> Collector<'_, 'source>
                 Unbuilt::GeneratorAttribute,
             ));
         }
-        let indices = match result {
-            Some(result) => self.uniform(result, (parameters, kinds))?,
-            None if kinds.is_empty() => Vec::new(),
-            None => {
-                return Err(LoweringRefusal::MalformedForm {
-                    span: named.span.join(cursor.here()),
-                    form: FormName::DATA_GENERATOR,
-                    fault: FormFault::MissingOperand,
-                });
-            },
-        };
+        let indices = self.uniform(result, (parameters, kinds))?;
 
         Ok(GeneratorForm {
             named,
@@ -1297,9 +1292,9 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `cursor` stands just past the colon.
     /// - ensures: a parenthesized telescope or a single side before `-->` as
-    ///   [`Signature::Arrow`], its entries named or bare in order, each past
-    ///   its grade `1` or `ω` where one is written, with the grades in order,
-    ///   and the type after the arrow; a type with no arrow as
+    ///   [`Signature::Arrow`], its entries named or bare in order, each graded
+    ///   `[1]` or `[ω]` after its name where one is written, the grades in
+    ///   order, and the type after the arrow; a type with no arrow as
     ///   [`Signature::Bare`]; the cursor stands past the signature.
     /// - fails: a grade other than `1` or `ω` by name; a telescope with no
     ///   arrow; a tile out of place in `form`.
@@ -1358,9 +1353,9 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the telescope's `(`.
-    /// - ensures: the entries named or bare in order, each past its grade `1`
-    ///   or `ω` where one is written, with the grades in order; the cursor
-    ///   stands past the `)`.
+    /// - ensures: the entries named or bare in order, a named entry's grade
+    ///   `[1]` or `[ω]` read after its name where one is written, with the
+    ///   grades in order; the cursor stands past the `)`.
     /// - fails: a grade other than `1` or `ω` by name; a tile out of place in
     ///   `form`.
     /// - panics: none.
@@ -1385,20 +1380,14 @@ impl<'source> Collector<'_, 'source>
         let mut grades = Vec::new();
         loop {
             let mut named = Maybe::Absent(field_name::Absent::Unnamed);
-            if let Maybe::Present(Piece::Tile { label, at }) = cursor.peek()
-                && (label == TileName::OMEGA || label == TileName::NUMBER)
-            {
-                if label == TileName::NUMBER && self.name_of(at).as_ref() != "1" {
-                    return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
-                }
-                let _grade = cursor.tile(label);
-                grades.push(at);
-            }
             if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
                 && label == TileName::IDENTIFIER
             {
                 if let Maybe::Present(binder) = cursor.tile(label) {
                     named = Maybe::Present(binder);
+                }
+                if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
+                    grades.push(self.grade(cursor, form)?);
                 }
                 if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
                     return Err(misplaced_in(form, cursor.here()));
@@ -1419,6 +1408,46 @@ impl<'source> Collector<'_, 'source>
             }
             return Err(misplaced_in(form, cursor.here()));
         }
+    }
+
+    /// Read a binder's grade between its brackets, `[1]` or `[ω]`, `form`
+    /// naming what a misplaced tile is out of place in.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the grade's `[`.
+    /// - ensures: the grade's tile; the cursor stands past the `]`.
+    /// - fails: a grade other than `1` or `ω` by name; a missing `]` as out of
+    ///   place in `form`.
+    /// - panics: none.
+    /// - executable: none — the cursor exposes no position to compare before
+    ///   and after.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::OutOfFragment`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `[1]` and `[ω]` read, and `[2]` refuses by name.
+    /// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+    fn grade(
+        &self,
+        cursor: &mut Cursor<'_>,
+        form: FormName,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Tile { label, at }) = cursor.peek()
+        else {
+            return Err(misplaced_in(form, cursor.here()));
+        };
+        let unit = label == TileName::NUMBER && self.name_of(at).as_ref() == "1";
+        if !unit && label != TileName::OMEGA {
+            return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
+        }
+        let _grade = cursor.tile(label);
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+            return Err(misplaced_in(form, cursor.here()));
+        }
+        Ok(at)
     }
 
     /// Require `result` to be the family over `parameters` and then one index

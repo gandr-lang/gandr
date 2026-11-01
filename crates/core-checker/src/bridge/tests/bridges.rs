@@ -333,9 +333,9 @@ fn a_bridge_at_a_base_or_a_sum_relates_as_its_identity_in_both_checkers()
 #[test]
 fn a_bridge_at_a_data_type_relates_constructor_by_constructor()
 {
-    // data Two : Type where { | Both(a : String, b : String) | None } ;
-    // `Both(a, a)` is bridged to itself by `((), ())`, `None` to itself by
-    // `()`, and `None` to `Both(a, a)` by nothing.
+    // data Two : Type where { | Both : (a : String, b : String) --> Two | None :
+    // Two } ; `Both(a, a)` is bridged to itself by `((), ())`, `None` to itself
+    // by `()`, and `None` to `Both(a, a)` by nothing.
     let mut arena = CoreArena::new();
     let kind = universe(&mut arena, LevelConstant::from(0_u64));
     let string = arena.value_type_base(BaseType::String);

@@ -1,12 +1,12 @@
 data Nat : Type where {
-  | Zero
-  | Succ(
+  | Zero : Nat
+  | Succ : (
     /// The predecessor.
     n : Nat
-  )
-  | Two
+  ) --> Nat
+  | Two : Nat
   /// Three.
-  | Three
+  | Three : Nat
 }
 def apply(
   f : (

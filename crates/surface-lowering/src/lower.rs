@@ -23536,7 +23536,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data U : Type where { | NatC | Arrow(a : U, b : U) } def pick(n : \
+                "data U : Type where { | NatC : U | Arrow : (a : U, b : U) --> U } def pick(n : \
                  Integer) -> -F Type { return Integer } def twice(n : Integer) -> -F Type { \
                  run x <- pick(n); return (x => x) } def el(u : U) -> -F Type { return Integer \
                  } def one : el(Arrow(NatC, NatC)) ;",
@@ -26144,7 +26144,7 @@ mod tests
     fn a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681()
     {
         let mut arena = CoreArena::new();
-        let text = "data U : Type where { | NatU | PathU(a : U, x : Integer, y : Integer) } \
+        let text = "data U : Type where { | NatU : U | PathU : (a : U, x : Integer, y : Integer) --> U } \
                     def rec el(u : U) -> -F Type { case u { NatU => return Integer, PathU(a, x, \
                     y) => return (Path(el[<](a), x, y)) } }";
         let module = lowered(SourceText::from(text), &mut arena);
@@ -26772,13 +26772,13 @@ mod tests
         let tree = repaired(
             &pbg,
             SourceText::from(
-                "data Color : Type where {\n  | Red\n  | Green : Color\n  Blue : Color\n}\n",
+                "data Color : Type where {\n  | Red : Color\n  | Green : Color\n  Blue : Color\n}\n",
             ),
         );
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(51_usize, 51_usize),
+                span: at(59_usize, 59_usize),
                 form: FormName::from(NamedKind("data_declaration")),
                 fault: FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
             },
@@ -27652,7 +27652,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "/// Squares, as [cube] cubes.\n/// Twice.\ndef square = 1 ;\n@[ doc(\"Cubes.\") ] def cube = 2 ;\n/// A colour.\ndata Color : Type where { | Red }\ndef plain = 3 ;",
+                "/// Squares, as [cube] cubes.\n/// Twice.\ndef square = 1 ;\n@[ doc(\"Cubes.\") ] def cube = 2 ;\n/// A colour.\ndata Color : Type where { | Red : Color }\ndef plain = 3 ;",
             ),
             &mut arena,
         );
@@ -28207,7 +28207,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let source = "/// See [M], [Red] and [x].\ndef a = 1 ;\nmodule M { def x = 1 ; }\ndata Color \
-                      : Type where { | Red }\n/// Not [gone].\ndef b = 2 ;";
+                      : Type where { | Red : Color }\n/// Not [gone].\ndef b = 2 ;";
         let module = lowered(SourceText::from(source), &mut arena);
         assert!(
             !matches!(outcome_named(&module, "a"), DeclarationOutcome::Refused(_)),
@@ -29219,7 +29219,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data L(a : Type) : Type where { | N } codata S(a : Type) : Type[-] { head : a; } \
+                "data L(a : Type) : Type where { | N : L(a) } codata S(a : Type) : Type[-] { head : a; } \
                  def listOf(p : Type) -> -F Type { return (L(p)) } def firstOf(a : Type, b : \
                  Type) -> -F Type { return (L(a)) } def secondOf(a : Type, b : Type) -> -F Type { \
                  return (L(b)) } def streamOf(p : Type) -> -F Type[-] { return (S(p)) }",
@@ -29285,7 +29285,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data Both(a : Type, b : Type) : Type where { | MkBoth(x : a, y : b) } \
+                "data Both(a : Type, b : Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } \
                  def same(a : Type) -> -F Type { return a } def pairSame(a : Type) -> -F Type { \
                  return (Both(same(a), a)) }",
             ),
@@ -29431,7 +29431,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig(x : a, y : b(x)) } data IR(d : Type) : Type[+, 1] where { | Iota(e : d) | SigmaC(a : Type, f : +U (a -> -F IR(d))) } def rec argsU(c : IR(Unit)) -> \
+                "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig : (x : a, y : b(x)) --> Sig(a, b) } data IR(d : Type) : Type[+, 1] where { | Iota : (e : d) --> IR(d) | SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d) } def rec argsU(c : IR(Unit)) -> \
                  -F Type { case c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk \
                  { fn (y) { argsU[<](f(y)) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
                  { case c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fn (y) \

@@ -18,8 +18,8 @@ import "../../model/desc/second-order-signatures.gandr" ;
 /// operations.
 @[ checks ]
 data N : Type where {
-  | Z
-  | S(n : N)
+  | Z : N
+  | S : (n : N) --> N
 }
 
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and

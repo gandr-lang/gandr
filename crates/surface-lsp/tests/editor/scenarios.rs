@@ -297,7 +297,7 @@ const SEEDS: [&str; 4] = [
     "",
     "def a : Integer ;\ndef a = 1 ;\n",
     "def f(x : Integer) -> -F Integer {\n  return x\n}\n",
-    "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  }\n}\n",
+    "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  }\n}\n",
 ];
 
 /// What a random script types, one token per step.
@@ -1419,7 +1419,7 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
 #[test]
 fn a_line_comment_holds_the_newline_closing_it_456()
 {
-    let text = "// a note\ndata Unit : Type where { | Tt }\n";
+    let text = "// a note\ndata Unit : Type where { | Tt : Unit }\n";
     let source = Source {
         uri: String::from("file:///comment-line-end.gandr"),
         text: String::from(text),

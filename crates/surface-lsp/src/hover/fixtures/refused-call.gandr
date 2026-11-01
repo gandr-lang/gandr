@@ -1,6 +1,6 @@
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 def bad(x : Nat) -> -F Nat {
   return Succ(x, x)

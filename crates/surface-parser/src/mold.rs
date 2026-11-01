@@ -5367,7 +5367,10 @@ mod tests
             ("def x = 1 ;", "def_value"),
             ("def x : Integer ;", "def_value"),
             ("def f(y : Integer) -> -F Integer { return y }", "def_value"),
-            ("data Color : Type where {\n  | Red\n}", "data_declaration"),
+            (
+                "data Color : Type where {\n  | Red : Color\n}",
+                "data_declaration",
+            ),
         ];
         for count in 1_usize ..= 6 {
             let attributes = vec!["runs(\"1\")"; count].join(", ");

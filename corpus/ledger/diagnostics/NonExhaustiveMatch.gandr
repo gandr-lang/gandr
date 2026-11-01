@@ -1,10 +1,10 @@
 /// `NonExhaustiveMatch`: a match some scrutinee value reaches no arm of.
 data Int : Type where {
-  | Z
-  | S(x : Int)
-  | P(x : Int)
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) <=> x;
+  rule : P(S(x)) <=> x;
 }
 
 @[ refuses("NonExhaustiveMatch") ]

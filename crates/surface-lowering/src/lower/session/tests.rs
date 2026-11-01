@@ -793,7 +793,7 @@ fn sharing_is_reserved_by_name()
 fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
     let source = SourceText::from(
-        "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def joined(n : Nat) -> -F Integer {\n\
            hold c = 100;\n\
            run m <- case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
@@ -821,7 +821,7 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
 {
     let source = SourceText::from(
-        "data Nat : Type where { | Zero | Succ(n : Nat) }\n\
+        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def forked(n : Nat) -> -F Unit {\n\
            fork (c : end) { close(c) } as d ;\n\
            close(d) ;\n\

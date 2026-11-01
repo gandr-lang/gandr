@@ -2923,7 +2923,7 @@ mod tests
         let report = settled(
             CorpusRoot::Strict,
             SourceText::from(
-                "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : Type where {\n  | Only\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+                "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
             ),
         );
         let cells = report
@@ -3050,14 +3050,14 @@ mod tests
     fn a_boundary_check_stands_as_its_run_answers_2901()
     {
         let declared = concat!(
-            "data Scalar : Type where { | U32 }\n",
-            "data Code : Type where { | Plain(s : Scalar) }\n",
-            "data Coded : Type where { | NoCoded | Coded(name : String, c : Code, rest : Coded) }\n",
-            "data Signature : Type where { | Signature(params : Coded, result : Code) }\n",
-            "data Signatures : Type where { | NoSignature | Member(s : Signature, rest : Signatures) }\n",
-            "data Row : Type where { | Row(result : Code) }\n",
-            "data Rows : Type where { | NoRow | Named(r : Row, rest : Rows) }\n",
-            "data Admission : Type where { | Admitted }\n",
+            "data Scalar : Type where { | U32 : Scalar }\n",
+            "data Code : Type where { | Plain : (s : Scalar) --> Code }\n",
+            "data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest : Coded) --> Coded }\n",
+            "data Signature : Type where { | Signature : (params : Coded, result : Code) --> Signature }\n",
+            "data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, rest : Signatures) --> Signatures }\n",
+            "data Row : Type where { | Row : (result : Code) --> Row }\n",
+            "data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
+            "data Admission : Type where { | Admitted : Admission }\n",
             "def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n",
             "def addRow : Row = Row(Plain(U32));\n",
         );
@@ -3325,7 +3325,7 @@ mod tests
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ reads((Nat, side, Nat)) ] data D : Type where { | E }",
+                "@[ reads((Nat, side, Nat)) ] data D : Type where { | E : D }",
                 read("(Nat, side, Nat)"),
                 Settlement::Settled,
                 &[("reads", 0_usize)][..],
@@ -3558,17 +3558,17 @@ mod tests
             format!(
                 r#"@[ normalizes("{line}") ]
 data NatUnits : Type where {{
-    | Zero
-    | Succ(n : NatUnits)
-    oper add(m : NatUnits, n : NatUnits) -> NatUnits;
-    rule add(Zero, n) ==> n;
+    | Zero : NatUnits
+    | Succ : (n : NatUnits) --> NatUnits
+    oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
+    rule : add(Zero, n) ==> n;
     {rules}
-    rule add(Succ(m), n) ==> Succ(add(m, n));
+    rule : add(Succ(m), n) ==> Succ(add(m, n));
 }}"#
             )
         };
-        let joins = "rule add(m, Zero) ==> m;";
-        let parts = "rule add(m, Zero) ==> Succ(m);";
+        let joins = "rule : add(m, Zero) ==> m;";
+        let parts = "rule : add(m, Zero) ==> Succ(m);";
         let normalizes = |line: &str| Outcome::Normalizes(RunSpelling::from(String::from(line)));
         let rows = [
             (

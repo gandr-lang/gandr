@@ -3,8 +3,8 @@
 /// Not implemented: two data families sharing a constructor name in one source, and a bare name resolved by uniqueness among imports; #2713 owes it.
 @[ checks ]
 data Shape : Type where {
-  | Dot
-  | Line(length : Integer)
+  | Dot : Shape
+  | Line : (length : Integer) --> Shape
 }
 
 /// The length of a line, zero for a dot, each matched by its qualified name.

@@ -1,6 +1,6 @@
 /// `LoopNotRespected`: a case over a sort its words loop at is not shown to respect one of the loops.
 data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base <-> Base
 }
 

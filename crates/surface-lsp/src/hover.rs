@@ -2406,7 +2406,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "data Flag : Type where {\n  | On\n  | Off\n}\ndef decoded(f : Flag) -> -F \
+                "data Flag : Type where {\n  | On : Flag\n  | Off : Flag\n}\ndef decoded(f : Flag) -> -F \
                  Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
                  Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
             )),
@@ -2419,7 +2419,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "data U : Type where {\n  | NatC\n  | Arrow(a : U, b : U)\n}\ndef el(u : U) \
+                "data U : Type where {\n  | NatC : U\n  | Arrow : (a : U, b : U) --> U\n}\ndef el(u : U) \
                  -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
                  }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
             )),
@@ -2479,7 +2479,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "data Circle : Type where { | Base | loop : Base <-> Base }\ndef rec size(p : \
+                "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef rec size(p : \
                  Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    \
                  loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
             )),
@@ -2744,9 +2744,9 @@ mod tests
         let data = include_str!("hover/fixtures/natdiv.gandr");
         let module = "module Ints {\n  def one : Integer ;\n  def one = 1 ;\n}\n";
         let rec = include_str!("hover/fixtures/rec-group.gandr");
-        let succ = fenced(SourceText::from("Succ(n : NatDiv)"));
+        let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
         let family = fenced(SourceText::from("NatDiv : Type"));
-        let rule = fenced(SourceText::from("rule divmod(m, Zero) ==> (Zero, m)"));
+        let rule = fenced(SourceText::from("rule : divmod(m, Zero) ==> (Zero, m)"));
         let ints = fenced(SourceText::from("module Ints"));
         let group = format!(
             "{}\n\nThe declarations this `rec_block` writes together.",
@@ -2758,7 +2758,7 @@ mod tests
             (
                 "a constructor's parenthesis",
                 data,
-                (2, 8),
+                (2, 11),
                 Ok(succ.clone()),
             ),
             (
@@ -2770,7 +2770,7 @@ mod tests
             (
                 "a constructor's closing parenthesis",
                 data,
-                (2, 19),
+                (2, 22),
                 Ok(succ),
             ),
             (
@@ -2838,13 +2838,13 @@ mod tests
             (
                 "a constructor's field",
                 data,
-                (2, 9),
+                (2, 12),
                 Ok(fenced(SourceText::from("n : NatDiv"))),
             ),
             (
                 "a rule's head",
                 data,
-                (4, 8),
+                (4, 10),
                 Ok(fenced(SourceText::from(
                     "divmod : +U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
                 ))),
@@ -2852,19 +2852,19 @@ mod tests
             (
                 "a rule's arrow",
                 data,
-                (4, 23),
+                (4, 25),
                 Ok(fenced(SourceText::from("oriented left to right"))),
             ),
             (
                 "a rule's pattern variable",
                 data,
-                (4, 14),
+                (4, 16),
                 Ok(fenced(SourceText::from("m : NatDiv"))),
             ),
             (
                 "a rule's results",
                 data,
-                (4, 27),
+                (4, 29),
                 Ok(fenced(SourceText::from("#{NatDiv, NatDiv}"))),
             ),
             (
@@ -2872,7 +2872,7 @@ mod tests
                 data,
                 (3, 3),
                 Ok(fenced(SourceText::from(
-                    "oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv)",
+                    "oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv)",
                 ))),
             ),
             (
@@ -3009,15 +3009,15 @@ mod tests
             ("the declaration's name", (0, 5), String::from(declared)),
             (
                 "a field's parenthesis",
-                (1, 26),
+                (1, 29),
                 format!("```gandr\n(\n```\n\nA tile of `parenthesized_type`.\n\n{declared}"),
             ),
             (
                 "a field's thunk type",
-                (1, 23),
+                (1, 26),
                 format!("```gandr\n+U\n```\n\nA tile of `u_type`.\n\n{declared}"),
             ),
-            ("a use of the declaration", (1, 36), String::from(declared)),
+            ("a use of the declaration", (1, 39), String::from(declared)),
         ];
         for (position, (line, character), expected) in rows {
             assert_eq!(
@@ -3045,7 +3045,7 @@ mod tests
                 "a constructor's use",
                 (5, 9),
                 format!(
-                    "```gandr\nSucc(n : Nat)\n```\n\nA constructor, written at line \
+                    "```gandr\nSucc : (n : Nat) --> Nat\n```\n\nA constructor, written at line \
                      3.\n\n{refused}"
                 ),
             ),

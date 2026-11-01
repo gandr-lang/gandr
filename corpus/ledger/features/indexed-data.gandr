@@ -15,7 +15,7 @@ import "../../model/data/data-base.gandr" ;
 @[ checks ]
 data Vec(a : Type) : Nat -> Type where {
   | VNil : Vec(a, Zero)
-  | VCons(n : Nat, head : a, tail : Vec(a, n)) : Vec(a, Succ(n))
+  | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
 }
 
 /// The vector of one integer, one long.
@@ -38,7 +38,7 @@ def pair() -> Vec(Integer, Succ(Succ(Zero))) {
 /// type of the vector reading the length before it.
 @[ checks ]
 data Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where {
-  | Measured(n : Nat, v : Vec(a, n)) : Sized(a, n, v)
+  | Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v)
 }
 
 /// A vector of integers, marked at its length.

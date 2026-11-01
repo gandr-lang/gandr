@@ -68,11 +68,12 @@
 //!
 //! # A data declaration is one more slot
 //!
-//! `data T(a : A) : U where { | C(x : B) … }` takes the next admission
-//! position under its family's name and files a definition half lowered at the
-//! declaration form itself, like a function tail. Its constructors go into one
-//! table by name, each with its family, tag and arity, so a term or a pattern
-//! naming one resolves it without searching the declarations.
+//! `data T(a : A) : U where { | C : (x : B) --> T(a) … }` takes the next
+//! admission position under its family's name and files a definition half
+//! lowered at the declaration form itself, like a function tail. Its
+//! constructors go into one table by name, each with its family, tag and arity,
+//! so a term or a pattern naming one resolves it without searching the
+//! declarations.
 //!
 //! # A `rec` block is one admission
 //!
@@ -13636,7 +13637,7 @@ mod tests
         let tree = parsed(
             &pbg,
             SourceText::from(
-                "def before = 1 ; rec { data N : Type where { | Z  } def f = 1 ; } def after = 2 ;",
+                "def before = 1 ; rec { data N : Type where { | Z : N  } def f = 1 ; } def after = 2 ;",
             ),
         );
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
@@ -14440,7 +14441,7 @@ mod tests
 
         for (text, doubled, close) in [
             (
-                "codata Stream : Type[-]] {\n  ω head : Integer;\n}\ndef kept = 1 ;\n",
+                "codata Stream : Type[-]] {\n  head[ω] : Integer;\n}\ndef kept = 1 ;\n",
                 "]]",
                 ClosingClass::Bracket,
             ),

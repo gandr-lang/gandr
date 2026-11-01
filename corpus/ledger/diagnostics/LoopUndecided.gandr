@@ -1,7 +1,7 @@
 /// `LoopUndecided`: a case over a sort its words loop at whose answer costs more to carry along a loop than the machine's fuel allows.
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def rec double(n : Nat) -> -F Nat {
@@ -19,7 +19,7 @@ def rec power(n : Nat) -> -F Nat {
 }
 
 data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base <-> Base
 }
 

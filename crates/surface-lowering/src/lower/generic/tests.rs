@@ -18,10 +18,10 @@ use crate::unit::Unit;
 
 /// A point, unary naturals and a declaration holding a function.
 const DATA: &str = "\
-data Point : Type where { | Point(x : Integer, y : Integer) }
-data Nat : Type where { | Zero | Succ(n : Nat) }
-data Shape : Type where { | Shape(f : (Integer) => Integer) }
-data Box(a : Type) : Type where { | Box(x : a) }
+data Point : Type where { | Point : (x : Integer, y : Integer) --> Point }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data Shape : Type where { | Shape : (f : (Integer) => Integer) --> Shape }
+data Box(a : Type) : Type where { | Box : (x : a) --> Box(a) }
 ";
 
 /// `source`, after [`DATA`], laid out after the prelude.
@@ -98,7 +98,7 @@ fn a_leaf_reads_a_source_s_family_before_the_prelude_s_3287()
     // checks rather than meeting the prelude's at the field.
     let (text, unit) = laid(SourceText::from(
         "\
-data Tagged : Type where { | Tagged(shown : Bool, count : Nat) }
+data Tagged : Type where { | Tagged : (shown : Bool, count : Nat) --> Tagged }
 def eqTagged = Eq.generic(Tagged) ;
 ",
     ));

@@ -8,8 +8,8 @@
 /// Unary naturals: a unit and a recursive occurrence.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Naturals compared constructor by constructor, recursing at `var Nat`.

@@ -10,10 +10,10 @@
 /// Programs over an integer state: a read hands the state to its
 /// continuation, and a store the next store overwrites is no store.
 data Program : Type where {
-  | Done(x : Integer)
-  | Get(k : Integer => Program)
-  | Put(s : Integer, k : Program)
-  rule Put(s, Put(u, k)) <=> Put(u, k);
+  | Done : (x : Integer) --> Program
+  | Get : (k : Integer => Program) --> Program
+  | Put : (s : Integer, k : Program) --> Program
+  rule : Put(s, Put(u, k)) <=> Put(u, k);
 }
 
 /// The state-passing handler, reaching a read's rest through its

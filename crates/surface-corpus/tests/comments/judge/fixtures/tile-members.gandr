@@ -3,12 +3,12 @@
 // the naturals
 data Nat : Type where {
   // the base
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 
   // a comment cut off by a blank line
 
-  rule Succ(Zero) <=> Zero;
+  rule : Succ(Zero) <=> Zero;
 }
 
 // a theory

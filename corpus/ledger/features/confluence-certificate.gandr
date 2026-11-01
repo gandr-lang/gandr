@@ -11,12 +11,12 @@
 /// The naturals with addition, zero stated a unit on both sides.
 @[ normalizes("add(Zero, Zero) ~> Zero") ]
 data NatUnits : Type where {
-  | Zero
-  | Succ(n : NatUnits)
-  oper add(m : NatUnits, n : NatUnits) -> NatUnits;
-  rule add(Zero, n) <=> n;
-  rule add(m, Zero) <=> m;
-  rule add(Succ(m), n) <=> Succ(add(m, n));
+  | Zero : NatUnits
+  | Succ : (n : NatUnits) --> NatUnits
+  oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
+  rule : add(Zero, n) <=> n;
+  rule : add(m, Zero) <=> m;
+  rule : add(Succ(m), n) <=> Succ(add(m, n));
 }
 
 /// Zero plus zero, where the two unit rules overlap.

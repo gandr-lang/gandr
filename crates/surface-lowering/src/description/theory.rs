@@ -94,10 +94,10 @@
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `description::theory::tests::an_abstraction_stands_outside_the_binders`.
 //!
-//! A rule between terms may close on a `where` clause of freshness
+//! A rule between terms may close on a `where` block of freshness
 //! conditions, `rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p,
-//! q)) where a # q;`: the atom `a` stands outside the support of the term `q`
-//! stands for (Fernández and Gabbay, _Nominal rewriting_, I&C 2007). The
+//! q)) where { | a # q };`: the atom `a` stands outside the support of the term
+//! `q` stands for (Fernández and Gabbay, _Nominal rewriting_, I&C 2007). The
 //! reader keeps each condition on its rule, in written order, and the value
 //! codes it in a `Fresh` member after the rule; a condition naming an atom no
 //! abstraction of the rule names or a variable its left side does not bind,
@@ -975,12 +975,12 @@ impl Reader<'_, '_>
         Ok((declaration, presented, parts, named))
     }
 
-    /// The row a rule's `under` clause states it fires under: each theory it
+    /// The row a rule's `under` item states it fires under: each theory it
     /// names, found as an `include` member's is, and whether the row stays
     /// open through a tail.
     ///
     /// # Specification
-    /// - requires: `run` stands past the rule's sides and its `where` clause.
+    /// - requires: `run` stands past an item's bar in the rule's `where` block.
     /// - ensures: absent when no `under` follows; otherwise the theories in
     ///   written order, each under the name its block presents, open exactly
     ///   when a `| r` tail follows them, and `run` past the `]`.
@@ -2258,20 +2258,32 @@ impl Reader<'_, '_>
             run.arrow(Some(ArrowRow::Face))?;
             let rhs = run.take()?;
             let mut fresh = Vec::new();
+            let mut under = Maybe::Absent(row_condition::Absent::Unconditioned);
             if run.eat(Spelling("where")).0 {
-                loop {
+                if !run.eat(Spelling("{")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+                // Every item of the block holds jointly: a freshness
+                // condition `a # q`, or the one row the rule fires under.
+                while !run.eat(Spelling("}")).0 {
+                    if !run.eat(Spelling("arm_bar")).0 {
+                        return Err(run.fault(DescriptionFault::Malformed));
+                    }
+                    if run.at(Spelling("under")).0 {
+                        if let Maybe::Present(_) = under {
+                            return Err(run.fault(DescriptionFault::Malformed));
+                        }
+                        under = self.under(run, visible)?;
+                        continue;
+                    }
                     let atom = run.take()?;
                     if !run.eat(Spelling("#")).0 {
                         return Err(run.fault(DescriptionFault::Malformed));
                     }
                     let term = run.take()?;
                     fresh.push(Freshness::new(self.text(atom).0, self.text(term).0));
-                    if !run.eat(Spelling(",")).0 {
-                        break;
-                    }
                 }
             }
-            let under = self.under(run, visible)?;
             run.end()?;
             let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
             let lhs = patterned(&lhs, |name| {

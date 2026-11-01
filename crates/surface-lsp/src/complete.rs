@@ -724,7 +724,7 @@ mod tests
 
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.
-    const BASE: &str = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef rec \
+    const BASE: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
                         plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
                         Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef double : +U (Nat -> -F \
                         Nat) ;\ndef double = thunk { fn (x) { return x } } ;\n";
@@ -973,7 +973,7 @@ mod tests
         use CompletionItemKind as Kind;
 
         let far = declared(SourceText::from(
-            "pub data Shape : Type where {\n  | Circle\n}\npub def faraway : Integer ;\ndef \
+            "pub data Shape : Type where {\n  | Circle : Shape\n}\npub def faraway : Integer ;\ndef \
              faraway = 7 ;\ndef farther : Integer ;\ndef farther = 3 ;\npub def far : Integer \
              ;\ndef far = 2 ;\npub module Inner {\n  def fargone = 1 ;\n}\n",
         ));
@@ -1114,7 +1114,8 @@ mod tests
             "a name typed in full still offers itself"
         );
 
-        let boxed = format!("{BASE}data Box : Type where {{\n  | Box(x : Integer)\n}}\n");
+        let boxed =
+            format!("{BASE}data Box : Type where {{\n  | Box : (x : Integer) --> Box\n}}\n");
         let hovering = hovered(SourceText::from(boxed.as_str()));
         let kinds: Vec<super::NameKind> = hovering
             .names()
@@ -1136,7 +1137,7 @@ mod tests
     {
         use CompletionItemKind as Kind;
 
-        let head = "data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef rec plus(n : \
+        let head = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : \
                     Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => ";
         let own = format!("{head}n,\n    Succ(p) => Succ(p");
         let own = offered(
@@ -1446,10 +1447,10 @@ mod tests
             at("cc(plus", LabelsDetailed(true)),
             [(
                 String::from("Succ"),
-                shown("Succ(n : Nat)"),
-                Some((shown("(n : Nat)"), None))
+                shown("Succ : (n : Nat) --> Nat"),
+                Some((shown(" : (n : Nat) --> Nat"), None))
             )],
-            "a constructor carries its fields"
+            "a constructor carries its signature"
         );
         assert_eq!(
             details(
@@ -1521,13 +1522,13 @@ mod tests
         );
         assert_eq!(
             resolve("Succ", Kind::CONSTRUCTOR),
-            read(Some("Succ(n : Nat)"), Some("One more.")),
-            "a constructor: its fields"
+            read(Some("Succ : (n : Nat) --> Nat"), Some("One more.")),
+            "a constructor: its signature"
         );
         assert_eq!(
             resolve("Zero", Kind::CONSTRUCTOR),
-            read(None, None),
-            "an undocumented constructor writing no fields: its head is its name alone"
+            read(Some("Zero : Nat"), None),
+            "an undocumented constant constructor: its head is its name and its result"
         );
         assert_eq!(
             resolve("Nat", Kind::ENUM),

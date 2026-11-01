@@ -1803,7 +1803,7 @@ mod tests
     fn a_second_run_refusal_is_located_where_its_bound_spelling_is_380()
     {
         let grammar = built_in().expect("the grammar builds");
-        let data = "data Int : Type where {\n  | Z\n  | S(x : Int)\n  | P(x : Int)\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\n\n";
+        let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\n\n";
         let fold = |arm: &str| {
             format!(
                 "{data}def rec tell(n : Int) -> -F Int {{\n  case n {{\n    Z => Z,\n    S(x) => \

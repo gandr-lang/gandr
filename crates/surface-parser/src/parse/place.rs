@@ -1114,8 +1114,8 @@ mod tests
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
         let once = "def once(n : Integer -> -F Integer {\n  return n\n}\n";
-        let glued = "data Int : Type where {\n  | Z\n  | S(x : Int)\n  | P(x : Int)\n  rule S(P(x) <=> \
-                     x;\n}\n";
+        let glued = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> \
+                     Int\n  rule : S(P(x) <=> x;\n}\n";
         let head = "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n";
         let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
         for (source, at, class, why) in [
@@ -1196,13 +1196,12 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let member = "data Circle : Type where {\n  | Base\n  | loop Base <-> Base\n}\n";
+        let member = "data Circle : Type where {\n  | Base : Circle\n  | loop Base <-> Base\n}\n";
         let arm = "def classify(n : Integer) -> -F Integer {\n  case n {\n    ?branch  return \
                    1\n  }\n}\n";
         let branch = "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n";
         let last = "def twice : Integer ;\ndef twice = loop then loop \n";
-        let binder =
-            "data Stack : Type where {\n  | Empty\n  | Push(x  Integer, rest : Stack)\n}\n";
+        let binder = "data Stack : Type where {\n  | Empty : Stack\n  | Push : (x  Integer, rest : Stack) --> Stack\n}\n";
         for (source, at, why) in [
             (
                 member,

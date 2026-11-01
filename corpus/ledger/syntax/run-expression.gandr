@@ -1,8 +1,8 @@
 /// `run_expression`: running a computation where a value is read.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {

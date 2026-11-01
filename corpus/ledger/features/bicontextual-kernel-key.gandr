@@ -11,25 +11,25 @@
 /// The naturals `side` answers.
 data Nat : Type where {
   /// Zero.
-  | Zero
+  | Zero : Nat
   /// The natural after `n`.
-  | Succ(n : Nat)
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A flag, on or off.
 data Flag : Type where {
   /// On.
-  | On
+  | On : Flag
   /// Off.
-  | Off
+  | Off : Flag
 }
 
 /// A natural or a flag.
 data Either : Type where {
   /// A natural.
-  | Count(m : Nat)
+  | Count : (m : Nat) --> Either
   /// A flag.
-  | Mark(f : Flag)
+  | Mark : (f : Flag) --> Either
 }
 
 /// Answers `n` whichever side `e` takes, each branch under the field it binds.

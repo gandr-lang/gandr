@@ -1,8 +1,8 @@
 /// `instantiation_expression`: an instantiation: a callee with its instantiation arguments.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 @[ checks ]
 def rec countdown(n : Nat) -> -F Nat {

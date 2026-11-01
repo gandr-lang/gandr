@@ -632,7 +632,7 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 #[test]
 fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 {
-    let source = "codata S : Type { head : Nat; oper tail(s : S) -> S; rule head ==> head; }";
+    let source = "codata S : Type { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),

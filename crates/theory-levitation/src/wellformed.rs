@@ -142,7 +142,7 @@ pub enum WfKind
     /// A port's atom abstraction, `bind (a : N) .`, ranges over a sort that is
     /// undeclared or not an atom sort.
     NonAtomAbstraction,
-    /// A rule's freshness condition, `where a # q`, names an atom no
+    /// A rule's freshness condition, `where { | a # q }`, names an atom no
     /// abstraction of the rule abstracts, or a variable its left side does not
     /// hold.
     UnknownFreshness,
@@ -1598,7 +1598,7 @@ fn check_freshness(
                 format!(
                     "`{variable}` stands under `bind {atom}` on one side of the rule and outside \
                      it on the other, so an instance naming `{atom}` would be captured or escape: \
-                     state `where {atom} # {variable}`"
+                     state `where {{ | {atom} # {variable} }}`"
                 ),
                 cell.provenance,
             ));

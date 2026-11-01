@@ -5,7 +5,7 @@ def twice(x: Integer) -> -F Integer {
 }
 def answer = 42 ;
 @[ checks ]
-data Color : Type where { | Red }
+data Color : Type where { | Red : Color }
 module Outer {
   def inner = 1 ;
   module Nested {

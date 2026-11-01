@@ -1,6 +1,6 @@
 data NatDiv : Type where {
-  | Zero
-  | Succ(n : NatDiv)
-  oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);
-  rule divmod(m, Zero) ==> (Zero, m);
+  | Zero : NatDiv
+  | Succ : (n : NatDiv) --> NatDiv
+  oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);
+  rule : divmod(m, Zero) ==> (Zero, m);
 }

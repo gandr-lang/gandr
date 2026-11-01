@@ -3,8 +3,8 @@
 /// The naturals.
 @[ checks ]
 data Nat : Type where {
-  | Zero
-  | Succ(n : Nat)
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ refuses("OutOfFragment.NonUniform") ]

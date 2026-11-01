@@ -138,8 +138,8 @@ fn the_tree_sum_names_each_pure_call()
     let named = named_calls(SourceText::from(
         r#"
 data Tree : Type where {
-  | Leaf(n : Integer)
-  | Node(l : Tree, r : Tree)
+  | Leaf : (n : Integer) --> Tree
+  | Node : (l : Tree, r : Tree) --> Tree
 }
 def rec sum(t : Tree) -> Integer {
   case t {

@@ -2786,7 +2786,7 @@ mod tests
     #[test]
     fn add_zero_elaborates_to_a_cut_against_the_operation_frame()
     {
-        // rule add(Zero, n) ==> n.
+        // rule : add(Zero, n) ==> n.
         let f = face(
             FreeTerm::op("add", [FreeTerm::ctor("Zero", []), FreeTerm::var("n")]),
             FreeTerm::var("n"),
@@ -2815,7 +2815,7 @@ mod tests
     #[test]
     fn add_succ_flattens_the_wrapping_constructor_into_a_frame()
     {
-        // rule add(Succ(m), n) ==> Succ(add(m, n)).
+        // rule : add(Succ(m), n) ==> Succ(add(m, n)).
         let f = face(
             FreeTerm::op("add", [
                 FreeTerm::ctor("Succ", [FreeTerm::var("m")]),
@@ -2878,7 +2878,7 @@ mod tests
     #[test]
     fn a_description_whose_rule_copies_a_hole_is_refused()
     {
-        // `rule and(x, x) ==> x`, the idempotence law written with a repeated
+        // `rule : and(x, x) ==> x`, the idempotence law written with a repeated
         // hole: ⟨x | and(x; $ret)⟩ ~> ⟨x | $ret⟩ copies the producer hole `x`.
         let desc = bit_with([face(
             FreeTerm::op("and", [FreeTerm::var("x"), FreeTerm::var("x")]),
@@ -3201,8 +3201,8 @@ mod tests
     #[test]
     fn a_two_output_operation_elaborates_one_frame_with_two_continuations()
     {
-        // `op divmod(m, n) -> (q, r)` with `rule divmod(m, Zero) ==> (Zero, m)`
-        // and the tail call `rule divmod(Succ(m), n) ==> divmod(m, n)`.
+        // `oper divmod : (m, n) --> (q, r)` with `rule : divmod(m, Zero) ==>
+        // (Zero, m)` and the tail call `rule : divmod(Succ(m), n) ==> divmod(m, n)`.
         let desc = nat_with([divmod_op()], [
             face(
                 FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::ctor("Zero", [])]),
@@ -4302,7 +4302,7 @@ mod tests
     #[test]
     fn a_conditioned_law_is_held_beside_the_store()
     {
-        // `rule gc : nu(bind a . p) ==> p where a # p` beside
+        // `rule gc : nu(bind a . p) ==> p where { | a # p }` beside
         // `rule r : f(x) ==> nil()`: where `out` takes a channel, collection
         // fires only where its body names no `a`, so no critical pair is read
         // through it and it is held beside the store.
@@ -4986,7 +4986,7 @@ mod tests
         )
     }
 
-    /// `rule add(Zero, n) ==> n`.
+    /// `rule : add(Zero, n) ==> n`.
     ///
     /// # Specification
     /// trivial.
@@ -4998,7 +4998,7 @@ mod tests
         )
     }
 
-    /// `rule add(Succ(m), n) ==> Succ(add(m, n))`.
+    /// `rule : add(Succ(m), n) ==> Succ(add(m, n))`.
     ///
     /// # Specification
     /// trivial.

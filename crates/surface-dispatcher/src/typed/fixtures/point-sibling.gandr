@@ -1,6 +1,6 @@
 pub data Point : Type where {
-  | Here
-  | There
+  | Here : Point
+  | There : Point
 }
 pub def here : Point ;
 def here = Here ;

@@ -586,8 +586,8 @@ fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 fn an_indexed_family_s_operation_answers_at_its_index_2940()
 {
     let source = SourceText::from(
-        "data N : Type where {\n  | Z\n  | S(n : N)\n}\ndata Skip : N -> Type where {\n  | Halt : Skip(Z)\n  oper skip(k : Skip(Z)) -> Skip(Z);\n  oper climb(c : Skip(Z)) -> \
-         Skip(S(Z));\n  rule skip(k) ==> k;\n}\n",
+        "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\ndata Skip : N -> Type where {\n  | Halt : Skip(Z)\n  oper skip : (k : Skip(Z)) --> Skip(Z);\n  oper climb : (c : Skip(Z)) --> \
+         Skip(S(Z));\n  rule : skip(k) ==> k;\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -616,11 +616,15 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
         Some((0_usize, Vec::new())),
         "the index the port writes, `Z`"
     );
-    let written = entry(&types, span("skip(k : Skip(Z)", "Z"), DescribedRole::Term);
+    let written = entry(
+        &types,
+        span("skip : (k : Skip(Z)", "Z"),
+        DescribedRole::Term,
+    );
     assert_eq!(ty(written), natural, "the index term at its own family");
     let sort = entry(
         &types,
-        span("skip(k : Skip(Z)", "Skip(Z)"),
+        span("skip : (k : Skip(Z)", "Skip(Z)"),
         DescribedRole::Type,
     );
     assert!(
@@ -650,7 +654,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
     assert_eq!(ty(applied), natural, "a nested index term at its family");
 
     let operation = entry(&types, span("oper skip", "skip"), DescribedRole::Name);
-    let head = entry(&types, span("rule skip", "skip"), DescribedRole::Term);
+    let head = entry(&types, span("rule : skip", "skip"), DescribedRole::Term);
     assert_eq!(ty(head), ty(operation), "the rule's head at the operation");
     // Each port mints its own index values, so a family is compared by the
     // constructors its index values are.
@@ -667,7 +671,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
         )),
         Some(_) | None => None,
     };
-    let call = entry(&types, span("rule skip", "skip(k)"), DescribedRole::Term);
+    let call = entry(&types, span("rule : skip", "skip(k)"), DescribedRole::Term);
     assert_eq!(
         at_index(call),
         at_index(port),
@@ -685,9 +689,9 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
 fn a_data_rule_answers_each_node_at_its_sort()
 {
     let source = SourceText::from(
-        "data NatDiv : Type where {\n  | Zero\n  | Succ(n : NatDiv)\n  oper \
-         divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  oper half(h : \
-         NatDiv) -> NatDiv;\n  rule divmod(m, Succ(d)) ==> (Zero, m);\n}\n",
+        "data NatDiv : Type where {\n  | Zero : NatDiv\n  | Succ : (n : NatDiv) --> NatDiv\n  oper \
+         divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);\n  oper half : (h : \
+         NatDiv) --> NatDiv;\n  rule : divmod(m, Succ(d)) ==> (Zero, m);\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -723,7 +727,7 @@ fn a_data_rule_answers_each_node_at_its_sort()
     let output = entry(&types, span("quot", "quot"), DescribedRole::Name);
     assert_eq!(ty(output), ty(zero));
 
-    let head = entry(&types, span("rule divmod", "divmod"), DescribedRole::Term);
+    let head = entry(&types, span("rule : divmod", "divmod"), DescribedRole::Term);
     assert_eq!(
         ty(head),
         ty(operation),
@@ -766,7 +770,7 @@ fn a_data_rule_answers_each_node_at_its_sort()
 fn a_parameterised_constructor_answers_under_its_parameters()
 {
     let source = SourceText::from(
-        "data Maybe(a : Type) : Type where {\n  | None : Maybe(a)\n  | Some(x : a) : Maybe(a)\n}\n",
+        "data Maybe(a : Type) : Type where {\n  | None : Maybe(a)\n  | Some : (x : a) --> Maybe(a)\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -790,7 +794,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
     assert!(ty(field).is_some(), "a field at its type");
     let result = entry(
         &types,
-        span(") : Maybe(a)", "Maybe(a)"),
+        span(") --> Maybe(a)", "Maybe(a)"),
         DescribedRole::Type,
     );
     assert!(
@@ -813,7 +817,7 @@ fn a_parameterised_constructor_answers_under_its_parameters()
 fn a_family_the_native_reading_owns_answers_at_its_signature()
 {
     let source = SourceText::from(
-        "data Two : Type where { | L | R }\ndata Tree : Type where {\n  | Leaf\n  | Node(f : +U (Two -> -F Tree)) : Tree\n}\n",
+        "data Two : Type where { | L : Two | R : Two }\ndata Tree : Type where {\n  | Leaf : Tree\n  | Node : (f : +U (Two -> -F Tree)) --> Tree\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -836,7 +840,7 @@ fn a_family_the_native_reading_owns_answers_at_its_signature()
         matches!(ty(field), Some(ValueType::Thunk(_))),
         "the field at its function type"
     );
-    let result = entry(&types, span(") : Tree", "Tree"), DescribedRole::Type);
+    let result = entry(&types, span(") --> Tree", "Tree"), DescribedRole::Type);
     assert!(
         matches!(ty(result), Some(ValueType::Universe { .. })),
         "the result at the family's universe"
@@ -1173,8 +1177,8 @@ fn an_indexed_constructor_answers_at_the_index_it_states_3528()
         }
     }
     let source = SourceText::from(
-        "data N : Type where {\n  | Z\n  | S(n : N)\n}\ndata Fin : N -> Type where {\n  | FZ(n :  N) : Fin(S(n))\n}\ndata At : N -> Type where {\n  | AtZ : At(Z)\n}\ndata V(a : Type) : N -> \
-         Type where {\n  | VN : V(a, Z)\n  | VC(n : N, x : a, t : V(a, n)) : V(a, S(n))\n}\n",
+        "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\ndata Fin : N -> Type where {\n  | FZ : (n :  N) --> Fin(S(n))\n}\ndata At : N -> Type where {\n  | AtZ : At(Z)\n}\ndata V(a : Type) : N -> \
+         Type where {\n  | VN : V(a, Z)\n  | VC : (n : N, x : a, t : V(a, n)) --> V(a, S(n))\n}\n",
     );
     let (types, arena) = described(source);
     let name = |around: &'static str, inner: &'static str| {

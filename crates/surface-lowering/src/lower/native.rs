@@ -240,8 +240,8 @@
 //! `def rec` function to one fixpoint over the parameter its matches take
 //! apart, recursive calls written with the descent claim `f[<](…)`.
 //!
-//! `data T(a : A) : Type where { | C(x : X) … }` at the root lowers to the
-//! core's native `DataSignature`: the parameters as a telescope, each
+//! `data T(a : A) : Type where { | C : (x : X) --> T(a) … }` at the root lowers
+//! to the core's native `DataSignature`: the parameters as a telescope, each
 //! generator's fields as one constructor, in source order. A field may name the
 //! family it belongs to, applied to its own parameters, which is how `List(a)`
 //! holds its tail; whether every such occurrence is strictly positive is the

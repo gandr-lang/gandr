@@ -16,17 +16,17 @@
 /// The depth of a complete tree.
 data Depth : Type where {
   /// The depth of a single leaf.
-  | Zero
+  | Zero : Depth
   /// One level deeper than `p`.
-  | Succ(p : Depth)
+  | Succ : (p : Depth) --> Depth
 }
 
 /// A binary tree with an integer at each leaf.
 data Tree : Type where {
   /// A leaf holding `n`.
-  | Leaf(n : Integer)
+  | Leaf : (n : Integer) --> Tree
   /// A node over the subtrees `l` and `r`.
-  | Node(l : Tree, r : Tree)
+  | Node : (l : Tree, r : Tree) --> Tree
 }
 
 /// The complete tree of depth `d` with a one at every leaf, each subtree built under a cut.

@@ -10533,7 +10533,7 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "pub data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\n",
+                "pub data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n",
             ),
             (
                 "lonely/far.gandr",
@@ -11440,7 +11440,7 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "pub data Nat : Type where {\n  | Zero\n}\npub def zero : Nat ;\ndef zero = Zero ;\n",
+                "pub data Nat : Type where {\n  | Zero : Nat\n}\npub def zero : Nat ;\ndef zero = Zero ;\n",
             ),
             ("first.gandr", opened),
             (
@@ -11558,9 +11558,9 @@ mod tests
         );
         let succ = wire(Json(
             r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
-                "label":"Succ(n : Nat)",
+                "label":"Succ : (n : Nat) --> Nat",
                 "documentation":{"kind":"markdown","value":"One more."},
-                "parameters":[{"label":[5,12]}]}],
+                "parameters":[{"label":[8,15]}]}],
                 "activeSignature":0,"activeParameter":0}}]"#,
         ));
         assert_eq!(
@@ -11666,7 +11666,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
-                     "text":"data Nat : Type where {\n  | Zero\n  | Succ(n : Nat)\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
+                     "text":"data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
             ),
         );
         let ask = |server: &mut Connected, character: u32| {

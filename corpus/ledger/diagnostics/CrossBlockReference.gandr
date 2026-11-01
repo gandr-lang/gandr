@@ -2,7 +2,7 @@
 rec {
   @[ refuses("CrossBlockReference") ]
   data Front : Type where {
-    | Hold(b : Back)
+    | Hold : (b : Back) --> Front
   }
 
   /// A definition between the two families ends the first one's block.
@@ -13,6 +13,6 @@ rec {
 
   @[ checks ]
   data Back : Type where {
-    | Only
+    | Only : Back
   }
 }

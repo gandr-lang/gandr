@@ -26,7 +26,7 @@ import "../../model/data/recursive-lists.gandr" ;
 /// strictly positive parameter (#517).
 @[ checks ]
 data Bush : Type where {
-  | Sprout(kids : List(Bush))
+  | Sprout : (kids : List(Bush)) --> Bush
 }
 
 /// A node without children, written directly.
@@ -84,14 +84,14 @@ rec {
   /// A node over its forest of children.
   @[ checks ]
   data Rose : Type where {
-    | Node(kids : Forest)
+    | Node : (kids : Forest) --> Rose
   }
 
   /// The children of a node, in order.
   @[ checks ]
   data Forest : Type where {
-    | Empty
-    | More(head : Rose, tail : Forest)
+    | Empty : Forest
+    | More : (head : Rose, tail : Forest) --> Forest
   }
 
   /// The nodes of a tree: its own and its children's.

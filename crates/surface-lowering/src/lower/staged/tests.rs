@@ -25,7 +25,7 @@ use crate::module::LoweredModule;
 use crate::resolve::SurfaceName;
 
 /// The naturals the staged functions take.
-const NAT: &str = "data Nat : Type where { | Zero | Succ(n : Nat) }\n";
+const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n";
 
 /// A function applied at a stage, and a recursion handing its claim to it.
 const APPLIED: &str = "def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\ndef rec helped(n : Nat) -> -F Nat {\n  case n {\n    Zero => Zero,\n    Succ(p) => Succ(applyAt(helped[<], p))\n  }\n}\n";

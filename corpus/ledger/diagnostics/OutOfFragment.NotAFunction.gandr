@@ -1,6 +1,6 @@
 /// `OutOfFragment.NotAFunction`: a form out of the fragment: the form is `cong` at a constructor, which is not a function.
 data Circle : Type where {
-  | Base
+  | Base : Circle
   | loop : Base <-> Base
 }
 

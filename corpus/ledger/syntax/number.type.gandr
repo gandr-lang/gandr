@@ -1,7 +1,7 @@
 /// `number.type`: a number in type position.
 @[ checks ]
 data Ix(n : Integer) : Type where {
-  | MkIx
+  | MkIx : Ix(n)
 }
 @[ checks ]
 def atOne(w : Ix(1)) -> -F Ix(1) {

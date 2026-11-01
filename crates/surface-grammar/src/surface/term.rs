@@ -281,11 +281,11 @@ fn declarations(
     // `a : Type` — and declares its indices as the head annotation, the kind
     // `: Idx -> Type` or the telescope `: (x : A, y : B(x)) --> Type` (`: Type`
     // when unindexed). `where` then opens the members in braces: each
-    // constructor and each cell opens on an arm bar, `| Nil`,
-    // `| Cons(head : a, tail : List(a))`, `| VCons(n : Nat, x : a) :
-    // Vec(a, Succ(n))`, `| loop : Base <-> Base`, and the keyword-led `oper`
-    // and `rule` members end on `;`. The bar is never hole content, so it
-    // ends the member before it without a separator.
+    // constructor and each cell opens on an arm bar, `| Nil : List(a)`,
+    // `| Cons : (head : a, tail : List(a)) --> List(a)`, `| VCons : (n : Nat,
+    // x : a) --> Vec(a, Succ(n))`, `| loop : Base <-> Base`, and the keyword-led
+    // `oper` and `rule` members end on `;`. The bar is never hole content, so
+    // it ends the member before it without a separator.
     let mut data = r(
         RuleName("data_declaration"),
         Provenance("data_declaration"),
@@ -1076,10 +1076,12 @@ fn head_params() -> Regex
 /// Build an inline `data` member: a **constructor** or a **cell** after an arm
 /// bar, or a keyword-led `oper` operation or `rule` 2-cell ending on `;`.
 ///
-/// A constructor writes its fields after its name and its result after a
-/// colon, each optional: `| Nil`, `| Cons(head : a, tail : List(a))`,
-/// `| VNil : Vec(a, Zero)`. The tile after the name tells the three tails
-/// apart, so the choice is locally decidable.
+/// Every member states its signature after a colon, as a theory's operation
+/// does: a constructor its inputs and its result, `| Cons : (head : a, tail :
+/// List(a)) --> List(a)`, or its result alone when it takes no input, `| Nil
+/// : List(a)`; an operation the same, `oper add : (m : Nat, n : Nat) --> Nat`;
+/// a rule its two sides, `rule : S(P(x)) <=> x`, with its name before the
+/// colon when it has one.
 ///
 /// A cell is named by a lowercase identifier, which no constructor opens on:
 /// `| loop : Base <-> Base` relates two terms by one glyph of the arrow grid.
@@ -1107,11 +1109,12 @@ fn data_member() -> Regex
         seq([
             t(TileLabel("arm_bar")),
             alt([
-                // a constructor `| C(fields)? (: Result)? [attrs]?`.
+                // a constructor `| C : (fields) --> R` or `| C : R`, then its
+                // attribute slot.
                 seq([
                     t(TileLabel("constructor")),
-                    opt(generator_telescope()),
-                    opt(seq([t(TileLabel(":")), h(Sort::Type)])),
+                    t(TileLabel(":")),
+                    generator_signature(),
                     opt(attr_slot()),
                 ]),
                 // a cell `| name : a <-> b` between two terms of the block's
@@ -1130,31 +1133,54 @@ fn data_member() -> Regex
                 ]),
             ]),
         ]),
-        // reserved `oper name(params) -> R?` operation member. The `op` lead
-        // still parses so the elaborator can decline it with the respelling
-        // (as it does the `~>` face arrow); `op` otherwise leads only the
-        // operator-fixity declaration.
+        // an operation `oper name : (params) --> R`. The `op` lead still
+        // parses so the elaborator can decline it with the respelling; `op`
+        // otherwise leads only the operator-fixity declaration.
         seq([
             data_oper_member(alt([t(TileLabel("oper")), t(TileLabel("op"))])),
             t(TileLabel(";")),
         ]),
-        // `rule lhs <=> rhs`, or `rule lhs ==> rhs` pinning the direction.
-        seq([
-            t(TileLabel("rule")),
-            h(Sort::Expression),
-            rule_face_arrow(),
-            h(Sort::Expression),
-            t(TileLabel(";")),
-        ]),
+        // `rule name? : lhs <=> rhs`, or `==>` pinning the direction.
+        seq([rule_member(), t(TileLabel(";"))]),
     ])
 }
 
-/// Build the data-style operation member after its context-specific lead menu.
+/// Build a block's rewrite member, `rule name? : lhs <=> rhs`: its name, when
+/// it has one, before the colon, and its two sides after it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the supplied lead, a name, parameters and an optional
-///   arrow/result tail.
+/// - ensures: the `rule` keyword, an optional name, a colon, and two expression
+///   sides about a rewrite-face arrow.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))]
+fn rule_member() -> Regex
+{
+    seq([
+        t(TileLabel("rule")),
+        opt(t(TileLabel("identifier"))),
+        t(TileLabel(":")),
+        h(Sort::Expression),
+        rule_face_arrow(),
+        h(Sort::Expression),
+    ])
+}
+
+/// Build the data-style operation member after its context-specific lead menu:
+/// `oper name : (params) --> R`, or `oper name : R` for an operation of no
+/// input.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the supplied lead, a name, a colon, then either a parameter list
+///   with an arrow to a result or a lone result type.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1164,14 +1190,17 @@ fn data_member() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
 fn data_oper_member(lead: Regex) -> Regex
 {
     seq([
         lead,
         t(TileLabel("identifier")),
-        params(),
-        opt(seq([t(TileLabel("->")), op_result()])),
+        t(TileLabel(":")),
+        alt([
+            seq([params(), t(TileLabel("-->")), op_result()]),
+            h(Sort::Type),
+        ]),
     ])
 }
 
@@ -1263,11 +1292,11 @@ pub(super) fn rule_face_arrow() -> Regex
     alt([t(TileLabel("==>")), t(TileLabel("<=>")), t(TileLabel("~>"))])
 }
 
-/// Build the reserved grade prefix, narrowed to `{ number, ω }`.
+/// Build a binder's grade, `[1]` or `[ω]`, written after its name: `x[1] : A`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: only numeric and omega grade-prefix alternatives, excluding
+/// - ensures: a numeric or omega grade between square brackets, excluding
 ///   identifier grades.
 /// - panics: none.
 ///
@@ -1278,10 +1307,14 @@ pub(super) fn rule_face_arrow() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["number","ω"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
-fn grade_prefix() -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref grades) if grades.len() == 2 && grades.iter().zip(["number","ω"]).all(|(grade, label)| matches!(grade.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
+fn binder_grade() -> Regex
 {
-    alt([t(TileLabel("number")), t(TileLabel("ω"))])
+    seq([
+        t(TileLabel("[")),
+        alt([t(TileLabel("number")), t(TileLabel("ω"))]),
+        t(TileLabel("]")),
+    ])
 }
 
 /// Build a reserved per-symbol attribute slot `[name, …]` inside a data block.
@@ -1341,14 +1374,16 @@ fn op_result() -> Regex
     ])
 }
 
-/// Build an inline `codata` member: an observation `[grade?] name (params?) :
-/// Type`, a data-style `oper` preserved whole for block-kind-aware decline, or
-/// the reserved `rule` 2-cell.
+/// Build an inline `codata` member: an observation `name[grade]? : Type`, or
+/// `name : (params) --> Type` when it takes inputs, a data-style `oper`
+/// preserved whole for block-kind-aware decline, or the reserved `rule`
+/// 2-cell.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: observation, operation and rewrite-member branches, with the
-///   observation ending in a type hole.
+/// - ensures: observation, operation and rewrite-member branches, the
+///   observation's signature after its colon a parameter list with an arrow to
+///   a type hole, or a type hole alone.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1358,37 +1393,36 @@ fn op_result() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "oper")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "oper")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 6 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule"))))))]
 fn codata_member() -> Regex
 {
     alt([
         seq([
-            opt(grade_prefix()),
             t(TileLabel("identifier")),
-            opt(seq([
-                t(TileLabel("(")),
-                comma1(ctor_field()),
-                t(TileLabel(")")),
-            ])),
+            opt(binder_grade()),
             t(TileLabel(":")),
-            h(Sort::Type),
+            alt([
+                seq([
+                    t(TileLabel("(")),
+                    comma1(ctor_field()),
+                    t(TileLabel(")")),
+                    t(TileLabel("-->")),
+                    h(Sort::Type),
+                ]),
+                h(Sort::Type),
+            ]),
         ]),
         data_oper_member(t(TileLabel("oper"))),
-        seq([
-            t(TileLabel("rule")),
-            h(Sort::Expression),
-            rule_face_arrow(),
-            h(Sort::Expression),
-        ]),
+        rule_member(),
     ])
 }
 
-/// Build a constructor field `[grade?] name : Type`, the grade reserved and
+/// Build a constructor field `name[grade]? : Type`, the grade reserved and
 /// narrowed.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an optional restricted grade, a name, colon and type hole.
+/// - ensures: a name, an optional restricted grade, colon and type hole.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1398,12 +1432,12 @@ fn codata_member() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn ctor_field() -> Regex
 {
     seq([
-        opt(grade_prefix()),
         t(TileLabel("identifier")),
+        opt(binder_grade()),
         t(TileLabel(":")),
         h(Sort::Type),
     ])

@@ -1210,8 +1210,8 @@ mod tests
         let mut owed = lines(Text(include_str!("judge/fixtures/tile-members.gandr")));
         owed.sort();
         let mut expected = vec![
-            key(Text("Nat.Succ"), Text("Succ(n : Nat)")),
-            key(Text("Nat.rule"), Text("rule Succ(Zero) <=> Zero;")),
+            key(Text("Nat.Succ"), Text("Succ : (n : Nat) --> Nat")),
+            key(Text("Nat.rule"), Text("rule : Succ(Zero) <=> Zero;")),
             key(Text("T.get"), Text("oper get : (k : S) --> S;")),
             key(Text("T.g"), Text("rule g : get(k) <=> k;")),
             key(Text("Stream.head"), Text("head : a;")),
@@ -1235,9 +1235,9 @@ mod tests
             key(Text("M.three"), Text("def three = 3;")),
             key(
                 Text("rec_block.Rose"),
-                Text("data Rose : Type where { | Node }"),
+                Text("data Rose : Type where { | Node : Rose }"),
             ),
-            key(Text("rec_block.Rose.Node"), Text("Node")),
+            key(Text("rec_block.Rose.Node"), Text("Node : Rose")),
         ];
         expected.sort();
         assert_eq!(
