@@ -1927,6 +1927,11 @@ enum StatementBinding
     },
 }
 
+/// Whether a block-like form ends its statement with no `;` after it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Ends(bool);
+
 /// One `run x <- c ;` or `c ;` statement of a block.
 ///
 /// # Specification
@@ -10557,9 +10562,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   (c : S) t as d ;` binds `d` and `hold x = e ;` binds `x` linearly over
     ///   the rest of the block; the last computation, written bare or as a
     ///   statement `c ;` before the closing `}` and then recorded as stated,
-    ///   reads under the frame every statement extended; the statements and the
-    ///   last computation are returned, with the cursor past the closing `}`
-    ///   and nothing after it.
+    ///   reads under the frame every statement extended; a block-like form (a
+    ///   block, a loop, an `if`, a `match`, or a form closing on a block)
+    ///   followed by another statement is a statement with no `;`, its result
+    ///   discarded, as Rust reads one; the statements and the last computation
+    ///   are returned, with the cursor past the closing `}` and nothing after
+    ///   it.
     /// - provides: the body reading of thunks, lambdas and function tails.
     /// - fails: yields the unadmitted or the reserved refusal for a statement
     ///   the fragment does not read, by the statement's own name; the arity
@@ -10582,6 +10590,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::session::tests::a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
     /// - witness: `lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
     /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+    /// - witness: `lower::tests::a_block_like_statement_needs_no_semicolon`
     #[spec(
         captures: before = (self.statements.len(), frame),
         ensures: |ret| {
@@ -10610,7 +10619,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut frame = frame;
         loop {
             match cursor.peek() {
-                Maybe::Present(Piece::Operand(_)) => {
+                Maybe::Present(Piece::Operand(first)) => {
+                    if self.ends_a_statement(first, cursor)?.0 {
+                        let _first = cursor.read();
+                        frame = self.discard(site, first, frame)?;
+                        continue;
+                    }
                     let mut run = cursor.operands();
                     if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
                         && access::ASSIGNING.contains(&label)
@@ -10645,20 +10659,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         }
                         let discarded = site.one(run)?;
                         let _semicolon = cursor.tile(TileName::SEMICOLON);
-                        self.read(discarded.node, Reading::Computation(frame));
-                        let _leads = self.leading.insert(discarded.span.start());
-                        self.statements.push(Statement {
-                            origin: discarded.node,
-                            bound: discarded.node,
-                            binding: StatementBinding::Discarded,
-                            rest: exits::Rest::Bound,
-                        });
-                        let after = Frame::Inner(self.scope.extend(
-                            frame,
-                            SurfaceName::from(""),
-                            Maybe::Absent(binder_site::Absent::Unwritten),
-                        ));
-                        frame = self.threads(site, discarded.node, (frame, after))?;
+                        frame = self.discard(site, discarded, frame)?;
                         continue;
                     }
                     let last = site.one(run)?;
@@ -10736,6 +10737,117 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
             }
         }
+    }
+
+    /// Record the computation `discarded` as a statement of the block `site`
+    /// reads, standing under `frame`, its result discarded.
+    ///
+    /// # Specification
+    /// - requires: `discarded` is a computation of the block, its cursor past
+    ///   it and past the `;` after it when one is written.
+    /// - ensures: `discarded` is read as a computation under `frame` and
+    ///   recorded as a discarded statement; the frame the rest of the block
+    ///   reads under, extended by a binder no name reaches and by the slots a
+    ///   loop threads, is returned.
+    /// - fails: as [`Self::threads`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a statement written with `;` and a block-like one
+    ///   written without it each bind under a binder no name reaches.
+    /// - witness: `lower::tests::a_discarded_statement_splits_its_unit`
+    /// - witness: `lower::tests::a_block_like_statement_needs_no_semicolon`
+    #[spec(
+        captures: before = self.statements.len(),
+        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
+            && self.statements.last().is_some_and(|last| last.bound == discarded.node && last.binding == StatementBinding::Discarded)),
+    )]
+    fn discard(
+        &mut self,
+        site: Site,
+        discarded: Placed,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        self.read(discarded.node, Reading::Computation(frame));
+        let _leads = self.leading.insert(discarded.span.start());
+        self.statements.push(Statement {
+            origin: discarded.node,
+            bound: discarded.node,
+            binding: StatementBinding::Discarded,
+            rest: exits::Rest::Bound,
+        });
+        let after = Frame::Inner(self.scope.extend(
+            frame,
+            SurfaceName::from(""),
+            Maybe::Absent(binder_site::Absent::Unwritten),
+        ));
+        self.threads(site, discarded.node, (frame, after))
+    }
+
+    /// Whether the operand `first`, at the head of `cursor`, is a block-like
+    /// form another statement follows with no `;` between: a block, a loop,
+    /// an `if`, a `match`, or an access or a handled scope closing on its
+    /// block.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at `first`.
+    /// - ensures: true exactly when `first` is such a form and the piece after
+    ///   it is an operand or a tile other than `;`, `}` and an assignment's;
+    ///   the cursor is left where it stands.
+    /// - fails: a fault reading the form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `while` and an `if` before a statement, a `while`
+    ///   before the block's last computation, and one before `;`.
+    /// - witness: `lower::tests::a_block_like_statement_needs_no_semicolon`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |ends| !ends.0 || matches!(cursor.peek(), Maybe::Present(Piece::Operand(at)) if at == first)))]
+    fn ends_a_statement(
+        &self,
+        first: Placed,
+        cursor: &Cursor<'_>,
+    ) -> Result<Ends, LoweringRefusal<'source>>
+    {
+        let mut ahead = cursor.clone();
+        let _first = ahead.read();
+        let followed = match ahead.peek() {
+            Maybe::Present(Piece::Operand(_)) => true,
+            Maybe::Present(Piece::Tile { label, .. }) => {
+                label != TileName::SEMICOLON
+                    && label != TileName::BRACE_CLOSE
+                    && !access::ASSIGNING.contains(&label)
+            },
+            Maybe::Absent(_) => false,
+        };
+        if !followed {
+            return Ok(Ends(false));
+        }
+        let block_like = match self.form_at(first)? {
+            Some((
+                _,
+                Former::Block
+                | Former::Loop
+                | Former::While
+                | Former::For
+                | Former::If
+                | Former::Case,
+            )) => true,
+            Some((_, Former::Access | Former::Scope)) => {
+                let mut pieces = Pieces::new();
+                read_pieces(self.pbg, self.tree, first.node, &mut pieces)?;
+                matches!(pieces.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE)
+            },
+            Some(_) | None => false,
+        };
+
+        Ok(Ends(block_like))
     }
 
     /// Read one `run p <- c ;` statement, its `run` tile already read.
@@ -25291,6 +25403,36 @@ mod tests
             matches!(arena.computation(last), Some(&Computation::Return(value)) if arena.value(value) == Some(&variable(1_u32))),
             "a wildcard binds at any type, with no split, and a name before it is read past it"
         );
+    }
+
+    /// A block-like form, a loop, a block or an access closing on its block,
+    /// followed by another statement needs no `;`, as Rust reads one; one
+    /// before the block's `}` is still its last computation.
+    #[test]
+    fn a_block_like_statement_needs_no_semicolon()
+    {
+        use crate::lower::native::tests::assert_accepted;
+        use crate::lower::native::tests::judged;
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                r"def counted() -> -F [Div] Integer {
+  var n = 0;
+  while n < 3 { n += 1; }
+  { n *= 2; }
+  access n as v { resume(v, v + 10) }
+  n -= 1;
+  return n
+}
+def ended() -> -F [Div] Unit {
+  var n = 0;
+  while n < 3 { n += 1; }
+}
+",
+            ),
+            &mut arena,
+        );
+        assert_accepted(&judged(&module, &mut arena));
     }
 
     /// `run (q, r) <- c ;` binds the tuple under a binder no name reaches and
