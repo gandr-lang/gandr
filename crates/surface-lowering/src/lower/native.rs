@@ -478,6 +478,8 @@ use crate::resolve::type_atom;
 use crate::resolve::type_former;
 use crate::unbuilt::Unbuilt;
 
+mod clauses;
+
 #[cfg(test)]
 pub(super) mod tests;
 
@@ -1493,6 +1495,22 @@ enum Test
         /// The level that settled each arm variable.
         bindings: Vec<TreeLevel>,
     },
+    /// Run arm `arm` when its guard holds, its variables settled as a leaf's:
+    /// the guard bound and cased on, `yes` the arm's leaf and `no` the rows
+    /// after it, each under the guard's binder and its case's.
+    Guard
+    {
+        /// The guarded arm.
+        arm: ArmAt,
+        /// The tree binders above the guard.
+        depth: Depth,
+        /// The level that settled each arm variable.
+        bindings: Vec<TreeLevel>,
+        /// The child where the guard holds: the arm's leaf.
+        yes: TestAt,
+        /// The child where it fails: the rows after the arm's.
+        no: TestAt,
+    },
     /// The hole that decides whether the first surviving row matches.
     Stuck(HoleId),
     /// A branch whose constructor no row admits, at a family of one index:
@@ -1605,6 +1623,47 @@ enum Test
     },
 }
 
+/// What a decision tree's root stands over.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a match's root reads its scrutinee at level zero; clauses' root
+///   stands under one binder per column, the column at place `k` read at level
+///   `k + 1`.
+/// - executable: none — a plain tag its producer establishes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function's clauses and a matching lambda's lower under
+///   one lambda per column.
+/// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
+/// - witness: `lower::native::tests::a_matching_lambda_binds_one_lambda_per_column`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Roots
+{
+    /// A match's scrutinee, at level zero.
+    Scrutinee,
+    /// A function's clauses, under its parameters' lambdas, which the
+    /// function mints.
+    Parameters(Depth),
+    /// A matching lambda's clauses, under lambdas the tree mints itself.
+    Lambdas(Depth),
+}
+
+impl Roots
+{
+    /// The tree binders the root stands under.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn columns(self) -> Depth
+    {
+        match self {
+            Self::Scrutinee => Depth(0),
+            Self::Parameters(columns) | Self::Lambdas(columns) => columns,
+        }
+    }
+}
+
 /// One match, compiled to its decision tree.
 ///
 /// # Specification
@@ -1620,8 +1679,11 @@ enum Test
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CaseForm
 {
-    /// The scrutinee's syntax node.
+    /// The scrutinee's syntax node; for clauses, a node standing for their
+    /// columns, which no value is written at.
     scrutinee: NodeIndex,
+    /// What the tree's root stands over.
+    roots: Roots,
     /// The frame the match is read under.
     frame: Frame,
     /// The answer the motive is read from.
@@ -1632,6 +1694,8 @@ pub(super) struct CaseForm
     ascribed: Maybe<Answer, answered::Absent>,
     /// Each constructor arm's body.
     bodies: Vec<NodeIndex>,
+    /// Each guarded clause's guard, `| p if g => c`.
+    guards: BTreeMap<ArmAt, NodeIndex>,
     /// The decision tree.
     tests: Vec<Test>,
     /// The loop arms, one per loop of the root's sort in the order its loop
@@ -2174,6 +2238,8 @@ struct Compiling
     tests: Vec<Test>,
     /// The matrices still to reduce.
     work: Vec<Work>,
+    /// The arms whose clause is guarded.
+    guarded: BTreeSet<ArmAt>,
 }
 
 impl Compiling
@@ -4547,7 +4613,7 @@ impl<'source> Lowerer<'_, 'source>
             variables.push(bound);
         }
         settle_unstated(&mut patterns, &roots)?;
-        let tests = self.compile(site, &patterns, rows)?;
+        let tests = self.compile(site, &patterns, (rows, Depth::default(), BTreeSet::new()))?;
         let loops = self.loop_arms(site, &tests, looped)?;
         let eliminates = tests.iter().any(|test| {
             matches!(
@@ -4666,10 +4732,12 @@ impl<'source> Lowerer<'_, 'source>
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
+            roots: Roots::Scrutinee,
             frame,
             answer,
             ascribed,
             bodies: arms.iter().map(|&(_pattern, body)| body.node).collect(),
+            guards: BTreeMap::new(),
             tests,
             loops,
             origin: kept,
@@ -4761,10 +4829,12 @@ impl<'source> Lowerer<'_, 'source>
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
+            roots: Roots::Scrutinee,
             frame,
             answer,
             ascribed,
             bodies: Vec::new(),
+            guards: BTreeMap::new(),
             tests: Vec::from([Test::Data {
                 level: TreeLevel::default(),
                 depth: Depth::default(),
@@ -6722,14 +6792,18 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Compile `rows` to a decision tree over the scrutinee at level zero.
+    /// Compile `rows` to a decision tree over the scrutinee at level zero, or,
+    /// `rooted` under one binder per column, over clauses' columns at levels
+    /// one to their count.
     ///
     /// # Specification
-    /// - requires: every row has one column, its arm's alternative.
+    /// - requires: every row has one column, its arm's alternative, or one per
+    ///   column `rooted` counts.
     /// - ensures: the tree's nodes, its root first and every child after its
     ///   parent: a leaf where the first surviving row's columns all match
-    ///   anything, a stuck node where its leftmost tested column is a hole or a
-    ///   hole it passed decides it, and else a switch on that column.
+    ///   anything, a guard over that leaf and the rows after it where the row's
+    ///   arm is `guarded`, a stuck node where its leftmost tested column is a
+    ///   hole or a hole it passed decides it, and else a switch on that column.
     /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] at the match where no
     ///   row survives; the wrong-sort refusal at a pattern whose kind its
     ///   column does not switch on; [`LoweringRefusal::BudgetExceeded`].
@@ -6755,11 +6829,18 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         patterns: &Written,
-        rows: Vec<Row>,
+        (rows, rooted, guarded): (Vec<Row>, Depth, BTreeSet<ArmAt>),
     ) -> Result<Vec<Test>, LoweringRefusal<'source>>
     {
-        let mut tree = Compiling::default();
-        let _root = tree.queue(Depth::default(), Vec::from([TreeLevel::default()]), rows);
+        let levels = match rooted {
+            Depth(0) => Vec::from([TreeLevel::default()]),
+            Depth(columns) => (1 ..= columns).map(TreeLevel).collect(),
+        };
+        let mut tree = Compiling {
+            guarded,
+            ..Compiling::default()
+        };
+        let _root = tree.queue(rooted, levels, rows);
         while let Some(item) = tree.work.pop() {
             self.fuel.spend()?;
             let test = self.reduce(site, patterns, &item, &mut tree)?;
@@ -6827,7 +6908,33 @@ impl<'source> Lowerer<'_, 'source>
             });
         let Some((column, written, head)) = tested
         else {
-            return Ok(leaf(patterns, first, &item.levels, item.depth));
+            let settled = leaf(patterns, first, &item.levels, item.depth);
+            // The guard binds its result and cases on it: its children stand
+            // two binders lower, the rows after the arm's where it fails.
+            if let Test::Leaf {
+                arm,
+                depth,
+                ref bindings,
+            } = settled
+                && tree.guarded.contains(&arm)
+            {
+                let below = Depth(depth.0.saturating_add(2));
+                let yes = tree.place(Test::Leaf {
+                    arm,
+                    depth: below,
+                    bindings: bindings.clone(),
+                });
+                let rest = item.rows.get(1 ..).unwrap_or_default().to_vec();
+                let no = tree.queue(below, item.levels.clone(), rest);
+                return Ok(Test::Guard {
+                    arm,
+                    depth,
+                    bindings: bindings.clone(),
+                    yes,
+                    no,
+                });
+            }
+            return Ok(settled);
         };
         let switch = Switch {
             column,
@@ -9982,15 +10089,28 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let Maybe::Present(scrutinee) = self.value_at(form.scrutinee)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
+        // Clauses scrutinise their columns, the tree's first binders, and no
+        // value at level zero.
+        let valued = match form.roots {
+            Roots::Scrutinee => match self.value_at(form.scrutinee) {
+                Maybe::Present(scrutinee) => Some(scrutinee),
+                Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
+            },
+            Roots::Parameters(_) | Roots::Lambdas(_) => None,
         };
         let mut bodies = Vec::with_capacity(form.bodies.len());
         for &body in &form.bodies {
             bodies.push(self.computation_at(body));
         }
+        let guards: Vec<Maybe<ComputationId, lowered::Absent>> = (0 .. form.bodies.len())
+            .map(|arm| match form.guards.get(&ArmAt(arm)) {
+                Some(&guard) => self.computation_at(guard),
+                None => Maybe::Absent(lowered::Absent::Unminted),
+            })
+            .collect();
         let mark = sink.arena.watermark();
+        // Level zero is never read under clauses: the unit stands for it.
+        let scrutinee = valued.unwrap_or_else(|| sink.arena.value_unit());
         // What each variable of the match's frame reads as at the arms its
         // answer was passed into.
         let armed = match form.answer {
@@ -10000,11 +10120,14 @@ impl<'source> Lowerer<'_, 'source>
         let motive = match form.answer {
             Maybe::Present(answer) => match self.answered_type(answer, sink) {
                 Maybe::Present(written) => {
+                    // Clauses' root stands under one binder per column, the
+                    // lambdas of the parameters it matches.
                     let gap = Depth(
                         self.scope
                             .telescope_binders(form.frame)
                             .count()
-                            .saturating_sub(self.scope.telescope_binders(answer.frame).count()),
+                            .saturating_sub(self.scope.telescope_binders(answer.frame).count())
+                            .saturating_add(form.roots.columns().0),
                     );
                     let base = self.relocate(
                         sink.arena,
@@ -10095,7 +10218,7 @@ impl<'source> Lowerer<'_, 'source>
             let id = mint_test(
                 test,
                 (scrutinised, readings),
-                (&bodies, match armed {
+                (&bodies, &guards, match armed {
                     Maybe::Present(ref read) => read,
                     Maybe::Absent(_) => &[],
                 }),
@@ -10115,7 +10238,7 @@ impl<'source> Lowerer<'_, 'source>
             Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
             Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
         };
-        let Maybe::Present(root) = minted_root
+        let Maybe::Present(tree) = minted_root
         else {
             record_copied_since(
                 sink,
@@ -10125,6 +10248,13 @@ impl<'source> Lowerer<'_, 'source>
                 &copies,
             );
             return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        // A matching lambda binds its columns itself, one lambda each.
+        let root = match form.roots {
+            Roots::Lambdas(Depth(columns)) => {
+                (0 .. columns).fold(tree, |body, _column| sink.arena.computation_lambda(body))
+            },
+            Roots::Scrutinee | Roots::Parameters(_) => tree,
         };
         if sink.arena.computations_since(mark).all(|id| id != root) {
             record_copied_since(
@@ -10144,8 +10274,11 @@ impl<'source> Lowerer<'_, 'source>
             &copies,
         );
         let mut kept = form.origin.clone();
-        kept.scrutinised = Maybe::Present(scrutinee);
-        sink.origins.record_case(root, kept);
+        kept.scrutinised = match valued {
+            Some(_) => Maybe::Present(scrutinee),
+            None => Maybe::Absent(scrutinised::Absent::Columns),
+        };
+        sink.origins.record_case(tree, kept);
 
         Maybe::Present(Lowered::Computation(root))
     }
@@ -10236,6 +10369,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Test::Stuck(_)
                 | Test::Absurd
                 | Test::Leaf { .. }
+                | Test::Guard { .. }
                 | Test::Boolean { .. }
                 | Test::Integer { .. }
                 | Test::Record { .. }
@@ -10318,7 +10452,11 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Some(&Test::Sum { ref branches, .. }) => pending.extend(branches.iter().copied()),
                 Some(&Test::List { nil, cell, .. }) => pending.extend([nil, cell]),
-                Some(&(Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. })) => {
+                Some(
+                    &(Test::Boolean { yes, no, .. }
+                    | Test::Integer { yes, no, .. }
+                    | Test::Guard { yes, no, .. }),
+                ) => {
                     pending.extend([yes, no]);
                 },
                 Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
@@ -10740,7 +10878,7 @@ fn tracked_motives(
                 under(arena, yes, 1_usize);
                 under(arena, no, 1_usize);
             },
-            Test::Integer { yes, no, .. } => {
+            Test::Integer { yes, no, .. } | Test::Guard { yes, no, .. } => {
                 under(arena, yes, 2_usize);
                 under(arena, no, 2_usize);
             },
@@ -10869,7 +11007,9 @@ fn refinings(tests: &[Test]) -> Refinings
                     stand(&mut refinings.under, at, above);
                 }
             },
-            Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. } => {
+            Test::Boolean { yes, no, .. }
+            | Test::Integer { yes, no, .. }
+            | Test::Guard { yes, no, .. } => {
                 stand(&mut refinings.under, yes, above);
                 stand(&mut refinings.under, no, above);
             },
@@ -11397,6 +11537,9 @@ fn environment_substituted(
     }
 }
 
+/// A computation the mint made, or why it made none.
+type Minted = Maybe<ComputationId, lowered::Absent>;
+
 /// Mint one node of a match's tree over its already minted children.
 ///
 /// # Specification
@@ -11430,8 +11573,8 @@ fn environment_substituted(
 fn mint_test(
     test: &Test,
     (scrutinised, readings): (Scrutinised, Readings<'_>),
-    (bodies, armed): (&[Maybe<ComputationId, lowered::Absent>], &[ValueId]),
-    minted: &[Maybe<ComputationId, lowered::Absent>],
+    (bodies, guards, armed): (&[Minted], &[Minted], &[ValueId]),
+    minted: &[Minted],
     (read, under, answered): (
         Maybe<CompTypeId, lowered::Absent>,
         Maybe<RefiningAt, refined::Absent>,
@@ -11475,75 +11618,62 @@ fn mint_test(
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let armed = armed_for(sink.arena, body, Depth(bindings.len()), armed);
-            let held = match (readings.held, readings.refines(under, TreeLevel::default())) {
-                (Maybe::Present(held), Maybe::Present(_)) => Maybe::Present(held),
-                (Maybe::Present(_), Maybe::Absent(reason)) | (Maybe::Absent(reason), _) => {
-                    Maybe::Absent(reason)
-                },
-            };
-            if depth == Depth::default()
-                && bindings.is_empty()
-                && matches!(held, Maybe::Absent(_))
-                && armed.is_empty()
-            {
-                return Maybe::Present(answered_at(sink, body, answered));
-            }
-            let mut environment =
-                Vec::with_capacity(bindings.len().saturating_add(scrutinised.outer.0));
-            for &level in bindings.iter().rev() {
-                environment.push(level_read(
-                    sink.arena,
-                    (scrutinised, readings),
-                    under,
-                    depth,
-                    level,
-                ));
-            }
-            for outer in 0 .. scrutinised.outer.0 {
-                let read = match held {
-                    Maybe::Present(Depth(held)) if held == outer => level_read(
-                        sink.arena,
-                        (scrutinised, readings),
-                        under,
-                        depth,
-                        TreeLevel::default(),
-                    ),
-                    Maybe::Present(_) | Maybe::Absent(_) => {
-                        variable(sink.arena, Depth(outer.saturating_add(depth.0)))
-                    },
-                };
-                environment.push(read);
-            }
-            // The arms the answer was passed into read the frame's variables
-            // first, the leaf's own reading of them after.
-            if !armed.is_empty() {
-                let reads = environment.split_off(bindings.len());
-                for &reading in armed {
-                    match gandr_core_term::substitute_environment(
-                        sink.arena,
-                        TermId::Value(reading),
-                        &reads,
-                    ) {
-                        TermId::Value(read) => environment.push(read),
-                        TermId::Computation(_) => return Maybe::Absent(lowered::Absent::Unminted),
-                    }
-                }
-            }
-            let mut carried = Vec::new();
-            match gandr_core_term::substitute_environment_traced(
-                sink.arena,
-                TermId::Computation(body),
-                &environment,
-                &mut carried,
+            match settled_at(
+                (scrutinised, readings),
+                (under, depth, bindings),
+                (body, armed),
+                sink,
+                copies,
             ) {
-                TermId::Computation(substituted) => {
-                    exits::mark_copies(sink, &carried);
-                    copies.extend_from_slice(&carried);
-                    Maybe::Present(answered_at(sink, substituted, answered))
-                },
-                TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Present(settled) => Maybe::Present(answered_at(sink, settled, answered)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             }
+        },
+        Test::Guard {
+            arm,
+            depth,
+            ref bindings,
+            yes,
+            no,
+        } => {
+            let (Maybe::Present(left), Maybe::Present(right)) = (child(yes), child(no))
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let Some(&Maybe::Present(guard)) = guards.get(arm.0)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let Maybe::Present(tested) = settled_at(
+                (scrutinised, readings),
+                (under, depth, bindings),
+                (guard, armed),
+                sink,
+                copies,
+            )
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            // `x ← g; case x { inl _ => yes, inr _ => no }`, as a conditional
+            // tests its condition; a guard returning a variable cases on it.
+            let bound = variable(sink.arena, Depth::default());
+            let case = sink.arena.computation_case(bound, &[left, right]);
+            if let Some(&Computation::Return(value)) = sink.arena.computation(tested)
+                && let Some(&Value::Variable { .. }) = sink.arena.value(value)
+            {
+                let mut carried = Vec::new();
+                let instantiated = gandr_core_term::instantiate_computation_traced(
+                    sink.arena,
+                    case,
+                    value,
+                    &mut carried,
+                );
+                exits::mark_copies(sink, &carried);
+                copies.extend_from_slice(&carried);
+                return Maybe::Present(answered_at(sink, instantiated, answered));
+            }
+            let bind = sink.arena.computation_bind(tested, case);
+            Maybe::Present(answered_at(sink, bind, answered))
         },
         Test::Data {
             level,
@@ -11765,6 +11895,110 @@ fn armed_for<'armed>(
         })
     });
     if changes { armed } else { &[] }
+}
+
+/// `term`, an arm's body or guard read under the case's frame and the arm's
+/// variables, placed where a leaf or a guard stands: under `depth` tree
+/// binders below the branch `under`, each variable read at the level in
+/// `bindings` that settled it.
+///
+/// # Specification
+/// - requires: `term` was minted under the case's frame and one binder per arm
+///   variable; `armed` reads the frame's variables at the arm.
+/// - ensures: `term` itself where no binder stands above it, no variable is
+///   settled, the scrutinee is not refined and no answer was passed; else
+///   `term` with each arm variable replaced by what [`level_read`] reads its
+///   level as, the scrutinee's variable by what it reads level zero as where
+///   the branch refines it, every other variable of the frame carried under the
+///   tree's binders and an answer's arms read so after; every copy is marked as
+///   its source is and reported in `copies`; nothing when an arm's reading does
+///   not substitute to a value.
+/// - provides: the one placing of an arm's term, shared by a leaf and a guard.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::mint_case`]; a guard reads its arm's
+///   variable where its leaf does.
+/// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+/// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
+fn settled_at(
+    (scrutinised, readings): (Scrutinised, Readings<'_>),
+    (under, depth, bindings): (Maybe<RefiningAt, refined::Absent>, Depth, &[TreeLevel]),
+    (term, armed): (ComputationId, &[ValueId]),
+    sink: &mut Sink<'_>,
+    copies: &mut Vec<Carried>,
+) -> Maybe<ComputationId, lowered::Absent>
+{
+    let armed = armed_for(sink.arena, term, Depth(bindings.len()), armed);
+    let held = match (readings.held, readings.refines(under, TreeLevel::default())) {
+        (Maybe::Present(held), Maybe::Present(_)) => Maybe::Present(held),
+        (Maybe::Present(_), Maybe::Absent(reason)) | (Maybe::Absent(reason), _) => {
+            Maybe::Absent(reason)
+        },
+    };
+    if depth == Depth::default()
+        && bindings.is_empty()
+        && matches!(held, Maybe::Absent(_))
+        && armed.is_empty()
+    {
+        return Maybe::Present(term);
+    }
+    let mut environment = Vec::with_capacity(bindings.len().saturating_add(scrutinised.outer.0));
+    for &level in bindings.iter().rev() {
+        environment.push(level_read(
+            sink.arena,
+            (scrutinised, readings),
+            under,
+            depth,
+            level,
+        ));
+    }
+    for outer in 0 .. scrutinised.outer.0 {
+        let read = match held {
+            Maybe::Present(Depth(held)) if held == outer => level_read(
+                sink.arena,
+                (scrutinised, readings),
+                under,
+                depth,
+                TreeLevel::default(),
+            ),
+            Maybe::Present(_) | Maybe::Absent(_) => {
+                variable(sink.arena, Depth(outer.saturating_add(depth.0)))
+            },
+        };
+        environment.push(read);
+    }
+    // The arms the answer was passed into read the frame's variables
+    // first, the leaf's own reading of them after.
+    if !armed.is_empty() {
+        let reads = environment.split_off(bindings.len());
+        for &reading in armed {
+            match gandr_core_term::substitute_environment(
+                sink.arena,
+                TermId::Value(reading),
+                &reads,
+            ) {
+                TermId::Value(read) => environment.push(read),
+                TermId::Computation(_) => return Maybe::Absent(lowered::Absent::Unminted),
+            }
+        }
+    }
+    let mut carried = Vec::new();
+    match gandr_core_term::substitute_environment_traced(
+        sink.arena,
+        TermId::Computation(term),
+        &environment,
+        &mut carried,
+    ) {
+        TermId::Computation(substituted) => {
+            exits::mark_copies(sink, &carried);
+            copies.extend_from_slice(&carried);
+            Maybe::Present(substituted)
+        },
+        TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
+    }
 }
 
 /// `id`, a match's root, ascribed `answered` when the match writes its

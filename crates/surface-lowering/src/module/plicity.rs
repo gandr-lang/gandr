@@ -57,6 +57,7 @@ use quenchant_shape::shape::Maybe;
 use super::Collector;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
+use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -682,10 +683,11 @@ impl<'source> Collector<'_, 'source>
     ///   lowercase or a capitalised name alike: `x : T` its `T`, or
     ///   [`unclosed::Absent::Dependent`] when `T` names an entry of the
     ///   telescope; a bare `x` [`unclosed::Absent::Unwritten`]; a receiver's
-    ///   mode word skipped. None when no parameter list follows, or one is out
-    ///   of shape. `header` is left where it was. A type naming a parameter
-    ///   before its own is kept: the arguments written for those replace them
-    ///   where the call is read.
+    ///   mode word skipped; then a clause tail's columns, as
+    ///   [`Self::column_parameters`] reads them. None from a list out of shape.
+    ///   `header` is left where it was. A type naming a parameter before its
+    ///   own is kept: the arguments written for those replace them where the
+    ///   call is read.
     /// - provides: [`super::Collected::parameters`], the type each argument of
     ///   a call checks against.
     /// - fails: never: a type whose pieces do not read counts as naming one.
@@ -699,6 +701,7 @@ impl<'source> Collector<'_, 'source>
     ///   argument's binder its parameter's domain, past capitalised binders.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
     /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     pub(super) fn explicit_parameters(
         &self,
@@ -723,11 +726,12 @@ impl<'source> Collector<'_, 'source>
                 }
             }
         }
-        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
-            return Vec::new();
-        }
         let mut parameters = Vec::new();
         let mut earlier: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+            self.column_parameters(cursor, &bound, &earlier, &mut parameters);
+            return parameters;
+        }
         // A binder is written lowercase, `x`, a type variable, or capitalised,
         // `A : Type`, as a type's name is (#3921).
         while let Maybe::Present(Piece::Tile { label, at: written }) = cursor.peek()
@@ -759,11 +763,96 @@ impl<'source> Collector<'_, 'source>
             });
             let _comma = cursor.tile(TileName::COMMA);
         }
-        if let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
             return Vec::new();
         }
+        self.column_parameters(cursor, &bound, &earlier, &mut parameters);
 
         parameters
+    }
+
+    /// Append to `parameters` one entry per column of the clause tail `: (A1,
+    /// …, An) => C where` that `cursor` stands at, its domain its type.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past a function's written parameter
+    ///   list, or past its name and telescope when it writes none; `bound`
+    ///   holds the telescope's names and `earlier` the written parameters'.
+    /// - ensures: for a tail `: T where` with `T` a value function space, one
+    ///   entry per domain `Ai` at its own node, typed `Ai`, or
+    ///   [`unclosed::Absent::Dependent`] when `Ai` names an entry of the
+    ///   telescope, and dependent when it names a written parameter; nothing
+    ///   for any other tail, or a domain list that does not read.
+    /// - provides: a clause column's type to the argument a call writes for it,
+    ///   as a written parameter's is.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the cursor offers no count of its pieces to bound
+    ///   the result by.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor argument of a call to a function of
+    ///   clauses takes its column's type, naming the parameter before it.
+    /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
+    fn column_parameters(
+        &self,
+        mut cursor: Cursor<'_>,
+        bound: &BTreeSet<SurfaceName<'source>>,
+        earlier: &BTreeSet<SurfaceName<'source>>,
+        parameters: &mut Vec<ExplicitParameter>,
+    )
+    {
+        let Maybe::Present(_) = cursor.tile(TileName::COLON)
+        else {
+            return;
+        };
+        let Maybe::Present(Piece::Operand(stated)) = cursor.read()
+        else {
+            return;
+        };
+        if let Maybe::Absent(_) = cursor.at(TileName::WHERE) {
+            return;
+        }
+        let Ok(Maybe::Present(Former::ValueFunctionType)) = self.root_former(stated)
+        else {
+            return;
+        };
+        let mut arrow = Pieces::new();
+        if read_pieces(self.pbg, self.tree, stated.node, &mut arrow).is_err() {
+            return;
+        }
+        let Some(&Piece::Operand(domain)) = arrow.pieces.first()
+        else {
+            return;
+        };
+        let mut listed = Pieces::new();
+        let grouped = matches!(
+            self.root_former(domain),
+            Ok(Maybe::Present(Former::ParenthesizedType))
+        ) && read_pieces(self.pbg, self.tree, domain.node, &mut listed).is_ok()
+            && listed.pieces.iter().any(
+                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::COMMA),
+            );
+        let domains: Vec<Placed> = if grouped {
+            listed
+                .pieces
+                .iter()
+                .filter_map(|piece| match *piece {
+                    Piece::Operand(each) => Some(each),
+                    Piece::Tile { .. } => None,
+                })
+                .collect()
+        }
+        else {
+            alloc::vec![domain]
+        };
+        for domain in domains {
+            parameters.push(ExplicitParameter {
+                binder: domain,
+                declared: self.closed(domain, bound),
+                dependent: matches!(self.closed(domain, earlier), Maybe::Absent(_)),
+            });
+        }
     }
 
     /// The type written at `typed`, when it names none of `names`, anywhere

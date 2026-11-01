@@ -2312,12 +2312,40 @@ struct Function
     /// The result type, when the source wrote one.
     result: Maybe<NodeIndex, stated::Absent>,
     /// The body.
-    block: Block,
+    body: Body,
     /// The frame binding the function's own name, between the staged
     /// parameter and the ones before it, when the tail recurses.
     recursion: Maybe<ScopeId, recursion::Absent>,
     /// The receiver a written-through method holds over its body.
     receiver: Maybe<method::HeldReceiver, method::unheld::Absent>,
+}
+
+/// A function tail's body: a block, or the decision tree its clauses compile
+/// to.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: a clause body's tree stands directly under the lambdas of the
+///   parameters its columns bind, each column one tree binder.
+/// - provides: what [`Lowerer::mint_function`] mints under the lambda chain.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — the statement and case stores are not retained;
+///   `function` and `mint_function` interpret the coordinates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block body and a clause body each lower under the same
+///   lambda chain.
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Body
+{
+    /// A block, `{ s… c }`.
+    Block(Block),
+    /// Clauses, `where { | p, … => c … }`, compiled to one match.
+    Clauses(native::CaseIndex),
 }
 
 /// A recursive tail's own name, from the reading of its body to the frame
@@ -9687,7 +9715,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   path's written type states (#3773). A bare lambda passed for a
     ///   parameter, its binder written untyped, records its binder in
     ///   [`Self::argued_binders`] with the parameter and the arrow's domain
-    ///   (#3921).
+    ///   (#3921). A matching lambda, `fn { | … }`, is
+    ///   [`Self::matching_lambda`]'s.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
     ///   computation; the unadmitted refusal for a type abstraction; the arity
@@ -9712,6 +9741,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(site.at.node), Some(&Plan::Lambda(Block { statements, .. }, _)) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Case(_)))
         },
     )]
     fn lambda(
@@ -9720,6 +9750,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // `fn { | … }` matches its binders by clauses.
+        let mut ahead = cursor.clone();
+        let _keyword = ahead.tile(TileName::FN);
+        if let Maybe::Present(_) = ahead.at(TileName::BRACE_OPEN) {
+            return self.matching_lambda(site, cursor);
+        }
         let frame = self.require(site, Produced::Computation)?;
         let _keyword = cursor.tile(TileName::FN);
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
@@ -10046,8 +10082,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Plan::Function(ref function) => {
                             function.parameters.start == parameters
                                 && function.parameters.end == self.parameters.len()
-                                && function.block.statements.start <= function.block.statements.end
-                                && function.block.statements.end <= self.statements.len()
+                                && match function.body {
+                                    | Body::Block(block) => {
+                                        block.statements.start <= block.statements.end
+                                            && block.statements.end <= self.statements.len()
+                                    },
+                                    | Body::Clauses(_) => true,
+                                }
                         },
                         | _ => false,
                     })
@@ -10076,7 +10117,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let named = cursor.tile(TileName::IDENTIFIER);
         self.merge_refusal(site.at.node)?;
         self.stage_telescope(site, &mut cursor)?;
-        closed(function, &mut cursor, TileName::PAREN_OPEN)?;
+        // A clause tail of no written parameter, `: T where { … }`, opens on
+        // its type's `:`.
+        let listing = cursor.tile(TileName::PAREN_OPEN);
+        if let (Maybe::Absent(_), Maybe::Absent(_)) = (listing, cursor.at(TileName::COLON)) {
+            return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
+        }
         let receiver = self.receiver_mode(site);
         self.stray_modes(&cursor, receiver)?;
         let start = self.parameters.len();
@@ -10093,17 +10139,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let mut names = Vec::new();
                 let mut types: Vec<Option<NodeIndex>> = Vec::new();
                 let mut roots = Vec::new();
-                let mut listed = true;
+                let mut listed = matches!(listing, Maybe::Present(_));
+                // A clause tail states its type after the list, or after the
+                // name when it writes none: the first tile there is `:`.
+                let mut first = !listed;
+                let mut clausal = false;
                 while let Maybe::Present(piece) = ahead.read() {
                     match piece {
+                        Piece::Tile { label, .. } if first => {
+                            clausal = label == TileName::COLON;
+                            first = false;
+                        },
                         Piece::Tile { label, at }
                             if listed && TileName::BINDERS.contains(&label) =>
                         {
                             names.push(self.name_at(at));
                             types.push(None);
                         },
-                        Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE => {
+                        Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE && listed => {
                             listed = false;
+                            first = true;
                         },
                         Piece::Operand(operand) if listed => {
                             if let Some(last) = types.last_mut() {
@@ -10126,7 +10181,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Maybe::Present(owner) => self.joint(owner),
                     Maybe::Absent(_) => native::Joint::alone(),
                 };
-                let written = self.staged_by_body(own, &joint, &names, &decoded, &roots)?;
+                // Clauses stage the column their tree first switches on,
+                // which `Self::clauses` records once the tree is compiled;
+                // every written parameter stays outside the fixpoint.
+                let written = if clausal {
+                    native::Staging {
+                        kept: native::ParameterAt(names.len()),
+                        staged: native::ParameterAt(names.len()),
+                    }
+                }
+                else {
+                    self.staged_by_body(own, &joint, &names, &decoded, &roots)?
+                };
                 Some(self.merged_staging(site, written)?)
             },
             _ => None,
@@ -10142,6 +10208,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.merged_parameters(site, function, &mut cursor, Frame::Outermost, &mut own)?;
         loop {
             let binder = match cursor.peek() {
+                _ if matches!(listing, Maybe::Absent(_)) => break,
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
                     let _close = cursor.tile(TileName::PAREN_CLOSE);
                     break;
@@ -10196,6 +10263,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A tail that keeps every parameter binds its own name after its
         // list: the loop above met no parameter to bind it before.
         frame = self.bind_kept(site, &mut own, frame);
+        // A clause tail binds one more parameter per column of its stated
+        // type, after its own name.
+        let columns = match cursor.at(TileName::COLON) {
+            Maybe::Present(_) => Some(self.columns(function, &mut cursor, frame)?),
+            Maybe::Absent(_) => None,
+        };
         let recursion = own.bound;
         let parameters = Stretch {
             start,
@@ -10212,6 +10285,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 };
                 let _first = self.staged_parameters.insert(parameter.frame, scrutiny);
             }
+        }
+        if let Some(columns) = columns {
+            if deduced.is_some() {
+                return Err(LoweringRefusal::ViewNotPlace {
+                    span: function.at.span,
+                });
+            }
+            if receiver == Some(ReceiverMode::Exclusive) {
+                return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
+            }
+            let case = self.clauses(function, &mut cursor, frame, &columns, recursion)?;
+            self.plan(
+                site,
+                Plan::Function(Function {
+                    parameters,
+                    result: Maybe::Present(columns.result),
+                    body: Body::Clauses(case),
+                    recursion,
+                    receiver: Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
+                }),
+            );
+            return Ok(());
         }
         let (result, viewed) = match cursor.tile(TileName::ARROW) {
             Maybe::Present(_) => {
@@ -10264,7 +10359,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Function(Function {
                 parameters,
                 result,
-                block,
+                body: Body::Block(block),
                 recursion,
                 receiver,
             }),
@@ -18054,8 +18149,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(reason);
             }
         }
-        let mut body = match self.mint_body(function.block, sink, origin) {
-            Maybe::Present(block) => block,
+        let minted = match function.body {
+            Body::Block(block) => self.mint_body(block, sink, origin),
+            Body::Clauses(case) => match self.mint_case(case, sink, origin) {
+                Maybe::Present(Lowered::Computation(tree)) => Maybe::Present(tree),
+                Maybe::Present(_) => Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+        };
+        let mut body = match minted {
+            Maybe::Present(body) => body,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         if let Maybe::Present(receiver) = function.receiver {

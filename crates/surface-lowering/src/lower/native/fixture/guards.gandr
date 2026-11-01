@@ -1,0 +1,21 @@
+data Nat : Type where {
+  | Zero
+  | Succ(n : Nat)
+}
+
+def isZero : Nat => Bool where {
+  | Zero => true
+  | Succ(_) => false
+}
+
+def pred(n : Nat) : Nat => Nat where {
+  | Zero => n
+  | Succ(m) if isZero(m) => Zero
+  | Succ(m) => m
+}
+
+def stray(n : Nat) : Nat => Nat where {
+  | Zero => n
+  | Succ(m) if isZero(k) => Zero
+  | Succ(m) => m
+}

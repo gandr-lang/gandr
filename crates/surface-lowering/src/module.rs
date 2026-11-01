@@ -10371,9 +10371,10 @@ const fn misplaced_in<'source>(
 ///   whose hole holds exactly one form and which closes with `;` and nothing
 ///   after it, and both halves for a signature joined with its definition, `: T
 ///   = e ;`, each hole holding one form; a function tail, opening on `(` or on
-///   a telescope `@[ … ]` followed by `(`, with whether it is signed; every
-///   other tail yields its first fault — an implicit telescope declined by the
-///   folded form's own name, an empty or overfull hole, or a tile out of place.
+///   a telescope `@[ … ]` followed by `(`, with whether it is signed, and a
+///   clause tail, `: T where { | … }`, signed by `T`; every other tail yields
+///   its first fault — an implicit telescope declined by the folded form's own
+///   name, an empty or overfull hole, or a tile out of place.
 /// - provides: the tail half of a declaration form.
 /// - fails: never; a fault is yielded rather than raised.
 /// - panics: none.
@@ -10393,7 +10394,7 @@ const fn misplaced_in<'source>(
     captures: first = header.peek(),
     ensures: |ret| match ret {
         | Tail::Function(_) => {
-            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::BRACKET_OPEN)
+            matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN || label == TileName::BRACKET_OPEN || label == TileName::COLON)
                 && header.peek() == first
         },
         | Tail::Wrote(kind, _) => {
@@ -10427,6 +10428,15 @@ fn read_tail<'source>(
     }
     if let Maybe::Present(_) = past.at(TileName::PAREN_OPEN) {
         return Tail::Function(signing(past));
+    }
+    // Clauses after a stated function type, `: (A, …) => C where { | … }`,
+    // are a function tail of no written parameter, signed by that type.
+    let mut clausal = past.clone();
+    if let Maybe::Present(_) = clausal.tile(TileName::COLON)
+        && let Run::One(_) = clausal.operands()
+        && let Maybe::Present(_) = clausal.at(TileName::WHERE)
+    {
+        return Tail::Function(Signing::Signed);
     }
     let kind = if let Maybe::Present(_) = header.tile(TileName::COLON) {
         HalfKind::Signature
@@ -10477,10 +10487,11 @@ fn read_tail<'source>(
 /// # Specification
 /// - requires: `header` stands at the tail's `(`.
 /// - ensures: signed exactly when every binder tile before the parameter list's
-///   own `)` is followed by `:`, and the `)` by `->`; unsigned otherwise, a
-///   list with no `)` included. Only the tiles are read: whether each type and
-///   the result hold exactly one form is the function's own reading, decided
-///   where the classification reads the declaration.
+///   own `)` is followed by `:`, and the `)` by `->` or by the `:` stating a
+///   clause tail's type; unsigned otherwise, a list with no `)` included. Only
+///   the tiles are read: whether each type and the result hold exactly one form
+///   is the function's own reading, decided where the classification reads the
+///   declaration.
 /// - provides: which halves a function tail writes.
 /// - fails: never.
 /// - panics: none.
@@ -10493,7 +10504,9 @@ fn read_tail<'source>(
 /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
 #[spec(
     ensures: |ret| {
-        ret != Signing::Signed || matches!(header.at(TileName::ARROW), Maybe::Present(_))
+        ret != Signing::Signed
+            || matches!(header.at(TileName::ARROW), Maybe::Present(_))
+            || matches!(header.at(TileName::COLON), Maybe::Present(_))
     },
 )]
 fn signing(mut header: Cursor<'_>) -> Signing
@@ -10511,9 +10524,9 @@ fn signing(mut header: Cursor<'_>) -> Signing
             Maybe::Absent(_) => return Signing::Unsigned,
         }
     }
-    match header.at(TileName::ARROW) {
-        Maybe::Present(_) => Signing::Signed,
-        Maybe::Absent(_) => Signing::Unsigned,
+    match (header.at(TileName::ARROW), header.at(TileName::COLON)) {
+        (Maybe::Present(_), _) | (_, Maybe::Present(_)) => Signing::Signed,
+        (Maybe::Absent(_), Maybe::Absent(_)) => Signing::Unsigned,
     }
 }
 

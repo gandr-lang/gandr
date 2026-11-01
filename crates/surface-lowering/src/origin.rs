@@ -137,6 +137,9 @@ quenchant_shape::reason_enum! {
             /// The record was read before its match was minted: the table
             /// records a match only once its tree is minted, with the value.
             Unminted,
+            /// The match is a function's clauses: it scrutinises the
+            /// function's parameters, one per column, and no one value.
+            Columns,
         }
     }
 }

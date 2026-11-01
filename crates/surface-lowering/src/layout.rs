@@ -181,8 +181,9 @@ pub struct Misplaced
     /// Where the fault is reported: the opener written once too often, or the
     /// empty point a closer or an opener left out belongs at.
     pub at: ByteSpan,
-    /// The bracket whose form the fault names: the opener, or the closer whose
-    /// opener was left out.
+    /// The bracket whose form the fault names: the opener, the closer whose
+    /// opener was left out, or, for an opener left out at the end of a line,
+    /// the tile leading that line.
     pub bracket: ByteSpan,
     /// What the layout says of it.
     pub fault: FormFault,
@@ -542,9 +543,9 @@ impl Pairing<'_>
     ///   waiting indented past it; then, when no opener waits at or past its
     ///   indentation and the nearest line at its indentation before it opens
     ///   nothing of the family and is followed by a deeper line, it notes a
-    ///   missing opener at that line's end and answers nothing; otherwise it
-    ///   answers the innermost opener waiting, if any, and marks that opener's
-    ///   line as answered.
+    ///   missing opener at that line's end, naming the form of the tile leading
+    ///   that line, and answers nothing; otherwise it answers the innermost
+    ///   opener waiting, if any, and marks that opener's line as answered.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates the pairing.
@@ -576,9 +577,16 @@ impl Pairing<'_>
                 .is_none_or(|waiting| waiting.indent < column)
                 && let Some(header) = self.header(here, laid)
             {
+                // The opener belongs to the form its line opens, whose tile
+                // leads that line; the parser's pairing of the closer is a
+                // guess among every form a `}` ends.
+                let leading = layout
+                    .tiles
+                    .get(header.first)
+                    .map_or(laid.span, |first| first.span);
                 self.note(Misplaced {
                     at: ByteSpan::new(header.end, header.end).unwrap_or(laid.span),
-                    bracket: laid.span,
+                    bracket: leading,
                     fault: FormFault::MissingOpen(self.family),
                 });
                 return;

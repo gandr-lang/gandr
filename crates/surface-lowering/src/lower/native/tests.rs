@@ -5699,3 +5699,182 @@ fn a_written_answer_ascribes_the_match_2089()
     );
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// The leading lambdas of `computation`, outermost first, and the computation
+/// under them.
+///
+/// # Specification
+/// trivial.
+fn under_lambdas(
+    arena: &CoreArena,
+    mut computation: ComputationId,
+) -> (Vec<ComputationId>, ComputationId)
+{
+    let mut lambdas = Vec::new();
+    while let Some(&Computation::Lambda(under)) = arena.computation(computation) {
+        lambdas.push(computation);
+        computation = under;
+    }
+
+    (lambdas, computation)
+}
+
+/// Clauses over `(Nat, Nat) => Nat` bind one lambda per column under the
+/// fixpoint, and the tree switches on the column the patterns test: the first
+/// for `plus`, the second for `add`, each read as its lambda's variable. A
+/// recursion through a written parameter, `scale(by)`, and overlapping
+/// clauses, `max`, check beside them.
+#[test]
+fn clauses_match_one_column_per_arrow()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!("fixture/clauses.gandr")),
+        &mut arena,
+    );
+    for (name, column) in [("plus", 1_u32), ("add", 0_u32)] {
+        let Some(&Value::Thunk(fixpoint)) =
+            arena.value(body_named(&module, SurfaceName::from(name)))
+        else {
+            panic!("`{name}` lowers to a thunk");
+        };
+        let Some(&Computation::Fixpoint { body, .. }) = arena.computation(fixpoint)
+        else {
+            panic!(
+                "`{name}`'s columns stand under its fixpoint: {:?}",
+                arena.computation(fixpoint)
+            );
+        };
+        let (lambdas, tree) = under_lambdas(&arena, body);
+        assert_eq!(
+            lambdas.len(),
+            2_usize,
+            "`{name}` binds one lambda per column"
+        );
+        let Some(&Computation::DataCase {
+            scrutinee,
+            ref branches,
+            ..
+        }) = arena.computation(tree)
+        else {
+            panic!(
+                "`{name}` switches on a column: {:?}",
+                arena.computation(tree)
+            );
+        };
+        assert_eq!(
+            arena.value(scrutinee),
+            Some(&variable(DeBruijnIndex::from(column))),
+            "`{name}` switches on the column its patterns test"
+        );
+        assert_eq!(branches.len(), 2_usize);
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A clause of one pattern more than the stated type has columns is refused at
+/// the extra pattern.
+#[test]
+fn a_clause_of_too_many_patterns_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!("{NAT}def f : Nat => Nat where {{ | m, n => m }}\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let extra = source.find("n =>").expect("the second pattern is written");
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("f")),
+            LoweringRefusal::MalformedForm {
+                span,
+                fault: crate::error::FormFault::ExtraOperand,
+                ..
+            } if usize::from(span.start()) == extra
+        ),
+        "{:?}",
+        outcome_of(&module, SurfaceName::from("f"))
+    );
+}
+
+/// A guard reads its clause's variables, `m` in `| Succ(m) if isZero(m)`, and
+/// tests a boolean behind the clause's leaf; a name the clause does not bind
+/// is unresolved there.
+#[test]
+fn a_guard_reads_its_clause_s_variables()
+{
+    let mut arena = CoreArena::new();
+    let source = include_str!("fixture/guards.gandr");
+    let module = lowered(SourceText::from(source), &mut arena);
+    let tree = tail_of(&arena, body_named(&module, SurfaceName::from("pred")));
+    assert!(
+        reachable(&arena, tree)
+            .into_iter()
+            .any(|at| matches!(arena.computation(at), Some(&Computation::Case { .. }))),
+        "the guard is tested by a case on its boolean"
+    );
+    let stray = source
+        .find("isZero(k)")
+        .map(|at| at.saturating_add(7_usize));
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("stray")),
+            LoweringRefusal::UnresolvedName { span, name }
+                if Some(usize::from(span.start())) == stray && name == "k".into()
+        ),
+        "{:?}",
+        outcome_of(&module, SurfaceName::from("stray"))
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A matching lambda over two columns binds two lambdas, and its tree switches
+/// on the column its patterns test, the outer lambda's.
+#[test]
+fn a_matching_lambda_binds_one_lambda_per_column()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def first : (Nat, Nat) => Nat = fn {{ | Zero, n => n | Succ(m), _ => m }};\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let body = body_named(&module, SurfaceName::from("first"));
+    let Some(&(Value::Thunk(lambda) | Value::Nested(lambda))) = arena.value(body)
+    else {
+        panic!("the definition is the lambda: {:?}", arena.value(body));
+    };
+    let (lambdas, tree) = under_lambdas(&arena, lambda);
+    assert_eq!(lambdas.len(), 2_usize, "one lambda per column");
+    assert!(
+        matches!(
+            arena.computation(tree),
+            Some(&Computation::DataCase { scrutinee, .. })
+                if arena.value(scrutinee) == Some(&variable(DeBruijnIndex::from(1_u32)))
+        ),
+        "the tree switches on the first column: {:?}",
+        arena.computation(tree)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A constructor passed for a clause column takes the column's type, the
+/// parameter before it read from the call: `length(Nat, Cons(Zero, …))`
+/// checks with no annotation on the list.
+#[test]
+fn a_clause_column_types_its_call_s_argument()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!("fixture/clause-calls.gandr")),
+        &mut arena,
+    );
+    for name in ["two", "one"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}

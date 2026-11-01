@@ -177,6 +177,19 @@ fn a_rule_s_freshness_conditions_stay_on_its_line()
 }
 
 #[test]
+fn a_clause_s_patterns_stay_on_its_line()
+{
+    let grammar = grammar();
+    let source =
+        "def both : (Bool, Bool) => Bool where {\n  | true, b if b => true\n  | _, _ => false\n}\n";
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "a bar opens each clause, so the comma between two patterns keeps them on the clause's line"
+    );
+}
+
+#[test]
 fn a_form_written_against_the_one_before_starts_its_own_line()
 {
     let grammar = grammar();

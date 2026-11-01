@@ -261,8 +261,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   capability at a region binder of its own
     ///   ([`Self::instance_parameter`]), and a recursive tail's own name bound
     ///   before the entry after the kept ones ([`Self::bind_kept`]); the cursor
-    ///   then stands at the list's `)`, and the frame the last entry bound is
-    ///   returned. Otherwise nothing changes and `frame` is returned.
+    ///   then stands at the list's `)`, or at a clause tail's `:` when it
+    ///   writes no list, and the frame the last entry bound is returned.
+    ///   Otherwise nothing changes and `frame` is returned.
     /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
     ///   an instance's ([`Self::instance_parameter`]); a fault at the parameter
     ///   list when it ends before its `)`.
@@ -339,6 +340,10 @@ impl<'source> Lowerer<'_, 'source>
                 component: None,
             });
             frame = Frame::Inner(bound);
+        }
+        // A clause tail of no written list stands at its type's `:`.
+        if let Maybe::Present(_) = cursor.at(TileName::COLON) {
+            return Ok(frame);
         }
         while let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
             if let Maybe::Absent(_) = cursor.read() {

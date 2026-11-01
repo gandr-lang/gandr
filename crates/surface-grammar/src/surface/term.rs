@@ -943,7 +943,8 @@ fn module_signature_field() -> Regex
 }
 
 /// Build the `def rec` recursive tail: `rec id [implicits]? (params) -> T? {
-/// body }`.
+/// body }`, or the clauses matching the arrows after the head, with or
+/// without parameters before it: `rec id (params)? : T where { | … }`.
 ///
 /// A single `{ … }` with an interior alternative separates the corecursive
 /// copattern-clause body from the ordinary statement body, so the two never
@@ -951,13 +952,15 @@ fn module_signature_field() -> Regex
 /// [`PbgError::DuplicateTile`] hazard). The
 /// copattern `.head => e` clause's `.` is a `≐`-successor of `{` / `,`,
 /// distinct from the postfix projection `.` (which requires a left operand), so
-/// the same `.` label molds by context.
+/// the same `.` label molds by context. The clause block follows `where`, so
+/// its `{` stands in a context of its own.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a rec keyword, name, optional implicit telescope (as the regular
-///   tail admits) and parameters followed by an optional result and one
-///   brace-delimited alternative body.
+/// - ensures: a rec keyword, name and optional implicit telescope (as the
+///   regular tail admits), then parameters followed by an optional result and
+///   one brace-delimited alternative body or by a stated type and clauses, or a
+///   stated type and clauses alone.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -967,23 +970,43 @@ fn module_signature_field() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 8 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rec")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(7).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rec")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 2))))]
 fn def_rec_tail() -> Regex
 {
+    let clauses = || {
+        seq([
+            t(TileLabel(":")),
+            h(Sort::Type),
+            t(TileLabel("where")),
+            clause_block(),
+        ])
+    };
     seq([
         t(TileLabel("rec")),
         t(TileLabel("identifier")),
         opt(implicit_telescope()),
-        params(),
-        opt(seq([t(TileLabel("->")), h(Sort::Type)])),
-        t(TileLabel("{")),
         alt([
-            // corecursive body: copattern clauses `.head => e` (+ reserved `_ =>`).
-            comma1(copattern_clause()),
-            // ordinary statement body (the block interior, flat).
-            seq([repeat(statement_alt()), opt(h(Sort::Expression))]),
+            seq([
+                params(),
+                alt([
+                    seq([
+                        opt(seq([t(TileLabel("->")), h(Sort::Type)])),
+                        t(TileLabel("{")),
+                        alt([
+                            // corecursive body: copattern clauses `.head => e`
+                            // (+ reserved `_ =>`).
+                            comma1(copattern_clause()),
+                            // ordinary statement body (the block interior,
+                            // flat).
+                            seq([repeat(statement_alt()), opt(h(Sort::Expression))]),
+                        ]),
+                        t(TileLabel("}")),
+                    ]),
+                    clauses(),
+                ]),
+            ]),
+            clauses(),
         ]),
-        t(TileLabel("}")),
     ])
 }
 
@@ -3136,7 +3159,7 @@ fn handler_clause() -> Regex
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref branches) if branches.len() == 2 && branches.iter().all(|branch| matches!(branch.shape(), RegexShape::Seq(ref parts) if parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))))]
 fn arm_block() -> Regex
 {
-    let bar = || t(TileLabel("|"));
+    let bar = || t(TileLabel("arm_bar"));
     let tail = || {
         seq([
             repeat(alt([
@@ -3149,6 +3172,41 @@ fn arm_block() -> Regex
     alt([
         seq([t(TileLabel("{")), arm(), tail(), t(TileLabel("}"))]),
         seq([t(TileLabel("{")), bar(), arm(), tail(), t(TileLabel("}"))]),
+    ])
+}
+
+/// Build a block of clauses, `{ | p, q if c => e … }`: each clause opened by
+/// an arm bar, its patterns one per column separated by commas, an optional
+/// guard after `if`, and its body after `=>`.
+///
+/// A clause takes no separator: the next clause's bar ends it, as a data
+/// member's does. A block of no clauses is the absurd definition.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `{`, a repetition of clauses each led by the arm bar, and `}`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
+fn clause_block() -> Regex
+{
+    seq([
+        t(TileLabel("{")),
+        repeat(seq([
+            t(TileLabel("arm_bar")),
+            h(Sort::Pattern),
+            repeat(seq([t(TileLabel(",")), h(Sort::Pattern)])),
+            opt(seq([t(TileLabel("if")), h(Sort::Expression)])),
+            t(TileLabel("=>")),
+            h(Sort::Expression),
+        ])),
+        t(TileLabel("}")),
     ])
 }
 
@@ -3835,20 +3893,34 @@ fn regular_def_tail() -> Regex
         t(TileLabel("identifier")),
         opt(implicit_telescope()),
         alt([
-            // signature tail: `: T ;`, or joined with its value: `: T = E ;`
+            // signature tail: `: T ;`, joined with its value: `: T = E ;`, or
+            // with its clauses: `: T where { | … }`
             seq([
                 t(TileLabel(":")),
                 h(Sort::Type),
-                opt(seq([t(TileLabel("=")), h(Sort::Expression)])),
-                t(TileLabel(";")),
+                alt([
+                    seq([
+                        opt(seq([t(TileLabel("=")), h(Sort::Expression)])),
+                        t(TileLabel(";")),
+                    ]),
+                    seq([t(TileLabel("where")), clause_block()]),
+                ]),
             ]),
             // value tail: `= E ;`
             seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
-            // function tail: `(params) -> T? { … }`
+            // function tail: `(params) -> T? { … }`, or the clauses matching
+            // the arrows after the head: `(params) : T where { | … }`
             seq([
                 params(),
-                opt(seq([t(TileLabel("->")), h(Sort::Type)])),
-                block(),
+                alt([
+                    seq([opt(seq([t(TileLabel("->")), h(Sort::Type)])), block()]),
+                    seq([
+                        t(TileLabel(":")),
+                        h(Sort::Type),
+                        t(TileLabel("where")),
+                        clause_block(),
+                    ]),
+                ]),
             ]),
         ]),
     ])
@@ -4080,6 +4152,9 @@ fn primary_expressions(
             t(TileLabel("fn")),
             alt([
                 seq([params(), block()]),
+                // the matching lambda `fn { | p => e … }`, the clauses the
+                // definition form writes after `where`.
+                clause_block(),
                 seq([
                     t(TileLabel("[")),
                     comma1(t(TileLabel("type_variable"))),
