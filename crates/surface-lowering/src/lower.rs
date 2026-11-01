@@ -11315,9 +11315,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A multi-output constructor with no output named is the record of
         // its ports.
         if let Run::One(head) = cursor.clone().operands()
-            && matches!(self.form_at(head)?, Some((_, Former::Constructor)))
-            && let Maybe::Present(ported) =
-                self.ported_named(site, SurfaceName::from(self.text_at(head)))
+            && let Maybe::Present(ported) = self.ported_head(site, head)?
         {
             let _head = cursor.operands();
             let start = self.operands.len();

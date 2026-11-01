@@ -2694,18 +2694,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unnamed);
         };
-        // A tile has no owner of its own: the family is resolved from the
-        // site's node, at the family name's bytes.
-        let named = Site {
-            at: Placed {
-                node: site.at.node,
-                span: family.span,
-            },
-            ..site
-        };
-        let family_name = SurfaceName::from(self.text_at(family));
-        let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, Frame::Outermost, family_name)?
+        let Maybe::Present(constant) = self.qualified_family(site, family)?
         else {
             return Ok(unnamed);
         };
@@ -2784,6 +2773,169 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// The declaration the family name `family` of a qualified constructor
+    /// written at `site` resolves to.
+    ///
+    /// # Specification
+    /// - requires: `site` is the qualified form or the form holding it.
+    /// - ensures: the declared constant the name resolves to as any global name
+    ///   at `site`, at the family name's bytes; the unnamed absence for any
+    ///   other resolution.
+    /// - fails: as [`Self::resolve_name`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's resolution refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::qualified_constructor`].
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(reason)) if reason != constructed::Absent::Unnamed))]
+    fn qualified_family(
+        &mut self,
+        site: Site,
+        family: Placed,
+    ) -> Result<Maybe<ConstantIndex, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        // A tile has no owner of its own: the family is resolved from the
+        // site's node, at the family name's bytes.
+        let named = Site {
+            at: Placed {
+                node: site.at.node,
+                span: family.span,
+            },
+            ..site
+        };
+        let family_name = SurfaceName::from(self.text_at(family));
+        Ok(
+            match self.resolve_name(named, Frame::Outermost, family_name)? {
+                Maybe::Present(Resolved::Declaration { constant, .. }) => Maybe::Present(constant),
+                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(constructed::Absent::Unnamed),
+            },
+        )
+    }
+
+    /// The multi-output constructor `name` of the data family `family` names,
+    /// written qualified as `family.name` at `site`.
+    ///
+    /// # Specification
+    /// - requires: `site` is the qualified form or the form holding it.
+    /// - ensures: the ports named `name` among the generators of the data
+    ///   family `family` resolves to, from the first port's tag over every port
+    ///   of that name, when the family's admission position is strictly earlier
+    ///   than the site's declaration's; otherwise the unnamed absence.
+    /// - fails: as [`Self::resolve_name`] at the family's name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The family name's resolution refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a qualified multi-output constructor constructs a
+    ///   port, its record and a port pattern as the bare one does.
+    /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    fn qualified_ported(
+        &mut self,
+        site: Site,
+        family: Placed,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Ported, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(unnamed);
+        };
+        let Maybe::Present(constant) = self.qualified_family(site, family)?
+        else {
+            return Ok(unnamed);
+        };
+        let Some((position, form)) = self.collected.data.iter().enumerate().find(|&(_, form)| {
+            self.collected
+                .slots
+                .get(usize::from(form.slot))
+                .is_some_and(|entry| entry.constant == constant)
+        })
+        else {
+            return Ok(unnamed);
+        };
+        let mut ports = form
+            .generators
+            .iter()
+            .enumerate()
+            .filter(|&(_, generator)| {
+                matches!(generator.port, Maybe::Present(_))
+                    && SurfaceName::from(self.text_at(generator.named)) == name
+            });
+        let Some((first, generator)) = ports.next()
+        else {
+            return Ok(unnamed);
+        };
+        let found = Ported {
+            family: form.slot,
+            form: Generators::Written(position),
+            first,
+            count: ports.count().saturating_add(1),
+            arity: generator.fields.len(),
+            named: generator.named,
+        };
+        Ok(if found.family < own {
+            Maybe::Present(found)
+        }
+        else {
+            unnamed
+        })
+    }
+
+    /// The multi-output constructor `head`, written at `site`, names: bare,
+    /// or qualified by its family as `Family.Constructor`.
+    ///
+    /// # Specification
+    /// - requires: `head` is the form at `site` or one of its operands.
+    /// - ensures: as [`Self::ported_named`] for a capitalised name; as
+    ///   [`Self::qualified_ported`] for a selection whose target is a
+    ///   capitalised name, the unnamed absence where that name's resolution
+    ///   refuses; the unnamed absence for any other form.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::qualified_ported`].
+    /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn ported_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Ported, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        match self.form_at(head)? {
+            Some((_, Former::Constructor)) => {
+                Ok(self.ported_named(site, SurfaceName::from(self.text_at(head))))
+            },
+            Some((_, Former::Projection)) => {
+                let Some((family, member)) = self.linked_selection(site, head)?
+                else {
+                    return Ok(unnamed);
+                };
+                if !matches!(self.form_at(family)?, Some((_, Former::Constructor))) {
+                    return Ok(unnamed);
+                }
+                let name = SurfaceName::from(self.text_at(member));
+                // A family name that does not resolve is the projection's to
+                // refuse.
+                Ok(self.qualified_ported(site, family, name).unwrap_or(unnamed))
+            },
+            Some(_) | None => Ok(unnamed),
+        }
+    }
+
     /// The constructor the selection `head`, written at `site`, names as
     /// `Family.Constructor`.
     ///
@@ -2795,17 +2947,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   a module's member, a record's field and a family's field keep their
     ///   own readings.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
-    ///   not hold.
+    ///   not hold; [`LoweringRefusal::UnknownMember`] for a capitalised member
+    ///   of a data family that declares no constructor of that name.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::qualified_constructor`]; a module's member
-    ///   selected off a capitalised name still reads as the member.
+    ///   selected off a capitalised name still reads as the member; a
+    ///   constructor a data family lacks is named as its unknown member.
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
     pub(super) fn selected_constructor(
         &mut self,
         site: Site,
@@ -2830,9 +2985,32 @@ impl<'source> Lowerer<'_, 'source>
         };
         let name = SurfaceName::from(self.text_at(member));
         // A family name that does not resolve is the projection's to refuse.
-        Ok(self
+        let found = self
             .qualified_constructor(site, family, name)
-            .unwrap_or(unnamed))
+            .unwrap_or(unnamed);
+        // A data family's capitalised member is one of its constructors or
+        // ports: any other name is a member the family lacks.
+        if let Maybe::Absent(_) = found
+            && name.as_ref().starts_with(char::is_uppercase)
+            && let Ok(Maybe::Present(constant)) = self.qualified_family(site, family)
+            && let Some(form) = self.collected.data.iter().find(|form| {
+                self.collected
+                    .slots
+                    .get(usize::from(form.slot))
+                    .is_some_and(|entry| entry.constant == constant)
+            })
+            && !form
+                .generators
+                .iter()
+                .any(|generator| SurfaceName::from(self.text_at(generator.named)) == name)
+        {
+            return Err(LoweringRefusal::UnknownMember {
+                span: member.span,
+                module: SurfaceName::from(self.text_at(family)),
+                member: name,
+            });
+        }
+        Ok(found)
     }
 
     /// The constructor `head`, the head of a call written at `site`, names.
@@ -5290,10 +5468,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unplanned;
         };
-        if !matches!(self.form_at(head)?, Some((_, Former::Constructor))) {
-            return unplanned;
-        }
-        let Maybe::Present(ported) = self.ported_named(site, SurfaceName::from(self.text_at(head)))
+        let Maybe::Present(ported) = self.ported_head(site, head)?
         else {
             return unplanned;
         };
@@ -6200,11 +6375,14 @@ impl<'source> Lowerer<'_, 'source>
             };
             // A multi-output constructor is matched through one port at a
             // time, `C(x).l`.
-            if family.is_none()
-                && let Maybe::Absent(_) = found
-                && let Maybe::Present(_) = self.ported_named(site, name)
-            {
-                return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::PortPattern)));
+            if let Maybe::Absent(_) = found {
+                let ported = match family {
+                    Some(family) => self.qualified_ported(site, family, name)?,
+                    None => self.ported_named(site, name),
+                };
+                if let Maybe::Present(_) = ported {
+                    return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::PortPattern)));
+                }
             }
             let shape = self.constructor_pattern(here, head, found, &fields, patterns, work)?;
             patterns
@@ -6299,21 +6477,43 @@ impl<'source> Lowerer<'_, 'source>
             return Err(repaired.refusal(here.name));
         }
         let mut cursor = Cursor::new(&written.pieces, target.span);
-        // The head is the constructor's tile of a constructor pattern, the
-        // operand of a call, or the target itself when it is a bare name.
-        let head = match cursor.tile(TileName::CONSTRUCTOR) {
-            Maybe::Present(head) => head,
+        // The head is the constructor's tile of a constructor pattern, its
+        // family's tile before it when qualified, the operand of a call, or
+        // the target itself when it is a bare or a qualified name.
+        let (head, ported) = match cursor.tile(TileName::CONSTRUCTOR) {
+            Maybe::Present(first) => match cursor.tile(TileName::DOT) {
+                Maybe::Present(_) => {
+                    let Maybe::Present(head) = cursor.tile(TileName::CONSTRUCTOR)
+                    else {
+                        return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+                    };
+                    let name = SurfaceName::from(self.text_at(head));
+                    (head, self.qualified_ported(here, first, name)?)
+                },
+                Maybe::Absent(_) => (
+                    first,
+                    self.ported_named(here, SurfaceName::from(self.text_at(first))),
+                ),
+            },
             Maybe::Absent(_) => match cursor.clone().operands() {
-                Run::One(head) if matches!(self.form_at(head)?, Some((_, Former::Constructor))) => {
+                Run::One(head)
+                    if matches!(
+                        self.form_at(head)?,
+                        Some((_, Former::Constructor | Former::Projection))
+                    ) =>
+                {
                     let _head = cursor.operands();
-                    head
+                    (head, self.ported_head(here, head)?)
                 },
                 Run::One(_) | Run::Several { .. } | Run::Empty(_) => {
-                    if !matches!(self.form_at(target)?, Some((_, Former::Constructor))) {
+                    if !matches!(
+                        self.form_at(target)?,
+                        Some((_, Former::Constructor | Former::Projection))
+                    ) {
                         return unnamed;
                     }
                     cursor = Cursor::new(&[], target.span);
-                    target
+                    (target, self.ported_head(here, target)?)
                 },
             },
         };
@@ -6328,7 +6528,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         exhausted(here, &cursor)?;
-        let Maybe::Present(ported) = self.ported_named(here, SurfaceName::from(self.text_at(head)))
+        let Maybe::Present(ported) = ported
         else {
             return unnamed;
         };

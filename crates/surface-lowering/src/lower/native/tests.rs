@@ -4734,6 +4734,86 @@ fn a_qualified_constructor_names_its_family_s_constructor_2428()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// `Expr.Share` names the multi-output constructor through its family:
+/// `Expr.Share(a).r` is the port, `Expr.Share(a)` the record of the ports,
+/// and `Expr.Share(x).l` a port pattern coverage counts. A bare
+/// `Expr.Share(x)` pattern is the joint pattern, and a name the family lacks
+/// is its unknown member.
+#[test]
+fn a_qualified_multi_output_constructor_names_its_ports()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!("fixture/qualified_ports.gandr")),
+        &mut arena,
+    );
+    let Some(&Value::Constructor { tag, .. }) =
+        arena.value(body_named(&module, SurfaceName::from("port")))
+    else {
+        panic!("a qualified port is a constructor value");
+    };
+    assert_eq!(
+        tag,
+        ConstructorTag::from(2_usize),
+        "`Expr.Share(a).right` is the port after `Lit` and `Share.left`"
+    );
+    let Some(&Value::Record(ref record)) =
+        arena.value(body_named(&module, SurfaceName::from("ports")))
+    else {
+        panic!("a qualified constructor with no output named is a record");
+    };
+    assert_eq!(
+        record.keys().map(AsRef::as_ref).collect::<Vec<&str>>(),
+        ["left", "right"],
+        "the record holds each port at its output's label"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("partial")),
+            LoweringRefusal::NonExhaustiveMatch { .. }
+        ),
+        "a match missing the qualified `right` port is refused"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("joint")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::PortPattern),
+                ..
+            }
+        ),
+        "a qualified pattern naming no output is the joint pattern"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("missing")),
+            LoweringRefusal::UnknownMember { module, member, .. }
+                if module == SurfaceName::from("Expr") && member == SurfaceName::from("Fork")
+        ),
+        "a constructor the family lacks is its unknown member"
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["Expr", "port", "ports", "size"] {
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("`{name}` is declared");
+        };
+        assert!(
+            report.judged().iter().any(|judged| {
+                judged.constant() == declaration.constant()
+                    && matches!(
+                        judged.verdict(),
+                        Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
+                    )
+            }),
+            "`{name}` is accepted"
+        );
+    }
+}
+
 #[test]
 fn a_case_over_a_family_of_parameters_reads_its_answer_unabstracted()
 {

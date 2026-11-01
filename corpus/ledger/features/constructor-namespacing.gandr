@@ -1,6 +1,6 @@
 /// `constructor-namespacing`: Constructor names namespaced by family.
-/// Implemented: a constructor named by its family, `Family.Constructor`, in a pattern and in a value, and bare where its name resolves to it.
-/// Not implemented: two data families sharing a constructor name in one source, and a bare name resolved by uniqueness among imports; #2713 owes it.
+/// Implemented: a constructor named by its family, `Family.Constructor`, in a pattern and in a value, and bare where its name resolves to it; a multi-output constructor's port as `Family.Constructor(e).l`, its record as `Family.Constructor(e)`, and its port pattern; a name the family lacks refused as its unknown member.
+/// Not implemented: two data families sharing a constructor name in one source, and a bare name resolved by uniqueness among imports, owed by #2713; a data block's rule terms naming its constructors qualified, owed by #4293.
 @[ checks ]
 data Shape : Type where {
   | Dot : Shape
@@ -19,3 +19,28 @@ def length(s : Shape) -> Integer {
 /// A line built by its qualified name.
 @[ runs("3") ]
 def measured() -> Integer { length(Shape.Line(3)) }
+
+/// A shared subterm with two ports.
+@[ checks ]
+data Expr : Type where {
+  | Lit : (n : Integer) --> Expr
+  | Share : (e : Expr) --> (left : Expr, right : Expr)
+}
+
+/// The size of an expression, each port matched by its qualified name.
+@[ checks ]
+def rec size(e : Expr) -> -F Integer {
+  match e {
+    Expr.Lit(n) => return 1,
+    Expr.Share(x).left => size[<](x),
+    Expr.Share(x).right => size[<](x)
+  }
+}
+
+/// A port built by its qualified name.
+@[ runs("1") ]
+def shared() -> -F Integer { size(Expr.Share(Expr.Lit(7)).right) }
+
+/// The record of both ports, built by the qualified name.
+@[ checks ]
+def ports : #{left : Expr, right : Expr} = Expr.Share(Expr.Lit(7));
