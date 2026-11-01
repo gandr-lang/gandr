@@ -1,7 +1,7 @@
 error[StaticClassifierExpected]: a type operator's parameter must range over a universe or a kind
   ╭▸ corpus/ledger/diagnostics/StaticClassifierExpected.gandr:2:32
   │
-2 │ module Indexed : #{ type Hom : Integer -> Integer } {
+2 │ module Indexed : #{ type Hom : Integer -> Integer } where {
   │                                ┯━━━━━━───────────
   │                                │
   │                                a type that classifies no codes: found `Integer`

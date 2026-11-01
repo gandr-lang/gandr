@@ -26,5 +26,5 @@ theory Unknown where {
   sort Name : Atom;
   sort Proc : Type;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule gc : nu(bind a. q) <=> q where a # q, b # q;
+  rule gc : nu(bind a. q) <=> q where { | a # q | b # q };
 }

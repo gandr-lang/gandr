@@ -2,9 +2,9 @@
 // nothing else (#2428).
 
 /// Trees of two constructors.
-data Tree : Type {
-  Var : (n : Integer) --> Tree;
-  App : (t : Tree, u : Tree) --> Tree;
+data Tree : Type where {
+  | Var : (n : Integer) --> Tree
+  | App : (t : Tree, u : Tree) --> Tree
 }
 
 /// `Tree` has no `Lam`, so `Tree.Lam` names nothing.

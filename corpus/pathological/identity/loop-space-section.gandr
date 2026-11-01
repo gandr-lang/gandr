@@ -3,21 +3,21 @@
 // whose endpoints are not the loop's.
 
 /// The circle, presented by its two cancellations.
-data Circle : Type {
-  Base : Circle;
-  Loop : (x : Circle) --> Circle;
-  Unloop : (x : Circle) --> Circle;
-  rule Loop(Unloop(x)) ==> x;
-  rule Unloop(Loop(x)) ==> x;
+data Circle : Type where {
+  | Base : Circle
+  | Loop : (x : Circle) --> Circle
+  | Unloop : (x : Circle) --> Circle
+  rule : Loop(Unloop(x)) ==> x;
+  rule : Unloop(Loop(x)) ==> x;
 }
 
 /// The integers, presented the same way.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) ==> x;
+  rule : P(S(x)) ==> x;
 }
 
 /// The winding number: a loop counts one up, an inverse one down.

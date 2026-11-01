@@ -1067,7 +1067,7 @@ fn moved(
 /// # Specification
 /// - requires: `std.package` writes each operation as `oper <name> : <type>;`
 ///   on one line, an `@[ inert ]` mark on the line before it, and each theory
-///   as `pub theory <name> {` closed by a line `}`.
+///   as `pub theory <name> where {` closed by a line `}`.
 /// - ensures: the operations of `Versioned`, `Presentation` and `Gandr.Package`
 ///   marked inert, in the order the source states them.
 /// - fails: never on the admitted domain.
@@ -1090,7 +1090,7 @@ fn inert_fields() -> Vec<String>
     for line in source.lines().map(str::trim) {
         if let Some(named) = line
             .strip_prefix("pub theory ")
-            .and_then(|rest| rest.strip_suffix(" {"))
+            .and_then(|rest| rest.strip_suffix(" where {"))
         {
             theory = named;
         }

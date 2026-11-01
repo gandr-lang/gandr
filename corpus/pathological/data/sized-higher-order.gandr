@@ -6,7 +6,7 @@
 // stage opens none for its result to follow: the model's quantified
 // signatures lift both, `applyAt` the first and `predAt` the second. A call
 // whose arguments bound one stage binder where no stage fits is refused by
-// name, and so is a stage supplied by name, `applyAt[i = k]`, apart from the
+// name, and so is a stage supplied by name, `applyAt[.i = k]`, apart from the
 // one the arguments show or for a binder they do not show (#1227). Shared
 // with `../../model/data/sized-higher-order.gandr`.
 
@@ -41,14 +41,14 @@ def rec applied_at_again(n : Nat) -> Nat {
 /// A stage on an integer: the signature's marks place only data types, so the
 /// checkers refuse the stage where the kernel could not read it (#392).
 @[ refuses("OutOfFragment.Stage") ]
-def integerAt @[i : Size] (n : Integer[i]) -> Integer {
+def integerAt[i : Size](n : Integer[i]) -> Integer {
   n
 }
 
 /// A stage in a path's carrier: a path places no stage, so the lowering
 /// refuses it where it is written (#392).
 @[ refuses("OutOfFragment.staged_type") ]
-def carriedAt @[i : Size] (a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
+def carriedAt[i : Size](a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
   return a
 }
 
@@ -118,14 +118,14 @@ def rec disagreeing(n : Nat) -> Nat {
 /// A stage supplied apart from the one the arguments show: they show `i` at
 /// `j`, and the supply states `k` (#1227).
 @[ refuses("StagesDisagree") ]
-def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
-  applyAt[i = k](f, x)
+def suppliedApart[j : Size, k : Size](f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
+  applyAt[.i = k](f, x)
 }
 
 /// A stage supplied for a binder no argument shows: `n` stands at no stage,
 /// so nothing holds `i` at the `j` supplied (#1227).
 @[ refuses("OutOfFragment.Stage") ]
-def suppliedUnshown @[j : Size] (n : Nat) -> Nat {
-  run m <- predAt[i = j](n);
+def suppliedUnshown[j : Size](n : Nat) -> Nat {
+  run m <- predAt[.i = j](n);
   m
 }

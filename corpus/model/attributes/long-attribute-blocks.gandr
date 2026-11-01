@@ -4,9 +4,9 @@
 
 // A colour, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("a colour, named by its constructors") ]
-data Color : Type {
-  Red : Color;
-  Green : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
 }
 
 // An answer stated before its definition, its block's second entry unknown.

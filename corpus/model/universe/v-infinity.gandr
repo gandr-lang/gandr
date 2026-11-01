@@ -15,14 +15,14 @@ import "../data/data-base.gandr";
 
 /// Sets: a type of members, and the member at each of its elements.
 @[ checks, form(explicit) ]
-data Vinf : Type[+, 1] {
-  Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
+data Vinf : Type[+, 1] where {
+  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
 }
 
 /// Ordinals of the same shape: the limit of a family of smaller ordinals.
 @[ checks ]
-data Ord : Type[+, 1] {
-  Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord;
+data Ord : Type[+, 1] where {
+  | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
 }
 
 /// The rank of a set: the limit, over its members, of their ranks. Each
@@ -44,8 +44,8 @@ def members(v : Vinf) -> -F Type {
 
 /// The type with one element.
 @[ checks ]
-data Lone : Type {
-  Pt : Lone;
+data Lone : Type where {
+  | Pt : Lone
 }
 
 /// Any set follows from an element of the empty type.

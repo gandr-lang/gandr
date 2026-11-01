@@ -40,9 +40,9 @@ rec {
   /// The family a code defines. Its one constructor holds the arguments over
   /// the family itself.
   @[ refuses("IndexOccurrence") ]
-  data Mu(d : Type, c : IR(d)) : Type {
+  data Mu(d : Type, c : IR(d)) : Type where {
     /// The arguments, over the family the decoder decodes.
-    In : (v : args(d, c, Mu(d, c), thunk { fn (m) { decodeMu(d, c, m) } })) --> Mu(d, c);
+    | In : (v : args(d, c, Mu(d, c), thunk { fn (m) { decodeMu(d, c, m) } })) --> Mu(d, c)
   }
 
   /// The decoder: the decode of the arguments its constructor holds.

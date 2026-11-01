@@ -104,9 +104,9 @@ pub theory Gandr.Module where {
 /// Where a dependency is found: never part of what it is, which its address,
 /// read back from the store at the pointer the dependent's `gandr.lock`
 /// records, says.
-pub data Coordinate : Type {
+pub data Coordinate : Type where {
   /// A directory rooting the dependency, read from the dependent's root.
-  Path : (path : String) --> Coordinate;
+  | Path : (path : String) --> Coordinate
 }
 
 /// A package another depends on: the alias the dependent's sources import it

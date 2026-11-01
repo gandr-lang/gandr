@@ -27,8 +27,8 @@ theory Lawful where {
 }
 
 /// One value.
-data Single : Type {
-  Only : Single;
+data Single : Type where {
+  | Only : Single
 }
 
 /// Every two values of `Single` are alike, so each law is a reflexivity.
@@ -82,9 +82,9 @@ module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where
 }
 
 /// A decision through any lawful model.
-def decide @[l : Model(Lawful)] (a : l.Carrier, b : l.Carrier) -> Bool { l.alike(a, b) }
+def decide[l : Model(Lawful)](a : l.Carrier, b : l.Carrier) -> Bool { l.alike(a, b) }
 
 /// The order's model stands where a lawful one is asked, restricted by the
 /// reduct: two is not three.
 @[ runs("+{.1 = unit}") ]
-def twoIsNotThree() -> Bool { decide[l = LawfulOrderInteger](2, 3) }
+def twoIsNotThree() -> Bool { decide[.l = LawfulOrderInteger](2, 3) }

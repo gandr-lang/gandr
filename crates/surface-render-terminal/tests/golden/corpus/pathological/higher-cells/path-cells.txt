@@ -1,7 +1,7 @@
 error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
    ╭▸ corpus/pathological/higher-cells/path-cells.gandr:65:1
    │
-65 │ ┏ module Unwitnessed : Model(Glob) {
+65 │ ┏ module Unwitnessed : Model(Glob) where {
 66 │ ┃   /// The one object.
 67 │ ┃   type Ob = One;
 68 │ ┃   /// The numbers, each a cell from the object to itself.

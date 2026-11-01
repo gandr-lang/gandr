@@ -4,8 +4,8 @@
 // names one (#2512).
 
 /// A parcel holding one value of any type.
-data Parcel(a : Type) : Type {
-  Enclosed : (x : a) --> Parcel(a);
+data Parcel(a : Type) : Type where {
+  | Enclosed : (x : a) --> Parcel(a)
 }
 
 /// The value a parcel holds, at the type given first.

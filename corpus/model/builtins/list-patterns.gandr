@@ -5,9 +5,9 @@
 // structurally, as a list's tail stands one stage below it.
 
 /// A rubric's grade.
-data Grade : Type {
-  Met : Grade;
-  Unmet : Grade;
+data Grade : Type where {
+  | Met : Grade
+  | Unmet : Grade
 }
 
 /// The grades composed: unmet as soon as one is, met when none is.
@@ -73,7 +73,7 @@ def eight() -> Integer {
 /// whole list the cell pattern matched.
 def headed(xs : List(Integer)) -> Integer {
   match xs {
-    [a, .._] as all => {
+    all @ [a, .._] => {
       run counted <- shortLength(all);
       a + counted
     },

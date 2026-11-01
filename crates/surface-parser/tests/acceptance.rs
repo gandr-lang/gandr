@@ -1047,6 +1047,18 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
         (Oblig::MissingTile, "="),
         (Oblig::MissingTile, ";"),
     ]),
+    // The retired constructor block, `data D(a) { C, … }`: a family's
+    // members open after `where`, each on its bar.
+    (
+        "fixture/pathological/data/constructor-block-retired.gandr",
+        &[
+            (Oblig::MissingTile, ")"),
+            (Oblig::MissingTile, "{"),
+            (Oblig::MissingTile, ","),
+            (Oblig::MissingTile, "Some"),
+            (Oblig::MissingTile, "}"),
+        ],
+    ),
 ];
 
 /// The zero-obligation gate over the language's corpus: the candidate

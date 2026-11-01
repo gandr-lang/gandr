@@ -8,6 +8,6 @@ import "../../model/identity/circle-base.gandr";
 
 /// The circle stated again over the imported one, refused naming both.
 @[ refuses("ImportShadows") ]
-data Circle : Type {
-  Base : Circle;
+data Circle : Type where {
+  | Base : Circle
 }

@@ -5,13 +5,13 @@
 // equivalence makes.
 
 /// A temperature in Celsius.
-data Celsius : Type {
-  Cel : (x : Integer) --> Celsius;
+data Celsius : Type where {
+  | Cel : (x : Integer) --> Celsius
 }
 
 /// A temperature in Fahrenheit, the same shape.
-data Fahrenheit : Type {
-  Fah : (x : Integer) --> Fahrenheit;
+data Fahrenheit : Type where {
+  | Fah : (x : Integer) --> Fahrenheit
 }
 
 /// The Fahrenheit type under another name.

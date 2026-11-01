@@ -4,7 +4,7 @@ error[ImportUnresolved]: this import names no source the root holds, so this sou
 2 │ import "./circle-absent.gandr" ;
   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ names no source this root holds
   ‡
-5 │ data Point : Type {
+5 │ data Point : Type where {
   │      ───── declared here
   │
   ╰ note: `Point` is refused with ImportUnresolved, as its expectation states

@@ -18,134 +18,134 @@
 // attributes and targets other than x86-64 are not modelled.
 
 /// A field's scalar type, its size its alignment on x86-64.
-pub data Scalar : Type {
+pub data Scalar : Type where {
   /// `u8`.
-  U8 : Scalar;
+  | U8 : Scalar
   /// `u16`.
-  U16 : Scalar;
+  | U16 : Scalar
   /// `u32`.
-  U32 : Scalar;
+  | U32 : Scalar
   /// `u64`.
-  U64 : Scalar;
+  | U64 : Scalar
   /// `i32`.
-  I32 : Scalar;
+  | I32 : Scalar
   /// `i64`.
-  I64 : Scalar;
+  | I64 : Scalar
   /// `bool`, whose 254 values past `true` are invalid.
-  Flag : Scalar;
+  | Flag : Scalar
   /// `&T`, whose null is invalid.
-  Ref : Scalar;
+  | Ref : Scalar
 }
 
 /// A struct's fields in declaration order.
-pub data Fields : Type {
+pub data Fields : Type where {
   /// No more fields.
-  Done : Fields;
+  | Done : Fields
   /// A named field, then the rest.
-  Field : (name : String, ty : Scalar, rest : Fields) --> Fields;
+  | Field : (name : String, ty : Scalar, rest : Fields) --> Fields
 }
 
 /// An enum's variants in declaration order.
-pub data Variants : Type {
+pub data Variants : Type where {
   /// No more variants.
-  NoVariant : Variants;
+  | NoVariant : Variants
   /// A named variant with its fields, then the rest.
-  Variant : (name : String, fields : Fields, rest : Variants) --> Variants;
+  | Variant : (name : String, fields : Fields, rest : Variants) --> Variants
 }
 
 /// Fields in memory order, each at its offset.
-pub data Placed : Type {
+pub data Placed : Type where {
   /// No more fields.
-  End : Placed;
+  | End : Placed
   /// A field at an offset, then the rest.
-  At : (name : String, offset : Integer, rest : Placed) --> Placed;
+  | At : (name : String, offset : Integer, rest : Placed) --> Placed
 }
 
 /// A struct's layout as rustc prints it.
-pub data Layout : Type {
+pub data Layout : Type where {
   /// Size, alignment and the fields placed.
-  Layout : (size : Integer, align : Integer, fields : Placed) --> Layout;
+  | Layout : (size : Integer, align : Integer, fields : Placed) --> Layout
 }
 
 /// Where an enum keeps which variant it holds.
-pub data Discriminant : Type {
+pub data Discriminant : Type where {
   /// In the invalid values of the field at an offset.
-  InNiche : (offset : Integer) --> Discriminant;
+  | InNiche : (offset : Integer) --> Discriminant
   /// In a tag of a size at offset zero.
-  Tag : (size : Integer) --> Discriminant;
+  | Tag : (size : Integer) --> Discriminant
 }
 
 /// Each variant's fields placed, in declaration order.
-pub data Arms : Type {
+pub data Arms : Type where {
   /// No more variants.
-  NoArm : Arms;
+  | NoArm : Arms
   /// A variant's fields placed, then the rest.
-  Arm : (name : String, fields : Placed, rest : Arms) --> Arms;
+  | Arm : (name : String, fields : Placed, rest : Arms) --> Arms
 }
 
 /// An enum's layout as rustc prints it.
-pub data EnumLayout : Type {
+pub data EnumLayout : Type where {
   /// Size, alignment, the discriminant and each variant's fields.
-  EnumLayout : (
+  | EnumLayout : (
     size : Integer,
     align : Integer,
     discriminant : Discriminant,
     arms : Arms
-  ) --> EnumLayout;
+  ) --> EnumLayout
 }
 
 /// A layout's largest niche.
-data Niche : Type {
+data Niche : Type where {
   /// No field has invalid values.
-  NoNiche : Niche;
+  | NoNiche : Niche
   /// The field at an offset, its width, and how many invalid values it has.
-  NicheAt : (offset : Integer, width : Integer, available : Integer) --> Niche;
+  | NicheAt : (offset : Integer, width : Integer, available : Integer) --> Niche
 }
 
 /// A layout with its largest niche.
-data Laid : Type {
+data Laid : Type where {
   /// Size, alignment, the fields placed and the largest niche.
-  Laid : (size : Integer, align : Integer, fields : Placed, niche : Niche) --> Laid;
+  | Laid : (size : Integer, align : Integer, fields : Placed, niche : Niche) --> Laid
 }
 
 /// Which end of its alignment group a struct's niche is sorted to.
-data Bias : Type {
+data Bias : Type where {
   /// Larger niches first.
-  NicheFirst : Bias;
+  | NicheFirst : Bias
   /// Larger niches last.
-  NicheLast : Bias;
+  | NicheLast : Bias
 }
 
 /// How fields are ordered.
-data Order : Type {
+data Order : Type where {
   /// A struct's: larger alignment first, then the niche toward the bias.
-  InStruct : (bias : Bias) --> Order;
+  | InStruct : (bias : Bias) --> Order
   /// A tagged variant's: smaller alignment first, then smaller niche.
-  AfterTag : Order;
+  | AfterTag : Order
 }
 
 /// Each variant laid out.
-data Laids : Type {
+data Laids : Type where {
   /// No more variants.
-  NoLaid : Laids;
+  | NoLaid : Laids
   /// A variant's layout, then the rest.
-  OneLaid : (name : String, laid : Laid, rest : Laids) --> Laids;
+  | OneLaid : (name : String, laid : Laid, rest : Laids) --> Laids
 }
 
 /// A layout with how many invalid values it leaves, or none.
-data Filled : Type {
+data Filled : Type where {
   /// No such layout.
-  NoFill : Filled;
+  | NoFill : Filled
   /// The layout and its remaining niche.
-  Filled : (layout : EnumLayout, remaining : Integer) --> Filled;
+  | Filled : (layout : EnumLayout, remaining : Integer) --> Filled
 }
 
 /// Variants placed around a niche, or a variant that does not fit.
-data Fitted : Type {
+data Fitted : Type where {
   /// A variant fits neither before nor after the niche.
-  Misfit : Fitted;
+  | Misfit : Fitted
   /// Every variant placed.
-  Fitted : (arms : Arms) --> Fitted;
+  | Fitted : (arms : Arms) --> Fitted
 }
 
 /// A scalar's size, which is its alignment.

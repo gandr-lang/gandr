@@ -14,19 +14,19 @@
 //   scrutinee at each arm
 
 /// The naturals.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero : Nat
   /// One past a natural.
-  Succ : (n : Nat) --> Nat;
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A universe of two codes.
-data UQ : Type {
+data UQ : Type where {
   /// The code of the naturals.
-  NatQ : UQ;
+  | NatQ : UQ
   /// The code of the unit type.
-  UnitQ : UQ;
+  | UnitQ : UQ
 }
 
 /// The type each code decodes to.

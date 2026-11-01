@@ -5,9 +5,9 @@
 // past the one the arm opened.
 
 /// The naturals, for the matches below.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The arm holds its own `c` and writes 2 back to it; the rest's `c` is the

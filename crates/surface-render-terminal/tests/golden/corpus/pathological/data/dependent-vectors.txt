@@ -1,13 +1,13 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/dependent-vectors.gandr:37:23
    │
-35 │    def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
-   │    │          ┬         ┬         ─ checked against `Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds v : Vec(a, Succ(n))
-   │    │          │         │
-   │    │          │         checked against `(n : Nat) -> Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds n : Nat
-   │ ┌──┘          checked against `(a : Type) -> (n : Nat) -> Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds a : Type
+35 │    def tail[a : Type, n : Nat](v : Vec(a, Succ(n))) -> Vec(a, n) {
+   │    │        ┬         ┬        ─ checked against `Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds v : Vec(a, Succ(n))
+   │    │        │         │
+   │    │        │         checked against `(n : Nat) -> Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds n : Nat
+   │ ┌──┘        checked against `(a : Type) -> (n : Nat) -> Vec(a, Succ(n)) -> -F Vec(a, n)`; while checking the body of this function; binds a : Type
    │ │
-36 │ │┌   case v {
+36 │ │┌   match v {
 37 │ ││     VCons(m, _, t) => t
    │ ││                       ━ its type does not convert: expected `Vec(a, n)`, found `Vec(a, m)`
 38 │ ││   }
@@ -42,9 +42,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │     │           │         checked against `(b : Type) -> (n : Nat) -> Vec(a, n) -> Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds b : Type
    │ ┌───┘           checked against `(a : Type) -> (b : Type) -> (n : Nat) -> Vec(a, n) -> Vec(b, n) -> -F Vec(a * b, n)`; while checking the body of this function; binds a : Type
    │ │
-50 │ │┌    case xs {
-51 │ ││      VNil => case ys { VNil => VNil },
-52 │ ││      VCons(m, x, xt) => case ys {
+50 │ │┌    match xs {
+51 │ ││      VNil => match ys { VNil => VNil },
+52 │ ││      VCons(m, x, xt) => match ys {
    │ ││┌────────────────────────┘
 53 │ │││       VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
    │ │││                          ┬────────────────┬───────────────────┯━──

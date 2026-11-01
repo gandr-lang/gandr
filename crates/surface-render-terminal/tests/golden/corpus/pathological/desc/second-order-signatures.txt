@@ -18,7 +18,7 @@ error[OutOfFragment.Misplaced]: the representable universe type classifies a the
 error[IllFormedDescription]: the port `t` binds a variable of the sort `Tm`, which is not representable
    ╭▸ corpus/pathological/desc/second-order-signatures.gandr:9:1
    │
- 9 │ ┏ theory Unbindable {
+ 9 │ ┏ theory Unbindable where {
 10 │ ┃   sort Tm : Type;
 11 │ ┃   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
 12 │ ┃ }

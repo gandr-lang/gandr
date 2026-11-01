@@ -1,39 +1,39 @@
-data Empty : Type {}
+data Empty : Type where {}
 
-data EmptyHom(a : Empty, b : Empty) : Type {}
+data EmptyHom(a : Empty, b : Empty) : Type where {}
 
 def empty_id(a : Empty) -> EmptyHom(a, a) {
   match a {}
 }
 
-data UnitOb : Type {
-  Star : UnitOb;
+data UnitOb : Type where {
+  | Star : UnitOb
 }
 
-data UnitHom(a : UnitOb, b : UnitOb) : Type {
-  UnitId : UnitHom(a, b);
+data UnitHom(a : UnitOb, b : UnitOb) : Type where {
+  | UnitId : UnitHom(a, b)
 }
 
 def unit_id(a : UnitOb) -> UnitHom(a, a) {
   UnitId
 }
 
-data PairOb(a : Type, b : Type) : Type {
-  Pair : (x : a, y : b) --> PairOb(a, b);
+data PairOb(a : Type, b : Type) : Type where {
+  | Pair : (x : a, y : b) --> PairOb(a, b)
 }
 
-data SumOb(a : Type, b : Type) : Type {
-  Inl : (x : a) --> SumOb(a, b);
-  Inr : (y : b) --> SumOb(a, b);
+data SumOb(a : Type, b : Type) : Type where {
+  | Inl : (x : a) --> SumOb(a, b)
+  | Inr : (y : b) --> SumOb(a, b)
 }
 
-data HomPlus(l : Type, r : Type, x : SumOb(l, r), y : SumOb(l, r)) : Type {
-  HomInl : (a : l, b : l, f : Integer) --> HomPlus(l, r, Inl(a), Inl(b));
-  HomInr : (c : r, d : r, g : Integer) --> HomPlus(l, r, Inr(c), Inr(d));
+data HomPlus(l : Type, r : Type, x : SumOb(l, r), y : SumOb(l, r)) : Type where {
+  | HomInl : (a : l, b : l, f : Integer) --> HomPlus(l, r, Inl(a), Inl(b))
+  | HomInr : (c : r, d : r, g : Integer) --> HomPlus(l, r, Inr(c), Inr(d))
 }
 
-data ProdHom(a : PairOb(Integer, String), b : PairOb(Integer, String)) : Type {
-  PairHom : (f : Integer, g : Integer) --> ProdHom(a, b);
+data ProdHom(a : PairOb(Integer, String), b : PairOb(Integer, String)) : Type where {
+  | PairHom : (f : Integer, g : Integer) --> ProdHom(a, b)
 }
 
 def prod_id(x : PairOb(Integer, String)) -> ProdHom(x, x) {

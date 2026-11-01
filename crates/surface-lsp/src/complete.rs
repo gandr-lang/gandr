@@ -1200,11 +1200,14 @@ mod tests
         let item = [
             row("def", "def ${1:identifier} : ${2:type};"),
             row("data", "data ${1:type_identifier} where { \\}"),
-            row("codata", "codata ${1:type_identifier} { \\}"),
-            row("module", "module ${1:type_identifier} { ${2:member} \\}"),
+            row("codata", "codata ${1:type_identifier} where { \\}"),
+            row(
+                "module",
+                "module ${1:type_identifier} where { ${2:member} \\}",
+            ),
             row(
                 "flow",
-                "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}",
+                "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} where { ${4:member} \\}",
             ),
             row("import", "import ${1:identifier};"),
             row("world", "world ${1:identifier};"),
@@ -1212,9 +1215,9 @@ mod tests
             (String::from("pub"), String::from("pub"), false),
             row(
                 "extern",
-                "extern \"${1:string_fragment}\" from \"${2:string_fragment}\" { \\}",
+                "extern ${1:type_identifier} from \"${2:string_fragment}\" { \\}",
             ),
-            row("theory", "theory ${1:type_identifier} { \\}"),
+            row("theory", "theory ${1:type_identifier} where { \\}"),
             row("oper", "oper ${1:identifier} : (${2:type})"),
             row("rule", "rule ${1:identifier} : (${2:type})"),
         ];
@@ -1233,7 +1236,7 @@ mod tests
             row("run", "run ${1:computation}"),
             row("hold", "hold ${1:value}"),
             row("type(", "type(${1:type})"),
-            row("fn", "fn () { ${1:computation} \\}"),
+            row("fn", "fn { \\}"),
             row("thunk", "thunk { ${1:computation} \\}"),
             row("match", "match ${1:value} { \\}"),
             row(

@@ -18,9 +18,9 @@ import "../data/empty.gandr";
 
 /// The pairs of two types, as data.
 @[ checks, form(explicit) ]
-pub data Both(a : Type, b : Type) : Type {
+pub data Both(a : Type, b : Type) : Type where {
   /// A value of each type.
-  MkBoth : (x : a, y : b) --> Both(a, b);
+  | MkBoth : (x : a, y : b) --> Both(a, b)
 }
 
 /// The apartness of two naturals. It is the unit type for distinct naturals
@@ -43,11 +43,11 @@ pub def rec apart(x : Nat, y : Nat) -> -F Type {
 rec {
   /// The lists of pairwise distinct naturals.
   @[ checks ]
-  pub data Fresh : Type {
+  pub data Fresh : Type where {
     /// The empty list.
-    FNil : Fresh;
+    | FNil : Fresh
     /// A head, a tail, and the head's freshness for the tail.
-    FCons : (x : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh;
+    | FCons : (x : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh
   }
 
   /// The freshness of a natural for a fresh list. It pairs the natural's

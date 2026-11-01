@@ -1,6 +1,9 @@
-data Either(a : Type, b : Type) : Type {
-  Left : (x : a) --> Either(a, b);
-  Right : (y : b) --> Either(a, b);
+data Either(
+  a : Type,
+  b : Type
+) : Type where {
+  | Left : (x : a) --> Either(a, b)
+  | Right : (y : b) --> Either(a, b)
 }
 
 def from_left() -> -F Integer {

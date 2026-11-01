@@ -5,18 +5,18 @@
 // cancellation are two different paths.
 
 /// The circle: one point and a loop at it.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 /// The integers, presented by their two cancellations.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) ==> x;
+  rule : P(S(x)) ==> x;
 }
 
 /// The winding number: a loop counts one up, its inverse one down.

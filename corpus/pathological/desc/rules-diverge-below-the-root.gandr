@@ -3,11 +3,11 @@
 /// `Loop(Loop(x)) ==> x` overlaps `Unloop(Loop(x)) ==> x` below the root, at
 /// `Unloop(Loop(Loop(x')))`, and the two reducts have different normal forms.
 @[ refuses("RulesDiverge") ]
-data Circle : Type {
-  Base : Circle;
-  Loop : (x : Circle) --> Circle;
-  Unloop : (x : Circle) --> Circle;
-  rule Loop(Unloop(x)) ==> x;
-  rule Unloop(Loop(x)) ==> x;
-  rule Loop(Loop(x)) ==> x;
+data Circle : Type where {
+  | Base : Circle
+  | Loop : (x : Circle) --> Circle
+  | Unloop : (x : Circle) --> Circle
+  rule : Loop(Unloop(x)) ==> x;
+  rule : Unloop(Loop(x)) ==> x;
+  rule : Loop(Loop(x)) ==> x;
 }

@@ -123,7 +123,7 @@ def readUnderScope() -> Integer {
 
 /// A scope over `State` whose manifest fixes `S` to the parameter `a`, answering a read with `x`.
 @[ checks ]
-def readGiven @[a : Type] (x : a) -> a {
+def readGiven[a : Type](x : a) -> a {
   handle s : State with sort S = a {
     s.get()
   } with {
@@ -159,7 +159,7 @@ def readAtUnderScope() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which a call's argument solves.
 @[ checks ]
-def readGivenAt @[a : Type] (x : a) -> [st : State with sort S = a] a {
+def readGivenAt[a : Type](x : a) -> [st : State with sort S = a] a {
   st.get()
 }
 
@@ -177,7 +177,7 @@ def readGivenAtUnderScope() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which no argument solves.
 @[ checks ]
-def readSolved @[a : Type] () -> [st : State with sort S = a] a {
+def readSolved[a : Type]() -> [st : State with sort S = a] a {
   st.get()
 }
 

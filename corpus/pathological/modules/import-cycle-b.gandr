@@ -5,6 +5,6 @@ import "./import-cycle-a.gandr";
 
 /// A declaration of the second member, refused with the cycle.
 @[ refuses("ImportCycle") ]
-data Right : Type {
-  R : Right;
+data Right : Type where {
+  | R : Right
 }

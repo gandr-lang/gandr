@@ -14,11 +14,11 @@
 // - see: #3481 — the spike that wrote these programs
 
 /// The object language's types.
-data Ty : Type {
+data Ty : Type where {
   /// Integers.
-  TInt : Ty;
+  | TInt : Ty
   /// Booleans.
-  TBool : Ty;
+  | TBool : Ty
 }
 
 /// The meaning of an object type, by a case on its code.
@@ -30,15 +30,15 @@ def meaning(t : Ty) -> Type {
 }
 
 /// Expressions, indexed by the type they evaluate to.
-data Expr : Ty -> Type {
+data Expr : Ty -> Type where {
   /// An integer literal.
-  Lit : (i : Integer) --> Expr(TInt);
+  | Lit : (i : Integer) --> Expr(TInt)
   /// A boolean literal.
-  BoolLit : (b : Bool) --> Expr(TBool);
+  | BoolLit : (b : Bool) --> Expr(TBool)
   /// The sum of two integer expressions.
-  Add : (l : Expr(TInt), r : Expr(TInt)) --> Expr(TInt);
+  | Add : (l : Expr(TInt), r : Expr(TInt)) --> Expr(TInt)
   /// A choice between two expressions of one type.
-  If : (t : Ty, c : Expr(TBool), y : Expr(t), n : Expr(t)) --> Expr(t);
+  | If : (t : Ty, c : Expr(TBool), y : Expr(t), n : Expr(t)) --> Expr(t)
 }
 
 /// The evaluator, each arm's result the meaning of its index. The `Lit` arm

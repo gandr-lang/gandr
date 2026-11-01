@@ -5,7 +5,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │    │              ─ checked against `Program -> -F Integer`; while checking the body of this function; binds p : Program
    │ ┌──┘
    │ │
-13 │ │┏   case p {
+13 │ │┏   match p {
 14 │ │┃     Done(_x) => 0,
 15 │ │┃     Get(k) => {
 16 │ │┃       run q <- k(0);

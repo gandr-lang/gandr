@@ -1,6 +1,6 @@
-data Maybe(a : Type) : Type {
-  None : Maybe(a);
-  Some : (x : a) --> Maybe(a);
+data Maybe(a : Type) : Type where {
+  | None : Maybe(a)
+  | Some : (x : a) --> Maybe(a)
 }
 
 @[ refuses("NonExhaustiveMatch") ]

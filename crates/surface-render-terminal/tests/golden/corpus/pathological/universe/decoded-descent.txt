@@ -5,13 +5,13 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │       │                   ─ checked against `(a : UL) -> -F (elL(a) => Nat)`; while checking the body of this function; binds c : UL
    │ ┌─────┘
    │ │
-22 │ │┌      case c {
+22 │ │┌      match c {
 23 │ ││        NatL => thunk { fn (v) { v } },
 24 │ ││        ListL(a) => thunk { fn (v) {
    │ ││ ┌──────────────────│───────┘
    │ ││┌│──────────────────┘
    │ ││││
-25 │ ││││┌       case v -> -F Nat {
+25 │ ││││┌       match v -> -F Nat {
 26 │ │││││         Nil => Zero,
 27 │ │││││         Cons(h, t) => {
 28 │ │││││           run each <- totalDirect[<](a);
@@ -40,9 +40,9 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
-   ╭▸ corpus/pathological/universe/decoded-descent.gandr:41:40
+   ╭▸ corpus/pathological/universe/decoded-descent.gandr:41:37
    │
-41 │ def decodedAt @[i : Size] (c : UL, v : elL(c)[i]) -> Nat {
-   │                                        ━━━━━━━━━ no rule for this former
+41 │ def decodedAt[i : Size](c : UL, v : elL(c)[i]) -> Nat {
+   │                                     ━━━━━━━━━ no rule for this former
    │
    ╰ note: `decodedAt` is refused with OutOfFragment.Stage, as its expectation states

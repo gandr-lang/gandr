@@ -26,9 +26,9 @@ import "../data/data-base.gandr";
 import "../data/data-maybe.gandr";
 
 /// A heap: finitely many cells, each a location and the word it holds.
-pub data Heap : Type {
-  Emp : Heap;
-  Cell : (l : Nat, v : Nat, rest : Heap) --> Heap;
+pub data Heap : Type where {
+  | Emp : Heap
+  | Cell : (l : Nat, v : Nat, rest : Heap) --> Heap
 }
 
 /// `yes` when the two words are one, `no` otherwise.
@@ -125,8 +125,8 @@ pub def vOpt(vt : (Nat, Heap) => Type, w : Nat, h : Heap) -> Type {
 }
 
 /// Two words: a tag and a payload.
-pub data Tagged : Type {
-  Tag : (t : Nat, p : Nat) --> Tagged;
+pub data Tagged : Type where {
+  | Tag : (t : Nat, p : Nat) --> Tagged
 }
 
 /// The tagged layout: tag zero with a null payload, owning nothing, or tag

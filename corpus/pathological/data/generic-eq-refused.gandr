@@ -6,29 +6,29 @@
 // induction.
 
 /// A shape holding a function, which has no equality the program decides.
-data Shape : Type {
-  Shape : (f : Integer => Integer) --> Shape;
+data Shape : Type where {
+  | Shape : (f : Integer => Integer) --> Shape
 }
 
 /// A box over any type: its equality needs its argument's.
-data Box(a : Type) : Type {
-  Box : (x : a) --> Box(a);
+data Box(a : Type) : Type where {
+  | Box : (x : a) --> Box(a)
 }
 
 /// A point in the plane.
-data Point : Type {
-  Point : (x : Integer, y : Integer) --> Point;
+data Point : Type where {
+  | Point : (x : Integer, y : Integer) --> Point
 }
 
 /// A point with a flag.
-data Flagged : Type {
-  Flagged : (x : Integer, shown : Bool) --> Flagged;
+data Flagged : Type where {
+  | Flagged : (x : Integer, shown : Bool) --> Flagged
 }
 
 /// Unary naturals.
-data Peano : Type {
-  Nought : Peano;
-  Next : (n : Peano) --> Peano;
+data Peano : Type where {
+  | Nought : Peano
+  | Next : (n : Peano) --> Peano
 }
 
 /// No equality for a function field.

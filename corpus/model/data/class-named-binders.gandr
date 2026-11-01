@@ -4,8 +4,8 @@
 // token of the class, a malformed literal.
 
 /// An integer wrapped under a field named `number`.
-data Wrap : Type {
-  Wrapped : (number : Integer) --> Wrap;
+data Wrap : Type where {
+  | Wrapped : (number : Integer) --> Wrap
 }
 
 /// The wrapped integer, bound by a binder named `number`.

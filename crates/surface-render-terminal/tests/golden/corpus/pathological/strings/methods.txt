@@ -31,7 +31,7 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
    │
    ╰ note: `readInThunk` is refused with HeldCaptured, as its expectation states
 
-error[OutOfFragment.Held]: an `access` lends a held value: a name a `hold` statement holds
+error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held value: a name a `var` statement holds
    ╭▸ corpus/pathological/strings/methods.gandr:31:3
    │
 31 │   t.push(33)
@@ -83,7 +83,7 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
    │ │
 54 │ │   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │   ──── checked against `-F Integer`; while checking the scope of this hold
-55 │ │   run xs <- case t -> -F List(Integer) {
+55 │ │   run xs <- match t -> -F List(Integer) {
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds xs : List(Integer)
 56 │ │     Inline(bs) => s.bytes(),
    ‡ │

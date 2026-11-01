@@ -25,8 +25,8 @@ import "./recursive-lists.gandr";
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter (#517).
-data Bush : Type {
-  Sprout : (kids : List(Bush)) --> Bush;
+data Bush : Type where {
+  | Sprout : (kids : List(Bush)) --> Bush
 }
 
 /// A node without children, written directly.
@@ -78,15 +78,15 @@ def grown_nodes : () => Nat = nodes(grow(shrub));
 rec {
   /// A node over its forest of children.
   @[ checks ]
-  data Rose : Type {
-    Node : (kids : Forest) --> Rose;
+  data Rose : Type where {
+    | Node : (kids : Forest) --> Rose
   }
 
   /// The children of a node, in order.
   @[ checks ]
-  data Forest : Type {
-    Empty : Forest;
-    More : (head : Rose, tail : Forest) --> Forest;
+  data Forest : Type where {
+    | Empty : Forest
+    | More : (head : Rose, tail : Forest) --> Forest
   }
 
   /// The nodes of a tree: its own and its children's.

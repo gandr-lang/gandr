@@ -7,13 +7,13 @@
 // same value read as `Fahrenheit` with no path written.
 
 /// A temperature in Celsius.
-data Celsius : Type {
-  Cel : (x : Integer) --> Celsius;
+data Celsius : Type where {
+  | Cel : (x : Integer) --> Celsius
 }
 
 /// A temperature in Fahrenheit, of the same shape.
-data Fahrenheit : Type {
-  Fah : (x : Integer) --> Fahrenheit;
+data Fahrenheit : Type where {
+  | Fah : (x : Integer) --> Fahrenheit
 }
 
 /// The relabelling forward: a Celsius value to the Fahrenheit value of its
@@ -54,8 +54,8 @@ def relabelled() -> Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
 def carriedInTuple() -> Fahrenheit * Integer { (transport(\X. X, ua(relabel), Cel(20)), 1) }
 
 /// A thermometer reading one Fahrenheit temperature.
-data Thermometer : Type {
-  Reads : (f : Fahrenheit) --> Thermometer;
+data Thermometer : Type where {
+  | Reads : (f : Fahrenheit) --> Thermometer
 }
 
 /// #2140: the transport written as a constructor's field runs before the

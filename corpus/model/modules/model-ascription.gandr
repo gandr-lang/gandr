@@ -50,9 +50,9 @@ theory Toggle where {
 }
 
 /// Two states.
-data Bit : Type {
-  Low : Bit;
-  High : Bit;
+data Bit : Type where {
+  | Low : Bit
+  | High : Bit
 }
 
 /// The two states as a model of the toggle, ascribed transparently: the law

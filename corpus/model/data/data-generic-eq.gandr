@@ -12,19 +12,19 @@
 // beside `../../pathological/data/generic-eq-refused.gandr`.
 
 /// A point in the plane.
-data Point : Type {
-  Point : (x : Integer, y : Integer) --> Point;
+data Point : Type where {
+  | Point : (x : Integer, y : Integer) --> Point
 }
 
 /// Unary naturals.
-data Peano : Type {
-  Nought : Peano;
-  Next : (n : Peano) --> Peano;
+data Peano : Type where {
+  | Nought : Peano
+  | Next : (n : Peano) --> Peano
 }
 
 /// A labelled position: a count, a point, a flag and a name.
-data Mark : Type {
-  Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark;
+data Mark : Type where {
+  | Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark
 }
 
 /// Points compared field by field.

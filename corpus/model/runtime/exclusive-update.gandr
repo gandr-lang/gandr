@@ -15,9 +15,9 @@
 // - see: Racordon, _A Formal Definition of Swift's Value Semantics_, 2020
 
 /// A pair of integers.
-pub data Pair : Type {
+pub data Pair : Type where {
   /// The pair of `a` and `b`.
-  Pair : (a : Integer, b : Integer) --> Pair;
+  | Pair : (a : Integer, b : Integer) --> Pair
 }
 
 /// A pair's methods.

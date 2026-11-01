@@ -1,4 +1,4 @@
-error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
   ╭▸ corpus/ledger/diagnostics/HeldCopied.gandr:5:8
   │
 3 │ ┌ def read_held() -> -F Integer {

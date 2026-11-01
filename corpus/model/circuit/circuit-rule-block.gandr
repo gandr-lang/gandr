@@ -5,9 +5,9 @@
 // doi:10.1145/96709.96718).
 
 /// A data family whose constructors are written with the circuit arrow.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then

@@ -4,9 +4,9 @@
 // it in its own row, and an entry runs at `+U (-F [Div] T)`. A `for` over a
 // list descends on the list and needs no entry; each `become` is an exit.
 
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 def tick(n : Nat) -> Unit {

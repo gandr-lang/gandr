@@ -10,9 +10,9 @@
 import "./data-base.gandr";
 
 /// A heap: empty, or a cell at a location over the rest.
-pub data Heap : Type {
-  Emp : Heap;
-  Cell : (l : Nat, rest : Heap) --> Heap;
+pub data Heap : Type where {
+  | Emp : Heap
+  | Cell : (l : Nat, rest : Heap) --> Heap
 }
 
 /// The heap is empty: inhabited at `Emp` alone.

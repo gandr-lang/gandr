@@ -9,7 +9,7 @@
 
 /// A line printed through `Console`, the rest of the row left open: `r`
 /// lacks `Console`, which the row writes beside it.
-pub def log @[r : Row] (s : String) -> [Console | r] Unit { Console.print(s) }
+pub def log[r : Row](s : String) -> [Console | r] Unit { Console.print(s) }
 
 /// `log` where the row is `Console` alone: the call's `r` is the empty row.
 def logAlone() -> [Console] Unit { log("alone") }
@@ -24,7 +24,7 @@ def logSwapped() -> [Div, Console] Unit { log("swapped") }
 
 /// A handler of `Console` around `log`: the handled body's row is
 /// `[Console | r]`, and what the handler leaves is `r`.
-def quiet @[r : Row] (s : String) -> [r] Unit {
+def quiet[r : Row](s : String) -> [r] Unit {
   handle c : Console {
     log(s)
   } with {

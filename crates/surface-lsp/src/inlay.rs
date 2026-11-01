@@ -305,12 +305,13 @@ mod tests
 
     use super::hints;
     use crate::hover::hovering;
+    use crate::protocol::InlayHint;
     use crate::reading::Reading;
     use crate::recheck::grammar;
 
     /// The hints over the bytes `window` of `text`, the source at `path`,
-    /// each as its line, named by the declaration it stands in (#2786), its
-    /// character, one-based, and its label.
+    /// that `keep` holds, each as its line, named by the declaration it stands
+    /// in (#2786), its character, one-based, and its label.
     ///
     /// # Specification
     /// trivial.
@@ -318,6 +319,7 @@ mod tests
         path: &std::path::Path,
         text: SourceText<'_>,
         window: ByteSpan,
+        keep: &dyn Fn(&InlayHint) -> bool,
     ) -> Vec<String>
     {
         let written: &str = text.into();
@@ -345,6 +347,7 @@ mod tests
             (style, crate::protocol::ResolvesHintLocations(false)),
         )
         .into_iter()
+        .filter(|hint| keep(hint))
         .map(|hint| {
             let at = serde_json::to_value(hint.position).expect("a position serializes");
             let line = at["line"].as_u64().unwrap_or_default();
@@ -389,13 +392,9 @@ mod tests
                 let window = ByteSpan::new(offset(lines.start), offset(lines.end))
                     .expect("an ordered window");
                 // The type hints alone: the shifts are the next test's.
-                hinted_in(&path, SourceText::from(written.as_str()), window)
-                    .into_iter()
-                    .filter(|hint| {
-                        hint.split_once(' ')
-                            .is_some_and(|(_, label)| label.starts_with(':'))
-                    })
-                    .collect()
+                hinted_in(&path, SourceText::from(written.as_str()), window, &|hint| {
+                    hint.kind.is_some()
+                })
             };
         let whole = |_: &str| 0 .. usize::MAX;
         let line_of = |text: &str, held: &str| {
@@ -458,7 +457,9 @@ mod tests
         let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(written.len()))
             .expect("an ordered window");
         assert_eq!(
-            hinted_in(std::path::Path::new("/shifts.gandr"), text, whole),
+            hinted_in(std::path::Path::new("/shifts.gandr"), text, whole, &|_| {
+                true
+            }),
             [
                 "def one+0:14 -F ",
                 "def one+0:24 return ",

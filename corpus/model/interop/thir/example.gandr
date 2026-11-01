@@ -18,35 +18,35 @@
 // specification at every value and postcondition given `identity`'s.
 
 /// A value the fragment computes: an integer or a boolean.
-pub data Value : Type {
+pub data Value : Type where {
   /// The integer `n`.
-  Int : (n : Integer) --> Value;
+  | Int : (n : Integer) --> Value
   /// The boolean true.
-  True : Value;
+  | True : Value
   /// The boolean false.
-  False : Value;
+  | False : Value
 }
 
 /// An item of the crate, which a call names.
-pub data Item : Type {
+pub data Item : Type where {
   /// `identity`, which answers its argument.
-  Identity : Item;
+  | Identity : Item
   /// `example`, the function under proof.
-  Example : Item;
+  | Example : Item
 }
 
 /// THIR's value expressions in the fragment: a literal, the parameter, a conditional, a return and a call.
-pub data Expr : Type {
+pub data Expr : Type where {
   /// The integer literal `n`.
-  Lit : (n : Integer) --> Expr;
+  | Lit : (n : Integer) --> Expr
   /// The function's parameter, read.
-  Param : Expr;
+  | Param : Expr
   /// `if c { t } else { f }`.
-  If : (c : Expr, t : Expr, f : Expr) --> Expr;
+  | If : (c : Expr, t : Expr, f : Expr) --> Expr
   /// `return e`.
-  Return : (e : Expr) --> Expr;
+  | Return : (e : Expr) --> Expr
   /// The item `g` called at the argument `e`.
-  Call : (g : Item, e : Expr) --> Expr;
+  | Call : (g : Item, e : Expr) --> Expr
 }
 
 /// The axioms as rules over THIR's nodes, each transformer an operation whose continuations bind a value: `example`'s guarded body at false normalizes to its postcondition at zero.

@@ -4,9 +4,9 @@
 // parameter's own stage, or at no stage, is refused by name.
 
 /// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The call at the scrutinee itself: `n` stands at the stage, not below it.

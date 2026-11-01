@@ -28,7 +28,7 @@ error[IllFormedDescription]: the face `far` holds a name the boundary `Square` d
 error[IllFormedDescription]: the boundary `Square` names the face `left` twice
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:18:1
    │
-18 │ ┏ theory Twice {
+18 │ ┏ theory Twice where {
 19 │ ┃   boundary Square { a, b, c, d };
 20 │ ┃   face left = {a, c};
 21 │ ┃   face left = {b, d};

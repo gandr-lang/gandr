@@ -6,14 +6,14 @@
 // itself are refused. Each refusal names #1835, whose steps take them.
 
 /// A box of any type: its field names the parameter.
-data Box(a : Type) : Type {
-  Boxed : (x : a) --> Box(a);
+data Box(a : Type) : Type where {
+  | Boxed : (x : a) --> Box(a)
 }
 
 /// The naturals: the successor's field holds the type itself.
-pub data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+pub data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A box of integers repacked as itself.

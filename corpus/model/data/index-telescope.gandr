@@ -8,27 +8,27 @@
 import "./data-base.gandr";
 
 /// The types of a simply typed object language.
-data ObjTy : Type {
+data ObjTy : Type where {
   /// The base type.
-  Base : ObjTy;
+  | Base : ObjTy
   /// The functions from `dom` to `cod`.
-  Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy;
+  | Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy
 }
 
 /// Contexts as lists of object types, the last entry outermost.
-data Ctx : Type {
+data Ctx : Type where {
   /// The empty context.
-  Empty : Ctx;
+  | Empty : Ctx
   /// The context `gamma` extended by one entry of type `a`.
-  Extend : (gamma : Ctx, a : ObjTy) --> Ctx;
+  | Extend : (gamma : Ctx, a : ObjTy) --> Ctx
 }
 
 /// A variable of type `a` in the context `gamma`, counted from the last entry.
-data Var : (gamma : Ctx, a : ObjTy) --> Type {
+data Var : (gamma : Ctx, a : ObjTy) --> Type where {
   /// The variable the last entry binds.
-  Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a);
+  | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
   /// A variable of `gamma`, past one more entry.
-  There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a);
+  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)
 }
 
 /// The variable of the first entry in a context of two.
@@ -37,18 +37,18 @@ def firstVar(a : ObjTy, b : ObjTy) -> Var(Extend(Extend(Empty, a), b), a) {
 }
 
 /// Positions below a bound.
-data Fin : Nat -> Type {
+data Fin : Nat -> Type where {
   /// The first position below the successor of `n`.
-  FZ : (n : Nat) --> Fin(Succ(n));
+  | FZ : (n : Nat) --> Fin(Succ(n))
   /// The position after `i`, below the successor of `n`.
-  FS : (n : Nat, i : Fin(n)) --> Fin(Succ(n));
+  | FS : (n : Nat, i : Fin(n)) --> Fin(Succ(n))
 }
 
 /// A value of `a` marked at the position `i` below `n`. The type of the
 /// second index reads the first, beside the parameter.
-data Pinned(a : Type) : (n : Nat, i : Fin(n)) --> Type {
+data Pinned(a : Type) : (n : Nat, i : Fin(n)) --> Type where {
   /// The value `x` at the position `i`.
-  Pin : (n : Nat, i : Fin(n), x : a) --> Pinned(a, n, i);
+  | Pin : (n : Nat, i : Fin(n), x : a) --> Pinned(a, n, i)
 }
 
 /// The integer `x` marked at the position `i` below `n`.

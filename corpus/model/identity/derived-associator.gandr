@@ -36,11 +36,11 @@ pub theory Monoid where {
 derive assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d))) in Monoid
 
 /// A sign.
-pub data Sign : Type {
+pub data Sign : Type where {
   /// The positive sign.
-  Plus : Sign;
+  | Plus : Sign
   /// The negative sign.
-  Minus : Sign;
+  | Minus : Sign
 }
 
 /// The product of two signs.

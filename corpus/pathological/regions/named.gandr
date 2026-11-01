@@ -3,4 +3,4 @@
 
 /// Answers its region binder as though it were a value.
 @[ refuses("RegionAsValue") ]
-def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }
+def named[r : Region](k : (() => Integer) at r) -> -F Integer { pure r }

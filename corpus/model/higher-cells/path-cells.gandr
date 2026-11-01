@@ -17,11 +17,11 @@
 import "../../../library/math/src/path.gandr";
 
 /// The circle: one point and a loop at it.
-data Circle : Type {
+data Circle : Type where {
   /// The point.
-  Base : Circle;
+  | Base : Circle
   /// The loop at the point.
-  loop : Base <-> Base;
+  | loop : Base <-> Base
 }
 
 /// `math.path`'s associator over the circle.

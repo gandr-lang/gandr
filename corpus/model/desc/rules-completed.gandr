@@ -10,15 +10,15 @@
 /// The naturals with addition and an operation whose two rules part at a
 /// call.
 @[ normalizes("swap(Zero, Succ(Zero)) ~> Succ(Zero)") ]
-data NatSwap : Type {
-  Zero : NatSwap;
-  Succ : (n : NatSwap) --> NatSwap;
-  oper add(m : NatSwap, n : NatSwap) -> NatSwap;
-  oper swap(m : NatSwap, n : NatSwap) -> NatSwap;
-  rule add(Zero, n) ==> n;
-  rule add(Succ(m), n) ==> Succ(add(m, n));
-  rule swap(m, n) ==> add(m, n);
-  rule swap(Zero, n) ==> add(n, Zero);
+data NatSwap : Type where {
+  | Zero : NatSwap
+  | Succ : (n : NatSwap) --> NatSwap
+  oper add : (m : NatSwap, n : NatSwap) --> NatSwap;
+  oper swap : (m : NatSwap, n : NatSwap) --> NatSwap;
+  rule : add(Zero, n) ==> n;
+  rule : add(Succ(m), n) ==> Succ(add(m, n));
+  rule : swap(m, n) ==> add(m, n);
+  rule : swap(Zero, n) ==> add(n, Zero);
 }
 
 /// Zero swapped with one, where the two rules overlap.

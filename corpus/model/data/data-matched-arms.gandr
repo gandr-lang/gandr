@@ -24,15 +24,15 @@ def warm(c : Color) -> Integer {
 }
 
 /// An optional integer.
-data Inner : Type {
-  No : Inner;
-  Yes : (n : Integer) --> Inner;
+data Inner : Type where {
+  | No : Inner
+  | Yes : (n : Integer) --> Inner
 }
 
 /// An optional `Inner`, so a match can reach two constructors deep.
-data Outer : Type {
-  None : Outer;
-  Some : (i : Inner) --> Outer;
+data Outer : Type where {
+  | None : Outer
+  | Some : (i : Inner) --> Outer
 }
 
 /// The integer two constructors down, or zero: the first arm's pattern nests

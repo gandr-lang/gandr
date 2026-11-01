@@ -1,6 +1,6 @@
-data Outer : Type {
-  None : Outer;
-  Some : (n : Integer) --> Outer;
+data Outer : Type where {
+  | None : Outer
+  | Some : (n : Integer) --> Outer
 }
 
 @[ refuses("NonExhaustiveMatch") ]

@@ -8,25 +8,25 @@
 //! source states only what the others read.
 
 /// The type with no element.
-pub data Empty : Type {}
+pub data Empty : Type where {}
 
 /// The circle: one point and a loop at it, bound as `loop : Path(Circle,
 /// Base, Base)`.
-pub data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+pub data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel. Their critical pairs join, so a word normalizes to the successors
 /// or predecessors it counts.
 @[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
-pub data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
+pub data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) <=> x;
+  rule : P(S(x)) <=> x;
 }
 
 /// One successor more.
@@ -40,9 +40,9 @@ pub def down(n : Int) -> Int {
 }
 
 /// The natural numbers, free: every constructor term is its own value.
-pub data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+pub data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// The winding number (cubical's `winding`): a loop counts one up, its

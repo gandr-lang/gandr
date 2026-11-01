@@ -38,17 +38,17 @@ theory Glob where {
 }
 
 /// The one object.
-data One : Type {
+data One : Type where {
   /// The object.
-  Star : One;
+  | Star : One
 }
 
 /// The naturals.
-data Nat : Type {
+data Nat : Type where {
   /// Zero.
-  Zero : Nat;
+  | Zero : Nat
   /// The natural after `n`.
-  Succ : (n : Nat) --> Nat;
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Addition, by recursion on its second argument.

@@ -1,7 +1,7 @@
 @[ checks, form(explicit) ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 @[ checks ]
@@ -120,9 +120,9 @@ def sequenced_run(n : Nat) -> -F Nat {
   return run down(n)
 }
 
-/// A last statement discards its value and the block returns the unit, so a
-/// body answering a natural cannot end in one (#1205).
-@[ refuses("TypeMismatch") ]
+/// A last statement's value is the block's unit, so a body answering a
+/// natural cannot end in one (#1205).
+@[ refuses("ShapeMismatch") ]
 def discarded(n : Nat) -> -F Nat {
   run m <- down(n);
   down(m);

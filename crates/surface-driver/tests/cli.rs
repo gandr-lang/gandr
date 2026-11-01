@@ -1208,12 +1208,12 @@ fn cells_reports_each_hole_s_count()
         format!(
             "{shown}:12:1: cell 0 frame, strictly linear: v 1, beta 1\n\
              {shown}:12:1: cell 1 frame, strictly linear: v 1, beta 1\n\
-             {shown}:19:21: cell 2 rule, strictly linear: $ret 1\n\
-             {shown}:20:27: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
-             {shown}:21:19: cell 4 rule, strictly linear: $ret 1\n\
-             {shown}:22:25: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
-             {shown}:23:17: cell 6 rule, duplicating 2: t 2, $ret 1\n\
-             {shown}:24:18: cell 7 rule, duplicating 3: t 3, $ret 1\n"
+             {shown}:19:23: cell 2 rule, strictly linear: $ret 1\n\
+             {shown}:20:29: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
+             {shown}:21:21: cell 4 rule, strictly linear: $ret 1\n\
+             {shown}:22:27: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
+             {shown}:23:19: cell 6 rule, duplicating 2: t 2, $ret 1\n\
+             {shown}:24:20: cell 7 rule, duplicating 3: t 3, $ret 1\n"
         )
     );
 

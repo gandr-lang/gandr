@@ -22,9 +22,9 @@
 import "./seat-and-operator.gandr";
 
 /// A point the seat measures, two integers.
-data Point : Type {
+data Point : Type where {
   /// The point at `x` and `y`.
-  At : (x : Integer, y : Integer) --> Point;
+  | At : (x : Integer, y : Integer) --> Point
 }
 
 /// A record of integers comes back from the seat.

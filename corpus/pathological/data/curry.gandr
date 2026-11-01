@@ -7,11 +7,11 @@
 // `../../model/data/stratified.gandr`.
 
 /// The type with no element.
-data Empty : Type {}
+data Empty : Type where {}
 
 /// A node holding a function from its own family into the empty type.
-data Bad : Type {
-  MkBad : (f : Bad => Empty) --> Bad;
+data Bad : Type where {
+  | MkBad : (f : Bad => Empty) --> Bad
 }
 
 /// A function applied to a node, each at its declared type.

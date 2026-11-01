@@ -29,13 +29,13 @@ pub theory Grade where {
 }
 
 /// How often a value is used: not at all, once, or any number of times.
-pub data Use : Type {
+pub data Use : Type where {
   /// Not used.
-  Unused : Use;
+  | Unused : Use
   /// Used exactly once.
-  Once : Use;
+  | Once : Use
   /// Used any number of times.
-  Many : Use;
+  | Many : Use
 }
 
 /// Usage, the grades the tree writes: zero and one apart, each under many,
@@ -95,13 +95,13 @@ pub module Usage : Model(Grade) where {
 }
 
 /// How two positives compare.
-data Comparison : Type {
+data Comparison : Type where {
   /// The first is below the second.
-  Below : Comparison;
+  | Below : Comparison
   /// The two are equal.
-  Equal : Comparison;
+  | Equal : Comparison
   /// The first is above the second.
-  Above : Comparison;
+  | Above : Comparison
 }
 
 /// One past a positive.
@@ -223,9 +223,9 @@ pub def count : Model(Grade) = pack Count at Model(Grade);
 
 /// A map from one algebra's grades to another's, named, so a reader asks for
 /// it by the two algebras it joins.
-pub data Hom(a : Model(Grade), b : Model(Grade)) : Type {
+pub data Hom(a : Model(Grade), b : Model(Grade)) : Type where {
   /// The map.
-  Map : (map : a.G => b.G) --> Hom(a, b);
+  | Map : (map : a.G => b.G) --> Hom(a, b)
 }
 
 /// A count's usage: zero unused, one once, more many.

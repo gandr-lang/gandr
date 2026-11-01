@@ -20,11 +20,11 @@
 import "./data-base.gandr";
 
 /// Vectors of elements of `a`, indexed by their length.
-pub data Vec(a : Type) : Nat -> Type {
+pub data Vec(a : Type) : Nat -> Type where {
   /// The empty vector, at length zero.
-  VNil : Vec(a, Zero);
+  | VNil : Vec(a, Zero)
   /// An element before a vector `n` long, at one past `n`.
-  VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n));
+  | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
 }
 
 /// The vector of one integer, one long.

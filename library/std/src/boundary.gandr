@@ -13,24 +13,24 @@
 import "./layout.gandr";
 
 /// A type at the row, as Rust's default layout codes it.
-pub data Code : Type {
+pub data Code : Type where {
   /// A scalar.
-  Plain : (s : Scalar) --> Code;
+  | Plain : (s : Scalar) --> Code
   /// An enum.
-  Sum : (vs : Variants) --> Code;
+  | Sum : (vs : Variants) --> Code
 }
 
 /// How a value is copied, moved, destroyed and relocated.
-pub data Handling : Type {
+pub data Handling : Type where {
   /// As its bytes: copied, moved and relocated by copying them, destroyed by
   /// nothing.
-  Bitwise : Handling;
+  | Bitwise : Handling
 }
 
 /// The witness record: size, stride, alignment, and how the value is handled.
-pub data Witness : Type {
+pub data Witness : Type where {
   /// The record.
-  Witness : (size : Integer, stride : Integer, align : Integer, handling : Handling) --> Witness;
+  | Witness : (size : Integer, stride : Integer, align : Integer, handling : Handling) --> Witness
 }
 
 /// A size rounded up to an alignment.
@@ -66,71 +66,71 @@ pub def niched(c : Code) -> Bool {
 }
 
 /// Argument codes in order.
-pub data Codes : Type {
+pub data Codes : Type where {
   /// No more arguments.
-  NoCode : Codes;
+  | NoCode : Codes
   /// An argument's code, then the rest.
-  Arg : (c : Code, rest : Codes) --> Codes;
+  | Arg : (c : Code, rest : Codes) --> Codes
 }
 
 /// A function row: its arguments' codes and its result's.
-pub data Row : Type {
+pub data Row : Type where {
   /// The row.
-  Row : (args : Codes, result : Code) --> Row;
+  | Row : (args : Codes, result : Code) --> Row
 }
 
 /// A type's layout as rustc printed it: size, alignment, a niche, and whether
 /// it needs drop.
-pub data Printed : Type {
+pub data Printed : Type where {
   /// The printed layout.
-  Printed : (size : Integer, align : Integer, niched : Bool, drops : Bool) --> Printed;
+  | Printed : (size : Integer, align : Integer, niched : Bool, drops : Bool) --> Printed
 }
 
 /// An extern's parameters in order, each named, as rustc built them.
-pub data Params : Type {
+pub data Params : Type where {
   /// No more parameters.
-  NoParam : Params;
+  | NoParam : Params
   /// A parameter's name and printed layout, then the rest.
-  Param : (name : String, p : Printed, rest : Params) --> Params;
+  | Param : (name : String, p : Printed, rest : Params) --> Params
 }
 
 /// An extern's declared signature: its parameters and its result.
-pub data Declared : Type {
+pub data Declared : Type where {
   /// The signature.
-  Declared : (params : Params, result : Printed) --> Declared;
+  | Declared : (params : Params, result : Printed) --> Declared
 }
 
 /// Where a clause stands in the row.
-pub data Position : Type {
+pub data Position : Type where {
   /// The argument at an index, from zero.
-  Argument : (index : Integer) --> Position;
+  | Argument : (index : Integer) --> Position
   /// The result.
-  Result : Position;
+  | Result : Position
 }
 
 /// The clause of the row a declared signature breaks.
-pub data Clause : Type {
+pub data Clause : Type where {
   /// The extern takes a different number of arguments.
-  Arity : Clause;
+  | Arity : Clause
   /// The block declares a different number of members than the attribute
   /// names rows.
-  Members : Clause;
+  | Members : Clause
   /// A size differs.
-  Size : (place : Position) --> Clause;
+  | Size : (place : Position) --> Clause
   /// An alignment differs.
-  Align : (place : Position) --> Clause;
+  | Align : (place : Position) --> Clause
   /// One keeps its discriminant in a niche and the other does not.
-  Niche : (place : Position) --> Clause;
+  | Niche : (place : Position) --> Clause
   /// The declared type needs drop, and the row's value is handled bitwise.
-  Destroy : (place : Position) --> Clause;
+  | Destroy : (place : Position) --> Clause
 }
 
 /// What admission answers.
-pub data Admission : Type {
+pub data Admission : Type where {
   /// The declared signature realises the row.
-  Admitted : Admission;
+  | Admitted : Admission
   /// It does not, by the first clause that fails.
-  Unrealised : (c : Clause) --> Admission;
+  | Unrealised : (c : Clause) --> Admission
 }
 
 /// Whether two booleans are equal.
@@ -199,18 +199,18 @@ pub def admit(d : Declared, r : Row) -> Admission {
 
 /// An extern's parameters in order, each named and coded as its declared type
 /// is.
-pub data Coded : Type {
+pub data Coded : Type where {
   /// No more parameters.
-  NoCoded : Coded;
+  | NoCoded : Coded
   /// A parameter's name and its type's code, then the rest.
-  Coded : (name : String, c : Code, rest : Coded) --> Coded;
+  | Coded : (name : String, c : Code, rest : Coded) --> Coded
 }
 
 /// An extern's signature as its declared types' codes: what an `extern "rust"`
 /// block declares, before Rust's layout prints it.
-pub data Signature : Type {
+pub data Signature : Type where {
   /// The signature.
-  Signature : (params : Coded, result : Code) --> Signature;
+  | Signature : (params : Coded, result : Code) --> Signature
 }
 
 /// A code's layout as rustc prints it, read off Rust's default layout. Every
@@ -238,19 +238,19 @@ pub def admitSignature(s : Signature, r : Row) -> Admission {
 }
 
 /// An `extern "rust"` block's members' signatures, in written order.
-pub data Signatures : Type {
+pub data Signatures : Type where {
   /// No more members.
-  NoSignature : Signatures;
+  | NoSignature : Signatures
   /// A member's signature, then the rest.
-  Member : (s : Signature, rest : Signatures) --> Signatures;
+  | Member : (s : Signature, rest : Signatures) --> Signatures
 }
 
 /// The rows a `boundary` attribute names, one per member in written order.
-pub data Rows : Type {
+pub data Rows : Type where {
   /// No more rows.
-  NoRow : Rows;
+  | NoRow : Rows
   /// A row, then the rest.
-  Named : (r : Row, rest : Rows) --> Rows;
+  | Named : (r : Row, rest : Rows) --> Rows
 }
 
 /// Each member against its row, in order, answered by the first member left

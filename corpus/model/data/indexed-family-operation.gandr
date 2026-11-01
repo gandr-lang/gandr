@@ -9,19 +9,19 @@
 /// - see: #2898
 
 /// The naturals the family is indexed by.
-data N : Type {
+data N : Type where {
   /// The naturals' zero.
-  Z : N;
+  | Z : N
   /// The successor of `n`.
-  S : (n : N) --> N;
+  | S : (n : N) --> N
 }
 
 /// A family indexed by `N`, with an operation and a rule over it.
-data Skip : N -> Type {
+data Skip : N -> Type where {
   /// The one constructor, at the index `Z`.
-  Halt : Skip(Z);
+  | Halt : Skip(Z)
   /// An operation from the family at `Z` to itself.
-  oper skip(k : Skip(Z)) -> Skip(Z);
+  oper skip : (k : Skip(Z)) --> Skip(Z);
   /// The rule that reads `skip` as the identity.
-  rule skip(k) ==> k;
+  rule : skip(k) ==> k;
 }

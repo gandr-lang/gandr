@@ -55,25 +55,25 @@ pub theory LC where {
 
 /// λ-terms with de Bruijn indices: a variable, an abstraction whose body
 /// binds index zero, and an application.
-pub data Term : Type {
-  Ix : (n : N) --> Term;
-  Lam : (t : Term) --> Term;
-  Ap : (t : Term, u : Term) --> Term;
+pub data Term : Type where {
+  | Ix : (n : N) --> Term
+  | Lam : (t : Term) --> Term
+  | Ap : (t : Term, u : Term) --> Term
 }
 
 /// Renamings: every index shifted by `k`, or a renaming lifted under one
 /// binder.
-pub data Ren : Type {
-  RShift : (k : N) --> Ren;
-  RLift : (r : Ren) --> Ren;
+pub data Ren : Type where {
+  | RShift : (k : N) --> Ren
+  | RLift : (r : Ren) --> Ren
 }
 
 /// Substitutions: every index shifted by `k`, a term consed on for index
 /// zero, or a substitution lifted under one binder.
-pub data Env : Type {
-  Shift : (k : N) --> Env;
-  Cons : (a : Term, s : Env) --> Env;
-  Lift : (s : Env) --> Env;
+pub data Env : Type where {
+  | Shift : (k : N) --> Env
+  | Cons : (a : Term, s : Env) --> Env
+  | Lift : (s : Env) --> Env
 }
 
 /// Addition, by recursion on the second summand.

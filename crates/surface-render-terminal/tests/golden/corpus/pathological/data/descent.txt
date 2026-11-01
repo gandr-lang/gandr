@@ -5,7 +5,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │    │             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-17 │ │┌   case n {
+17 │ │┌   match n {
 18 │ ││     Zero => Zero,
 19 │ ││     Succ(p) => again[<](n)
    │ ││                ┬────────┯─

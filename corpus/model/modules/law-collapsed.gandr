@@ -24,9 +24,9 @@ theory Collapsed where {
 }
 
 /// One value.
-data Dot : Type {
+data Dot : Type where {
   /// The value.
-  Spot : Dot;
+  | Spot : Dot
 }
 
 /// The model proves the law at `Dot` by cases: the one loop is the one loop.

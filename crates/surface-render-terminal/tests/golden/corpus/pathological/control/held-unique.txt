@@ -1,4 +1,4 @@
-error[HeldShared]: `hold[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
+error[HeldShared]: `var[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
    ╭▸ corpus/pathological/control/held-unique.gandr:9:15
    │
  8 │   def entered(n : Integer) -> Unit {
@@ -13,7 +13,7 @@ error[HeldShared]: `hold[1]` enters a value made in place — a constructor, a l
    │
    ╰ note: `entered` is refused with HeldShared, as its expectation states
 
-error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
    ╭▸ corpus/pathological/control/held-unique.gandr:17:8
    │
 15 │ ┌ def read_held() -> Integer {
@@ -29,7 +29,7 @@ error[HeldCopied]: a value held with `hold[1]` is never copied: read it once thr
    │
    ╰ note: `read_held` is refused with HeldCopied, as its expectation states
 
-error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
    ╭▸ corpus/pathological/control/held-unique.gandr:25:33
    │
 23 │ ┌ def read_twice() -> Unit {
@@ -47,7 +47,7 @@ error[HeldCopied]: a value held with `hold[1]` is never copied: read it once thr
    │
    ╰ note: `read_twice` is refused with HeldCopied, as its expectation states
 
-error[HeldCopied]: a value held with `hold[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
+error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
    ╭▸ corpus/pathological/control/held-unique.gandr:32:31
    │
 30 │ ┌ def read_shared() -> Integer {

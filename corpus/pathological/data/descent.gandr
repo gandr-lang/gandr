@@ -5,9 +5,9 @@
 // `../../model/data/data-base.gandr` declares.
 
 /// Natural numbers, the data every definition here descends on.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A call at the matched parameter itself rather than a field of it: not

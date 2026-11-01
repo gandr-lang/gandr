@@ -20,23 +20,23 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// A propositional formula over numbered variables.
-data Formula : Type {
+data Formula : Type where {
   /// The variable of that number.
-  Atom : (index : Nat) --> Formula;
+  | Atom : (index : Nat) --> Formula
   /// Negation.
-  Not : (f : Formula) --> Formula;
+  | Not : (f : Formula) --> Formula
   /// Conjunction.
-  And : (l : Formula, r : Formula) --> Formula;
+  | And : (l : Formula, r : Formula) --> Formula
   /// Disjunction.
-  Or : (l : Formula, r : Formula) --> Formula;
+  | Or : (l : Formula, r : Formula) --> Formula
 }
 
 /// The values of the variables set so far, the last one set first.
-data Assignment : Type {
+data Assignment : Type where {
   /// No variable set.
-  Unset : Assignment;
+  | Unset : Assignment
   /// One more variable, set to `value`.
-  Set : (value : Bool, rest : Assignment) --> Assignment;
+  | Set : (value : Bool, rest : Assignment) --> Assignment
 }
 
 /// The value of variable `i`, counted from the last one set.

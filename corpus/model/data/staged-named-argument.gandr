@@ -55,23 +55,23 @@ def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
 def zeroFirst : Path(Bool, leBoth(Zero, oneByName, three), true) = here(true);
 
 /// Positive binary numerals, the high bit outermost.
-data Pos : Type {
+data Pos : Type where {
   /// One.
-  H : Pos;
+  | H : Pos
   /// Twice `p`.
-  O : (p : Pos) --> Pos;
+  | O : (p : Pos) --> Pos
   /// Twice `p`, and one.
-  I : (p : Pos) --> Pos;
+  | I : (p : Pos) --> Pos
 }
 
 /// How two positives compare.
-data Cmp : Type {
+data Cmp : Type where {
   /// The first is below the second.
-  Lt : Cmp;
+  | Lt : Cmp
   /// The two are equal.
-  Eq : Cmp;
+  | Eq : Cmp
   /// The first is above the second.
-  Gt : Cmp;
+  | Gt : Cmp
 }
 
 /// Two, named.

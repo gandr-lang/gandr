@@ -4,8 +4,8 @@
 // the second (the HoTT book, §2.7).
 
 /// A family indexed by an integer, with one element at each index.
-data Ix(n : Integer) : Type {
-  MkIx : Ix(n);
+data Ix(n : Integer) : Type where {
+  | MkIx : Ix(n)
 }
 
 /// A label a later entry names binds there: the type is a dependent pair.

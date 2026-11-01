@@ -1,4 +1,4 @@
-error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `mu`
+error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `rec`
   ╭▸ corpus/ledger/diagnostics/OutOfFragment.NonContractive.gandr:4:16
   │
 4 │   fork (seat : mu turn. turn) { close(seat) } as desk;

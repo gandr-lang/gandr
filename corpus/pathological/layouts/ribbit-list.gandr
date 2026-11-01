@@ -8,11 +8,11 @@
 import "../../model/layouts/ribbit-list.gandr";
 
 /// A tag without its payloads, Ribbit's Example 3.15: it tells the empty list from the rest and keeps nothing else.
-data Tags : Type {
+data Tags : Type where {
   /// The empty list's tag.
-  Bare : Tags;
+  | Bare : Tags
   /// Any other list's tag.
-  Held : Tags;
+  | Held : Tags
 }
 
 /// A list's tag.

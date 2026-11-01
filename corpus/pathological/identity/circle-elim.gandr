@@ -5,9 +5,9 @@
 // written with no path type stated, that their operands refuse.
 
 /// The circle: one point and a loop at it.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
 }
 
 /// Every point joined to the point: reflexivity at `Base`, which the loop
@@ -55,10 +55,10 @@ def misjoined(x : Circle) -> Path(Circle, Base, x) {
 }
 
 /// A point with a loop at it, and a second point the loop never reaches.
-data Marked : Type {
-  Mark : Marked;
-  Elsewhere : Marked;
-  turn : Mark <-> Mark;
+data Marked : Type where {
+  | Mark : Marked
+  | Elsewhere : Marked
+  | turn : Mark <-> Mark
 }
 
 /// A composite whose second path starts where the first does not end: the

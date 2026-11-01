@@ -23,7 +23,7 @@ import "../../model/data/vectors.gandr";
 
 /// The first element, its element type and length implicit. `VNil` stands at
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
-def head @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> a {
+def head[a : Type, n : Nat](v : Vec(a, Succ(n))) -> a {
   match v {
     VCons(_, h, _) => h
   }
@@ -32,7 +32,7 @@ def head @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> a {
 /// The rest of a vector at least one long. The arm binds the path from
 /// `Succ(m)` to `Succ(n)`, and the tail stands at `m` where the result reads `n`.
 @[ refuses("TypeMismatch") ]
-def tail @[a : Type, n : Nat] (v : Vec(a, Succ(n))) -> Vec(a, n) {
+def tail[a : Type, n : Nat](v : Vec(a, Succ(n))) -> Vec(a, n) {
   match v {
     VCons(m, _, t) => t
   }

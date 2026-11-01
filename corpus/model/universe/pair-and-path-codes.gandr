@@ -28,11 +28,11 @@ import "fresh-lists.gandr";
 
 /// The codes: the naturals and the pairs of two coded types.
 @[ checks, form(explicit) ]
-data UProd : Type {
+data UProd : Type where {
   /// The naturals.
-  NatX : UProd;
+  | NatX : UProd
   /// The pairs of two coded types.
-  ProdX : (a : UProd, b : UProd) --> UProd;
+  | ProdX : (a : UProd, b : UProd) --> UProd
 }
 
 /// The decoder, with a pair code's two decodes as calls.
@@ -48,12 +48,12 @@ def rec elProd(u : UProd) -> -F Type {
 rec {
   /// The codes: the naturals, and the dependent pairs over a coded type.
   @[ checks ]
-  data USig : Type {
+  data USig : Type where {
     /// The naturals.
-    NatS : USig;
+    | NatS : USig
     /// The dependent pairs from a coded type to a family of codes over its
     /// decode.
-    SigS : (a : USig, b : +U (elSig(a) -> -F USig)) --> USig;
+    | SigS : (a : USig, b : +U (elSig(a) -> -F USig)) --> USig
   }
 
   /// The decoder: a pair code decodes to the pairs over its first decode.
@@ -73,11 +73,11 @@ rec {
   /// The codes: the naturals, and the paths between two values of a coded
   /// type.
   @[ checks ]
-  data UPath : Type {
+  data UPath : Type where {
     /// The naturals.
-    NatP : UPath;
+    | NatP : UPath
     /// The paths between two values of a coded type's decode.
-    PathP : (a : UPath, x : elPath(a), y : elPath(a)) --> UPath;
+    | PathP : (a : UPath, x : elPath(a), y : elPath(a)) --> UPath
   }
 
   /// The decoder: a path code decodes to the path type over its carrier.

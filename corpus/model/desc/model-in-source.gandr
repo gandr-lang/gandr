@@ -13,9 +13,9 @@ import "./second-order-signatures.gandr";
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
-pub data N : Type {
-  Z : N;
-  S : (n : N) --> N;
+pub data N : Type where {
+  | Z : N
+  | S : (n : N) --> N
 }
 
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and

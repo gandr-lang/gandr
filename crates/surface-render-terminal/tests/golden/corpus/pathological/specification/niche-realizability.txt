@@ -6,8 +6,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │     │              │
    │ ┌───┘              checked against `(w : Nat) -> (h : Heap) -> -F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the body of this function; binds w : Nat
    │ │
-30 │ │┌    case w {
-31 │ ││      Zero => case h {
+30 │ │┌    match w {
+31 │ ││      Zero => match h {
    │ ││┌─────────────┘
 32 │ │││       Emp => return fn (e) { e },
    │ │││              ┬──────┬────────┯──

@@ -16,11 +16,11 @@
 // - see: `model-laws.gandr` — a law stated as its path type
 
 /// The naturals, apart from any theory.
-data Ticks : Type {
+data Ticks : Type where {
   /// No tick.
-  NoTick : Ticks;
+  | NoTick : Ticks
   /// One tick more.
-  Tick : (n : Ticks) --> Ticks;
+  | Tick : (n : Ticks) --> Ticks
 }
 
 /// A carrier with a unit and a product, and one rule: the unit is a left unit.

@@ -10,7 +10,7 @@
 import "./data-base.gandr";
 
 /// The type with no element.
-pub data Empty : Type {}
+pub data Empty : Type where {}
 
 /// Anything follows from an element of the empty type.
 def absurd(v : Empty) -> Integer {
@@ -66,9 +66,9 @@ def signs(e : Path(Int, P(S(P(Z))), S(Z))) -> Empty {
 }
 
 /// A free type: two constructors and no rule.
-data Truth : Type {
-  False : Truth;
-  True : Truth;
+data Truth : Type where {
+  | False : Truth
+  | True : Truth
 }
 
 /// True is not false: distinct constructors of a free type are apart.

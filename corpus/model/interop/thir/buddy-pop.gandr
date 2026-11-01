@@ -17,28 +17,28 @@ import "../../data/data-maybe.gandr";
 rec {
   /// A value: an integer, a pointer, an option, the unit, or a tree of fields.
   @[ checks ]
-  pub data Val : Type {
+  pub data Val : Type where {
     /// The integer `n`.
-    IntV : (n : Nat) --> Val;
+    | IntV : (n : Nat) --> Val
     /// A pointer to the root `l`.
-    PtrV : (l : Nat) --> Val;
+    | PtrV : (l : Nat) --> Val
     /// `None`.
-    NoneV : Val;
+    | NoneV : Val
     /// `Some(v)`.
-    SomeV : (v : Val) --> Val;
+    | SomeV : (v : Val) --> Val
     /// The unit an assignment answers.
-    UnitV : Val;
+    | UnitV : Val
     /// A struct or an array, its fields or elements in order.
-    Tree : (fields : Vals) --> Val;
+    | Tree : (fields : Vals) --> Val
   }
 
   /// Fields or elements, in order.
   @[ checks ]
-  pub data Vals : Type {
+  pub data Vals : Type where {
     /// No more.
-    VNil : Vals;
+    | VNil : Vals
     /// A value, then the rest.
-    VCons : (v : Val, rest : Vals) --> Vals;
+    | VCons : (v : Val, rest : Vals) --> Vals
   }
 }
 
@@ -65,11 +65,11 @@ pub def rec setN(vs : Vals, i : Nat, x : Val) -> Vals {
 }
 
 /// A path below a root: field or element positions, outermost first.
-pub data Steps : Type {
+pub data Steps : Type where {
   /// The root itself.
-  Here : Steps;
+  | Here : Steps
   /// The field or element at `i`, then the rest.
-  Down : (i : Nat, rest : Steps) --> Steps;
+  | Down : (i : Nat, rest : Steps) --> Steps
 }
 
 /// The field or element of a tree at a position.
@@ -136,59 +136,59 @@ pub def rec same(a : Nat, b : Nat) -> Bool {
 }
 
 /// THIR's place expressions in the fragment, each operand a local.
-pub data PlaceExpr : Type {
+pub data PlaceExpr : Type where {
   /// `*x`, the local `x` dereferenced.
-  Deref : (x : Nat) --> PlaceExpr;
+  | Deref : (x : Nat) --> PlaceExpr
   /// `p.i`, the field at position `i`.
-  Field : (p : PlaceExpr, i : Nat) --> PlaceExpr;
+  | Field : (p : PlaceExpr, i : Nat) --> PlaceExpr
   /// `p[x]`, the element at the local `x`'s index.
-  Index : (p : PlaceExpr, x : Nat) --> PlaceExpr;
+  | Index : (p : PlaceExpr, x : Nat) --> PlaceExpr
 }
 
 /// THIR's value expressions over places, in the fragment `pop` needs.
-pub data MemExpr : Type {
+pub data MemExpr : Type where {
   /// The local `x` read, the parameters the outermost locals.
-  Var : (x : Nat) --> MemExpr;
+  | Var : (x : Nat) --> MemExpr
   /// The place `p` read by copy.
-  Read : (p : PlaceExpr) --> MemExpr;
+  | Read : (p : PlaceExpr) --> MemExpr
   /// `None`.
-  NoneE : MemExpr;
+  | NoneE : MemExpr
   /// `Some(e)`.
-  SomeE : (e : MemExpr) --> MemExpr;
+  | SomeE : (e : MemExpr) --> MemExpr
   /// `p = e`: the operand first, then the place.
-  Assign : (p : PlaceExpr, e : MemExpr) --> MemExpr;
+  | Assign : (p : PlaceExpr, e : MemExpr) --> MemExpr
   /// `{ s; e }`.
-  Seq : (s : MemExpr, e : MemExpr) --> MemExpr;
+  | Seq : (s : MemExpr, e : MemExpr) --> MemExpr
   /// `match e { None => n, Some(x) => m }`, `m` reading the payload as local zero.
-  MatchOpt : (e : MemExpr, n : MemExpr, m : MemExpr) --> MemExpr;
+  | MatchOpt : (e : MemExpr, n : MemExpr, m : MemExpr) --> MemExpr
   /// `return e`.
-  Return : (e : MemExpr) --> MemExpr;
+  | Return : (e : MemExpr) --> MemExpr
 }
 
 /// A fraction of a root: the whole, or a part shared with others.
-pub data Frac : Type {
+pub data Frac : Type where {
   /// The whole root, which a write needs.
-  Whole : Frac;
+  | Whole : Frac
   /// A part of it, which a read needs.
-  Part : Frac;
+  | Part : Frac
 }
 
 /// The receiver's root: its location, the fraction held and its value.
-pub data State : Type {
+pub data State : Type where {
   /// `l ↦_q v`.
-  Own : (l : Nat, q : Frac, v : Val) --> State;
+  | Own : (l : Nat, q : Frac, v : Val) --> State
 }
 
 /// Where an expression ends: its value and the state after it.
-pub data Out : Type {
+pub data Out : Type where {
   /// The value `v` in the state `s`.
-  Ends : (v : Val, s : State) --> Out;
+  | Ends : (v : Val, s : State) --> Out
 }
 
 /// A location below a root.
-pub data Loc : Type {
+pub data Loc : Type where {
   /// The path `path` below the root `l`.
-  At : (l : Nat, path : Steps) --> Loc;
+  | At : (l : Nat, path : Steps) --> Loc
 }
 
 /// The root a pointer value points to.
@@ -332,11 +332,11 @@ pub def buddy(blocks : Vals, heads : Vals) -> Val {
 }
 
 /// Block indices, in order.
-pub data Ixs : Type {
+pub data Ixs : Type where {
   /// No more.
-  INil : Ixs;
+  | INil : Ixs
   /// A block, then the rest.
-  ICons : (b : Nat, rest : Ixs) --> Ixs;
+  | ICons : (b : Nat, rest : Ixs) --> Ixs
 }
 
 /// Whether a block index is absent from a list.

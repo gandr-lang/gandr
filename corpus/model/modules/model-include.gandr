@@ -19,7 +19,7 @@ module GradeInteger : Model(Graded) with sort Carrier = Integer where {
 }
 
 /// Whether a grade is at most another, through the grading the operands force.
-def atMost @[g : Model(Graded)] (a : g.Carrier, b : g.Carrier) -> Bool {
+def atMost[g : Model(Graded)](a : g.Carrier, b : g.Carrier) -> Bool {
   if g.below(a, b) { true } else { g.eq(a, b) }
 }
 

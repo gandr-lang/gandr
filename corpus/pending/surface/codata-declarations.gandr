@@ -8,15 +8,15 @@ codata Iter(a : Type) : Type where {
 }
 
 codata Fun(a : Type, b : Type) : Type where {
-  ap(x : a) : b;
+  ap : (x : a) --> b;
 }
 
 codata Session : Type where {
-  1 step : -F (Unit);
+  step[1] : -F (Unit);
 }
 
 codata Colist(a : Type) : Type where {
   head : a;
   tail : Colist(a);
-  rule tail(x) ==> x;
+  rule : tail(x) ==> x;
 }

@@ -6,8 +6,8 @@
 import "./model-resolution-tally.gandr";
 
 /// The carrier of the tally numbered 0.
-data Tag0 : Type {
-  Mark0 : Tag0;
+data Tag0 : Type where {
+  | Mark0 : Tag0
 }
 
 /// A tally over `Tag0`, reading 0.
@@ -22,8 +22,8 @@ module Tally0 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 1.
-data Tag1 : Type {
-  Mark1 : Tag1;
+data Tag1 : Type where {
+  | Mark1 : Tag1
 }
 
 /// A tally over `Tag1`, reading 1.
@@ -38,8 +38,8 @@ module Tally1 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 2.
-data Tag2 : Type {
-  Mark2 : Tag2;
+data Tag2 : Type where {
+  | Mark2 : Tag2
 }
 
 /// A tally over `Tag2`, reading 2.
@@ -54,8 +54,8 @@ module Tally2 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 3.
-data Tag3 : Type {
-  Mark3 : Tag3;
+data Tag3 : Type where {
+  | Mark3 : Tag3
 }
 
 /// A tally over `Tag3`, reading 3.
@@ -70,8 +70,8 @@ module Tally3 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 4.
-data Tag4 : Type {
-  Mark4 : Tag4;
+data Tag4 : Type where {
+  | Mark4 : Tag4
 }
 
 /// A tally over `Tag4`, reading 4.
@@ -86,8 +86,8 @@ module Tally4 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 5.
-data Tag5 : Type {
-  Mark5 : Tag5;
+data Tag5 : Type where {
+  | Mark5 : Tag5
 }
 
 /// A tally over `Tag5`, reading 5.
@@ -102,8 +102,8 @@ module Tally5 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 6.
-data Tag6 : Type {
-  Mark6 : Tag6;
+data Tag6 : Type where {
+  | Mark6 : Tag6
 }
 
 /// A tally over `Tag6`, reading 6.
@@ -118,8 +118,8 @@ module Tally6 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 7.
-data Tag7 : Type {
-  Mark7 : Tag7;
+data Tag7 : Type where {
+  | Mark7 : Tag7
 }
 
 /// A tally over `Tag7`, reading 7.
@@ -134,8 +134,8 @@ module Tally7 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 8.
-data Tag8 : Type {
-  Mark8 : Tag8;
+data Tag8 : Type where {
+  | Mark8 : Tag8
 }
 
 /// A tally over `Tag8`, reading 8.
@@ -150,8 +150,8 @@ module Tally8 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 9.
-data Tag9 : Type {
-  Mark9 : Tag9;
+data Tag9 : Type where {
+  | Mark9 : Tag9
 }
 
 /// A tally over `Tag9`, reading 9.
@@ -166,8 +166,8 @@ module Tally9 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 10.
-data Tag10 : Type {
-  Mark10 : Tag10;
+data Tag10 : Type where {
+  | Mark10 : Tag10
 }
 
 /// A tally over `Tag10`, reading 10.
@@ -182,8 +182,8 @@ module Tally10 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 11.
-data Tag11 : Type {
-  Mark11 : Tag11;
+data Tag11 : Type where {
+  | Mark11 : Tag11
 }
 
 /// A tally over `Tag11`, reading 11.
@@ -198,8 +198,8 @@ module Tally11 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 12.
-data Tag12 : Type {
-  Mark12 : Tag12;
+data Tag12 : Type where {
+  | Mark12 : Tag12
 }
 
 /// A tally over `Tag12`, reading 12.
@@ -214,8 +214,8 @@ module Tally12 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 13.
-data Tag13 : Type {
-  Mark13 : Tag13;
+data Tag13 : Type where {
+  | Mark13 : Tag13
 }
 
 /// A tally over `Tag13`, reading 13.
@@ -230,8 +230,8 @@ module Tally13 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 14.
-data Tag14 : Type {
-  Mark14 : Tag14;
+data Tag14 : Type where {
+  | Mark14 : Tag14
 }
 
 /// A tally over `Tag14`, reading 14.
@@ -246,8 +246,8 @@ module Tally14 : Model(Count) where {
 }
 
 /// The carrier of the tally numbered 15.
-data Tag15 : Type {
-  Mark15 : Tag15;
+data Tag15 : Type where {
+  | Mark15 : Tag15
 }
 
 /// A tally over `Tag15`, reading 15.

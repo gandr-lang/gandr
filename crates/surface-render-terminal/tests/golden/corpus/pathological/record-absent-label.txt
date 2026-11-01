@@ -5,7 +5,7 @@ error[AbsentRecordField]: the record has no such field
   │    │          ─ checked against `#{n : Integer, s : String} -> -F Integer`; while checking the body of this function; binds r : #{n : Integer, s : String}
   │ ┌──┘
   │ │
-3 │ │┏   case r {
+3 │ │┏   match r {
 4 │ │┃     #{.z = m} => m
 5 │ │┃   }
   │ │┗━━━┛ no field of the record type

@@ -2,13 +2,13 @@
 // `Celsius` is no list of `Fahrenheit`, in any definition that ascribes it.
 
 /// A temperature in Celsius.
-data Celsius : Type {
-  Cel : (x : Integer) --> Celsius;
+data Celsius : Type where {
+  | Cel : (x : Integer) --> Celsius
 }
 
 /// A temperature in Fahrenheit, the same shape.
-data Fahrenheit : Type {
-  Fah : (x : Integer) --> Fahrenheit;
+data Fahrenheit : Type where {
+  | Fah : (x : Integer) --> Fahrenheit
 }
 
 /// A list of one Celsius value ascribed a list of Fahrenheit: its element

@@ -24,10 +24,10 @@ pub theory Marks where {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
-  rule dropped : flush(mark(k)) <=> k under [Sink | r];
-  rule kept : flush(mark(k)) <=> mark(k) under [State | r];
-  rule erased : mark(k) <=> k under [State, Sink | r];
-  rule flushed : flush(k) <=> k under [Sink, State | r];
+  rule dropped : flush(mark(k)) <=> k where { | under [Sink | r] };
+  rule kept : flush(mark(k)) <=> mark(k) where { | under [State | r] };
+  rule erased : mark(k) <=> k where { | under [State, Sink | r] };
+  rule flushed : flush(k) <=> k where { | under [Sink, State | r] };
 }
 
 /// The same two rules under closed rows: a row holding exactly `Sink` is
@@ -37,6 +37,6 @@ theory ExactMarks where {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
-  rule dropped : flush(mark(k)) <=> k under [Sink];
-  rule kept : flush(mark(k)) <=> mark(k) under [State];
+  rule dropped : flush(mark(k)) <=> k where { | under [Sink] };
+  rule kept : flush(mark(k)) <=> mark(k) where { | under [State] };
 }

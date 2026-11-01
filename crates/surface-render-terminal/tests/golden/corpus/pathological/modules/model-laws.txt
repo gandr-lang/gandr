@@ -19,7 +19,7 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
 error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
    ╭▸ corpus/pathological/modules/model-laws.gandr:43:1
    │
-43 │ ┏ module FloatEqMissing : Model(Eq) with sort Carrier = f64 {
+43 │ ┏ module FloatEqMissing : Model(Eq) with sort Carrier = f64 where {
 44 │ ┃   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
 45 │ ┃   law sym admitted;
 46 │ ┃ }

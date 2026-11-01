@@ -6,7 +6,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │    │                     │
    │ ┌──┘                     checked against `Stores -> Integer -> -F Integer`; while checking the body of this function; binds p : Stores
    │ │
-12 │ │┏   case p {
+12 │ │┏   match p {
 13 │ │┃     End(_x) => n,
 14 │ │┃     Store(_t, k) => storesCounted[<](k, n + 1)
 15 │ │┃   }
@@ -24,7 +24,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │    │                  ─ checked against `Stores -> -F Integer`; while checking the body of this function; binds p : Stores
    │ ┌──┘
    │ │
-22 │ │┏   case p {
+22 │ │┏   match p {
 23 │ │┃     End(_x) => 0,
 24 │ │┃     Store(_t, k) => storeCount[<](k) + 1
 25 │ │┃   }

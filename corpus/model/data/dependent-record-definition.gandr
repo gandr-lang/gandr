@@ -12,9 +12,9 @@ import "./data-base.gandr";
 import "./stuck-arm-call.gandr";
 
 /// A tagged natural.
-data T : Type {
+data T : Type where {
   /// The tag over a natural.
-  Tg : (t : Nat) --> T;
+  | Tg : (t : Nat) --> T
 }
 
 /// What a tag owes of a heap: emptiness at zero, by a call of `emp`, and nothing else.

@@ -10,9 +10,9 @@ import "./data-base.gandr";
 
 /// Binary trees with the branching written as a function: a node picks its
 /// subtree at each branch.
-data Tree : Type {
-  Leaf : Tree;
-  Node : (f : Two => Tree) --> Tree;
+data Tree : Type where {
+  | Leaf : Tree
+  | Node : (f : Two => Tree) --> Tree
 }
 
 /// The number of leaves: each subtree is reached through `f` and counted one

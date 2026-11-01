@@ -1,5 +1,5 @@
-data Ix(n : Integer) : Type {
-  MkIx : Ix(n);
+data Ix(n : Integer) : Type where {
+  | MkIx : Ix(n)
 }
 
 /// The second component lies over another first.

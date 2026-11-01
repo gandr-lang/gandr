@@ -5,7 +5,7 @@ error[RideUnsupported]: `ride` moves a run of the moving endpoint, a value whose
    │              ┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
    │              │       │
    │              │       a motive the ride cannot move
-   │              checked against `() => List(?String. mu t. +{handoff : !String. end, report : !String. &{next : t}})`; while checking the body of this thunk
+   │              checked against `() => List(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the body of this thunk
    │
    ├ note: `listed` is refused with RideUnsupported, as its expectation states
    ╰ note: tracked by #1318 <https://github.com/gandr-lang/gandr/issues/1318>

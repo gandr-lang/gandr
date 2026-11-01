@@ -3,10 +3,10 @@
 // `pattern-hole-arms.gandr` refuses the same leaf beside written arms.
 
 /// Three colours, one arm each.
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// Every colour reaches the hole (#391).

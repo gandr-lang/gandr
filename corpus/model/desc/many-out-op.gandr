@@ -6,19 +6,19 @@
 
 /// The naturals with division and remainder, both outputs named.
 @[ normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> (Succ(Succ(Zero)), Succ(Zero))") ]
-data NatDiv : Type {
-  Zero : NatDiv;
-  Succ : (n : NatDiv) --> NatDiv;
-  oper walk(m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) -> (
+data NatDiv : Type where {
+  | Zero : NatDiv
+  | Succ : (n : NatDiv) --> NatDiv
+  oper walk : (m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) --> (
     quot : NatDiv,
     rem : NatDiv
   );
-  oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);
-  rule walk(Zero, g, d, q, r) <=> (q, r);
-  rule walk(Succ(m), Zero, d, q, r) <=> walk(m, d, d, Succ(q), Zero);
-  rule walk(Succ(m), Succ(g), d, q, r) <=> walk(m, g, d, q, Succ(r));
-  rule divmod(m, Zero) <=> (Zero, m);
-  rule divmod(m, Succ(d)) <=> walk(m, d, d, Zero, Zero);
+  oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);
+  rule : walk(Zero, g, d, q, r) <=> (q, r);
+  rule : walk(Succ(m), Zero, d, q, r) <=> walk(m, d, d, Succ(q), Zero);
+  rule : walk(Succ(m), Succ(g), d, q, r) <=> walk(m, g, d, q, Succ(r));
+  rule : divmod(m, Zero) <=> (Zero, m);
+  rule : divmod(m, Succ(d)) <=> walk(m, d, d, Zero, Zero);
 }
 
 /// Five by two runs to two remainder one, both outputs bound.

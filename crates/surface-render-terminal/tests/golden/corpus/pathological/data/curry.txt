@@ -5,7 +5,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │       ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
    │ ┌──┘
    │ │
-26 │ │┌   case b {
+26 │ │┌   match b {
 27 │ ││     MkBad(f) => f(b)
    │ ││                 ┬─┯─
    │ ││                 │ │
@@ -26,7 +26,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │            ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
    │ ┌──┘
    │ │
-35 │ │┌   case b {
+35 │ │┌   match b {
 36 │ ││     MkBad(f) => apply(f, b)
    │ ││                 ┬─────┯────
    │ ││                 │     │

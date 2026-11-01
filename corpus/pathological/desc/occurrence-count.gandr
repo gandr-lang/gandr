@@ -4,10 +4,10 @@
 // family and its other members keep checking (#2788).
 
 /// Binary hedges, with an operation whose rule copies on its left side.
-data Hedge : Type {
-  Leaf : Hedge;
-  Node : (l : Hedge, r : Hedge) --> Hedge;
-  oper same(s : Hedge, t : Hedge) -> Hedge;
+data Hedge : Type where {
+  | Leaf : Hedge
+  | Node : (l : Hedge, r : Hedge) --> Hedge
+  oper same : (s : Hedge, t : Hedge) --> Hedge;
   @[ refuses("RulesNonLinear") ]
-  rule same(t, t) ==> Node(t, t);
+  rule : same(t, t) ==> Node(t, t);
 }

@@ -25,7 +25,7 @@ error[OutOfFragment.Endpoint]: a session action acts on an endpoint: a name a `f
   ├ note: `parameter_as_endpoint` is refused with OutOfFragment.Endpoint, as its expectation states
   ╰ note: tracked by #1862 <https://github.com/gandr-lang/gandr/issues/1862>
 
-error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `mu`
+error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `rec`
   ╭▸ corpus/pathological/sessions/fragment.gandr:8:16
   │
 8 │   fork (seat : mu turn. turn) { close(seat) } as desk;

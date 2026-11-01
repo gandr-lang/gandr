@@ -8,9 +8,9 @@
 // `../../pathological/modules/phase.gandr`.
 
 /// A sign, closed data whose constructors are static.
-data Sign : Type {
-  Plus : Sign;
-  Minus : Sign;
+data Sign : Type where {
+  | Plus : Sign
+  | Minus : Sign
 }
 
 /// A point sealed by its signature: an abstract type and a value of it.

@@ -47,9 +47,9 @@ def drawn(shape : Shape) -> Figure {
 def drawings : Path(Shape => Figure, Shapes.toFigure, drawn) = funext(Shapes.toFigure, drawn);
 
 /// A light's two states, neither holding a field.
-data Light : Type {
-  Stop : Light;
-  Go : Light;
+data Light : Type where {
+  | Stop : Light
+  | Go : Light
 }
 
 /// A light switched.

@@ -1,7 +1,7 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
    ╭▸ corpus/pathological/include/two-joins.gandr:27:1
    │
-27 │ ┏ theory MagmaWithUnit {
+27 │ ┏ theory MagmaWithUnit where {
 28 │ ┃   include Pointed;
 29 │ ┃   include Magma;
 30 │ ┃ }

@@ -5,7 +5,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │      │                ─ checked against `USigRun -> -F Type`; while checking the body of this function; binds u : USigRun
    │ ┌────┘
    │ │
-37 │ │┌     case u {
+37 │ │┌     match u {
 38 │ ││       NatR => return Nat,
 39 │ ││       SigR(a, b) => {
 40 │ ││         run t <- elSigRun[<](a);
@@ -36,7 +36,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │      │                ─ checked against `USigRun -> -F Type`; while checking the body of this function; binds u : USigRun
    │ ┌────┘
    │ │
-37 │ │┌     case u {
+37 │ │┌     match u {
 38 │ ││       NatR => return Nat,
 39 │ ││       SigR(a, b) => {
 40 │ ││         run t <- elSigRun[<](a);

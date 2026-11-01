@@ -1,13 +1,13 @@
 @[ checks, ]
-data Either(a : Type, b : Type,) : Type {
-  Left : (x : a,) --> Either(a, b,);
-  Right : (y : b,) --> Either(a, b,);
+data Either(a : Type, b : Type,) : Type where {
+  | Left : (x : a,) --> Either(a, b,)
+  | Right : (y : b,) --> Either(a, b,)
 }
 
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 def from_left() -> Integer {
@@ -19,8 +19,7 @@ def from_left() -> Integer {
 
 def warm(c : Color) -> Integer {
   match c {
-    | Red
-    | Green => 1,
+    | Red | Green => 1,
     Blue => 0
   }
 }

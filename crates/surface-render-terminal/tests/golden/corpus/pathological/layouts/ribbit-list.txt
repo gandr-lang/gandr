@@ -5,7 +5,7 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
    │    │            ─ checked against `(l : Ints) -> -F Path(Ints, listOf(tagsOf(l)), l)`; while checking the body of this function; binds l : Ints
    │ ┌──┘
    │ │
-37 │ │┌   case l {
+37 │ │┌   match l {
 38 │ ││     Nil => here(Nil),
 39 │ ││     Cons(x, rest) => here(Cons(x, rest))
    │ ││                      ━━━━━━━━━━━━━━━━━━━ not both endpoints of the path

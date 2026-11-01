@@ -6,7 +6,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │    │             │
    │ ┌──┘             checked against `Int -> Int -> -F Int`; while checking the body of this function; binds acc : Int
    │ │
-13 │ │┏   case b {
+13 │ │┏   match b {
 14 │ │┃     Z => acc,
 15 │ │┃     S(x) => count[<](S(acc), x),
 16 │ │┃     P(x) => count[<](S(acc), x)

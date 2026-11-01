@@ -21,15 +21,15 @@ import "../../model/data/data-base.gandr";
 rec {
   /// A family consuming the next one: `right` stands left of the arrow.
   @[ refuses("NegativeOccurrence"), form(explicit) ]
-  data Left : Type {
-    MkL : (f : +U (right -> -F Two)) --> Left;
+  data Left : Type where {
+    | MkL : (f : +U (right -> -F Two)) --> Left
   }
 
   /// The family `Left` consumes: its own field is positive, and it is
   /// refused with its block.
   @[ refuses("NegativeOccurrence") ]
-  data Right : Type {
-    MkR : (l : Left) --> Right;
+  data Right : Type where {
+    | MkR : (l : Left) --> Right
   }
 
   /// `Right`, named by a definition of the block, refused with it.
@@ -44,9 +44,9 @@ rec {
   /// Codes whose function code decodes a code it was not built from,
   /// refused with their decoder.
   @[ refuses("StageNotBelow") ]
-  data Odd : Type {
-    TwoC : Odd;
-    Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd;
+  data Odd : Type where {
+    | TwoC : Odd
+    | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
   }
 
   /// The decoder, recursing on the code below: the field's decode does not
@@ -70,9 +70,9 @@ rec {
   /// The codes: one base code, and the dependent functions over a code,
   /// refused with their decoder.
   @[ refuses("StageNotBelow") ]
-  data Loop : Type {
-    Base : Loop;
-    PiL : (a : Loop, b : +U (unloop(a) -> -F Loop)) --> Loop;
+  data Loop : Type where {
+    | Base : Loop
+    | PiL : (a : Loop, b : +U (unloop(a) -> -F Loop)) --> Loop
   }
 
   /// The decoder decoding a function code again where its domain is wanted.
@@ -97,13 +97,13 @@ def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two {
 rec {
   /// The codes at each level. They share their decoder's refusal.
   @[ refuses("NegativeOccurrence") ]
-  data ULevel : Nat -> Type {
+  data ULevel : Nat -> Type where {
     /// The naturals, at every level.
-    NatV : (n : Nat) --> ULevel(n);
+    | NatV : (n : Nat) --> ULevel(n)
     /// The universe a level down, a code one level up.
-    TypeV : (n : Nat) --> ULevel(Succ(n));
+    | TypeV : (n : Nat) --> ULevel(Succ(n))
     /// The dependent functions from a coded domain at a level.
-    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n);
+    | PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n)
   }
 
   /// The decoder at each level. Its arm for `TypeV` returns the family

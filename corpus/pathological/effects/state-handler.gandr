@@ -126,7 +126,7 @@ def unansweredForConsole() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which a call's
 /// argument solves.
-def readGivenAt @[a : Type] (x : a) -> [st : State with sort S = a] a {
+def readGivenAt[a : Type](x : a) -> [st : State with sort S = a] a {
   st.get()
 }
 

@@ -8,28 +8,28 @@
 // node's stage. Shared with `../../model/data/rose.gandr`.
 
 /// The two answers a test gives.
-data Two : Type {
-  L : Two;
-  R : Two;
+data Two : Type where {
+  | L : Two
+  | R : Two
 }
 
 /// Tests of a value: the parameter stands to the left of an arrow, so it is
 /// not strictly positive.
-data Test(a : Type) : Type {
-  MkTest : (probe : a => Two) --> Test(a);
+data Test(a : Type) : Type where {
+  | MkTest : (probe : a => Two) --> Test(a)
 }
 
 /// A node over a test of nodes: `Rose` nested under `Test`, whose parameter
 /// places nothing below the node (#517).
 @[ refuses("NestedOccurrence") ]
-data Rose : Type {
-  Node : (kids : Test(Rose)) --> Rose;
+data Rose : Type where {
+  | Node : (kids : Test(Rose)) --> Rose
 }
 
 /// Natural numbers, the measure the fold counts in.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// Addition by recursion on the second argument.
@@ -42,14 +42,14 @@ def rec plus(n : Nat, m : Nat) -> Nat {
 
 /// Lists, whose element stands only where a list holds it: strictly
 /// positive, so a family nests through it.
-data List(a : Type) : Type {
-  Nil : List(a);
-  Cons : (head : a, tail : List(a)) --> List(a);
+data List(a : Type) : Type where {
+  | Nil : List(a)
+  | Cons : (head : a, tail : List(a)) --> List(a)
 }
 
 /// The direct form: a node over a list of nodes (#517).
-data Bush : Type {
-  Sprout : (kids : List(Bush)) --> Bush;
+data Bush : Type where {
+  | Sprout : (kids : List(Bush)) --> Bush
 }
 
 /// A function mapped over a list.

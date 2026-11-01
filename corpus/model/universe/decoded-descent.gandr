@@ -21,10 +21,10 @@ rec {
   /// dependent functions from a coded domain to a family of codes over that
   /// domain's decode.
   @[ checks, form(explicit) ]
-  pub data UL : Type {
-    NatL : UL;
-    ListL : (a : UL) --> UL;
-    PiL : (a : UL, b : +U (elL(a) -> -F UL)) --> UL;
+  pub data UL : Type where {
+    | NatL : UL
+    | ListL : (a : UL) --> UL
+    | PiL : (a : UL, b : +U (elL(a) -> -F UL)) --> UL
   }
 
   /// The decoder, recursing below the code.

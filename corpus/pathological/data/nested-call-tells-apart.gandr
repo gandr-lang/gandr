@@ -1,11 +1,11 @@
 /// The integers presented by their two cancellations: `S(P(x))` and
 /// `P(S(x))` are each `x`.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S(P(x)) ==> x;
+  rule : P(S(x)) ==> x;
 }
 
 /// Reads a predecessor as a successor, so `S(P(Z))`, which is `Z`, would

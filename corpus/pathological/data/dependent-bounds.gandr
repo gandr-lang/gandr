@@ -21,11 +21,11 @@ import "../../model/data/data-base.gandr";
 import "../../model/data/vectors.gandr";
 
 /// The naturals below `n`.
-data Fin : Nat -> Type {
+data Fin : Nat -> Type where {
   /// Zero, below every successor.
-  FZero : (n : Nat) --> Fin(Succ(n));
+  | FZero : (n : Nat) --> Fin(Succ(n))
   /// One past a bound, below the successor of that bound.
-  FSucc : (n : Nat, i : Fin(n)) --> Fin(Succ(n));
+  | FSucc : (n : Nat, i : Fin(n)) --> Fin(Succ(n))
 }
 
 /// No natural lies below zero. Each constructor stands at a successor, apart

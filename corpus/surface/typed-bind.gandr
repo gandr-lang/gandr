@@ -2,9 +2,9 @@
 // computation returns, so a computation that only checks may be bound.
 
 /// The naturals the bound computations return.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
 }
 
 /// A return checks only against a type, and the annotation states it.

@@ -22,9 +22,9 @@ rec {
   /// The codes: the naturals, and the dependent functions from a coded
   /// domain to a family of codes over that domain's decode.
   @[ checks, form(explicit) ]
-  data UPi : Type {
-    NatC : UPi;
-    PiC : (a : UPi, b : +U (elPi(a) -> -F UPi)) --> UPi;
+  data UPi : Type where {
+    | NatC : UPi
+    | PiC : (a : UPi, b : +U (elPi(a) -> -F UPi)) --> UPi
   }
 
   /// The decoder. The function code's arm decodes its domain and, under a
@@ -65,11 +65,11 @@ def idNat = idDecoded;
 rec {
   /// The codes at each level: the naturals, and the dependent functions.
   @[ checks ]
-  data UM : Nat -> Type {
+  data UM : Nat -> Type where {
     /// The naturals, at every level.
-    NatM : (n : Nat) --> UM(n);
+    | NatM : (n : Nat) --> UM(n)
     /// The dependent functions from a coded domain at a level.
-    PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n);
+    | PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n)
   }
 
   /// The decoder at each level. It recurses below the code.

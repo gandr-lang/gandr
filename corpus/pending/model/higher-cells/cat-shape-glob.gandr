@@ -1,6 +1,6 @@
 codata Glob : Type where {
   cells : Type;
-  hom(x : cells, y : cells) : Glob;
+  hom : (x : cells, y : cells) --> Glob;
 }
 
 def path_glob(A : Type) -> Glob {

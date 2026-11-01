@@ -14,8 +14,8 @@ import "./small-string.gandr";
 
 /// A written string and the number of buffers the write filled anew: none
 /// in place, one when the bytes moved to a buffer of their own.
-pub data Written : Type {
-  Written : (string : Repr, copies : Integer) --> Written;
+pub data Written : Type where {
+  | Written : (string : Repr, copies : Integer) --> Written
 }
 
 /// The string a copy holds: the same inline bytes, or the same buffer with

@@ -12,7 +12,7 @@ theory Tally where {
 }
 
 /// The reading after one step, over any tally the slot names.
-def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
+def stepped[s : Model(Tally)](c : s.C) -> Integer { s.read(s.incr(c)) }
 
 /// No module of `Tally` is in scope yet.
 @[ refuses("ModelUnanswered") ]
@@ -50,10 +50,10 @@ def twin() -> Integer { stepped(4) }
 
 /// Naming one settles it.
 @[ runs("14") ]
-def named() -> Integer { stepped[s = Tens](4) }
+def named() -> Integer { stepped[.s = Tens](4) }
 
 /// The reading from zero over a tally of integers.
-def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
+def fromZero[s : Model(Tally) with sort C = Integer]() -> Integer {
   s.read(s.incr(s.zero))
 }
 
@@ -62,7 +62,7 @@ def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
 def manifest() -> Integer { fromZero() }
 
 /// The reading from zero over a tally of text.
-def fromText @[s : Model(Tally) with sort C = String] () -> Integer {
+def fromText[s : Model(Tally) with sort C = String]() -> Integer {
   s.read(s.incr(s.zero))
 }
 

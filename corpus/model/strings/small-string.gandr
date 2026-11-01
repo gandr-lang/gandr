@@ -11,9 +11,9 @@ import "./string-base.gandr";
 import "./nul-terminated.gandr";
 
 /// Where a string's bytes live, read off its representation.
-pub data Place : Type {
-  Inside : Place;
-  OnHeap : Place;
+pub data Place : Type where {
+  | Inside : Place
+  | OnHeap : Place
 }
 
 /// A string holding `bs`: inline when they fit the inline capacity, else in a

@@ -6,10 +6,10 @@
 
 /// λ-terms with de Bruijn indices, whose application is named as `Theory`'s
 /// is.
-data Bruijn : Type {
-  Ix : (n : Integer) --> Bruijn;
-  Abst : (t : Bruijn) --> Bruijn;
-  App : (t : Bruijn, u : Bruijn) --> Bruijn;
+data Bruijn : Type where {
+  | Ix : (n : Integer) --> Bruijn
+  | Abst : (t : Bruijn) --> Bruijn
+  | App : (t : Bruijn, u : Bruijn) --> Bruijn
 }
 
 /// A monoid's signature presented as data, in a source that already declares
@@ -21,8 +21,8 @@ theory Mon where {
 }
 
 /// One kind, named as `Theory`'s sort link is, declared after the block.
-data Kind : Type {
-  Sort : Kind;
+data Kind : Type where {
+  | Sort : Kind
 }
 
 /// One per `Oper` link of a presentation's operation chain, zero at its end.

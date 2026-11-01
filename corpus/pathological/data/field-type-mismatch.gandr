@@ -2,9 +2,9 @@
 // it: `Some("hello")` is no `Maybe(Integer)`.
 
 /// An optional value of any type.
-data Maybe(a : Type) : Type {
-  None : Maybe(a);
-  Some : (x : a) --> Maybe(a);
+data Maybe(a : Type) : Type where {
+  | None : Maybe(a)
+  | Some : (x : a) --> Maybe(a)
 }
 
 /// A string where an integer is expected.

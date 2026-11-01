@@ -11,13 +11,13 @@
 
 /// A list of values of a type it carries: a large type, since a field holds a
 /// type.
-data Packed : Type[+, 1] {
-  Pack : (a : Type, xs : List(a)) --> Packed;
+data Packed : Type[+, 1] where {
+  | Pack : (a : Type, xs : List(a)) --> Packed
 }
 
 /// A second large type of the same shape.
-data Boxed : Type[+, 1] {
-  Box : (a : Type, xs : List(a)) --> Boxed;
+data Boxed : Type[+, 1] where {
+  | Box : (a : Type, xs : List(a)) --> Boxed
 }
 
 /// The stationary flow at a large code.

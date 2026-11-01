@@ -6,7 +6,7 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
    │    │            │
    │ ┌──┘            checked against `(n : Nat) -> Vec(Integer, n) -> -F Integer`; while checking the body of this function; binds n : Nat
    │ │
-16 │ │┏   case v {
+16 │ │┏   match v {
 17 │ │┃     VCons(m, h, t) => h
 18 │ │┃   }
    │ │┗━━━┛ a path whose endpoints are not apart

@@ -12,9 +12,9 @@ import "./data-base.gandr";
 
 /// Chains whose every link holds the chain before it and a test of chains:
 /// `Chain` stands to the left of the test's arrow, below the link.
-data Chain : Type {
-  Start : Chain;
-  Link : (prev : Chain, test : Chain => Two) --> Chain;
+data Chain : Type where {
+  | Start : Chain
+  | Link : (prev : Chain, test : Chain => Two) --> Chain
 }
 
 /// A test answering `R` of a link and `L` of the start.

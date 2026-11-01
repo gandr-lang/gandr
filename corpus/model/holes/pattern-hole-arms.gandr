@@ -3,10 +3,10 @@
 // twin in `pathological/holes/` leaves an arm to a pattern hole.
 
 /// Three colours, one arm each.
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+  | Blue : Color
 }
 
 /// Every colour has its arm.

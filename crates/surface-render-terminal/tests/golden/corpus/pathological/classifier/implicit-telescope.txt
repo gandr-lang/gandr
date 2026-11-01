@@ -47,10 +47,10 @@ error[ImplicitInParentheses]: `same`'s implicit `a` is supplied by name, `same[a
    ╰ note: `inParentheses` is refused with ImplicitInParentheses, as its expectation states
 
 error[UnresolvedName]: `b` is not defined
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:44:34
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:44:35
    │
-44 │ def strayResident = thunk { same[b = Integer](3) };
-   │                                  ━ not found in this scope
+44 │ def strayResident = thunk { same[.b = Integer](3) };
+   │                                   ━ not found in this scope
    │
    ├ note: `strayResident` is refused with UnresolvedName, as its expectation states
    ╰ help: define `b`, or import the module that exports it
@@ -64,12 +64,12 @@ error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `sa
    ╰ note: `sameNamed` is refused with ImplicitUnsupplied, as its expectation states
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:54:51
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:54:52
    │
-54 │ def chosenStanding : Type => Integer = chosen[x = 7];
-   │                                        ┬──────────┯─
-   │                                        │          │
-   │                                        │          its type does not convert: expected `?`, found `Integer`
+54 │ def chosenStanding : Type => Integer = chosen[.x = 7];
+   │                                        ┬───────────┯─
+   │                                        │           │
+   │                                        │           its type does not convert: expected `?`, found `Integer`
    │                                        checked against `Type => Integer`; while checking the argument of this application; binds _ : Type
    │
    ├ note: `chosenStanding` is refused with TypeMismatch, as its expectation states
@@ -78,7 +78,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither can come first
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:58:1
    │
-58 │ def tangled @[a : b, b : a] (x : a) -> -F a { return x }
-   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
+58 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
    │
    ╰ note: `tangled` is refused with TelescopeCycle, as its expectation states

@@ -1,7 +1,7 @@
 error[SignatureMismatch.Unstated]: this import is read at `Greeted`, whose `greeting` the match reads no type for, so this source's declarations are not read
   ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:9:59
   │
-3 │ theory Greeted {
+3 │ theory Greeted where {
   │        ─────── declared here
   ‡
 9 │ import "../features/package-address.gandr" as addressed : Greeted;

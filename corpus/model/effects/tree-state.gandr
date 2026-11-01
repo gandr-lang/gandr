@@ -65,10 +65,10 @@ def passingByFold() -> Integer { passingState(passingTree, 0) }
 /// constructor per operation, each holding its payload and the continuation
 /// awaiting its reply. `get` holds the unit and awaits the state; `put` holds
 /// the state and awaits the unit.
-data StateModel(a : Type) : Type {
-  Answer : (x : a) --> StateModel(a);
-  Read : (u : Unit, k : Integer => StateModel(a)) --> StateModel(a);
-  Write : (s : Integer, k : Unit => StateModel(a)) --> StateModel(a);
+data StateModel(a : Type) : Type where {
+  | Answer : (x : a) --> StateModel(a)
+  | Read : (u : Unit, k : Integer => StateModel(a)) --> StateModel(a)
+  | Write : (s : Integer, k : Unit => StateModel(a)) --> StateModel(a)
 }
 
 /// `constant`'s subject as a program of the model.

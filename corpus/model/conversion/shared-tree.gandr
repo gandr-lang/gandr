@@ -18,13 +18,13 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// Binary trees with unlabelled leaves, each half under a wrapper.
-data Tree : Type {
+data Tree : Type where {
   /// The tree of depth zero.
-  Leaf : Tree;
+  | Leaf : Tree
   /// A tree held as one half of a node.
-  Wrap : (inner : Tree) --> Tree;
+  | Wrap : (inner : Tree) --> Tree
   /// A node over two halves.
-  Node : (left : Tree, right : Tree) --> Tree;
+  | Node : (left : Tree, right : Tree) --> Tree
 }
 
 /// A node holding `t` in both halves, each half under its own wrapper.

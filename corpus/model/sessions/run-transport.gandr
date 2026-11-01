@@ -5,15 +5,15 @@
 // the transport as a match on the run's moves, to the run conversion gives.
 
 /// A bit.
-pub data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+pub data Bit : Type where {
+  | Zero : Bit
+  | One : Bit
 }
 
 /// An answer.
-pub data Answer : Type {
-  No : Answer;
-  Yes : Answer;
+pub data Answer : Type where {
+  | No : Answer
+  | Yes : Answer
 }
 
 /// A bit read as an answer.

@@ -4,9 +4,9 @@
 // 1984).
 
 /// An optional `a`: none, or some value.
-pub data Maybe(a : Type) : Type {
-  None : Maybe(a);
-  Some : (x : a) --> Maybe(a);
+pub data Maybe(a : Type) : Type where {
+  | None : Maybe(a)
+  | Some : (x : a) --> Maybe(a)
 }
 
 /// The value inside a present option, or zero for an absent one.
@@ -27,13 +27,13 @@ def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
 }
 
 /// One integer, its constructor named for its type.
-data Tally : Type {
-  Tally : (count : Integer) --> Tally;
+data Tally : Type where {
+  | Tally : (count : Integer) --> Tally
 }
 
 /// Two types side by side, its constructor named for its type.
-data Duo(a : Type, b : Type) : Type {
-  Duo : (first : a, second : b) --> Duo(a, b);
+data Duo(a : Type, b : Type) : Type where {
+  | Duo : (first : a, second : b) --> Duo(a, b)
 }
 
 /// A tally kept as present: `Tally` at `Maybe`'s type parameter names the

@@ -28,5 +28,5 @@ theory Restriction where {
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule gc : nu(bind a. nil()) ==> nil();
-  rule scope : par(nu(bind a. p), q) ==> nu(bind a. par(p, q)) where a # q;
+  rule scope : par(nu(bind a. p), q) ==> nu(bind a. par(p, q)) where { | a # q };
 }

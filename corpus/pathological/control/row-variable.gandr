@@ -7,18 +7,18 @@ import "../../model/control/row-variable.gandr";
 
 /// A suspended computation taken and never run: its row variable occurs in
 /// its argument alone.
-def ignored @[e : Row] (x : +U (-F [e] Unit)) -> Unit { pure unit }
+def ignored[e : Row](x : +U (-F [e] Unit)) -> Unit { pure unit }
 
 /// One of two suspended computations, run at the row both share.
-def either @[e : Row] (x : +U (-F [e] Unit), y : +U (-F [e] Unit)) -> [e] Unit {
+def either[e : Row](x : +U (-F [e] Unit), y : +U (-F [e] Unit)) -> [e] Unit {
   force x
 }
 
 /// A computation at `Div`, the rest of its row left open.
-def stall @[r : Row] (s : String) -> [Div | r] Unit { pure unit }
+def stall[r : Row](s : String) -> [Div | r] Unit { pure unit }
 
 /// `log` suspended and ignored: nothing reads its row, so nothing determines
-/// its `r`, and the call is refused naming the slot `log[r = …]`.
+/// its `r`, and the call is refused naming the slot `log[.r = …]`.
 @[ refuses("ImplicitUnsolved") ]
 def unread() -> Unit { ignored(thunk { log("unread") }) }
 

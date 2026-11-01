@@ -4,9 +4,9 @@
 // and how the printer writes it back (#2428).
 
 /// Trees whose application is named as `Theory`'s is.
-data Tree : Type {
-  Var : (n : Integer) --> Tree;
-  App : (t : Tree, u : Tree) --> Tree;
+data Tree : Type where {
+  | Var : (n : Integer) --> Tree
+  | App : (t : Tree, u : Tree) --> Tree
 }
 
 /// A presentation, so this source reads `Theory`.

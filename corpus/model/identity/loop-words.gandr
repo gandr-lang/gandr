@@ -10,12 +10,12 @@
 /// The loop's words as a presented type: its rules rewrite constructor
 /// terms, so a word normalizes to the loops it winds.
 @[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)") ]
-pub data Words : Type {
-  Nil : Words;
-  Loop : (x : Words) --> Words;
-  Unloop : (x : Words) --> Words;
-  rule Loop(Unloop(x)) <=> x;
-  rule Unloop(Loop(x)) <=> x;
+pub data Words : Type where {
+  | Nil : Words
+  | Loop : (x : Words) --> Words
+  | Unloop : (x : Words) --> Words
+  rule : Loop(Unloop(x)) <=> x;
+  rule : Unloop(Loop(x)) <=> x;
 }
 
 /// A function that builds a word: one more loop.

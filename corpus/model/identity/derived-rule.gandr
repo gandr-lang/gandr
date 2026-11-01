@@ -15,9 +15,9 @@ import "./group-laws.gandr";
 derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
 
 /// A bit.
-data Bit : Type {
-  Zero : Bit;
-  One : Bit;
+data Bit : Type where {
+  | Zero : Bit
+  | One : Bit
 }
 
 /// Exclusive or.

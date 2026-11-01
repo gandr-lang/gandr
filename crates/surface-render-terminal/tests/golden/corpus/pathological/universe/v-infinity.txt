@@ -1,17 +1,17 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/universe/v-infinity.gandr:24:42
    │
-10 │      Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
-   │                                    ─────── the type it synthesises
+10 │      | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
+   │                                      ─────── the type it synthesises
    ‡
-16 │      Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord;
-   │                                    ────── the type it is checked against
+16 │      | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
+   │                                      ────── the type it is checked against
    ‡
 22 │    def rec unranked(v : Vinf) -> -F Ord {
    │    │                ─ checked against `Vinf -> -F Ord`; while checking the body of this function; binds v : Vinf
    │ ┌──┘
    │ │
-23 │ │┌   case v {
+23 │ │┌   match v {
 24 │ ││     Sup(a, f) => Lim(a, thunk { fn (x) { f(x) } })
    │ ││                  ┬──────┬───────┬────────┯━━━─────
    │ ││                  │      │       │        │
@@ -34,7 +34,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                ─ checked against `Vinf -> -F Ord`; while checking the body of this function; binds v : Vinf
    │ ┌──┘
    │ │
-31 │ │┌   case v {
+31 │ │┌   match v {
 32 │ ││     Sup(a, f) => Lim(a, thunk { fn (x) { circular[<](Sup(a, f)) } })
    │ ││                  ┬──────┬───────┬────────┬───────────┯━━━━━━━━──────
    │ ││                  │      │       │        │           │
@@ -52,11 +52,11 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[DataFieldLevel]: a constructor field lives in a larger universe than its datatype
-   ╭▸ corpus/pathological/universe/v-infinity.gandr:39:15
+   ╭▸ corpus/pathological/universe/v-infinity.gandr:39:17
    │
-38 │ data Small : Type {
+38 │ data Small : Type where {
    │              ──── the type it is checked against
-39 │   Pick : (a : Type, f : +U (a -> -F Small)) --> Small;
-   │               ━━━━ above the declared universe
+39 │   | Pick : (a : Type, f : +U (a -> -F Small)) --> Small
+   │                 ━━━━ above the declared universe
    │
    ╰ note: `Small` is refused with DataFieldLevel, as its expectation states

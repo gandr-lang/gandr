@@ -1,7 +1,7 @@
 error[UndescribedMember.NativeDecode]: this member has no interpretation the native description reading gives
    ╭▸ corpus/ledger/diagnostics/UndescribedMember.NativeDecode.gandr:8:1
    │
- 8 │ ┏ codata Holder : Type[-] {
+ 8 │ ┏ codata Holder : Type[-] where {
  9 │ ┃   held : Big;
 10 │ ┃ }
    │ ┗━┛ a member the description does not read

@@ -16,8 +16,8 @@ theory Decided where {
 }
 
 /// One value.
-data Lone : Type {
-  Alone : Lone;
+data Lone : Type where {
+  | Alone : Lone
 }
 
 /// `Lone` is no carrier the host provides, so its laws are the author's to
