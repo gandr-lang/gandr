@@ -49,7 +49,7 @@ def sameNamed : +U (Integer -> -F Integer);
 def sameNamed = same;
 
 /// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, so the
-/// supply is `λ t. chosen(t)[x = 7]`, and `7` is no value of every `t`.
+/// supply is `λ t. chosen(t)[.x = 7]`, and `7` is no value of every `t`.
 @[ refuses("TypeMismatch") ]
 def chosenStanding : Type => Integer = chosen[.x = 7];
 

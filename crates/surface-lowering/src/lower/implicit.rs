@@ -62,7 +62,7 @@
 //!   after an explicit parameter, whose type mentions it, opens a lambda for
 //!   each explicit parameter before the last implicit and applies the function
 //!   to their variables: `chosen[.x = 7]`, for `chosen[x : t] (t : Type)`,
-//!   lowers to `λ t. chosen(t)[x = 7]`. A supplied value is read where the
+//!   lowers to `λ t. chosen(t)[.x = 7]`. A supplied value is read where the
 //!   supply stands and raised past those lambdas, so it names none of them.
 //! - A stage crosses only at a call's head, so a supply of one standing as a
 //!   value opens a lambda for every explicit parameter and stands as the call.
@@ -986,7 +986,7 @@ impl<'source> Lowerer<'_, 'source>
         // Standing, the supply applies the function to its implicits and opens
         // a lambda for each explicit parameter the merged telescope places
         // before the last of them, whose types those implicits mention:
-        // `chosen[.x = 7]` is `λ t. chosen(t)[x = 7]`, a function of the rest.
+        // `chosen[.x = 7]` is `λ t. chosen(t)[.x = 7]`, a function of the rest.
         // A supplied stage crosses only at a call's head, so a supply of one
         // opens a lambda for every explicit parameter and stands as the call:
         // `applyAt[.i = k]` is `λ f. λ x. applyAt[.i = k](f, x)`.

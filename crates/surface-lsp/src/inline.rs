@@ -810,7 +810,8 @@ impl<'text> Labeled<'text>
     ///   labels it.
     /// - panics: none.
     /// - economy: copies the tokens and rescans from the cut's previous line
-    ///   ([`Labeling::relabel`]), never the whole text.
+    ///   ([`Labeling::relabel`]), never the whole text; the arm bars are marked
+    ///   in one pass over the tokens.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every cursor of a corpus source holding comments,

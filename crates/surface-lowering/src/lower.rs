@@ -7834,12 +7834,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   recursive function's fixpoint binds, which only a descent claim reads;
     ///   [`LoweringRefusal::ForwardMemberReference`] for a member of an
     ///   enclosing module declared at or after the referring declaration;
+    ///   [`LoweringRefusal::ImportShadows`] where a module a block opens and
+    ///   another scope answer the name distinctly ([`Self::opened_name`]);
     ///   propagates [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::UnmarkedSelfReference`],
-    /// [`LoweringRefusal::ForwardMemberReference`] and
+    /// [`LoweringRefusal::ForwardMemberReference`],
+    /// [`LoweringRefusal::ImportShadows`] and
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy

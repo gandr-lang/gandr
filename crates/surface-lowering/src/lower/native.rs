@@ -10861,6 +10861,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   answer, each branch a lambda per field and then one per index
     ///   equation, a pruned branch the case of no branches on its equation; a
     ///   sum case for a boolean; an integer comparison bound and cased on; a
+    ///   guard's condition, read as its arm's body is, bound and cased on, its
+    ///   true branch the arm's leaf and its false branch the rows after it; a
     ///   hole for a stuck node; and a leaf as its arm's body with each variable
     ///   replaced by what [`level_read`] reads the level that settled it at and
     ///   the case's context carried under the tree's binders, the scrutinee's
@@ -13667,7 +13669,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - provides: the refusal [`Self::instantiation`] raises for a claim on
     ///   another function.
     /// - fails: the refusals name resolution raises before an answer: an
-    ///   unmarked self reference, a forward member reference, the allowance.
+    ///   unmarked self reference, a forward member reference, a name an opened
+    ///   module and another scope answer distinctly, the allowance.
     /// - panics: none.
     ///
     /// # Errors
