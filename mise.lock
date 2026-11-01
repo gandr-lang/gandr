@@ -167,9 +167,9 @@ url = "https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de
 checksum = "sha256:731e043390c9457299484d39e427221fc868a9249540a498a5a4f6456c7744d1"
 
 [[tools."cargo:cargo-dylint"]]
-version = "6.3.2"
+version = "6.2.0"
 backend = "cargo:cargo-dylint"
-specifiers = ["6.3.2"]
+specifiers = ["6.2.0"]
 
 [[tools."cargo:cargo-mutants"]]
 version = "27.1.0"
@@ -177,9 +177,9 @@ backend = "cargo:cargo-mutants"
 specifiers = ["27.1.0"]
 
 [[tools."cargo:dylint-link"]]
-version = "6.3.2"
+version = "6.2.0"
 backend = "cargo:dylint-link"
-specifiers = ["6.3.2"]
+specifiers = ["6.2.0"]
 
 [[tools."cargo:hotpath"]]
 version = "0.30.3"
