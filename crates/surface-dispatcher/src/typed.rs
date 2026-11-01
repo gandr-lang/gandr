@@ -171,6 +171,7 @@ use gandr_surface_lowering::ClausePlace;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
+use gandr_surface_lowering::Exit;
 use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
@@ -879,6 +880,42 @@ pub enum ChosenDirection
     RightToLeft,
 }
 
+/// A shift or an exit the source leaves out and the elaboration writes, as
+/// an inlay draws it before the bytes it stands at.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Shift
+{
+    /// `return`, inferred where a path through a body ends in a value.
+    Return,
+    /// `become`, inferred where a path through a body ends in a computation.
+    Become,
+    /// `-F`, the returner over a value type written at a result.
+    Returner,
+}
+
+impl core::fmt::Display for Shift
+{
+    /// The keyword the explicit form writes for the shift.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Return => "return",
+            Self::Become => "become",
+            Self::Returner => "-F",
+        })
+    }
+}
+
 /// The type of every node of one source a face can point at, and of every
 /// declaration.
 ///
@@ -958,6 +995,9 @@ pub struct TypeTable
     /// declaration: one entry per parameter in the order the core applies
     /// them, an implicit's name and none for an explicit one.
     telescopes: BTreeMap<ConstantIndex, Vec<Option<String>>>,
+    /// Each shift and exit the source's own text leaves out, by the offset
+    /// the explicit form writes it at, ascending.
+    shifts: Vec<(ByteOffset, Shift)>,
 }
 
 /// The printer's root for `node`.
@@ -1557,6 +1597,28 @@ impl TypeTable
             levels,
         } = run;
         let origins = module.origins();
+        let mut shifts: Vec<(ByteOffset, Shift)> = module
+            .inferred_exits()
+            .iter()
+            .map(|inferred| {
+                (inferred.span, match inferred.exit {
+                    Exit::Return => Shift::Return,
+                    Exit::Become => Shift::Become,
+                })
+            })
+            .chain(
+                origins
+                    .comp_types()
+                    .iter()
+                    .filter(|&&(_, origin)| {
+                        origin.provenance() == Provenance::Inserted(Insertion::Returner)
+                    })
+                    .map(|&(_, origin)| (origin.span(), Shift::Returner)),
+            )
+            .filter_map(|(span, shift)| Some((own(span, base)?.start(), shift)))
+            .collect();
+        shifts.sort_unstable();
+        shifts.dedup();
         let universes: Vec<(Origin, TypeNode)> = levels
             .into_iter()
             .map(|(origin, sort, level)| {
@@ -2703,6 +2765,7 @@ impl TypeTable
             crossings,
             slots,
             telescopes,
+            shifts,
         }
     }
 
@@ -3319,6 +3382,20 @@ impl TypeTable
             .ok()?;
             Some((SourceText::from(name), own))
         })
+    }
+
+    /// Each shift and exit the source's own text leaves out, by the offset
+    /// the explicit form writes it at, ascending: the `return` or `become` the
+    /// lowering inferred at a tail, and the `-F` it wrote over a value type at
+    /// a result.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shifts(&self) -> &[(ByteOffset, Shift)]
+    {
+        &self.shifts
     }
 
     /// The span of every entry, in table order, unspelled.

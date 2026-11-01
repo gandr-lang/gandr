@@ -2270,6 +2270,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','typed::ReadBack','struct','One 
 INSERT INTO purpose VALUES('surface-dispatcher','typed::ReadSite','enum','Which printed type of a table a read back reads: an entry''s own, the type an outer judgement checked the entry against, or a declaration''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::Reading','struct','How the table reads one span its source wrote a binder or a term at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::RoundTrip','enum','What reading one printed type back gave.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','typed::Shift','enum','A shift or an exit the source leaves out and the elaboration writes, as an inlay draws it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::Subject','enum','What an entry of the table stands for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::TypeTable','struct','The type of every node of one source a face can point at, and of every declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','typed::TypedSpan','struct','One node the source wrote, with the type a face shows for it.',NULL,'fits','sound',NULL);

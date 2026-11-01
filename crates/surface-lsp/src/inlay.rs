@@ -1,5 +1,6 @@
 //! Inlay hints: the type of each binder whose form writes none, drawn after
-//! its name as the hover over the name spells it.
+//! its name as the hover over the name spells it, and each shift and exit
+//! the source leaves out, drawn where the explicit form writes it.
 //!
 //! A binder is an entry the type table keeps as one, written in the source:
 //! a lambda's parameter, a pattern's field, a `run` or `for` binder, a
@@ -18,6 +19,12 @@
 //! and `inlayHint/resolve` lays the one hint out again and links it
 //! ([`hint_at`]): placing a name in a sibling indexes that sibling's text,
 //! which a range of hints would otherwise pay for every name it draws.
+//!
+//! A shift or an exit is a keyword the elaboration writes and the sugared
+//! form leaves out ([`TypeTable::shifts`]): the `return` or `become` a tail
+//! exits by, and the `-F` over a value type written at a result. Its hint
+//! is the keyword, drawn before the bytes the explicit form writes it at,
+//! with no kind, as a parameter name or a type is not.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -71,7 +78,9 @@ const HINT_WIDTH: u32 = 1_000;
 ///   type naming no declaration is labelled whole; one naming any is labelled
 ///   in parts, each name the type writes for a declaration a part of its own,
 ///   located at the declaration's name unless `deferred` holds, in which case
-///   no part is located and the hint carries `uri` for its resolution.
+///   no part is located and the hint carries `uri` for its resolution. And one
+///   hint per shift the table answers at an offset in `window`, standing there,
+///   labelled its keyword and a space, with no kind and nothing to resolve.
 /// - fails: never; a span the index cannot place is skipped, and a name no
 ///   document places is a part without a location.
 /// - panics: none.
@@ -81,8 +90,10 @@ const HINT_WIDTH: u32 = 1_000;
 ///   handler's binders are hinted; a parameter, an annotated `run`, a use, a
 ///   constructor in a pattern and a declaration's name are not; a window holds
 ///   only the hints inside it; a type's family names are parts linked to their
-///   declarations, in the document or a sibling.
+///   declarations, in the document or a sibling; an inferred `return` and
+///   `become` and an elided `-F` are hinted, and a written one is not.
 /// - witness: `inlay::tests::each_binder_that_writes_no_type_is_hinted`
+/// - witness: `inlay::tests::each_shift_the_source_leaves_out_is_hinted`
 /// - witness: `server::tests::an_inlay_hint_request_answers_the_binders_in_its_range`
 /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
 #[spec(ensures: |ret| ret.is_sorted_by(|before, after| before.position <= after.position)
@@ -104,7 +115,19 @@ pub fn hints(
         .map(|tile| tile.span)
         .collect();
     let mut locator = (!deferred.0).then(|| Locator::new(hovering, uri, index));
-    table
+    let shifts = table
+        .shifts()
+        .iter()
+        .filter(|&&(at, _)| window.start() <= at && at < window.end())
+        .filter_map(|&(at, shift)| {
+            Some(InlayHint {
+                position: Position::of_byte(index, ByteOffset::from(usize::from(at))).ok()?,
+                label: HintLabel::Text(format!("{shift} ")),
+                kind: None,
+                data: None,
+            })
+        });
+    let mut found: Vec<InlayHint> = table
         .binders(window, PageWidth::from(HINT_WIDTH), style)
         .filter_map(|binder| match binder {
             Maybe::Present(binder) => Some((binder.span(), binder)),
@@ -135,11 +158,14 @@ pub fn hints(
             Some(InlayHint {
                 position,
                 label,
-                kind: InlayHintKind::TYPE,
+                kind: Some(InlayHintKind::TYPE),
                 data,
             })
         })
-        .collect()
+        .chain(shifts)
+        .collect();
+    found.sort_by_key(|hint| hint.position);
+    found
 }
 
 /// The hint drawn at `position` of the copy of the document at `uri`, as
@@ -282,75 +308,95 @@ mod tests
     use crate::reading::Reading;
     use crate::recheck::grammar;
 
+    /// The hints over the bytes `window` of `text`, the source at `path`,
+    /// each as its line, named by the declaration it stands in (#2786), its
+    /// character, one-based, and its label.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hinted_in(
+        path: &std::path::Path,
+        text: SourceText<'_>,
+        window: ByteSpan,
+    ) -> Vec<String>
+    {
+        let written: &str = text.into();
+        let grammar = grammar().expect("the grammar builds");
+        let mut session = Session::new(
+            grammar.clone(),
+            SourceRoot::Strict,
+            MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
+            BackendArtifact::from(b"inlay".as_slice()),
+        );
+        let _judged = session.judge(text).expect("the session does not fault");
+        let hovering = hovering(text, path, &session, &gandr_surface_dispatcher::Unshadowed);
+        let reading = Reading::of(text);
+        let index = LineIndex::new(written.into());
+        let style = gandr_surface_pretty::Style {
+            form: Form::Sugared,
+            spelling: Spelling::Unicode,
+        };
+        let uri = crate::protocol::DocumentUri::from("file:///corpus/hinted.gandr");
+        hints(
+            (&hovering, reading.tiles()),
+            (&uri, &index),
+            window,
+            (style, crate::protocol::ResolvesHintLocations(false)),
+        )
+        .into_iter()
+        .map(|hint| {
+            let at = serde_json::to_value(hint.position).expect("a position serializes");
+            let line = at["line"].as_u64().unwrap_or_default();
+            std::format!(
+                "{}:{} {}",
+                crate::anchor::anchored(
+                    crate::anchor::Source(written),
+                    crate::anchor::Row(u32::try_from(line).unwrap_or(u32::MAX))
+                ),
+                at["character"]
+                    .as_u64()
+                    .unwrap_or_default()
+                    .saturating_add(1),
+                hint.label
+            )
+        })
+        .collect()
+    }
+
     #[test]
     fn each_binder_that_writes_no_type_is_hinted()
     {
         // The hints over the zero-based lines `window` finds in the corpus
-        // source at `file`, each as its line, named by the declaration it
-        // stands in (#2786), its character, one-based, and its label.
-        let hinted = |file: &str,
-                      window: &dyn Fn(&str) -> core::ops::Range<usize>|
-         -> Vec<String> {
-            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../..")
-                .join("corpus")
-                .join(file);
-            let written = std::fs::read_to_string(&path).expect("the corpus source is read");
-            let text = SourceText::from(written.as_str());
-            let grammar = grammar().expect("the grammar builds");
-            let mut session = Session::new(
-                grammar.clone(),
-                SourceRoot::Strict,
-                MemoryCheckpointStore::default(),
-                InMemoryBlockStore::default(),
-                BackendArtifact::from(b"inlay".as_slice()),
-            );
-            let _judged = session.judge(text).expect("the session does not fault");
-            let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
-            let reading = Reading::of(text);
-            let index = LineIndex::new(written.as_str().into());
-            let offset = |line: usize| {
-                ByteOffset::from(
-                    written
-                        .split_inclusive('\n')
-                        .take(line)
-                        .map(str::len)
-                        .sum::<usize>(),
-                )
+        // source at `file`.
+        let hinted =
+            |file: &str, window: &dyn Fn(&str) -> core::ops::Range<usize>| -> Vec<String> {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("corpus")
+                    .join(file);
+                let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+                let offset = |line: usize| {
+                    ByteOffset::from(
+                        written
+                            .split_inclusive('\n')
+                            .take(line)
+                            .map(str::len)
+                            .sum::<usize>(),
+                    )
+                };
+                let lines = window(&written);
+                let window = ByteSpan::new(offset(lines.start), offset(lines.end))
+                    .expect("an ordered window");
+                // The type hints alone: the shifts are the next test's.
+                hinted_in(&path, SourceText::from(written.as_str()), window)
+                    .into_iter()
+                    .filter(|hint| {
+                        hint.split_once(' ')
+                            .is_some_and(|(_, label)| label.starts_with(':'))
+                    })
+                    .collect()
             };
-            let lines = window(&written);
-            let window =
-                ByteSpan::new(offset(lines.start), offset(lines.end)).expect("an ordered window");
-            let style = gandr_surface_pretty::Style {
-                form: Form::Sugared,
-                spelling: Spelling::Unicode,
-            };
-            let uri = crate::protocol::DocumentUri::from("file:///corpus/hinted.gandr");
-            hints(
-                (&hovering, reading.tiles()),
-                (&uri, &index),
-                window,
-                (style, crate::protocol::ResolvesHintLocations(false)),
-            )
-            .into_iter()
-            .map(|hint| {
-                let at = serde_json::to_value(hint.position).expect("a position serializes");
-                let line = at["line"].as_u64().unwrap_or_default();
-                std::format!(
-                    "{}:{} {}",
-                    crate::anchor::anchored(
-                        crate::anchor::Source(&written),
-                        crate::anchor::Row(u32::try_from(line).unwrap_or(u32::MAX))
-                    ),
-                    at["character"]
-                        .as_u64()
-                        .unwrap_or_default()
-                        .saturating_add(1),
-                    hint.label
-                )
-            })
-            .collect()
-        };
         let whole = |_: &str| 0 .. usize::MAX;
         let line_of = |text: &str, held: &str| {
             let crate::anchor::Row(at) =
@@ -397,6 +443,28 @@ mod tests
             }),
             [""; 0],
             "a window past every unannotated binder holds none"
+        );
+    }
+
+    /// An inferred `return` and `become` and an elided `-F` are hinted where
+    /// the explicit form writes them; a written one is not.
+    #[test]
+    fn each_shift_the_source_leaves_out_is_hinted()
+    {
+        let written = "def one() -> Integer { 1 }\n\
+                       def two() -> -F Integer { return 2 }\n\
+                       def three() -> -F Integer { one() }\n";
+        let text = SourceText::from(written);
+        let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(written.len()))
+            .expect("an ordered window");
+        assert_eq!(
+            hinted_in(std::path::Path::new("/shifts.gandr"), text, whole),
+            [
+                "def one+0:14 -F ",
+                "def one+0:24 return ",
+                "def three+0:29 become ",
+            ],
+            "the elided returner and the inferred exits, and nothing written"
         );
     }
 }

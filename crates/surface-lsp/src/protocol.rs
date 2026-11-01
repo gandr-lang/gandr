@@ -3707,8 +3707,10 @@ pub struct InlayHint
     pub position: Position,
     /// The text drawn, whole or in parts.
     pub label: HintLabel,
-    /// What the label says.
-    pub kind: InlayHintKind,
+    /// What the label says: a type, or none for a keyword the source leaves
+    /// out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<InlayHintKind>,
     /// The document a resolution reads the label's locations from; none for
     /// a label naming no declaration, or one listed with its locations.
     #[serde(skip_serializing_if = "Option::is_none")]
