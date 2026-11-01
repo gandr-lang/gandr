@@ -17976,9 +17976,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `fork` tile's origin; a hold `var x = e ;` mints as the hold of `e`
     ///   whose scope is the rest of the block, at its keyword's origin; a `leta
     ///   x = v ;` mints as the opening of `v` whose body is the rest of the
-    ///   block, at its `leta` tile's origin, binding the name; a block of no
-    ///   statements is its last computation; nothing is minted when any
-    ///   computation, value or protocol of the block did not lower.
+    ///   block, at its `leta` tile's origin, binding the name; a `let x = v ;`
+    ///   mints as the rest of the block instantiated at `v`, so it mints no
+    ///   node of its own when nothing nests in `v`, and a stated type, or a
+    ///   computation nested in `v`, is returned once at the `let`'s origin; a
+    ///   block of no statements is its last computation; nothing is minted when
+    ///   any computation, value or protocol of the block did not lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
@@ -17988,6 +17991,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   order, each bind records its run token, and an empty statement prefix
     ///   leaves the existing final computation unchanged.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
     /// - witness: `lower::tests::a_tuple_binder_names_each_component_it_writes_2181`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
@@ -18007,7 +18011,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | None => match statements.first() {
                         | None => ret == Maybe::Present(last),
                         | Some(first) => {
-                            matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.origin)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
+                            matches!((first.binding, ret), (StatementBinding::Inlined(_), Maybe::Present(_)))
+                                || matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.origin)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
                         },
                     },
                 }

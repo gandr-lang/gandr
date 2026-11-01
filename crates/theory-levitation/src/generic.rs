@@ -715,12 +715,12 @@ pub fn serialize_value<G>(
 ///
 /// # Specification
 /// - ensures: deterministic output for a given description: `theory` and the
-///   datatype's name, its parameters in parentheses when it has any, then the
-///   shape parameter, the sorts, operations, rule faces and circuit rules in
-///   declaration order, each terminated by `;`, or `{}` when there are none. A
-///   shape renders `boundary Name {p0, p1, …};` with its points' names padded
-///   to one width, then one `face name = {pi, …};` per face, its points
-///   ascending.
+///   datatype's name, its parameters in parentheses when it has any, then
+///   `where` and the shape parameter, the sorts, operations, rule faces and
+///   circuit rules in declaration order, each terminated by `;`, or `{}` when
+///   there are none. A shape renders `boundary Name {p0, p1, …};` with its
+///   points' names padded to one width, then one `face name = {pi, …};` per
+///   face, its points ascending.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -740,7 +740,7 @@ pub fn serialize_value<G>(
 #[must_use]
 #[spec(ensures: |ref text| text.as_ref().strip_prefix("theory ")
     .and_then(|body| body.strip_prefix(desc.id.name.as_ref()))
-    .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " {" } else { "(" }))
+    .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " where {" } else { "(" }))
     && text.as_ref().ends_with(if matches!(desc.shape, Maybe::Absent(_)) && desc.sorts.is_empty()
         && desc.opers.is_empty() && desc.rules.is_empty() && desc.circuits.is_empty() { "{}" } else { "; }" }))]
 pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText

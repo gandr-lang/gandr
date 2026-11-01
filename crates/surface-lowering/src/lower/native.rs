@@ -3021,18 +3021,19 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::selected_constructor`] for a selection; the unnamed absence
     ///   for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
-    ///   not hold.
+    ///   not hold; [`LoweringRefusal::UnknownMember`] as
+    ///   [`Self::selected_constructor`] for a selection.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor head and a function head take their own
     ///   readings.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
     pub(super) fn constructor_head(
         &mut self,
         site: Site,
@@ -4316,17 +4317,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   a type application's head names, as [`Self::constructor_named`]
     ///   answers it, where the type grammar molds the parentheses; the unnamed
     ///   absence for any other form.
-    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - fails: [`LoweringRefusal::UnknownMold`];
+    ///   [`LoweringRefusal::UnknownMember`] as [`Self::constructor_head`].
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotated`].
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
     fn applied_constructor(
         &mut self,
         site: Site,
