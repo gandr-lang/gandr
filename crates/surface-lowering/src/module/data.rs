@@ -163,6 +163,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a generator is no output of a multi-output constructor.
+    pub mod port {
+        /// The constructor writes one result.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A type follows the constructor's arrow, or it writes no arrow.
+            Single,
+        }
+    }
+}
+
 /// One entry of a telescope a data declaration writes, a generator's field or
 /// an index of its kind: the name it binds, when written, and its type.
 ///
@@ -213,31 +225,50 @@ enum Signature
         /// The type after the arrow.
         result: Placed,
     },
+    /// `(x : A, …) --> (l : T, …)`: a multi-output constructor's inputs and
+    /// its named outputs.
+    Outputs
+    {
+        /// The entries before the arrow.
+        entries: Vec<FieldForm>,
+        /// Each grade written on an entry or an output, `1` or `ω`.
+        grades: Vec<Placed>,
+        /// The outputs after the arrow, each named.
+        outputs: Vec<FieldForm>,
+    },
     /// A type with no arrow after it.
     Bare(Placed),
 }
 
 /// One generator of a data declaration: its name's tile, its fields and the
-/// indices its result states.
+/// indices its result states. A multi-output constructor is one generator
+/// per output, each a port: the constructor's name tile, the output's, the
+/// inputs every port shares, and the indices that output states.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: the fields keep source order, which is the constructor's field
 ///   order; a generator with none is a nullary constructor; the indices keep
 ///   the result's argument order past the parameters, one per index the
-///   family's kind writes.
+///   family's kind writes; a constructor's ports stand at consecutive tags, in
+///   the order its outputs are written.
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nullary, unary and three-field generators keep their
-///   field counts and order; a vector's `Cons` states its length.
+///   field counts and order; a vector's `Cons` states its length; a two-output
+///   constructor is two ports over one input.
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
 /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+/// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct GeneratorForm
 {
     /// The constructor's name.
     pub named: Placed,
+    /// The output this generator is, for a constructor written with an
+    /// output group: the output's name tile.
+    pub port: Maybe<Placed, port::Absent>,
     /// Each field, in order.
     pub fields: Vec<FieldForm>,
     /// Each index the result states, in order; none for a parameterised
@@ -448,6 +479,37 @@ pub struct Constructor
     pub arity: usize,
     /// The generator's name tile; for a constructor of `Theory`, the name tile
     /// of the `theory` block that minted it.
+    pub named: Placed,
+}
+
+/// A multi-output constructor, as a term naming it resolves it: the ports its
+/// outputs are, at consecutive tags of its family's generators.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `form` names the family's written generators; the ports are the
+///   `count` generators from tag `first`, each taking `arity` fields, in the
+///   order the outputs are written.
+/// - executable: none — the entry holds no list to check its indices against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a two-output constructor resolves to its two ports, and
+///   its name is no single constructor's.
+/// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Ported
+{
+    /// The family's slot.
+    pub family: SlotIndex,
+    /// Where the family's generators are read from.
+    pub form: Generators,
+    /// The first port's tag.
+    pub first: usize,
+    /// How many ports the constructor has.
+    pub count: usize,
+    /// How many fields every port takes.
+    pub arity: usize,
+    /// The constructor's name tile.
     pub named: Placed,
 }
 
@@ -724,16 +786,20 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: the data tail at the form's position when every constructor's
     ///   name is fresh, each entered with its family, tag and arity, in place
     ///   of a constructor of `Theory`'s of that name, which is recorded among
-    ///   [`Collected::shadowed`](crate::module::Collected::shadowed); otherwise
-    ///   the refusal of the first constructor this or an earlier declaration
-    ///   already named, and nothing entered.
+    ///   [`Collected::shadowed`](crate::module::Collected::shadowed); a
+    ///   multi-output constructor entered once, with its ports, among
+    ///   [`Collected::ports`](crate::module::Collected::ports) and never among
+    ///   the constructors; otherwise the refusal of the first constructor this
+    ///   or an earlier declaration already named, and nothing entered.
     /// - fails: never; a second name is a refused tail.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two families with distinct constructors, and a second
-    ///   family reusing a name, separate entry from refusal.
+    ///   family reusing a name, separate entry from refusal; a two-output
+    ///   constructor enters its name once.
     /// - witness: `lower::native::tests::a_constructor_named_twice_is_refused`
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(
         captures: before = (self.collected.data.len(), self.collected.constructors.len()),
         ensures: |ret| match ret {
@@ -747,7 +813,18 @@ impl<'source> Collector<'_, 'source>
     ) -> Tail<'source>
     {
         for (index, generator) in form.generators.iter().enumerate() {
+            // A later port of a constructor shares the first's name.
+            if index > 0
+                && let Maybe::Present(_) = generator.port
+                && form
+                    .generators
+                    .get(index.saturating_sub(1))
+                    .is_some_and(|prior| prior.named == generator.named)
+            {
+                continue;
+            }
             let name = self.name_of(generator.named);
+            let source = self.collected.unit.source_at(generator.named.span.start());
             let earlier = form
                 .generators
                 .iter()
@@ -757,12 +834,15 @@ impl<'source> Collector<'_, 'source>
             let entered = self
                 .collected
                 .constructors
-                .get(&(
-                    self.collected.unit.source_at(generator.named.span.start()),
-                    name,
-                ))
+                .get(&(source, name))
                 .filter(|entry| entry.form != Generators::Presentation)
-                .map(|entry| entry.named.span);
+                .map(|entry| entry.named.span)
+                .or_else(|| {
+                    self.collected
+                        .ports
+                        .get(&(source, name))
+                        .map(|entry| entry.named.span)
+                });
             if let Some(first) = entered.or(earlier) {
                 return Tail::Refused(LoweringRefusal::DuplicateDefinition {
                     span: generator.named.span,
@@ -775,6 +855,22 @@ impl<'source> Collector<'_, 'source>
         for (tag, generator) in form.generators.iter().enumerate() {
             let source = self.collected.unit.source_at(generator.named.span.start());
             let name = self.name_of(generator.named);
+            if let Maybe::Present(_) = generator.port {
+                let entry = self
+                    .collected
+                    .ports
+                    .entry((source, name))
+                    .or_insert(Ported {
+                        family: form.slot,
+                        form: Generators::Written(position),
+                        first: tag,
+                        count: 0,
+                        arity: generator.fields.len(),
+                        named: generator.named,
+                    });
+                entry.count = entry.count.saturating_add(1);
+                continue;
+            }
             let displaced = self
                 .collected
                 .constructors
@@ -989,6 +1085,12 @@ impl<'source> Collector<'_, 'source>
                     }
                     (entries, Maybe::Present(result))
                 },
+                Signature::Outputs { outputs, .. } => {
+                    let at = outputs
+                        .first()
+                        .map_or_else(|| cursor.here(), |output| output.ty.span);
+                    return Err(misplaced_in(FormName::DATA, at));
+                },
                 Signature::Bare(kind) => {
                     let (classifiers, universe) = self.telescope(kind)?;
                     let indices = classifiers
@@ -1044,7 +1146,11 @@ impl<'source> Collector<'_, 'source>
                         Maybe::Present(Piece::Tile { label, at })
                             if label == TileName::CONSTRUCTOR =>
                         {
-                            generators.push(self.generator(at, cursor, (&parameters, &indices))?);
+                            generators.extend(self.generator(
+                                at,
+                                cursor,
+                                (&parameters, &indices),
+                            )?);
                         },
                         Maybe::Present(Piece::Tile { label, at })
                             if label == TileName::IDENTIFIER =>
@@ -1156,14 +1262,19 @@ impl<'source> Collector<'_, 'source>
         parameters: &[DataParameter],
     ) -> Result<Vec<CellForm>, LoweringRefusal<'source>>
     {
-        let names: Vec<SurfaceName<'source>> = generators
+        // A port is no constructor a closed term names by its constructor's
+        // name alone.
+        let names: Vec<Option<SurfaceName<'source>>> = generators
             .iter()
-            .map(|generator| self.name_of(generator.named))
+            .map(|generator| match generator.port {
+                Maybe::Present(_) => None,
+                Maybe::Absent(_) => Some(self.name_of(generator.named)),
+            })
             .collect();
         let tag_of = |name: SourceFragment<'source>| {
-            let tag = names
-                .iter()
-                .position(|&written| written.as_ref() == name.as_ref())?;
+            let tag = names.iter().position(|written| {
+                written.is_some_and(|written| written.as_ref() == name.as_ref())
+            })?;
             Some((tag, generators.get(tag)?.fields.len()))
         };
         let mut cells = Vec::with_capacity(written.len());
@@ -1224,38 +1335,46 @@ impl<'source> Collector<'_, 'source>
 
     /// Read one constructor, `| C : T(a, …)` or `| C : (x : B, …) --> T(a, …)`,
     /// its name tile `named` already read, of a
-    /// family over `parameters` and indexed by `kinds`.
+    /// family over `parameters` and indexed by `kinds`: one generator, or one
+    /// port per output of `| C : (x : B, …) --> (l : T(a, …), …)`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the constructor's name tile.
     /// - ensures: the constructor's fields, named or bare, in order, each past
     ///   its grade `[1]` or `[ω]` where one is written, read off the signature
     ///   after its colon, `: (fields) --> R` or `: R` for none, and the indices
-    ///   its result states; the cursor stands past the member.
+    ///   its result states; for an output group, one generator per output, in
+    ///   order, each over every field, its port the output's name tile and its
+    ///   indices the ones that output states; the cursor stands past the
+    ///   member.
     /// - fails: a member with no colon as a missing operand; an attribute slot
-    ///   by name; any other grade by name; a stated result other than the
-    ///   family over its parameters then one index per entry of `kinds`, as an
-    ///   indexed family.
+    ///   by name; any other grade by name; an output group grading an input or
+    ///   an output `[1]`, as the linear reading's, at that grade; a stated
+    ///   result other than the family over its parameters then one index per
+    ///   entry of `kinds`, as an indexed family; an output named twice as a
+    ///   duplicate.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::MalformedForm`] and
-    /// [`LoweringRefusal::OutOfFragment`].
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::OutOfFragment`]
+    /// and [`LoweringRefusal::DuplicateDefinition`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nullary, single-port and telescoped constructors read
     ///   their fields; an indexed result and an index left unstated each
-    ///   refuse; a vector's constructors state their lengths.
+    ///   refuse; a vector's constructors state their lengths; a two-output
+    ///   constructor is two ports, and a linear one is refused by name.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |generator| generator.named == named && generator.indices.len() == kinds.len()))]
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |generators| !generators.is_empty() && generators.iter().all(|generator| generator.named == named && generator.indices.len() == kinds.len())))]
     fn generator(
         &self,
         named: Placed,
         cursor: &mut Cursor<'_>,
         (parameters, kinds): (&[DataParameter], &[FieldForm]),
-    ) -> Result<GeneratorForm, LoweringRefusal<'source>>
+    ) -> Result<Vec<GeneratorForm>, LoweringRefusal<'source>>
     {
         if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
             return Err(LoweringRefusal::MalformedForm {
@@ -1264,11 +1383,52 @@ impl<'source> Collector<'_, 'source>
                 fault: FormFault::MissingOperand,
             });
         }
-        let (fields, result) = match self.generator_signature(cursor, FormName::DATA_GENERATOR)? {
-            Signature::Bare(result) => (Vec::new(), result),
+        let (fields, results) = match self.generator_signature(cursor, FormName::DATA_GENERATOR)? {
+            Signature::Bare(result) => (Vec::new(), alloc::vec![(
+                Maybe::Absent(port::Absent::Single),
+                result
+            )]),
             Signature::Arrow {
                 entries, result, ..
-            } => (entries, result),
+            } => (entries, alloc::vec![(
+                Maybe::Absent(port::Absent::Single),
+                result
+            )]),
+            Signature::Outputs {
+                entries,
+                grades,
+                outputs,
+            } => {
+                if let Some(&linear) = grades
+                    .iter()
+                    .find(|&&grade| self.name_of(grade).as_ref() == "1")
+                {
+                    return Err(declined(
+                        linear,
+                        FormName::DATA_GENERATOR,
+                        Unbuilt::LinearPorts,
+                    ));
+                }
+                let mut ports: Vec<(Maybe<Placed, port::Absent>, Placed)> =
+                    Vec::with_capacity(outputs.len());
+                for output in outputs {
+                    let Maybe::Present(label) = output.named
+                    else {
+                        continue;
+                    };
+                    if let Some(&(Maybe::Present(first), _)) = ports.iter().find(|&&(written, _)| {
+                        matches!(written, Maybe::Present(prior) if self.name_of(prior) == self.name_of(label))
+                    }) {
+                        return Err(LoweringRefusal::DuplicateDefinition {
+                            span: label.span,
+                            name: self.name_of(label),
+                            first: first.span,
+                        });
+                    }
+                    ports.push((Maybe::Present(label), output.ty));
+                }
+                (entries, ports)
+            },
         };
         if let Maybe::Present(attributes) = cursor.tile(TileName::ATTRIBUTES) {
             return Err(declined(
@@ -1277,13 +1437,17 @@ impl<'source> Collector<'_, 'source>
                 Unbuilt::GeneratorAttribute,
             ));
         }
-        let indices = self.uniform(result, (parameters, kinds))?;
+        let mut generators = Vec::with_capacity(results.len());
+        for (port, result) in results {
+            generators.push(GeneratorForm {
+                named,
+                port,
+                fields: fields.clone(),
+                indices: self.uniform(result, (parameters, kinds))?,
+            });
+        }
 
-        Ok(GeneratorForm {
-            named,
-            fields,
-            indices,
-        })
+        Ok(generators)
     }
 
     /// Read the signature a generator, or a data header's kind, writes after
@@ -1294,8 +1458,10 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a parenthesized telescope or a single side before `-->` as
     ///   [`Signature::Arrow`], its entries named or bare in order, each graded
     ///   `[1]` or `[ω]` after its name where one is written, the grades in
-    ///   order, and the type after the arrow; a type with no arrow as
-    ///   [`Signature::Bare`]; the cursor stands past the signature.
+    ///   order, and the type after the arrow; the same before an output group
+    ///   as [`Signature::Outputs`], each output named, its grade after the
+    ///   entries'; a type with no arrow as [`Signature::Bare`]; the cursor
+    ///   stands past the signature.
     /// - fails: a grade other than `1` or `ω` by name; a telescope with no
     ///   arrow; a tile out of place in `form`.
     /// - panics: none.
@@ -1307,9 +1473,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nullary, single-port and telescoped generators read
     ///   their fields, and a header reads its named indices; a missing result
-    ///   refuses.
+    ///   refuses; a two-output generator reads both outputs.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::a_named_index_telescope_lowers_its_dependencies_4022`
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| !matches!(ret, Ok(Signature::Arrow { ref entries, ref grades, .. }) if grades.len() > entries.len()))]
     fn generator_signature(
         &self,
@@ -1323,14 +1490,11 @@ impl<'source> Collector<'_, 'source>
             if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
                 return Ok(Signature::Bare(side));
             }
-            return Ok(Signature::Arrow {
-                entries: alloc::vec![FieldForm {
-                    named: Maybe::Absent(field_name::Absent::Unnamed),
-                    ty: side,
-                }],
-                grades: Vec::new(),
-                result: one_in(form, cursor.operands())?,
-            });
+            let entries = alloc::vec![FieldForm {
+                named: Maybe::Absent(field_name::Absent::Unnamed),
+                ty: side,
+            }];
+            return self.result(cursor, form, entries, Vec::new());
         };
         let (entries, grades) = self.entries(cursor, form)?;
         if let Maybe::Absent(_) = cursor.tile(TileName::GENERATOR) {
@@ -1340,11 +1504,57 @@ impl<'source> Collector<'_, 'source>
                 fault: FormFault::MissingOperand,
             });
         }
+        self.result(cursor, form, entries, grades)
+    }
 
-        Ok(Signature::Arrow {
+    /// Read what a generator writes after its `-->`, its inputs `entries`
+    /// graded by `grades`: a type, or an output group.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the `-->`.
+    /// - ensures: [`Signature::Arrow`] over the type; [`Signature::Outputs`]
+    ///   over the group's outputs, each named, with their grades after the
+    ///   inputs'; the cursor stands past the result.
+    /// - fails: as [`Self::entries`] inside a group, and an output written
+    ///   without its name as a tile out of place in `form`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::OutOfFragment`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::generator_signature`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Signature::Bare(_))))]
+    fn result(
+        &self,
+        cursor: &mut Cursor<'_>,
+        form: FormName,
+        entries: Vec<FieldForm>,
+        mut grades: Vec<Placed>,
+    ) -> Result<Signature, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN)
+        else {
+            return Ok(Signature::Arrow {
+                entries,
+                grades,
+                result: one_in(form, cursor.operands())?,
+            });
+        };
+        let (outputs, graded) = self.entries(cursor, form)?;
+        if let Some(unnamed) = outputs
+            .iter()
+            .find(|output| matches!(output.named, Maybe::Absent(_)))
+        {
+            return Err(misplaced_in(form, open.span.join(unnamed.ty.span)));
+        }
+        grades.extend(graded);
+        Ok(Signature::Outputs {
             entries,
             grades,
-            result: one_in(form, cursor.operands())?,
+            outputs,
         })
     }
 
@@ -1768,7 +1978,7 @@ impl<'source> Collector<'_, 'source>
                 let fields = Width::from(generator.fields.len());
                 generators.push(fields);
                 let _constructor = table.constructors.insert(
-                    Name::from(self.name_of(generator.named).as_ref()),
+                    Name::from(self.generator_name(generator).as_str()),
                     RouteConstructor {
                         family,
                         tag: ConstructorTag::from(tag),
@@ -1787,6 +1997,24 @@ impl<'source> Collector<'_, 'source>
         }
 
         table
+    }
+
+    /// The name a generator is printed and routed by: its constructor's name,
+    /// and for a port the output's after a dot, `Share.left`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn generator_name(
+        &self,
+        generator: &GeneratorForm,
+    ) -> alloc::string::String
+    {
+        let mut name = alloc::string::String::from(self.name_of(generator.named).as_ref());
+        if let Maybe::Present(port) = generator.port {
+            name.push('.');
+            name.push_str(self.name_of(port).as_ref());
+        }
+        name
     }
 }
 

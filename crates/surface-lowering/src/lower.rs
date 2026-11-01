@@ -524,6 +524,7 @@ use gandr_core_term::CodataSignature;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Renaming;
@@ -2592,6 +2593,10 @@ enum Plan
     Expansion(FamilyIndex, Stretch),
     /// A constructor applied to its fields.
     Constructor(native::Constructed),
+    /// A multi-output constructor applied to its inputs and no output named:
+    /// the record of its ports, each the constructor at its tag over the
+    /// same fields, labelled by its output.
+    Ports(native::Constructed, Vec<(FieldLabel, ConstructorTag)>),
     /// A match, compiled to the decision tree at this position of the
     /// lowerer's match store.
     Case(native::CaseIndex),
@@ -11198,11 +11203,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   position inside a type a body quotes.
     /// - ensures: a call whose head is a constructor of a data family declared
     ///   strictly earlier is that constructor applied to the arguments as its
-    ///   fields; a call whose head is `here`, `back` or `cong`, a name no
-    ///   binder and no earlier declaration carries, is that identity operation
-    ///   over the arguments; a call whose head selects an operation off a
-    ///   capability is that exercise, one whose head is a continuation — an
-    ///   operation clause's, or a binder declared at `Stack(C, D)` or a member
+    ///   fields; one whose head is a multi-output constructor is the record of
+    ///   its ports over the arguments, as [`Self::ports`] plans it; a call
+    ///   whose head is `here`, `back` or `cong`, a name no binder and no
+    ///   earlier declaration carries, is that identity operation over the
+    ///   arguments; a call whose head selects an operation off a capability is
+    ///   that exercise, one whose head is a continuation — an operation
+    ///   clause's, or a binder declared at `Stack(C, D)` or a member
     ///   abbreviating it — resumes it, and one whose head selects a method off
     ///   its receiver is that method's call, as [`Self::exercise`],
     ///   [`Self::resumption`] and [`Self::method`] read them; a call standing
@@ -11270,7 +11277,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     })
                             })
                     },
-                    | Some(&Plan::Constructor(constructed)) => {
+                    | Some(&(Plan::Constructor(constructed) | Plan::Ports(constructed, _))) => {
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
@@ -11304,6 +11311,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 end: self.operands.len(),
             };
             return self.construct(site, constructor, fields);
+        }
+        // A multi-output constructor with no output named is the record of
+        // its ports.
+        if let Run::One(head) = cursor.clone().operands()
+            && matches!(self.form_at(head)?, Some((_, Former::Constructor)))
+            && let Maybe::Present(ported) =
+                self.ported_named(site, SurfaceName::from(self.text_at(head)))
+        {
+            let _head = cursor.operands();
+            let start = self.operands.len();
+            arguments(site, &mut cursor, &mut self.operands)?;
+            let fields = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            return self.ports(site, ported, fields);
         }
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(operation) = self.identity_head(site, head)?
@@ -11753,35 +11776,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: a selection `Family.Constructor` naming a constructor of a
     ///   family is that constructor, applied to no field, as
-    ///   [`Self::construct`] reads it; a selection by position projects the
-    ///   entry at that place of the type written for its operand, or of the
-    ///   pair the operand is when no type is written, as [`Self::positional`]
-    ///   reads it; a selection read as a computation off a name whose written
-    ///   type is a thunked lazy record over labels observes the entry its label
-    ///   names; a selection off a name whose written type is a type over labels
-    ///   projects the entry its label names, as [`Self::selection`] reads it; a
-    ///   selection off a name whose written type is a data family without
-    ///   indices reads the field its label names off every constructor, as
-    ///   [`Self::data_field`] reads it; a selection off a flattened model
-    ///   implicit is the parameter of the component it names, as
-    ///   [`Self::flattened_member`] reads it; a selection off a value no
-    ///   written type states, a chain of selections ending at a binder's or a
-    ///   declaration's name not capitalised, projects the field its label names
-    ///   of the record the value is, as [`Self::field`] reads it. A chain of
-    ///   selections whose head is a capitalised name is a path: inside a
-    ///   functor whose parameter the head names, a one-link path is that
-    ///   parameter's value component, as [`Self::parameter_value`] reads it; a
-    ///   path whose head, capitalised or not, names a module an enclosing
-    ///   module declares reaches the member that module exports, as
-    ///   [`Self::enclosed_member`] reads it, and stands as that member's
-    ///   constant as below; otherwise it is resolved through the outermost
-    ///   scope at the depth that binds it: a path ending at an exported value
-    ///   component stands as that member's constant when the member is declared
-    ///   strictly before the declaration the path is written in, its last
-    ///   segment kept as a written name resolved to that declaration, and a
-    ///   path ending at a type component stands as its stated type, as
-    ///   [`Self::module_type`] reads it. The chain is walked by an explicit
-    ///   loop, and its links are left unread.
+    ///   [`Self::construct`] reads it; a selection `C(a, …).l` off a
+    ///   multi-output constructor is its port `l`, as [`Self::port`] reads it;
+    ///   a selection by position projects the entry at that place of the type
+    ///   written for its operand, or of the pair the operand is when no type is
+    ///   written, as [`Self::positional`] reads it; a selection read as a
+    ///   computation off a name whose written type is a thunked lazy record
+    ///   over labels observes the entry its label names; a selection off a name
+    ///   whose written type is a type over labels projects the entry its label
+    ///   names, as [`Self::selection`] reads it; a selection off a name whose
+    ///   written type is a data family without indices reads the field its
+    ///   label names off every constructor, as [`Self::data_field`] reads it; a
+    ///   selection off a flattened model implicit is the parameter of the
+    ///   component it names, as [`Self::flattened_member`] reads it; a
+    ///   selection off a value no written type states, a chain of selections
+    ///   ending at a binder's or a declaration's name not capitalised, projects
+    ///   the field its label names of the record the value is, as
+    ///   [`Self::field`] reads it. A chain of selections whose head is a
+    ///   capitalised name is a path: inside a functor whose parameter the head
+    ///   names, a one-link path is that parameter's value component, as
+    ///   [`Self::parameter_value`] reads it; a path whose head, capitalised or
+    ///   not, names a module an enclosing module declares reaches the member
+    ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
+    ///   as that member's constant as below; otherwise it is resolved through
+    ///   the outermost scope at the depth that binds it: a path ending at an
+    ///   exported value component stands as that member's constant when the
+    ///   member is declared strictly before the declaration the path is written
+    ///   in, its last segment kept as a written name resolved to that
+    ///   declaration, and a path ending at a type component stands as its
+    ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
+    ///   an explicit loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
@@ -11845,6 +11869,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 end: self.operands.len(),
             };
             return self.construct(site, constructor, none);
+        }
+        // `C(a, …).l` names the port `l` of the multi-output constructor `C`.
+        if self.port(site, pieces)? == arity::Planned(true) {
+            return Ok(());
         }
         // An observation by position of a thunked lazy product or codata
         // family comes before the positional selection of a pair.
@@ -15518,7 +15546,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 {
                     Some(arguments)
                 },
-                Some(&Plan::Constructor(constructed)) if !released => Some(constructed.fields),
+                Some(&(Plan::Constructor(constructed) | Plan::Ports(constructed, _)))
+                    if !released =>
+                {
+                    Some(constructed.fields)
+                },
                 Some(_) | None => None,
             };
             let waited = waiting.is_some_and(|waiting| {
@@ -15879,6 +15911,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Recorded(_)
                 | Plan::Dialogue(_)
                 | Plan::Constructor(_)
+                | Plan::Ports(..)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
@@ -16180,6 +16213,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 expanded
             },
             Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
+            Plan::Ports(constructed, ref ports) => {
+                self.mint_ports(constructed, ports, sink, origin)
+            },
             Plan::Case(case) => self.mint_case(case, sink, origin),
             Plan::EmptyCase(scrutinee) => self.value_at(scrutinee).map(|scrutinised| {
                 let id = sink.arena.computation_case(scrutinised, &[]);
@@ -17365,6 +17401,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Codata(..)
             | Plan::Expansion(..)
             | Plan::Constructor(_)
+            | Plan::Ports(..)
             | Plan::Case(_)
             | Plan::EmptyCase(_)
             | Plan::Product(_)

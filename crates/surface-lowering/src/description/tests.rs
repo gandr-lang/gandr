@@ -602,6 +602,11 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
             "a field naming the one before it",
             "Pack",
         ),
+        (
+            "data Tree : Type where { | Split : (n : Integer) --> (l : Tree, r : Tree) }",
+            "a constructor with several outputs",
+            "Tree",
+        ),
     ] {
         let report = elaborated(SourceText::from(source));
         assert!(
@@ -635,6 +640,18 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
     assert_eq!(
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
         Some("Integer -> Integer")
+    );
+    // So does a constructor with several outputs.
+    let source = "data Tree : Type where { | Split : (n : Integer) --> (l : Tree, r : Tree) oper prune : (t : Tree) --> Tree; }";
+    let report = elaborated(SourceText::from(source));
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one multi-output constructor")
+    };
+    assert_eq!(diagnostic.fault, DescriptionFault::MultiOutput);
+    assert_eq!(
+        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
+        Some("(l : Tree, r : Tree)")
     );
 }
 
@@ -1495,6 +1512,7 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::UnderivedWiring,
         MemberFault::ParallelRedexes,
         MemberFault::OffBoundary,
+        MemberFault::MultiOutput,
     ]
     .map(|fault| fault.to_string());
     for (position, message) in messages.iter().enumerate() {

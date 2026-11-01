@@ -49,6 +49,7 @@ use crate::origin::PatternReading;
 use crate::origin::Provenance;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 /// Three nullary constructors.
 const COLOR: &str = "data Color : Type where { | Red : Color | Green : Color | Blue : Color }\n";
@@ -2267,6 +2268,115 @@ fn a_constructor_applies_to_its_fields()
     ));
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
+}
+
+/// A multi-output constructor is one port per output, each an ordinary
+/// constructor over the shared inputs at consecutive tags; `C(a).l` is the
+/// port `l` applied to `a`, `C(a)` the record of its ports, and the two ports
+/// of one input stay apart.
+#[test]
+fn a_multi_output_constructor_is_one_port_per_output()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!("fixture/ports.gandr")),
+        &mut arena,
+    );
+    let port = |value: ValueId| match arena.value(value) {
+        Some(&Value::Constructor {
+            tag, ref fields, ..
+        }) => (tag, fields.clone()),
+        other => panic!("a port is a constructor value: {other:?}"),
+    };
+    let (tag, fields) = port(body_named(&module, SurfaceName::from("left")));
+    assert_eq!(
+        tag,
+        ConstructorTag::from(1_usize),
+        "`Share.left` follows `Lit`"
+    );
+    assert_eq!(
+        fields.len(),
+        1_usize,
+        "a port takes the constructor's inputs"
+    );
+    let (tag, fields) = port(body_named(&module, SurfaceName::from("both")));
+    assert_eq!(
+        tag,
+        ConstructorTag::from(3_usize),
+        "`Add` follows both ports"
+    );
+    let tags: Vec<ConstructorTag> = fields.iter().map(|&field| port(field).0).collect();
+    assert_eq!(
+        tags,
+        [1_usize, 2_usize].map(ConstructorTag::from),
+        "`.left` and `.right` are the two ports"
+    );
+    let Some(&Value::Record(ref record)) =
+        arena.value(body_named(&module, SurfaceName::from("whole")))
+    else {
+        panic!("a constructor with no output named is a record");
+    };
+    let labelled: Vec<(&str, ConstructorTag)> = record
+        .iter()
+        .map(|(label, &value)| (label.as_ref(), port(value).0))
+        .collect();
+    assert_eq!(
+        labelled,
+        [("left", 1_usize), ("right", 2_usize)]
+            .map(|(label, tag)| (label, ConstructorTag::from(tag))),
+        "the record holds each port at its output's label"
+    );
+    let report = judged(&module, &mut arena);
+    for name in [
+        "Expr", "left", "both", "apart", "whole", "unpacked", "Pair", "first",
+    ] {
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("`{name}` is declared");
+        };
+        let Some(judged) = report
+            .judged()
+            .iter()
+            .find(|judged| judged.constant() == declaration.constant())
+        else {
+            panic!("`{name}` is judged");
+        };
+        assert_eq!(
+            matches!(
+                judged.verdict(),
+                Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
+            ),
+            name != "apart",
+            "`{name}`: only the path between the two ports is rejected"
+        );
+    }
+    assert!(matches!(
+        refusal_of(&module, SurfaceName::from("middle")),
+        LoweringRefusal::PartialField { field, .. } if field == SurfaceName::from("middle")
+    ));
+    for (name, feature) in [
+        ("doubled", Unbuilt::PortTuple),
+        ("matched", Unbuilt::PortPattern),
+        ("Buffer", Unbuilt::LinearPorts),
+    ] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::Unadmitted(refused),
+                    ..
+                } if refused == feature
+            ),
+            "`{name}` is refused by name"
+        );
+    }
+    assert!(matches!(
+        refusal_of(&module, SurfaceName::from("Twice")),
+        LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("out")
+    ));
 }
 
 /// A constructor under a classifier of another family of one shape keeps its

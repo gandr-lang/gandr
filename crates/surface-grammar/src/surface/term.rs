@@ -1212,19 +1212,22 @@ fn data_oper_member(lead: Regex) -> Regex
 
 /// Build a generator's signature: a **side** — the bare result sort, a bare
 /// single-field sort, or a parenthesized binder telescope — optionally
-/// followed by `-->` and the result head.
+/// followed by `-->` and the result head, or by an output group naming each
+/// output of a multi-output constructor.
 ///
 /// The ladder mirrors the circuit signature's: no arrow means the side IS the
 /// result (`Nil : Vec(a, 0)` declares no fields); an arrow makes the side the
 /// telescope and the post-arrow type the result (`Cons : (n : Nat, x : a) -->
 /// Vec(a, n)`). Every generator's result head is checked against the family by
 /// the elaborator — head uniformity is a structural property of this form, not
-/// a grammar fact, because the result is an ordinary type hole.
+/// a grammar fact, because the result is an ordinary type hole. An output
+/// group, `share : (e : Expr) --> (left : Expr, right : Expr)`, writes one
+/// named result per output, each graded as a field is.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a type-or-telescope side followed by an optional result-arrow
-///   tail.
+///   tail, whose result is a type or an output group.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1239,8 +1242,33 @@ fn generator_signature() -> Regex
 {
     seq([
         alt([h(Sort::Type), generator_telescope()]),
-        opt(seq([t(TileLabel("-->")), h(Sort::Type)])),
+        opt(seq([
+            t(TileLabel("-->")),
+            alt([h(Sort::Type), generator_outputs()]),
+        ])),
     ])
+}
+
+/// Build a multi-output constructor's output group `( name : Type, … )`: each
+/// output named, with the reserved grade a field takes, so a port is selected
+/// by its name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a non-optional list of named, optionally graded outputs inside
+///   parentheses.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
+fn generator_outputs() -> Regex
+{
+    seq([t(TileLabel("(")), comma1(ctor_field()), t(TileLabel(")"))])
 }
 
 /// Build a generator's parenthesized telescope `( entry, … )`: named binders

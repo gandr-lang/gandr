@@ -380,6 +380,7 @@ pub use self::data::Constructor;
 pub use self::data::DataForm;
 pub use self::data::DataMember;
 pub use self::data::Generators;
+pub use self::data::Ported;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
 pub use self::derive::DerivedSlot;
@@ -1554,6 +1555,10 @@ pub struct Collected<'source>
     /// Every constructor a data declaration declares, by the source declaring
     /// it and its name.
     pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
+    /// Every multi-output constructor a data declaration declares, by the
+    /// source declaring it and its name: its ports, which are no constructor
+    /// of that name.
+    pub ports: BTreeMap<(SourceIndex, SurfaceName<'source>), Ported>,
     /// Each constructor of `Theory` a source's own constructor shadows, by
     /// the family's slot and the name the two share: the bare name is the
     /// source's, so `Theory`'s is written `Theory.Constructor`.
@@ -2597,6 +2602,48 @@ impl<'source> Collected<'source>
         )
     }
 
+    /// The multi-output constructor `source`'s unqualified imports answer
+    /// `name` with, and the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`], over the multi-output
+    ///   constructors each imported source declares, one answering only when
+    ///   its source exports its family.
+    /// - provides: the import fallback of port lookup.
+    /// - fails: [`Ambiguity`] for two imports binding one constructor name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::imported_constructor`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present((ported, _))) => ported.count > 0,
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    pub fn imported_ported(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(Ported, ByteSpan), imported::Absent>, Ambiguity>
+    {
+        self.through_imports(
+            source,
+            name,
+            |target| {
+                self.ports
+                    .get(&(target, name))
+                    .copied()
+                    .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
+            },
+            |_| None,
+        )
+    }
+
     /// The type member `source`'s unqualified imports answer `name` with, and
     /// the import that answers it.
     ///
@@ -3453,6 +3500,7 @@ pub fn begin_collection<'source>(
         words: Vec::new(),
         terms: Vec::new(),
         constructors: BTreeMap::new(),
+        ports: BTreeMap::new(),
         shadowed: BTreeSet::new(),
         operations: BTreeMap::new(),
         operation_names: BTreeMap::new(),

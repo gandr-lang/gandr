@@ -218,6 +218,12 @@ impl TrackingIssue
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);
+    /// A multi-output constructor in a family that also writes an operation or
+    /// a rule, whose monomials the description code does not hold yet.
+    pub const PORT_MONOMIALS: Self = Self(4289);
+    /// A multi-output constructor grading an input or an output `[1]`, whose
+    /// values are circuits.
+    pub const LINEAR_PORTS: Self = Self(4288);
     /// The terms of a theory of several sorts, of an indexed sort, or of an
     /// operation that binds, abstracts or returns several results.
     pub const SORTED_TERMS: Self = Self(4150);

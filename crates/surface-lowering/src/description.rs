@@ -170,6 +170,9 @@ pub enum DescriptionFault
     MemberPolarity,
     /// A type shape has no symbolic first-order reference.
     TypeShape,
+    /// A constructor with several outputs, which the description code holds
+    /// as no monomial yet.
+    MultiOutput,
     /// The retired rule arrow has no rewrite-face reading.
     RetiredRuleArrow,
     /// The retired operation lead is not a synonym for an operation member.
@@ -241,6 +244,9 @@ pub enum MemberFault
     ParallelRedexes,
     /// A circuit rule whose redex lies off the boundary its wiring derives.
     OffBoundary,
+    /// A constructor with several outputs in a family the description reads,
+    /// whose monomials the description code does not hold yet.
+    MultiOutput,
 }
 
 impl fmt::Display for MemberFault
@@ -301,16 +307,21 @@ impl fmt::Display for MemberFault
             Self::OffBoundary => {
                 "is a circuit whose redex lies off the boundary its wiring derives"
             },
+            Self::MultiOutput => {
+                "is a constructor with several outputs, whose monomials the description code \
+                 does not hold yet"
+            },
         })
     }
 }
 
 /// The field refusals that mark the description code's limit rather than a
 /// fault of the source: the native reading admits each such field.
-const UNCODED: [DescriptionFault; 3] = [
+const UNCODED: [DescriptionFault; 4] = [
     DescriptionFault::HigherOrderField,
     DescriptionFault::DependentField,
     DescriptionFault::TypeShape,
+    DescriptionFault::MultiOutput,
 ];
 
 /// What the route reads a declaration form as.
@@ -330,6 +341,21 @@ struct Generator
     ctor: Result<CtorDesc<DescriptionGrade>, DescriptionDiagnostic>,
     /// Where the judgment's name, fields and result are written.
     written: written::WrittenConstructor,
+}
+
+/// What a constructor writes after its `-->`.
+enum After
+{
+    /// One result type.
+    Single(Placed),
+    /// An output group, read as its first output's type and its bytes.
+    Outputs
+    {
+        /// The first output's type.
+        first: Placed,
+        /// The group's bytes, its parentheses included.
+        span: ByteSpan,
+    },
 }
 
 /// A data family the native reading owns whole.
@@ -413,6 +439,7 @@ impl DescriptionDiagnostic
             DescriptionFault::HigherOrderField => undescribed(MemberFault::HigherOrderField),
             DescriptionFault::DependentField => undescribed(MemberFault::DependentField),
             DescriptionFault::TypeShape => undescribed(MemberFault::TypeShape),
+            DescriptionFault::MultiOutput => undescribed(MemberFault::MultiOutput),
             DescriptionFault::NativeDecode(_) => undescribed(MemberFault::NativeDecode),
             DescriptionFault::Signature(crate::circuit::SignatureFault::OperationFiller) => {
                 undescribed(MemberFault::OperationFiller)
@@ -1399,7 +1426,9 @@ impl Reader<'_, '_>
     ///   tile when written, and the result's bytes and each of its arguments'.
     ///   A higher-order or universe field, or one whose type names a field
     ///   before it, leaves the constructor uncoded with the first such field's
-    ///   refusal, and the constructor is still read whole.
+    ///   refusal, and the constructor is still read whole. An output group
+    ///   leaves it uncoded as a constructor with several outputs, its first
+    ///   output standing as the written result.
     /// - fails: nonuniform results, a member with no colon and incomplete
     ///   constructors are located.
     /// - panics: none.
@@ -1456,7 +1485,7 @@ impl Reader<'_, '_>
             }
             Ok(())
         };
-        let result = if run.eat(Spelling("(")).0 {
+        let after = if run.eat(Spelling("(")).0 {
             while !run.eat(Spelling(")")).0 {
                 let first = run.take()?;
                 let grade = self.grade(run)?;
@@ -1477,7 +1506,7 @@ impl Reader<'_, '_>
             if !run.eat(Spelling("-->")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
-            run.take()?
+            self.after_arrow(run)?
         }
         else {
             let side = run.take()?;
@@ -1487,11 +1516,23 @@ impl Reader<'_, '_>
                     DescriptionGrade::Finite(Multiplicity::from(1_u64)),
                     Maybe::Absent(written::port_name::Absent::Unnamed),
                 )?;
-                run.take()?
+                self.after_arrow(run)?
             }
             else {
-                side
+                After::Single(side)
             }
+        };
+        let result = match after {
+            After::Single(result) => result,
+            After::Outputs { first, span } => {
+                // The description codes one monomial per constructor: a
+                // constructor with several outputs is the native reading's.
+                uncoded = Some(DescriptionDiagnostic {
+                    span,
+                    fault: DescriptionFault::MultiOutput,
+                });
+                first
+            },
         };
         let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
         let repeated = arguments
@@ -1527,6 +1568,64 @@ impl Reader<'_, '_>
                 fields: ports,
                 result,
             },
+        })
+    }
+
+    /// Read what a constructor writes after its `-->`: its result type, or an
+    /// output group `(l : T, …)`, read as its first output and its span.
+    ///
+    /// # Specification
+    /// - requires: `run` stands just past the `-->`.
+    /// - ensures: [`After::Single`] over the result; [`After::Outputs`] over
+    ///   the first output's type and the group's bytes, every output read.
+    /// - fails: an output with no colon or no type, or a group left open, as
+    ///   malformed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`DescriptionFault::Malformed`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-output constructor leaves its family to the
+    ///   native reading.
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    #[spec(ensures: |result| match result {
+        Ok(After::Outputs { ref first, ref span }) => span.start() <= first.span.start() && first.span.end() <= span.end(),
+        Ok(After::Single(_)) | Err(_) => true,
+    })]
+    fn after_arrow(
+        &self,
+        run: &mut Run<'_>,
+    ) -> Result<After, DescriptionDiagnostic>
+    {
+        if !run.at(Spelling("(")).0 {
+            return Ok(After::Single(run.take()?));
+        }
+        let open = run.take()?;
+        let mut first = None;
+        let close = loop {
+            let _name = run.take()?;
+            let _grade = self.grade(run)?;
+            if !run.eat(Spelling(":")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            let output = run.take()?;
+            let _first = first.get_or_insert(output);
+            if run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                continue;
+            }
+            if run.at(Spelling(")")).0 {
+                break run.take()?.span;
+            }
+            return Err(run.fault(DescriptionFault::Malformed));
+        };
+        let Some(first) = first
+        else {
+            return Err(run.fault(DescriptionFault::Malformed));
+        };
+        Ok(After::Outputs {
+            first,
+            span: open.span.join(close),
         })
     }
 

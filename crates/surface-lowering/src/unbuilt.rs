@@ -266,12 +266,21 @@ pub enum Unbuilt
     /// The terms `Terms(S)` of a theory that states a law, which the initial
     /// model carries as a cell.
     LawTerms,
+    /// A multi-output constructor grading an input or an output `[1]`: the
+    /// linear reading, whose values are circuits.
+    LinearPorts,
+    /// A multi-output constructor applied without naming an output: the
+    /// value of all its ports at once.
+    PortTuple,
+    /// A pattern naming a multi-output constructor, which matches through
+    /// its ports.
+    PortPattern,
 }
 
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 81_usize] = [
+    pub const ALL: [Self; 84_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -353,6 +362,9 @@ impl Unbuilt
         Self::ModelSignature,
         Self::TermsType,
         Self::LawTerms,
+        Self::LinearPorts,
+        Self::PortTuple,
+        Self::PortPattern,
     ];
 
     /// The qualifier a fixture's `refuses` expectation names the feature by:
@@ -458,6 +470,9 @@ impl Unbuilt
             Self::ModelSignature => "model_signature",
             Self::TermsType => "terms_type.sorted",
             Self::LawTerms => "terms_type.law",
+            Self::LinearPorts => "linear_ports",
+            Self::PortTuple => "port_tuple",
+            Self::PortPattern => "port_pattern",
         })
     }
 
@@ -554,6 +569,8 @@ impl Unbuilt
             Self::TermsType => TrackingIssue::SORTED_TERMS,
             Self::LawTerms => TrackingIssue::LAW_CELL,
             Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
+            Self::LinearPorts => TrackingIssue::LINEAR_PORTS,
+            Self::PortTuple | Self::PortPattern => TrackingIssue::PORT_MONOMIALS,
         }
     }
 }

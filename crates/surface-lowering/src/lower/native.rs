@@ -447,6 +447,7 @@ use crate::module::DataIndex;
 use crate::module::Generators;
 use crate::module::Half;
 use crate::module::Operand;
+use crate::module::Ported;
 use crate::module::SlotIndex;
 use crate::module::TermsForm;
 use crate::module::WordsForm;
@@ -2579,6 +2580,57 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(found)
     }
 
+    /// The multi-output constructor `name` names at `site`.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: the multi-output constructor entered under `name` in the
+    ///   site's source, or else the one its unqualified imports answer, when
+    ///   its family's admission position is strictly earlier than the site's
+    ///   declaration's; otherwise the unnamed absence, two imports answering
+    ///   included.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::constructor_named`], over the ports.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => matches!(
+            self.collected.owner_of(site.at.node),
+            Maybe::Present(own) if found.family < own
+        ),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn ported_named(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Maybe<Ported, constructed::Absent>
+    {
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        };
+        let source = self.collected.unit.source_at(site.at.span.start());
+        let (found, import) = match self.collected.ports.get(&(source, name)) {
+            Some(&found) => (found, None),
+            None => match self.collected.imported_ported(source, name) {
+                Ok(Maybe::Present((found, import))) => (found, Some(import)),
+                Ok(Maybe::Absent(_)) | Err(_) => {
+                    return Maybe::Absent(constructed::Absent::Unnamed);
+                },
+            },
+        };
+        if found.family >= own {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        }
+        if let Some(import) = import {
+            self.collected.reach(import);
+        }
+        Maybe::Present(found)
+    }
+
     /// The constructor `name` of the family `family` names, written
     /// qualified as `family.name` at `site`.
     ///
@@ -2651,7 +2703,10 @@ impl<'source> Lowerer<'_, 'source>
             form.generators
                 .iter()
                 .enumerate()
-                .find(|&(_, generator)| SurfaceName::from(self.text_at(generator.named)) == name)
+                .find(|&(_, generator)| {
+                    matches!(generator.port, Maybe::Absent(_))
+                        && SurfaceName::from(self.text_at(generator.named)) == name
+                })
                 .map(|(tag, generator)| Constructor {
                     family: form.slot,
                     form: Generators::Written(position),
@@ -5167,6 +5222,174 @@ impl<'source> Lowerer<'_, 'source>
         Ok(arity::Planned(true))
     }
 
+    /// Classify a selection `C(a, …).l` off a multi-output constructor as
+    /// the port `l` of `C` applied to `a, …`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a call whose head
+    ///   names a multi-output constructor as [`Self::ported_named`] reads it:
+    ///   the port of that output constructed from the call's arguments, as
+    ///   [`Self::construct`] constructs it. Nothing is planned for any other
+    ///   selection.
+    /// - fails: [`LoweringRefusal::PartialField`] at the member when the
+    ///   constructor has no output `l`; as [`Self::construct`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each output of a two-output constructor, and an
+    ///   output it lacks, separate the two ports from the refusal.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(_))))]
+    pub(super) fn port(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let unplanned = Ok(arity::Planned(false));
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return unplanned;
+        };
+        if !matches!(self.form_at(target)?, Some((_, Former::Call))) {
+            return unplanned;
+        }
+        let mut called = Pieces::new();
+        read_pieces(self.pbg, self.tree, target.node, &mut called)?;
+        if let Maybe::Present(repaired) = called.repair {
+            return Err(repaired.refusal(site.name));
+        }
+        let mut cursor = Cursor::new(&called.pieces, target.span);
+        let Run::One(head) = cursor.clone().operands()
+        else {
+            return unplanned;
+        };
+        if !matches!(self.form_at(head)?, Some((_, Former::Constructor))) {
+            return unplanned;
+        }
+        let Maybe::Present(ported) = self.ported_named(site, SurfaceName::from(self.text_at(head)))
+        else {
+            return unplanned;
+        };
+        let output = self.name_at(selected);
+        let Generators::Written(form) = ported.form
+        else {
+            return unplanned;
+        };
+        let tag = self.collected.data.get(form).and_then(|data| {
+            (ported.first .. ported.first.saturating_add(ported.count)).find(|&tag| {
+                data.generators.get(tag).is_some_and(|generator| {
+                    matches!(generator.port, Maybe::Present(port) if self.name_at(port) == output)
+                })
+            })
+        });
+        let Some(tag) = tag
+        else {
+            return Err(LoweringRefusal::PartialField {
+                span: selected.span,
+                field: output,
+                constructor: self.name_at(ported.named),
+            });
+        };
+        let constructor = Constructor {
+            family: ported.family,
+            form: ported.form,
+            tag,
+            arity: ported.arity,
+            named: ported.named,
+        };
+        self.constructed_at(head.span, constructor);
+        let _head = cursor.operands();
+        let start = self.operands.len();
+        arguments(site, &mut cursor, &mut self.operands)?;
+        let fields = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.construct(site, constructor, fields)?;
+
+        Ok(arity::Planned(true))
+    }
+
+    /// Classify a multi-output constructor `ported` applied to the fields
+    /// `fields` holds, no output named, as the record of its ports.
+    ///
+    /// # Specification
+    /// - requires: `fields` is a stretch of the operand store, each entry a
+    ///   field the site was written with, left to right.
+    /// - ensures: for a family of neither parameters nor indices, the record of
+    ///   every port labelled by its output, each port the constructor at its
+    ///   tag over the fields as [`Self::construct`] reads them, its classifier
+    ///   the family alone.
+    /// - fails: [`FragmentBoundary::Unadmitted`] for a family with parameters
+    ///   or indices, whose ports take their classifier from no record type yet;
+    ///   as [`Self::construct`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The constructor's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the record of a two-output constructor destructures
+    ///   to its ports, and a parameterised family's is refused by name.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Ports(..))))]
+    pub(super) fn ports(
+        &mut self,
+        site: Site,
+        ported: Ported,
+        fields: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let unbuilt = || site.out(FragmentBoundary::Unadmitted(Unbuilt::PortTuple));
+        let Generators::Written(form) = ported.form
+        else {
+            return Err(unbuilt());
+        };
+        let Some(data) = self.collected.data.get(form)
+        else {
+            return Err(unbuilt());
+        };
+        if !data.parameters.is_empty() || !data.indices.is_empty() {
+            return Err(unbuilt());
+        }
+        let labels: Vec<(FieldLabel, ConstructorTag)> = (ported.first
+            .. ported.first.saturating_add(ported.count))
+            .filter_map(|tag| match data.generators.get(tag)?.port {
+                Maybe::Present(port) => Some((
+                    FieldLabel::from(String::from(self.name_at(port).as_ref())),
+                    ConstructorTag::from(tag),
+                )),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let first = Constructor {
+            family: ported.family,
+            form: ported.form,
+            tag: ported.first,
+            arity: ported.arity,
+            named: ported.named,
+        };
+        self.construct(site, first, fields)?;
+        let Some(&Plan::Constructor(constructed)) = self.plans.get(site.at.node)
+        else {
+            return Err(unbuilt());
+        };
+        // The family takes no arguments, so it classifies each port alone,
+        // whatever type the record is written at.
+        let constructed = Constructed {
+            classifier: Classifier::Inserted,
+            ..constructed
+        };
+        self.plan(site, Plan::Ports(constructed, labels));
+
+        Ok(())
+    }
+
     /// Whether some leaf of the syntax under `node` spells one of `names`.
     ///
     /// # Specification
@@ -5894,6 +6117,14 @@ impl<'source> Lowerer<'_, 'source>
                 Some(family) => self.qualified_constructor(site, family, name)?,
                 None => self.constructor_named(site, name),
             };
+            // A multi-output constructor is matched through its ports, which
+            // patterns do not read yet.
+            if family.is_none()
+                && let Maybe::Absent(_) = found
+                && let Maybe::Present(_) = self.ported_named(site, name)
+            {
+                return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::PortPattern)));
+            }
             let shape = self.constructor_pattern(here, head, found, &fields, patterns, work)?;
             patterns
                 .spelled
@@ -7948,7 +8179,14 @@ impl<'source> Lowerer<'_, 'source>
             self.constructors.push(
                 form.generators
                     .iter()
-                    .map(|generator| String::from(<&str>::from(self.text_at(generator.named))))
+                    .map(|generator| {
+                        let mut name = String::from(<&str>::from(self.text_at(generator.named)));
+                        if let Maybe::Present(port) = generator.port {
+                            name.push('.');
+                            name.push_str(<&str>::from(self.text_at(port)));
+                        }
+                        name
+                    })
                     .collect(),
             );
             let _first = self.signatures.insert(position, index);
@@ -8711,6 +8949,45 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(sink.value(ascribed, origin))
     }
 
+    /// Mint a multi-output constructor applied with no output named: the
+    /// record of its ports.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_constructor`].
+    /// - ensures: the record keyed by each port's label, its value the port's
+    ///   constructor over the shared fields as [`Self::mint_constructor`] mints
+    ///   it at that port's tag; nothing when a port did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::ports`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
+    pub(super) fn mint_ports(
+        &self,
+        constructed: Constructed,
+        ports: &[(FieldLabel, ConstructorTag)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut minted = BTreeMap::new();
+        for &(ref label, tag) in ports {
+            let port = Constructed { tag, ..constructed };
+            match self.mint_constructor(port, sink, origin) {
+                Maybe::Present(Lowered::Value(id)) => {
+                    let _first = minted.insert(label.clone(), id);
+                },
+                Maybe::Present(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_record(minted);
+
+        Maybe::Present(sink.value(id, origin))
+    }
+
     /// The value type `classifier` names for a constructor of the family
     /// `family`, minted in the term context of the constructor's frame.
     ///
@@ -8763,7 +9040,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut owner = origin.node();
         let mut fields = Vec::new();
         while let Classifier::Field(field) = classifier {
-            let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
+            let Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) =
+                self.plans.get(field.around)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
@@ -8899,7 +9177,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(&Plan::Constructor(outer)) = self.plans.get(field.around)
+        let Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) =
+            self.plans.get(field.around)
         else {
             return unminted;
         };
