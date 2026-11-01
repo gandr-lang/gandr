@@ -1562,7 +1562,19 @@ fn attributes_parameters_externs(
         p,
         seq([
             t(TileLabel("extern")),
-            dq_string(),
+            // The convention is a value of `Abi`, named as a path, `C` or
+            // `Abi.C`; the quoted name it replaces stays until the corpus
+            // moves.
+            alt([
+                dq_string(),
+                seq([
+                    alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+                    repeat(seq([
+                        t(TileLabel(".")),
+                        alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+                    ])),
+                ]),
+            ]),
             t(TileLabel("from")),
             dq_string(),
             // The alias names the block's interface: a type identifier as a

@@ -49,13 +49,13 @@ use gandr_theory_graphs::WalkChainLength;
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
 /// the protocol step `! T >> S` and the recursive protocol `rec X => S`, read
 /// beside the dotted forms until the corpus moves.
-const BUILT_IN_FINGERPRINT: u64 = 0xa947_e010_0420_a587;
+const BUILT_IN_FINGERPRINT: u64 = 0xd77d_121c_573f_28b2;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3723);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3728);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 102;
@@ -88,7 +88,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 20),
     ("->", 10),
     ("-F", 3),
-    (".", 70),
+    (".", 71),
     (".#[", 2),
     (".#{", 1),
     ("..", 3),
@@ -186,7 +186,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 499),
+    ("identifier", 501),
     ("if", 11),
     ("import", 21),
     ("in", 2),
@@ -240,7 +240,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 2),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 171),
+    ("type_identifier", 173),
     ("type_variable", 63),
     ("typed_number", 2),
     ("u32", 1),
