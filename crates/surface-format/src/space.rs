@@ -27,9 +27,11 @@ const OPERANDS: [&str; 6] = [
 
 /// The rules a `[` stands apart from the word before it in, as an operand's
 /// does: a computation's effect row, the world a migration or a package
-/// names, a world's requirement and a site's offer, a theory's or a data
-/// type's bracketed parameters.
-const APART: [&str; 11] = [
+/// names, a world's requirement and a site's offer, a theory's bracketed
+/// parameters. A data declaration's `[` is apart too, a constructor's
+/// decoration list, but for a field's grade, `x[1] : A`, which touches the
+/// field's name.
+const APART: [&str; 10] = [
     "f_type.result",
     "f_type.result.labelled",
     "f_type.row",
@@ -38,7 +40,6 @@ const APART: [&str; 11] = [
     "pack_expression",
     "package_type",
     "theory_declaration",
-    "data_declaration",
     "world_declaration",
     "offers_declaration",
 ];
@@ -92,8 +93,8 @@ pub enum Context
     /// A `(` or `[` standing apart from the word before it: one opening an
     /// operand of its own (a parenthesised term or type, a tuple pattern, a
     /// list, an import's list of names), an effect row, a migration's or a
-    /// package's world, a world's requirement or a site's offer, a theory's or
-    /// a data type's bracketed parameters.
+    /// package's world, a world's requirement or a site's offer, a theory's
+    /// bracketed parameters.
     Operand,
     /// An operator touching what follows it: a negation, a session's `!` or
     /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's
@@ -144,6 +145,13 @@ impl Context
                 Self::Binding
             },
             "[" if APART.contains(&rule) => Self::Operand,
+            "[" if rule == "data_declaration"
+                && before
+                    .last()
+                    .is_none_or(|step| step.crossed != StepSym::Tile("identifier")) =>
+            {
+                Self::Operand
+            },
             "{" if TELESCOPES.contains(&rule) => Self::Telescope,
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
             "#{" if SIGNATURES.contains(&rule) => Self::Signature,
