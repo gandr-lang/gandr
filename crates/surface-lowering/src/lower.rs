@@ -778,6 +778,8 @@ mod native;
 
 mod natural;
 
+mod opening;
+
 mod phase;
 
 use crate::table::NodeTable;
@@ -3480,6 +3482,8 @@ struct Lowerer<'run, 'source>
     /// Each block's last computation written as a statement, `c ;` before the
     /// closing brace, with the statement's span.
     stated: BTreeMap<NodeIndex, ByteSpan>,
+    /// Each module a block's `import P ;` opens, by the statement's span.
+    opened: BTreeMap<ByteSpan, opening::Opened>,
     /// The positions in tail position of a block's last computation written
     /// as a statement, `c ;`: an exit there keeps `c` the block's end, so the
     /// sugared form keeps it written.
@@ -5389,6 +5393,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             asked_runs: BTreeMap::new(),
             leading: BTreeSet::new(),
             stated: BTreeMap::new(),
+            opened: BTreeMap::new(),
             stated_tails: BTreeSet::new(),
             trailing: BTreeSet::new(),
             cases: Vec::new(),
@@ -7806,21 +7811,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is the name's own node.
-    /// - ensures: the binder with its index and its written type; else, in a
-    ///   flow's body, the component of the flow's domain of that name, whose
-    ///   slot precedes the body's, untyped, the body's own members never read;
-    ///   else the first module, innermost first, whose body declares the name:
-    ///   its member when that member's admission position is strictly earlier,
-    ///   and the forward-member refusal when it is not; else a top-level
-    ///   declaration strictly earlier or another member of the mutual block
-    ///   `site` belongs to, with its admission position and its signature's
-    ///   written type; the data declaration `site` belongs to, untyped, for its
-    ///   own name: a family's self reference, whose positivity the checker
-    ///   judges; else a callable operation admitted strictly earlier, untyped;
-    ///   else what the source's imports answer; else, for `Theory`, the
-    ///   presentation code admitted strictly earlier, untyped, when the source
-    ///   or one it imports holds a `theory` block ([`Collected::theory_in`]);
-    ///   the unresolved absence when nothing answers.
+    /// - ensures: the binder with its index and its written type; else the
+    ///   member a module a block opens over `site` exports under the name
+    ///   ([`Self::opened_name`]); else, in a flow's body, the component of the
+    ///   flow's domain of that name, whose slot precedes the body's, untyped,
+    ///   the body's own members never read; else the first module, innermost
+    ///   first, whose body declares the name: its member when that member's
+    ///   admission position is strictly earlier, and the forward-member refusal
+    ///   when it is not; else a top-level declaration strictly earlier or
+    ///   another member of the mutual block `site` belongs to, with its
+    ///   admission position and its signature's written type; the data
+    ///   declaration `site` belongs to, untyped, for its own name: a family's
+    ///   self reference, whose positivity the checker judges; else a callable
+    ///   operation admitted strictly earlier, untyped; else what the source's
+    ///   imports answer; else, for `Theory`, the presentation code admitted
+    ///   strictly earlier, untyped, when the source or one it imports holds a
+    ///   `theory` block ([`Collected::theory_in`]); the unresolved absence when
+    ///   nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
     /// - fails: [`LoweringRefusal::UnmarkedSelfReference`] for the name a
@@ -7890,6 +7897,45 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
+        if !self.opened.is_empty()
+            && let opened @ Maybe::Present(_) = self.opened_name(site, own, name)?
+        {
+            return Ok(opened);
+        }
+        self.declared_name(site, own, name)
+    }
+
+    /// What the declarations enclosing `site`, owned by the declaration `own`,
+    /// answer `name` with: [`Self::resolve_name`] past the binders and the
+    /// modules a block opens.
+    ///
+    /// # Specification
+    /// - requires: `own` owns `site`.
+    /// - ensures: as [`Self::resolve_name`], from the flow's domain on.
+    /// - provides: the declaration half of [`Self::resolve_name`], which an
+    ///   opened module's answer is weighed against.
+    /// - fails: as [`Self::resolve_name`], but for the self-reference refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ForwardMemberReference`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resolve_name`].
+    /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `lower::opening::tests::a_name_two_scopes_answer_is_refused_at_its_use`
+    #[spec(
+        captures: before = self.fuel.remaining,
+        ensures: |_| self.fuel.remaining <= before,
+    )]
+    fn declared_name(
+        &mut self,
+        site: Site,
+        own: SlotIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
+    {
         let mut container = self.collected.slots.get(usize::from(own)).map_or_else(
             || self.collected.top(site.at.span.start()),
             |slot| slot.container,
@@ -10727,6 +10773,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                     else if label == TileName::HOLD || label == TileName::VAR {
                         self.hold(cursor, at, frame)?
+                    }
+                    else if label == TileName::IMPORT {
+                        self.open(site, cursor, at)?;
+                        frame
                     }
                     else {
                         self.fork(cursor, at, frame)?
@@ -22071,7 +22121,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
 ///   statement may start.
 /// - ensures: `fork` followed by `!` is the shared fork, reserved; a keyword of
 ///   the table its form and boundary; `run`, `let`, `recv`, `var`, `hold`,
-///   `leta` and `fork` without `!` open statements the block reads,
+///   `leta`, `import` and `fork` without `!` open statements the block reads,
 ///   [`statement::Absent::Read`].
 /// - provides: the names a block's refused statements are written as;
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
@@ -22096,7 +22146,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
                 FragmentBoundary::Reserved(Unbuilt::SharedFork),
             ))
         }
-        else if label == TileName::FORK || label == TileName::RUN || label == TileName::LET || label == TileName::RECV || label == TileName::HOLD || label == TileName::VAR || label == TileName::LETA {
+        else if label == TileName::FORK || label == TileName::RUN || label == TileName::LET || label == TileName::RECV || label == TileName::HOLD || label == TileName::VAR || label == TileName::LETA || label == TileName::IMPORT {
             Maybe::Absent(statement::Absent::Read)
         }
         else {
@@ -22132,6 +22182,7 @@ fn statement_form(
         || label == TileName::HOLD
         || label == TileName::VAR
         || label == TileName::LETA
+        || label == TileName::IMPORT
     {
         return Maybe::Absent(statement::Absent::Read);
     }

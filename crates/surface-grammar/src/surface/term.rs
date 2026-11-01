@@ -2591,7 +2591,7 @@ fn session_stmt(keyword: TileLabel) -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the twelve statement alternatives, each carrying its own
+/// - ensures: the thirteen statement alternatives, each carrying its own
 ///   terminating semicolon.
 /// - panics: none.
 ///
@@ -2602,7 +2602,7 @@ fn session_stmt(keyword: TileLabel) -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 12 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 13 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn statement_alt() -> Regex
 {
     alt([
@@ -2645,6 +2645,16 @@ fn statement_alt() -> Regex
         ]),
         seq([h(Sort::Expression), t(TileLabel(";"))]),
         assignment_statement(),
+        // `import P ;` opens the module `P` names over the rest of the block.
+        seq([
+            t(TileLabel("import")),
+            alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+            repeat(seq([
+                t(TileLabel(".")),
+                alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+            ])),
+            t(TileLabel(";")),
+        ]),
     ])
 }
 
@@ -4315,6 +4325,7 @@ fn primary_expressions(
         "fork_shared_statement",
         "expression_statement",
         "assignment_statement",
+        "import_statement",
     ] {
         block_rule.adaptations.push(Adaptation::new(
             RuleName("block"),
