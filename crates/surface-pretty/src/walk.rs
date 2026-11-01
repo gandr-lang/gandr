@@ -11281,7 +11281,7 @@ impl Walk<'_, '_>
                 });
                 let _ = parts.part(Part::Endpoint(held));
                 if let gandr_core_term::memory::Place::At { .. } = place {
-                    let _ = parts.text("[").piece(Binding::Arrow).text("]");
+                    let _ = parts.text(".#[").piece(Binding::Arrow).text("]");
                 }
                 let _ = parts
                     .text(" as ")

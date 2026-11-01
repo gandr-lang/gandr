@@ -3533,7 +3533,7 @@ struct Lowerer<'run, 'source>
     /// its name, by the slot of the method.
     mode_binders: BTreeMap<SlotIndex, BTreeSet<SurfaceName<'source>>>,
     /// The body a method answering a view ends in, by its node: the place of
-    /// the receiver the body answers, `self[e]`.
+    /// the receiver the body answers, `self.#[e]`.
     view_places: BTreeMap<NodeIndex, method::ViewPlace>,
     /// The view types, `View[m](a)`, a method answering a place declares its
     /// result at, by node: each stands as the place's index.
@@ -9416,10 +9416,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a list literal, `[v1, …, vn]`, the empty `[]` included.
+    /// Classify a list literal, `#[v1, …, vn]`, the empty `#[]` included, or
+    /// its bare spelling `[v1, …, vn]`, read until the corpus moves.
     ///
     /// # Specification
-    /// - requires: `cursor` stands at the `[` of a list literal.
+    /// - requires: `cursor` stands at the `#[` or `[` of a list literal.
     /// - ensures: the list stands as a value, reads every element as a value
     ///   under its own frame, and is planned over them as one native list, as
     ///   `v1 :: … :: vn :: nil` is. Under a written classifier `List(T)` — its
@@ -9464,11 +9465,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let frame = self.require(site, Produced::Value)?;
         let start = self.operands.len();
+        let open = match cursor.at(TileName::SEQUENCE_OPEN) {
+            Maybe::Present(_) => TileName::SEQUENCE_OPEN,
+            Maybe::Absent(_) => TileName::BRACKET_OPEN,
+        };
         if let Err(refusal) = delimited(
             site,
             &mut cursor,
             &mut self.operands,
-            TileName::BRACKET_OPEN,
+            open,
             TileName::BRACKET_CLOSE,
         ) {
             self.operands.truncate(start);
@@ -26195,7 +26200,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def e = [] ; def o = [1] ; def t = [1, \"a\", 1,] ;"),
+            SourceText::from("def e = #[] ; def o = #[1] ; def t = #[1, \"a\", 1,] ;"),
             &mut arena,
         );
         let lowered = outcomes(&module);
@@ -26220,12 +26225,12 @@ mod tests
         assert_eq!(
             cells(body_of(lowered[0])),
             Some(Vec::new()),
-            "`[]` is the empty list"
+            "`#[]` is the empty list"
         );
         assert_eq!(
             cells(body_of(lowered[1])),
             Some(vec![Some(&one)]),
-            "`[v]` is one cell over `v` ending in the empty list"
+            "`#[v]` is one cell over `v` ending in the empty list"
         );
         assert_eq!(
             cells(body_of(lowered[2])),
@@ -26235,10 +26240,10 @@ mod tests
         );
         assert_eq!(
             refusal(SourceText::from(
-                "def u = thunk { run x <- [1, 2] ; return x } ;"
+                "def u = thunk { run x <- #[1, 2] ; return x } ;"
             )),
             LoweringRefusal::OutOfFragment {
-                span: at(25_usize, 31_usize),
+                span: at(25_usize, 32_usize),
                 form: FormName::from(NamedKind("list_expression")),
                 sort: FragmentSort::Computation,
                 boundary: FragmentBoundary::WrongSort,

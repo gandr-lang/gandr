@@ -1868,13 +1868,18 @@ fn scan_shell_interior(
         },
         b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
         // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
-        // punctuation is structural. The freshness relation's lone `#` is host
-        // syntax, so inside a shell block it stays unknown.
+        // punctuation is structural. The freshness relation's lone `#` and the
+        // sequence literal's `#[` are host syntax, so inside a shell block the
+        // `#` stays unknown.
         b'#' => match scan_hash(bytes, pos) {
             ScanResult {
                 lexeme: Lexeme::Punct,
                 next,
-            } if next == pos.advance(ByteWidth::ONE) => ScanResult::new(Lexeme::Unknown, next),
+            } if next == pos.advance(ByteWidth::ONE)
+                || bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'[')) =>
+            {
+                ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
+            },
             scanned => scanned,
         },
         b'$' => scan_dollar(bytes, pos),
@@ -2124,13 +2129,13 @@ fn scan_slash(
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan a lexeme led by `#`: shebang, shell/record start, the freshness
-/// relation, or a stray byte.
+/// Scan a lexeme led by `#`: shebang, shell/record start, the sequence
+/// literal's `#[`, the freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shebangs are layout, record and valid shell
-///   openers are punctuation, a `#` that opens neither is the one-byte
+/// - ensures: scanning advances; shebangs are layout, record, sequence and
+///   valid shell openers are punctuation, a `#` that opens none is the one-byte
 ///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
 ///   shell is unknown.
 /// - panics: none.
@@ -2159,8 +2164,8 @@ fn scan_hash(
             // `#!{` or `#!dialect{` shell-block start.
             _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
         },
-        // `#{` record / record-type / record-pattern open.
-        Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        // `#{` record / record-type / record-pattern open; `#[` a sequence.
+        Some(b'{' | b'[') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
         // `a # t`: the freshness relation.
         _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
     }
@@ -2762,7 +2767,7 @@ fn suffix_len(
 }
 
 /// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
-/// or a bare `.`.
+/// the selectors `.#[` and `.#{`, or a bare `.`.
 ///
 /// A dot before a digit stands alone too, so `.1` is the leading-dot label
 /// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
@@ -2771,8 +2776,9 @@ fn suffix_len(
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; a pair `..` or `.@` is one punctuation and
-///   every other dot, one before a digit included, stands alone.
+/// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
+///   a selector `.#[` or `.#{`, and every other dot, one before a digit
+///   included, stands alone.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2789,7 +2795,13 @@ fn scan_dot(
 ) -> ScanResult
 {
     let second = bytes.byte(pos.advance(ByteWidth::ONE));
-    if second == Some(SourceByte::from(b'.')) || second == Some(SourceByte::from(b'@')) {
+    let third = bytes.byte(pos.advance(ByteWidth::TWO));
+    if second == Some(SourceByte::from(b'#'))
+        && (third == Some(SourceByte::from(b'[')) || third == Some(SourceByte::from(b'{')))
+    {
+        ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
+    }
+    else if second == Some(SourceByte::from(b'.')) || second == Some(SourceByte::from(b'@')) {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO))
     }
     else {
@@ -3423,6 +3435,7 @@ mod tests
                 ("[x", Lexeme::SubshellOpen, 1),
                 ("]x", Lexeme::SubshellClose, 1),
                 ("# q", Lexeme::Unknown, 1),
+                ("#[x", Lexeme::Unknown, 1),
                 ("word=ok;", Lexeme::EnvAssign, 7),
                 (" \t", Lexeme::Space, 2),
                 ("2>x", Lexeme::FileDescriptor, 1),
@@ -3445,6 +3458,7 @@ mod tests
                 ("#!/x\n", Lexeme::Space, 4),
                 ("#!sh{x", Lexeme::Punct, 5),
                 ("#{x", Lexeme::Punct, 2),
+                ("#[x", Lexeme::Punct, 2),
                 ("#!bad", Lexeme::Unknown, 1),
                 ("#", Lexeme::Punct, 1),
                 ("# q", Lexeme::Punct, 1),
@@ -3510,6 +3524,9 @@ mod tests
                 ("..x", Lexeme::Punct, 2),
                 (".@ x", Lexeme::Punct, 2),
                 (".x", Lexeme::Punct, 1),
+                (".#[i]", Lexeme::Punct, 3),
+                (".#{.a}", Lexeme::Punct, 3),
+                (".# q", Lexeme::Punct, 1),
                 (".", Lexeme::Punct, 1),
             ]),
             (super::scan_word_or_underscore, &[

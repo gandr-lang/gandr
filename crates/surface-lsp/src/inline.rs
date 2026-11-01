@@ -2565,7 +2565,7 @@ mod tests
               " ${1:pattern} => ${2:computation}, ${3:pattern} => ${4:computation}"
               " + { . ${1:identifier} = ${2:pattern} \\} => ${3:computation}"
               " ${1:pattern} => ${2:computation}, | ${3:pattern} => ${4:computation}"
-              " [${1:pattern}] => ${2:computation}"
+              " #[${1:pattern}] => ${2:computation}"
             "data Nat : Type where {\n  | Zero" ‸ "\n}"
               " : ${1:type}"
               " : ${1:type} --> ${2:type}"

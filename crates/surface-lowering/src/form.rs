@@ -292,7 +292,7 @@ impl FormName
     pub const GRADE: Self = Self("grade");
     /// The statement `hold x = e ;`, inlined into its block.
     pub const HOLD_STATEMENT: Self = Self("hold_statement");
-    /// The index `e[i]`, the place a view-answering method's body ends in.
+    /// The index `e.#[i]`, the place a view-answering method's body ends in.
     pub const INDEX: Self = Self("index_expression");
     /// An interpolation `${ e }`, folded into the string.
     pub const INTERPOLATION: Self = Self("string_interpolation");
@@ -531,6 +531,10 @@ impl TileName
     pub const BRACKET_CLOSE: Self = Self("]");
     /// A bracket opener `[`.
     pub const BRACKET_OPEN: Self = Self("[");
+    /// The sequence literal's opener `#[`, closed by `]`.
+    pub const SEQUENCE_OPEN: Self = Self("#[");
+    /// The index selector's opener `.#[`, closed by `]`.
+    pub const SELECT_OPEN: Self = Self(".#[");
     /// A brace closer `}`.
     pub const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
@@ -1026,7 +1030,7 @@ pub enum Former
     /// Temporary access to a held value: the access `access x as v { t }
     /// unwind { u }`, the eliminators `resume(v, e)` and `abort(v)` that end
     /// its view, the view block `e as v { t }` a call of a method answering a
-    /// place lends its place to, and that method's place `self[e]`.
+    /// place lends its place to, and that method's place `self.#[e]`.
     Access,
     /// A located form the world register reads: the hold `hold v`, returning
     /// `v` held at the current world, and the migration `migrate [w] { t }`,

@@ -15,7 +15,7 @@
 //! }` spells the same mode. `access shared x as v { t }` lends `x` shared: the
 //! view ends with the body, so the form takes no unwind, and an `unwind`
 //! after it is a misplaced tile. Either mode lends a place of `x` when an
-//! index follows it, `access shared x[e] as v { t }`: `e` is read as a value
+//! index follows it, `access shared x.#[e] as v { t }`: `e` is read as a value
 //! where the access stands, and the view is the element of `x` at `e`.
 //! `resume(v, e)` and `abort(v)` end the view `v` names, `e` read as a value.
 //! Each name a form lends or ends resolves to a linear binder, counted among
@@ -102,7 +102,7 @@ pub(in crate::lower) mod tests;
 pub(super) enum Accessed
 {
     /// `access x as v { t } unwind { u }` or `access shared x as v { t }`,
-    /// either of a place `x[e]`.
+    /// either of a place `x.#[e]`.
     Access
     {
         /// The mode the slot is lent in, with an exclusive access's unwind
@@ -130,7 +130,7 @@ pub(super) enum Accessed
         /// The view ended, a linear index.
         view: DeBruijnIndex,
     },
-    /// The place `self[e]` a method answering a view ends in: its receiver
+    /// The place `self.#[e]` a method answering a view ends in: its receiver
     /// held and lent shared at `e`, the view judged at the element type, and
     /// the index answered.
     Place
@@ -143,7 +143,7 @@ pub(super) enum Accessed
         /// where the place stands.
         element: NodeIndex,
     },
-    /// A bare index `s[e]` of a held slot: the element at `e`, read through a
+    /// A bare index `s.#[e]` of a held slot: the element at `e`, read through a
     /// shared view of it that answers what it views.
     Element
     {
@@ -416,8 +416,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read an access, `access x as v { t } unwind { u }` or
-    /// `access shared x as v { t }`, either of a place `x[e]`, at `site` under
-    /// `frame`.
+    /// `access shared x as v { t }`, either of a place `x.#[e]`, at `site`
+    /// under `frame`.
     ///
     /// # Specification
     /// - requires: `pieces` are the access's own, from its `access` tile.
@@ -472,7 +472,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let place = match cursor.tile(TileName::BRACKET_OPEN) {
+        let opened = match cursor.tile(TileName::SELECT_OPEN) {
+            Maybe::Present(at) => Maybe::Present(at),
+            Maybe::Absent(_) => cursor.tile(TileName::BRACKET_OPEN),
+        };
+        let place = match opened {
             Maybe::Present(_) => {
                 let index = site.one(cursor.operands())?;
                 closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
@@ -530,12 +534,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the memory form over its children's lowered nodes at
     ///   `origin`, an access's blocks minted as blocks, its index as a value,
     ///   and an exclusive access's missing unwind minted as `pure unit` at
-    ///   `origin`; a method's place `self[e]` minted as `hold p = self ; access
-    ///   shared p[e] as v { run _ : a <- pure v ; pure e }`, `a` the element
-    ///   type, every node below the hold marked as inserted for the method; a
-    ///   held slot's element `s[e]` minted as `access shared s[e] as v { pure v
-    ///   }`, its body marked as inserted for the read; the first absence among
-    ///   the children otherwise.
+    ///   `origin`; a method's place `self.#[e]` minted as `hold p = self ;
+    ///   access shared p.#[e] as v { run _ : a <- pure v ; pure e }`, `a` the
+    ///   element type, every node below the hold marked as inserted for the
+    ///   method; a held slot's element `s.#[e]` minted as `access shared s.#[e]
+    ///   as v { pure v }`, its body marked as inserted for the read; the first
+    ///   absence among the children otherwise.
     /// - fails: never.
     /// - panics: none.
     ///

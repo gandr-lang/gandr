@@ -49,16 +49,16 @@ use gandr_theory_graphs::WalkChainLength;
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
 /// the protocol step `! T >> S` and the recursive protocol `rec X => S`, read
 /// beside the dotted forms until the corpus moves.
-const BUILT_IN_FINGERPRINT: u64 = 0x27b9_fca9_31a5_c5d5;
+const BUILT_IN_FINGERPRINT: u64 = 0x915c_cba0_5aec_f289;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3425);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3429);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 95;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 97;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -67,6 +67,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("\"", 12),
     ("#", 1),
     ("#!{", 1),
+    ("#[", 2),
     ("#{", 9),
     ("$", 3),
     ("${", 3),
@@ -85,6 +86,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("->", 10),
     ("-F", 3),
     (".", 48),
+    (".#[", 2),
     ("..", 3),
     (".@", 1),
     (":", 305),

@@ -138,9 +138,11 @@ use crate::parity::NamedKind;
 /// stands inside it.
 const OPENERS: &[&str] = &[
     "#!{",
+    "#[",
     "#{",
     "${",
     "(",
+    ".#[",
     "@[",
     "[",
     "command_substitution_start",
@@ -1058,7 +1060,7 @@ mod tests
         assert_eq!(pbg.mold_count().0, walk.len(), "one occurrence per mold");
         let closes: &[(&str, &[&str])] = &[
             (")", &["(", "type("]),
-            ("]", &["@[", "["]),
+            ("]", &["#[", ".#[", "@[", "["]),
             ("}", &["#!{", "#{", "${", "command_substitution_start", "{"]),
             ("subshell_close", &["subshell_open"]),
         ];

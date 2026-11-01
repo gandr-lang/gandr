@@ -87,7 +87,7 @@ pub enum Unbuilt
     /// A projection, `e.1` or `e.field`, where the fragment reads none, or a
     /// path the projection does not resolve.
     Projection,
-    /// An index `xs[i]` outside a view-answering method's body.
+    /// An index `xs.#[i]` outside a view-answering method's body.
     Index,
     /// A module packed into a value, `pack [T, …] e`.
     Pack,

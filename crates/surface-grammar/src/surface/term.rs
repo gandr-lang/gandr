@@ -1704,7 +1704,11 @@ fn patterns(
         Provenance("list_pattern"),
         s,
         atom,
-        seq([t(TileLabel("[")), opt(list_pat_elems()), t(TileLabel("]"))]),
+        seq([
+            alt([t(TileLabel("#[")), t(TileLabel("["))]),
+            opt(list_pat_elems()),
+            t(TileLabel("]")),
+        ]),
     ));
     out.push(r(
         RuleName("rest_pattern"),
@@ -2188,17 +2192,23 @@ fn expressions(
             block(),
         ]),
     ));
-    // A place of a value, `s[e]`, its index a whole expression: the body a
-    // view-answering method ends in, `{ self[i] }`. It follows the
-    // instantiation, so a bracket an instantiation resident reads as well,
-    // `f[<]`, `f[tail]` or `f[T]`, keeps the instantiation's mold. The
-    // tree-sitter grammar has no places, so the kind is in `PBG_ONLY_KINDS`.
+    // A place of a value, `s.#[e]`, its index a whole expression: the body a
+    // view-answering method ends in, `{ self.#[i] }`. The bare `s[e]` is read
+    // beside it until the corpus moves; it follows the instantiation, so a
+    // bracket an instantiation resident reads as well, `f[<]`, `f[tail]` or
+    // `f[T]`, keeps the instantiation's mold. The tree-sitter grammar has no
+    // places, so the kind is in `PBG_ONLY_KINDS`.
     out.push(r(
         RuleName("index_expression"),
         Provenance("index_expression"),
         s,
         p.postfix,
-        seq([h(s), t(TileLabel("[")), h(s), t(TileLabel("]"))]),
+        seq([
+            h(s),
+            alt([t(TileLabel(".#[")), t(TileLabel("["))]),
+            h(s),
+            t(TileLabel("]")),
+        ]),
     ));
     primary_expressions(out, p.atom);
 }
@@ -3502,7 +3512,11 @@ fn access_expressions(
             t(TileLabel("access")),
             opt(alt([t(TileLabel("shared")), t(TileLabel("exclusive"))])),
             t(TileLabel("identifier")),
-            opt(seq([t(TileLabel("[")), h(s), t(TileLabel("]"))])),
+            opt(seq([
+                alt([t(TileLabel(".#[")), t(TileLabel("["))]),
+                h(s),
+                t(TileLabel("]")),
+            ])),
             t(TileLabel("as")),
             t(TileLabel("identifier")),
             block(),
@@ -4182,7 +4196,11 @@ fn primary_expressions(
         Provenance("list_expression"),
         s,
         p,
-        seq([t(TileLabel("[")), opt(comma1(h(s))), t(TileLabel("]"))]),
+        seq([
+            alt([t(TileLabel("#[")), t(TileLabel("["))]),
+            opt(comma1(h(s))),
+            t(TileLabel("]")),
+        ]),
     ));
     let mut block_rule = r(RuleName("block"), Provenance("block"), s, p, block());
     for statement in [

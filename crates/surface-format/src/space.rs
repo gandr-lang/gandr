@@ -301,11 +301,12 @@ fn applied(left: Token<'_>) -> Wordlike
 /// - requires: `left` stands directly before `right` on one line, and neither
 ///   is the bracket of a group the other is the first or last element of.
 /// - ensures: a `,` or `;` touches what stands before it and is followed by one
-///   space; a comment has one space on either side; a `.` touches the word or
-///   bracket before it, and the word after it unless it ends a binder; a prefix
-///   operator touches what follows it; a `(` or `[` touches the word or hugging
-///   bracket before it, unless it opens an operand or the binders of `fn`,
-///   `fork`, `bind` or `pi+`; any other two are one space apart.
+///   space; a comment has one space on either side; a `.` or a selector `.#[`
+///   touches the word or bracket before it, and a `.` the word after it unless
+///   it ends a binder; a prefix operator touches what follows it; a `(` or `[`
+///   touches the word or hugging bracket before it, unless it opens an operand
+///   or the binders of `fn`, `fork`, `bind` or `pi+`; any other two are one
+///   space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -337,7 +338,10 @@ pub fn join(
     if left.kind == Kind::Comment || right.kind == Kind::Comment {
         return Join::Space;
     }
-    if right.kind == Kind::Token && right_text == "." && applied(left) == Wordlike::Yes {
+    if (right.kind == Kind::Token && right_text == "."
+        || right.kind == Kind::Open && right_text == ".#[")
+        && applied(left) == Wordlike::Yes
+    {
         return Join::Touch;
     }
     if left.kind == Kind::Token && left_text == "." {

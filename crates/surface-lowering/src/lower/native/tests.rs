@@ -3653,7 +3653,7 @@ fn list_patterns_case_on_the_native_list()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def empty(xs : List(Integer)) -> -F Integer { match xs { [] => return 0, _ => return 1 } }\ndef pair(xs : List(Integer)) -> -F Integer { match xs { [a, b] => return b, _ => return 0 } }\ndef rest(xs : List(Integer)) -> -F List(Integer) { match xs { [a, ..tail] => return tail, [] => return [] } }\ndef whole(xs : List(Integer)) -> -F List(Integer) { match xs { all @ [a, .._] => return all, [] => return [] } }\n",
+            "def empty(xs : List(Integer)) -> -F Integer { match xs { #[] => return 0, _ => return 1 } }\ndef pair(xs : List(Integer)) -> -F Integer { match xs { #[a, b] => return b, _ => return 0 } }\ndef rest(xs : List(Integer)) -> -F List(Integer) { match xs { #[a, ..tail] => return tail, #[] => return #[] } }\ndef whole(xs : List(Integer)) -> -F List(Integer) { match xs { all @ #[a, .._] => return all, #[] => return #[] } }\n",
         ),
         &mut arena,
     );

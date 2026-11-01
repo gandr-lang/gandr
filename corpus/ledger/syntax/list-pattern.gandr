@@ -2,7 +2,7 @@
 @[ checks ]
 def head(xs : List(Integer)) -> -F Integer {
   match xs {
-    [x, ..rest] => return x,
-    [] => return 0
+    #[x, ..rest] => return x,
+    #[] => return 0
   }
 }

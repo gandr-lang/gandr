@@ -260,8 +260,8 @@ fn a_receiver_is_a_typed_first_self()
 const PLACES: &str = r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 module Places where {
-  def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self[0] }
-  def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
+  def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self.#[0] }
+  def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self.#[i] }
 }
 def head() -> -F Integer { var xs = pair; run h <- xs.first(); pure h }
 def doubled() -> -F Integer { var xs = pair; xs.first() as w { pure w + w } }
@@ -274,7 +274,7 @@ fn a_deduced_mode_is_erased_from_the_telescope()
 {
     let source = format!(
         "{PLACES}module Unbound where {{\n  def lost[m : Mode](self : k List(Integer)) -> -F \
-         View[m](Integer) {{ self[0] }}\n}}\n"
+         View[m](Integer) {{ self.#[0] }}\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -343,11 +343,11 @@ fn a_view_method_answering_no_place_is_refused()
 {
     let source = format!(
         "{PLACES}module Misplaced where {{\n  def valued[m : Mode](self : m List(Integer)) -> -F \
-         Integer {{ self[0] }}\n  def computed[m : Mode](self : m List(Integer)) -> -F \
+         Integer {{ self.#[0] }}\n  def computed[m : Mode](self : m List(Integer)) -> -F \
          View[m](Integer) {{ pure 0 }}\n  def crossed[m : Mode, n : Mode](self : m \
-         List(Integer)) -> -F View[n](Integer) {{ self[0] }}\n}}\ndef stray(v : \
+         List(Integer)) -> -F View[n](Integer) {{ self.#[0] }}\n}}\ndef stray(v : \
          View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(xs : List(Integer), i : Integer) \
-         -> -F Integer {{ run y <- xs[i]; pure y }}\n"
+         -> -F Integer {{ run y <- xs.#[i]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -378,8 +378,8 @@ fn a_view_method_answering_no_place_is_refused()
 fn a_bare_index_reads_its_held_element()
 {
     let source = format!(
-        "{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; run y <- xs[i]; pure \
-         y }}\ndef zeroth() -> -F Integer {{ var xs = pair; run y <- xs[0]; pure y }}\n"
+        "{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; run y <- xs.#[i]; pure \
+         y }}\ndef zeroth() -> -F Integer {{ var xs = pair; run y <- xs.#[0]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
