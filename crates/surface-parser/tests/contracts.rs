@@ -217,7 +217,7 @@ fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Box<dyn Erro
     let pbg = built();
     // Each case pairs a source with the sorts its `?` tiles must carry, in
     // source order.
-    let cases: [(&str, &[Sort]); 6] = [
+    let cases: [(&str, &[Sort]); 7] = [
         ("def f = case c { ? => 0 };", &[Sort::Pattern]),
         ("def f = case c { ?arm => 0 };", &[Sort::Pattern]),
         ("def f = case m { Just(?) => 0 };", &[Sort::Pattern]),
@@ -225,7 +225,10 @@ fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Box<dyn Erro
             Sort::Pattern,
             Sort::Pattern,
         ]),
+        // A bare hole closing an infix pattern's tail leaves the arm's `=>`
+        // to the case, never to a value-function type over the pattern.
         ("def f = case c { whole @ ? => 0 };", &[Sort::Pattern]),
+        ("def f = case c { x ∷ ? => 0 };", &[Sort::Pattern]),
         // The scrutinee's hole is an expression, the arm's is a pattern, and
         // the arm body's is an expression again — one spelling, three slots.
         ("def f = case ? { ? => ?body };", &[

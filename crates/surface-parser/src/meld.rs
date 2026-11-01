@@ -3385,14 +3385,18 @@ impl<'pbg> MeldState<'pbg>
     /// form's closer (the `;` closing a `def` whose value is a bare hole)
     /// molds against the correct frontier. A completable frontier whose
     /// `≐`-successor shares a label with the upcoming token (a `?` before a
-    /// `hole_name` word) stays open so the name still attaches.
+    /// `hole_name` word) stays open so the name still attaches. A required
+    /// tail a closed hole leaves whole (`x @ ?` before an arm's `=>`) settles
+    /// too, so the enclosing form, not the tail, meets the token.
     ///
     /// # Specification
     /// - requires: `labels` are the upcoming token's candidate labels.
     /// - ensures: reduces to a clean operand meld every topmost completable
-    ///   frontier none of whose successors carries a label in `labels`; stops
-    ///   at the first non-completable or token-continuable frontier; introduces
-    ///   no obligation.
+    ///   frontier none of whose successors carries a label in `labels`, and
+    ///   every required tail so left whole that the token does not extend, in
+    ///   turn until neither closes a frontier; stops at the first
+    ///   non-completable or token-continuable frontier; introduces no
+    ///   obligation.
     /// - provides: the molder's pre-gather hole-settling pass.
     /// - fails: never.
     /// - panics: none.
@@ -3412,27 +3416,37 @@ impl<'pbg> MeldState<'pbg>
         labels: CandidateLabels<'_>,
     )
     {
-        self.settle_filled_required_tail(Incoming::Token(labels));
-        while let Some(frontier) = self.nearest_open_form() {
-            let Some(Role::FormTile {
-                mold: head_mold, ..
-            }) = self.stack.get(usize::from(frontier)).map(|cell| cell.role)
-            else {
-                break;
-            };
-            if bool::from(self.pbg.mold_has_required_tail(head_mold)) {
+        // Closing a completable hole can leave a required tail whole beneath
+        // it (`x @ ?` before `=>`), and settling that tail can expose another
+        // completable frontier, so the two settle in turn until neither
+        // closes a frontier.
+        loop {
+            self.settle_filled_required_tail(Incoming::Token(labels));
+            let before = self.frontiers.len();
+            while let Some(frontier) = self.nearest_open_form() {
+                let Some(Role::FormTile {
+                    mold: head_mold, ..
+                }) = self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+                else {
+                    break;
+                };
+                if bool::from(self.pbg.mold_has_required_tail(head_mold)) {
+                    break;
+                }
+                if !bool::from(FormTable::is_form_last(self.pbg, head_mold)) {
+                    break;
+                }
+                // Keep the frontier open when the upcoming token could be its
+                // `≐`-successor (a `?` before a `hole_name` word), so the name
+                // still attaches to the hole.
+                if bool::from(self.successor_label_in(head_mold, labels)) {
+                    break;
+                }
+                self.close_form(StackIndex::from(frontier));
+            }
+            if self.frontiers.len() == before {
                 break;
             }
-            if !bool::from(FormTable::is_form_last(self.pbg, head_mold)) {
-                break;
-            }
-            // Keep the frontier open when the upcoming token could be its
-            // `≐`-successor (a `?` before a `hole_name` word), so the name
-            // still attaches to the hole.
-            if bool::from(self.successor_label_in(head_mold, labels)) {
-                break;
-            }
-            self.close_form(StackIndex::from(frontier));
         }
     }
 
