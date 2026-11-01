@@ -167,7 +167,7 @@ flag "--limit <seconds>" help="the wall-clock limit" default="1800"
 flag "--catt <program>" help="the program run in place of the pinned Catt"
 '''
 tools.jq = "1.8.1"
-tools.opam = "2.6.1"
+tools."github:ocaml/opam" = "2.6.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail

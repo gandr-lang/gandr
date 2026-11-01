@@ -95,3 +95,12 @@ echo 'clear ~/.dylint_drivers and target/dylint, then rerun the full gate wall'
 echo 'external consumers: mise run check'
 {% endraw %}
 '''
+
+# Every project pin but the compiler moves to its newest release, and the
+# lockfile with it. `mise upgrade --bump` would also rewrite
+# `rust-toolchain.toml` to the newest nightly, apart from the rust-clippy tag
+# the Dylint driver is built against; the channel moves only with
+# `toolchain:bump` above. The global config's tools stay with the user.
+["tools:bump"]
+description = "Bump every project tool pin but the compiler, which moves with toolchain:bump"
+run = "mise upgrade --bump --no-global --exclude rust"
