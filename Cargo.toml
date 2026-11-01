@@ -1057,7 +1057,7 @@ default-features = false
 # - surface-lsp
 # - theory-coherent-resolutions
 [workspace.dependencies.hotpath]
-version = "0.28.6"
+version = "0.29.2"
 default-features = false
 
 # QUIC endpoints dialed by public key: the host's `Net` interface, one
@@ -1070,7 +1070,7 @@ default-features = false
 # consumers:
 # - runtime-net
 [workspace.dependencies.iroh]
-version = "=1.3.0"
+version = "=1.4.1"
 default-features = false
 features = ["tls-ring"]
 
@@ -1081,7 +1081,7 @@ features = ["tls-ring"]
 # consumers:
 # - runtime-net
 [workspace.dependencies.iroh-mdns-address-lookup]
-version = "=0.6.0"
+version = "=0.6.1"
 default-features = false
 
 # The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
