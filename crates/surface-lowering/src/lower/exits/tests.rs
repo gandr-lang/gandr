@@ -297,14 +297,15 @@ fn a_block_ending_in_a_statement_returns_the_unit_1205()
         matches!(
             arena.computation(stated),
             Some(&Computation::Bind(ran, rest))
-                if matches!(arena.computation(ran), Some(&Computation::Ascribe { body, .. }) if returns(body))
+                if returns(ran)
                     && matches!(
                         arena.computation(rest),
                         Some(&Computation::Split { arity, body, .. })
                             if arity == ComponentCount::default() && returns(body)
                     )
         ),
-        "a statement no path leaves runs ascribed, its unit split, and the unit returned"
+        "a statement no path leaves runs as written, its unit split, and the unit returned; \
+         the checker checks a match there against the unit at the block's row"
     );
     assert_same_body(
         &module,

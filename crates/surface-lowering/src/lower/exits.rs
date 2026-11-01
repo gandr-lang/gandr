@@ -972,11 +972,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `position` trails, as [`Self::trail`] records; `end` is the
     ///   node's bridged computation.
-    /// - ensures: `x ← end; split x (); return ()`, `end` ascribed the returner
-    ///   of the unit when no path through it leaves, every inserted node at
+    /// - ensures: `x ← end; split x (); return ()`, every inserted node at
     ///   `origin` marked as the statement's insertion, the `return` recorded as
     ///   an exit, and the bind recorded as distributed when a path through
-    ///   `end` leaves.
+    ///   `end` leaves. The checker checks a case `end` against the unit's
+    ///   returner at the row the block stands in, as it does every discarded
+    ///   statement's.
     /// - provides: the minting half of [`Self::trail`].
     /// - fails: never.
     /// - panics: none.
@@ -1009,22 +1010,7 @@ impl<'source> Lowerer<'_, 'source>
             .computation_split(discarded, ComponentCount::default(), returned);
         sink.origins.record_computation(split, inserted);
         let leaves = self.leaves_at(position);
-        // The discarded result is the unit, so a statement no path leaves is
-        // ascribed the returner of the unit: the bind then checks it against
-        // that type rather than synthesising one.
-        let ran = if leaves == Leaves::Never {
-            let unit = sink.arena.value_type_unit();
-            sink.origins.record_value_type(unit, inserted);
-            let returner = sink.arena.comp_type_returner(unit);
-            sink.origins.record_comp_type(returner, inserted);
-            let ascribed = sink.arena.computation_ascribe(end, returner);
-            sink.origins.record_computation(ascribed, inserted);
-            ascribed
-        }
-        else {
-            end
-        };
-        let bound = sink.arena.computation_bind(ran, split);
+        let bound = sink.arena.computation_bind(end, split);
         sink.origins.record_computation(bound, inserted);
         if leaves != Leaves::Never {
             let _first = sink.distributed.insert(bound, inserted);

@@ -25405,9 +25405,9 @@ mod tests
         );
     }
 
-    /// A block-like form, a loop, a block or an access closing on its block,
-    /// followed by another statement needs no `;`, as Rust reads one; one
-    /// before the block's `}` is still its last computation.
+    /// A block-like form, a loop, an `if`, a block or an access closing on its
+    /// block, followed by another statement needs no `;`, as Rust reads one;
+    /// one before the block's `}` is still its last computation.
     #[test]
     fn a_block_like_statement_needs_no_semicolon()
     {
@@ -25419,6 +25419,7 @@ mod tests
                 r"def counted() -> -F [Div] Integer {
   var n = 0;
   while n < 3 { n += 1; }
+  if n == 3 { n += 10; } else { n += 20; }
   { n *= 2; }
   access n as v { resume(v, v + 10) }
   n -= 1;

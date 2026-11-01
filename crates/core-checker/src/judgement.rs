@@ -538,6 +538,21 @@ mod session;
 
 mod worlds;
 
+/// Why a bind's bound computation synthesises rather than checks.
+mod discarded
+{
+    /// The reason the bound computation is synthesised.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// The bind is no discarded statement, or its computation is no case.
+        NoCase,
+        /// The type the bind is checked against is no returner at its weak
+        /// head.
+        NoReturner,
+    }
+}
+
 use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
 pub use self::elaboration::Formed;
@@ -2233,6 +2248,22 @@ enum Frame
         /// The bind's own direction, which the body takes.
         direction: Direction<CompTypeId>,
     },
+    /// A bind of a discarded statement waits on its bound computation's
+    /// check against the unit's returner at the expected row, then proceeds
+    /// as [`Self::BindBound`] does with that returner as the bound's type.
+    BindChecked
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The bound computation.
+        bound: ComputationId,
+        /// The body still to judge.
+        body: ComputationId,
+        /// The bind's own direction, which the body takes.
+        direction: Direction<CompTypeId>,
+        /// The returner the bound computation was checked against.
+        against: CompTypeId,
+    },
     /// A bind waits on its body's judgement, then closes the binder it opened
     /// and hands the body's result on, a synthesised type lowered out of the
     /// binder.
@@ -2638,7 +2669,7 @@ impl Frame
             Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
             Self::FixpointArgument { .. } => FrameRole::FixpointArgument,
             Self::LambdaBody => FrameRole::LambdaBody,
-            Self::BindBound { .. } => FrameRole::BindBound,
+            Self::BindBound { .. } | Self::BindChecked { .. } => FrameRole::BindBound,
             Self::BindBody { .. } => FrameRole::BindBody,
             Self::ValueBridge { .. } => FrameRole::ValueBridge,
             Self::CompBridge { .. } => FrameRole::CompBridge,
@@ -2800,6 +2831,7 @@ impl Frame
             | Self::ApplicationArgument { .. }
             | Self::FixpointArgument { .. }
             | Self::BindBound { .. }
+            | Self::BindChecked { .. }
             | Self::ValueBridge { .. }
             | Self::CompBridge { .. }
             | Self::Quote(_)
@@ -3280,6 +3312,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FixpointArgument { .. }
                 | Frame::LambdaBody
                 | Frame::BindBound { .. }
+                | Frame::BindChecked { .. }
                 | Frame::BindBody { .. }
                 | Frame::ValueBridge { .. }
                 | Frame::CompBridge { .. }
@@ -6301,9 +6334,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Fixpoint { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Fixpoint(term),
             }),
-            Computation::Bind(bound, body) => {
-                Ok(self.bind(term, bound, body, Direction::Synthesise))
-            },
+            Computation::Bind(bound, body) => self.bind(term, bound, body, Direction::Synthesise),
             Computation::Case { .. } | Computation::ListCase { .. } => {
                 Err(CheckRefusal::NotSynthesisable {
                     form: CheckingForm::Case(term),
@@ -6571,7 +6602,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Computation::Bind(bound, body) => {
-                Ok(self.bind(term, bound, body, Direction::Check(expected)))
+                self.bind(term, bound, body, Direction::Check(expected))
             },
             Computation::Split { scrutinee, .. } => {
                 self.wait(Frame::SplitScrutinee {
@@ -6619,14 +6650,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
 
     /// Start the bind `at` of `bound` into `body`, judged in `direction`.
     ///
+    /// A discarded statement `c ;` lowers to a bind whose body splits its
+    /// binder as the unit. Checked against `-F [ε] B`, such a bind whose `c`
+    /// synthesises nothing — a case of any kind — checks `c` against `-F [ε]
+    /// Unit` instead: the bind of the ascription `(c : -F [ε] Unit)`, so an
+    /// `if` or a `match` written as a statement reads, at the row the
+    /// statement stands in.
+    ///
     /// # Specification
     /// - requires: `bound` and `body` are the two halves of the bind `at`.
-    /// - ensures: the bound computation's synthesis is the next goal, with the
-    ///   bind's frame awaiting its type and holding the direction the body is
-    ///   judged in.
+    /// - ensures: for such a discarded case checked against a returner, the
+    ///   case's check against the unit's returner at that returner's row is the
+    ///   next goal, with the bind's frame awaiting it; otherwise the bound
+    ///   computation's synthesis is the next goal, with the bind's frame
+    ///   awaiting its type; either frame holds the direction the body is judged
+    ///   in.
     /// - provides: the one rule both computation faces share.
-    /// - fails: never.
+    /// - fails: the expected type's unfolding refusal.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// The expected type's unfolding refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the rule's surfaces are the two directions, the
@@ -6639,11 +6683,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_whose_type_mentions_its_binder_is_refused`
+    /// - witness: `judgement::tests::a_discarded_case_checks_at_the_expected_row`
     #[spec(
         captures: before = self.frames.len(),
-        ensures: |ret| self.frames.len().checked_sub(before) == Some(1)
-            && self.frames.last().map(|waiting| waiting.frame) == Some(Frame::BindBound { at, bound, body, direction })
-            && ret == Step::Descend(Goal::Computation { term: bound, direction: Direction::Synthesise }),
+        ensures: |ret| ret.is_err() || (self.frames.len().checked_sub(before) == Some(1)
+            && match self.frames.last().map(|waiting| waiting.frame) {
+                | Some(Frame::BindChecked { against, .. }) => ret == Ok(Step::Descend(Goal::Computation { term: bound, direction: Direction::Check(against) })),
+                | Some(Frame::BindBound { .. }) => ret == Ok(Step::Descend(Goal::Computation { term: bound, direction: Direction::Synthesise })),
+                | _ => false,
+            }),
     )]
     fn bind(
         &mut self,
@@ -6651,8 +6699,23 @@ impl<'context, 'arena> Machine<'context, 'arena>
         bound: ComputationId,
         body: ComputationId,
         direction: Direction<CompTypeId>,
-    ) -> Step
+    ) -> Result<Step, CheckRefusal>
     {
+        if let Direction::Check(expected) = direction
+            && let Maybe::Present(against) = self.discarded_case(bound, body, expected)?
+        {
+            self.wait(Frame::BindChecked {
+                at,
+                bound,
+                body,
+                direction,
+                against,
+            });
+            return Ok(Step::Descend(Goal::Computation {
+                term: bound,
+                direction: Direction::Check(against),
+            }));
+        }
         self.wait(Frame::BindBound {
             at,
             bound,
@@ -6660,10 +6723,156 @@ impl<'context, 'arena> Machine<'context, 'arena>
             direction,
         });
 
-        Step::Descend(Goal::Computation {
+        Ok(Step::Descend(Goal::Computation {
             term: bound,
             direction: Direction::Synthesise,
-        })
+        }))
+    }
+
+    /// The unit's returner at the row of `expected`, when the bind of `bound`
+    /// into `body` is a discarded statement whose computation is a case.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` are the two halves of one bind.
+    /// - ensures: present exactly when `body` splits the innermost
+    ///   intuitionistic binder into no components, `bound` is a case, a list
+    ///   case or a data case, or binds ending in one, and `expected` at its
+    ///   weak head is a returner: then the returner of the unit at that
+    ///   returner's row.
+    /// - fails: the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The unfolding's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an `if` statement checks at its function's row, and a
+    ///   statement that is no case still synthesises.
+    /// - witness: `judgement::tests::a_discarded_case_checks_at_the_expected_row`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(against)) => matches!(self.context.arena().comp_type(against), Some(&CompType::Returner { .. })),
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn discarded_case(
+        &mut self,
+        bound: ComputationId,
+        body: ComputationId,
+        expected: CompTypeId,
+    ) -> Result<Maybe<CompTypeId, discarded::Absent>, CheckRefusal>
+    {
+        let arena = self.context.arena();
+        let splits_unit = matches!(
+            arena.computation(body),
+            Some(&Computation::Split { scrutinee, arity, .. })
+                if arity == gandr_core_term::ComponentCount::default()
+                    && arena.value(scrutinee) == Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index: DeBruijnIndex::from(0_u32),
+                    })
+        );
+        // The case may stand after the binds that compute its scrutinee.
+        let mut tail = bound;
+        while let Some(&Computation::Bind(_, rest)) = arena.computation(tail) {
+            tail = rest;
+        }
+        let case = matches!(
+            arena.computation(tail),
+            Some(
+                Computation::Case { .. }
+                    | Computation::ListCase { .. }
+                    | Computation::DataCase { .. }
+            )
+        );
+        if !(splits_unit && case) {
+            return Ok(Maybe::Absent(discarded::Absent::NoCase));
+        }
+        let head = self.context.whnf_comp_type(expected)?;
+        let Some(CompType::Returner { effects, .. }) =
+            self.context.arena().comp_type(head).cloned()
+        else {
+            return Ok(Maybe::Absent(discarded::Absent::NoReturner));
+        };
+        let arena = self.context.arena_mut();
+        let unit = arena.value_type_unit();
+
+        Ok(Maybe::Present(
+            arena.comp_type_returner_with_effects(unit, effects),
+        ))
+    }
+
+    /// Open the binder of the bind `at` at the returner `synthesised` its
+    /// bound computation has, and judge its body in `direction`.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` are the two halves of the bind `at`, and
+    ///   `synthesised` is the type `bound` synthesised or was checked against.
+    /// - ensures: `synthesised` read as a returner; a checked bind's effects
+    ///   accumulated and bridged into the expected type, which the body then
+    ///   checks against under the binder; the body's judgement is the next
+    ///   goal, the binder of the returned type open.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `bound` for a type that is
+    ///   no returner; the accumulation's and the bridge's refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The bind's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bind`].
+    /// - witness: `judgement::tests::a_bind_synthesises_its_continuations_type`
+    /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
+    /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
+    /// - witness: `judgement::tests::a_discarded_case_checks_at_the_expected_row`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |step| matches!(*step, Step::Descend(Goal::Computation { term, .. }) if term == body)))]
+    fn bound(
+        &mut self,
+        at: ComputationId,
+        (bound, body): (ComputationId, ComputationId),
+        direction: Direction<CompTypeId>,
+        synthesised: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let read = crate::codata::read(self.context, synthesised)?;
+        let result = match matched_returner(self.context.arena_mut(), read) {
+            Maybe::Present(result) => result,
+            Maybe::Absent(absent) => {
+                return Err(unmatched(
+                    absent,
+                    TypeNode::Computation(read),
+                    CheckRefusal::ShapeMismatch {
+                        at: TermNode::Computation(bound),
+                        wanted: ExpectedShape::Returner,
+                        found: TypeNode::Computation(synthesised),
+                    },
+                ));
+            },
+        };
+        let direction = match direction {
+            Direction::Synthesise => Direction::Synthesise,
+            Direction::Check(expected) => {
+                let accumulated = self.accumulate_effects(at, read, expected)?;
+                if accumulated != expected {
+                    comp_bridge(
+                        self.context,
+                        at,
+                        accumulated,
+                        expected,
+                        &mut self.conversions,
+                    )?;
+                }
+                let arena = self.context.arena_mut();
+                Direction::Check(
+                    shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
+                )
+            },
+        };
+        self.context.binders().open(Zone::Intuitionistic, result);
+        self.context.open_copy(at);
+        self.wait(Frame::BindBody { at, bound: read });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction,
+        }))
     }
 
     /// The body a thunk checks against: the one the expected type matches as a
@@ -9739,6 +9948,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (
+                Frame::BindChecked {
+                    at,
+                    bound,
+                    body,
+                    direction,
+                    against,
+                },
+                Produced::Checked,
+            ) => self.bound(at, (bound, body), direction, against),
+            (
                 Frame::BindBound {
                     at,
                     bound,
@@ -9746,49 +9965,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction,
                 },
                 Produced::CompType(synthesised),
-            ) => {
-                let read = crate::codata::read(self.context, synthesised)?;
-                let result = match matched_returner(self.context.arena_mut(), read) {
-                    Maybe::Present(result) => result,
-                    Maybe::Absent(absent) => {
-                        return Err(unmatched(
-                            absent,
-                            TypeNode::Computation(read),
-                            CheckRefusal::ShapeMismatch {
-                                at: TermNode::Computation(bound),
-                                wanted: ExpectedShape::Returner,
-                                found: TypeNode::Computation(synthesised),
-                            },
-                        ));
-                    },
-                };
-                let direction = match direction {
-                    Direction::Synthesise => Direction::Synthesise,
-                    Direction::Check(expected) => {
-                        let accumulated = self.accumulate_effects(at, read, expected)?;
-                        if accumulated != expected {
-                            comp_bridge(
-                                self.context,
-                                at,
-                                accumulated,
-                                expected,
-                                &mut self.conversions,
-                            )?;
-                        }
-                        let arena = self.context.arena_mut();
-                        Direction::Check(
-                            shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
-                        )
-                    },
-                };
-                self.context.binders().open(Zone::Intuitionistic, result);
-                self.context.open_copy(at);
-                self.wait(Frame::BindBody { at, bound: read });
-                Ok(Step::Descend(Goal::Computation {
-                    term: body,
-                    direction,
-                }))
-            },
+            ) => self.bound(at, (bound, body), direction, synthesised),
             (Frame::BindBody { at, bound }, Produced::CompType(synthesised)) => {
                 let Maybe::Present(lowered) =
                     strengthen_comp_type(self.context.arena_mut(), synthesised)
@@ -10105,7 +10282,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::StayEndpoints { .. }
                 | Frame::AccessUnwind { .. }
                 | Frame::AccessIndex { .. }
-                | Frame::ResumeValue { .. },
+                | Frame::ResumeValue { .. }
+                | Frame::BindChecked { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
             | (
