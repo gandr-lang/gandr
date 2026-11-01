@@ -47,18 +47,18 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the hold statement's keyword `var`, read beside `hold` until the corpus
-/// moves.
-const BUILT_IN_FINGERPRINT: u64 = 0x3cf8_b3ee_cbec_09dc;
+/// the protocol step `! T >> S` and the recursive protocol `rec X => S`, read
+/// beside the dotted forms until the corpus moves.
+const BUILT_IN_FINGERPRINT: u64 = 0x27b9_fca9_31a5_c5d5;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3420);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3425);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 95;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -100,11 +100,11 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("=", 143),
     ("==", 1),
     ("==>", 27),
-    ("=>", 32),
+    ("=>", 33),
     (">", 4),
     (">&", 1),
     (">=", 1),
-    (">>", 1),
+    (">>", 3),
     ("?", 4),
     ("@", 1),
     ("@[", 4),
@@ -208,7 +208,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("pi+", 8),
     ("pub", 1),
     ("pure", 3),
-    ("rec", 2),
+    ("rec", 3),
     ("recv", 20),
     ("release", 20),
     ("requires", 1),
@@ -234,7 +234,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("type", 23),
     ("type(", 1),
     ("type_identifier", 131),
-    ("type_variable", 62),
+    ("type_variable", 63),
     ("typed_number", 2),
     ("u32", 1),
     ("u64", 1),

@@ -947,20 +947,20 @@ fn session_types_spell_their_protocol_and_payloads()
     for (root, spelling) in [
         (
             CoreNode::ValueType(seat),
-            "?Integer. mu t. +{handoff : !(+U (-F Unit)). end, report : !String. &{next : t, retire : end}}",
+            "?Integer >> rec t => +{handoff : !(+U (-F Unit)) >> end, report : !String >> &{next : t, retire : end}}",
         ),
         (
             CoreNode::ValueType(peer),
-            "!Integer. mu t. &{handoff : ?(+U (-F Unit)). end, report : ?String. +{next : t, retire : end}}",
+            "!Integer >> rec t => &{handoff : ?(+U (-F Unit)) >> end, report : ?String >> +{next : t, retire : end}}",
         ),
         (
             CoreNode::ValueType(inside),
-            "&{next : mu t. +{handoff : !(+U (-F Unit)). end, report : !String. &{next : t, retire : end}}, retire : end}",
+            "&{next : rec t => +{handoff : !(+U (-F Unit)) >> end, report : !String >> &{next : t, retire : end}}, retire : end}",
         ),
         (CoreNode::ValueType(ended), "end"),
         (
             CoreNode::CompType(returns_seat),
-            "-F (?Integer. mu t. +{handoff : !(+U (-F Unit)). end, report : !String. &{next : t, retire : end}})",
+            "-F (?Integer >> rec t => +{handoff : !(+U (-F Unit)) >> end, report : !String >> &{next : t, retire : end}})",
         ),
         (CoreNode::CompType(returns_end), "-F end"),
     ] {

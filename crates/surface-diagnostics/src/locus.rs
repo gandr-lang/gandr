@@ -1966,7 +1966,7 @@ impl fmt::Display for Shape
             ExpectedShape::Path => "an element path type `Path(A, a, b)`",
             ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
             ExpectedShape::Session => {
-                "a session type `!A. S`, `?A. S`, `+{l : S}`, `&{l : S}` or `end`"
+                "a session type `!A >> S`, `?A >> S`, `+{l : S}`, `&{l : S}` or `end`"
             },
             ExpectedShape::Capability => "a capability `Cap {op, …}`",
             ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",

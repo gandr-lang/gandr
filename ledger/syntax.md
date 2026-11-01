@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x3cf8b3eecbec09dc`
+- Grammar fingerprint: `0x27b9fca931a5c5d5`
 - Rules: 168 — 167 committed, 1 internal
-- Molds: 3420
+- Molds: 3425
 - Attributes: 17
 
 ## Reading a form
@@ -186,12 +186,12 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `#{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
-| [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE . TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
-| [`receive_session_type`](../corpus/ledger/syntax/receive-session-type.gandr) | `? TYPE . TYPE` | `type.arrow` | `receive_session_type` | admitted | Operator, Other |
+| [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
+| [`receive_session_type`](../corpus/ledger/syntax/receive-session-type.gandr) | `? TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `receive_session_type` | admitted | Operator, Other |
 | [`end_session_type`](../corpus/ledger/syntax/end-session-type.gandr) | `end` | `type.atom` | `end_session_type` | admitted | Keyword |
 | [`labelled_sum_type`](../corpus/ledger/syntax/labelled-sum-type.gandr) | `+ { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | admitted | Operator, Other |
 | [`lazy_record_type`](../corpus/ledger/syntax/lazy-record-type.gandr) | `& { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | admitted | Operator, Other |
-| [`mu_session_type`](../corpus/ledger/syntax/mu-session-type.gandr) | `mu ‹type_variable› . TYPE` | `type.arrow` | `mu_session_type` | admitted | Keyword, TypeVariable, Other |
+| [`mu_session_type`](../corpus/ledger/syntax/mu-session-type.gandr) | `⦅ rec ‹type_variable› => ‖ mu ‹type_variable› . ⦆ TYPE` | `type.arrow` | `mu_session_type` | admitted | Keyword, TypeVariable, Operator, Other |
 | [`primitive_type`](../corpus/ledger/syntax/primitive-type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void ‖ Buf` | `type.atom` | `primitive_type` | admitted | TypeBuiltin |
 | [`unknown_type`](../corpus/ledger/syntax/unknown-type.gandr) | `?` | `type.atom` | `unknown_type` * | unadmitted | TypeBuiltin |
 | [`type_identifier`](../corpus/ledger/syntax/type-identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | admitted | Type |

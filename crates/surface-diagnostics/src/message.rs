@@ -419,7 +419,7 @@ fn lowered(
                 ),
                 FragmentBoundary::NonContractive => f.write_str(
                     "this recursive session type recurses before any action; put a send, a \
-                     receive or a choice under its `mu`",
+                     receive or a choice under its `rec`",
                 ),
                 FragmentBoundary::Held => {
                     f.write_str("an `access` lends a held value: a name a `var` statement holds")

@@ -191,7 +191,7 @@ pub enum FragmentSort
     Computation,
     /// A pattern, the binder of a `run` statement.
     Pattern,
-    /// A session type's continuation: a session form, or a variable a `mu`
+    /// A session type's continuation: a session form, or a variable a `rec`
     /// around it binds.
     Continuation,
 }
@@ -326,7 +326,7 @@ pub enum FragmentBoundary
     /// a name a fork binds as one of its ends: a value, a declaration or an
     /// ordinary binder.
     Endpoint,
-    /// The form is a `mu` whose body is a `mu` or a recursion variable, so
+    /// The form is a `rec` whose body is a `rec` or a recursion variable, so
     /// the protocol recurses before any action: not contractive.
     NonContractive,
     /// The name an access lends is no linear slot: a value, a declaration
@@ -425,7 +425,7 @@ impl fmt::Display for FragmentBoundary
                  ends",
             ),
             Self::NonContractive => f.write_str(
-                "recurses before any action: a `mu` body that is a `mu` or a variable unfolds \
+                "recurses before any action: a `rec` body that is a `rec` or a variable unfolds \
                  to itself",
             ),
             Self::Held => {

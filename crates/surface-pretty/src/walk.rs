@@ -2051,14 +2051,14 @@ fn protocol_template(
                 text.push('!');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
                 segments.push(Segment::Payload(payload));
-                text.push_str(". ");
+                text.push_str(" >> ");
                 pending.push(Spelling::State(next));
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "the receive session type's own `?A. S`, which \
+                    reason = "the receive session type's own `?A >> S`, which \
                               `receive_session_type` reads: an answer, not a placeholder"
                 )
             )]
@@ -2066,7 +2066,7 @@ fn protocol_template(
                 text.push('?');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
                 segments.push(Segment::Payload(payload));
-                text.push_str(". ");
+                text.push_str(" >> ");
                 pending.push(Spelling::State(next));
             },
             Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
@@ -2085,9 +2085,9 @@ fn protocol_template(
             },
             Ok(&ProtocolNode::End) => text.push_str("end"),
             Ok(&ProtocolNode::Mu(body)) => {
-                text.push_str("mu ");
+                text.push_str("rec ");
                 text.push_str(&Nesting(binders.len()).name());
-                text.push_str(". ");
+                text.push_str(" => ");
                 binders.push(at);
                 pending.push(Spelling::Leave);
                 pending.push(Spelling::State(body));
@@ -2096,7 +2096,7 @@ fn protocol_template(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     linear_search_in_loop,
-                    reason = "bounded: `binders` holds the `mu`s open around one session type, \
+                    reason = "bounded: `binders` holds the `rec`s open around one session type, \
                               innermost last"
                 )
             )]

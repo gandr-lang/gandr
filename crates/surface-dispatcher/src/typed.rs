@@ -7915,7 +7915,7 @@ mod tests
              close(peer)\n}\n",
         );
         let table = table(source);
-        for (needle, ty) in [("next =>", "!String. end"), ("retire =>", "end")] {
+        for (needle, ty) in [("next =>", "!String >> end"), ("retire =>", "end")] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Binder, SourceText::from(ty)),

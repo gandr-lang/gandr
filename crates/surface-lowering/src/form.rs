@@ -565,6 +565,9 @@ impl TileName
     pub const GREATER_THAN: Self = Self(">");
     /// The value function space's `=>`.
     pub const FAT_ARROW: Self = Self("=>");
+    /// The protocol step `>>` between a send's or a receive's payload and the
+    /// rest of the protocol.
+    pub const SEQUENCE: Self = Self(">>");
     /// An escape sequence inside a string's own tiles.
     pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
     /// An identifier written as one of a form's own tiles.
@@ -761,7 +764,8 @@ impl TileName
     pub const DROP: Self = Self("drop");
     /// The closed session type `end`.
     pub const END: Self = Self("end");
-    /// The recursive session type's binder keyword `mu`.
+    /// The recursive session type's former keyword `mu`, read until the corpus
+    /// moves to `rec t => S`.
     pub const MU: Self = Self("mu");
     /// The session keyword `offer`.
     pub const OFFER: Self = Self("offer");
@@ -1009,8 +1013,9 @@ pub enum Former
     /// The instantiation `e[i, …]`: a recursive definition's descent claim
     /// `f[<]` at the head of its own call, and nothing else.
     Instantiation,
-    /// A session type's own forms, `!A. S`, `?A. S`, `end` and `mu t. S`:
-    /// the outermost form of a protocol, read whole down its continuations.
+    /// A session type's own forms, `!A >> S`, `?A >> S`, `end` and `rec t =>
+    /// S`: the outermost form of a protocol, read whole down its
+    /// continuations.
     SessionType,
     /// An action on an endpoint returning the unit: `send(c, v)`,
     /// `select(c, l)` or `close(c)`.

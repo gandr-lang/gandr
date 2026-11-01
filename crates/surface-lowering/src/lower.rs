@@ -61,7 +61,7 @@
 //! value, is thunked; a type standing where a value is read
 //! is quoted into its code, a value type by `⌜A⌝` and a computation type by
 //! `⌜C⌝`, so `def t : Type ; def t = Integer ;` declares a code, and a type an
-//! expression cannot spell bare, a receive `?A. S` or a labelled sum `+{…}`,
+//! expression cannot spell bare, a receive `?A >> S` or a labelled sum `+{…}`,
 //! is written there as `type(T)`, which reads `T` at the quote's own position
 //! and so takes the same quote; and a name
 //! standing where a type is read, bound at a universe, is decoded out of it, as

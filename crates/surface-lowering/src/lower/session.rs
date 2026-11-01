@@ -5,7 +5,8 @@
 //!
 //! A session type is one core value type: a protocol, one node per state,
 //! over the payload types its sends and receives carry. The lowering reads
-//! it from its outermost session form — `!A. S`, `?A. S`, `end`, `mu t. S`,
+//! it from its outermost session form — `!A >> S`, `?A >> S`, `end`, `rec t
+//! => S`,
 //! or braces whose entries are all session forms — down through every
 //! continuation, and plans the protocol there. A continuation is a state of
 //! that protocol, never a type of its own, so the sweep does not read it; a
@@ -17,12 +18,13 @@
 //! `next : turn` and `retire : end` read as branches; at a type's root the
 //! braces are the select or the offer exactly when every entry is a session
 //! form (the `lower::arity` module). A branch is labelled; a positional entry
-//! has no label to select. `mu t.` binds `t` for the continuations under it,
-//! and a continuation spelled as a name is the innermost binder of that name;
-//! any other type standing where a continuation is read is refused by sort,
-//! the session continuation. A protocol whose recursion reaches its own
-//! variable before any action, `mu t. t`, is refused as not contractive where
-//! the `mu` is written.
+//! has no label to select. `rec t =>` binds `t` for the continuations under
+//! it, and a continuation spelled as a name is the innermost binder of that
+//! name; any other type standing where a continuation is read is refused by
+//! sort, the session continuation. A protocol whose recursion reaches its own
+//! variable before any action, `rec t => t`, is refused as not contractive
+//! where the `rec` is written. The dotted `!A. S`, `?A. S` and `mu t. S` are
+//! read alike until the corpus moves.
 //!
 //! - Alternatives: a core type per continuation, which mints one protocol per
 //!   state and makes the protocol's identity depend on sharing; second grammar
@@ -704,16 +706,18 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Read one of a session type's own forms, `!A. S`, `?A. S`, `end` or `mu
-    /// t. S`, at `here`, its continuations queued on the walk.
+    /// Read one of a session type's own forms, `!A >> S`, `?A >> S`, `end` or
+    /// `rec t => S`, at `here`, its continuations queued on the walk; the
+    /// dotted `!A. S`, `?A. S` and `mu t. S` are read alike until the corpus
+    /// moves.
     ///
     /// # Specification
     /// - requires: `cursor` reads the form's pieces from the start, and `state`
     ///   is the state the form is written as.
     /// - ensures: `end` is the closed node; a send or receive reads its payload
     ///   as a value type under the form's frame, stores it in the next slot and
-    ///   queues its continuation as a fresh state; `mu t. S` binds `t` for the
-    ///   walk under it, queues a leave after `S`, is the fixed point of the
+    ///   queues its continuation as a fresh state; `rec t => S` binds `t` for
+    ///   the walk under it, queues a leave after `S`, is the fixed point of the
     ///   state `S` fills, and keeps `t` as a site naming `state`.
     /// - fails: a misplaced tile or a hole's own fault.
     /// - panics: none.
@@ -746,12 +750,19 @@ impl<'source> Lowerer<'_, 'source>
             exhausted(here, &cursor)?;
             return Ok(ProtocolSyntax::End);
         }
-        if let Maybe::Present(_) = cursor.tile(TileName::MU) {
+        let recursive = match cursor.tile(TileName::REC) {
+            Maybe::Present(_) => Some(TileName::FAT_ARROW),
+            Maybe::Absent(_) => match cursor.tile(TileName::MU) {
+                Maybe::Present(_) => Some(TileName::DOT),
+                Maybe::Absent(_) => None,
+            },
+        };
+        if let Some(arrow) = recursive {
             let Maybe::Present(variable) = cursor.tile(TileName::TYPE_VARIABLE)
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            closed(here, &mut cursor, TileName::DOT)?;
+            closed(here, &mut cursor, arrow)?;
             let body = here.one(cursor.operands())?;
             exhausted(here, &cursor)?;
             binders.push(self.name_at(variable));
@@ -772,7 +783,9 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let carried = here.one(cursor.operands())?;
-        closed(here, &mut cursor, TileName::DOT)?;
+        if let Maybe::Absent(_) = cursor.tile(TileName::SEQUENCE) {
+            closed(here, &mut cursor, TileName::DOT)?;
+        }
         let continued = here.one(cursor.operands())?;
         exhausted(here, &cursor)?;
         let Reading::ValueType(frame) = here.reading
