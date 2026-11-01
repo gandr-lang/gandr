@@ -7,7 +7,7 @@ def answer() -> -F Integer {
   return m + one
 }
 
-/// A value a `let` names is the value itself where the name is read.
+/// A name a `let` binds reads as the value itself.
 @[ checks ]
 def three() -> -F Path(Integer, 3, 3) {
   let x = 3;
@@ -22,9 +22,9 @@ def counted() -> -F Integer {
   pure c
 }
 
-/// An assignment writes a held place: `=` the right side's value, `+=`, `-=`
-/// and `*=` the operator over the place's value and it, the right side read
-/// before the place is lent.
+/// An assignment writes a held place. `=` writes the right side's value, and
+/// `+=`, `-=` and `*=` write the operator over the place's value and it. The
+/// right side runs before the assignment lends the place.
 @[ checks ]
 def assigned() -> -F Integer {
   var n = 1;
@@ -34,7 +34,7 @@ def assigned() -> -F Integer {
   return n
 }
 
-/// A `var` may state its value's type, which a list needs to be read.
+/// A `var` may state its value's type, and a list needs one.
 @[ checks ]
 def listed() -> -F Integer {
   var xs : List(Integer) = #[1, 2];

@@ -69,7 +69,7 @@ def keptInferred() -> Integer { kept(0, 4) }
 @[ checks ]
 def sameAt(t : Type, y : t) -> t { same(y) }
 
-/// `same` supplied from a variable of its implicit's name: `.a` is `.a = a`.
+/// A pun supplies `same` from a variable of its implicit's name: `.a` is `.a = a`.
 @[ checks ]
 def samePunned(a : Type, y : a) -> a { same[.a](y) }
 
