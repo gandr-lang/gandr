@@ -42,12 +42,13 @@
 //! # An arm's bar is told apart from the union's
 //!
 //! A `|` opens a clause, a constructor or a match arm when it is the first
-//! token on its line, or when it stands directly in a brace whose first token
-//! is a `|`; it is then a [`Lexeme::ArmBar`]. In such a brace, a `|` inside
-//! an arm's patterns is the or-pattern's, as OCaml's `function | A | B -> e`
-//! reads it: one standing before the arm's `=>` with a `=>` still to come
-//! before the next `:`, `;`, line-leading bar or the brace's close. Every
-//! other `|` is the union, an or-pattern or the pipeline. A union inside a
+//! token on its line, when it follows a `,` directly inside a brace, or when
+//! it stands directly in a brace whose first token is a `|`; it is then a
+//! [`Lexeme::ArmBar`]. In such a brace, a `|` inside an arm's patterns is the
+//! or-pattern's, as OCaml's `function | A | B -> e` reads it: one standing
+//! before the arm's `=>` with a `=>` still to come before the next `:`, `;`,
+//! line-leading bar or the brace's close. Every other `|` is the union, an
+//! or-pattern or the pipeline. A union inside a
 //! bar block is parenthesised: `| C : (A | B)`. The marking reads brackets,
 //! line starts and the arm's `=>` only, so it runs over the labeled stream,
 //! never inside a scanner.
@@ -904,7 +905,9 @@ enum Opened
         /// The current arm's `=>` has passed.
         arrowed: bool,
     },
-    /// Any other host bracket.
+    /// Any other host brace: a `|` after its `,` opens the next arm.
+    Brace,
+    /// A host parenthesis or bracket.
     Plain,
     /// A shell block or a bracket inside one, where `|` is the shell's pipe.
     Shell,
@@ -968,11 +971,12 @@ fn arrow_ahead<'bytes>(
 /// # Specification
 /// - requires: `tokens` are the labeled tokens of `bytes`.
 /// - ensures: a `|` outside a shell block is an arm bar exactly when no token
-///   but space stands between it and the line's start, or when the innermost
-///   open bracket is a brace whose first token after it is a `|`, unless the
-///   brace's current arm has met no `=>` and one follows before the next `:`,
-///   `;`, line-leading `|` or the brace's close, where it is an or-pattern's;
-///   no other token changes.
+///   but space stands between it and the line's start, when the innermost open
+///   bracket is a brace and the token before the bar is a `,`, or when the
+///   innermost open bracket is a brace whose first token after it is a `|`,
+///   unless the brace's current arm has met no `=>` and one follows before the
+///   next `:`, `;`, line-leading `|` or the brace's close, where it is an
+///   or-pattern's; no other token changes.
 /// - panics: none.
 /// - executable: none — the clause would walk every token twice per call; the
 ///   witness checks each class.
@@ -980,9 +984,10 @@ fn arrow_ahead<'bytes>(
 /// # Adequacy
 /// - hypothesis: L3 — a line-leading bar, bars on one line in a bar brace, a
 ///   union in parentheses inside one, an or-pattern among a clause's patterns
-///   on one line and on its own, a bar after a plain brace's first token and a
-///   shell pipe each take their class; marking by line alone, by brace alone or
-///   past the arm's `=>` changes one of them.
+///   on one line and on its own, a bar after a plain brace's first token, a bar
+///   after a plain brace's comma and a shell pipe each take their class;
+///   marking by line alone, by brace alone or past the arm's `=>` changes one
+///   of them.
 /// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
 fn mark_arm_bars(
     bytes: SourceBytes<'_>,
@@ -1003,6 +1008,7 @@ fn mark_arm_bars(
     };
     let mut opened: Vec<Opened> = Vec::new();
     let mut line_start = true;
+    let mut after_comma = false;
     for index in 0 .. tokens.len() {
         let Some(&token) = tokens.get(index)
         else {
@@ -1024,6 +1030,7 @@ fn mark_arm_bars(
                         || arrowed
                         || !bool::from(arrow_ahead(tokens, TokenIndex::from(index), text))
                 },
+                Some(Opened::Brace) => line_start || after_comma,
                 Some(Opened::Plain) | None => line_start,
             };
             if arm
@@ -1039,6 +1046,7 @@ fn mark_arm_bars(
                 bar.lexeme = if arm { Lexeme::ArmBar } else { Lexeme::Punct };
             }
             line_start = false;
+            after_comma = false;
             continue;
         }
         if let Some(&mut Opened::Bars {
@@ -1075,6 +1083,9 @@ fn mark_arm_bars(
                         arrowed: false,
                     }
                 }
+                else if spelled.ends_with(b"{") {
+                    Opened::Brace
+                }
                 else {
                     Opened::Plain
                 });
@@ -1084,6 +1095,7 @@ fn mark_arm_bars(
             }
         }
         line_start = false;
+        after_comma = token.lexeme == Lexeme::Punct && text(&token) == b",";
     }
 }
 
@@ -3736,6 +3748,8 @@ mod tests
             ("where { | C : (A | B) | D }", &[true, false, true]),
             // A brace whose first token is no bar is plain.
             ("{ A | B => x }", &[false]),
+            // A bar after a plain brace's comma opens the next arm.
+            ("match c { A | B => x, | C => y }", &[false, true]),
             // A bar leading its line is an arm's wherever it stands.
             ("f : T where\n  | x => a | b\n  | y => c", &[
                 true, false, true,

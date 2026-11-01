@@ -1051,7 +1051,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut written: Vec<(Placed, Placed)> = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-            let _bar = cursor.tile(TileName::BAR);
+            let _bar = cursor.tile(TileName::ARM_BAR);
             let pattern = site.one(cursor.operands())?;
             closed(site, &mut cursor, TileName::FAT_ARROW)?;
             let body = site.one(cursor.operands())?;

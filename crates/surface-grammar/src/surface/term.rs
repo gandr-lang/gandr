@@ -3323,14 +3323,14 @@ fn handler_clause() -> Regex
 /// Build a braced, comma-separated, nonempty arm list whose every arm may open
 /// with `|`.
 ///
-/// A leading `|` lets an or-pattern spread over lines open with its
-/// separator. A mold is one tile occurrence, and an occurrence a hole can
-/// follow admits an operand before any successor: an optional `|` after a
-/// single `{` would admit `{ A | B => …` as `A` before the arm's bar, a
-/// reading that ties with the or-pattern's. So the bar is never optional
-/// after a shared tile: the opener and every separator come in two
-/// occurrences, one a hole follows and one the bar follows, and the token
-/// after the tile tells them apart.
+/// A leading `|` lets an arm open with its bar, as a clause does; the labeler
+/// marks it an arm bar after the brace or a comma and at a line's start. A
+/// mold is one tile occurrence, and an occurrence a hole can follow admits an
+/// operand before any successor: an optional bar after a single `{` would
+/// admit `{ A | B => …` as `A` before the arm's bar, a reading that ties with
+/// the or-pattern's. So the bar is never optional after a shared tile: the
+/// opener and every separator come in two occurrences, one a hole follows and
+/// one the bar follows, and the token after the tile tells them apart.
 ///
 /// # Specification
 /// - requires: nothing.

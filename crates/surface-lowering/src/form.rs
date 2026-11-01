@@ -522,7 +522,7 @@ impl TileName
     pub const DOT_AT: Self = Self(".@");
     /// The bang `!` marking a shared fork, and the send session type's lead.
     pub const BANG: Self = Self("!");
-    /// The bar `|` that may lead a case arm.
+    /// The bar `|` of a record update's base or a row's open tail.
     pub const BAR: Self = Self("|");
     /// The arm bar `|` opening a constructor, a clause or a match arm.
     pub const ARM_BAR: Self = Self("arm_bar");
