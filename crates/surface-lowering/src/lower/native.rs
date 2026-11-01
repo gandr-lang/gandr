@@ -5325,13 +5325,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `fields` is a stretch of the operand store, each entry a
     ///   field the site was written with, left to right.
-    /// - ensures: for a family of neither parameters nor indices, the record of
-    ///   every port labelled by its output, each port the constructor at its
-    ///   tag over the fields as [`Self::construct`] reads them, its classifier
-    ///   the family alone.
-    /// - fails: [`FragmentBoundary::Unadmitted`] for a family with parameters
-    ///   or indices, whose ports take their classifier from no record type yet;
-    ///   as [`Self::construct`] otherwise.
+    /// - ensures: the record of every port labelled by its output, each port
+    ///   the constructor at its tag over the fields as [`Self::construct`]
+    ///   reads them; for a family of neither parameters nor indices its
+    ///   classifier is the family alone, and for any other the record type the
+    ///   position states, whose entry at each label the port takes.
+    /// - fails: as [`Self::construct`], the unannotated refusal for a family
+    ///   with arguments at a position that states no type included; the
+    ///   unresolved-name refusal for a constructor whose ports its family does
+    ///   not list.
     /// - panics: none.
     ///
     /// # Errors
@@ -5339,7 +5341,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the record of a two-output constructor destructures
-    ///   to its ports, and a parameterised family's is refused by name.
+    ///   to its ports, and a parameterised family's takes its ports' types from
+    ///   the record type its definition states.
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Ports(..))))]
     pub(super) fn ports(
@@ -5349,28 +5352,31 @@ impl<'source> Lowerer<'_, 'source>
         fields: Stretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let unbuilt = || site.out(FragmentBoundary::Unadmitted(Unbuilt::PortTuple));
-        let Generators::Written(form) = ported.form
-        else {
-            return Err(unbuilt());
+        let name = self.name_at(ported.named);
+        let unresolved = || LoweringRefusal::UnresolvedName {
+            span: ported.named.span,
+            name,
         };
-        let Some(data) = self.collected.data.get(form)
-        else {
-            return Err(unbuilt());
+        let (labels, alone) = match ported.form {
+            Generators::Written(form) => match self.collected.data.get(form) {
+                Some(data) => (
+                    (ported.first .. ported.first.saturating_add(ported.count))
+                        .filter_map(|tag| match data.generators.get(tag)?.port {
+                            Maybe::Present(port) => Some((
+                                FieldLabel::from(String::from(self.name_at(port).as_ref())),
+                                ConstructorTag::from(tag),
+                            )),
+                            Maybe::Absent(_) => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    data.parameters.is_empty() && data.indices.is_empty(),
+                ),
+                None => return Err(unresolved()),
+            },
+            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => {
+                return Err(unresolved());
+            },
         };
-        if !data.parameters.is_empty() || !data.indices.is_empty() {
-            return Err(unbuilt());
-        }
-        let labels: Vec<(FieldLabel, ConstructorTag)> = (ported.first
-            .. ported.first.saturating_add(ported.count))
-            .filter_map(|tag| match data.generators.get(tag)?.port {
-                Maybe::Present(port) => Some((
-                    FieldLabel::from(String::from(self.name_at(port).as_ref())),
-                    ConstructorTag::from(tag),
-                )),
-                Maybe::Absent(_) => None,
-            })
-            .collect();
         let first = Constructor {
             family: ported.family,
             form: ported.form,
@@ -5381,17 +5387,88 @@ impl<'source> Lowerer<'_, 'source>
         self.construct(site, first, fields)?;
         let Some(&Plan::Constructor(constructed)) = self.plans.get(site.at.node)
         else {
-            return Err(unbuilt());
+            return Err(unresolved());
         };
-        // The family takes no arguments, so it classifies each port alone,
-        // whatever type the record is written at.
-        let constructed = Constructed {
-            classifier: Classifier::Inserted,
-            ..constructed
+        // A family without arguments classifies each port alone, whatever
+        // type the record is written at.
+        let constructed = if alone {
+            Constructed {
+                classifier: Classifier::Inserted,
+                ..constructed
+            }
+        }
+        else {
+            self.through_first_port(site, ported, fields);
+            constructed
         };
         self.plan(site, Plan::Ports(constructed, labels));
 
         Ok(())
+    }
+
+    /// Hand each constructor written in a field of the record of ports
+    /// planned at `site` the field's declared type, read under the first
+    /// port's entry of the record type.
+    ///
+    /// # Specification
+    /// - requires: [`Self::construct`] read the fields `fields` holds for the
+    ///   first port of `ported` at `site`.
+    /// - ensures: every field holding an inherited classifier other than a
+    ///   field classifier around `site` holds instead the field's declared type
+    ///   around `site`, which [`Self::classifier_type`] reads under the first
+    ///   port's entry of the record type, never the record type itself.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field typed by the family over its own parameters
+    ///   is classified by a port's type, not by the record of the ports.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |()| (fields.start .. fields.end).all(|position| self.operands.get(position).and_then(|field| self.inherited.get(field)).is_none_or(|inherited| matches!(inherited, &Classifier::Field(of) if of.around == site.at.node))) || !matches!(ported.form, Generators::Written(form) if self.collected.data.get(form).and_then(|data| data.generators.get(ported.first)).is_some_and(|generator| generator.fields.len() >= (fields.start .. fields.end).count())))]
+    fn through_first_port(
+        &mut self,
+        site: Site,
+        ported: Ported,
+        fields: Stretch,
+    )
+    {
+        let Generators::Written(form) = ported.form
+        else {
+            return;
+        };
+        let Some(data) = self.collected.data.get(form)
+        else {
+            return;
+        };
+        let Some(generator) = data.generators.get(ported.first)
+        else {
+            return;
+        };
+        let parameters = data.parameters.len();
+        let declared: Vec<NodeIndex> = generator.fields.iter().map(|field| field.ty.node).collect();
+        for (index, position) in (fields.start .. fields.end).enumerate() {
+            let (Some(&field), Some(&declared)) =
+                (self.operands.get(position), declared.get(index))
+            else {
+                continue;
+            };
+            let Some(&inherited) = self.inherited.get(&field)
+            else {
+                continue;
+            };
+            if matches!(inherited, Classifier::Field(of) if of.around == site.at.node) {
+                continue;
+            }
+            let _replaced = self.inherited.insert(
+                field,
+                Classifier::Field(FieldOf {
+                    around: site.at.node,
+                    declared,
+                    parameters,
+                    index,
+                }),
+            );
+        }
     }
 
     /// Whether some leaf of the syntax under `node` spells one of `names`.
@@ -9064,6 +9141,31 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
+        self.mint_classified(constructed, fields, written, sink, origin)
+    }
+
+    /// Mint a constructor over its minted `fields` at the minted classifier
+    /// `written`.
+    ///
+    /// # Specification
+    /// - requires: `fields` are the constructor's fields, minted in order.
+    /// - ensures: as [`Self::mint_constructor`], past its classifier.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_constructor`].
+    /// - witness: `lower::native::tests::a_constructor_keeps_its_family_under_another_s_classifier_2075`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(Lowered::Value(_))))]
+    fn mint_classified(
+        &self,
+        constructed: Constructed,
+        fields: Vec<ValueId>,
+        written: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
         // A constructor's tag counts within its own family: under a classifier
         // of another family it would name that family's constructor of the
         // same place.
@@ -9111,8 +9213,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: as [`Self::mint_constructor`].
     /// - ensures: the record keyed by each port's label, its value the port's
-    ///   constructor over the shared fields as [`Self::mint_constructor`] mints
-    ///   it at that port's tag; nothing when a port did not lower.
+    ///   constructor over the shared fields at that port's tag; for a family
+    ///   without arguments the port is classified as [`Self::mint_constructor`]
+    ///   classifies it, and for any other by its label's entry of the record
+    ///   type the classifier names; nothing when a field or the classifier did
+    ///   not lower, or the record type has no entry for a port.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -9128,10 +9233,35 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
+        let mut fields = Vec::new();
+        for position in constructed.fields.start .. constructed.fields.end {
+            let Some(&field) = self.operands.get(position)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            match self.value_at(field) {
+                Maybe::Present(value) => fields.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let written =
+            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        let first = ports.first().map(|&(ref label, _)| label);
         let mut minted = BTreeMap::new();
         for &(ref label, tag) in ports {
+            // A family without arguments classifies each port alone; any other
+            // port reads its entry of the record type.
+            let classifier = if constructed.classifier == Classifier::Inserted {
+                written
+            }
+            else {
+                Self::port_type(written, label, first, sink)
+            };
             let port = Constructed { tag, ..constructed };
-            match self.mint_constructor(port, sink, origin) {
+            match self.mint_classified(port, fields.clone(), classifier, sink, origin) {
                 Maybe::Present(Lowered::Value(id)) => {
                     let _first = minted.insert(label.clone(), id);
                 },
@@ -9142,6 +9272,40 @@ impl<'source> Lowerer<'_, 'source>
         let id = sink.arena.value_record(minted);
 
         Maybe::Present(sink.value(id, origin))
+    }
+
+    /// The type a port labelled `label` takes from `record`, the type its
+    /// record of ports is written at, `first` labelling the first port.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry at `label` when `record` is a record type holding
+    ///   it; else its entry at `first`; else `record` itself, so a record type
+    ///   missing a port, or a type that is no record, leaves the checker to
+    ///   refuse the record of ports against it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ports of a parameterised family read their
+    ///   classifiers off the record type at the value's position.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| ret == record || matches!(sink.arena.value_type(record), Some(&gandr_core_term::ValueType::Record(ref entries)) if entries.values().any(|&entry| entry == ret)))]
+    fn port_type(
+        record: ValueTypeId,
+        label: &FieldLabel,
+        first: Option<&FieldLabel>,
+        sink: &Sink<'_>,
+    ) -> ValueTypeId
+    {
+        match sink.arena.value_type(record) {
+            Some(&gandr_core_term::ValueType::Record(ref entries)) => entries
+                .get(label)
+                .or_else(|| entries.get(first?))
+                .copied()
+                .unwrap_or(record),
+            Some(_) | None => record,
+        }
     }
 
     /// The value type `classifier` names for a constructor of the family
@@ -9194,14 +9358,23 @@ impl<'source> Lowerer<'_, 'source>
         // constructor that owns it.
         let (mut classifier, mut family) = (classifier, family);
         let mut owner = origin.node();
+        // Each field followed out, with the label of the first port when the
+        // constructor around it is a record of ports: its classifier is the
+        // record's, and the field reads the first port's entry of it.
         let mut fields = Vec::new();
         while let Classifier::Field(field) = classifier {
-            let Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) =
-                self.plans.get(field.around)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
+            let (outer, port) = match self.plans.get(field.around) {
+                // A family without arguments classifies its ports alone; any
+                // other's ports read the record type their position states.
+                Some(&Plan::Ports(outer, ref ports))
+                    if outer.classifier != Classifier::Inserted =>
+                {
+                    (outer, ports.first().map(|&(ref label, _)| label.clone()))
+                },
+                Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) => (outer, None),
+                Some(_) | None => return Maybe::Absent(lowered::Absent::Unminted),
             };
-            fields.push(field);
+            fields.push((field, port));
             owner = field.around;
             (classifier, family) = (outer.classifier, outer.family);
         }
@@ -9291,7 +9464,10 @@ impl<'source> Lowerer<'_, 'source>
             Classifier::Field(_) => return Maybe::Absent(lowered::Absent::Unminted),
         };
         let mut ty = outermost;
-        for field in fields.into_iter().rev() {
+        for (field, port) in fields.into_iter().rev() {
+            if let Some(label) = port {
+                ty = Self::port_type(ty, &label, None, sink);
+            }
             ty = match self.field_type(field, ty, sink, origin) {
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),

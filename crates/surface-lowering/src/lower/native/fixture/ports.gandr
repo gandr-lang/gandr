@@ -51,6 +51,9 @@ def first = Dup(Leaf(1)).one;
 def doubled : #{one : Pair(Integer), two : Pair(Integer)};
 def doubled = Dup(Leaf(1));
 
+def mismatched : #{one : Pair(Integer), two : Pair(String)};
+def mismatched = Dup(Leaf(1));
+
 data Buffer : Type where {
   | Whole : (n : Integer) --> Buffer
   | Halve : (b[1] : Buffer) --> (front : Buffer, back : Buffer)

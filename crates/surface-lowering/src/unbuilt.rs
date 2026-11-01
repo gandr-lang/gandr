@@ -269,10 +269,6 @@ pub enum Unbuilt
     /// A multi-output constructor grading an input or an output `[1]`: the
     /// linear reading, whose values are circuits.
     LinearPorts,
-    /// A multi-output constructor of a family with parameters or indices
-    /// applied without naming an output: the record of its ports, whose
-    /// classifiers no record type is read for yet.
-    PortTuple,
     /// A pattern naming a multi-output constructor with no output: the joint
     /// pattern over a node's outputs, the linear reading's. At grade ω a value
     /// is one port, matched as `C(x).l`.
@@ -282,7 +278,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 84_usize] = [
+    pub const ALL: [Self; 83_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -365,7 +361,6 @@ impl Unbuilt
         Self::TermsType,
         Self::LawTerms,
         Self::LinearPorts,
-        Self::PortTuple,
         Self::PortPattern,
     ];
 
@@ -473,7 +468,6 @@ impl Unbuilt
             Self::TermsType => "terms_type.sorted",
             Self::LawTerms => "terms_type.law",
             Self::LinearPorts => "linear_ports",
-            Self::PortTuple => "port_tuple",
             Self::PortPattern => "port_pattern",
         })
     }
@@ -572,7 +566,6 @@ impl Unbuilt
             Self::LawTerms => TrackingIssue::LAW_CELL,
             Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
             Self::LinearPorts | Self::PortPattern => TrackingIssue::LINEAR_PORTS,
-            Self::PortTuple => TrackingIssue::PORT_RECORD,
         }
     }
 }

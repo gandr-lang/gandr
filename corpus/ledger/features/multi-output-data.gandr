@@ -1,6 +1,6 @@
 /// `multi-output-data`: Multi-output data constructors.
-/// Implemented: a constructor writing an output group, read at grade ω as one port per output, an ordinary constructor over the shared inputs; `C(x).l` constructs a port and matches it, coverage counts each port, a block's rules name ports, and `C(x)` is the record of the ports of a family without arguments.
-/// Not implemented: the grade-1 reading, whose values are circuits, owed by #4288; the record of a parameterised family's ports, owed by #4292.
+/// Implemented: a constructor writing an output group, read at grade ω as one port per output, an ordinary constructor over the shared inputs; `C(x).l` constructs a port and matches it, coverage counts each port, a block's rules name ports, and `C(x)` is the record of the ports, a parameterised family's typed by the record type its position states.
+/// Not implemented: the grade-1 reading, whose values are circuits, owed by #4288.
 // A shared subterm written once: `Share(e)` has two outputs, and each is a
 // value of `Expr` in its own right. The ports share the input `e`, so the
 // size below counts the shared subterm from either side.
@@ -31,3 +31,14 @@ def twice() -> -F Integer { size(Add(Share(Lit(1)).left, Share(Lit(1)).right)) }
 /// The two ports of a share, as a record.
 @[ checks ]
 def ports : #{left : Expr, right : Expr} = Share(Lit(1));
+
+/// A pair that duplicates a value into two ports of one parameter.
+@[ checks ]
+data Pair(a : Type) : Type where {
+  | Leaf : (x : a) --> Pair(a)
+  | Dup : (p : Pair(a)) --> (one : Pair(a), two : Pair(a))
+}
+
+/// A parameterised family's record: each port takes its entry's type.
+@[ checks ]
+def doubled : #{one : Pair(Integer), two : Pair(Integer)} = Dup(Leaf(1));

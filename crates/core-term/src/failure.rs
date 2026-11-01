@@ -218,9 +218,6 @@ impl TrackingIssue
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);
-    /// The record of a multi-output constructor's ports in a family with
-    /// parameters or indices, whose classifiers no record type gives yet.
-    pub const PORT_RECORD: Self = Self(4292);
     /// A multi-output constructor grading an input or an output `[1]`, whose
     /// values are circuits, and a joint pattern over a node's outputs.
     pub const LINEAR_PORTS: Self = Self(4288);
