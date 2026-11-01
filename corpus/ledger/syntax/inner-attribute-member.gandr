@@ -1,0 +1,5 @@
+/// `inner_attribute_member`: an inner attribute block leading a module's body: attributes decorating the module.
+module Counter where {
+  @![ checks ]
+  def zero = 0;
+}

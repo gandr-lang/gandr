@@ -513,6 +513,9 @@ impl TileName
     pub const ADMITTED: Self = Self("admitted");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
+    /// The inner attribute-block opener `@![`, decorating the item it stands
+    /// in.
+    pub const INNER_ATTRIBUTES: Self = Self("@![");
     /// The as-pattern's `@`, `x @ p`.
     pub const AT_SIGN: Self = Self("@");
     /// The as-pattern's dotted `.@`, `x .@ p`.
@@ -1186,7 +1189,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 135_usize] = [
+pub const FORMERS: [(&str, Former); 136_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1314,6 +1317,10 @@ pub const FORMERS: [(&str, Former); 135_usize] = [
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
     ("if_expression", Former::If),
+    (
+        "inner_attribute_block",
+        Former::Unadmitted(Unbuilt::SourceAttribute),
+    ),
     (
         "labelled_sum_pattern",
         Former::Unadmitted(Unbuilt::LabelledSumPattern),

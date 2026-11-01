@@ -451,6 +451,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "hold_statement",
     "import_declaration",
     "index_expression",
+    "inner_attribute_block",
     "isomorphism_type",
     "circuit_declaration",
     "labelled_sum_expression",

@@ -130,7 +130,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 109 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=11 => Sort::Item, 12..=17 => Sort::ModuleMember, 18..=29 | 99..=100 => Sort::Pattern, 30..=35 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 111 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 101..=102 => Sort::Pattern, 32..=37 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -1479,10 +1479,14 @@ fn ctor_field() -> Regex
 
 /// Append attribute, parameter, and extern helper forms.
 ///
+/// The inner attribute block `@![ … ]` decorates the item it stands in, where
+/// `@[ … ]` decorates the item after it; at an item slot it is a form of its
+/// own, which the lowering refuses at a source's root by name.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends the attribute and extern blocks, in order, at the item
-///   sort and supplied band.
+/// - ensures: appends the attribute, inner attribute and extern blocks, in
+///   order, at the item sort and supplied band.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1493,7 +1497,7 @@ fn ctor_field() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 2 && added.iter().zip(["attribute_block", "extern_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["attribute_block", "inner_attribute_block", "extern_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn attributes_parameters_externs(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -1534,6 +1538,13 @@ fn attributes_parameters_externs(
         AdaptationReason("folded away: the `id : T?` parameter is inlined in the parameter list, not a standalone form-first identifier competing with a bare variable"),
     ));
     out.push(attribute_block);
+    out.push(r(
+        RuleName("inner_attribute_block"),
+        Provenance("inner_attribute_block"),
+        s,
+        p,
+        inner_attr_block_inline(),
+    ));
     // The extern members `extern_type` (`type T ;`) and `extern_function`
     // (`def id (params) -> T? ;`) live only inside an `extern { … }` block, where
     // they are inlined below. Declaring them as standalone top-level Item rules
@@ -2450,6 +2461,31 @@ fn binary(
 pub(super) fn attr_block_inline() -> Regex
 {
     seq([t(TileLabel("@[")), comma1(attr_inline()), t(TileLabel("]"))])
+}
+
+/// Build an inline inner attribute block, `@![ … ]`: the attributes an outer
+/// block takes, on the item the block stands in.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a non-optional attribute list between the inner attribute opener
+///   and its closer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "@![")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
+fn inner_attr_block_inline() -> Regex
+{
+    seq([
+        t(TileLabel("@![")),
+        comma1(attr_inline()),
+        t(TileLabel("]")),
+    ])
 }
 
 /// Build an inline attribute.
@@ -3763,8 +3799,9 @@ fn member_sep() -> Regex
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends plain definitions, attributed definitions and type
-///   members, a plain type member, a nested module, a model include and a law's
-///   admission, all at the module-member sort with module provenance.
+///   members, a plain type member, a nested module, a model include, a law's
+///   admission and an inner attribute block, all at the module-member sort with
+///   module provenance.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3775,7 +3812,7 @@ fn member_sep() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member", "module_include_member", "module_law_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 7 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member", "module_include_member", "module_law_member", "inner_attribute_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
 fn module_members(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3842,6 +3879,16 @@ fn module_members(
         s,
         p,
         law_admission_tail(),
+    ));
+    // `@![ … ]` among the members decorates the module they stand in, where
+    // an attributed member's `@[ … ]` decorates that member. `@![` is its own
+    // lead, so the choice stays one token deep.
+    out.push(r(
+        RuleName("inner_attribute_member"),
+        Provenance("module_declaration"),
+        s,
+        p,
+        inner_attr_block_inline(),
     ));
 }
 

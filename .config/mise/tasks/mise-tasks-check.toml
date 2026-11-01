@@ -200,6 +200,8 @@ unproduced = [
   { rule = "if_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
   { rule = "import_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "index_expression", reason = "sugar the lowering elaborates away: a view method's body `self[e]` answers the place's index `e`, the term the printer writes, and the lowering refuses an index anywhere else (`OutOfFragment`)" },
+  { rule = "inner_attribute_block", reason = "a module item: the printer presents one core term or type, and an attribute block decorates a declaration in the module's environment, never a core node" },
+  { rule = "inner_attribute_member", reason = "a module item: the printer presents one core term or type, and an attribute block decorates a declaration in the module's environment, never a core node" },
   { rule = "instantiation.direction.descent", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
   { rule = "instantiation.direction.productivity", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
   { rule = "instantiation.explicit", reason = "a supply by name, which the lowering applies as the implicit argument it names, or a named-stage claim it consumes into the recursion check; core's call keeps neither the label nor the claim" },

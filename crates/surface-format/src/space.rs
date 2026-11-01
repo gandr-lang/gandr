@@ -201,7 +201,7 @@ impl Padding
 pub fn padding(open: Token<'_>) -> Padding
 {
     match <&str>::from(open.text) {
-        "@[" | "{" => match open.context {
+        "@[" | "@![" | "{" => match open.context {
             Context::Telescope | Context::Written => Padding::Hug,
             Context::Operand
             | Context::Prefix

@@ -219,6 +219,8 @@ impl TrackingIssue
     /// A multi-output constructor grading an input or an output `[1]`, whose
     /// values are circuits, and a joint pattern over a node's outputs.
     pub const LINEAR_PORTS: Self = Self(4288);
+    /// An inner attribute block at a source's root, decorating the source.
+    pub const SOURCE_ATTRIBUTE: Self = Self(4297);
     /// The terms of a theory of several sorts, of an indexed sort, or of an
     /// operation that binds, abstracts or returns several results.
     pub const SORTED_TERMS: Self = Self(4150);

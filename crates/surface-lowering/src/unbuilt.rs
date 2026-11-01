@@ -271,12 +271,15 @@ pub enum Unbuilt
     /// pattern over a node's outputs, the linear reading's. At grade ω a value
     /// is one port, matched as `C(x).l`.
     PortPattern,
+    /// An inner attribute block at a source's root, `@![ … ]`: the source it
+    /// decorates has no key of its own yet.
+    SourceAttribute,
 }
 
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 82_usize] = [
+    pub const ALL: [Self; 83_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -359,6 +362,7 @@ impl Unbuilt
         Self::LawTerms,
         Self::LinearPorts,
         Self::PortPattern,
+        Self::SourceAttribute,
     ];
 
     /// The qualifier a fixture's `refuses` expectation names the feature by:
@@ -465,6 +469,7 @@ impl Unbuilt
             Self::LawTerms => "terms_type.law",
             Self::LinearPorts => "linear_ports",
             Self::PortPattern => "port_pattern",
+            Self::SourceAttribute => "inner_attribute_block",
         })
     }
 
@@ -561,6 +566,7 @@ impl Unbuilt
             Self::LawTerms => TrackingIssue::LAW_CELL,
             Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
             Self::LinearPorts | Self::PortPattern => TrackingIssue::LINEAR_PORTS,
+            Self::SourceAttribute => TrackingIssue::SOURCE_ATTRIBUTE,
         }
     }
 }

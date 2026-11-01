@@ -627,6 +627,78 @@ fn an_explicit_exits_attribute_asks_within_its_form()
     );
 }
 
+/// An inner block leading a module's body, `@![ explicit_exits ]`, asks for
+/// its members' exits as an outer block before the module does, a nested
+/// module's too; one after a member is refused under the module's name, and
+/// asks for nothing; one doubling an outer block's attribute is refused as a
+/// block doubling another's is.
+#[test]
+fn an_inner_attribute_decorates_its_module()
+{
+    let source = format!(
+        "{NAT}module Asked where {{\n\
+         @![ explicit_exits ]\n\
+         def kept(n : Nat) -> -F Nat {{ n }}\n\
+         }}\n\
+         module Late where {{\n\
+         def first(n : Nat) -> -F Nat {{ Zero }}\n\
+         @![ explicit_exits ]\n\
+         }}\n\
+         module Outer where {{\n\
+         module Inner where {{\n\
+         @![ explicit_exits ]\n\
+         def deep(n : Nat) -> -F Nat {{ Succ(n) }}\n\
+         }}\n\
+         }}\n\
+         @[ explicit_exits ]\n\
+         module Doubled where {{\n\
+         @![ explicit_exits ]\n\
+         def twice(m : Nat) -> -F Nat {{ m }}\n\
+         }}\n"
+    );
+    let text = SourceText::from(source.as_str());
+    let module = lowered(text, &mut CoreArena::new());
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let inferred = |span, exit, explicitness| InferredExit {
+        span,
+        exit,
+        explicitness,
+    };
+    assert_eq!(
+        module.inferred_exits(),
+        [
+            inferred(at("{ n }", "n"), Exit::Return, Explicitness::Asked),
+            inferred(at("{ Zero }", "Zero"), Exit::Return, Explicitness::Unasked),
+            inferred(
+                at("{ Succ(n) }", "Succ(n)"),
+                Exit::Return,
+                Explicitness::Asked
+            ),
+        ],
+        "a leading inner block asks for its module's exits, a nested one's too, and the late \
+         one asks for none"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateAttribute { .. }
+        ),
+        "an inner block doubling the outer block's attribute refuses the module's first member"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("Late")),
+            LoweringRefusal::MalformedForm {
+                fault: crate::FormFault::MisplacedTile,
+                ..
+            }
+        ),
+        "an inner block after a member is refused under its module's name"
+    );
+}
+
 #[test]
 fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
 {

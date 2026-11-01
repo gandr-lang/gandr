@@ -1594,7 +1594,9 @@ pub struct Collected<'source>
     /// member of its body in order: taken by the held refusals once the
     /// description route has run.
     pub data_members: BTreeMap<NodeIndex, Vec<DataMember>>,
-    /// Every top-level module an attribute block decorates, in source order.
+    /// Every module an attribute block decorates, from before it at the root
+    /// or from within its body: each module once, its outer attributes ahead
+    /// of its inner ones.
     pub decorated: Vec<DecoratedModule<'source>>,
     /// Every root declaration a `pub` mark precedes, by the first byte of its
     /// form, with the form's bytes: what its source exports, the
@@ -4913,6 +4915,17 @@ impl<'source> Collector<'_, 'source>
                 name,
                 ..
             } => self.import(child, name),
+            // An inner attribute block at the root decorates the source,
+            // which has no key of its own yet.
+            Shape::Form {
+                former: Former::Unadmitted(feature @ Unbuilt::SourceAttribute),
+                name,
+            } => Err(LoweringRefusal::OutOfFragment {
+                span: child.span,
+                form: name,
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::Unadmitted(feature),
+            }),
             Shape::Form { name, .. } => Err(self
                 .closed_early(child)
                 .or_else(|| {
@@ -5229,10 +5242,11 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `module` is a module form standing at the root, and
     ///   `decorations` the attribute blocks written before it.
     /// - ensures: the module is collected as an undecorated one is, and its
-    ///   attributes are kept with the slots its collection admitted, the blocks
-    ///   owned by the first of them so a fault in a payload refuses that
-    ///   member; a module whose collection admits no slot decorates nothing,
-    ///   and refuses the run as a stray attribute block does.
+    ///   attributes are kept with the slots its collection admitted, ahead of
+    ///   those its inner blocks wrote, the blocks owned by the first of them so
+    ///   a fault in a payload refuses that member; a module whose collection
+    ///   admits no slot decorates nothing, and refuses the run as a stray
+    ///   attribute block does.
     /// - provides: the decorated half of [`collect_source`]'s module reading.
     /// - fails: a block out of shape, and every fault [`Self::module`] raises.
     /// - panics: none.
@@ -5249,8 +5263,9 @@ impl<'source> Collector<'_, 'source>
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.decorated.len()),
         ensures: |ret| ret.is_err()
-            || self.collected.decorated.get(before.1).is_some_and(|decorated| {
-                decorated.first.0 == before.0
+            || self.collected.decorated.last().is_some_and(|decorated| {
+                self.collected.decorated.len() > before.1
+                    && decorated.first.0 == before.0
                     && decorated.end.0 == self.collected.slots.len()
                     && decorated.first < decorated.end
                     && decorated.attributes.iter().all(|attribute| attribute.decorates == module.node)
@@ -5279,12 +5294,20 @@ impl<'source> Collector<'_, 'source>
         for &written in decorations {
             self.collected.own(written.node, first);
         }
-        self.collected.decorated.push(DecoratedModule {
-            module,
-            attributes,
-            first,
-            end,
-        });
+        // The module's own inner blocks closed with its body, last: the outer
+        // blocks join them, written first, so a doubled attribute is one.
+        match self.collected.decorated.last_mut() {
+            Some(within) if within.module.node == module.node => {
+                attributes.append(&mut within.attributes);
+                within.attributes = attributes;
+            },
+            Some(_) | None => self.collected.decorated.push(DecoratedModule {
+                module,
+                attributes,
+                first,
+                end,
+            }),
+        }
 
         Ok(())
     }
@@ -7212,7 +7235,7 @@ enum Header<'source>
 ///   resolves each nested level.
 /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
 #[derive(Clone, Debug)]
-struct Open
+struct Open<'source>
 {
     /// The module.
     structure: StructureIndex,
@@ -7223,7 +7246,22 @@ struct Open
     /// The modules its body includes, in source order, taken in when it
     /// closes.
     includes: Vec<Inclusion>,
+    /// The first slot its body admits.
+    first: SlotIndex,
+    /// The attributes of the inner blocks leading its body, `@![ … ]`, which
+    /// decorate the module when it closes.
+    inner: Vec<WrittenAttribute<'source>>,
+    /// Those inner blocks, owned by the module's first slot when it closes.
+    blocks: Vec<Placed>,
+    /// Whether every member read so far is an inner block.
+    leading: Leading,
 }
+
+/// Whether every member a module body has read so far is an inner attribute
+/// block.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Leading(bool);
 
 /// A module a body includes, `include M ;`.
 ///
@@ -7489,8 +7527,12 @@ impl<'source> Collector<'_, 'source>
             let structure = top.structure;
             let Some(&member) = top.members.get(top.next)
             else {
-                let includes = stack.pop().map(|open| open.includes).unwrap_or_default();
-                self.close(structure, &includes)?;
+                let Some(open) = stack.pop()
+                else {
+                    continue;
+                };
+                self.close(structure, &open.includes)?;
+                self.decorate_from_within(&open);
                 continue;
             };
             top.next = top.next.saturating_add(1_usize);
@@ -8189,7 +8231,7 @@ impl<'source> Collector<'_, 'source>
         container: Container,
         form: Placed,
         opened: Opened<'source>,
-        stack: &mut Vec<Open>,
+        stack: &mut Vec<Open<'source>>,
     )
     {
         let key = (container, opened.name);
@@ -8248,6 +8290,10 @@ impl<'source> Collector<'_, 'source>
             members: opened.members,
             next: 0_usize,
             includes: Vec::new(),
+            first: SlotIndex(self.collected.slots.len()),
+            inner: Vec::new(),
+            blocks: Vec::new(),
+            leading: Leading(true),
         });
     }
 
@@ -8535,7 +8581,7 @@ impl<'source> Collector<'_, 'source>
         structure: StructureIndex,
         member: Placed,
         pieces: &Pieces,
-        stack: &mut Vec<Open>,
+        stack: &mut Vec<Open<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let container = Container::Module(structure);
@@ -8574,6 +8620,15 @@ impl<'source> Collector<'_, 'source>
             },
             Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(()),
         };
+        if let Some(&Piece::Tile { label, .. }) = pieces.pieces.first()
+            && label == TileName::INNER_ATTRIBUTES
+        {
+            self.inner_attributes(structure, member, pieces, stack);
+            return Ok(());
+        }
+        if let Some(open) = stack.last_mut().filter(|open| open.structure == structure) {
+            open.leading = Leading(false);
+        }
         let defines = pieces
             .pieces
             .iter()
@@ -8642,6 +8697,129 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// Read the inner attribute block `member`, `@![ … ]`, of the module
+    /// `structure`, open at the top of `stack`.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of `member`, a member form of
+    ///   `structure` whose first tile is `@![`.
+    /// - ensures: a block that only inner blocks precede in the body keeps its
+    ///   attributes, decorating the module's form, for the module's close
+    ///   ([`Self::decorate_from_within`]); a block after another member, or one
+    ///   out of shape, is refused under the module's name at the member.
+    /// - provides: the inner attribute half of [`Self::member`].
+    /// - fails: never; a refusal is filed at the member.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an inner block leading a module's body decorates the
+    ///   module as an outer block before it does, and one after a definition is
+    ///   refused at it.
+    /// - witness: `lower::exits::tests::an_inner_attribute_decorates_its_module`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() <= before.saturating_add(1),
+    )]
+    fn inner_attributes(
+        &mut self,
+        structure: StructureIndex,
+        member: Placed,
+        pieces: &Pieces,
+        stack: &mut [Open<'source>],
+    )
+    {
+        let form = self
+            .collected
+            .structures
+            .get(structure.0)
+            .map_or(member, |entry| entry.declared_by);
+        let Some(open) = stack.last_mut().filter(|open| open.structure == structure)
+        else {
+            return;
+        };
+        if !open.leading.0 {
+            self.fault_at(
+                structure,
+                member,
+                misplaced_in(FormName::MODULE, member.span),
+            );
+            return;
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, member.span);
+        let _opener = cursor.tile(TileName::INNER_ATTRIBUTES);
+        let start = open.inner.len();
+        let read = self
+            .read_block(&mut cursor, form.node, &mut open.inner)
+            .and_then(|()| match cursor.peek() {
+                Maybe::Present(_) => Err(misplaced(cursor.here())),
+                Maybe::Absent(_) => Ok(()),
+            });
+        if let Err(refusal) = read {
+            open.inner.truncate(start);
+            self.fault_at(structure, member, refusal);
+            return;
+        }
+        open.blocks.push(member);
+    }
+
+    /// Decorate the module `open` closes with the inner blocks leading its
+    /// body, as [`Self::decorated_module`] decorates one with the blocks
+    /// before it.
+    ///
+    /// # Specification
+    /// - requires: `open` is the frame of a module whose body was just read.
+    /// - ensures: with no inner block nothing changes; otherwise the module's
+    ///   attributes are kept with the slots its body admitted, the blocks owned
+    ///   by the first of them; a module whose body admits no slot decorates
+    ///   nothing, and its first inner block is refused under its name.
+    /// - provides: the closing half of [`Self::inner_attributes`].
+    /// - fails: never; a refusal is filed at the block.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::inner_attributes`].
+    /// - witness: `lower::exits::tests::an_inner_attribute_decorates_its_module`
+    #[spec(
+        captures: before = self.collected.decorated.len(),
+        ensures: self.collected.decorated.len() <= before.saturating_add(1),
+    )]
+    fn decorate_from_within(
+        &mut self,
+        open: &Open<'source>,
+    )
+    {
+        let Some(&block) = open.blocks.first()
+        else {
+            return;
+        };
+        let Some(module) = self
+            .collected
+            .structures
+            .get(open.structure.0)
+            .map(|entry| entry.declared_by)
+        else {
+            return;
+        };
+        let end = SlotIndex(self.collected.slots.len());
+        if open.first == end {
+            self.fault_at(
+                open.structure,
+                block,
+                misplaced_in(FormName::MODULE, block.span),
+            );
+            return;
+        }
+        for &written in &open.blocks {
+            self.collected.own(written.node, open.first);
+        }
+        self.collected.decorated.push(DecoratedModule {
+            module,
+            attributes: open.inner.clone(),
+            first: open.first,
+            end,
+        });
     }
 
     /// Read the law member `member`, `law name admitted ;` after any attribute

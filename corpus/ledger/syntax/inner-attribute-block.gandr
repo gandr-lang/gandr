@@ -1,0 +1,4 @@
+/// `inner_attribute_block`: an inner attribute block: attributes decorating the item it stands in.
+/// At a source's root the checker does not reach this form yet; #4297 tracks it.
+@[ refuses("OutOfFragment.inner_attribute_block") ]
+@![ checks ]

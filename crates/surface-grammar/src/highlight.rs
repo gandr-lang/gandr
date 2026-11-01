@@ -144,6 +144,7 @@ const OPENERS: &[&str] = &[
     "(",
     ".#[",
     ".#{",
+    "@![",
     "@[",
     "[",
     "command_substitution_start",
@@ -893,7 +894,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
             "@[" | "[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
             "[" if matches!(facts.kind.0, "u_type" | "thunk_expression") => HlRole::Number,
             "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
-            "@[" | "[" => HlRole::Other,
+            "@[" | "@![" | "[" => HlRole::Other,
             "(" if left.crosses(TileLabel("select")).0 => HlRole::Label,
             "(" if facts.kind.0 == "import_declaration" => HlRole::Variable,
             "(" => HlRole::VariableParam,
@@ -948,7 +949,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         Opener::Bracket { label, left } => match label.0 {
             "#{" | "{" => HlRole::Member,
             "@[" | "[" if right_crosses(":") => HlRole::VariableParam,
-            "@[" => HlRole::Other,
+            "@[" | "@![" => HlRole::Other,
             "[" => match kind {
                 "u_type" | "thunk_expression" => HlRole::Number,
                 "migrate_expression" => HlRole::Label,
@@ -1061,7 +1062,7 @@ mod tests
         assert_eq!(pbg.mold_count().0, walk.len(), "one occurrence per mold");
         let closes: &[(&str, &[&str])] = &[
             (")", &["(", "type("]),
-            ("]", &["#[", ".#[", "@[", "["]),
+            ("]", &["#[", ".#[", "@![", "@[", "["]),
             ("}", &[
                 "#!{",
                 "#{",
