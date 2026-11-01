@@ -15,7 +15,7 @@
 ///   1970, § 7 — completion
 
 /// A monoid's unit and associativity laws, each a rule.
-pub theory Monoid {
+pub theory Monoid where {
   /// The carrier.
   sort M : Type;
 
@@ -56,7 +56,7 @@ pub def times(a : Sign, b : Sign) -> Sign {
 
 /// The signs under their product, plus the unit. The model writes its three
 /// rules' witnesses and nothing for the associator of four.
-module Signs : Model(Monoid) {
+module Signs : Model(Monoid) where {
   /// The carrier is the signs.
   type M = Sign;
   /// Plus is the unit.

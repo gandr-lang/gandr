@@ -1,4 +1,4 @@
-codata Glob : Type {
+codata Glob : Type where {
   cells : Type;
   hom(x : cells, y : cells) : Glob;
 }

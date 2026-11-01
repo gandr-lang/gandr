@@ -2,7 +2,7 @@
 ///
 /// A unit: a carrier and its one element.
 @[ checks ]
-theory Pointed {
+theory Pointed where {
   sort C : Type;
   oper point : C;
 }

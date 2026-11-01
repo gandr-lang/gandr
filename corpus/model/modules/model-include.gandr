@@ -6,13 +6,13 @@
 // conversion).
 
 /// A grade orders verdicts: equality of grades, and one grade below another.
-theory Graded {
+theory Graded where {
   include Eq;
   oper below : (a : Carrier, b : Carrier) --> Bool;
 }
 
 /// Integer grades: the prelude's integer equality, and the integers' order.
-module GradeInteger : Model(Graded) with sort Carrier = Integer {
+module GradeInteger : Model(Graded) with sort Carrier = Integer where {
   include EqInteger;
   /// One grade below another.
   def below(a : Integer, b : Integer) -> Bool { a < b }

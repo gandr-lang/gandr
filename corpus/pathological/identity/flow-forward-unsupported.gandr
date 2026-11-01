@@ -5,7 +5,7 @@
 // is refused.
 
 /// A record migrated by a translator that drops a field's value.
-module Schema {
+module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   /// The translator: the age moved, the name replaced by a literal.

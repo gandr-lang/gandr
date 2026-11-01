@@ -2344,7 +2344,7 @@ mod tests
     #[test]
     fn only_a_function_type_and_a_list_s_own_separators_make_parameters_1810()
     {
-        let text = "theory Lambda {\n  sort Tm : Type;\n  oper lam : (t : pi+ (x : Tm) . Tm) --> \
+        let text = "theory Lambda where {\n  sort Tm : Type;\n  oper lam : (t : pi+ (x : Tm) . Tm) --> \
                     Tm;\n  oper app : (t : Tm, u : Tm) --> Tm;\n}\ndef g : -F (Nat -> -F Nat) ;\n";
         let grammar = grammar().expect("the grammar builds");
         let roles = roles().expect("the roles build");

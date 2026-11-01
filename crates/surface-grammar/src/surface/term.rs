@@ -337,8 +337,9 @@ fn declarations(
     // --- `codata` datatype declaration -------
     // The other polarity's block over the SAME head discipline: parameters
     // are typed binders bound once at the head and the head carries the
-    // annotation (`codata Stream(a : Type) : Type`). The members are
-    // lowercase-led observations (`head: a`) plus the reserved `rule` 2-cell —
+    // annotation (`codata Stream(a : Type) : Type where { … }`). `where` opens
+    // the members, as it opens every declaration block. The members are
+    // lowercase-led observations (`head : a`) plus the reserved `rule` 2-cell —
     // observations are not generators, so no result-head discipline applies to
     // them. `codata` reserves as one whole keyword so it never lexes as `co` +
     // `data`. Observations are inline (the `ident : Type` shape, like the
@@ -354,6 +355,7 @@ fn declarations(
             t(TileLabel("type_identifier")),
             opt(head_params()),
             opt(seq([t(TileLabel(":")), h(Sort::Type)])),
+            t(TileLabel("where")),
             t(TileLabel("{")),
             opt(member_list(codata_member())),
             t(TileLabel("}")),
@@ -382,26 +384,28 @@ fn declarations(
     out.push(codata);
 
     // --- module declaration ----------------------------------------------------
-    // `module M { … }`, optionally ascribed against a `#{ … }` signature, `:`
-    // transparently or `:>` opaquely (`module_ascription_tail`). The shared
+    // `module M where { … }`, optionally ascribed against a `#{ … }` signature,
+    // `:` transparently or `:>` opaquely (`module_ascription_tail`); `where`
+    // opens the members, as it opens every declaration block. The shared
     // `module` opener and its name own one mold. The body is a repetition of
     // `Sort::ModuleMember` holes: a definition, an attributed definition, a
     // type member, or a nested module of either name case with its own
     // optional ascription, whose body is the same repetition, so nesting depth
     // is unbounded.
     //
-    // The name is a dotted path, `module Gandr.Workspace { … }`: its segments
-    // before the last name the modules it is declared in, each opened where
-    // the source declares none of that name.
+    // The name is a dotted path, `module Gandr.Workspace where { … }`: its
+    // segments before the last name the modules it is declared in, each opened
+    // where the source declares none of that name.
     //
     // After the name, a functor declares its parameter in parentheses,
-    // `module MkSet(Elt : #{ … }) :> #{ … } { … }` (`functor_parameter`), and a
-    // functor application binds its instance, `module IntSet = MkSet(IntOrd) ;`
-    // (`functor_application_tail`). The application's tail opens at `=`, the
-    // parameter at `(`, the ascription at `:` or `:>` and the body at `{`, so
-    // the choice stays one token deep. The application is a module binding and
-    // nothing else: no rule projects from it, so `MkSet(IntOrd).T` has no
-    // reading but the one the lowering refuses by name.
+    // `module MkSet(Elt : #{ … }) :> #{ … } where { … }` (`functor_parameter`),
+    // and a functor application binds its instance, `module IntSet =
+    // MkSet(IntOrd) ;` (`functor_application_tail`). The application's tail
+    // opens at `=`, the parameter at `(`, the ascription at `:` or `:>` and the
+    // body at `where`, so the choice stays one token deep. The application is
+    // a module binding and nothing else: no rule projects from it, so
+    // `MkSet(IntOrd).T` has no reading but the one the lowering refuses by
+    // name.
     let mut module = r(
         RuleName("module_declaration"),
         Provenance("module_declaration"),
@@ -419,6 +423,7 @@ fn declarations(
                 seq([
                     opt(functor_parameter()),
                     opt(module_ascription_tail()),
+                    t(TileLabel("where")),
                     t(TileLabel("{")),
                     repeat(h(Sort::ModuleMember)),
                     t(TileLabel("}")),
@@ -434,13 +439,13 @@ fn declarations(
     out.push(module);
 
     // --- flow declaration --------------------------------------------------
-    // `flow f : V1 ~~> V2 { … }`: a flow from the signature `V1` to `V2`, a
-    // `Flow` between signatures written with the flow's type-level arrow. Its
-    // body is the translator, `V2`'s members over `V1`'s. Both signatures are
-    // type paths, as `Model(…)` writes one, around the flow tile `⇝`, which
+    // `flow f : V1 ~~> V2 where { … }`: a flow from the signature `V1` to `V2`,
+    // a `Flow` between signatures written with the flow's type-level arrow.
+    // Its body is the translator, `V2`'s members over `V1`'s. Both signatures
+    // are type paths, as `Model(…)` writes one, around the flow tile `⇝`, which
     // the labeler offers for `~~>`. The body is the module body's repetition
-    // of `Sort::ModuleMember` holes. The reserved lead `flow` chooses the form
-    // at an item slot, so the choice stays one token deep.
+    // of `Sort::ModuleMember` holes after `where`. The reserved lead `flow`
+    // chooses the form at an item slot, so the choice stays one token deep.
     out.push(r(
         RuleName("flow_declaration"),
         Provenance("flow_declaration"),
@@ -453,6 +458,7 @@ fn declarations(
             theory_path(),
             t(TileLabel("⇝")),
             theory_path(),
+            t(TileLabel("where")),
             t(TileLabel("{")),
             repeat(h(Sort::ModuleMember)),
             t(TileLabel("}")),
@@ -3978,9 +3984,8 @@ fn regular_def_tail() -> Regex
 /// name by name; this slot carries no such ruling.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: a module keyword, either name case, optional ascription and a
-///   brace-delimited repetition of module-member holes.
+/// - ensures: a module keyword, either name case, optional ascription, `where`
+///   and a brace-delimited repetition of module-member holes.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3989,14 +3994,14 @@ fn regular_def_tail() -> Regex
 ///   The predicate observes the stated shape; source programs outside the
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "module")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Sort(Sort::ModuleMember))))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "module")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "where")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Sort(Sort::ModuleMember))))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn nested_module_member() -> Regex
 {
     seq([
         t(TileLabel("module")),
         alt([t(TileLabel("identifier")), t(TileLabel("type_identifier"))]),
         opt(module_ascription_tail()),
+        t(TileLabel("where")),
         t(TileLabel("{")),
         repeat(h(Sort::ModuleMember)),
         t(TileLabel("}")),

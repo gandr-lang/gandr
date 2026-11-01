@@ -975,7 +975,7 @@ mod tests
         let far = declared(SourceText::from(
             "pub data Shape : Type where {\n  | Circle : Shape\n}\npub def faraway : Integer ;\ndef \
              faraway = 7 ;\ndef farther : Integer ;\ndef farther = 3 ;\npub def far : Integer \
-             ;\ndef far = 2 ;\npub module Inner {\n  def fargone = 1 ;\n}\n",
+             ;\ndef far = 2 ;\npub module Inner where {\n  def fargone = 1 ;\n}\n",
         ));
         let import = [TextEdit {
             range: crate::position::Range::default(),

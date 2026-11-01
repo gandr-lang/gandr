@@ -20,7 +20,7 @@ def fourHere : Bridge(Integer, 4, 4) = here(4);
 def otherDigits : Bridge(List(Integer), [1], [2]) = (unit, unit);
 
 /// `Hidden` seals the unit type and states no identity system.
-module Hidden :> #{ type T, one : T } {
+module Hidden :> #{ type T, one : T } where {
   /// The sealed points.
   @[ checks ]
   type T = Unit;

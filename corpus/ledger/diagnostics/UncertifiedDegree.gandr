@@ -1,5 +1,5 @@
 /// `UncertifiedDegree`: univalence at a degree no shape of the catalogue reaches.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

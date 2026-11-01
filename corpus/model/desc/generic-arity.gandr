@@ -6,7 +6,7 @@
 
 /// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.
-pub theory Monoid {
+pub theory Monoid where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

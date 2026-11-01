@@ -11,7 +11,7 @@
 /// encloses both. `q` moves under the restriction, so the law states `a`
 /// fresh for it (`freshness.gandr`). The checker orients the law, finds no
 /// critical pair and the kernel replays the verdict.
-theory Scope {
+theory Scope where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -23,7 +23,7 @@ theory Scope {
 /// Two laws whose left sides differ only in the atom they abstract: one left
 /// side once re-minted, so the laws overlap at the root, and completion joins
 /// `nil()` and `stop()` as it would for one binder-free left side.
-theory Alpha {
+theory Alpha where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;

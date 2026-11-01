@@ -2,7 +2,7 @@
 module Seat :> #{
   type Dispatch,
   task : Dispatch
-} {
+} where {
   type Dispatch = String;
   /// The dispatch a seat receives.
   @[ checks ]

@@ -3,11 +3,11 @@
 //!
 //! # Why a table at all
 //!
-//! Opaque ascription `module M :> Σ { … }` mints one nominal atom for each
-//! abstract type component of `Σ` and gives the module's exports their types
-//! at the atoms. An abstract type could instead be introduced by quantifying
-//! existentially over its identity, packing the representation at the
-//! ascription and opening the package at every use (Mitchell and Plotkin's
+//! Opaque ascription `module M :> Σ where { … }` mints one nominal atom for
+//! each abstract type component of `Σ` and gives the module's exports their
+//! types at the atoms. An abstract type could instead be introduced by
+//! quantifying existentially over its identity, packing the representation at
+//! the ascription and opening the package at every use (Mitchell and Plotkin's
 //! reading, and the one *F-ing modules* elaborates to). The two presentations
 //! translate into each other in the first-order fragment sealing admits; what
 //! differs is what an admission point can verify. A package offers an importer

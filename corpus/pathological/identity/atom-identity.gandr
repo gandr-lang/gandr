@@ -8,7 +8,7 @@
 import "../../model/identity/atom-identity.gandr";
 
 /// The unit type sealed, stating the relation and its reflexivity alone.
-module Lawless :> #{ type T, origin : T, other : T } {
+module Lawless :> #{ type T, origin : T, other : T } where {
   /// The sealed points, whose interface names no transport law.
   @[ identity((related, reflexivity)) ]
   type T = Unit;
@@ -39,7 +39,7 @@ def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
 /// check against their types; the kernel withholds them with the law, as it
 /// withholds every reader of a declaration that did not cross, rather than
 /// faulting the source (#1959).
-module UnpairedPoint :> #{ type T, origin : T, other : T } {
+module UnpairedPoint :> #{ type T, origin : T, other : T } where {
   /// The sealed points, whose transport law is refused.
   @[ identity((pathRelated, pathReflexivity, unpairedContraction)) ]
   type T = Unit;

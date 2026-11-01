@@ -6,7 +6,7 @@
 // both alike by construction.
 
 /// A counter: a carrier, a zero, a step and a reading.
-pub theory Counter {
+pub theory Counter where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -14,7 +14,7 @@ pub theory Counter {
 }
 
 /// Counting up modulo three, read as it is.
-pub module Up : Model(Counter) {
+pub module Up : Model(Counter) where {
   type C = Unit + (Unit + Unit);
   /// Zero.
   @[ checks ]
@@ -40,7 +40,7 @@ pub module Up : Model(Counter) {
 }
 
 /// Counting down modulo three, read negated.
-module Down : Model(Counter) {
+module Down : Model(Counter) where {
   type C = Unit + (Unit + Unit);
   /// Zero.
   @[ checks ]

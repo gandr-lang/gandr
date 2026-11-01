@@ -10,7 +10,7 @@ module Ring :> #{
   type Cancelling = ?Pending. !Cqe. end,
   read : Sqe,
   done : Cqe
-} {
+} where {
   type Sqe = String;
   type Cqe = Integer;
   /// The entry a read submits.

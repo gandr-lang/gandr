@@ -8,7 +8,7 @@
 
 /// Mapping twice fused into mapping once, over the `def`.
 @[ refuses("IllFormedDescription") ]
-theory MapLaws {
+theory MapLaws where {
   sort L : Type;
 
   rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);

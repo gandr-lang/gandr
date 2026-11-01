@@ -4,14 +4,14 @@
 // counter transparently.
 
 /// A counter: a carrier, a start and a step.
-pub theory Counter {
+pub theory Counter where {
   sort C : Type;
   oper start : () --> C;
   oper step : (c : C) --> C;
 }
 
 /// The counter on the integers, sealed by the theory.
-module Sealed :> Model(Counter) {
+module Sealed :> Model(Counter) where {
   type C = Integer;
 
   def start() -> Integer { 0 }

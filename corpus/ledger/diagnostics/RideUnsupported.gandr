@@ -1,5 +1,5 @@
 /// `RideUnsupported`: a ride between two distinct session codes whose motive is no run of them.
-module Evolution {
+module Evolution where {
   type SeatEnd = ?String. mu turn. +{
     report : !String. &{ next : turn, retire : end },
     handoff : !String. end

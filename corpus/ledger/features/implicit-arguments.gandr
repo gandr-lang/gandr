@@ -112,7 +112,7 @@ def identityAt : (t : Type, t) => t = applyAt[.g = fn (y) { y }] ;
 def identityRun() -> Integer { identityAt(Integer, 5) }
 
 /// The integers' addition, a member of a module.
-module Adding {
+module Adding where {
   /// The sum of two integers.
   @[ checks ]
   def plus(x : Integer, y : Integer) -> Integer { x + y }

@@ -9,7 +9,7 @@ import "../../model/include/monoid.gandr";
 /// left unit law, `mul(one(), pair(x, y))` reads `pair(x, y)` and
 /// `pair(y, x)`, which the path order orients neither way.
 @[ refuses("RulesUncompleted") ]
-theory Swapping {
+theory Swapping where {
   include Monoid;
   oper pair : (x : M, y : M) --> M;
   rule swap : mul(one(), pair(x, y)) ==> pair(y, x);
@@ -17,7 +17,7 @@ theory Swapping {
 
 /// An include of a theory neither this source nor its import presents.
 @[ refuses("MalformedForm") ]
-theory Orphan {
+theory Orphan where {
   include Unwritten;
   oper one : () --> M;
 }

@@ -8,7 +8,7 @@
 import "../../model/modules/functor-pair.gandr";
 
 /// A counter whose zero is an integer rather than its own abstract type.
-module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } {
+module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } where {
   type T = Integer;
   /// The counter's zero, sealed as an integer.
   def zero = 0;

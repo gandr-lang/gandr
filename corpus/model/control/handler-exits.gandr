@@ -168,7 +168,7 @@ def resumed_on() -> Integer {
 /// A type member may abbreviate a continuation's type: a function stating the
 /// member resumes the continuation it is handed as one stating the stack does
 /// (#1651).
-module Conts {
+module Conts where {
   type K = Stack(-F Unit, -F Integer);
 
   /// `resume_stack`, through the member.

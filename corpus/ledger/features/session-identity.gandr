@@ -13,7 +13,7 @@ import "../../model/sessions/seat-base.gandr" ;
 
 /// The seat's protocol, the protocol with a pause added, and the protocol
 /// unrolled once, related by simulation and bisimulation.
-module Evolution {
+module Evolution where {
   type Dispatch = Seat.Dispatch;
   type Report = Seat.Report;
   type Handoff = Seat.Handoff;

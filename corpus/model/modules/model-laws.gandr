@@ -12,7 +12,7 @@
 // The refusals are beside `../../pathological/modules/model-laws.gandr`.
 
 /// A decision and the laws that make it an equivalence.
-theory Lawful {
+theory Lawful where {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
   law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
@@ -32,7 +32,7 @@ data Single : Type {
 }
 
 /// Every two values of `Single` are alike, so each law is a reflexivity.
-module LawfulSingle : Model(Lawful) with sort Carrier = Single {
+module LawfulSingle : Model(Lawful) with sort Carrier = Single where {
   def alike(a : Single, b : Single) -> Bool { true }
   def refl(a : Single) -> Path(Bool, alike(a, a), true) { here(true) }
   def sym(a : Single, b : Single) -> Path(Bool, alike(a, b), alike(b, a)) { here(true) }
@@ -49,7 +49,7 @@ module LawfulSingle : Model(Lawful) with sort Carrier = Single {
 
 /// The same decision with its laws left out. Each law's sides convert, so
 /// the checker discharges each by `here`.
-module LawfulOmitted : Model(Lawful) with sort Carrier = Single {
+module LawfulOmitted : Model(Lawful) with sort Carrier = Single where {
   /// Every two values are alike.
   def alike(a : Single, b : Single) -> Bool { true }
 }
@@ -57,7 +57,7 @@ module LawfulOmitted : Model(Lawful) with sort Carrier = Single {
 /// The host's integer equality: its laws are the host's, admitted, each
 /// settling `checks` with the audit row naming it, `LawfulInteger.refl
 /// admitted` the first.
-module LawfulInteger : Model(Lawful) with sort Carrier = Integer {
+module LawfulInteger : Model(Lawful) with sort Carrier = Integer where {
   def alike(a : Integer, b : Integer) -> Bool { a == b }
   law refl admitted;
   law sym admitted;
@@ -70,13 +70,13 @@ def threeIsThree() -> Bool { LawfulInteger.alike(3, 3) }
 
 /// A decision with an order beside it: its models restrict to `Lawful`'s,
 /// the laws carried through the include.
-theory LawfulOrder {
+theory LawfulOrder where {
   include Lawful;
   oper below : (a : Carrier, b : Carrier) --> Bool;
 }
 
 /// The integers' order over their lawful decision.
-module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer {
+module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where {
   include LawfulInteger;
   def below(a : Integer, b : Integer) -> Bool { a < b }
 }

@@ -51,7 +51,7 @@ fn the_entry_is_the_main_of_the_source_run_1881()
             Maybe::Absent(program_entry::Absent::Undeclared),
         ),
         (
-            "module Tool { def main() -> -F Integer { return 0 } }\n",
+            "module Tool where { def main() -> -F Integer { return 0 } }\n",
             Maybe::Absent(program_entry::Absent::Undeclared),
         ),
         (

@@ -1,5 +1,5 @@
 /// `NotNatural`: translator tables that do not commute with a corolla's automorphisms.
-theory Rig {
+theory Rig where {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);

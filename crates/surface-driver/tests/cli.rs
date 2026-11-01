@@ -658,7 +658,7 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
     let source = scratch.file(
         Path::new("six.gandr"),
         Text::from(
-            "pub theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
+            "pub theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
              oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  match b {\n    \
              true => +{.1 = unit},\n    false => +{.0 = unit}\n  }\n}\n\npub def keep(e : +{Unit}) \
              -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, #{.mul = exchange, .one = \
@@ -908,11 +908,11 @@ fn check_reports_each_cell_a_source_discharges_4112()
     let source = scratch.file(
         Path::new("laws.gandr"),
         Text::from(
-            "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
+            "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
              Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : \
-             Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  \
+             Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  \
              def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
-             Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+             Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
         ),
     );
     let cells = |output: &Output| -> Vec<String> {
@@ -1823,7 +1823,7 @@ macro_rules! fields {
 /// A package's library declaring its model, `name`, `version` and the
 /// fields [`fields`] states, after [`STD_PACKAGE`].
 const LIBRARY: &str = concat!(
-    "/// The package.\npub module Package : Model(Gandr.Package) {\n  def name = \"hello\";\n  def \
+    "/// The package.\npub module Package : Model(Gandr.Package) where {\n  def name = \"hello\";\n  def \
      version = \"0.1.0\";\n",
     fields!(),
     "}\n"
@@ -2001,7 +2001,7 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     std::fs::write(
         &library,
         format!(
-            "{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name = \"hello\";\n}}\n"
+            "{STD_PACKAGE}pub module Package : Model(Gandr.Package) where {{\n  def name = \"hello\";\n}}\n"
         ),
     )
     .expect("the model loses its version");
@@ -2465,7 +2465,7 @@ fn a_workspace_checks_each_member_it_names_2687()
     let scratch = Scratch::new(Path::new("workspace"));
     let stated = |members: &str| {
         format!(
-            "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) {{\n  def version = \
+            "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) where {{\n  def version = \
              \"0.2.0\";\n  def gandr = \"\";\n  def features = \"\";\n  def systems = \
              \"\";\n}}\npub def members : List(String) = {members};\n"
         )
@@ -2483,7 +2483,7 @@ fn a_workspace_checks_each_member_it_names_2687()
             Text::from(
                 format!(
                     "{STD_PACKAGE}import \"{up}/workspace.gandr\";\npub module Package : \
-                     Model(Gandr.Package) {{\n  def name = \"{name}\";\n  def version = \
+                     Model(Gandr.Package) where {{\n  def name = \"{name}\";\n  def version = \
                      Workspace.version;\n{}}}\n",
                     fields!()
                 )

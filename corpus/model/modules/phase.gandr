@@ -14,7 +14,7 @@ data Sign : Type {
 }
 
 /// A point sealed by its signature: an abstract type and a value of it.
-module Point :> #{ type T, z : T } {
+module Point :> #{ type T, z : T } where {
   type T = Integer;
   /// The point.
   @[ runs("0") ]
@@ -23,7 +23,7 @@ module Point :> #{ type T, z : T } {
 
 /// A functor whose type member reads only its argument's type: its result's
 /// static part is a function of the argument's static part.
-module Square(S : #{ type T, z : T }) :> #{ type U, w : U } {
+module Square(S : #{ type T, z : T }) :> #{ type U, w : U } where {
   type U = S.T * S.T;
   /// The argument's point, twice.
   @[ checks ]
@@ -38,7 +38,7 @@ def squared : Squared.U = Squared.w;
 
 /// A module whose type members read a literal and a constructor, which are
 /// static data, and whose values read those types.
-module Fixed {
+module Fixed where {
   /// A path at three.
   type Three = Path(Integer, 3, 3);
   /// A path at the plus sign.

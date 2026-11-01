@@ -9,7 +9,7 @@
 
 /// A unital magma's signature.
 @[ checks ]
-theory Mag {
+theory Mag where {
   /// The carrier.
   sort M : Type;
   /// The unit.

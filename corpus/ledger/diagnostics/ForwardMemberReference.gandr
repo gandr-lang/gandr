@@ -1,5 +1,5 @@
 /// `ForwardMemberReference`: a module member named at or after the member naming it.
-module Bad {
+module Bad where {
   @[ refuses("ForwardMemberReference") ]
   def first = second + 1;
   @[ runs("2") ]

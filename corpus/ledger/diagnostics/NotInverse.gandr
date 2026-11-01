@@ -1,5 +1,5 @@
 /// `NotInverse`: translator tables that are not mutually inverse.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

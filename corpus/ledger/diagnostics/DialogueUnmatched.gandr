@@ -1,5 +1,5 @@
 /// `DialogueUnmatched`: a receipt in a dialogue that no send of the other endpoint matches.
-module Ask {
+module Ask where {
   type Asking = !String. end;
 }
 

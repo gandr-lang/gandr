@@ -2,7 +2,7 @@
 import "./model-resolution-tally.gandr";
 
 /// Counting up by one.
-module Up : Model(Count) {
+module Up : Model(Count) where {
   type C = Integer;
   /// Zero.
   def zero = 0;

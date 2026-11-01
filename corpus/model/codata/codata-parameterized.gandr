@@ -6,7 +6,7 @@
 /// A number observed doubled. A codata declaration's kind is a computation
 /// universe, and `Type` is none.
 @[ refuses("CodataKindNotUniverse") ]
-codata Scaled : Type {
+codata Scaled : Type where {
   doubled : Integer;
 }
 

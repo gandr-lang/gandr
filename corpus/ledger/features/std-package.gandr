@@ -7,7 +7,7 @@ import "../../../library/std/src/package.gandr";
 
 /// A package's model, every field but what it asks of the toolchain inert:
 /// only the manifest step reads them (#3029).
-pub module Package : Model(Gandr.Package) {
+pub module Package : Model(Gandr.Package) where {
   /// The package's name, which the manifest records it by.
   def name = "probe";
   /// The version the package releases at.

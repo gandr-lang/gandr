@@ -1,7 +1,7 @@
 /// `hold_expression`: reading a held cell.
 @[ checks ]
 world seat ;
-module Seat :> #{ mobile type Report, progress : Report } {
+module Seat :> #{ mobile type Report, progress : Report } where {
   type Report = String;
   @[ checks ]
   def progress = "progress";

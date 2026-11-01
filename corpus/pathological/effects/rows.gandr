@@ -11,7 +11,7 @@ import "../../model/effects/rows.gandr";
 /// by: there `flush(mark(k))` reaches `k` one way and `mark(k)` the other,
 /// two normal forms, so the rules are refused (#2448).
 @[ refuses("RulesOverlapCondition") ]
-theory Unerased {
+theory Unerased where {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
@@ -23,7 +23,7 @@ theory Unerased {
 /// that holds only `State` and `Sink`, and in those rows the overlap still
 /// parts, so the rules are refused (#2448).
 @[ refuses("RulesOverlapCondition") ]
-theory Overreaching {
+theory Overreaching where {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
@@ -35,7 +35,7 @@ theory Overreaching {
 
 /// A row naming a theory no block this source sees presents (#2448).
 @[ refuses("UnresolvedTypeHead") ]
-theory Unseen {
+theory Unseen where {
   sort C : Type;
   oper mark : (k : C) --> C;
   rule dropped : mark(k) <=> k under [Missing | r];
@@ -43,7 +43,7 @@ theory Unseen {
 
 /// A row naming one theory twice: a row holds each theory once (#2448).
 @[ refuses("DuplicateDefinition") ]
-theory Twice {
+theory Twice where {
   sort C : Type;
   oper mark : (k : C) --> C;
   rule dropped : mark(k) <=> k under [Sink, State, Sink];

@@ -13,7 +13,7 @@
 
 /// An ordered semiring's operations: grades, their zero and one, their sum and
 /// product, and their order.
-pub theory Grade {
+pub theory Grade where {
   /// The grades.
   sort G : Type;
   /// The grade of what is not used.
@@ -40,7 +40,7 @@ pub data Use : Type {
 
 /// Usage, the grades the tree writes: zero and one apart, each under many,
 /// as linear types order them.
-pub module Usage : Model(Grade) {
+pub module Usage : Model(Grade) where {
   /// The grades: uses.
   type G = Use;
   /// Unused.
@@ -200,7 +200,7 @@ def leNat(a : Nat, b : Nat) -> Bool {
 }
 
 /// Counting: the naturals under sum and product, in their order.
-pub module Count : Model(Grade) {
+pub module Count : Model(Grade) where {
   /// The grades: naturals.
   type G = Nat;
   /// Zero.

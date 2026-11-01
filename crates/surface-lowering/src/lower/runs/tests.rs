@@ -35,7 +35,7 @@ fn an_explicit_runs_attribute_asks_within_its_form()
 {
     let source = format!(
         "{NAT}@[ explicit_runs ]\n\
-         module Asked {{\n\
+         module Asked where {{\n\
          def every(n : Nat) -> -F Nat {{ Succ(twice(n)) }}\n\
          @[ explicit_runs(\"effects\") ]\n\
          def wider(n : Nat) -> -F Nat {{ Succ(twice(Succ(n))) }}\n\

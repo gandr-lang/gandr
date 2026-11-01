@@ -813,11 +813,11 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
         ));
     }
     let rendered = if members.is_empty() {
-        format!("theory {}{params} {{}}", desc.id.name)
+        format!("theory {}{params} where {{}}", desc.id.name)
     }
     else {
         format!(
-            "theory {}{params} {{ {}; }}",
+            "theory {}{params} where {{ {}; }}",
             desc.id.name,
             members.join("; ")
         )
@@ -1075,7 +1075,7 @@ mod tests
     fn desc_inspection_renders_the_structure()
     {
         assert_eq!(
-            "theory Maybe(a) { sort Maybe : Type; }",
+            "theory Maybe(a) where { sort Maybe : Type; }",
             serialize_desc(&maybe_desc()).as_ref(),
             "the inspection notation names the parameters and the sort set; constructors have \
              no item-level member spelling in the theory normal form"
@@ -1173,7 +1173,7 @@ mod tests
             Attrs::empty(),
         );
         assert_eq!(
-            "theory Vec(a) { sort Vec : Type; }",
+            "theory Vec(a) where { sort Vec : Type; }",
             serialize_desc(&desc).as_ref(),
             "constructors — graded, attributed, or right-nested — carry no member spelling: \
              the item-level `data` member is retired from the theory normal form"
@@ -1222,7 +1222,7 @@ mod tests
         )
         .with_circuits([rule]);
         assert_eq!(
-            "theory Nat { sort Nat : Type; rule cong1 : (rule p : Nat ==> Nat) add(x, y) ==> \
+            "theory Nat where { sort Nat : Type; rule cong1 : (rule p : Nat ==> Nat) add(x, y) ==> \
              add(x\u{2032}, y); }",
             serialize_desc(&desc).as_ref(),
             "a circuit member renders its telescope and its sphere"
@@ -1265,7 +1265,7 @@ mod tests
         .with_circuits(circuits);
         assert_eq!(
             serialize_desc(&desc).as_ref(),
-            "theory Ordered { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
+            "theory Ordered where { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
         );
     }
 
@@ -1295,7 +1295,7 @@ mod tests
             Attrs::empty(),
         )
         .with_sorts([]);
-        assert_eq!(serialize_desc(&desc).as_ref(), "theory Empty {}");
+        assert_eq!(serialize_desc(&desc).as_ref(), "theory Empty where {}");
     }
 
     #[test]
@@ -1328,7 +1328,7 @@ mod tests
             .with_shape(TheoryShape::new("Point", ShapeSize::from(1_usize), []));
         assert_eq!(
             serialize_desc(&bare).as_ref(),
-            "theory Cells { boundary Point {p0}; }",
+            "theory Cells where { boundary Point {p0}; }",
             "a boundary is a member: a description of nothing else is not empty"
         );
         let eleven =
@@ -1339,7 +1339,7 @@ mod tests
                 ]));
         assert_eq!(
             serialize_desc(&eleven).as_ref(),
-            "theory Cells { boundary Line {p00, p01, p02, p03, p04, p05, p06, p07, p08, p09, p10}; \
+            "theory Cells where { boundary Line {p00, p01, p02, p03, p04, p05, p06, p07, p08, p09, p10}; \
              face ends = {p00, p10}; }",
             "past ten points each name is padded, so the names sort in point order"
         );
@@ -1352,7 +1352,7 @@ mod tests
             ]));
         assert_eq!(
             serialize_desc(&square).as_ref(),
-            "theory Cells { boundary Square {p0, p1, p2, p3}; face left = {p0, p2}; face right = \
+            "theory Cells where { boundary Square {p0, p1, p2, p3}; face left = {p0, p2}; face right = \
              {p1, p3}; face none = {}; sort A : Type; }",
             "the boundary comes first, then each face, its names in point order"
         );
@@ -1380,7 +1380,7 @@ mod tests
             Attrs::empty(),
         );
         assert_eq!(
-            "theory Wrap { sort Wrap : Type; }",
+            "theory Wrap where { sort Wrap : Type; }",
             serialize_desc(&desc).as_ref(),
             "a primitive-field constructor renders no member spelling either"
         );

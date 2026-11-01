@@ -1245,7 +1245,7 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::FamilyHead));
         }
         let (indices, classifier) = self.kind_arity(run)?;
-        if polarity == DeclPolarity::Data && !run.eat(Spelling("where")).0 {
+        if !run.eat(Spelling("where")).0 {
             return Err(run.fault(DescriptionFault::FamilyHead));
         }
         if !run.eat(Spelling("{")).0 {

@@ -6,7 +6,7 @@
 
 /// A record schema with its fields swapped, the reader of its ages carried
 /// back to the old schema along the upgrade.
-module ReaderSchema {
+module ReaderSchema where {
   type Old = String * Integer;
   type New = Integer * String;
   /// The translator: the old record's fields swapped.

@@ -1,6 +1,6 @@
 /// `signatures-as-values`: a `theory` block presents a sort and its operations as one value of `Theory`, which an ordinary function reads by `case`.
 @[ checks ]
-theory Monoid {
+theory Monoid where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

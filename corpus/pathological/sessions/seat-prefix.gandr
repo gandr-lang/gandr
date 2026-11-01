@@ -4,7 +4,7 @@
 
 /// The seat's protocol over plain strings: a dispatch received, then reports
 /// and the choice to continue or retire, or a handoff that ends it.
-module Seat {
+module Seat where {
   type SeatEnd = ?String. mu turn. +{
     report : !String. &{next : turn, retire : end},
     handoff : !String. end

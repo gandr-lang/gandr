@@ -18,7 +18,7 @@ import "../../../library/std/src/manifold.gandr";
 import "./offers.site.gandr" as far;
 
 /// The program this manifold deploys.
-pub module Manifold : Model(Manifold) {
+pub module Manifold : Model(Manifold) where {
   /// The role-bearing program, beside this file.
   def artifact = "offers.gandr";
 }

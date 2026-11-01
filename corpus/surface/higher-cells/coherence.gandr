@@ -14,7 +14,7 @@
 /// Two steps and the shortcut between their ends: the cell relates the
 /// composite of the steps to the shortcut.
 @[ refuses("UndescribedMember.HigherCell") ]
-theory Shortcut {
+theory Shortcut where {
   sort Ob : Type;
 
   oper s : (a : Ob) --> Ob;

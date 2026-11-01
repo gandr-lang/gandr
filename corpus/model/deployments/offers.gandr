@@ -16,7 +16,7 @@
 
 /// What a role at `far` reads and writes: values held by key. Each operation
 /// hands what it reads to what runs after, so a model answers it.
-pub theory Store {
+pub theory Store where {
   /// The store holds values of this sort.
   sort V : Type+;
   /// What a computation over the store answers.

@@ -3,7 +3,7 @@
 // sort (#1073).
 
 /// A unital magma: a carrier, a unit, a product, and the left unit law.
-theory Unital {
+theory Unital where {
   sort M : Type;
   oper e : () --> M;
   oper mul : (x : M, y : M) --> M;
@@ -12,7 +12,7 @@ theory Unital {
 
 /// The integers under the right projection, sealed: outside, `M` is a fresh
 /// type, and the law is stated over it.
-module Sealed :> Model(Unital) {
+module Sealed :> Model(Unital) where {
   type M = Integer;
 
   def e() -> Integer { 0 }

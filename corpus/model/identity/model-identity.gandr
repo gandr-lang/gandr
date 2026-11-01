@@ -12,7 +12,7 @@ import "./transport-list.gandr";
 import "./structure-operations.gandr";
 
 /// A toggle: a carrier, where it starts, a step and a reading.
-theory Toggle {
+theory Toggle where {
   sort T : Type;
   oper start : T;
   oper step : (t : T) --> T;

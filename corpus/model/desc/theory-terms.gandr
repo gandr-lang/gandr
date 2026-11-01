@@ -18,7 +18,7 @@
 //   into a model module
 
 /// A unital magma's signature.
-theory Mag {
+theory Mag where {
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -73,7 +73,7 @@ def rec noTickRight(n : Ticks) -> Path(Ticks, joinLeft(n, NoTick), n) {
 }
 
 /// The counts as a model: the left unit by conversion, the right by induction.
-module Counts : Model(Mag) {
+module Counts : Model(Mag) where {
   /// The carrier, the counts.
   type M = Ticks;
   /// The unit, no tick.

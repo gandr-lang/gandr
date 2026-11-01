@@ -2,7 +2,7 @@
 ///
 /// The theory the model derives from.
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory T {
+theory T where {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   rule twice : (data x : Nat) ==> (o : Nat) {

@@ -8,7 +8,7 @@
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
-pub theory Nat {
+pub theory Nat where {
   sort Nat : Type;
   oper zero : () --> Nat;
   oper succ : (n : Nat) --> Nat;
@@ -16,7 +16,7 @@ pub theory Nat {
 
 /// Pure λ-calculus syntax: one representable sort of terms, an abstraction
 /// whose body binds a term, and an application.
-theory Lambda {
+theory Lambda where {
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
@@ -25,7 +25,7 @@ theory Lambda {
 /// The identity-return signature: value types and computation types, values
 /// representable and indexed by their type, and an abstraction whose body
 /// binds a value of its domain.
-theory IdentityReturn {
+theory IdentityReturn where {
   sort VTy : Type;
   sort CTy : Type;
   sort VTm(a : VTy) : Type+;

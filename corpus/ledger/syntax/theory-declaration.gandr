@@ -1,6 +1,6 @@
 /// `theory_declaration`: a theory: its sorts, operations and rules.
 @[ checks ]
-theory Semi {
+theory Semi where {
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 }

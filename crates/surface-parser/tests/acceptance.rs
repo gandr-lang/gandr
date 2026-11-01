@@ -567,7 +567,7 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The congruence cell, members `;`-terminated.
-        r#"theory Nat {
+        r#"theory Nat where {
   sort Nat : Type;
   data Zero : Nat;
   data Succ : Nat --> Nat;
@@ -592,14 +592,14 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 "#,
         // The sugar ladder's named-port normal form, including `()` and `_`.
-        r#"theory N {
+        r#"theory N where {
   sort Nat : Type;
   data Zero : () --> (_ : Nat);
   data Succ : (_ : Nat) --> (_ : Nat);
 }
 "#,
         // Occurrence labels and the pinned-endpoint binder.
-        r#"theory L {
+        r#"theory L where {
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
     node w1 : p(x) ==> (m);
     node w2 : step(m) --> (o);
@@ -607,8 +607,8 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 "#,
         // The invertible face, and the reserved reversible glyph.
-        "theory I { rule involutive : (b : Bit) <=> (c : Bit); }",
-        "theory R { oper negate : (b : Bit) <-> (c : Bit); }",
+        "theory I where { rule involutive : (b : Bit) <=> (c : Bit); }",
+        "theory R where { oper negate : (b : Bit) <-> (c : Bit); }",
         // A top-level `rule` declaration beside the top-level `oper`.
         "rule step : (x : Nat) ==> (y : Nat)",
     ];
@@ -632,7 +632,8 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 #[test]
 fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 {
-    let source = "codata S : Type { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
+    let source =
+        "codata S : Type where { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -651,7 +652,7 @@ fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Erro
 #[test]
 fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"theory Theory { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
+    let source = r#"theory Theory where { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -771,7 +772,7 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
     let member = parse(
         pbg,
         SourceText::from(
-            "theory S { data Zero : Nat; data Succ : Nat --> Nat; oper add : (Nat, Nat) --> Nat; }",
+            "theory S where { data Zero : Nat; data Succ : Nat --> Nat; oper add : (Nat, Nat) --> Nat; }",
         ),
     )?;
     assert!(
@@ -819,10 +820,10 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
     // ports sit are past the member lead's slot, so a type variable spelled
     // `sort` molds as a type there.
     let inside: &[&str] = &[
-        "theory S { oper f : (a : sort) --> (b : Nat); sort Bit : Type; }",
-        "theory S { rule r : (rule p : sort ==> other, data x : Nat) ==> (z : Nat); }",
-        "theory S { oper f : node --> Nat; }",
-        "theory S { oper f : (a : feed) --> (b : Nat); }",
+        "theory S where { oper f : (a : sort) --> (b : Nat); sort Bit : Type; }",
+        "theory S where { rule r : (rule p : sort ==> other, data x : Nat) ==> (z : Nat); }",
+        "theory S where { oper f : node --> Nat; }",
+        "theory S where { oper f : (a : feed) --> (b : Nat); }",
     ];
     for &src in inside {
         let result = parse(pbg, SourceText::from(src))?;
@@ -850,7 +851,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The headline shape: one wire consumed twice in a redex line.
-        r#"theory Copy {
+        r#"theory Copy where {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (s : Nat);
   rule copy2 : (data x : Nat) ==> (z : Nat) {
@@ -860,7 +861,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 "#,
         // The same reading with distinct names, and the sugar ladder's
         // unnamed-port rungs.
-        r#"theory Copy {
+        r#"theory Copy where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule copy2 : (data x : Nat, data y : Nat) ==> (z : Nat) {
@@ -869,7 +870,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 }
 "#,
         // A body-less rule member ahead of the closing brace.
-        r#"theory B {
+        r#"theory B where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule copy2 : (data x : Nat) ==> (z : Nat);
@@ -894,7 +895,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let unterminated = parse(
         pbg,
         SourceText::from(
-            r#"theory S {
+            r#"theory S where {
   sort Nat : Type
   sort T : Type;
 }
@@ -917,18 +918,18 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"theory S {
+        r#"theory S where {
   sort S : Type;
 
 }
 "#,
-        r#"theory S {
+        r#"theory S where {
   sort S : Type;
 
   sort T : Type;
 }
 "#,
-        r#"theory S {
+        r#"theory S where {
   sort S : Type;
 
   oper f : (S) --> S;
@@ -938,7 +939,7 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
   };
 }
 "#,
-        r#"theory S {
+        r#"theory S where {
 
   sort S : Type;
 
@@ -975,15 +976,15 @@ fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Bo
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"theory Unknown {
+        r#"theory Unknown where {
   sort Nat : Type;
 }
 "#,
-        r#"theory Boolean {
+        r#"theory Boolean where {
   sort Bit : Type;
 }
 "#,
-        r#"theory Any {
+        r#"theory Any where {
   sort Nat : Type;
 }
 "#,
@@ -1020,7 +1021,10 @@ fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Bo
     );
     // And the name slot of a primitive-named block reads the word as the
     // generic class — the two readings of one spelling, separated by position.
-    let named = parse(pbg, SourceText::from("theory Unknown { sort Nat : Type; }"))?;
+    let named = parse(
+        pbg,
+        SourceText::from("theory Unknown where { sort Nat : Type; }"),
+    )?;
     assert_eq!(
         Some("type_identifier".to_owned()),
         mold_label_of(
@@ -1247,7 +1251,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
 fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let written = "theory Magma {\n    sort M : type;\n}";
+    let written = "theory Magma where {\n    sort M : type;\n}";
     let result = parse(pbg, SourceText::from(written))?;
     let start = written.find("type").ok_or("the keyword is written")?;
     assert_eq!(
@@ -1275,12 +1279,12 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
         .collect();
     assert_eq!(
         tiles,
-        ["theory", "Magma", "{", "sort", "M", ":", ";", "}"],
+        ["theory", "Magma", "where", "{", "sort", "M", ":", ";", "}"],
         "the member's terminator and the block's closer are the block's own tiles"
     );
     let spelled = parse(
         pbg,
-        SourceText::from("theory Magma {\n    sort M : Type;\n}"),
+        SourceText::from("theory Magma where {\n    sort M : Type;\n}"),
     )?;
     assert!(
         bool::from(spelled.is_clean()),
@@ -1305,10 +1309,10 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
         for written in [
             format!("def {keyword} : Integer ;\ndef ok = 2 ;"),
             format!(
-                "theory T {{\n  sort Tm : Type;\n  oper {keyword} : (b : Tm) --> Tm;\n}}\ndef ok = 2 ;"
+                "theory T where {{\n  sort Tm : Type;\n  oper {keyword} : (b : Tm) --> Tm;\n}}\ndef ok = 2 ;"
             ),
             format!(
-                "theory T {{\n  sort Tm : Type;\n  oper nil : () --> Tm;\n  rule {keyword} : nil() <=> nil();\n}}\ndef ok = 2 ;"
+                "theory T where {{\n  sort Tm : Type;\n  oper nil : () --> Tm;\n  rule {keyword} : nil() <=> nil();\n}}\ndef ok = 2 ;"
             ),
         ] {
             let result = parse(pbg, SourceText::from(written.as_str()))?;
@@ -1483,9 +1487,9 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
     for survivor in [
         "def good = 2;",
         "data Good  where { }",
-        "codata Good { }",
-        "module Good { }",
-        "theory Good { }",
+        "codata Good where { }",
+        "module Good where { }",
+        "theory Good where { }",
         "import \"good\" as good ;",
     ] {
         let source = format!("def bad = ( 1 ;\n{survivor}");

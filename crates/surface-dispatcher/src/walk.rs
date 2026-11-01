@@ -2432,7 +2432,7 @@ pub mod tests
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
             SourceText::from(
-                "module M : #{ x: Integer, z: Integer } { def x = 1; }\ndef broken = missing ;",
+                "module M : #{ x: Integer, z: Integer } where { def x = 1; }\ndef broken = missing ;",
             ),
         );
         scratch.file(
@@ -3205,7 +3205,7 @@ pub mod tests
     {
         let scratch = Scratch::new(Path::new("regrouped"));
         let base = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
-        let nested = "module inner {\n  import \"./base.gandr\" ;\n}\n\n@[ checks ]\ndef three : \
+        let nested = "module inner where {\n  import \"./base.gandr\" ;\n}\n\n@[ checks ]\ndef three : \
                       Integer ;\ndef three = 3 ;\n";
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         scratch.file(Path::new("fixture/nested.gandr"), SourceText::from(nested));

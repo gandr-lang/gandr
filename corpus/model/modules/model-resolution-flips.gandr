@@ -2,7 +2,7 @@
 import "./model-resolution-tally.gandr";
 
 /// Flipping a flag, and resetting it.
-module Flips : Model(ResetCount) {
+module Flips : Model(ResetCount) where {
   type C = Bool;
   /// Down.
   def zero = false;

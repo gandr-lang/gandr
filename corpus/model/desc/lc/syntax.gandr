@@ -30,7 +30,7 @@ import "../model-in-source.gandr";
 /// path order orients it and the rules are refused; `Model(LC)` derives from
 /// the block all the same.
 @[ refuses("RulesUnoriented") ]
-pub theory LC {
+pub theory LC where {
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;
   sort Tm(g : Con) : Type;

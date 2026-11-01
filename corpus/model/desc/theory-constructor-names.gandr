@@ -14,7 +14,7 @@ data Bruijn : Type {
 
 /// A monoid's signature presented as data, in a source that already declares
 /// `App`.
-theory Mon {
+theory Mon where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

@@ -578,7 +578,7 @@ fn an_explicit_exits_attribute_asks_within_its_form()
 {
     let source = format!(
         "{NAT}@[ explicit_exits ]\n\
-         module Asked {{\n\
+         module Asked where {{\n\
          def kept(n : Nat) -> -F Nat {{ n }}\n\
          def called(n : Nat) -> -F Nat {{ kept(n) }}\n\
          }}\n\
@@ -750,10 +750,10 @@ fn a_variable_answering_at_its_own_bytes_gains_no_label()
 #[test]
 fn a_renamed_parameter_type_stands_in_only_at_other_bytes()
 {
-    let source = "module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } {\n  type T = \
+    let source = "module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
                   Integer;\n  def zero = 0;\n  def next(n : T) -> -F T { become n + 1 }\n}\n\nmodule \
                   MkCounter(S : #{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> #{ type T, \
-                  seed : T, step : +U[ω] (T -> -F T) } {\n  type T = S.T;\n  def seed = \
+                  seed : T, step : +U[ω] (T -> -F T) } where {\n  type T = S.T;\n  def seed = \
                   S.zero;\n  def step = S.next;\n}\n\nmodule A = MkCounter(Seed) ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);

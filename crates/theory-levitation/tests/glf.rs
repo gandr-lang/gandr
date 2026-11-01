@@ -200,7 +200,7 @@ fn generation()
     // `Tm`, and naturality lifts `lam`'s substitution once. β belongs to the
     // source theory, not its binding signature. Three sorts, nine operations,
     // six equations.
-    let expected = r#"theory LC$ssc {
+    let expected = r#"theory LC$ssc where {
         sort $Con : Type;
         sort $Sub(D : $Con, G : $Con) : Type;
         sort Tm(G : $Con) : Type;

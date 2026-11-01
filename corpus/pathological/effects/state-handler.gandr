@@ -93,7 +93,7 @@ def inScopeAtInteger() -> Integer {
 
 /// A second state-passing model at an integer state: reading answers zero,
 /// and storing is forgotten.
-module Forgetting : Model(State) with sort S = Integer {
+module Forgetting : Model(State) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands zero to what runs after.

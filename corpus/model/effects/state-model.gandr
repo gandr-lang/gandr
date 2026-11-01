@@ -15,7 +15,7 @@ import "./state.gandr";
 import "../identity/model-counter.gandr";
 
 /// State passing: what runs reads the current state and answers an integer.
-module Passing : Model(State) with sort S = Integer {
+module Passing : Model(State) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands the current state to what runs after, at that same state.
@@ -41,7 +41,7 @@ def putThenGet() -> Integer {
 /// The same model of `StatePutPut`: put-put relates no term at `get`'s port,
 /// so the model states it, and proves it by conversion — both sides run what
 /// comes after at the second value.
-module Overwriting : Model(StatePutPut) with sort S = Integer {
+module Overwriting : Model(StatePutPut) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// As `Passing.get`.

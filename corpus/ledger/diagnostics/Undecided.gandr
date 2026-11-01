@@ -1,5 +1,5 @@
 /// `Undecided`: a claim the machine cannot decide: a `ua` whose translator branches on a lazy record's entry, which the machine does not observe.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

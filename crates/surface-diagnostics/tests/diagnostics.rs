@@ -705,7 +705,7 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "data Term : Type where {\n  | Var : (n : Integer) --> Term\n  | App : (t : Term, u : Term) --> Term\n}\ntheory Pointed {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
+        "data Term : Type where {\n  | Var : (n : Integer) --> Term\n  | App : (t : Term, u : Term) --> Term\n}\ntheory Pointed where {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
          applies(link : Theory) -> Integer {\n  match link {\n    Theory.App(head, rest) => 1,\n    \
          _ => 0\n  }\n}\n",
     );
@@ -827,7 +827,7 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
+        "theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
          : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer { \
          s.read(s.incr(c)) }\n",
     );
@@ -1273,7 +1273,7 @@ fn a_sealed_type_is_spelled_by_its_path()
         Path::new("sealed.gandr"),
         SourceRoot::Strict,
         SourceText::from(
-            "module Counter :> #{ type T, zero : T } { type T = Integer ; def zero = 0 ; }\ndef \
+            "module Counter :> #{ type T, zero : T } where { type T = Integer ; def zero = 0 ; }\ndef \
                  leaked : Integer ;\ndef leaked = Counter.zero ;\n",
         ),
     );
@@ -1802,11 +1802,11 @@ fn repeated_equal_siblings_point_at_the_right_occurrence()
 #[test]
 fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
 {
-    let text = "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
+    let text = "theory Tally where {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
                 C) --> Integer;\n}\ndef stepped[s : Model(Tally)](c : s.C) -> Integer { \
-                s.read(s.incr(c)) }\nmodule Up : Model(Tally) {\n  type C = Integer;\n  def \
+                s.read(s.incr(c)) }\nmodule Up : Model(Tally) where {\n  type C = Integer;\n  def \
                 incr(c : Integer) -> Integer { c + 1 }\n  def read(c : Integer) -> Integer { c \
-                }\n}\nmodule Tens : Model(Tally) {\n  type C = Integer;\n  def incr(c : Integer) \
+                }\n}\nmodule Tens : Model(Tally) where {\n  type C = Integer;\n  def incr(c : Integer) \
                 -> Integer { c + 10 }\n  def read(c : Integer) -> Integer { c }\n}\ndef twin() \
                 -> Integer { stepped(4) }\n";
     assert_eq!(
@@ -2572,8 +2572,7 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
 fn an_importer_keeps_the_marks_its_import_holds_1199()
 {
     let scratch = Scratch::new(Path::new("consumable"));
-    let base =
-        "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} {\n}\n";
+    let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
     let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork (kernel : \
                 P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } as ring;\n  \
                 close(ring)\n}\n";

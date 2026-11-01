@@ -12,7 +12,7 @@ def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path(
 ) {
   return (unit, unit)
 }
-module Point :> #{ type T, origin : T } {
+module Point :> #{ type T, origin : T } where {
   @[ identity((related, reflexive, contraction)) ]
   @[ checks ]
   type T = Unit;

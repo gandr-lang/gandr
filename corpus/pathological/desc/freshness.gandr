@@ -9,7 +9,7 @@ import "../../model/desc/freshness.gandr";
 /// an instance naming `a` would be captured. The description check refuses
 /// the rule as a capture, an ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Captured {
+theory Captured where {
   sort Name : Atom;
   sort Proc : Type;
   oper par : (p : Proc, q : Proc) --> Proc;
@@ -22,7 +22,7 @@ theory Captured {
 /// description check refuses the condition as naming an unknown atom, an
 /// ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Unknown {
+theory Unknown where {
   sort Name : Atom;
   sort Proc : Type;
   oper nu : (p : bind (a : Name). Proc) --> Proc;

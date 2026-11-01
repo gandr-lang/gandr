@@ -25,7 +25,7 @@ use crate::model::ModelForm;
 use crate::unit::Unit;
 
 /// A group presented by its left unit, associativity and left inverse.
-const GROUP: &str = "theory Grp {
+const GROUP: &str = "theory Grp where {
   sort G : Type;
   oper e : G;
   oper inv : (x : G) --> G;

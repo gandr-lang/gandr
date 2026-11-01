@@ -22,7 +22,7 @@ use crate::resolve::OperandCount;
 
 /// A magma, the opposite multiplication's translator at its binary corolla
 /// and the identity at its constant one.
-const MAGMA: &str = r"theory Magma {
+const MAGMA: &str = r"theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
@@ -223,7 +223,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
 #[test]
 fn a_later_member_named_ua_is_a_forward_reference()
 {
-    let source = "theory S { sort M : Type; }\nmodule M { def o = ua[1, 4](S, S, #{}, #{}); def ua = 1; \
+    let source = "theory S where { sort M : Type; }\nmodule M where { def o = ua[1, 4](S, S, #{}, #{}); def ua = 1; \
                   }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -268,11 +268,11 @@ fn a_description_outside_the_stratum_is_refused_at_its_name()
 {
     for (theory, name) in [
         (
-            "theory Two {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> (b : Ob);\n}\n",
+            "theory Two where {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> (b : Ob);\n}\n",
             "Two",
         ),
         (
-            "theory Old {\n  sort Nat : Type;\n  oper f(x : Nat) -> Nat;\n  oper g : (a : Nat) --> (b : Nat);\n}\n",
+            "theory Old where {\n  sort Nat : Type;\n  oper f(x : Nat) -> Nat;\n  oper g : (a : Nat) --> (b : Nat);\n}\n",
             "Old",
         ),
     ] {

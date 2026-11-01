@@ -2,13 +2,13 @@
 ///
 /// A unit: a carrier and its one element.
 @[ checks ]
-theory Pointed {
+theory Pointed where {
   sort C : Type;
   oper point : C;
 }
 
 /// Zero as the point.
-module Zero : Model(Pointed) {
+module Zero : Model(Pointed) where {
   type C = Integer;
   /// Zero.
   @[ checks ]
@@ -16,7 +16,7 @@ module Zero : Model(Pointed) {
 }
 
 /// One as the point.
-module One : Model(Pointed) {
+module One : Model(Pointed) where {
   type C = Integer;
   /// One.
   @[ checks ]

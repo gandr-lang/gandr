@@ -11,7 +11,7 @@
 // - see: `pathological/modules/inert-field.gandr` — the reads refused
 
 /// What a release states: its version, a field no content reads.
-theory Released {
+theory Released where {
   /// The version.
   @[ inert ]
   oper version : String;
@@ -19,7 +19,7 @@ theory Released {
 
 /// A named release: its name inert as its version is, and a greeting that is
 /// content.
-theory Named {
+theory Named where {
   /// The release's version, inert here as there.
   include Released;
   /// The name.
@@ -30,7 +30,7 @@ theory Named {
 }
 
 /// The release a family of packages shares.
-module Family : Model(Released) {
+module Family : Model(Released) where {
   /// The family's version.
   @[ runs("\"0.1.0\"") ]
   def version = "0.1.0";
@@ -38,7 +38,7 @@ module Family : Model(Released) {
 
 /// One package of the family: its version read from the family's, inert from
 /// inert, and its greeting content.
-module Hello : Model(Named) {
+module Hello : Model(Named) where {
   /// The version, the family's.
   @[ runs("\"0.1.0\"") ]
   def version = Family.version;

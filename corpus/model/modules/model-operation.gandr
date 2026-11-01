@@ -10,7 +10,7 @@
 
 /// A counter, the theory of `functor-pair.gandr`'s signature
 /// `#{ type T, zero : T, next : T => T, read : T => Integer }`.
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper zero : T;
   oper next : T => T;
@@ -18,7 +18,7 @@ theory Counting {
 }
 
 /// The integers, counting up from zero.
-module Counted : Model(Counting) {
+module Counted : Model(Counting) where {
   type T = Integer;
   /// The start.
   @[ runs("0") ]
@@ -39,14 +39,14 @@ def counted_two() -> Integer {
 /// A sum, the theory of `nat-add.gandr`'s signature
 /// `#{ type M = Integer, zero : M, add : (M, M) => M }`: two inputs, written
 /// as the thunk of two arrows.
-theory Summing {
+theory Summing where {
   sort M : Type;
   oper zero : M;
   oper add : +U (M -> M -> -F M);
 }
 
 /// The integers under addition.
-module Summed : Model(Summing) {
+module Summed : Model(Summing) where {
   type M = Integer;
   /// The unit.
   @[ runs("0") ]

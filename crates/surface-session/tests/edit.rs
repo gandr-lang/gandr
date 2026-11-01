@@ -552,7 +552,7 @@ fn growing_a_tuple_replaces_it_325()
 {
     let revision = |component: &str| {
         snapshot(&format!(
-            "module Schema {{\n  type Old = #{{String, Integer}};\n  type New = #{{Integer, \
+            "module Schema where {{\n  type Old = #{{String, Integer}};\n  type New = #{{Integer, \
              String}};\n  @[ checks ]\n  def anonymise(old : Old) -> -F New {{\n    match old \
              {{\n      #{{name, age}} => return #{{age, {component}}}\n    }}\n  }}\n}}\n"
         ))

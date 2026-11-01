@@ -349,8 +349,8 @@ impl FormName
     pub const WORLD_DECLARATION: Self = Self("world_declaration");
     /// A site's offer `offers [ … ] ;`.
     pub const OFFERS_DECLARATION: Self = Self("offers_declaration");
-    /// The flow `flow f : V1 ~~> V2 { … }`, a translation from the models of
-    /// one theory to the models of another, read as a module form.
+    /// The flow `flow f : V1 ~~> V2 where { … }`, a translation from the models
+    /// of one theory to the models of another, read as a module form.
     pub const FLOW: Self = Self("flow_declaration");
     /// The derived rule `derive r : l <=> r in T`.
     pub const DERIVE_DECLARATION: Self = Self("derive_declaration");

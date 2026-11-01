@@ -2884,7 +2884,7 @@ mod tests
         let report = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n}\n",
+                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n}\n",
             ),
         );
         let refl = report
@@ -2923,7 +2923,7 @@ mod tests
         let report = settled(
             CorpusRoot::Strict,
             SourceText::from(
-                "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
             ),
         );
         let cells = report
@@ -3797,7 +3797,7 @@ data NatUnits : Type where {{
         let report = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"module Mk(C : #{ zero : Integer }) { @[ checks ] def seed = C.zero ; } module Bare { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk(Bare) ; @[ refuses("UnresolvedName") ] def b = z ;"#,
+                r#"module Mk(C : #{ zero : Integer }) where { @[ checks ] def seed = C.zero ; } module Bare where { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk(Bare) ; @[ refuses("UnresolvedName") ] def b = z ;"#,
             ),
         );
         let unsettled: Vec<_> = report
@@ -3835,12 +3835,12 @@ data NatUnits : Type where {{
                 RefusalName::TypeMismatch,
             ),
             (
-                r#"theory Idem {
+                r#"theory Idem where {
                   sort T : Type;
                   oper f : (x : T) --> T;
                   rule idem : f(f(x)) <=> f(x);
                 }
-                module Bad : Model(Idem) {
+                module Bad : Model(Idem) where {
                   type T = Bool;
                   def f(x : Bool) -> Bool { match x { true => false, false => true } }
                   @[ refuses("EndpointMismatch") ]
@@ -4196,7 +4196,7 @@ data NatUnits : Type where {{
     #[test]
     fn a_declaration_refused_at_refused_terms_states_their_cause_4143()
     {
-        let theory = "theory Mon {
+        let theory = "theory Mon where {
           sort M : Type;
           oper one : () --> M;
           oper mul : (x : M, y : M) --> M;

@@ -762,10 +762,10 @@ fn laid_out(
 
 /// What a client shows in place of the lines `span` folds, written by the
 /// form at `holder` among its own tiles: the text before `span` on its first
-/// line, then what the form writes up to its first own `{`, `=` or `;` inside
-/// `span`, its layout collapsed, the body after a `{` elided as `{ … }` and
-/// the definition after an `=` as `= …` with a final `;` kept; none when no
-/// such tile is inside `span`.
+/// line, then what the form writes up to its first own `where`, `{`, `=` or
+/// `;` inside `span`, its layout collapsed, the body after a `where` elided as
+/// `where { … }`, after a `{` as `{ … }` and the definition after an `=` as
+/// `= …` with a final `;` kept; none when no such tile is inside `span`.
 ///
 /// # Specification
 /// trivial.
@@ -797,6 +797,7 @@ fn folded(
         .get(usize::from(span.start()) .. usize::from(span.end()))
         .is_some_and(|written| written.trim_end().ends_with(';'));
     let elided = match <&str>::from(spelled) {
+        "where" => "where { … }",
         "{" => "{ … }",
         "=" if ended => "= …;",
         "=" => "= …",
@@ -1509,7 +1510,7 @@ mod tests
     {
         let source = "@[ deprecated ] def bare = 1 ;\n@[ checks ]\n@[ doc(\"x\"), deprecated(#{ \
                       since = \"0.2\" }) ] def recorded = 2 ;\n@[ respects(deprecated) ] def \
-                      named = 3 ;\nmodule Holder {\n  @[ deprecated ] def member = 4 ;\n}\ndef \
+                      named = 3 ;\nmodule Holder where {\n  @[ deprecated ] def member = 4 ;\n}\ndef \
                       plain = 5 ;\n";
         let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(
@@ -1584,12 +1585,12 @@ mod tests
     #[test]
     fn a_theory_holds_its_members()
     {
-        let source = "theory Shapes {\n  sort M : Type;\n  data Unit : M;\n  oper mul : (x : M, y \
+        let source = "theory Shapes where {\n  sort M : Type;\n  data Unit : M;\n  oper mul : (x : M, y \
                       : M) --> M;\n  obs size : (m : M) --> M;\n  rule assoc : mul(mul(x, y), z) \
                       ==> mul(x, mul(y, z));\n  boundary Square { tl, tr, bl, br };\n  face \
-                      left = { tl, bl };\n  ext Cell = M on left is zero;\n}\ntheory Monoid {\n  \
+                      left = { tl, bl };\n  ext Cell = M on left is zero;\n}\ntheory Monoid where {\n  \
                       include Shapes;\n  oper \
-                      one : () --> M;\n}\ncodata Stream : Type {\n  head : M;\n  tail : \
+                      one : () --> M;\n}\ncodata Stream : Type where {\n  head : M;\n  tail : \
                       Stream;\n}\n";
         assert_eq!(outline(&Reading::of(SourceText::from(source)).symbols()), [
             "Shapes 11 0:0-9:1 at 0:7-0:13",
@@ -1614,7 +1615,7 @@ mod tests
     {
         let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
-                      theory T {\n  sort M : Type;\n  boundary Square {\n    tl, tr, bl, br\n  \
+                      theory T where {\n  sort M : Type;\n  boundary Square {\n    tl, tr, bl, br\n  \
                       };\n  oper mul :\n    (M, M) => M;\n}\ndef k =\n  1 ;\n";
         let answered: Vec<(u64, u64, Option<&str>, Option<String>)> =
             Reading::of(SourceText::from(source))
@@ -1637,7 +1638,7 @@ mod tests
                 (0, 1, Some("comment"), None),
                 (2, 4, None, shown("def f(x: Integer) -> -F Integer { … }")),
                 (6, 7, Some("comment"), None),
-                (9, 16, None, shown("theory T { … }")),
+                (9, 16, None, shown("theory T where { … }")),
                 (11, 13, None, shown("  boundary Square { … }")),
                 (14, 15, None, shown("  oper mul : (M, M) => M;")),
                 (17, 18, None, shown("def k = …;")),
@@ -1692,8 +1693,9 @@ mod tests
             Some("0:9-0:10".to_owned()),
             "where one token ends and the next starts, the one starting is selected"
         );
-        let theory =
-            SourceText::from("theory T {\n  sort M : Type;\n  oper mul : (x : M) --> M;\n}\n");
+        let theory = SourceText::from(
+            "theory T where {\n  sort M : Type;\n  oper mul : (x : M) --> M;\n}\n",
+        );
         let member =
             Reading::of(theory).selections(&LineIndex::new(theory.as_ref().into()), &[at(
                 Line::from(2),

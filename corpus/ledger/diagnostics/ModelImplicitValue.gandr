@@ -2,13 +2,13 @@
 ///
 /// A unit: a carrier and a point.
 @[ checks ]
-theory Pointed {
+theory Pointed where {
   sort C : Type;
   oper point : C;
 }
 
 /// The point read as an integer.
-module Origin : Model(Pointed) {
+module Origin : Model(Pointed) where {
   type C = Integer;
   /// Zero.
   @[ checks ]

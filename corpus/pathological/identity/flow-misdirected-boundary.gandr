@@ -1,4 +1,4 @@
-module Schema {
+module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]

@@ -174,14 +174,14 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         scratch.file(
             Path::new(name),
             Text(&format!(
-                "pub module Manifold : Model(Manifold) {{\n  def artifact = \"p.gandr\";\n}}\n{placements}"
+                "pub module Manifold : Model(Manifold) where {{\n  def artifact = \"p.gandr\";\n}}\n{placements}"
             )),
         )
     };
     let twice = manifold(
         "twice.gandr",
         &format!(
-            "pub module Site : Model(Site) {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
+            "pub module Site : Model(Site) where {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
              \"\";\n  def secret = \"far\";\n}}\npub def placements : List(Placement) = \
              [Instances(\"far\", pack Site at Model(Site), 2)];\n"
         ),
@@ -219,7 +219,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         scratch.file(
             Path::new(name),
             Text(&format!(
-                "pub module Site : Model(Site) {{\n  def key = \"{key}\";\n  def sockets = \
+                "pub module Site : Model(Site) where {{\n  def key = \"{key}\";\n  def sockets = \
                  \"{sockets}\";\n  def secret = \"far\";\n}}\n"
             )),
         )
@@ -247,12 +247,12 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
 
 /// The theory a site's own model answers a labelled `Store` with, and two
 /// models of it: one at strings, one at integers.
-const KEPT: &str = "pub theory Kept {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key \
+const KEPT: &str = "pub theory Kept where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key \
                     : V, k : pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) \
-                    --> C;\n}\npub module Echo : Model(Kept) with sort V = String {\n  type C = \
+                    --> C;\n}\npub module Echo : Model(Kept) with sort V = String where {\n  type C = \
                     String;\n  def get(key : String, k : String => String) -> String { k(key) \
                     }\n  def put(key : String, value : String, k : String) -> String { k }\n}\npub \
-                    module Counted : Model(Kept) with sort V = Integer {\n  type C = Integer;\n  \
+                    module Counted : Model(Kept) with sort V = Integer where {\n  type C = Integer;\n  \
                     def get(key : Integer, k : Integer => Integer) -> Integer { k(key) }\n  def \
                     put(key : Integer, value : Integer, k : Integer) -> Integer { k }\n}\n";
 
@@ -319,7 +319,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     let _program = scratch.file(
         Path::new("p.gandr"),
         Text(
-            "pub theory Store {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
+            "pub theory Store where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
              pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) --> C;\n}\npub \
              world far requires [Console, store : Store with sort V = String];\npub world netted \
              requires [Net];\npub world lost requires [Missing];\n",
@@ -336,7 +336,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
             Path::new(name),
             Text(&format!(
                 "import \"../../../library/std/src/authority.gandr\";\n{KEPT}{offers}pub module \
-                 Site : Model(Site) {{\n  def key = \"{key}\";\n  def sockets = \"\";\n  def \
+                 Site : Model(Site) where {{\n  def key = \"{key}\";\n  def sockets = \"\";\n  def \
                  secret = \"far\";\n}}\npub def site : Model(Site) = pack Site at \
                  Model(Site);\n"
             )),
@@ -358,8 +358,8 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
         Path::new("m.gandr"),
         Text(&format!(
             "import \"./answered.gandr\" as answered;\nimport \"./typed.gandr\" as typed;\nimport \
-             \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) {{\n  def artifact \
-             = \"p.gandr\";\n}}\npub module Local : Model(Site) {{\n  def key = \"{local}\";\n  \
+             \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) where {{\n  def artifact \
+             = \"p.gandr\";\n}}\npub module Local : Model(Site) where {{\n  def key = \"{local}\";\n  \
              def sockets = \"\";\n  def secret = \"local\";\n}}\npub def placements : \
              List(Placement) = [\n  At(\"far\", answered.site),\n  At(\"far\", typed.site),\n  \
              At(\"far\", bare.site),\n  At(\"netted\", answered.site),\n  At(\"far\", pack Local \
@@ -415,7 +415,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
     let named = scratch.file(
         Path::new("named.gandr"),
         Text(&format!(
-            "pub module Site : Model(Site) {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
+            "pub module Site : Model(Site) where {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
              \"\";\n  def secret = \"far-site.é\";\n}}\n"
         )),
     );
@@ -428,7 +428,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
         scratch.file(
             Path::new(name),
             Text(&format!(
-                "pub module Secrets : Model(Secrets) with sort K = Secret.T {{\n  def \
+                "pub module Secrets : Model(Secrets) with sort K = Secret.T where {{\n  def \
                  secret(name : String) -> Secret.T {{ Secret.seal(\"{text}\") }}\n}}\n"
             )),
         )

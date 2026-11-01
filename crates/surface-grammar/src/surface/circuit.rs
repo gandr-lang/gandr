@@ -112,7 +112,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 
 /// Append the `theory` block declaration.
 ///
-/// `theory Nat { sort … ; data … ; oper … ; rule … ; }`. Every member is
+/// `theory Nat where { sort … ; data … ; oper … ; rule … ; }`. Every member is
 /// **terminated** by `;` (the surface's declaration terminator), and the
 /// terminator is load-bearing, not admitted:
 /// an unseparated member list is a clean parse of the WRONG tree — a member
@@ -130,9 +130,10 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// `oper` / `rule` never gain a form-first Item mold competing at a top-level
 /// slot.
 ///
-/// The name is a dotted path, `theory Gandr.Package { … }`: its segments
+/// The name is a dotted path, `theory Gandr.Package where { … }`: its segments
 /// before the last name the modules the theory is declared in, as a module's
-/// written name does.
+/// written name does. `where` opens the members, as it opens every declaration
+/// block.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -162,6 +163,7 @@ fn theory_declaration(
             t(TileLabel("theory")),
             t(TileLabel("type_identifier")),
             repeat(seq([t(TileLabel(".")), t(TileLabel("type_identifier"))])),
+            t(TileLabel("where")),
             t(TileLabel("{")),
             repeat(seq([
                 repeat(attr_block_inline()),

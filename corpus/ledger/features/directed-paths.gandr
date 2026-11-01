@@ -7,7 +7,7 @@
 // sequence ride a record of the first schema to the third.
 
 /// Three versions of a record schema and the flows between them.
-module Versions {
+module Versions where {
   type V1 = String * Integer;
   type V2 = Integer * String;
   type V3 = (Unit + Unit) * Integer * String;

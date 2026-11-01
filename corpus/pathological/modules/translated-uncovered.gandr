@@ -13,7 +13,7 @@
 
 /// The older signature with a member no flow of the newer source produces.
 @[ refuses("SignatureMismatch.Missing") ]
-theory Wider {
+theory Wider where {
   /// The answer.
   oper answer : Integer;
   /// A member the flow does not define.

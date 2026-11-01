@@ -6,7 +6,7 @@
 
 /// A counter sealed by its signature: an abstract type, its zero, a step and
 /// a reader.
-pub module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } {
+pub module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } where {
   type T = Integer;
   /// The counter's zero.
   @[ runs("0") ]
@@ -26,7 +26,7 @@ module MkCounter(S : #{
   zero : T,
   next : T => T,
   read : T => Integer
-}) :> #{ type T, seed : T, step : T => T, read : T => Integer } {
+}) :> #{ type T, seed : T, step : T => T, read : T => Integer } where {
   type T = S.T;
   def seed = S.zero;
   def step = S.next;

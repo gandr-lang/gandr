@@ -8,7 +8,7 @@
 
 /// Cells over a square of four corners, top left to bottom right: its left
 /// and right sides, its top and bottom, one corner and the empty face.
-theory Cells {
+theory Cells where {
   boundary Square { tl, tr, bl, br };
   face left = {tl, bl};
   face right = {tr, br};

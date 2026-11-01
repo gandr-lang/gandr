@@ -6,7 +6,7 @@
 /// continuation `k` is lost. Against the left unit law at `ext(ext(ret(a), k),
 /// l)`, one rule leaves `l(a)` and the other `ext(k(a), l)`.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory MonadLossy {
+theory MonadLossy where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
@@ -16,28 +16,28 @@ theory MonadLossy {
 }
 
 /// The carrier into the computation types.
-theory Carrier {
+theory Carrier where {
   /// A family from the host's types into the computation types.
   sort T(A : Type) : Type[-];
 }
 
 /// Lists answer it as a family into the value types, which `Type[-]` does
 /// not classify.
-module ValueCarrier : Model(Carrier) {
+module ValueCarrier : Model(Carrier) where {
   /// The lists at each type, a value type.
   @[ refuses("FamilyTelescope") ]
   type T(a : Type) = List(a);
 }
 
 /// A carrier into the value types.
-theory ValueSort {
+theory ValueSort where {
   /// A family from the host's types into the value types.
   sort T(A : Type) : Type;
 }
 
 /// Returned lists answer it as a family into the computation types, which
 /// `Type` does not classify.
-module ComputationCarrier : Model(ValueSort) {
+module ComputationCarrier : Model(ValueSort) where {
   /// A computation returning a list at each type.
   @[ refuses("FamilyTelescope") ]
   type T(a : Type) = -F List(a);

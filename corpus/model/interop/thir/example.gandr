@@ -51,7 +51,7 @@ pub data Expr : Type {
 
 /// The axioms as rules over THIR's nodes, each transformer an operation whose continuations bind a value: `example`'s guarded body at false normalizes to its postcondition at zero.
 @[ normalizes("body(ret(call(identity, cond(param, lit(succ(zero)), ret(lit(zero))))), ff, bind v . post(v)) ~> post(int(zero))") ]
-pub theory Thir.Wp {
+pub theory Thir.Wp where {
   /// A natural number, which a literal carries.
   sort Num : Type;
   /// A value the fragment computes, which a continuation binds.

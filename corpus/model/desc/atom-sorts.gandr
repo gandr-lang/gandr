@@ -6,13 +6,13 @@
 // it back by `case`.
 
 /// One atom sort and nothing else.
-theory AtomOnly {
+theory AtomOnly where {
   sort Name : Atom;
 }
 
 /// Names and the terms that mention them: a variable names an atom, and a
 /// renaming takes two atoms and a term.
-theory Renaming {
+theory Renaming where {
   sort Name : Atom;
   sort Tm : Type;
   oper var : (a : Name) --> Tm;

@@ -6,7 +6,7 @@
 /// A point observed by its coordinates. A codata declaration's kind is a
 /// computation universe, and `Type` is none.
 @[ refuses("CodataKindNotUniverse") ]
-codata Point : Type {
+codata Point : Type where {
   x : Integer;
   y : Integer;
 }

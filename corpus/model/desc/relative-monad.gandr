@@ -14,7 +14,7 @@ import "../data/data-maybe.gandr";
 
 /// The left unit: returning a value to an extension runs its continuation at
 /// that value, a second-order rule over values `V` and computations `C`.
-theory MonadLeftUnit {
+theory MonadLeftUnit where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
@@ -25,7 +25,7 @@ theory MonadLeftUnit {
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
 /// it at its port of the sort `V` (#2115).
-theory MonadRightUnit {
+theory MonadRightUnit where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
@@ -37,7 +37,7 @@ theory MonadRightUnit {
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
 /// unification, and its two reducts normalize to one term (#2116).
-pub theory RelativeMonad {
+pub theory RelativeMonad where {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;

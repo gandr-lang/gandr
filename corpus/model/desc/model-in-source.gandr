@@ -20,7 +20,7 @@ pub data N : Type {
 
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and
 /// each operation its constructor.
-module SyntaxNat : Model(Nat) {
+module SyntaxNat : Model(Nat) where {
   type Nat = N;
   def zero() -> N { Z }
   def succ(n : N) -> N { S(n) }

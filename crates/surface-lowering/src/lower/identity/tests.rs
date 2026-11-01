@@ -2190,7 +2190,7 @@ fn matching_reflexivity_is_refused_as_k()
 
 /// Two protocols, one widening the other's selection, and a copy of the
 /// first, as module type members a statement names bare.
-const PROTOCOLS: &str = "module Evolution {\n  type Old = +{ report : !String. end };\n  type New = +{ report : !String. end, pause : end };\n  type Same = +{ report : !String. end };\n";
+const PROTOCOLS: &str = "module Evolution where {\n  type Old = +{ report : !String. end };\n  type New = +{ report : !String. end, pause : end };\n  type Same = +{ report : !String. end };\n";
 
 #[test]
 fn session_statements_lower_to_their_formers()
@@ -2376,7 +2376,7 @@ fn directed_statements_lower_to_their_formers()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "module Schema {\n",
+            "module Schema where {\n",
             "  type Old = #{String, Integer};\n",
             "  type New = #{Integer, String};\n",
             "  type ReadNew = +U (New -> -F Integer);\n",
@@ -2495,7 +2495,7 @@ fn a_dialogue_lowers_its_moves_beside_their_endpoints()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "module Ask {\n  type Asking = !String. end;\n}\n",
+            "module Ask where {\n  type Asking = !String. end;\n}\n",
             "def played : Dialogue(Ask.Asking);\n",
             "def played = dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed));\n",
             "def web() -> -F Web {\n  become decompose(played)\n}\n",

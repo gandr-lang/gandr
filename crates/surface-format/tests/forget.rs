@@ -26,24 +26,24 @@ use gandr_surface_syntax::SourceText;
 /// A counter over the integers, a pairing with both its carriers manifest,
 /// and a monoid over the integers, whose sort set also takes the map onto
 /// the semigroup it includes.
-const SOURCE: &str = "theory Counter {
+const SOURCE: &str = "theory Counter where {
   sort C : Type;
   oper zero : () --> C;
 }
 
-theory Pairing {
+theory Pairing where {
   sort A : Type;
   sort B : Type;
   oper first : () --> A;
   oper second : () --> B;
 }
 
-theory Semigroup {
+theory Semigroup where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
 }
 
-theory Monoid {
+theory Monoid where {
   include Semigroup;
   oper one : () --> M;
 }

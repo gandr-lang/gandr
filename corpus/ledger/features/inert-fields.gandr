@@ -1,21 +1,21 @@
 /// `inert-fields`: A theory's inert operations.
 /// Implemented: a theory's operation marked `@[ inert ]` is a field the manifest step reads; a model's component for it is inert, an `include` carries the mark, another inert component reads it, and a declaration that is no inert component and reads one is refused `InertRead` (`corpus/ledger/diagnostics/InertRead.gandr`); a package's address leaves every inert component out.
 /// A release: its version, a field no content reads.
-theory Released {
+theory Released where {
   /// The version.
   @[ inert ]
   oper version : String;
 }
 
 /// A family's release.
-module Family : Model(Released) {
+module Family : Model(Released) where {
   /// The family's version.
   @[ runs("\"0.1.0\"") ]
   def version = "0.1.0";
 }
 
 /// A package of the family, its version read inert from inert.
-module Member : Model(Released) {
+module Member : Model(Released) where {
   /// The version, the family's.
   @[ runs("\"0.1.0\"") ]
   def version = Family.version;

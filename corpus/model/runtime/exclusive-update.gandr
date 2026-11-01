@@ -21,7 +21,7 @@ pub data Pair : Type {
 }
 
 /// A pair's methods.
-pub module Pairs {
+pub module Pairs where {
   /// The pair, taken out of its hold.
   @[ checks ]
   def take(self : consumed Pair) -> Pair { pure self }

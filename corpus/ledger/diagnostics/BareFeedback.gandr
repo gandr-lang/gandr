@@ -1,6 +1,6 @@
 /// `BareFeedback`: a circuit rule's fed-back port read under no observation.
 @[ refuses("BareFeedback") ]
-theory Wheel {
+theory Wheel where {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
 

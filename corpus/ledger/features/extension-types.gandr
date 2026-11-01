@@ -15,7 +15,7 @@
 /// included; β reads an introduced cell's value at the point off the face; η
 /// rebuilds a cell from its value there.
 @[ normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)") ]
-theory ZeroFiber {
+theory ZeroFiber where {
   boundary Two { p, q };
   face left = {p};
   sort Val : Type;

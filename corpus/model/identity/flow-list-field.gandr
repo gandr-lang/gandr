@@ -5,7 +5,7 @@
 // riding the flow moves a record holding any list.
 
 /// A record with a list field, migrated by reordering its fields.
-module Roster {
+module Roster where {
   type Old = String * List(Integer);
   type New = List(Integer) * String;
   /// The translator: the fields swapped, the scores moved unread.

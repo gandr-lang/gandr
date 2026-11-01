@@ -16,7 +16,7 @@ import "../../../library/std/src/string.gandr";
 
 /// The empty string's unit law over the definition `concat` is refused.
 @[ refuses("IllFormedDescription") ]
-theory JoinLaws {
+theory JoinLaws where {
   /// The sort the law ranges over.
   sort S : Type;
 

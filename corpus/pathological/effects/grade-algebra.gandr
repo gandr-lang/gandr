@@ -29,7 +29,7 @@ def eightUnderTwoGiB : Path(
 ) = here(true);
 
 /// Counted bytes in the native integers: the order is the integer primitive.
-module Bytes : Model(Grade) {
+module Bytes : Model(Grade) where {
   /// The grades: integers.
   type G = Integer;
   /// Zero.

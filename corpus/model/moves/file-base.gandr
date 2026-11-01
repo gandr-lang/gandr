@@ -13,7 +13,7 @@ module File :> #{
   type Writer = ?Handle. !Handle. end,
   type Line,
   line : Line
-} {
+} where {
   type Line = String;
   /// The line a writer writes.
   def line = "line";

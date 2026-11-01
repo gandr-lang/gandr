@@ -1642,7 +1642,7 @@ impl Offering<'_>
             let start = ByteOffset::from(written.len());
             let _written = write!(
                 written,
-                "module {REQUIRED}{at}(M : Model({interface}){manifest}) {{}}\nmodule \
+                "module {REQUIRED}{at}(M : Model({interface}){manifest}) where {{}}\nmodule \
                  {OFFERED}{at} = {REQUIRED}{at}({module});\n",
                 at = label.position.0,
                 interface = label.entry.interface,

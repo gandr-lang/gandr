@@ -14,7 +14,7 @@
 /// composition and restriction, scope extrusion moving `q` under the
 /// restriction fresh for its atom. The checker orients the law and the kernel
 /// replays the verdict.
-theory Pi {
+theory Pi where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;

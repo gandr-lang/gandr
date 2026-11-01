@@ -3,19 +3,19 @@
 // members.
 
 /// A configuration, three modules deep.
-module Config {
+module Config where {
   /// The configuration's name.
   def name = "gandr";
   /// The limits.
-  module limits {
+  module limits where {
     /// The soft limit.
     def soft = 10;
     /// The hard limit, one level down.
-    module hard {
+    module hard where {
       /// Its value.
       def value = 100;
       /// The innermost module.
-      module detail {
+      module detail where {
         /// A note at the bottom.
         def note = "the innermost component";
       }

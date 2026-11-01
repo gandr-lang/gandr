@@ -3911,10 +3911,10 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
     {
         let mut sealed = program(
-            "pub module Secret :> #{ type T, seal : String => T } {\n  type T = String;\n  def \
+            "pub module Secret :> #{ type T, seal : String => T } where {\n  type T = String;\n  def \
              seal(text : String) -> String { text }\n}\npub module Counter :> #{ type T, zero : \
-             T } {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
-             Report, progress : Report } {\n  type Report = String;\n  def progress = \
+             T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
+             Report, progress : Report } where {\n  type Report = String;\n  def progress = \
              \"progress\";\n}\ndef returned() -> Secret.T { Secret.seal(\"x\") }\ndef listed() \
              -> List(Secret.T) {\n  run s <- Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() \
              -> Seat.Report { pure Seat.progress }\n",
@@ -4201,11 +4201,11 @@ def kept : +U (-F (+U (-F (Type -> Type)))) ; def kept = thunk { return held } ;
     fn a_run_naming_a_declaration_outside_every_sealed_module_is_spelled()
     {
         let mut beside = program(
-            r"theory Pointed {
+            r"theory Pointed where {
   sort T : Type;
   oper z : T;
 }
-module ZeroPointed : Model(Pointed) {
+module ZeroPointed : Model(Pointed) where {
   type T = Integer;
   def z = 0;
 }
@@ -4226,11 +4226,11 @@ def wrap : Integer => Integer ; def wrap = fn (n) { become helper(n) } ;",
     fn a_run_naming_a_hidden_member_is_opaque_at_its_module()
     {
         let mut hiding = program(
-            r"theory Pointed {
+            r"theory Pointed where {
   sort T : Type;
   oper z : T;
 }
-module Stepped : Model(Pointed) {
+module Stepped : Model(Pointed) where {
   type T = Integer => Integer;
   def step(x : Integer) -> -F Integer { x }
   def z : T ; def z = fn (n) { become step(n) } ;
@@ -4334,7 +4334,7 @@ def bad : Integer ; def bad = "text" ;"#,
     fn a_member_is_named_by_its_whole_path_2687()
     {
         let mut package = program(
-            r#"def name = "outer" ; module Package { def name = "hello" ; def version = "0.1.0" ; }"#,
+            r#"def name = "outer" ; module Package where { def name = "hello" ; def version = "0.1.0" ; }"#,
         );
         let spelled =
             |package: &mut Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
@@ -4367,7 +4367,7 @@ def bad : Integer ; def bad = "text" ;"#,
     fn a_path_is_named_among_the_declarations_given_2687()
     {
         let mut package = program(
-            r#"module Package { def name = "hello" ; } def name = "outer" ; def version = "0.1.0" ;"#,
+            r#"module Package where { def name = "hello" ; } def name = "outer" ; def version = "0.1.0" ;"#,
         );
         let at = |package: &Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
             Maybe::Present(constant) => constant,
@@ -4522,7 +4522,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     fn a_skipped_admission_position_holds_no_declaration()
     {
         let mut program = program(
-            "module M { type T = Integer ; def seed : T ; def seed = 41 ; }\ndef copy : Integer \
+            "module M where { type T = Integer ; def seed : T ; def seed = 41 ; }\ndef copy : Integer \
              ;\ndef copy = M.seed ;",
         );
         assert_eq!(

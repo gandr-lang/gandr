@@ -1,10 +1,10 @@
 /// `InertRead`: a declaration reads a field its theory marks inert (#3029).
-theory Labelled {
+theory Labelled where {
   @[ inert ]
   oper label : String;
 }
 
-module Box : Model(Labelled) {
+module Box : Model(Labelled) where {
   @[ runs("\"box\"") ]
   def label = "box";
 }

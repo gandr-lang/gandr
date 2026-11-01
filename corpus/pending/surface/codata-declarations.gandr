@@ -1,21 +1,21 @@
-codata Stream(a : Type) : Type {
+codata Stream(a : Type) : Type where {
   head : a;
   tail : Stream(a);
 }
 
-codata Iter(a : Type) : Type {
+codata Iter(a : Type) : Type where {
   next : -F (Option(#{item : a, rest : Iter(a)}));
 }
 
-codata Fun(a : Type, b : Type) : Type {
+codata Fun(a : Type, b : Type) : Type where {
   ap(x : a) : b;
 }
 
-codata Session : Type {
+codata Session : Type where {
   1 step : -F (Unit);
 }
 
-codata Colist(a : Type) : Type {
+codata Colist(a : Type) : Type where {
   head : a;
   tail : Colist(a);
   rule tail(x) ==> x;

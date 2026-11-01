@@ -497,15 +497,15 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
 /// A counter theory, a counter that also resets, a module of each, and a
 /// step over any counter its model implicit names.
 const STEPPED: &str = "\
-theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-theory ResetCounter { include Counter; oper reset : (c : C) --> C; }
-module Up : Model(Counter) {
+theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+theory ResetCounter where { include Counter; oper reset : (c : C) --> C; }
+module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
   def incr(c : Integer) -> -F Integer { c + 1 }
   def read(c : Integer) -> -F Integer { c }
 }
-module Tens : Model(ResetCounter) {
+module Tens : Model(ResetCounter) where {
   type C = Integer;
   def zero = 0;
   def incr(c : Integer) -> -F Integer { c + 10 }
@@ -801,8 +801,8 @@ fn an_omitted_model_implicit_plans_each_module_of_its_theory_739()
     // count the integers `4` forces, so the checker refuses the call naming
     // both places.
     let source = format!(
-        "{STEPPED}theory Lonely {{ sort L : Type; oper lone : L; }}\nmodule Lone : \
-         Model(Lonely) {{ type L = Integer; def lone = 0; }}\ndef omitted() -> -F Integer {{ \
+        "{STEPPED}theory Lonely where {{ sort L : Type; oper lone : L; }}\nmodule Lone : \
+         Model(Lonely) where {{ type L = Integer; def lone = 0; }}\ndef omitted() -> -F Integer {{ \
          stepped(4) }}\n"
     );
     let mut arena = CoreArena::new();
@@ -957,15 +957,15 @@ fn a_model_slot_one_module_answers_checks_as_supplied_739()
     // include: `4` forces `Up`, an annotated flag forces `Flips`, and each
     // call checks as if it named its module.
     let source = "\
-theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-theory ResetCounter { include Counter; oper reset : (c : C) --> C; }
-module Up : Model(Counter) {
+theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+theory ResetCounter where { include Counter; oper reset : (c : C) --> C; }
+module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
   def incr(c : Integer) -> -F Integer { c + 1 }
   def read(c : Integer) -> -F Integer { c }
 }
-module Flips : Model(ResetCounter) {
+module Flips : Model(ResetCounter) where {
   type C = Bool;
   def zero = false;
   def incr(c : Bool) -> -F Bool { match c { true => false, false => true } }
@@ -989,14 +989,14 @@ fn an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317()
     // `C`, so it files the integers' code and each candidate its own
     // carrier's, and the call checks as `Up` alone answers it.
     let source = "\
-theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-module Up : Model(Counter) {
+theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
   def incr(c : Integer) -> -F Integer { c + 1 }
   def read(c : Integer) -> -F Integer { c }
 }
-module Flips : Model(Counter) {
+module Flips : Model(Counter) where {
   type C = Bool;
   def zero = false;
   def incr(c : Bool) -> -F Bool { match c { true => false, false => true } }

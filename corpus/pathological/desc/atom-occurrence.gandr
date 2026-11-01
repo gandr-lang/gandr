@@ -10,7 +10,7 @@ import "../../model/desc/atom-occurrence.gandr";
 /// one: the description check refuses the occurrence as misplaced, an
 /// ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Misplaced {
+theory Misplaced where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -25,7 +25,7 @@ theory Misplaced {
 /// reaches `nu(bind a . par(nil, q))` one way and `par(nil, q)` the other, two
 /// normal forms, so the rules are refused (#2448).
 @[ refuses("RulesOverlapCondition") ]
-theory Vacant {
+theory Vacant where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -41,7 +41,7 @@ theory Vacant {
 /// no matching step decides yet, so the description check refuses the rule
 /// undecided (#1934).
 @[ refuses("IllFormedDescription") ]
-theory Split {
+theory Split where {
   sort Name : Atom;
   sort Proc : Type;
   oper par : (p : Proc, q : Proc) --> Proc;

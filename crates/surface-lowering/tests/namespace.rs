@@ -1506,7 +1506,7 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     // in an include, and its own `eq` shadows the prelude's; alone, it reads
     // neither.
     let pbg = grammar();
-    let source = "theory Decided { include Eq; }\ndef same[e : Model(Eq)](a : e.Carrier, b \
+    let source = "theory Decided where { include Eq; }\ndef same[e : Model(Eq)](a : e.Carrier, b \
                   : e.Carrier) -> Bool { e.eq(a, b) }\ndef eq(a : Bool) -> Bool { a }\ndef \
                   mine() -> Bool { eq(true) }\n";
     let (text, unit) =
@@ -1560,12 +1560,12 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
 fn the_standard_package_theory_is_read_by_its_path_2767()
 {
     let pbg = grammar();
-    let source = "import \"./package.gandr\" ;\nmodule Package : Model(Gandr.Package) {\n  def \
+    let source = "import \"./package.gandr\" ;\nmodule Package : Model(Gandr.Package) where {\n  def \
                   name : String = \"probe\";\n  def version : String = \"0.1.0\";\n  def authors \
                   : String = \"Ada\";\n  def licence : String = \"MIT\";\n  def documentation : \
                   String = \"d\";\n  def endpoint : String = \"e\";\n  def gandr : String = \
                   \"\";\n  def features : String = \"\";\n  def systems : String = \"\";\n  def \
-                  spelling : String = \"\";\n}\nmodule Partial : Model(Gandr.Package) {\n  def \
+                  spelling : String = \"\";\n}\nmodule Partial : Model(Gandr.Package) where {\n  def \
                   name : String = \"partial\";\n}\n";
     let (text, unit) = laid(&[
         (
@@ -1613,15 +1613,15 @@ fn a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub theory Kit.Shown {\n  oper label : String;\n}\ntheory Kit.Hidden {\n  oper \
+                "pub theory Kit.Shown where {\n  oper label : String;\n}\ntheory Kit.Hidden where {\n  oper \
                  label : String;\n}\n",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "import \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) {\n  def label : \
-                 String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) {\n  def label : \
+                "import \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) where {\n  def label : \
+                 String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) where {\n  def label : \
                  String = \"unseen\";\n}\n",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
@@ -1711,13 +1711,13 @@ fn a_method_of_a_source_not_imported_is_out_of_scope()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub module Str { def len(self : shared Integer) -> -F Integer { pure self } }",
+                "pub module Str where { def len(self : shared Integer) -> -F Integer { pure self } }",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "pub module Bytes { def len(self : shared Integer) -> -F Integer { pure 0 } }",
+                "pub module Bytes where { def len(self : shared Integer) -> -F Integer { pure 0 } }",
             ),
             &[],
         ),
@@ -1911,14 +1911,14 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+                "pub theory Nat where {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
                  Nat) --> Nat;\n}",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = \
+                "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) where {\n  type Nat = \
                  Integer;\n  def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> \
                  -F Integer { return n + 1 }\n}",
             ),
@@ -1959,16 +1959,16 @@ fn a_functor_argument_reads_an_imported_module_1993()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\npub \
-                 module Times : Model(Mag) {\n  type M = Integer;\n  def mul(a : Integer, b : \
-                 Integer) -> -F Integer { become a * b }\n}\npub module Squaring(S : Model(Mag)) {\n  def \
+                "pub theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\npub \
+                 module Times : Model(Mag) where {\n  type M = Integer;\n  def mul(a : Integer, b : \
+                 Integer) -> -F Integer { become a * b }\n}\npub module Squaring(S : Model(Mag)) where {\n  def \
                  square(x : S.M) -> -F S.M { become S.mul(x, x) }\n}",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "pub module Times {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) -> -F \
+                "pub module Times where {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) -> -F \
                  Integer { become a + b }\n}",
             ),
             &[],
@@ -2040,7 +2040,7 @@ fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub theory Inv {\n  sort G : Type;\n  oper inv : (x : G) --> G;\n  rule invInv : \
+                "pub theory Inv where {\n  sort G : Type;\n  oper inv : (x : G) --> G;\n  rule invInv : \
                  inv(inv(x)) <=> x;\n}",
             ),
             &[],
@@ -2104,10 +2104,10 @@ fn an_include_reads_the_theories_its_source_imports_1224()
 {
     let pbg = grammar();
     let magma = SourceText::from(
-        "pub theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}",
+        "pub theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}",
     );
     let pointed = SourceText::from(
-        "import \"./magma.gandr\" ;\ntheory Pointed {\n  include Mag;\n  oper one : () --> \
+        "import \"./magma.gandr\" ;\ntheory Pointed where {\n  include Mag;\n  oper one : () --> \
          M;\n}",
     );
     let mag = Name::from("Mag");
@@ -2116,26 +2116,26 @@ fn an_include_reads_the_theories_its_source_imports_1224()
         (pointed, &[ImportTarget::Source(SourceIndex::from(0_usize))]),
         (
             SourceText::from(
-                "import \"./pointed.gandr\" ;\ntheory Through {\n  include Mag;\n  oper two : \
+                "import \"./pointed.gandr\" ;\ntheory Through where {\n  include Mag;\n  oper two : \
                  () --> M;\n}",
             ),
             &[ImportTarget::Source(SourceIndex::from(1_usize))],
         ),
         (
             SourceText::from(
-                "import \"./magma.gandr\" as magma ;\ntheory Aliased {\n  include Mag;\n}",
+                "import \"./magma.gandr\" as magma ;\ntheory Aliased where {\n  include Mag;\n}",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
         (
             SourceText::from(
-                "pub theory Mag {\n  sort N : Type;\n  oper add : (x : N, y : N) --> N;\n}",
+                "pub theory Mag where {\n  sort N : Type;\n  oper add : (x : N, y : N) --> N;\n}",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "import \"./magma.gandr\" ;\nimport \"./other.gandr\" ;\ntheory Both {\n  include \
+                "import \"./magma.gandr\" ;\nimport \"./other.gandr\" ;\ntheory Both where {\n  include \
                  Mag;\n}",
             ),
             &[
@@ -2215,12 +2215,12 @@ fn a_source_lowers_alike_whatever_follows_it_776()
 {
     let pbg = grammar();
     let base = SourceText::from(
-        "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+        "pub theory Nat where {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
          Nat) --> Nat;\n}\npub data Point : Type where { | One : Point }\npub def one : Point ;\ndef \
          one = One ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
     );
     let importer = SourceText::from(
-        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = Integer;\n  \
+        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) where {\n  type Nat = Integer;\n  \
          def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> -F Integer { return \
          n + 1 }\n}\ndef again : Point ;\ndef again = one ;",
     );
@@ -2297,8 +2297,8 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
 {
     let pbg = grammar();
     let first =
-        SourceText::from("theory Magma {\n  sort M : Type;\n  oper one : () --> (z : M);\n}");
-    let counting = "theory Monoid {\n  sort M : Type;\n  oper one : () --> (z : M);\n}\ndef \
+        SourceText::from("theory Magma where {\n  sort M : Type;\n  oper one : () --> (z : M);\n}");
+    let counting = "theory Monoid where {\n  sort M : Type;\n  oper one : () --> (z : M);\n}\ndef \
                     count(presented : Theory) -> -F Integer {\n  match presented {\n    \
                     Presents(sorts, opers, rules) => return 1,\n    _ => return 0\n  }\n}";
     let importing = format!("import \"./base.gandr\" ;\n{counting}");
@@ -2370,10 +2370,10 @@ fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
 {
     let pbg = grammar();
     let monoid = SourceText::from(
-        "pub theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  oper one : \
+        "pub theory Monoid where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  oper one : \
          () --> (z : M);\n}",
     );
-    let stating = "theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
+    let stating = "theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
                    oper one : () --> (z : M);\n}\ndef exchange(b : Bool) -> -F Bool {\n  match b \
                    {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  \
                    }\n}\ndef keep(e : +{Unit}) -> -F +{Unit} {\n  return e\n}\ndef unnamed = \
@@ -2435,12 +2435,12 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
 {
     let pbg = grammar();
     let base = SourceText::from(
-        "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+        "pub theory Nat where {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
          Nat) --> Nat;\n}\npub data Point : Type where { | One : Point }\npub def one : Point ;\ndef \
          one = One ;\ndef pending = ? ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
     );
     let importer = SourceText::from(
-        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = Integer;\n  \
+        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) where {\n  type Nat = Integer;\n  \
          def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> -F Integer { return \
          n + 1 }\n}\ndef again : Point ;\ndef again = one ;\ndef later = ?named ;",
     );
@@ -2573,13 +2573,13 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
         "  applyAt[.i = k](f, x)\n}\n",
         "def crossed[s : Region, r : Region](k : (() => Integer) at r, j : (() => Integer) \
          at s) -> -F Integer {\n  force k\n}\n",
-        "pub theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
+        "pub theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
          read : (c : C) --> Integer; }\n",
-        "pub module Up : Model(Counter) {\n  type C = Integer;\n  def zero = 0;\n  def incr(c : \
+        "pub module Up : Model(Counter) where {\n  type C = Integer;\n  def zero = 0;\n  def incr(c : \
          Integer) -> -F Integer { c + 1 }\n  def read(c : Integer) -> -F Integer { c }\n}\n",
         "pub def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
         "def omitted() -> -F Integer { stepped(4) }\n",
-        "pub theory StatePutLaws {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
+        "pub theory StatePutLaws where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
          (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put(s, \
          get(bind t . k(t))) <=> put(s, k(s));\n  rule putPut : put(s, put(u, k)) <=> put(u, \
          k);\n}\n",
@@ -3351,7 +3351,7 @@ fn an_import_at_a_narrower_signature_settles_3098()
 {
     let pbg = grammar();
     let exported = "pub def welcome : String = \"hi\" ;\npub def count : Integer = 3 ;";
-    let theory = "theory Greeting { oper welcome : String ; }\n";
+    let theory = "theory Greeting where { oper welcome : String ; }\n";
     let outcomes = |importer: &str| {
         let (text, unit) = laid(&[
             (SourceText::from(exported), &[]),
@@ -3422,7 +3422,7 @@ fn an_import_at_a_wider_signature_refuses_its_source_3098()
                     def bare = \"bare\" ;";
     let refused = |members: &str| {
         let importer = format!(
-            "theory Wanted {{ {members} }}\nimport \"./base.gandr\" as base : Wanted ;\ndef \
+            "theory Wanted where {{ {members} }}\nimport \"./base.gandr\" as base : Wanted ;\ndef \
              one : Integer ;\ndef one = 1 ;"
         );
         let (text, unit) = laid(&[
@@ -3481,8 +3481,8 @@ fn an_import_at_a_wider_signature_refuses_its_source_3098()
 }
 
 /// The signatures the translation tests read a source at and through.
-const VERSIONS: &str = "theory Older { oper answer : Integer ; oper tag : Integer ; }\ntheory \
-                        Newer { oper reply : Integer ; oper label : Integer ; }\n";
+const VERSIONS: &str = "theory Older where { oper answer : Integer ; oper tag : Integer ; }\ntheory \
+                        Newer where { oper reply : Integer ; oper label : Integer ; }\n";
 
 /// The newer source the translation tests import.
 const NEWER: &str = "pub def reply : Integer = 42 ;\npub def label : Integer = 7 ;";
@@ -3568,7 +3568,7 @@ fn translated(
 fn an_import_via_a_flow_reads_its_source_through_it_3378()
 {
     let pbg = grammar();
-    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = 9 ; }\n";
+    let flow = "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = 9 ; }\n";
     for reads in [
         "import \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : Integer ;\ndef \
          relayed = old.answer ;\ndef tagged : Integer ;\ndef tagged = old.tag ;",
@@ -3606,7 +3606,7 @@ fn an_import_via_a_flow_reads_its_source_through_it_3378()
 fn an_importer_reads_a_declaration_as_its_import_binds_it_3498()
 {
     let pbg = grammar();
-    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = 9 ; }\n";
+    let flow = "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = 9 ; }\n";
     let flowed = |import: &str| [VERSIONS, flow, import].concat();
     for (importer, expected) in [
         (
@@ -3669,7 +3669,8 @@ fn an_importer_reads_a_declaration_as_its_import_binds_it_3498()
 fn a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378()
 {
     let pbg = grammar();
-    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = label ; }\n";
+    let flow =
+        "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = label ; }\n";
     let import = "import \"./base.gandr\" as old : Older via downgrade ;\n";
     let read = "def relayed : Integer ;\ndef relayed = old.answer ;";
     let refusals = |exported: &str, importer: &str| {
@@ -3718,7 +3719,8 @@ fn a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378()
 fn a_translation_is_refused_at_its_domain_or_its_codomain_3378()
 {
     let pbg = grammar();
-    let flow = "flow downgrade : Newer ~~> Older { def answer = reply ; def tag = label ; }\n";
+    let flow =
+        "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = label ; }\n";
     for (exported, signature, at, (theory, member, fault)) in [
         (
             "pub def reply : Integer = 42 ;",
@@ -3741,7 +3743,7 @@ fn a_translation_is_refused_at_its_domain_or_its_codomain_3378()
     ] {
         let importer = [
             VERSIONS,
-            "theory Wider { oper answer : Integer ; oper extra : Integer ; }\n",
+            "theory Wider where { oper answer : Integer ; oper extra : Integer ; }\n",
             flow,
             &format!(
                 "import \"./base.gandr\" as old : {signature} via downgrade ;\ndef one : Integer \
@@ -5085,7 +5087,7 @@ fn each_import_a_name_is_read_through_is_reached()
         (
             SourceText::from(
                 "pub data Point : Type where { | One : Point }\npub module Cancel :> #{\n  notes : \
-                 String\n} {\n  def notes = \"notes\";\n}\npub module Str { def len(self : shared \
+                 String\n} where {\n  def notes = \"notes\";\n}\npub module Str where { def len(self : shared \
                  Integer) -> -F Integer { pure self } }\npub def seven : Integer ;\ndef seven = 7 ;",
             ),
             &[],
@@ -5168,11 +5170,11 @@ const VISIBLE_BASE: &str = "pub def shown : Integer ;\ndef shown = 2 ;\ndef hidd
                             ;\npub def hidden = 1 ;\n@[ checks ]\npub def checked : Integer ;\ndef \
                             checked = 4 ;\npub @[ checks ]\ndef early : Integer ;\ndef early = 5 \
                             ;\ndef secret = 3 ;\npub data Bit : Type where { | O : Bit }\ndata Hid : \
-                            Type where { | H : Hid }\npub theory Pointed {\n  sort P : Type;\n  oper pt \
-                            : () --> P;\n}\ntheory Closed {\n  sort Q : Type;\n  oper qt : () \
-                            --> Q;\n}\npub module Open { def x = 6; }\nmodule Shut { def y = 7; \
-                            }\npub module Methods { def width(self : shared Integer) -> -F Integer \
-                            { pure self } }\nmodule Hidden { def depth(self : shared Integer) -> \
+                            Type where { | H : Hid }\npub theory Pointed where {\n  sort P : Type;\n  oper pt \
+                            : () --> P;\n}\ntheory Closed where {\n  sort Q : Type;\n  oper qt : () \
+                            --> Q;\n}\npub module Open where { def x = 6; }\nmodule Shut where { def y = 7; \
+                            }\npub module Methods where { def width(self : shared Integer) -> -F Integer \
+                            { pure self } }\nmodule Hidden where { def depth(self : shared Integer) -> \
                             -F Integer { pure self } }";
 
 /// Each declaration of the unit `base` then `importer` lays, the importer
@@ -5229,7 +5231,7 @@ fn a_pub_declaration_is_read_by_its_importer_2687()
         "import \"./base.gandr\" ;\ndef a : Integer ;\ndef a = shown ;\ndef b : Integer ;\ndef b \
          = hidden ;\ndef c : Integer ;\ndef c = checked ;\ndef d : Integer ;\ndef d = early ;\ndef \
          e : Bit ;\ndef e = O ;\ndef f : Integer ;\ndef f = Open.x ;\nmodule Pointing : \
-         Model(Pointed) {\n  type P = Integer;\n  def pt() -> -F Integer { return 0 }\n}\ndef \
+         Model(Pointed) where {\n  type P = Integer;\n  def pt() -> -F Integer { return 0 }\n}\ndef \
          g() -> -F Integer { hold s = 1; s.width() }",
     ));
     let refused: Vec<_> = outcomes
@@ -5254,7 +5256,7 @@ fn a_private_declaration_is_refused_to_its_importer_2687()
     let outcomes = importer_outcomes(SourceText::from(
         "import \"./base.gandr\" ;\ndef g : Integer ;\ndef g = secret ;\ndef h : Hid ;\ndef h = \
          1 ;\ndef i = H ;\ndef j : Integer ;\ndef j = Shut.y ;\nmodule Closing : Model(Closed) \
-         {\n  type Q = Integer;\n  def qt() -> -F Integer { return 0 }\n}\ndef k() -> -F Integer \
+         where {\n  type Q = Integer;\n  def qt() -> -F Integer { return 0 }\n}\ndef k() -> -F Integer \
          { hold s = 1; s.depth() }\ndef secret = 8 ;",
     ));
     let private = |name: &str| format!("name: SurfaceName(SourceFragment(\"{name}\"))");

@@ -1,6 +1,6 @@
 /// Decidable equality over a carrier some value may be unequal to itself in:
 /// symmetric.
-pub theory PartialEq {
+pub theory PartialEq where {
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
   law sym : (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b, a));
@@ -8,20 +8,20 @@ pub theory PartialEq {
 
 /// Decidable equality over a carrier: a partial equality every value is
 /// equal to itself in.
-pub theory Eq {
+pub theory Eq where {
   include PartialEq;
   law refl : (a : Carrier) => Path(Bool, eq(a, a), true);
 }
 
 /// Structural equality from `T`'s constructors, and its laws.
-pub module Eq {
+pub module Eq where {
   /// `def eq = Eq.generic(T)`; `def refl = Eq.generic.refl(T)` and `def sym
   /// = Eq.generic.sym(T)` prove its laws.
   def generic : (T : Type) => (T, T) => Bool;
 }
 
 /// Integer equality, the integer primitive, its laws the host's.
-pub module EqInteger : Model(Eq) with sort Carrier = Integer {
+pub module EqInteger : Model(Eq) with sort Carrier = Integer where {
   /// Whether two integers are equal.
   def eq(a : Integer, b : Integer) -> Bool { int.eq(a, b) }
   law refl admitted;
@@ -29,7 +29,7 @@ pub module EqInteger : Model(Eq) with sort Carrier = Integer {
 }
 
 /// String equality, the string primitive, its laws the host's.
-pub module EqString : Model(Eq) with sort Carrier = String {
+pub module EqString : Model(Eq) with sort Carrier = String where {
   /// Whether two strings are equal, byte for byte.
   def eq(a : String, b : String) -> Bool { string.eq(a, b) }
   law refl admitted;
@@ -38,7 +38,7 @@ pub module EqString : Model(Eq) with sort Carrier = String {
 
 /// Float equality, the float primitive: symmetric, and no equality, since
 /// NaN is equal to nothing, itself included.
-pub module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 {
+pub module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 where {
   /// Whether two floats are equal, NaN equal to none.
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
   law sym admitted;
@@ -50,7 +50,7 @@ pub def eq[e : Model(PartialEq)](a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a,
 
 /// A decidable order over a carrier with its equality: below, at most, above
 /// and at least.
-pub theory Ord {
+pub theory Ord where {
   include Eq;
   oper lt : (a : Carrier, b : Carrier) --> Bool;
   oper le : (a : Carrier, b : Carrier) --> Bool;
@@ -59,7 +59,7 @@ pub theory Ord {
 }
 
 /// The integers' order, the integer primitives, over `EqInteger`.
-pub module OrdInteger : Model(Ord) with sort Carrier = Integer {
+pub module OrdInteger : Model(Ord) with sort Carrier = Integer where {
   include EqInteger;
   /// Whether one integer is below another.
   def lt(a : Integer, b : Integer) -> Bool { int.lt(a, b) }
@@ -73,7 +73,7 @@ pub module OrdInteger : Model(Ord) with sort Carrier = Integer {
 
 /// The strings' byte-lexicographic order, the string primitive, over
 /// `EqString`.
-pub module OrdString : Model(Ord) with sort Carrier = String {
+pub module OrdString : Model(Ord) with sort Carrier = String where {
   include EqString;
   /// Whether one string is below another, byte by byte.
   def lt(a : String, b : String) -> Bool { string.lt(a, b) }

@@ -6,7 +6,7 @@
 
 /// Metrics, the theory of `module-signature-matching.gandr`'s
 /// `#{ type Ratio = Integer, base: Integer, double: Integer, scale: Ratio }`.
-theory Metering {
+theory Metering where {
   sort Ratio : Type;
   oper base : Integer;
   oper double : Integer;
@@ -15,7 +15,7 @@ theory Metering {
 
 /// The metrics at integer ratios. The module writes no `Ratio`: the model
 /// type states it.
-module Metrics : Model(Metering) with sort Ratio = Integer {
+module Metrics : Model(Metering) with sort Ratio = Integer where {
   /// The base.
   def base = 7;
   /// Its double.
@@ -25,7 +25,7 @@ module Metrics : Model(Metering) with sort Ratio = Integer {
 }
 
 /// The metrics sealed at the manifest model type: the sort stays `Integer`.
-module Sealed :> Model(Metering) with sort Ratio = Integer {
+module Sealed :> Model(Metering) with sort Ratio = Integer where {
   /// The base.
   def base = 7;
   /// Its double.

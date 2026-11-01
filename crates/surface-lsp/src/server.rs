@@ -10119,8 +10119,8 @@ mod tests
             ("fourth.gandr", disk[4].1),
             (
                 "fifth.gandr",
-                "theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
-                 Ints {\n  def twice = 2 ;\n}\nInts.twice\n",
+                "theory Monoid where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
+                 Ints where {\n  def twice = 2 ;\n}\nInts.twice\n",
             ),
         ];
         for (file, text) in opened {

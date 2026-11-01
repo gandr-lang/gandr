@@ -1,5 +1,5 @@
 /// `SessionNotSubtype`: a `sim` whose source does not simulate its target.
-module Evolution {
+module Evolution where {
   type SeatEnd = ?String. mu turn. +{
     report : !String. &{ next : turn, retire : end },
     handoff : !String. end

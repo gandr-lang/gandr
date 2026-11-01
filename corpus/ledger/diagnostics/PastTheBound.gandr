@@ -1,5 +1,5 @@
 /// `PastTheBound`: a generator whose corolla is past the catalogue's bound.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

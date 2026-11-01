@@ -41,7 +41,7 @@ def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano);
 def eqMark = Eq.generic(Mark);
 
 /// Points under `==`, every member derived.
-module EqPoint : Model(Eq) with sort Carrier = Point {
+module EqPoint : Model(Eq) with sort Carrier = Point where {
   /// Field by field.
   @[ checks ]
   def eq = Eq.generic(Point);

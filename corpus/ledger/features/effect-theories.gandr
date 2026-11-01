@@ -18,7 +18,7 @@
 
 /// The operations alone, reading and storing a state of sort `S`, with no law.
 @[ checks ]
-theory State {
+theory State where {
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -31,7 +31,7 @@ theory State {
 
 /// State with the put-get law alone.
 @[ checks ]
-theory StatePutGet {
+theory StatePutGet where {
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -46,7 +46,7 @@ theory StatePutGet {
 
 /// State with the put-put law alone.
 @[ checks ]
-theory StatePutPut {
+theory StatePutPut where {
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -61,7 +61,7 @@ theory StatePutPut {
 
 /// State with put-get and put-put, whose overlap joins because both reducts store the second value and continue at it.
 @[ checks ]
-theory StatePutLaws {
+theory StatePutLaws where {
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -78,7 +78,7 @@ theory StatePutLaws {
 
 /// State with the get-get law, which overlaps itself through its pattern and joins.
 @[ checks ]
-theory StateGetGet {
+theory StateGetGet where {
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.

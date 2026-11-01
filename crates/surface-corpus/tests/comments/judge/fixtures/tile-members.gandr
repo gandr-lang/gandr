@@ -12,7 +12,7 @@ data Nat : Type where {
 }
 
 // a theory
-theory T {
+theory T where {
   /// the carrier
   sort S : Type+;
   oper get : (k : S) --> S;
@@ -20,7 +20,7 @@ theory T {
 }
 
 // a stream
-codata Stream(a : Type) : Type[-] {
+codata Stream(a : Type) : Type[-] where {
   head : a;
   /// what follows
   tail : Stream(a);

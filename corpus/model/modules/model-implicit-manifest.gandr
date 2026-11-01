@@ -6,7 +6,7 @@
 // `Up`.
 
 /// A dial: a carrier, a zero, a turn and a reading.
-theory Dial {
+theory Dial where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -14,7 +14,7 @@ theory Dial {
 }
 
 /// Counting up by one.
-module Up : Model(Dial) {
+module Up : Model(Dial) where {
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -25,7 +25,7 @@ module Up : Model(Dial) {
 }
 
 /// Flipping a flag.
-module Flips : Model(Dial) {
+module Flips : Model(Dial) where {
   type C = Bool;
   /// Down.
   def zero = (false : Bool);

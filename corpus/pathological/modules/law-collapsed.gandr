@@ -18,7 +18,7 @@
 // - see: `../../model/modules/law-collapsed.gandr` — the accepted model
 
 /// A sort whose loops are one.
-theory Collapsed {
+theory Collapsed where {
   /// The loops.
   sort Loop : Type;
   /// Any two loops are one path.
@@ -26,7 +26,7 @@ theory Collapsed {
 }
 
 /// Two integers differ, so no proof exists and no host asserts one.
-module CollapsedInteger : Model(Collapsed) with sort Loop = Integer {
+module CollapsedInteger : Model(Collapsed) with sort Loop = Integer where {
   /// The admission names a law the host does not assert.
   @[ refuses("UnprovenLaw.Admitted") ]
   law one admitted;
@@ -34,7 +34,7 @@ module CollapsedInteger : Model(Collapsed) with sort Loop = Integer {
 
 /// A rule from a variable would identify every loop with the trivial one.
 @[ refuses("UndescribedMember.LhsNotOperation") ]
-theory RuledK {
+theory RuledK where {
   /// The carrier.
   sort Carrier : Type;
   /// The trivial loop at a point.
@@ -45,7 +45,7 @@ theory RuledK {
 
 /// K for the native identity at the carrier, as a law.
 @[ refuses("MalformedForm") ]
-theory WithK {
+theory WithK where {
   /// The carrier.
   sort Carrier : Type;
   /// Every loop at a point is reflexivity: a path between paths.

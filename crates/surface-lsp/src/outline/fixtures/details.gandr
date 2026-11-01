@@ -6,17 +6,17 @@ def twice(
 def answer = 42 ;
 def later : Integer ;
 data Color : Type where { | Red : Color }
-theory Shapes {
+theory Shapes where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule spin : (data s : M) ==> (out : M) {
     node : mul(s, s) --> (out);
   };
 }
-module Plain {
+module Plain where {
   def one = 1 ;
 }
 world seat ;
-module Kit.Tools : #{ two : Integer } {
+module Kit.Tools : #{ two : Integer } where {
   def two = 2 ;
 }

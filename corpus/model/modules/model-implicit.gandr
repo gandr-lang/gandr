@@ -7,7 +7,7 @@
 // which binds no parameter.
 
 /// A tally: a carrier, a zero, a step and a reading.
-theory Tally {
+theory Tally where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -15,13 +15,13 @@ theory Tally {
 }
 
 /// A tally that also resets.
-theory ResetTally {
+theory ResetTally where {
   include Tally;
   oper reset : (c : C) --> C;
 }
 
 /// Counting up by one.
-module Up : Model(Tally) {
+module Up : Model(Tally) where {
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -32,7 +32,7 @@ module Up : Model(Tally) {
 }
 
 /// Counting up by ten, and resetting.
-module Tens : Model(ResetTally) {
+module Tens : Model(ResetTally) where {
   type C = Integer;
   /// Zero.
   def zero = 0;

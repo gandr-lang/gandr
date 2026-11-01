@@ -102,12 +102,12 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let cases = [
-        "module M { def x = 1; def y : Integer; }",
-        r#"module M : #{ x: Integer, f: -F Integer } {
+        "module M where { def x = 1; def y : Integer; }",
+        r#"module M : #{ x: Integer, f: -F Integer } where {
   def x = 1;
   def f(a: Integer) -> -F Integer { pure a }
 }"#,
-        "module Outer { module Inner { type T = Integer; } } def y : Outer.Inner.T -> -F Outer.Inner.T;",
+        "module Outer where { module Inner where { type T = Integer; } } def y : Outer.Inner.T -> -F Outer.Inner.T;",
     ];
     for src in cases {
         let result = parse(pbg, SourceText::from(src))?;
@@ -173,9 +173,9 @@ fn prefix_type_formers_group_required_operands() -> Result<(), Box<dyn Error>>
 fn nested_module_members_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
-    let src = r#"module Outer : #{ before: Integer, inner: #{ answer: Integer }, after: Integer } {
+    let src = r#"module Outer : #{ before: Integer, inner: #{ answer: Integer }, after: Integer } where {
   def before = 0;
-  module inner : #{ answer: Integer } { def answer = 42; }
+  module inner : #{ answer: Integer } where { def answer = 42; }
   def after = inner.answer;
 }"#;
     let result = parse(&pbg, SourceText::from(src))?;
@@ -290,7 +290,7 @@ fn hole_tile_sorts(
 fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module Counter :> #{ type T, zero : T } { type T = Integer; def zero = 0; }";
+    let src = "module Counter :> #{ type T, zero : T } where { type T = Integer; def zero = 0; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         bool::from(result.is_clean()),
@@ -308,7 +308,7 @@ fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
 fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module Counter : #{ type T, zero : T } { def zero = 0; }";
+    let src = "module Counter : #{ type T, zero : T } where { def zero = 0; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         bool::from(result.is_clean()),
@@ -394,9 +394,9 @@ fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Box<dyn Erro
 {
     let pbg = built();
     for depth in [1_usize, 2, 3, 4, 8, 16, 32] {
-        let mut src = String::from("module Outer {");
+        let mut src = String::from("module Outer where {");
         for level in 0 .. depth {
-            write!(src, " module level{level} {{")?;
+            write!(src, " module level{level} where {{")?;
         }
         src.push_str(" def innermost = 1;");
         for _level in 0 .. depth {
@@ -421,7 +421,7 @@ fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Box<dyn Erro
 fn malformed_module_member_uses_ordinary_recovery() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module M { def bad = 1 ^ 2; def good = 1; }";
+    let src = "module M where { def bad = 1 ^ 2; def good = 1; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         !bool::from(result.is_clean()),

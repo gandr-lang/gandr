@@ -1,6 +1,6 @@
 /// `HandlerUnlawful`: a capability scope over a theory is not shown to satisfy one of the theory's laws, here a read after a store answering other than the stored value.
 @[ checks ]
-theory Stored {
+theory Stored where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;

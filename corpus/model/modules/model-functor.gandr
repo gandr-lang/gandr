@@ -9,20 +9,20 @@
 // theory and a parameterised module the static half of a functor.
 
 /// A magma: a carrier and a binary operation on it.
-theory Mag {
+theory Mag where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
 }
 
 /// The integers under multiplication, a model of the magma.
-pub module Times : Model(Mag) {
+pub module Times : Model(Mag) where {
   type M = Integer;
 
   def mul(a : Integer, b : Integer) -> Integer { a * b }
 }
 
 /// Squaring in any magma: an element multiplied by itself.
-module Squaring(S : Model(Mag)) {
+module Squaring(S : Model(Mag)) where {
   def square(x : S.M) -> S.M { S.mul(x, x) }
 }
 
@@ -35,7 +35,7 @@ def nine() -> Integer { TimesSquared.square(3) }
 
 /// The integers under addition, ascribed the record signature the magma
 /// presents rather than its model signature.
-module Plus : #{ type M, mul : (M, M) => M } {
+module Plus : #{ type M, mul : (M, M) => M } where {
   type M = Integer;
 
   def mul(a : Integer, b : Integer) -> Integer { a + b }
@@ -49,7 +49,7 @@ module PlusSquared = Squaring(Plus);
 def six() -> Integer { PlusSquared.square(3) }
 
 /// A semigroup: a magma whose multiplication is associative.
-theory Semi {
+theory Semi where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
@@ -57,7 +57,7 @@ theory Semi {
 
 /// A semigroup's law read at any of its models: the parameter states the law
 /// at its own multiplication, so the body can turn it round (#1764).
-module Reassociating(S : Model(Semi)) {
+module Reassociating(S : Model(Semi)) where {
   /// Associativity, read right to left.
   def reassoc(x : S.M, y : S.M, z : S.M) -> Path(
     S.M,
@@ -69,7 +69,7 @@ module Reassociating(S : Model(Semi)) {
 }
 
 /// The one-point semigroup: every product is the unit.
-module OnePoint : Model(Semi) {
+module OnePoint : Model(Semi) where {
   type M = Unit;
 
   def mul(a : Unit, b : Unit) -> Unit { unit }

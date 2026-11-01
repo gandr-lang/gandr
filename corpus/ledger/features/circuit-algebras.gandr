@@ -16,7 +16,7 @@ data Nat : Type where {
 
 /// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then
 /// `add` takes the result and `y`. The block binds `NatSum : Theory`.
-theory NatSum {
+theory NatSum where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 

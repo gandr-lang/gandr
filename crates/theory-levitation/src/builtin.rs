@@ -306,7 +306,7 @@ mod tests
         // The generic consumers apply to `Boolean` exactly as to declared data.
         let boolean: TheoryDesc<Grade> = bool_desc();
         assert_eq!(
-            "theory Boolean { sort Boolean : Type; }",
+            "theory Boolean where { sort Boolean : Type; }",
             serialize_desc(&boolean).as_ref(),
             "the builtin renders through the same inspection notation — sorts, operations, \
              and rules; constructors carry no member spelling"

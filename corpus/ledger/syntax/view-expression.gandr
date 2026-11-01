@@ -2,7 +2,7 @@
 @[ checks ]
 def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
-module Places {
+module Places where {
   @[ checks ]
   def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self[0] }
 }

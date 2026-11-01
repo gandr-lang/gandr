@@ -9,7 +9,7 @@ data Nat : Type where {
 }
 
 /// A state theory.
-theory T {
+theory T where {
   /// The state.
   sort S : Type+;
   /// Reading the state.
@@ -17,7 +17,7 @@ theory T {
 }
 
 /// A stream.
-codata Stream(a : Type) : Type[-] {
+codata Stream(a : Type) : Type[-] where {
   /// The head.
   head : a;
   /// The rest.
@@ -25,7 +25,7 @@ codata Stream(a : Type) : Type[-] {
 }
 
 /// A module.
-module M {
+module M where {
   /// One.
   @[ checks ]
   def one = 1;

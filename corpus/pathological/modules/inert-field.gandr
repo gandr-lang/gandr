@@ -12,7 +12,7 @@
 // - see: `model/modules/inert-field.gandr` — the reads admitted
 
 /// A labelled thing: its label inert, its tag content.
-theory Labelled {
+theory Labelled where {
   /// The label.
   @[ inert ]
   oper label : String;
@@ -21,7 +21,7 @@ theory Labelled {
 }
 
 /// A box, whose content member reads its own label.
-module Box : Model(Labelled) {
+module Box : Model(Labelled) where {
   /// The label.
   @[ runs("\"box\"") ]
   def label = "box";
@@ -40,7 +40,7 @@ def labelOf(l : Model(Labelled)) -> String { l.label }
 
 /// The mark on a sort, which is no field.
 @[ refuses("MalformedForm") ]
-theory Sorted {
+theory Sorted where {
   /// The sort.
   @[ inert ]
   sort T : Type;
@@ -48,7 +48,7 @@ theory Sorted {
 
 /// A declaration's attribute on an operation.
 @[ refuses("MalformedForm") ]
-theory Checked {
+theory Checked where {
   /// The operation.
   @[ checks ]
   oper x : String;

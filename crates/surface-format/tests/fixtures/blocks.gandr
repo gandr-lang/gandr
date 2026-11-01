@@ -7,9 +7,9 @@ def from_left() -> -F Integer {
   match (Left(5) : Either(Integer, String)) { Left(x) => return x, Right(y) => return 0 }
 }
 
-module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
+module Facts : #{ inner: #{ answer: Integer }, total: Integer } where {
   def base = 40;
-  module inner : #{ answer: Integer } {
+  module inner : #{ answer: Integer } where {
     def answer = base + 1;
   }
 

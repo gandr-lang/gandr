@@ -5870,12 +5870,12 @@ mod tests
         assert_eq!(at("rule unitL"), None, "nor does a rule's keyword");
         assert_eq!(
             at("Semigroup;\n  oper one"),
-            named("Semigroup {", "Semigroup"),
+            named("Semigroup where {", "Semigroup"),
             "an include names the theory it includes"
         );
         assert_eq!(
-            at("Monoid) {"),
-            named("Monoid {", "Monoid"),
+            at("Monoid) where {"),
+            named("Monoid where {", "Monoid"),
             "a model ascription's argument names the theory, not a member of the module"
         );
         assert_eq!(
@@ -6778,7 +6778,7 @@ mod tests
         use super::reprinted;
 
         let source = SourceText::from(
-            "theory Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
+            "theory Pointed where {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
              rule flipPt : flip(pt()) <=> pt();\n  rule flipFlip : flip(flip(p)) <=> p;\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -7180,7 +7180,7 @@ mod tests
     fn a_type_under_a_model_implicit_reads_back_under_it_2364()
     {
         let source = SourceText::from(
-            "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read \
+            "theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read \
              : (c : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer \
              { s.read(s.incr(c)) }\n",
         );
@@ -7272,8 +7272,8 @@ mod tests
     fn a_crossed_model_names_the_reduct_the_checker_applies_2031()
     {
         let source = SourceText::from(
-            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory \
-             Monoid {\n  include Semigroup;\n  oper one : () --> M;\n}\ndef multiplies(s : \
+            "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory \
+             Monoid where {\n  include Semigroup;\n  oper one : () --> M;\n}\ndef multiplies(s : \
              Model(Semigroup)) -> -F Integer { 0 }\ndef asSemigroup(m : Model(Monoid)) -> -F \
              Integer { become multiplies(m) }\n",
         );
@@ -7574,7 +7574,7 @@ mod tests
             "  match xs {\n    [_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
             "def headed(xs : List(Integer)) -> -F Integer {\n",
             "  match xs {\n    all @ [h, .._] => become shortLength(all),\n    [] => 0\n  }\n}\n",
-            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
+            "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
             "def multiplies(s : Model(Semigroup)) -> -F Integer {\n",
             "  match s {\n    #{.mul = m} => 0\n  }\n}\n",
             "def bound() -> -F Integer {\n  run (p, n) <- pure ((true : Bool), 2);\n  n\n}\n",
@@ -7609,7 +7609,7 @@ mod tests
     fn a_model_parameter_in_a_later_parameter_type_answers_2182()
     {
         let source = SourceText::from(concat!(
-            "theory Counter {\n  sort C : Type;\n  oper zero : C;\n}\n",
+            "theory Counter where {\n  sort C : Type;\n  oper zero : C;\n}\n",
             "def shared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> \
              -F Integer { return 0 }\n",
             "def fixed(x : Type, f : Model(Counter) with sort C = x, c : f.C) -> -F x { c }\n",
@@ -7748,14 +7748,14 @@ mod tests
     fn a_functor_parameter_s_abstract_type_answers_at_its_kind_2183()
     {
         let source = SourceText::from(concat!(
-            "module Point :> #{ type T, z : T } {\n  type T = Integer;\n  def z = 0;\n}\n",
-            "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } {\n",
+            "module Point :> #{ type T, z : T } where {\n  type T = Integer;\n  def z = 0;\n}\n",
+            "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } where {\n",
             "  type U = S.T * S.T;\n  def w = (S.z, S.z);\n}\n",
             "module Squared = Square(Point) ;\n",
-            "module Pointed(R : #{ type V, y : V }) {\n  type At = Path(R.V, R.y, R.y);\n}\n",
+            "module Pointed(R : #{ type V, y : V }) where {\n  type At = Path(R.V, R.y, R.y);\n}\n",
         ));
         let table = table(source);
-        for needle in ["T }) :>", "V }) {"] {
+        for needle in ["T }) :>", "V }) where {"] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Type, SourceText::from("Type")),
@@ -7770,8 +7770,8 @@ mod tests
     fn a_module_refused_at_its_header_is_held_refused_2183()
     {
         let source = SourceText::from(concat!(
-            "theory Scaled {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
-            "module Misnamed : Model(Scaled) with sort Rate = Integer {\n",
+            "theory Scaled where {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
+            "module Misnamed : Model(Scaled) with sort Rate = Integer where {\n",
             "  type Ratio = Integer;\n  def scale = 2;\n}\n",
         ));
         let grammar = built_in().expect("the built-in grammar builds");
@@ -7928,7 +7928,7 @@ mod tests
     fn a_sealed_export_is_typed_at_its_atom_by_path()
     {
         let source = SourceText::from(
-            "module Counter :> #{ type T, zero : T } { type T = Integer ; def zero = 0 ; }\ndef z = \
+            "module Counter :> #{ type T, zero : T } where { type T = Integer ; def zero = 0 ; }\ndef z = \
              Counter.zero ;",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -7966,7 +7966,7 @@ mod tests
     fn a_theory_member_answers_under_the_sorts_before_it()
     {
         let source = SourceText::from(
-            "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+            "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
              : Ob) --> Hom(a, a);\n  rule idem : id(a) ==> id(a);\n}\n",
         );
         let table = table(source);
@@ -7995,9 +7995,9 @@ mod tests
         // names; their terms once answered there, over binders the naming
         // fallback called after the theory (`CatShape => CatShape`).
         let source = SourceText::from(
-            "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
+            "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
              Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-             rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) {\n  type Ob = \
+             rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) where {\n  type Ob = \
              Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \
              t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t \
              -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    run y <- f(x);\n    become \
@@ -8010,7 +8010,7 @@ mod tests
         );
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("Cat) {")),
+            answer(&table, source, SourceText::from("Cat) where {")),
             Maybe::Absent(typing::Absent::Untyped)
         );
         assert_eq!(
@@ -8171,9 +8171,9 @@ mod tests
         use gandr_surface_lowering::UnitSource;
 
         let sibling = "pub def reply = 42 ;";
-        let importer = "theory Older {\n  oper answer : Integer;\n}\ntheory Tagged {\n  oper \
+        let importer = "theory Older where {\n  oper answer : Integer;\n}\ntheory Tagged where {\n  oper \
                         reply : Integer;\n  oper label : String;\n}\nflow retagged : Tagged ~~> \
-                        Older {\n  def answer = reply;\n}\nimport \"./newer.gandr\" as newer : \
+                        Older where {\n  def answer = reply;\n}\nimport \"./newer.gandr\" as newer : \
                         Older via retagged ;\ndef relayed() -> Integer { newer.answer }";
         let laid = format!("{sibling}\n{importer}");
         let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
@@ -8236,7 +8236,7 @@ mod tests
     {
         let theory = |name: &str, law: &str| {
             format!(
-                "theory {name} {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s \
+                "theory {name} where {{\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s \
                  : S) . C) --> C;\n{law}}}\n\n"
             )
         };

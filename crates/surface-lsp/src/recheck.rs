@@ -2494,8 +2494,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
-        let base =
-            "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} {\n}\n";
+        let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
         let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork \
                     (kernel : P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } \
                     as ring;\n  close(ring)\n}\n";

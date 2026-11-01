@@ -1,11 +1,11 @@
 /// `CorollaCardinality`: two species with different numbers of elements at a corolla.
-theory Rig {
+theory Rig where {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
 }
 
-theory Semi {
+theory Semi where {
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 }

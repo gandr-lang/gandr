@@ -117,7 +117,7 @@ fn a_derived_law_lowers_to_its_proof_2302()
         "\
 def reflPoint = Eq.generic.refl(Point) ;
 def symPoint = Eq.generic.sym(Point) ;
-module EqPoint : Model(Eq) with sort Carrier = Point {
+module EqPoint : Model(Eq) with sort Carrier = Point where {
   def eq = Eq.generic(Point) ;
   def refl = Eq.generic.refl(Point) ;
   def sym = Eq.generic.sym(Point) ;
@@ -167,7 +167,7 @@ fn a_source_s_own_eq_module_is_no_derivation_2302()
 {
     // With no prelude, `Eq.generic` is whatever the source declares.
     let source = "\
-module Eq { def generic(a : Integer) -> -F Integer { return a } }
+module Eq where { def generic(a : Integer) -> -F Integer { return a } }
 def one() -> -F Integer { Eq.generic(1) }
 ";
     let mut arena = CoreArena::new();

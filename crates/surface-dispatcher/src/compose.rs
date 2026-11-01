@@ -5631,7 +5631,7 @@ def wrong = "text" ;"#,
                 r#"@[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;
-module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
+module M : #{ x: Integer, z: Integer } where { def x = 1; }"#,
             ),
             &mut lowerings,
         );
@@ -6296,7 +6296,7 @@ def delivered() -> -F Unit {
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; }\n\
+                "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }\n\
                  def held : Counter.T ;\n\
                  def held = Counter.seed ;\n\
                  def leak : Integer ;\n\
@@ -6380,7 +6380,7 @@ def delivered() -> -F Unit {
         let mut lowerings = LoweringCount::default();
         let sealed = |name: &str, identity: &str| {
             format!(
-                "module {name} :> #{{ type T, origin : T, other : T }} {{ {identity} type T = \
+                "module {name} :> #{{ type T, origin : T, other : T }} where {{ {identity} type T = \
                  Unit ; def origin = unit ; def other = unit ; }}\ndef evidence{name} : \
                  Path({name}.T, {name}.origin, {name}.other) ;\ndef evidence{name} = unit ;\n"
             )
@@ -6437,10 +6437,10 @@ def delivered() -> -F Unit {
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "module A : #{ x: Integer, p: Integer } { def x = 1; }\n\
+            "module A : #{ x: Integer, p: Integer } where { def x = 1; }\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             module B : #{ y: Integer, q: Integer } { def y = 1; }",
+             module B : #{ y: Integer, q: Integer } where { def y = 1; }",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)

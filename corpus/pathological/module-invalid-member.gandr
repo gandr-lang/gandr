@@ -1,4 +1,4 @@
-module Bad {
+module Bad where {
   @[ owes(1) ]
   def missing : Integer;
 }

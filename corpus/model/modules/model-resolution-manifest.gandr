@@ -4,19 +4,19 @@
 // leaves the one candidate stating it.
 
 /// Equality over a carrier.
-theory Same {
+theory Same where {
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
 }
 
 /// Integers, the sort stated by the model type.
-module SameInteger : Model(Same) with sort Carrier = Integer {
+module SameInteger : Model(Same) with sort Carrier = Integer where {
   /// Integer equality.
   def eq(a : Integer, b : Integer) -> Bool { a == b }
 }
 
 /// Flags, the sort stated by the model type.
-module SameBool : Model(Same) with sort Carrier = Bool {
+module SameBool : Model(Same) with sort Carrier = Bool where {
   /// Flag equality.
   def eq(a : Bool, b : Bool) -> Bool { if a { b } else { if b { false } else { true } } }
 }

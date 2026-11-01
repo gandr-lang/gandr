@@ -12,7 +12,7 @@
 //   `Console` and a store under `store`
 
 /// A store holds values by key, and each operation hands what it reads on.
-pub theory Store {
+pub theory Store where {
   /// The store holds values of this sort.
   sort V : Type+;
   /// What a computation over the store answers.
@@ -25,7 +25,7 @@ pub theory Store {
 
 /// A carrier and a binary operation on it: a theory of models, not of
 /// effects.
-pub theory Magma {
+pub theory Magma where {
   /// The carrier.
   sort M : Type;
   /// The operation.

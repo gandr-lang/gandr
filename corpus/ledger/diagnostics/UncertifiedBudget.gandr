@@ -1,5 +1,5 @@
 /// `UncertifiedBudget`: univalence over a catalogue of more shape classes than the stratum budget.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

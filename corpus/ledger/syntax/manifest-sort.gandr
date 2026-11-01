@@ -1,6 +1,6 @@
 /// `manifest_sort`: the binding a `with` fixes, a sort and the type it is.
 @[ checks ]
-theory Counter {
+theory Counter where {
   sort C : Type;
   oper zero : C;
 }

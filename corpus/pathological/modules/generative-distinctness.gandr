@@ -1,4 +1,4 @@
-module Seed :> #{ type T, zero : T, next : T => T } {
+module Seed :> #{ type T, zero : T, next : T => T } where {
   type T = Integer;
   @[ runs("0") ]
   def zero = 0;
@@ -10,7 +10,7 @@ module MkCounter(S : #{ type T, zero : T, next : T => T }) :> #{
   type T,
   seed : T,
   step : T => T
-} {
+} where {
   type T = S.T;
   def seed = S.zero;
   def step = S.next;

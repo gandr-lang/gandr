@@ -138,9 +138,9 @@ fn returned(
 fn a_theory_answers_at_every_member()
 {
     let source = SourceText::from(
-        "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+        "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
          : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-         rule unitL : comp(id(a), f) ==> f;\n}\ntheory Add {\n  sort Nat : Type;\n  oper add : \
+         rule unitL : comp(id(a), f) ==> f;\n}\ntheory Add where {\n  sort Nat : Type;\n  oper add : \
          (Nat, Nat) --> Nat;\n  rule cong1 : (rule p : x ==> x′, data x : Nat, data y : Nat) \
          ==> (z : Nat) {\n    node : p(x) ==> (x′);\n    node : add(x′, y) --> (z);\n  };\n}\n",
     );
@@ -242,7 +242,7 @@ fn a_theory_answers_at_every_member()
 fn a_stated_law_answers_at_its_statement_2356()
 {
     let source = SourceText::from(
-        "theory Decision {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl \
+        "theory Decision where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl \
          : (a : C) => Path(Bool, eq(a, a), true);\n  law flip : (a : C, b : C, p : Path(Bool, \
          eq(a, b), true)) => Path(Bool, eq(b, a), true);\n}\n",
     );
@@ -301,7 +301,7 @@ fn a_stated_law_answers_at_its_statement_2356()
 fn a_binding_port_answers_at_the_function_from_its_variables_765()
 {
     let source = SourceText::from(
-        "theory IdentityReturn {\n  sort VTy : Type;\n  sort CTy : Type;\n  sort VTm(a : VTy) : \
+        "theory IdentityReturn where {\n  sort VTy : Type;\n  sort CTy : Type;\n  sort VTm(a : VTy) : \
          Type+;\n  sort CTm(b : CTy) : Type;\n  oper f : (a : VTy) --> CTy;\n  oper arrow : (a \
          : VTy, b : CTy) --> CTy;\n  oper ret : (a : VTy, t : VTm(a)) --> CTm(f(a));\n  oper \
          lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)) . CTm(b)) --> CTm(arrow(a, b));\n}\n",
@@ -381,7 +381,7 @@ fn a_binding_port_answers_at_the_function_from_its_variables_765()
 fn an_unelaborated_operation_s_ports_answer_as_written_2969()
 {
     let source = SourceText::from(
-        "theory Spec {\n  sort V : Type+;\n  sort C : Type;\n  sort Below(w : C, v : C) : \
+        "theory Spec where {\n  sort V : Type+;\n  sort C : Type;\n  sort Below(w : C, v : C) : \
          Type;\n  oper ext : (m : C, k : pi+ (x : V). C) --> C;\n  oper mono : (m : C, n : C, k \
          : pi+ (x : V). C, l : pi+ (x : V). C, p : Below(m, n), q : pi+ (x : V). Below(k(x), \
          l(x))) --> Below(ext(m, k), ext(n, l));\n}\n",
@@ -473,7 +473,7 @@ fn an_unelaborated_operation_s_ports_answer_as_written_2969()
 fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 {
     let source = SourceText::from(
-        "theory Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  rule \
+        "theory Pointed where {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  rule \
          flipPt : flip(pt()) <=> pt();\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
@@ -507,7 +507,7 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 fn a_derived_rule_answers_each_side_node_at_its_sort()
 {
     let source = SourceText::from(
-        "theory Grp {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> G;\n  oper mul \
+        "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> G;\n  oper mul \
          : (x : G, y : G) --> G;\n  rule unitL : mul(e(), x) <=> x;\n  rule assoc : mul(mul(x, \
          y), z) <=> mul(x, mul(y, z));\n  rule invL : mul(inv(x), x) <=> e();\n}\nderive invMul \
          : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp\n",
@@ -548,7 +548,7 @@ fn a_derived_rule_answers_each_side_node_at_its_sort()
 fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 {
     let source = SourceText::from(
-        "theory Wired {\n  sort Nat : Type;\n  sort Bool : Type;\n  oper add : (Nat, Nat) --> \
+        "theory Wired where {\n  sort Nat : Type;\n  sort Bool : Type;\n  oper add : (Nat, Nat) --> \
          Nat;\n  oper isz : (Nat) --> Bool;\n  rule late : (rule p : u ==> u2, data x : Nat, \
          data y : Nat) ==> (z : Nat) {\n    node : p(tt) ==> (tlate);\n    node : add(x, y) \
          --> (tt);\n  };\n  rule side : (rule q : x ==> wside, data x : Nat) ==> (o : Nat) {\n    \
@@ -851,7 +851,7 @@ fn a_family_the_native_reading_owns_answers_at_its_signature()
 fn a_codata_observation_s_type_answers_at_its_universe()
 {
     let source = SourceText::from(
-        "codata Stream(a : Type) : Type[-] {\n  head : a;\n  tail : Stream(a);\n}\ncodata Spot : Type[-] {\n  x : Integer;\n  depth : Integer;\n}\n",
+        "codata Stream(a : Type) : Type[-] where {\n  head : a;\n  tail : Stream(a);\n}\ncodata Spot : Type[-] where {\n  x : Integer;\n  depth : Integer;\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -906,7 +906,7 @@ fn a_codata_observation_s_type_answers_at_its_universe()
 fn a_second_order_law_answers_at_its_written_sorts()
 {
     let source = SourceText::from(
-        "theory Let {\n  sort Tm : Type+;\n  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> \
+        "theory Let where {\n  sort Tm : Type+;\n  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> \
          Tm;\n  rule zeta : let(u, t) <=> t(u);\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
@@ -950,7 +950,7 @@ fn a_second_order_law_answers_at_its_written_sorts()
 fn a_variable_under_an_abstraction_answers_at_its_port()
 {
     let source = SourceText::from(
-        "theory Scope {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper par : (p : Proc, q : \
+        "theory Scope where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper par : (p : Proc, q : \
          Proc) --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule scope : \
          par(nu(bind a . p), q) <=> nu(bind a . par(p, q));\n}\n",
     );
@@ -1007,7 +1007,7 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
 fn an_occurrence_answers_at_its_port()
 {
     let source = SourceText::from(
-        "theory Unheard {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  \
+        "theory Unheard where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  \
          oper out : (c : Name, p : Proc) --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) \
          --> Proc;\n  rule unheard : nu(bind a . out(a, p)) ==> nil();\n}\n",
     );
@@ -1043,7 +1043,7 @@ fn an_occurrence_answers_at_its_port()
 fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
 {
     let source = SourceText::from(
-        "theory Commute {\n  sort Value : Type;\n  sort Name : Type;\n  sort Digest : Type+;\n  \
+        "theory Commute where {\n  sort Value : Type;\n  sort Name : Type;\n  sort Digest : Type+;\n  \
          sort Claim : Type+;\n  sort C : Type;\n  oper put : (v : Value, k : pi+ (d : Digest) . \
          C) --> C;\n  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;\n  oper new : \
          (body : pi+ (x : Digest) . C) --> C;\n  rule commute : put(v, bind d . lookup(n, bind \

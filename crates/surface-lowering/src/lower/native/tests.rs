@@ -787,7 +787,7 @@ fn a_parameterless_recursive_tail_binds_its_own_name_1499()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}codata Ones : Type[-] {{ head : Integer; tail : Ones; }}\n\
+        "{NAT}codata Ones : Type[-] where {{ head : Integer; tail : Ones; }}\n\
          def rec constant() -> -F Nat {{ return Zero }}\n\
          def rec ones() -> Ones {{ &{{ .head => 1, .tail => ones[>]() }} }}\n"
     );
@@ -822,7 +822,7 @@ fn a_recursion_under_an_instance_row_binds_its_own_name_3699()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}theory Tick {{ sort C : Type; oper tick : (k : C) --> C; }}\n\
+        "{NAT}theory Tick where {{ sort C : Type; oper tick : (k : C) --> C; }}\n\
          def rec quiet(h : Nat) -> [t : Tick] Integer {{ match h {{ Zero => pure 0, Succ(p) => quiet[<](p) }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1570,7 +1570,7 @@ fn a_recursive_call_passes_its_leading_parameters_unchanged()
 fn a_productive_call_is_the_whole_arm_of_a_copattern_block()
 {
     let mut arena = CoreArena::new();
-    let stream = "codata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\n";
+    let stream = "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\n";
     let source = alloc::format!(
         "{NAT}{stream}def rec upward(n : Nat, m : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => upward[>](m, Succ(n))}} }}\n"
     );
@@ -4519,7 +4519,7 @@ fn the_presentation_code_names_its_family_where_a_type_is_read()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "theory Monoid { sort M : Type; }\ndef held : Theory ;\ndef held = Monoid ;\n",
+            "theory Monoid where { sort M : Type; }\ndef held : Theory ;\ndef held = Monoid ;\n",
         ),
         &mut arena,
     );
@@ -4558,7 +4558,7 @@ fn a_qualified_constructor_names_its_family_s_constructor_2428()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Term : Type where { | Var : (n : Integer) --> Term | App : (t : Term, u : Term) --> Term }\ntheory Pointed { sort P : Type; oper point : () --> (p : P); }\ndef \
+            "data Term : Type where { | Var : (n : Integer) --> Term | App : (t : Term, u : Term) --> Term }\ntheory Pointed where { sort P : Type; oper point : () --> (p : P); }\ndef \
              theirs : Theory ;\ndef theirs = Theory.App(\"f\", Theory.End) ;\ndef ours : Term \
              ;\ndef ours = Term.App(Var(0), Var(1)) ;\ndef applies(link : Theory) -> Integer { \
              match link { Theory.App(head, rest) => 1, _ => 0 } }\n",
@@ -5438,7 +5438,7 @@ fn a_word_conses_its_letters_and_matches_them()
 #[test]
 fn a_loop_arm_follows_the_constructors_branches()
 {
-    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndata Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }\ndef invLooper(x : Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\nmodule Late {\n  def kept(x : Circle) -> -F Circle {\n    match x {\n      later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => loop,\n    loop => back(loop)\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  match n {\n    Z => Z,\n    S(m) => m,\n    loop => Z\n  }\n}\n";
+    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndata Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }\ndef invLooper(x : Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\nmodule Late where {\n  def kept(x : Circle) -> -F Circle {\n    match x {\n      later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => loop,\n    loop => back(loop)\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  match n {\n    Z => Z,\n    S(m) => m,\n    loop => Z\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(Computation::DataCase { branches, .. }) = arena

@@ -13,13 +13,13 @@
 // - see: `pathological/modules/translated.gandr` — a source off the domain
 
 /// The older signature, as this importer wrote it.
-theory Legacy {
+theory Legacy where {
   /// The answer.
   oper answer : Integer;
 }
 
 /// The older signature with a scaling beside the answer.
-theory Scaling {
+theory Scaling where {
   /// The answer.
   oper answer : Integer;
   /// A number times the count.
@@ -27,7 +27,7 @@ theory Scaling {
 }
 
 /// The newer signature, as this importer reads it.
-theory Current {
+theory Current where {
   /// The reply.
   oper reply : Integer;
   /// The count.
@@ -36,7 +36,7 @@ theory Current {
 
 /// A flow that reads the newer version with a scaling: the answer is the
 /// reply, and the count scales a number.
-flow scaling : Current ~~> Scaling {
+flow scaling : Current ~~> Scaling where {
   def answer = reply;
 
   def scaled(n : Integer) -> Integer { n * count }

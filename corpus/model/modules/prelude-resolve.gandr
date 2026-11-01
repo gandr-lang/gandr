@@ -10,7 +10,7 @@ data Point : Type {
 }
 
 /// Points under `==`, compared field by field.
-module EqPoint : Model(Eq) with sort Carrier = Point {
+module EqPoint : Model(Eq) with sort Carrier = Point where {
   /// Both coordinates, in order.
   @[ checks ]
   def eq = Eq.generic(Point);

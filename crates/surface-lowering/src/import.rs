@@ -64,7 +64,7 @@
 //! # An import through a flow
 //!
 //! `import "./v2.gandr" as old : Older via downgrade ;` reads its source at
-//! the domain of `flow downgrade : Newer ~~> Older { … }` and binds the
+//! the domain of `flow downgrade : Newer ~~> Older where { … }` and binds the
 //! signature's members from the flow's definitions over it. The flow is the
 //! one of that name declared before the import in the importer, or one the
 //! source declares `pub`; the importer's is read first. Collecting the import

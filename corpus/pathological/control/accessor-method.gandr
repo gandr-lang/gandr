@@ -10,7 +10,7 @@ import "../../model/control/accessor-place.gandr";
 import "../../model/control/accessor-method.gandr";
 
 /// A list's places out of shape.
-module Misplaced {
+module Misplaced where {
   /// A method at a deduced mode whose result is a value, not a view.
   @[ refuses("ViewNotPlace") ]
   def valued @[ m : Mode ] (self : m List(Integer)) -> -F Integer { self[0] }

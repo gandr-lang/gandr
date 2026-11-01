@@ -13,7 +13,7 @@
 /// No process outside the restriction can name `c` to send on it, so the
 /// receive never fires. The checker orients the law and the kernel replays
 /// the verdict.
-theory Deaf {
+theory Deaf where {
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;
@@ -28,7 +28,7 @@ theory Deaf {
 /// written without `x` as an argument, so no instance of it names `x`, and
 /// the law needs no freshness condition where an abstraction's atom would
 /// (`freshness.gandr`): a field binds for substitution, never for swapping.
-theory Vacuous {
+theory Vacuous where {
   sort Val : Type+;
   sort Proc : Type;
   oper new : (body : pi+ (x : Val). Proc) --> Proc;

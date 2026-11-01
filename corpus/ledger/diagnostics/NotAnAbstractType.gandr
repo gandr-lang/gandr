@@ -2,7 +2,7 @@
 module Seat :> #{
   mobile type Report,
   progress : Report
-} {
+} where {
   @[ refuses("MarkUnfounded") ]
   type Report = +U (Integer -> -F Integer);
   @[ refuses("NotAnAbstractType") ]

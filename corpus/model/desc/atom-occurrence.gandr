@@ -27,7 +27,7 @@
 /// orients the law and the kernel replays the verdict; a restriction naming
 /// its channel `b` normalizes by the law written over `a`.
 @[ normalizes("nu(bind b . out(b, nil)) ~> nil") ]
-theory Unheard {
+theory Unheard where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -39,7 +39,7 @@ theory Unheard {
 /// The law below a second restriction, sending on the outer channel. The
 /// occurrence's depth differs from the law's, so the law does not apply.
 @[ normalizes("nu(bind a . nu(bind b . out(a, nil))) ~> nu(bind a0 . nu(bind a1 . out(a0, nil)))") ]
-theory Overheard {
+theory Overheard where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -51,7 +51,7 @@ theory Overheard {
 /// An inner restriction of the outer one's name shadows it. The channel sent
 /// on is the inner one, and the law applies below the outer restriction.
 @[ normalizes("nu(bind a . nu(bind a . out(a, nil))) ~> nu(bind a0 . nil)") ]
-theory Shadowed {
+theory Shadowed where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -64,7 +64,7 @@ theory Shadowed {
 /// restriction stated fresh for it. Each channel `q` names counts one
 /// abstraction further.
 @[ normalizes("nu(bind c . par(nu(bind b . out(b, nil)), out(c, nil))) ~> nu(bind a0 . nu(bind a1 . par(out(a1, nil), out(a0, nil))))") ]
-theory Extruding {
+theory Extruding where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -78,7 +78,7 @@ theory Extruding {
 /// names none of its channel is the process. It fires on the inner
 /// restriction only.
 @[ normalizes("nu(bind c . nu(bind b . out(c, nil))) ~> nu(bind a0 . out(a0, nil))") ]
-theory Collected {
+theory Collected where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -91,7 +91,7 @@ theory Collected {
 /// as a higher-order critical pair. Each variable is a pattern over the
 /// channels it may name, and both rewrites of the peak meet.
 @[ normalizes("nu(bind c . par(nu(bind b . nil), out(c, nil))) ~> nu(bind a0 . par(nil, out(a0, nil)))") ]
-theory Collecting {
+theory Collecting where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -106,7 +106,7 @@ theory Collecting {
 /// Their left sides unify, but collection's `p` may not name the sent
 /// channel, so no instance overlaps.
 @[ normalizes("nu(bind c . nu(bind b . out(b, nil))) ~> nil") ]
-theory Quiet {
+theory Quiet where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;

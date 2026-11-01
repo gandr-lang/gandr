@@ -1,5 +1,5 @@
 /// `CorollaTables`: a corolla whose translators are missing on one side or given twice.
-theory Rig {
+theory Rig where {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);

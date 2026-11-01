@@ -28,7 +28,7 @@ pub data Figure : Type {
 }
 
 /// One field moved to a constructor of another name.
-module Rename {
+module Rename where {
   /// The translator: the field moved to the new constructor.
   @[ checks ]
   def toOther(old : Old) -> Other {
@@ -50,7 +50,7 @@ module Rename {
 }
 
 /// Each constructor moved to its twin, a constructor's fields swapped.
-pub module Shapes {
+pub module Shapes where {
   /// The translator: each shape to its figure, the sides swapped.
   @[ checks ]
   def toFigure(shape : Shape) -> Figure {

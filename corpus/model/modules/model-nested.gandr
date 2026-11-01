@@ -7,20 +7,20 @@
 // as a path through the nested model's name, `Sealed.inner.T` (#1311).
 
 /// The theory of `module-members.gandr`'s nested `#{ answer: Integer }`.
-theory Answering {
+theory Answering where {
   oper answer : Integer;
 }
 
 /// The theory of its outer `#{ inner: #{ answer: Integer }, total: Integer }`.
-pub theory Faceted {
+pub theory Faceted where {
   oper inner : Model(Answering);
   oper total : Integer;
 }
 
 /// The facts: the nested answer and the total beside it.
-module Facts : Model(Faceted) {
+module Facts : Model(Faceted) where {
   /// The nested model.
-  module inner : Model(Answering) {
+  module inner : Model(Answering) where {
     /// The answer.
     @[ checks ]
     def answer = 41;
@@ -35,20 +35,20 @@ module Facts : Model(Faceted) {
 def nested_answer() -> Integer { Facts.inner.answer }
 
 /// A theory with an abstract sort, the carrier a sealed model hides.
-theory Carrier {
+theory Carrier where {
   sort T : Type;
   oper zero : T;
 }
 
 /// The theory of a model that holds a `Carrier` model under `inner`.
-theory Outer {
+theory Outer where {
   oper inner : Model(Carrier);
 }
 
 /// A model sealed at `Outer`: the nested model's sort is an atom outside.
-pub module Sealed :> Model(Outer) {
+pub module Sealed :> Model(Outer) where {
   /// The nested model, its carrier the integers inside the seal.
-  module inner : Model(Carrier) {
+  module inner : Model(Carrier) where {
     /// The carrier.
     type T = Integer;
     /// The point.

@@ -24,7 +24,7 @@ data Ticks : Type {
 }
 
 /// A carrier with a unit and a product, and one rule: the unit is a left unit.
-theory LeftUnit {
+theory LeftUnit where {
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -63,7 +63,7 @@ def rec noTickJoinsRight(n : Ticks) -> Path(Ticks, joinRight(NoTick, n), n) {
 }
 
 /// Joining on the left as a model: its carrier converts the rule's sides.
-module ByLeft : Model(LeftUnit) {
+module ByLeft : Model(LeftUnit) where {
   /// The naturals carry it.
   type M = Ticks;
 
@@ -78,7 +78,7 @@ module ByLeft : Model(LeftUnit) {
 }
 
 /// Joining on the right as a model: its carrier leaves the rule's sides apart.
-module ByRight : Model(LeftUnit) {
+module ByRight : Model(LeftUnit) where {
   /// The naturals carry it.
   type M = Ticks;
 

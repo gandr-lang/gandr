@@ -39,7 +39,7 @@ def associator(
 
 /// The globular theory at dimension one. The right unit law is a rule, and the
 /// associator a cell between two composites.
-theory Glob {
+theory Glob where {
   /// The objects.
   sort Ob : Type;
   /// The cells from one object to another.
@@ -65,7 +65,7 @@ theory Glob {
 }
 
 /// The circle's points, and the paths between them as the cells.
-module PathCells : Model(Glob) {
+module PathCells : Model(Glob) where {
   /// The circle's points.
   type Ob = Circle;
   /// The paths between two points.
@@ -117,7 +117,7 @@ module PathCells : Model(Glob) {
 }
 
 /// The circle's paths with the associator left out, which `here` discharges.
-module Discharged : Model(Glob) {
+module Discharged : Model(Glob) where {
   /// The circle's points.
   type Ob = Circle;
   /// The paths between two points.

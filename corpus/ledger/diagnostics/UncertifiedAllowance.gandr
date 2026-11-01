@@ -1,5 +1,5 @@
 /// `UncertifiedAllowance`: univalence over a bound past the largest a catalogue builds at.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

@@ -1,6 +1,6 @@
 /// `HeldConsumed`: a held slot read, accessed or consumed after a consumed receiver ended its hold, or consumed on one arm of an offer and not on another.
 /// An integer's methods.
-module Taken {
+module Taken where {
   /// The integer, taken.
   @[ checks ]
   def take(self : consumed Integer) -> -F Integer { pure self }

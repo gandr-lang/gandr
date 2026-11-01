@@ -6,7 +6,7 @@ import "../../model/effects/state.gandr";
 
 /// `get` read first-order, its continuation at the carrier: the model's `get`
 /// takes the function from the state, so the module's is refused at its type.
-module FirstOrder : Model(State) with sort S = Integer {
+module FirstOrder : Model(State) with sort S = Integer where {
   /// The carrier.
   type C = Integer;
   /// A continuation at the carrier, not a function of the state.
@@ -20,7 +20,7 @@ module FirstOrder : Model(State) with sort S = Integer {
 /// model signature does not state (#1324): refused by the law's name at the
 /// module, even admitted.
 @[ refuses("UnstatedComponent.Binding") ]
-module PutGet : Model(StatePutGet) with sort S = Integer {
+module PutGet : Model(StatePutGet) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = +U (Integer -> -F Integer);
   /// Reading hands the current state on.

@@ -10,7 +10,7 @@ data Tree : Type {
 }
 
 /// A presentation, so this source reads `Theory`.
-theory Pointed {
+theory Pointed where {
   sort P : Type;
   oper point : () --> (p : P);
 }

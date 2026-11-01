@@ -1,4 +1,4 @@
-module Bad {
+module Bad where {
   @[ refuses("ForwardMemberReference") ]
   def first = second + 1;
   @[ runs("2") ]

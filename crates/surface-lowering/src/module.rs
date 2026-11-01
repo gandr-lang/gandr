@@ -88,18 +88,18 @@
 //!
 //! # A `theory` block defines a value of `Theory`
 //!
-//! `theory S { … }` takes the next admission position under `S` and files a
-//! definition half lowered at the block itself: `S : Theory`, whose body is the
-//! presentation's value the description route read (`crate::model`). `Theory`,
-//! the presentation code `gandr_theory_levitation::theory_desc` describes, is
-//! minted once per module as a slot of its own, just before the first block
-//! that refuses nothing, and its constructors enter the constructor table
-//! beside the written families'; a module with no such block declares neither,
-//! so a module that presents nothing loses no name to them. A block some member
-//! of which the description route or the cell gate refused still takes its
-//! slot, refused by its first refusal, and each further refusal is held at its
-//! member's span. The alternatives were `Theory` in a prelude every module
-//! imports, which the fragment has none of, and `Theory` minted in every
+//! `theory S where { … }` takes the next admission position under `S` and files
+//! a definition half lowered at the block itself: `S : Theory`, whose body is
+//! the presentation's value the description route read (`crate::model`).
+//! `Theory`, the presentation code `gandr_theory_levitation::theory_desc`
+//! describes, is minted once per module as a slot of its own, just before the
+//! first block that refuses nothing, and its constructors enter the constructor
+//! table beside the written families'; a module with no such block declares
+//! neither, so a module that presents nothing loses no name to them. A block
+//! some member of which the description route or the cell gate refused still
+//! takes its slot, refused by its first refusal, and each further refusal is
+//! held at its member's span. The alternatives were `Theory` in a prelude every
+//! module imports, which the fragment has none of, and `Theory` minted in every
 //! module, which takes eleven constructor names from modules that present
 //! nothing. The choice reverses with a prelude: `Theory` becomes one of its
 //! declarations.
@@ -152,8 +152,8 @@
 //!
 //! # A module declaration flattens to named members
 //!
-//! `module M { … }` declares no value of its own. Each member `def` is one
-//! declaration, admitted among every other declaration in source order — a
+//! `module M where { … }` declares no value of its own. Each member `def` is
+//! one declaration, admitted among every other declaration in source order — a
 //! nested module's members between the parent's members written before and
 //! after it — so `Config.limits.hard.detail.note` is one declaration at the
 //! position its place in the source gives it. Its structured name is the
@@ -193,26 +193,26 @@
 //! resolving paths against the collected modules directly, which would leave
 //! the namespace engine registering names that nothing consults.
 //!
-//! An inline signature `module M : #{ x : A, type T = τ } { … }` is matched
-//! coercively. A value component's type becomes its member's signature when the
-//! member has none, or only the type a function tail derives; a member already
-//! signed is checked by a witness — a declaration at the component's type whose
-//! body is the member's constant — so the checker refuses a disagreement as a
-//! type mismatch at the witness. The exports are reordered to signature order
-//! and narrowed to the components: a member the signature omits is admitted and
-//! checked, but absent from the namespace and from the module's stratum item. A
-//! nested module component takes a record type `#{ … }` and is matched against
-//! the nested module's own exports the same way, as is a member signature `def
-//! inner : #{ … } ;` written beside `module inner`. A manifest type component
-//! `type T = τ` lowers `τ` once, and a later component naming `T` stands for
-//! that type; an earlier one cannot name it. The alternatives were checking the
-//! whole module against one record type, declined with the record carrier, and
-//! refusing a second stated type, which loses the agreement check. A witness
-//! becomes an annotation on the member's body when the core has an annotation
-//! former. An abstract component `type T` or `type T : κ`, and the opaque
-//! ascription `:>` that seals it, are `sealing`'s: a type member of the body
-//! gives the component its meaning, and `:>` declares one abstract type per
-//! component.
+//! An inline signature `module M : #{ x : A, type T = τ } where { … }` is
+//! matched coercively. A value component's type becomes its member's signature
+//! when the member has none, or only the type a function tail derives; a member
+//! already signed is checked by a witness — a declaration at the component's
+//! type whose body is the member's constant — so the checker refuses a
+//! disagreement as a type mismatch at the witness. The exports are reordered to
+//! signature order and narrowed to the components: a member the signature omits
+//! is admitted and checked, but absent from the namespace and from the module's
+//! stratum item. A nested module component takes a record type `#{ … }` and is
+//! matched against the nested module's own exports the same way, as is a member
+//! signature `def inner : #{ … } ;` written beside `module inner`. A manifest
+//! type component `type T = τ` lowers `τ` once, and a later component naming
+//! `T` stands for that type; an earlier one cannot name it. The alternatives
+//! were checking the whole module against one record type, declined with the
+//! record carrier, and refusing a second stated type, which loses the agreement
+//! check. A witness becomes an annotation on the member's body when the core
+//! has an annotation former. An abstract component `type T` or `type T : κ`,
+//! and the opaque ascription `:>` that seals it, are `sealing`'s: a type member
+//! of the body gives the component its meaning, and `:>` declares one abstract
+//! type per component.
 //!
 //! A refusal that belongs to no member — a top-level module with a lowercase
 //! name, an unread module body, a missing component, an abstract component
@@ -4790,9 +4790,10 @@ impl<'source> Collector<'_, 'source>
     ///   its structures and member slots, a type member written at the top
     ///   level into the source's [`Collected::top_types`], and an import into
     ///   the import list; a closer the layout shows was written once too often
-    ///   before the child refuses there ([`Self::closed_early`]); every other
-    ///   form refuses as a form of the wrong sort, and a repair the parser
-    ///   inserted as that repair.
+    ///   before the child refuses there ([`Self::closed_early`]); a form the
+    ///   description route refused refuses at its first description refusal
+    ///   ([`Self::described_refusals`]); every other form refuses as a form of
+    ///   the wrong sort, and a repair the parser inserted as that repair.
     /// - provides: the module-shape half of [`collect_source`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
     ///   a declaration, a module, a type member nor an import;
@@ -4813,6 +4814,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
+    /// - witness: `module::tests::a_torn_declaration_is_refused_where_it_stopped_2877`
     /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[spec(
         captures: before = (
@@ -4863,16 +4865,20 @@ impl<'source> Collector<'_, 'source>
                 name,
                 ..
             } => self.import(child, name),
-            Shape::Form { name, .. } => {
-                Err(self
-                    .closed_early(child)
-                    .unwrap_or(LoweringRefusal::OutOfFragment {
-                        span: child.span,
-                        form: name,
-                        sort: FragmentSort::Declaration,
-                        boundary: FragmentBoundary::WrongSort,
-                    }))
-            },
+            Shape::Form { name, .. } => Err(self
+                .closed_early(child)
+                .or_else(|| {
+                    self.described_refusals(child)
+                        .into_iter()
+                        .next()
+                        .map(|(_, refusal)| refusal)
+                })
+                .unwrap_or(LoweringRefusal::OutOfFragment {
+                    span: child.span,
+                    form: name,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::WrongSort,
+                })),
             Shape::Repair(_) => match repair_at(self.pbg, self.tree, child) {
                 Maybe::Present(found) => Err(found.refusal(FormName::ROOT)),
                 Maybe::Absent(_) => Ok(()),
@@ -5720,8 +5726,8 @@ impl<'source> Collector<'_, 'source>
     ///   name tile beside the slot owning the theory it includes; a block whose
     ///   slot stands unrefused takes its reducts' slots after it
     ///   ([`Self::reducts`]).
-    /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
-    ///   is the presentation's value.
+    /// - provides: `theory S where { … }` as the declaration `S : Theory` whose
+    ///   body is the presentation's value.
     /// - panics: none.
     /// - executable: none — the slot it takes is chosen by the name table,
     ///   which the call reads and writes in one step.
@@ -7388,7 +7394,7 @@ impl<'source> Collector<'_, 'source>
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         let mut stack = Vec::new();
         let top = self.collected.top(module.span.start());
-        // A dotted name, `module Gandr.Workspace { … }`, declares the module in
+        // A dotted name, `module Gandr.Workspace where { … }`, declares the module in
         // the modules its prefix names; a functor or an application is bound
         // at the top level alone.
         let dotted = match Self::dotted_name(&pieces, module) {
@@ -7657,6 +7663,9 @@ impl<'source> Collector<'_, 'source>
         else {
             Maybe::Absent(ascription::Absent::Unascribed)
         };
+        if let Maybe::Absent(_) = cursor.tile(TileName::WHERE) {
+            return refused(misplaced_in(FormName::MODULE, cursor.here()));
+        }
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
             return refused(misplaced_in(FormName::MODULE, cursor.here()));
         }
@@ -7752,6 +7761,9 @@ impl<'source> Collector<'_, 'source>
             Ok(path) => path,
             Err(refusal) => return refused(refusal),
         };
+        if let Maybe::Absent(_) = cursor.tile(TileName::WHERE) {
+            return refused(misplaced_in(FormName::FLOW, cursor.here()));
+        }
         if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
             return refused(misplaced_in(FormName::FLOW, cursor.here()));
         }
@@ -13587,7 +13599,7 @@ mod tests
         let tree = parsed(
             &pbg,
             SourceText::from(
-                "module M { def first = 1 ; def last = 2 ; def dotted = 3 ; def hidden = 4 ; }",
+                "module M where { def first = 1 ; def last = 2 ; def dotted = 3 ; def hidden = 4 ; }",
             ),
         );
         let mut arena = gandr_core_term::CoreArena::new();
@@ -14013,14 +14025,15 @@ mod tests
         let tree = repaired(&pbg, SourceText::from("@[ checks ] theory Sta"));
         assert_eq!(
             collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
-            LoweringRefusal::OutOfFragment {
-                span: span(ByteOffset::from(12_usize), ByteOffset::from(22_usize)),
+            LoweringRefusal::MalformedForm {
+                span: span(ByteOffset::from(22_usize), ByteOffset::from(22_usize)),
                 form: FormName::from(NamedKind("theory_declaration")),
-                sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::WrongSort,
+                fault: FormFault::Repaired(crate::Repair::GhostClose(
+                    gandr_surface_syntax::ClosingClass::Brace,
+                )),
             },
             "a theory the parser repaired declares nothing, and the source holding only it and \
-             the block before it is refused whole, at the theory"
+             the block before it is refused whole, at the repair the description route read"
         );
     }
 
@@ -14252,7 +14265,7 @@ mod tests
             "the stray is refused at the second `}}` of the access line"
         );
 
-        let nested = "module M {\n  def give_up() -> -F Unit {\n    hold c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
+        let nested = "module M where {\n  def give_up() -> -F Unit {\n    hold c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
         assert_eq!(
             refusals(nested),
             [LoweringRefusal::MalformedForm {
@@ -14346,7 +14359,7 @@ mod tests
     fn a_torn_declaration_is_refused_where_it_broke_2110()
     {
         let pbg = grammar();
-        let text = "theory Restriction {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . nil()) =>= nil();\n}\n";
+        let text = "theory Restriction where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . nil()) =>= nil();\n}\n";
         let tree = repaired(&pbg, SourceText::from(text));
         // The theory is the source's one item, so its refusal is the source's.
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
@@ -14377,12 +14390,14 @@ mod tests
 
     /// A declaration torn into its tiles because it stopped inside an operand
     /// is refused where it stopped. A universe missing its polarity is marked
-    /// just past its `[`, not at the close minted after the capture (#2877).
+    /// just past its `[`, not at the close minted after the capture (#2877):
+    /// the refusal names the universe the reading stopped in, not a form of the
+    /// wrong sort.
     #[test]
     fn a_torn_declaration_is_refused_where_it_stopped_2877()
     {
         let pbg = grammar();
-        let text = "codata Stream : Type[] {\n  head : Integer;\n}\n";
+        let text = "codata Stream : Type[] where {\n  head : Integer;\n}\n";
         let tree = repaired(&pbg, SourceText::from(text));
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
             Ok(collected) => collected
@@ -14404,7 +14419,7 @@ mod tests
                     form,
                     fault: FormFault::Repaired(_),
                 }] if usize::from(span.start()) == stop
-                    && *form == FormName::from(NamedKind("codata_declaration"))
+                    && *form == FormName::from(NamedKind("universe_type"))
             ),
             "the codata declaration is refused once, past its universe's `[`: {refused:?}"
         );
@@ -14512,7 +14527,7 @@ mod tests
     fn an_empty_module_beside_a_stray_declares()
     {
         let pbg = grammar();
-        let tree = parsed(&pbg, SourceText::from("3 ;\nmodule M { }"));
+        let tree = parsed(&pbg, SourceText::from("3 ;\nmodule M where { }"));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let read: Vec<_> = collected
             .slots
@@ -14583,7 +14598,7 @@ mod tests
         let pbg = grammar();
         let tree = parsed(
             &pbg,
-            SourceText::from("module M { @[ checks ] @[ owes ] def x = 3 ; }"),
+            SourceText::from("module M where { @[ checks ] @[ owes ] def x = 3 ; }"),
         );
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected
@@ -14607,7 +14622,7 @@ mod tests
         );
         assert_eq!(
             slot.introduced_by.span,
-            span(ByteOffset::from(11_usize), ByteOffset::from(44_usize)),
+            span(ByteOffset::from(17_usize), ByteOffset::from(50_usize)),
             "a member's blocks are inside its form"
         );
     }

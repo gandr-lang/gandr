@@ -1,7 +1,7 @@
 // file
 
 // a module
-module M {
+module M where {
   /// one
   @[ checks ]
   def one = 1;

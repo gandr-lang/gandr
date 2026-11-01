@@ -8,7 +8,7 @@
 
 /// A restriction that extrudes its scope and is collected once empty.
 @[ refuses("RulesNeverComplete") ]
-theory Extrusion {
+theory Extrusion where {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
@@ -21,7 +21,7 @@ theory Extrusion {
 /// last one under the abstraction, and the block is refused by name as the
 /// first-order one is, not once its budget runs out (#1917).
 @[ refuses("RulesNeverComplete") ]
-theory Restriction {
+theory Restriction where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;

@@ -1,6 +1,6 @@
 /// `NotATranslation`: an import read via a name that no flow declared before it, or published by its source, bears.
 @[ refuses("NotATranslation") ]
-theory Replying {
+theory Replying where {
   oper reply : Integer;
 }
 

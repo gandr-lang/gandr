@@ -12,7 +12,7 @@
 
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.
-theory Let {
+theory Let where {
   sort Tm : Type+;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
@@ -20,7 +20,7 @@ theory Let {
 
 /// A body binding two terms is instantiated at two arguments, outermost
 /// binder first.
-theory LetPair {
+theory LetPair where {
   sort Tm : Type+;
   oper let2 : (u : Tm, v : Tm, t : pi+ (x : Tm). pi+ (y : Tm). Tm) --> Tm;
   rule zeta2 : let2(u, v, t) <=> t(u, v);
@@ -28,7 +28,7 @@ theory LetPair {
 
 /// ζ beside first-order rules whose pair parts: completion joins `f`'s two
 /// rules as it would without ζ, which overlaps neither.
-theory LetBeside {
+theory LetBeside where {
   sort Tm : Type+;
   oper zero : () --> Tm;
   oper one : () --> Tm;
@@ -42,7 +42,7 @@ theory LetBeside {
 /// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
 /// the root, the pair is found by pattern unification, and both reducts are
 /// `t(zero())` (#2328).
-theory LetOverlap {
+theory LetOverlap where {
   sort Tm : Type+;
   oper zero : () --> Tm;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;

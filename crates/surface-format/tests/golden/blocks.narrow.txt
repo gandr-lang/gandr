@@ -16,9 +16,9 @@ def from_left() -> -F Integer {
 module Facts : #{
   inner : #{answer : Integer},
   total : Integer
-} {
+} where {
   def base = 40;
-  module inner : #{ answer : Integer } {
+  module inner : #{ answer : Integer } where {
     def answer = base + 1;
   }
 

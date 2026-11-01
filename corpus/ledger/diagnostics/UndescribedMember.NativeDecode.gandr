@@ -5,6 +5,6 @@ data Big : Type[+, 1] where {
 }
 
 @[ refuses("UndescribedMember.NativeDecode") ]
-codata Holder : Type[-] {
+codata Holder : Type[-] where {
   held : Big;
 }

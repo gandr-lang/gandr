@@ -51,7 +51,7 @@ def observedCarried() -> Integer { observe(negatedManifest) }
 
 /// A counter whose reading has a sort of its own: the counts and the
 /// readings, a zero, a step, a reading and the reading shown as an integer.
-pub theory ReadCounter {
+pub theory ReadCounter where {
   sort C : Type;
   sort R : Type;
   oper zero : C;
@@ -187,7 +187,7 @@ def countOfAny(x : Type, a : Model(Counter) with sort C = x, n : Integer, c : a.
 }
 
 /// A pairing: two carriers, a value of each.
-pub theory Pairing {
+pub theory Pairing where {
   sort A : Type;
   sort B : Type;
   oper left : A;

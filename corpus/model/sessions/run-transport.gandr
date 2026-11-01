@@ -52,7 +52,7 @@ def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
 pub def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
 
 /// A protocol that hears a bit, and one that hears an answer.
-module Ask {
+module Ask where {
   type Coded = ?Bit. end;
   type Decoded = ?Answer. end;
 }

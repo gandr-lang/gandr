@@ -2,7 +2,7 @@
 module Cancel :> #{
   type Join = !String. end,
   notes : String
-} {
+} where {
   /// The path a task reads.
   @[ checks ]
   def notes = "notes";

@@ -1,5 +1,5 @@
 /// `UnknownGenerator`: a translator record naming a generator its description does not declare.
-theory Magma {
+theory Magma where {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);

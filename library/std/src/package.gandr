@@ -17,7 +17,7 @@
 
 /// The version a package and a workspace release at, which [`Project`]
 /// brings to both, so a member reads its version from its workspace's model.
-pub theory Versioned {
+pub theory Versioned where {
   /// The version, as a package's manifest records it.
   @[ inert ]
   oper version : String;
@@ -28,7 +28,7 @@ pub theory Versioned {
 /// its workspace's model. A constraint is content, so the package's address
 /// digests it. Each list is one line of `,`-separated entries, none when it
 /// is empty, until an operation's port can be a list (#2993).
-pub theory Toolchain {
+pub theory Toolchain where {
   /// The least language version the sources are written for, `>= 0.3`, or
   /// empty for any.
   oper gandr : String;
@@ -43,7 +43,7 @@ pub theory Toolchain {
 /// What a package and a workspace both state: the version they release at
 /// and what they ask of the toolchain. `Gandr.Package` and `Gandr.Workspace`
 /// include it, so the two theories it joins are joined once.
-pub theory Project {
+pub theory Project where {
   include Versioned;
   include Toolchain;
 }
@@ -52,7 +52,7 @@ pub theory Project {
 /// `gandr.toml`, the table the user's configuration file writes, which a
 /// language server opened on the package reads over the user's. Each field
 /// is inert: how a source is shown is not what it is.
-pub theory Presentation {
+pub theory Presentation where {
   /// The spelling a construct with a glyph is written in, `unicode` or
   /// `ascii`, or empty to leave the reader's own.
   @[ inert ]
@@ -64,7 +64,7 @@ pub theory Presentation {
 /// the project's `gandr.toml`. Its own fields are inert: what a package is
 /// called, who wrote it, where it is documented and how it is shown leave its
 /// address alone (#3030). What it asks of the toolchain is not.
-pub theory Gandr.Package {
+pub theory Gandr.Package where {
   include Project;
   include Presentation;
   /// The package's name, which the manifest records it by.
@@ -89,14 +89,14 @@ pub theory Gandr.Package {
 /// model its `module Workspace : Model(Gandr.Workspace)` is, beside the
 /// `members` it names. Its members' libraries import it and read what it
 /// states.
-pub theory Gandr.Workspace {
+pub theory Gandr.Workspace where {
   include Project;
 }
 
 /// A module of a package: a source below its library, named by its path from
 /// the package's root, `text.greet` of `text/greet.gandr`. The manifest lists
 /// each in `modules`; no source declares a model of it yet.
-pub theory Gandr.Module {
+pub theory Gandr.Module where {
   /// The module's path, its segments joined by `.`.
   oper path : String;
 }

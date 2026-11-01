@@ -261,7 +261,7 @@ data Circle : Type where {
 
 /// The circle's shape: the presentation the circle's constructors present,
 /// read as a signature whose models interpret it.
-const CIRCLE_SHAPE: &str = r#"theory CircleShape {
+const CIRCLE_SHAPE: &str = r#"theory CircleShape where {
     sort Pt : Type;
     oper base : Pt;
     oper turn : (x : Pt) --> Pt;
@@ -435,7 +435,7 @@ def later = 7;"#,
 /// A group's laws with the left inverse: associativity and the inverse law
 /// meet at `mul(mul(inv(x), x), z)`, which they leave at `z` and at
 /// `mul(inv(x), mul(x, z))`.
-const GROUP: &str = r#"theory Group {
+const GROUP: &str = r#"theory Group where {
     sort G : Type;
     oper e : G;
     oper a : G;
@@ -517,7 +517,7 @@ fn a_groups_inverse_law_completes_to_the_rules_it_derives()
 /// `nu(par(nil, q)) ==> par(nil, q)`, that rule and `scope` by the same rule
 /// with `nil` wrapped in `par(□, q')`, and so on, one wrapping deeper every
 /// round (#1604).
-const SCOPE_EXTRUSION: &str = "theory S {
+const SCOPE_EXTRUSION: &str = "theory S where {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
@@ -868,7 +868,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
 {
     let theory = |rules: &str| {
         format!(
-            "theory Let {{
+            "theory Let where {{
     sort Tm : Type+;
     oper zero : () --> Tm;
     oper f : (a : Tm) --> Tm;
@@ -941,7 +941,7 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
 {
     let theory = |rule: &str| {
         format!(
-            "theory State {{
+            "theory State where {{
     sort S : Type+;
     sort C : Type;
     oper ret : (a : S) --> C;
@@ -979,7 +979,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 {
     let theory = |channel: &str, rules: &str| {
         format!(
-            "theory Pi {{
+            "theory Pi where {{
     sort Name : Atom;
     sort Proc : Type;
     oper nil : () --> Proc;
@@ -1101,7 +1101,7 @@ fn an_equation_written_backwards_orients_forwards()
 fn a_congruence_is_no_rewrite_of_its_own()
 {
     let source = SourceText::from(
-        r#"theory Nat {
+        r#"theory Nat where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 
@@ -1139,7 +1139,7 @@ fn a_congruence_is_no_rewrite_of_its_own()
         );
     });
     let with_a_rule = SourceText::from(
-        r#"theory Nat {
+        r#"theory Nat where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule left : add(x, y) ==> x;
@@ -1241,7 +1241,7 @@ def later = 7;"#,
         );
     });
     let restriction = SourceText::from(
-        r#"theory Unheard {
+        r#"theory Unheard where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -1291,7 +1291,7 @@ def later = 7;"#,
 fn a_call_nesting_operations_reads_over_terms_1510()
 {
     let choices = SourceText::from(
-        r#"theory Cut {
+        r#"theory Cut where {
   sort Grade : Type;
   oper bot : () --> Grade;
   oper top : () --> Grade;
@@ -1303,7 +1303,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
 }"#,
     );
     let plain = SourceText::from(
-        r#"theory Plain {
+        r#"theory Plain where {
   sort N : Type;
   oper first : () --> N;
   oper second : () --> N;
@@ -1312,7 +1312,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
 }"#,
     );
     let two_cells = SourceText::from(
-        r#"theory TwoCells {
+        r#"theory TwoCells where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
   sort Two(src : Hom(x, y), tgt : Hom(x, y)) : Type;
@@ -1389,7 +1389,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
 fn an_instantiating_rule_fires_at_an_inspected_call_2966()
 {
     let beta = SourceText::from(
-        r#"theory Beta {
+        r#"theory Beta where {
   sort V : Type+;
   sort C : Type;
   oper z : () --> V;
@@ -1399,7 +1399,7 @@ fn an_instantiating_rule_fires_at_an_inspected_call_2966()
 }"#,
     );
     let continued = SourceText::from(
-        r#"theory Continued {
+        r#"theory Continued where {
   sort N : Type;
   sort V : Type+;
   sort E : Type;

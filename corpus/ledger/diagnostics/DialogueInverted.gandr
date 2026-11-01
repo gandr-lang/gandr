@@ -1,5 +1,5 @@
 /// `DialogueInverted`: a dialogue that logs a receipt before the send it matches.
-module Ask {
+module Ask where {
   type Asking = !String. end;
 }
 

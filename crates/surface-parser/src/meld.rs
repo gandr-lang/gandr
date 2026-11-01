@@ -2463,15 +2463,16 @@ impl<'pbg> MeldState<'pbg>
     /// the floor is the slope base.
     ///
     /// Known bound: a container whose own member carries the damage — the
-    /// `module M { def bad = ( 1 ; def good = 2; }` shape — force-closes the
-    /// container too, so `good` is emitted as a sibling of `M` rather than a
-    /// member of it. The member is tiles of the container's rule rather than a
-    /// form of its own, so there is no member-level ghost to close it with,
-    /// and telling a container apart from a declaration needs the rule a mold
-    /// was numbered for — which the grammar reads back
-    /// ([`Pbg::rule_of`](gandr_surface_grammar::Pbg::rule_of)) but this repair
-    /// does not yet consult. Both declarations survive as distinct items; what
-    /// the repair does not preserve is which one owns the later declaration.
+    /// `module M where { def bad = ( 1 ; def good = 2; }` shape — force-closes
+    /// the container too, so `good` is emitted as a sibling of `M` rather
+    /// than a member of it. The member is tiles of the container's rule
+    /// rather than a form of its own, so there is no member-level ghost to
+    /// close it with, and telling a container apart from a declaration
+    /// needs the rule a mold was numbered for — which the grammar reads
+    /// back ([`Pbg::rule_of`](gandr_surface_grammar::Pbg::rule_of)) but
+    /// this repair does not yet consult. Both declarations survive as
+    /// distinct items; what the repair does not preserve is which one owns
+    /// the later declaration.
     ///
     /// # Specification
     /// - requires: `candidates` are molds of this state's PBG.

@@ -4,22 +4,22 @@
 // sibling under one prefix read by its name inside that prefix.
 
 /// A dotted module holding a nested block.
-module Net.Wire {
+module Net.Wire where {
   /// A block inside the dotted module.
-  module Core {
+  module Core where {
     /// A gauge.
     def gauge = 3;
   }
 }
 
 /// A written block reading into the dotted module.
-module Panel {
+module Panel where {
   /// The gauge, through the dotted module's path.
   def gauge = Net.Wire.Core.gauge;
 }
 
 /// A second module under the prefix.
-module Net.Meter {
+module Net.Meter where {
   /// The panel's gauge, read back out of the block.
   def shown = Panel.gauge;
   /// The sibling's gauge, by its name inside `Net`.

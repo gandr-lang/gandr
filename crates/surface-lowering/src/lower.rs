@@ -23499,8 +23499,8 @@ mod tests
     #[test]
     fn a_signature_s_types_answer_whatever_its_members_1115()
     {
-        let text = "module Facts : #{ inner: #{ answer: Integer }, total: Integer } {\n  module \
-                    inner : #{ answer: Integer } {\n    def answer = 1;\n  }\n  def total = \
+        let text = "module Facts : #{ inner: #{ answer: Integer }, total: Integer } where {\n  module \
+                    inner : #{ answer: Integer } where {\n    def answer = 1;\n  }\n  def total = \
                     inner.answer + 1;\n}\n";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
@@ -23523,7 +23523,7 @@ mod tests
                 (25, "#{ answer: Integer }"),
                 (36, "Integer"),
                 (54, "Integer"),
-                (94, "Integer"),
+                (100, "Integer"),
             ],
             "the nested signature, its field, the refused member's field and the nested \
              module's own field, each a written type"
@@ -23745,7 +23745,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "module M {\n  type T = Integer ;\n}\ndef a = Integer ;\ndef b = M.T ;",
+                "module M where {\n  type T = Integer ;\n}\ndef a = Integer ;\ndef b = M.T ;",
             ),
             &mut arena,
         );
@@ -25025,12 +25025,12 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
-        // `g()` at 52..55 with its head at 52..53; `M.z()` at 131..136 with
-        // its head at 131..134.
+        // `g()` at 52..55 with its head at 52..53; `M.z()` at 137..142 with
+        // its head at 137..140.
         let module = lowered(
             SourceText::from(
                 "def g = thunk { return 1 } ; def k = thunk { become g() } ; \
-                 module M { def z() -> -F Integer { return 0 } } \
+                 module M where { def z() -> -F Integer { return 0 } } \
                  def m = thunk { become M.z() } ;",
             ),
             &mut arena,
@@ -25068,8 +25068,8 @@ mod tests
         assert_eq!(
             called("m"),
             (
-                Maybe::Present((Provenance::Written, at(131_usize, 136_usize))),
-                Maybe::Present(at(131_usize, 134_usize)),
+                Maybe::Present((Provenance::Written, at(137_usize, 142_usize))),
+                Maybe::Present(at(137_usize, 140_usize)),
             ),
             "a module member called with no arguments answers at its call too"
         );
@@ -26700,7 +26700,7 @@ mod tests
         let pbg = grammar();
         let tree = repaired(
             &pbg,
-            SourceText::from("theory Magma {\n  sort M : type;\n}\n"),
+            SourceText::from("theory Magma where {\n  sort M : type;\n}\n"),
         );
         let LoweringRefusal::MalformedForm { span, fault, .. } = refusal_in(&pbg, &tree)
         else {
@@ -26708,7 +26708,7 @@ mod tests
         };
         assert_eq!(
             span,
-            at(26_usize, 30_usize),
+            at(32_usize, 36_usize),
             "the refusal stands at the keyword itself"
         );
         let FormFault::Repaired(Repair::Keyword(stray)) = fault
@@ -26838,14 +26838,14 @@ mod tests
         );
         let tree = repaired(
             &pbg,
-            SourceText::from("module M {\n  def a = 1 ;\n  def b = 2 ;\n"),
+            SourceText::from("module M where {\n  def a = 1 ;\n  def b = 2 ;\n"),
         );
         assert!(
             matches!(refusal_in(&pbg, &tree), LoweringRefusal::MalformedForm {
                 span,
                 fault: FormFault::Repaired(Repair::GhostClose(_)),
                 ..
-            } if span == at(38_usize, 38_usize)),
+            } if span == at(44_usize, 44_usize)),
             "a module never closed keeps its close at its end: its rule writes its members \
              side by side"
         );
@@ -27700,7 +27700,7 @@ mod tests
         let text = "@[ deprecated(#{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 \
                     ;\n@[ deprecated ] def old : Integer ;\ndef old = 2 ;\ndef cube = 3 ;\ndef \
                     a = square ;\ndef b = old ;\ndef c = cube ;\ndef d = square ;\nmodule Holder \
-                    {\n  @[ deprecated ] def member = 4 ;\n}\ndef e = Holder.member ;";
+                    where {\n  @[ deprecated ] def member = 4 ;\n}\ndef e = Holder.member ;";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
         let listed: Vec<(&str, String, Option<String>, Option<String>)> = module
@@ -28031,7 +28031,7 @@ mod tests
     {
         let pbg = grammar();
         let source =
-            SourceText::from("def p : Integer ; @[ respects(p) ] module M { def x = 1 ; }");
+            SourceText::from("def p : Integer ; @[ respects(p) ] module M where { def x = 1 ; }");
         let tree = parsed(&pbg, source);
         let mut arena = CoreArena::new();
         let module = lower_module(
@@ -28063,9 +28063,9 @@ mod tests
     fn a_module_s_documentation_is_filed_under_its_key_1135()
     {
         let pbg = grammar();
-        let text = "/// A module.\nmodule A {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  \
-                    module B { def y = 2 ; }\n}\n/// Decorated, see [gone].\n@[ explicit_exits \
-                    ]\nmodule C { def z = 3 ; }\n";
+        let text = "/// A module.\nmodule A where {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  \
+                    module B where { def y = 2 ; }\n}\n/// Decorated, see [gone].\n@[ explicit_exits \
+                    ]\nmodule C where { def z = 3 ; }\n";
         let source = SourceText::from(text);
         let tree = parsed(&pbg, source);
         let mut arena = CoreArena::new();
@@ -28101,10 +28101,12 @@ mod tests
             .iter()
             .map(|&(_, ref doc, written)| {
                 (doc.as_str(), match doc.as_str() {
-                    "A module." => written.contains("module A {"),
+                    "A module." => written.contains("module A where {"),
                     "A def." => written.contains("def x") && !written.contains("module"),
-                    "Nested." => written.contains("module B {") && !written.contains("module A"),
-                    _ => written.contains("module C {") && !written.contains("module A"),
+                    "Nested." => {
+                        written.contains("module B where {") && !written.contains("module A")
+                    },
+                    _ => written.contains("module C where {") && !written.contains("module A"),
                 })
             })
             .collect();
@@ -28206,7 +28208,7 @@ mod tests
     fn a_link_resolves_to_a_module_its_member_or_a_constructor()
     {
         let mut arena = CoreArena::new();
-        let source = "/// See [M], [Red] and [x].\ndef a = 1 ;\nmodule M { def x = 1 ; }\ndata Color \
+        let source = "/// See [M], [Red] and [x].\ndef a = 1 ;\nmodule M where { def x = 1 ; }\ndata Color \
                       : Type where { | Red : Color }\n/// Not [gone].\ndef b = 2 ;";
         let module = lowered(SourceText::from(source), &mut arena);
         assert!(
@@ -28231,7 +28233,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("@[ checkz ] module M { def x = 1 ; }\ndef y = 2 ;"),
+            SourceText::from("@[ checkz ] module M where { def x = 1 ; }\ndef y = 2 ;"),
             &mut arena,
         );
         assert_eq!(
@@ -28411,15 +28413,15 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("module M { def a : f(Integer) ; def f : Type -> Type ; }"),
+            SourceText::from("module M where { def a : f(Integer) ; def f : Type -> Type ; }"),
             &mut arena,
         );
         assert_eq!(
             outcome_named(&module, "a"),
             DeclarationOutcome::Refused(LoweringRefusal::ForwardMemberReference {
-                span: at(19_usize, 20_usize),
+                span: at(25_usize, 26_usize),
                 name: SurfaceName::from("f"),
-                declared: at(36_usize, 37_usize),
+                declared: at(42_usize, 43_usize),
             }),
             "the refusal stands at the operator's name, not the whole application"
         );
@@ -28544,9 +28546,9 @@ mod tests
     #[test]
     fn a_type_head_answers_at_what_it_stands_for()
     {
-        let text = "module NatAdd : #{ type M = Integer, zero : M } {\n  type M = Integer;\n  def \
+        let text = "module NatAdd : #{ type M = Integer, zero : M } where {\n  type M = Integer;\n  def \
                     zero = 0;\n}\n\nmodule MkCounter(S : #{ type T, zero : T }) :> #{ type T, \
-                    seed : T } {\n  type T = S.T;\n  def seed = S.zero;\n}\n\nmodule Seed {\n  \
+                    seed : T } where {\n  type T = S.T;\n  def seed = S.zero;\n}\n\nmodule Seed where {\n  \
                     type T = Integer;\n  def zero = 0;\n}\n\nmodule A = MkCounter(Seed) ;\n";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
@@ -28661,8 +28663,8 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(concat!(
-                "theory Scaled {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
-                "module Misnamed : Model(Scaled) with sort Rate = Integer {\n",
+                "theory Scaled where {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
+                "module Misnamed : Model(Scaled) with sort Rate = Integer where {\n",
                 "  type Ratio = Integer;\n  def scale = 2;\n}\n",
             )),
             &mut arena,
@@ -29219,7 +29221,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "data L(a : Type) : Type where { | N : L(a) } codata S(a : Type) : Type[-] { head : a; } \
+                "data L(a : Type) : Type where { | N : L(a) } codata S(a : Type) : Type[-] where { head : a; } \
                  def listOf(p : Type) -> -F Type { return (L(p)) } def firstOf(a : Type, b : \
                  Type) -> -F Type { return (L(a)) } def secondOf(a : Type, b : Type) -> -F Type { \
                  return (L(b)) } def streamOf(p : Type) -> -F Type[-] { return (S(p)) }",

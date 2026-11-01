@@ -34,7 +34,7 @@ def xor(a : Bit, b : Bit) -> Bit {
 /// The group of order two: zero is the unit, exclusive or the product, and
 /// each bit its own inverse; the two elements the presentation names are one
 /// and zero.
-module Parity : Model(Group) {
+module Parity : Model(Group) where {
   type G = Bit;
   def e = Zero;
   def a = One;

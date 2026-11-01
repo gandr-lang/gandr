@@ -90,7 +90,7 @@ fn a_groups_certificate_replays_in_the_kernel()
         Coincidence::Joined(ref certificates) => certificates.derived_terms.len(),
         Coincidence::Unexamined | Coincidence::Orthogonal | Coincidence::Refused(_) => 0,
     };
-    let group = r#"theory Group {
+    let group = r#"theory Group where {
     sort G : Type;
     oper e : G;
     oper inv : (x : G) --> G;
@@ -111,7 +111,7 @@ fn a_groups_certificate_replays_in_the_kernel()
         assert_eq!(certificate.turns, [RuleTurn::AsWritten; 3]);
         assert_eq!(verdict, Ok(()), "{certificate:?}");
     });
-    let unital = r#"theory Unital {
+    let unital = r#"theory Unital where {
     sort M : Type;
     oper e : M;
     oper mul : (x : M, y : M) --> M;
@@ -128,7 +128,7 @@ fn a_groups_certificate_replays_in_the_kernel()
         );
         assert_eq!(verdict, Ok(()));
     });
-    let pointed = r#"theory Pointed {
+    let pointed = r#"theory Pointed where {
     sort P : Type;
     oper e : P;
     oper twice : (x : P) --> P;

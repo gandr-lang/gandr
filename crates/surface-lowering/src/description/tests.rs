@@ -84,7 +84,7 @@ fn codata_observations_preserve_their_codes()
     let grammar = grammar();
     let tree = parsed(
         &grammar,
-        r#"codata Stream(a : Type) : Type {
+        r#"codata Stream(a : Type) : Type where {
         head[1] : a;
         tail[ω] : Stream(a);
     }"#
@@ -414,7 +414,7 @@ fn description_wrapper_boundaries_stay_observable_to_pipeline_consumers()
     assert_eq!(entry.description.id.name.as_ref(), "Maybe");
     assert_eq!(
         serialize_desc(&entry.description).as_ref(),
-        "theory Maybe(a) { sort Maybe : Type; }"
+        "theory Maybe(a) where { sort Maybe : Type; }"
     );
     assert!(bool::from(generic_eq(&entry.description, &none, &none)));
 }
@@ -566,7 +566,7 @@ fn the_retired_op_member_lead_declines_with_its_respelling()
 fn codata_declarations_elaborate_with_codata_polarity()
 {
     let report = elaborated(SourceText::from(
-        "codata Stream(a : Type) : Type { head : a; tail : Stream(a); }",
+        "codata Stream(a : Type) : Type where { head : a; tail : Stream(a); }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref entry] = *report.declarations.as_slice()
@@ -935,7 +935,9 @@ fn a_constructor_led_member_of_a_codata_block_declines()
             .collect::<Vec<_>>(),
         ["Mk"]
     );
-    let report = elaborated(SourceText::from("codata Boxed : Type { Mk : Boxed; }"));
+    let report = elaborated(SourceText::from(
+        "codata Boxed : Type where { Mk : Boxed; }",
+    ));
     assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -953,7 +955,8 @@ fn a_constructor_led_member_of_a_codata_block_declines()
 #[test]
 fn a_codata_oper_declines_without_swallowing_observation_and_rule_siblings()
 {
-    let source = "codata S : Type { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
+    let source =
+        "codata S : Type where { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
     let report = elaborated(SourceText::from(source));
     let [ref entry] = *report.declarations.as_slice()
     else {
@@ -1186,7 +1189,7 @@ fn an_unended_family_is_refused_once_at_its_close()
             "a data family whose last member the cell gate refuses",
         ),
         (
-            "codata Point : Type {\n  x : Integer;\n",
+            "codata Point : Type where {\n  x : Integer;\n",
             "a codata family the decoder would refuse",
         ),
     ] {
@@ -1246,7 +1249,7 @@ fn a_codata_declaration_lowers_to_its_signature()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "data Flag : Type where { | Off : Flag | On : Flag }\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef ones : +U Stream(Integer) ;\ndef later = 7;";
+    let source = "data Flag : Type where { | Off : Flag | On : Flag }\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef ones : +U Stream(Integer) ;\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1326,7 +1329,7 @@ fn a_codata_self_reference_keeps_its_written_arguments_2188()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "codata Swap(a : Type, b : Type) : Type[-] { head : a; tail : Swap(b, a); }\ncodata Twisted(a : Type) : Type[-] { head : a; tail : Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }";
+    let source = "codata Swap(a : Type, b : Type) : Type[-] where { head : a; tail : Swap(b, a); }\ncodata Twisted(a : Type) : Type[-] where { head : a; tail : Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1404,7 +1407,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     use crate::namespace::Recognition;
     use crate::resolve::SurfaceName;
     let grammar = grammar();
-    let source = "@[ checks ]\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef later = 7;";
+    let source = "@[ checks ]\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1437,7 +1440,7 @@ fn parameterized_observations_retain_both_port_boundaries()
 {
     use gandr_theory_levitation::SortRef;
     let report = elaborated(SourceText::from(
-        "codata Fun(a : Type, b : Type) : Type { get : b; ap : (x : a) --> b; }",
+        "codata Fun(a : Type, b : Type) : Type where { get : b; ap : (x : a) --> b; }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref entry] = *report.declarations.as_slice()

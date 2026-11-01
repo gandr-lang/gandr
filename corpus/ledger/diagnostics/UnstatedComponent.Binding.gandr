@@ -2,7 +2,7 @@
 ///
 /// The theory the model derives from: a binder no body uses is collected.
 @[ checks ]
-theory T {
+theory T where {
   sort Val : Type+;
   sort Proc : Type;
   oper nil : Proc;

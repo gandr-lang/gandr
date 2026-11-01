@@ -29,7 +29,7 @@ def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(to
 
 /// A judge that hears a verdict and acknowledges it, written over either
 /// nesting, and a judge that hears two verdicts.
-module Judge {
+module Judge where {
   type Right = ?(Unit + (Unit + Unit)). !Unit. end;
   type Left = ?((Unit + Unit) + Unit). !Unit. end;
   type RightTwice = ?(Unit + (Unit + Unit)). ?(Unit + (Unit + Unit)). end;

@@ -8,14 +8,14 @@
 import "./monoid.gandr";
 
 /// A monoid with a chosen element.
-theory PointedMonoid {
+theory PointedMonoid where {
   include Monoid;
   oper point : () --> M;
 }
 
 /// The functions on the integers under composition, pointed at the
 /// successor.
-module Successor : Model(PointedMonoid) {
+module Successor : Model(PointedMonoid) where {
   type M = Integer => Integer;
 
   /// `f` then `g`, applied.

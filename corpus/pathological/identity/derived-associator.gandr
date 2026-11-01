@@ -15,7 +15,7 @@
 import "../../model/identity/derived-associator.gandr";
 
 /// The signs under their product, writing the derived associator too.
-module Written : Model(Monoid) {
+module Written : Model(Monoid) where {
   /// The carrier is the signs.
   type M = Sign;
   /// Plus is the unit.

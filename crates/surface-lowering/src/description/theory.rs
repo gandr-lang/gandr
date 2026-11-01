@@ -493,7 +493,7 @@ impl Reader<'_, '_>
             path.push('.');
             path.push_str(self.text(named).0);
         }
-        if !run.eat(Spelling("{")).0 {
+        if !run.eat(Spelling("where")).0 || !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
         // A member's attribute blocks come off its front; only `@[ inert ]`

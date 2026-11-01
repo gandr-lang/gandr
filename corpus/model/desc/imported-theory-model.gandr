@@ -6,7 +6,7 @@ import "./second-order-signatures.gandr";
 
 /// A counting model of the imported naturals: the carrier is the integers,
 /// zero is `0` and the successor adds one.
-module Counting : Model(Nat) {
+module Counting : Model(Nat) where {
   type Nat = Integer;
 
   def zero() -> Integer { 0 }

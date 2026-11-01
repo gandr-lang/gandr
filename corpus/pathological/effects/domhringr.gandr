@@ -6,7 +6,7 @@
 /// A put answers a digest, not a value: putting the digest a put answered
 /// names a `Digest` at the port of a `Value`.
 @[ refuses("IllFormedDescription") ]
-theory StoreDigestPut {
+theory StoreDigestPut where {
   sort Value : Type+;
   sort Digest : Type+;
   sort C : Type;
@@ -19,7 +19,7 @@ theory StoreDigestPut {
 /// a builtin, so the description check refuses the port by name
 /// (`UnknownPortSort`, #2410).
 @[ refuses("IllFormedDescription") ]
-theory FailNonsense {
+theory FailNonsense where {
   sort Reason : Type;
   oper raise : (r : Reason) --> Nonsense;
 }

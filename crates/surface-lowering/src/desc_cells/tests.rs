@@ -150,7 +150,7 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
 fn an_ill_formed_rule_is_refused_once_and_left_unexamined_2375()
 {
     let report = descriptions(
-        "theory Undeclared { sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C; oper put : (s : S, k : C) --> C; rule putPut : put(s, put(f(s), k)) <=> put(f(s), k); }",
+        "theory Undeclared where { sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C; oper put : (s : S, k : C) --> C; rule putPut : put(s, put(f(s), k)) <=> put(f(s), k); }",
     );
     let [ref refusal] = *report.diagnostics.as_slice()
     else {
@@ -187,12 +187,12 @@ fn a_copied_variable_is_refused_at_its_second_occurrence()
             "rule : minus(x, ".len(),
         ),
         (
-            "theory Idem { sort M : Type; oper mul : (x : M, y : M) --> M; rule idem : mul(x, x) ==> x; }",
+            "theory Idem where { sort M : Type; oper mul : (x : M, y : M) --> M; rule idem : mul(x, x) ==> x; }",
             "rule idem : mul(x, x) ==> x",
             "rule idem : mul(x, ".len(),
         ),
         (
-            "theory Copy { sort Nat : Type; oper add : (l : Nat, r : Nat) --> (s : Nat); rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, x) --> (z); }; }",
+            "theory Copy where { sort Nat : Type; oper add : (l : Nat, r : Nat) --> (s : Nat); rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, x) --> (z); }; }",
             "rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, x) --> (z); }",
             "rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, ".len(),
         ),
@@ -309,7 +309,7 @@ fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 {
     let descriptions = descriptions(
         r#"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-        theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
+        theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
             rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
                 node : p(x) ==> (xp); node : add(xp, y) --> (z);
             };
@@ -340,7 +340,7 @@ fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 fn a_two_redex_body_declines_with_both_occurrences()
 {
     let descriptions = descriptions(
-        r#"theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
+        r#"theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
         rule cong2 : (rule p : Nat ==> Nat, rule q : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
             node : p(x) ==> (xp); node : q(y) ==> (yp); node : add(xp, yp) --> (z);
         };
@@ -379,7 +379,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
             MemberFault::ResultArity,
         ),
         (
-            r#"theory Shared { sort Nat : Type; oper f : (a : Nat) --> (b : Nat);
+            r#"theory Shared where { sort Nat : Type; oper f : (a : Nat) --> (b : Nat);
         rule twice : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
             node : p(x) ==> (m); node : f(x) --> (m);
         };
@@ -388,7 +388,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
             MemberFault::LhsNotOperation,
         ),
         (
-            r#"theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
+            r#"theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
         rule cong2 : (rule p : Nat ==> Nat, rule q : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
             node : p(x) ==> (xp); node : q(y) ==> (yp); node : add(xp, yp) --> (z);
         };

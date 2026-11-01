@@ -7,7 +7,7 @@
 /// The category shape: a sort of morphisms dependent on the objects. Its
 /// laws over the dependent sort are read with the objects each composite
 /// stands at, so the unit laws agree at `comp(id(a), id(a))` (#1510).
-theory CatShape {
+theory CatShape where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
@@ -20,7 +20,7 @@ theory CatShape {
 }
 
 /// Types and the functions between them as a model of the category shape.
-module SetoidCat : Model(CatShape) {
+module SetoidCat : Model(CatShape) where {
   type Ob = Type;
   type Hom(a : Ob, b : Ob) = a => b;
 

@@ -1,6 +1,6 @@
 /// `IllFormedDescription`: a description the description check refuses.
 @[ refuses("IllFormedDescription") ]
-theory Past {
+theory Past where {
   boundary Square { a, b, c, d };
   face far = {b, e};
   sort Cell : Type;

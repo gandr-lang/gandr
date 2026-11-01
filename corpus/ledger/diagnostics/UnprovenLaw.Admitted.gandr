@@ -2,7 +2,7 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory Reflexive {
+theory Reflexive where {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
   law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
@@ -15,7 +15,7 @@ data Lone : Type where {
 }
 
 /// The model at `Lone`.
-module Admitting : Model(Reflexive) with sort Carrier = Lone {
+module Admitting : Model(Reflexive) with sort Carrier = Lone where {
   def alike(a : Lone, b : Lone) -> Bool { true }
   @[ refuses("UnprovenLaw.Admitted") ]
   law refl admitted;

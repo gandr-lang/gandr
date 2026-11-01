@@ -25,7 +25,7 @@ const APART: &str = r#"data NatApart : Type where {
 
 /// A group's laws with the left inverse, which completion joins by deriving
 /// rules into the block's store.
-const GROUP: &str = r#"theory Group {
+const GROUP: &str = r#"theory Group where {
     sort G : Type;
     oper e : G;
     oper a : G;

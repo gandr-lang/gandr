@@ -1,5 +1,5 @@
 /// `universe_flow_type`: a flow between universe codes, written with its glyph and in ASCII.
-module Schema {
+module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]

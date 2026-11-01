@@ -13,7 +13,7 @@ pub module Task :> #{
   type Relay = ?String. !String. end,
   type Volunteer = !String. ?String. end,
   notes : String
-} {
+} where {
   /// The path a task reads.
   def notes = "notes";
 }

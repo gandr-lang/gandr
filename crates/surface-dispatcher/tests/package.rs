@@ -348,7 +348,7 @@ fn a_workspace_walks_every_member_it_names_2687()
     let source = directory.join("workspace.gandr");
     let stated = |members: &str| {
         format!(
-            "pub module Workspace : Model(Gandr.Workspace) {{ def version = \"0.2.0\"; }}\n{members}\n"
+            "pub module Workspace : Model(Gandr.Workspace) where {{ def version = \"0.2.0\"; }}\n{members}\n"
         )
     };
     std::fs::write(
@@ -530,7 +530,7 @@ const TOOLCHAIN: &str = "\n[toolchain]\ngandr = \">= 0.1\"\nfeatures = [\n  \"a\
 fn a_manifest_reads_the_package_model_2687()
 {
     let read = manifest_of(SourceText::from(concat!(
-        "module Package { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
+        "module Package where { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
         rest!(),
         " }"
     )))
@@ -538,7 +538,7 @@ fn a_manifest_reads_the_package_model_2687()
     assert_eq!(
         read.render(),
         manifest_of(SourceText::from(concat!(
-            "module Package { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
+            "module Package where { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
             rest!(),
             " }"
         )))
@@ -555,7 +555,7 @@ fn a_manifest_reads_the_package_model_2687()
     );
     assert_eq!(
         manifest_of(SourceText::from(concat!(
-            "module Package { def name = \"hello\" ; ",
+            "module Package where { def name = \"hello\" ; ",
             rest!(),
             " }"
         ))),
@@ -564,7 +564,7 @@ fn a_manifest_reads_the_package_model_2687()
     );
     assert_eq!(
         manifest_of(SourceText::from(concat!(
-            "module Package { def name = 3 ; def version = \"0.1.0\" ; ",
+            "module Package where { def name = 3 ; def version = \"0.1.0\" ; ",
             rest!(),
             " }"
         ))),
@@ -576,7 +576,7 @@ fn a_manifest_reads_the_package_model_2687()
     );
     assert_eq!(
         manifest_of(SourceText::from(
-            "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; def authors = 3 ; \
+            "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; def authors = 3 ; \
              def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" ; }"
         )),
         Err(Unmanifested::Unstrung {
@@ -604,7 +604,7 @@ fn a_manifest_renders_the_dependencies_its_library_lists_3072()
     let read = manifest_of(SourceText::from(concat!(
         "data Coordinate : Type where { | Path : (path : String) --> Coordinate } ",
         "type Dependency = #{ alias : String, coordinate : Coordinate }; ",
-        "module Package { def name = \"tools\" ; def version = \"0.1.0\" ; ",
+        "module Package where { def name = \"tools\" ; def version = \"0.1.0\" ; ",
         rest!(),
         " } def dependencies : List(Dependency) = [ #{ alias = \"hello\", coordinate = \
          Path(\"../hello\") } ] ;"
@@ -619,7 +619,7 @@ fn a_manifest_renders_the_dependencies_its_library_lists_3072()
     );
     assert_eq!(
         manifest_of(SourceText::from(concat!(
-            "module Package { def name = \"tools\" ; def version = \"0.1.0\" ; ",
+            "module Package where { def name = \"tools\" ; def version = \"0.1.0\" ; ",
             rest!(),
             " } def dependencies = 3 ;"
         ))),
@@ -638,7 +638,7 @@ fn a_manifest_renders_the_dependencies_its_library_lists_3072()
 fn a_manifest_renders_its_digest_and_its_table_2687()
 {
     let rendered = manifest_of(SourceText::from(concat!(
-        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
         rest!(),
         " }"
     )))
@@ -656,7 +656,7 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
         )
     );
     let escaped = manifest_of(SourceText::from(concat!(
-        "module Package { def name = \"back\\\\slash\\nline\\ttab\" ; def version = \"1\" ; ",
+        "module Package where { def name = \"back\\\\slash\\nline\\ttab\" ; def version = \"1\" ; ",
         rest!(),
         " }"
     )))
@@ -679,7 +679,7 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
     macro_rules! model {
         ($toolchain:literal) => {
             manifest_of(SourceText::from(concat!(
-                "module Package { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
+                "module Package where { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
                  \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
                  ; def spelling = \"\" ; ",
                 $toolchain,
@@ -724,7 +724,7 @@ fn a_manifest_renders_the_presentation_its_model_names_3135()
     macro_rules! model {
         ($spelling:literal) => {
             manifest_of(SourceText::from(concat!(
-                "module Package { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
+                "module Package where { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
                  \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
                  ; def gandr = \">= 0.1\" ; def features = \"a, b\" ; def systems = \"\" ; def \
                  spelling = ",
@@ -773,7 +773,7 @@ fn a_manifest_lists_the_modules_its_sources_make_2687()
         panic!("the package is found");
     };
     let (mut program, report) = settled_of(SourceText::from(concat!(
-        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
         rest!(),
         " }"
     )));
@@ -798,13 +798,13 @@ fn a_manifest_is_written_rewritten_and_refused_as_drift_2687()
     let directory = scratch(Path::new("reconciled"), &[]);
     let path = directory.join("gandr.toml");
     let first = manifest_of(SourceText::from(concat!(
-        "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
         rest!(),
         " }"
     )))
     .expect("the model reads");
     let second = manifest_of(SourceText::from(concat!(
-        "module Package { def name = \"hello\" ; def version = \"0.2.0\" ; ",
+        "module Package where { def name = \"hello\" ; def version = \"0.2.0\" ; ",
         rest!(),
         " }"
     )))
@@ -968,7 +968,7 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
     let stated = |name: &str, gandr: &str| {
         format!(
             "import text.greet (greeting);\n{STD_PACKAGE}pub module Package : \
-             Model(Gandr.Package) {{\n  def name : String = \"{name}\";\n  def version = \
+             Model(Gandr.Package) where {{\n  def name : String = \"{name}\";\n  def version = \
              \"0.1.0\";\n  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation \
              = \"d\";\n  def endpoint = \"e\";\n  def gandr = \"{gandr}\";\n  def features = \
              \"\";\n  def systems = \"\";\n  def spelling = \"\";\n}}\npub def welcome = greeting;\n"
@@ -1274,7 +1274,7 @@ impl Library<'_>
             rest,
         } = self;
         format!(
-            "{imports}{STD_PACKAGE}pub module Package : Model(Gandr.Package) {{\n  def name : \
+            "{imports}{STD_PACKAGE}pub module Package : Model(Gandr.Package) where {{\n  def name : \
              String = \"p\";\n  def version = \"{version}\";\n  def authors = \"Ada\";\n  def \
              licence = \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n  def \
              gandr = \"\";\n  def features = \"\";\n  def systems = \"\";\n  def spelling = \

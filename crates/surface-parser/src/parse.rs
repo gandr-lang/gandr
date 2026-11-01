@@ -1273,7 +1273,7 @@ mod tests
         };
         for (closure, document) in [
             (
-                "def a = 1;\nmodule M {\n  def b = (a, 2);\n}\n",
+                "def a = 1;\nmodule M where {\n  def b = (a, 2);\n}\n",
                 "def c = M.b;\ndef d = (c ;\n",
             ),
             ("def a = 1;\n", "  \n// c\n\ndef b = a;\n"),
@@ -1556,7 +1556,7 @@ pure greeting
         // before each top-level head and nowhere else; every seam holds but
         // the last, which follows a statement rather than a declaration.
         let pbg = built_in()?;
-        let src = "def a = 1;\n@[doc(\"b\")] def b = 2;\nmodule M {\n  def c = 3;\n  def d = 4;\n}\ndata Bit : Type where {\n  | Off : Bit\n}\n1;\ndef e = 5;\n";
+        let src = "def a = 1;\n@[doc(\"b\")] def b = 2;\nmodule M where {\n  def c = 3;\n  def d = 4;\n}\ndata Bit : Type where {\n  | Off : Bit\n}\n1;\ndef e = 5;\n";
         let source = SourceText::from(src);
         let mut molder = Molder::new(&pbg);
         let split = FormSplit::new(&molder, source);

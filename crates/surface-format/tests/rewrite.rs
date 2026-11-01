@@ -132,7 +132,7 @@ def step : +U[ω] (Integer -> -F Integer) ;
 def lazy : +U[inf] &{-F Integer, -F Integer} ;
 def noted : +U[/* every use */ ω] (-F Integer) ;
 def once : +U[1] (Integer -> -F Integer) ;
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper next : +U[ω] (T -> -F T);
   oper add : +U[ω] (T -> T -> -F T);
@@ -146,7 +146,7 @@ def step : Integer => Integer;
 def lazy : +U (-F Integer & -F Integer);
 def noted : +U[/* every use */ ω] (-F Integer);
 def once : +U[1] (Integer -> -F Integer);
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper next : T => T;
   oper add : +U (T -> T -> -F T);
@@ -160,7 +160,7 @@ def step : +U (Integer -> -F Integer);
 def lazy : +U &{-F Integer, -F Integer};
 def noted : +U[/* every use */ ω] (-F Integer);
 def once : +U[1] (Integer -> -F Integer);
-theory Counting {
+theory Counting where {
   sort T : Type;
   oper next : +U (T -> -F T);
   oper add : +U (T -> T -> -F T);
@@ -184,14 +184,14 @@ fn a_law_keeps_its_statement_in_either_form_2384()
 {
     let grammar = grammar();
     let explicit = "\
-theory Lawful {
+theory Lawful where {
   sort C : Type;
   oper next : +U (C -> -F C);
   law trivial : (a : C) => Path(Bool, true, true);
 }
 ";
     let sugared = "\
-theory Lawful {
+theory Lawful where {
   sort C : Type;
   oper next : C => C;
   law trivial : (a : C) => Path(Bool, true, true);
@@ -861,7 +861,7 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
 fn a_composite_of_flows_keeps_its_then()
 {
     let grammar = grammar();
-    let source = "module Evolution {\n  type Old = +{ report : !String. end };\n  type New = +{ \
+    let source = "module Evolution where {\n  type Old = +{ report : !String. end };\n  type New = +{ \
                   report : !String. end, pause : end };\n  def sub : Flow(Type, Old, New);\n  \
                   def sub = sim(Old, New);\n  def kept : Flow(Type, Old, Old);\n  def kept = \
                   stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {\n    become kept then \
@@ -1018,13 +1018,13 @@ def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), q then
 fn a_functor_s_composite_takes_no_motive_from_its_instantiation_2166()
 {
     let grammar = grammar();
-    let source = "theory Semi {
+    let source = "theory Semi where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
 }
 
-module Reassociating(S : Model(Semi)) {
+module Reassociating(S : Model(Semi)) where {
   def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path(
     S.M,
     S.mul(x, S.mul(y, z)),
@@ -1034,7 +1034,7 @@ module Reassociating(S : Model(Semi)) {
   }
 }
 
-module OnePoint : Model(Semi) {
+module OnePoint : Model(Semi) where {
   type M = Unit;
 
   def mul(a : Unit, b : Unit) -> -F Unit { unit }
@@ -1166,7 +1166,7 @@ def suspended : Type -> Type = \\X. () => X;
 fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
 {
     let grammar = grammar();
-    let theory = "theory Pointed {\n  sort M : Type;\n  oper one : M;\n}\n\n";
+    let theory = "theory Pointed where {\n  sort M : Type;\n  oper one : M;\n}\n\n";
     let explicit =
         format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer);\n");
     let sugared =
@@ -1850,11 +1850,11 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
 fn a_rewrite_is_checked_beside_every_kind_of_declaration()
 {
     let grammar = grammar();
-    let source = "codata Stream(a : Type) : Type[-] {\n  head : a;\n  tail : Stream(a);\n}\n\
+    let source = "codata Stream(a : Type) : Type[-] where {\n  head : a;\n  tail : Stream(a);\n}\n\
                   \n\
                   world seat;\n\
                   \n\
-                  module Pair :> #{ type Kept, one : Kept } {\n  type Kept = Integer;\n  def \
+                  module Pair :> #{ type Kept, one : Kept } where {\n  type Kept = Integer;\n  def \
                   one = 1;\n}\n\
                   \n\
                   def lost() -> Integer { migrate [nowhere] { pure 1 } }\n\
@@ -2271,7 +2271,7 @@ fn an_adjacent_pair_joins_into_one_definition_2228()
 fn a_module_member_pair_joins_as_a_top_level_one_2255()
 {
     let grammar = grammar();
-    let source = "module Outer {\n\
+    let source = "module Outer where {\n\
                   \x20 /// The one.\n\
                   \x20 def one : Integer ;\n\
                   \x20 def one = 1 ;\n\
@@ -2285,7 +2285,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
                   \x20 def four : () => Integer ;\n\
                   \x20 def four = thunk { 4 } ;\n\
                   \n\
-                  \x20 module Inner {\n\
+                  \x20 module Inner where {\n\
                   \x20   def five : Integer ;\n\
                   \x20   def five = 5 ;\n\
                   \x20 }\n\
@@ -2305,7 +2305,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
         formatted.into_text()
     };
     expect![[r#"
-        module Outer {
+        module Outer where {
           /// The one.
           def one : Integer = 1;
 
@@ -2317,14 +2317,14 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
 
           def four() -> Integer { 4 }
 
-          module Inner {
+          module Inner where {
             def five : Integer = 5;
           }
         }
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        module Outer {
+        module Outer where {
           /// The one.
           def one : Integer;
           def one = 1;
@@ -2338,7 +2338,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
 
           def four() -> -F Integer { 4 }
 
-          module Inner {
+          module Inner where {
             def five : Integer;
             def five = 5;
           }
@@ -2367,7 +2367,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
                   def four : () => Integer ;\n\
                   def four = thunk { 4 } ;\n\
                   \n\
-                  module Kept {\n\
+                  module Kept where {\n\
                   \x20 def five() -> -F Integer { 5 }\n\
                   }\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
@@ -2395,7 +2395,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def four() -> Integer { 4 }
 
-        module Kept {
+        module Kept where {
           def five() -> Integer { 5 }
         }
     "#]]
@@ -2411,7 +2411,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def four() -> -F Integer { 4 }
 
-        module Kept {
+        module Kept where {
           def five() -> -F Integer { 5 }
         }
     "#]]

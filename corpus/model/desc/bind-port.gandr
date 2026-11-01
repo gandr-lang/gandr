@@ -8,7 +8,7 @@
 
 /// The π-calculus's processes: `nu` restricts a channel name over a process,
 /// abstracting it.
-pub theory Restriction {
+pub theory Restriction where {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
@@ -18,7 +18,7 @@ pub theory Restriction {
 
 /// Both binders over one port, the abstraction outside: a fresh channel
 /// abstracted over a body that binds the value received on it.
-theory Receive {
+theory Receive where {
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;

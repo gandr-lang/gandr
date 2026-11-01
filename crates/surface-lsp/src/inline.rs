@@ -2396,7 +2396,7 @@ mod tests
                 " }\n}",
                 " ${1:pattern} => ${2:computation}",
             ),
-            ("module M {", "\n}", " ${1:member}"),
+            ("module M where {", "\n}", " ${1:member}"),
             ("", "", "def ${1:identifier} : ${2:type};"),
         ] {
             let found = between(&tools, SourceText::from(before), SourceText::from(after));
@@ -2702,9 +2702,9 @@ mod tests
             "" ‸ ""
               "def ${1:identifier} : ${2:type};"
               "data ${1:type_identifier} where { \\}"
-              "codata ${1:type_identifier} { \\}"
-              "module ${1:type_identifier} { ${2:member} \\}"
-              "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} { ${4:member} \\}"
+              "codata ${1:type_identifier} where { \\}"
+              "module ${1:type_identifier} where { ${2:member} \\}"
+              "flow ${1:identifier} : ${2:type_identifier} ⇝ ${3:type_identifier} where { ${4:member} \\}"
               "import ${1:identifier};"
               "world ${1:identifier};"
               "rec { ${1:item} \\}"

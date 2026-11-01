@@ -1296,7 +1296,7 @@ fn a_co_bundle_is_the_lazy_record_of_its_labels()
 #[test]
 fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
 {
-    let pair = "codata Duo : Type[-] { fst : Integer; snd : String; }\n";
+    let pair = "codata Duo : Type[-] where { fst : Integer; snd : String; }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{pair}def ordered(n : Integer) -> Duo {{ &{{.fst => return n, .snd => return \"s\"}} \
@@ -1337,7 +1337,7 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         refused(source.as_str())
     );
     let source = String::from(
-        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef short(n : Integer) \
+        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef short(n : Integer) \
          -> Trio { &{.a => return n, .b => return n} }\n",
     );
     assert!(
@@ -1418,7 +1418,7 @@ fn an_observation_by_position_projects_its_entry_941()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef labelled(m : +U \
+        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef labelled(m : +U \
          &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.b }\ndef placed(m : +U &{a \
          : -F Integer, b : -F Integer}) -> -F Integer { become m.1 }\ndef chained(m : +U (-F \
          Integer & -F String & -F Integer)) -> -F Integer { become m.2 }\ndef named(t : +U \
@@ -1475,7 +1475,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
+        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
          -> Trio { &{ .a => n, .b => n, .c => n } }\ndef pair(n : Integer) -> &{a : -F Integer, \
          b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { trio(1).b \
          }\ndef counted() -> -F Integer { trio(1).1 }\ndef recorded() -> -F Integer { \
@@ -1521,7 +1521,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         "an observation off a call stands as an operand: {:?}",
         outcome(&module, "above")
     );
-    let source = "codata Duo : Type[-] { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
+    let source = "codata Duo : Type[-] where { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
                   1, .b => 2 } }\ndef gone() -> -F Integer { duo().z }\n";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
@@ -1540,7 +1540,7 @@ fn a_chain_of_observations_projects_each_link_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef rec upward(n : \
+        "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef rec upward(n : \
          Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>](n + 1) } }\ndef \
          second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }\ndef third() -> -F Integer \
          { upward(1).tail.tail.head }\ndef counted() -> -F Integer { upward(1).1.tail.0 }\ndef \

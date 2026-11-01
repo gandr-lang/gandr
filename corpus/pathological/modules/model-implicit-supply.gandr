@@ -5,7 +5,7 @@
 // model implicit is named alone.
 
 /// A tally: a carrier, a zero, a step and a reading.
-theory Tally {
+theory Tally where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -13,14 +13,14 @@ theory Tally {
 }
 
 /// A tally without its reading.
-theory Stepper {
+theory Stepper where {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
 }
 
 /// Counting up by one, with no reading.
-module Mute : Model(Stepper) {
+module Mute : Model(Stepper) where {
   type C = Integer;
   /// Zero.
   def zero = 0;

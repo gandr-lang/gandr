@@ -5,7 +5,7 @@
 // 2003, doi:10.1007/978-94-007-0954-6).
 
 /// A module whose one member takes no arguments.
-module Origin {
+module Origin where {
   /// The starting point.
   def zero() -> Integer { 0 }
 }

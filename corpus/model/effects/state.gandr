@@ -13,7 +13,7 @@
 /// The operations alone: reading the state of sort `S` into what runs after,
 /// and storing a value of it before what runs after. A handler answers each
 /// with the sort fixed (`state-handler.gandr`).
-pub theory State {
+pub theory State where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
@@ -22,7 +22,7 @@ pub theory State {
 
 /// Storing a value and then reading the state is storing it and continuing
 /// at it.
-pub theory StatePutGet {
+pub theory StatePutGet where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
@@ -31,7 +31,7 @@ pub theory StatePutGet {
 }
 
 /// Storing twice keeps the second value.
-pub theory StatePutPut {
+pub theory StatePutPut where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
@@ -42,7 +42,7 @@ pub theory StatePutPut {
 /// Put-get and put-put together. Put-put's continuation can be a `get`, so
 /// its inner `put` is a put-get redex; both reducts store the second value
 /// and continue at it (#2116).
-pub theory StatePutLaws {
+pub theory StatePutLaws where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
@@ -57,7 +57,7 @@ pub theory StatePutLaws {
 /// scope over this theory runs its subject normalised by the rule: `run a <-
 /// st.get(); run b <- st.get(); pure a + b` reads once, `run a <- st.get();
 /// pure a + a` with `b` bound to `a` (`state-laws.gandr`'s `readTwice`).
-pub theory StateGetGet {
+pub theory StateGetGet where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
@@ -69,7 +69,7 @@ pub theory StateGetGet {
 /// under a store is a redex of put-get and of get-get, and both reducts store
 /// the value and continue at it twice. Get-put beside them is refused in the
 /// twin (#1934).
-pub theory StateLaws {
+pub theory StateLaws where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;

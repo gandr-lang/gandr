@@ -2,7 +2,7 @@
 /// the theory and proved for every model; here an involution applied four
 /// times.
 @[ checks ]
-theory Involution {
+theory Involution where {
   sort G : Type;
   oper inv : (x : G) --> G;
   rule invInv : inv(inv(x)) <=> x;
