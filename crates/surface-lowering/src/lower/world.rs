@@ -32,7 +32,9 @@
 //!
 //! A block statement that opens with `hold` is the access statement `hold x
 //! = v ;`, so a handle made at a block's tail is written in parentheses,
-//! `(hold v)`.
+//! `(hold v)`. A handle bound for the rest of a block is written `var x : A at
+//! w = v ;`, the statement `run x : A at w <- (hold v) ;` spells: the stated
+//! handle type tells it from a held slot.
 //!
 //! # The mark and the entry are written where the source already decides
 //!

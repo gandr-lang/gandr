@@ -2645,12 +2645,15 @@ fn assignment_statement() -> Regex
 }
 
 /// Build the statement that holds a value: `var x = E ;`, or `var[1] x = E
-/// ;` at a grade. `hold` is read in `var`'s place until the corpus moves.
+/// ;` at a grade, or `var x : T = E ;` with the value's type stated, a type
+/// `A at w` making it the handle the world `w` holds. `hold` is read in
+/// `var`'s place until the corpus moves.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the `var` or `hold` keyword, an optional bracketed numeral grade,
-///   the held name, then an equals-delimited expression and a semicolon.
+///   the held name, an optional colon-led type, then an equals-delimited
+///   expression and a semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2660,7 +2663,7 @@ fn assignment_statement() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref leads) if leads.len() == 2 && leads.iter().zip(["var", "hold"]).all(|(lead, label)| matches!(lead.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref leads) if leads.len() == 2 && leads.iter().zip(["var", "hold"]).all(|(lead, label)| matches!(lead.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn hold_statement() -> Regex
 {
     seq([
@@ -2671,6 +2674,7 @@ fn hold_statement() -> Regex
             t(TileLabel("]")),
         ])),
         t(TileLabel("identifier")),
+        opt(seq([t(TileLabel(":")), h(Sort::Type)])),
         t(TileLabel("=")),
         h(Sort::Expression),
         t(TileLabel(";")),

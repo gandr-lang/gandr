@@ -480,3 +480,81 @@ def field(p : #{ a : Integer }) -> -F Unit { p.a += 1; }
         "a field is no place an assignment writes"
     );
 }
+
+#[test]
+fn a_stated_var_ascribes_its_value_or_holds_a_handle()
+{
+    let source = SourceText::from(
+        r"def listed() -> -F Integer {
+  var xs : List(Integer) = #[1, 2];
+  xs.#[0] += 1;
+  return 0
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let listed = tail_of(&arena, body_named(&module, SurfaceName::from("listed")));
+    let Some(&Computation::Memory(MemoryForm::Hold { value, .. })) = arena.computation(listed)
+    else {
+        panic!(
+            "a stated `var` still holds its value: {:?}",
+            arena.computation(listed)
+        );
+    };
+    assert!(
+        matches!(arena.value(value), Some(&Value::Ascribe { .. })),
+        "the held value is ascribed the stated type, so a list reads its type there"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    // A handle is held only where its world runs, so these are read, not
+    // judged: `pointing` in the worlds corpus is judged.
+    let source = SourceText::from(
+        r"world seat;
+def located() -> -F (Integer at seat) {
+  var h : Integer at seat = 3;
+  pure h
+}
+def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure unit }
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let located = tail_of(&arena, body_named(&module, SurfaceName::from("located")));
+    let Some(&Computation::Bind(bound, rest)) = arena.computation(located)
+    else {
+        panic!(
+            "a located `var` binds its handle: {:?}",
+            arena.computation(located)
+        );
+    };
+    let Some(&Computation::Ascribe { body, .. }) = arena.computation(bound)
+    else {
+        panic!(
+            "the handle is bound at the stated type: {:?}",
+            arena.computation(bound)
+        );
+    };
+    assert!(
+        matches!(
+            arena.computation(body),
+            Some(&Computation::World(
+                gandr_core_term::world::WorldForm::Hold { .. }
+            ))
+        ),
+        "the handle is the world's hold of the value, not a held slot"
+    );
+    assert!(
+        matches!(arena.computation(rest), Some(&Computation::Return(_))),
+        "the rest of the block reads the handle's name"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("graded")),
+            LoweringRefusal::MalformedForm { span, fault: FormFault::MisplacedTile, .. }
+                if span == spelled_within(source, SourceText::from("h : Integer at seat = 3; pure unit"), SourceText::from("Integer at seat"))
+        ),
+        "a handle binds no slot, so a grade has nothing to grade"
+    );
+}

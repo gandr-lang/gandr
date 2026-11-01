@@ -1,6 +1,6 @@
 //! Temporary access in the lowering: the statement that holds a value, the
-//! access that lends it to a view in a mode, and the two eliminators that end
-//! the view.
+//! access that lends it to a view in a mode, the two eliminators that end
+//! the view, and the assignment that writes a held place.
 //!
 //! # A held value and a view are names in the linear zone
 //!
@@ -8,7 +8,9 @@
 //! its block, as `fork` binds an endpoint over the rest of its block: the
 //! core hold, whose scope is that rest, at grade `ω`. `var[1] x = e ;` holds
 //! it at grade one; any other numeral is [`LoweringRefusal::GradedBridge`], as
-//! on a thunk type. `access x as v { t }
+//! on a thunk type. `var x : T = e ;` holds `e` ascribed `T`; a handle type
+//! `A at w` there binds the world's handle instead (the `lower::world`
+//! module). `access x as v { t }
 //! unwind { u }` lends the slot `x` names exclusively and binds the view `v`,
 //! linearly, over the body `t`; the unwind `u` reads where the access stands,
 //! and a missing unwind is `unwind { pure unit }`. `access exclusive x as v { …
@@ -27,6 +29,22 @@
 //! held value has elements an index reads are the checker's to judge. A read
 //! of either name elsewhere is a linear variable, which the checker reads as
 //! the value the slot holds.
+//!
+//! # An assignment is an access the statement writes
+//!
+//! `p = e ;` writes the held place `p`, a name a `var` holds or its index
+//! `x.#[i]`, and `p += e ;`, `p -= e ;` and `p *= e ;` write the operator's
+//! prelude row over the place's value and `e`. The statement lowers to `run t
+//! <- pure e ; access p as v { resume(v, t) }`, or `{ run w <- op(v, t) ;
+//! resume(v, w) }` for a compound: `e` is read before the place is lent, so
+//! `n = n + 1` reads the slot while it is not lent, and a computation `e`
+//! runs once there, as a `let` runs one. Any other place is
+//! [`FragmentBoundary::Held`].
+//!
+//! - Alternatives: the right side read inside the access, which reads the slot
+//!   while it is lent exclusively; a field place, which the core's place does
+//!   not have.
+//! - Reversal: a field place once the core has one.
 //!
 //! # The body and the unwind are no bodies
 //!
@@ -207,20 +225,25 @@ pub(super) const ASSIGNING: [TileName; 4] = [
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read one `var x = e ;` or `var[g] x = e ;` statement, its keyword tile
-    /// already read; `hold` is read as `var` until the corpus moves.
+    /// Read one `var x = e ;`, `var[g] x = e ;` or `var x : T = e ;`
+    /// statement, its keyword tile already read; `hold` is read as `var` until
+    /// the corpus moves.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the statement's tile `var` or
     ///   `hold`; `frame` is the frame the statement reads under.
     /// - ensures: the grade is read when a bracket follows the keyword, `ω`
-    ///   otherwise; `e` is read as a value under `frame`; the statement is
-    ///   recorded as the hold of `e` at the grade over the rest of the block,
-    ///   and the frame binding `x` linearly over `frame`, which the rest of the
-    ///   block reads under, is returned, its binder recorded as a held slot.
-    /// - fails: a fault naming the hold statement for a tile out of shape, the
-    ///   grade's refusal, the value hole's own fault and the binder's own
-    ///   refusal.
+    ///   otherwise; `e` is read as a value under `frame`, and a stated `T` as a
+    ///   value type there. A stated handle type `A at w` makes the statement
+    ///   the world's hold of `e` bound at that type, `run x : A at w <- (hold
+    ///   e) ;`, and the frame binding `x` over `frame` is returned. Otherwise
+    ///   the statement is recorded as the hold of `e`, ascribed `T` when one is
+    ///   stated, at the grade over the rest of the block, and the frame binding
+    ///   `x` linearly over `frame`, which the rest of the block reads under, is
+    ///   returned, its binder recorded as a held slot.
+    /// - fails: a fault naming the hold statement for a tile out of shape and
+    ///   for a grade beside a handle type, the grade's refusal, each hole's own
+    ///   fault and the binder's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -233,10 +256,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   grade.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::a_hold_lowers_at_its_grade`
+    /// - witness: `lower::access::tests::a_stated_var_ascribes_its_value_or_holds_a_handle`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
-            && self.statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. }))),
+            && self.statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
     )]
     pub(super) fn hold(
         &mut self,
@@ -258,12 +282,40 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
         };
+        let stated = match cursor.tile(TileName::COLON) {
+            Maybe::Present(_) => Maybe::Present(statement.one(cursor.operands())?),
+            Maybe::Absent(_) => Maybe::Absent(unstated::Absent::Unwritten),
+        };
         closed(statement, cursor, TileName::EQUALS)?;
         let value = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
         self.read(value.node, Reading::Value(frame));
+        if let Maybe::Present(stated) = stated {
+            self.read(stated.node, Reading::ValueType(frame));
+            if matches!(self.form_at(stated)?, Some((_, Former::AtType))) {
+                // A handle is the world's to hold: it binds no slot, so a
+                // grade has nothing to grade.
+                if grade != HoldGrade::Many {
+                    return Err(statement.fault(stated.span, FormFault::MisplacedTile));
+                }
+                self.statements.push(Statement {
+                    origin: hold.node,
+                    bound: value.node,
+                    binding: StatementBinding::Located {
+                        annotation: stated.node,
+                        name: binder.node,
+                    },
+                    rest: exits::Rest::Bound,
+                });
+                return Ok(Frame::Inner(self.scope.extend(
+                    frame,
+                    name,
+                    Maybe::Present(binder.span),
+                )));
+            }
+        }
         self.statements.push(Statement {
             origin: hold.node,
             bound: hold.node,
@@ -271,6 +323,10 @@ impl<'source> Lowerer<'_, 'source>
                 value: value.node,
                 grade,
                 name: binder.node,
+                stated: match stated {
+                    Maybe::Present(stated) => Maybe::Present(stated.node),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                },
             },
             rest: exits::Rest::Bound,
         });
@@ -993,6 +1049,18 @@ impl<'source> Lowerer<'_, 'source>
         let id = sink.arena.computation_bind(returned, lent);
 
         Maybe::Present(sink.computation(id, origin))
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a `var` states no type.
+    pub mod unstated {
+        /// The statement writes no `: T` after its name.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The held value's type is the checker's to read off it.
+            Unwritten,
+        }
     }
 }
 

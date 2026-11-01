@@ -33,3 +33,11 @@ def assigned() -> -F Integer {
   n -= 1;
   return n
 }
+
+/// A `var` may state its value's type, which a list needs to be read.
+@[ checks ]
+def listed() -> -F Integer {
+  var xs : List(Integer) = #[1, 2];
+  xs.#[0] += 1;
+  return 0
+}
