@@ -1710,16 +1710,17 @@ fn patterns(
     ));
     // The as-pattern names its match first, `x @ p`, or glued through the
     // dotted alias, `x .@ p`: a glued `x@[` would open an attribute block.
+    // It is an infix operator, the name its left operand, rather than a form
+    // led by the name: a form whose only tail is a required hole, opened by
+    // a stray `@` where no pattern stands (a case missing its `{`), would
+    // hold every later tile and the enclosing closers with them, while an
+    // operator stays within its group. The lowering names the left operand.
     out.push(r(
         RuleName("as_pattern"),
         Provenance("as_pattern"),
         s,
         as_p,
-        seq([
-            t(TileLabel("identifier")),
-            alt([t(TileLabel("@")), t(TileLabel(".@"))]),
-            h(s),
-        ]),
+        seq([h(s), alt([t(TileLabel("@")), t(TileLabel(".@"))]), h(s)]),
     ));
 }
 

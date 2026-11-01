@@ -5730,10 +5730,18 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::AS_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
-            let Maybe::Present(alias) = cursor.tile(TileName::IDENTIFIER)
-            else {
-                return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
-            };
+            let alias = here.one(cursor.operands())?;
+            if !matches!(
+                self.tree
+                    .node(alias.node)
+                    .map(|node| shape_of(self.pbg, node)),
+                Some(Ok(Shape::Form {
+                    name: FormName::IDENTIFIER,
+                    ..
+                }))
+            ) {
+                return Err(here.fault(alias.span, FormFault::NotAName));
+            }
             if let Maybe::Absent(_) = cursor.tile(TileName::AT_SIGN) {
                 closed(here, &mut cursor, TileName::DOT_AT)?;
             }

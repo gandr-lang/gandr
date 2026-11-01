@@ -515,6 +515,9 @@ fn lowered(
                     "this keyword is retired here, and `{}` replaces it",
                     keyword.as_ref()
                 ),
+                FormFault::NotAName => {
+                    write!(f, "this {form} names its match with a name, and a pattern stands here")
+                },
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",

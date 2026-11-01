@@ -3578,6 +3578,29 @@ fn list_patterns_case_on_the_native_list()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// An as-pattern names its match with a name: a pattern before the `@` is
+/// refused at that pattern, while the name form aliases the whole list.
+#[test]
+fn an_as_pattern_names_its_match_with_a_name()
+{
+    let mut arena = CoreArena::new();
+    let source = "def whole(xs : List(Integer)) -> -F List(Integer) { case xs { [a, .._] @ all => \
+                  return all, [] => return [] } }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let start = source.find("[a, .._]").unwrap_or(0_usize);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("whole")),
+            LoweringRefusal::MalformedForm {
+                form: FormName::AS_PATTERN,
+                fault: crate::FormFault::NotAName,
+                span,
+            } if usize::from(span.start()) == start
+        ),
+        "the list pattern before `@` is refused where it stands"
+    );
+}
+
 #[test]
 fn patterns_outside_the_fragment_are_declined_by_name()
 {

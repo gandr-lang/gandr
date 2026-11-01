@@ -300,6 +300,7 @@ fn malformed(
                 keyword.as_ref()
             )
         },
+        FormFault::NotAName => String::from("write a name before the `@`"),
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",

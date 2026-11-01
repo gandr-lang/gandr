@@ -492,6 +492,9 @@ pub enum FormFault
     /// A retired keyword standing where the form spells this one: the site
     /// names the keyword that replaces it.
     Retired(crate::form::TileName),
+    /// A pattern stands where the form binds a name: the left side of an
+    /// as-pattern, `x @ p`.
+    NotAName,
 }
 
 impl fmt::Display for FormFault
@@ -533,6 +536,7 @@ impl fmt::Display for FormFault
                     keyword.as_ref()
                 )
             },
+            Self::NotAName => f.write_str("binds a pattern where it takes a name"),
         }
     }
 }
@@ -3279,6 +3283,7 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Brace),
             &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
             &FormFault::Retired(crate::form::TileName::BOUNDARY),
+            &FormFault::NotAName,
         ]));
         assert_apart(&render(&[
             &FragmentBoundary::Reserved(Unbuilt::Dup),
