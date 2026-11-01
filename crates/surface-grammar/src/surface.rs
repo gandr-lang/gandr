@@ -470,6 +470,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "pub_declaration",
     "unpack_statement",
     "representable_universe_type",
+    "record_selection_expression",
     "rec_block",
     "resume_expression",
     "return_expression",

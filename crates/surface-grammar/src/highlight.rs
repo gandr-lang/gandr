@@ -143,6 +143,7 @@ const OPENERS: &[&str] = &[
     "${",
     "(",
     ".#[",
+    ".#{",
     "@[",
     "[",
     "command_substitution_start",
@@ -1061,7 +1062,14 @@ mod tests
         let closes: &[(&str, &[&str])] = &[
             (")", &["(", "type("]),
             ("]", &["#[", ".#[", "@[", "["]),
-            ("}", &["#!{", "#{", "${", "command_substitution_start", "{"]),
+            ("}", &[
+                "#!{",
+                "#{",
+                "${",
+                ".#{",
+                "command_substitution_start",
+                "{",
+            ]),
             ("subshell_close", &["subshell_open"]),
         ];
         for ((id, def), occurrence) in pbg.iter_molds().zip(&walk) {

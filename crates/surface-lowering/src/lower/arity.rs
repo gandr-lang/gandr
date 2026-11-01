@@ -150,11 +150,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
@@ -309,6 +312,48 @@ impl Entry<'_>
             Key::Index(_, _, at) | Key::Label(_, at) => at,
         }
     }
+}
+
+/// How a sub-record projects one field of the value it selects from.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a stated projection carries the entry and the type over labels
+///   the value's name is written with; a field carries nothing more.
+/// - executable: none — the record holds no form to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sub-record of a stated record and of a record no type
+///   states, each projecting every label it names.
+/// - witness: `lower::arity::tests::a_sub_record_binds_each_field_and_returns_their_record`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Projection
+{
+    /// The entry `Observed` names of the type over labels at the node, as a
+    /// selection `p.l` off a name written with that type projects it.
+    Stated(Observed, NodeIndex),
+    /// The field at the label of a record no written type states, for the
+    /// checker to read off the record type the value synthesises.
+    Field,
+}
+
+/// One field a sub-record selects: its label and how it is projected.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the label as written and its projection.
+/// - executable: none — the record holds no form to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Projection`].
+/// - witness: `lower::arity::tests::a_sub_record_binds_each_field_and_returns_their_record`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Selected
+{
+    /// The field's label.
+    pub label: FieldLabel,
+    /// How the field is projected.
+    pub projection: Projection,
 }
 
 /// The entries of an arity-shaped form, of one kind throughout.
@@ -3130,6 +3175,105 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Classify a sub-record `r.#{ .a, .b }` as the record of the fields its
+    /// labels select off `r`, each projected as the selection `r.a` is.
+    ///
+    /// # Specification
+    /// - requires: `site` is a sub-record selection; `pieces` is its reading.
+    /// - ensures: planned when the value is a name not capitalised: each label
+    ///   in written order, projected at the entry it names when the name is
+    ///   written with a type over labels, as [`Self::selection`] reads it, and
+    ///   at its label for the checker to read otherwise; the name read as a
+    ///   value under the form's frame.
+    /// - fails: the unadmitted projection for a value that is no such name, or
+    ///   a name written with a type that is not over labels; the labels' own
+    ///   refusals, a label written twice or by position among them; the
+    ///   unresolved-name refusal for a label a dependent record lacks; the
+    ///   wrong-sort refusal where no computation is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sub-record of a stated record checked at the record
+    ///   of its fields, one of a record no type states, a label the record
+    ///   lacks, and a value that is no name.
+    /// - witness: `lower::arity::tests::a_sub_record_binds_each_field_and_returns_their_record`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::SubRecord(..))))]
+    pub(super) fn sub_record(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+        let target = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::SUB_RECORD_OPEN)?;
+        let entries = self.dotted_entries(site, &mut cursor, TileName::EQUALS)?;
+        let Arranged::Labelled(entries) = arrange(site, entries)?
+        else {
+            return Err(site.fault(target.span, FormFault::MisplacedTile));
+        };
+        let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection));
+        if !matches!(self.form_at(target)?, Some((_, Former::Name)))
+            || self
+                .name_at(target)
+                .as_ref()
+                .chars()
+                .next()
+                .is_none_or(char::is_uppercase)
+        {
+            return Err(unadmitted());
+        }
+        let stated = match self.written_entries(site, target)? {
+            Maybe::Present((form, stated))
+                if stated
+                    .first()
+                    .is_some_and(|entry| matches!(entry.key, Key::Label(..))) =>
+            {
+                Some((form, stated))
+            },
+            Maybe::Present(_) => return Err(unadmitted()),
+            Maybe::Absent(_) => None,
+        };
+        let mut selected = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            let Key::Label(name, at) = entry.key
+            else {
+                return Err(site.fault(entry.keyed_at().span, FormFault::MisplacedTile));
+            };
+            let projection = match stated {
+                Some((form, ref stated)) => {
+                    let index = match Self::labelled_in(stated, name, at) {
+                        Ok((Place(index), _)) => index,
+                        Err(lacked) => match self.dependent_links(stated)? {
+                            Maybe::Absent(_) => stated.len(),
+                            Maybe::Present(_) => return Err(lacked),
+                        },
+                    };
+                    Projection::Stated(
+                        Observed {
+                            index,
+                            count: stated.len(),
+                        },
+                        form,
+                    )
+                },
+                None => Projection::Field,
+            };
+            selected.push(Selected {
+                label: FieldLabel::from(String::from(name.as_ref())),
+                projection,
+            });
+        }
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Value(frame));
+        self.plan(site, Plan::SubRecord(target.node, selected));
+
+        Ok(())
+    }
+
     /// Classify a selection by position, `e.0`, `e.1`, `e.2` and on, as a
     /// projection of the entry at that place.
     ///
@@ -4132,7 +4276,24 @@ impl<'source> Lowerer<'_, 'source>
             sink.origins.record_computation(id, origin);
             return Maybe::Present(Lowered::Computation(id));
         };
-        let record = match self.plans.get(stated) {
+        let record = self.stated_record(stated, label);
+        Self::project(held, selected, record, sink, origin).map(Lowered::Computation)
+    }
+
+    /// The label to project a selection at when the type over labels at
+    /// `stated` mints as a record: one no entry depends on, as
+    /// [`Self::binds_any`] reads a type over labels and as a model type's
+    /// bundle reads no dependence; nothing when it mints as nested pairs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stated_record<'label>(
+        &self,
+        stated: NodeIndex,
+        label: &'label FieldLabel,
+    ) -> Option<&'label FieldLabel>
+    {
+        match self.plans.get(stated) {
             Some(&Plan::RecordType(_, binders, last, _))
                 if !bool::from(self.binds_any(binders, last)) =>
             {
@@ -4142,8 +4303,90 @@ impl<'source> Lowerer<'_, 'source>
                 Some(label)
             },
             _ => None,
+        }
+    }
+
+    /// Mint a sub-record: each selected field projected off the subject in
+    /// written order and bound, the subject raised past the fields bound
+    /// before it, and the record of the bound fields returned.
+    ///
+    /// # Specification
+    /// - requires: the subject is already minted or absent; `selected` is the
+    ///   plan's fields, each labelled once.
+    /// - ensures: `bind p₀ ; … ; bind pₙ₋₁ ; return #{l₀ = xₙ₋₁, …}`, each `pᵢ`
+    ///   the projection [`Self::mint_select`] mints for a stated field, or the
+    ///   record projection at the label for a field, raised past the `i`
+    ///   binders before it, and each label bound to its own field's variable;
+    ///   every node with the written origin and the raised copies recorded;
+    ///   nothing when the subject did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::sub_record`].
+    /// - witness: `lower::arity::tests::a_sub_record_binds_each_field_and_returns_their_record`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_sub_record(
+        &self,
+        subject: NodeIndex,
+        selected: &[Selected],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let held: ValueId = match self.value_at(subject) {
+            Maybe::Present(held) => held,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        Self::project(held, selected, record, sink, origin).map(Lowered::Computation)
+        let count = selected.len();
+        let mut fields = BTreeMap::new();
+        for (place, field) in selected.iter().enumerate() {
+            let index = count.saturating_sub(place).saturating_sub(1);
+            let bound = sink.arena.value_variable(
+                Zone::Intuitionistic,
+                DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
+            );
+            sink.origins.record_value(bound, origin);
+            let _first = fields.insert(field.label.clone(), bound);
+        }
+        let record = sink.arena.value_record(fields);
+        sink.origins.record_value(record, origin);
+        let mut body = sink.arena.computation_return(record);
+        sink.origins.record_computation(body, origin);
+        let mut carried = Vec::new();
+        for (place, field) in selected.iter().enumerate().rev() {
+            let projected = match field.projection {
+                Projection::Stated(observed, stated) => {
+                    let record = self.stated_record(stated, &field.label);
+                    match Self::project(held, observed, record, sink, origin) {
+                        Maybe::Present(projected) => projected,
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    }
+                },
+                Projection::Field => {
+                    let projected = sink
+                        .arena
+                        .computation_record_projection(held, field.label.clone());
+                    sink.origins.record_computation(projected, origin);
+                    projected
+                },
+            };
+            let before = Binders::from(u32::try_from(place).unwrap_or(u32::MAX));
+            let mark = sink.arena.watermark();
+            carried.clear();
+            let raised = gandr_core_term::shift_computation_under(
+                sink.arena,
+                projected,
+                Binders::NONE,
+                before,
+            )
+            .settle_traced(sink.arena, &mut carried);
+            super::exits::record_copies(sink, mark, &carried, origin);
+            body = sink.arena.computation_bind(raised, body);
+            sink.origins.record_computation(body, origin);
+        }
+
+        Maybe::Present(Lowered::Computation(body))
     }
 
     /// Project the entry `selected` names off the record or the dependent

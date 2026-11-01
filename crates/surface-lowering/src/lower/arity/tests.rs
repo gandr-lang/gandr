@@ -198,6 +198,10 @@ fn shown(
                 Some(&Computation::Lambda(body)) => {
                     (String::from("lambda"), vec![Root::Computation(body)])
                 },
+                Some(&Computation::Bind(bound, body)) => (String::from("bind"), vec![
+                    Root::Computation(bound),
+                    Root::Computation(body),
+                ]),
                 Some(&Computation::With(ref components)) => (
                     format!("with{}", components.len()),
                     components
@@ -720,6 +724,62 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
             LoweringRefusal::OutOfFragment { .. }
         ),
         "a written type that is no record keeps the selection's refusal"
+    );
+}
+
+/// A sub-record binds each field it selects in written order, the name
+/// raised past the fields bound before it, and returns the record of the
+/// bound fields: off a stated record each field is projected as `r.l` is, and
+/// off a record no type states at its label for the checker. A value that is
+/// no name is unadmitted.
+#[test]
+fn a_sub_record_binds_each_field_and_returns_their_record()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def pick(r : #{a : Integer, b : Integer, c : Integer}) -> -F #{c : Integer, a : \
+         Integer} { r.#{.c, .a} } def outer = #{ x = 1, y = 2 } ; def free() -> -F #{y : \
+         Integer} { outer.#{.y} }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "pick"),
+        [
+            "thunk",
+            "lambda",
+            "bind",
+            "field.c",
+            "#0",
+            "bind",
+            "field.a",
+            "#1",
+            "return",
+            "record{a,c}",
+            "#0",
+            "#1"
+        ],
+        "each field is bound in written order and their record returned"
+    );
+    assert_eq!(
+        body(&arena, &module, "free"),
+        [
+            "thunk",
+            "bind",
+            "field.y",
+            "const1",
+            "return",
+            "record{y}",
+            "#0"
+        ],
+        "a record no type states is projected at the label"
+    );
+    assert!(
+        matches!(
+            refused("def p(r : #{a : Integer}) -> -F #{a : Integer} { (r).#{.a} }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a value that is no name is unadmitted"
     );
 }
 

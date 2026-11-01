@@ -135,6 +135,7 @@ const COUNTED: &[&str] = &[
     "expression projection_expression",
     "expression projection_expression name",
     "expression pure_expression",
+    "expression record_selection_expression",
     "expression redirection_operator",
     "expression resume_expression",
     "expression resume_expression name",

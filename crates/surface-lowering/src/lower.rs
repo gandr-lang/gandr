@@ -2549,6 +2549,10 @@ enum Plan
     /// type stated nowhere: projected at the label, for the checker to read
     /// off the record type the value synthesises.
     Field(NodeIndex, FieldLabel),
+    /// The record of the fields the labels select off the value at the node,
+    /// `r.#{ .a, .b }`: each field projected in turn as its selection `r.a`
+    /// is, bound, and the record of the bound fields returned.
+    SubRecord(NodeIndex, Vec<arity::Selected>),
     /// The field a label names of the data value the name at the node is,
     /// read as the case returning it from each constructor.
     Projected(native::ProjectedIndex),
@@ -12018,7 +12022,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -12028,6 +12032,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // `r.#{ .a, .b }` selects the record of `r`'s fields `a` and `b`.
+        if let [_, Piece::Tile { label, .. }, ..] = *pieces.pieces.as_slice()
+            && label == TileName::SUB_RECORD_OPEN
+        {
+            return self.sub_record(site, pieces);
+        }
         // `Family.Constructor` names a constructor of the family.
         if let Maybe::Present(constructor) = self.selected_constructor(site, site.at)? {
             self.constructed_at(site.at.span, constructor);
@@ -16081,7 +16091,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ports(..)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -16408,6 +16418,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_computation(id, origin);
                 Lowered::Computation(id)
             }),
+            Plan::SubRecord(subject, ref selected) => {
+                self.mint_sub_record(subject, selected, sink, origin)
+            },
             Plan::Projected(projected) => self.mint_projected(projected, sink, origin),
             Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             Plan::Loop(body) => self.mint_loop(body, sink, origin),
@@ -17579,6 +17592,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Observe(..)
             | Plan::Select(..)
             | Plan::Field(..)
+            | Plan::SubRecord(..)
             | Plan::Projected(_)
             | Plan::Block(_)
             | Plan::Loop(_)

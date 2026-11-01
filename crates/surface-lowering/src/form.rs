@@ -535,6 +535,8 @@ impl TileName
     pub const SEQUENCE_OPEN: Self = Self("#[");
     /// The index selector's opener `.#[`, closed by `]`.
     pub const SELECT_OPEN: Self = Self(".#[");
+    /// The sub-record selector's opener `.#{`, closed by `}`.
+    pub const SUB_RECORD_OPEN: Self = Self(".#{");
     /// A brace closer `}`.
     pub const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
@@ -1175,7 +1177,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 134_usize] = [
+pub const FORMERS: [(&str, Former); 135_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1214,6 +1216,7 @@ pub const FORMERS: [(&str, Former); 134_usize] = [
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),
+    ("record_selection_expression", Former::Projection),
     ("primitive_type", Former::TypeHead),
     ("type_identifier", Former::TypeHead),
     ("type_variable", Former::TypeHead),
