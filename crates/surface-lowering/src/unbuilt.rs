@@ -203,8 +203,6 @@ pub enum Unbuilt
     TypeGrade,
     /// The type abstraction `fn [T] { … }`.
     TypeAbstraction,
-    /// The statement `val p = e ;`.
-    Val,
     /// An infix form the lowering does not read: an operator outside the
     /// prelude's vocabulary, or a word `g ∷ w` whose `g` is neither a loop
     /// nor `back` of one; a `g` that names nothing is unresolved.
@@ -278,7 +276,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 83_usize] = [
+    pub const ALL: [Self; 82_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -334,7 +332,6 @@ impl Unbuilt
         Self::ThunkGrade,
         Self::TypeGrade,
         Self::TypeAbstraction,
-        Self::Val,
         Self::InfixForm,
         Self::PrefixOperator,
         Self::EmptyMatch,
@@ -441,7 +438,6 @@ impl Unbuilt
             Self::ThunkGrade => "grade.value",
             Self::TypeGrade => "grade.value_type",
             Self::TypeAbstraction => "type_abstraction",
-            Self::Val => "val_statement",
             Self::InfixForm => "binary_expression",
             Self::PrefixOperator => "unary_expression",
             Self::EmptyMatch => "match_expression",
@@ -548,7 +544,6 @@ impl Unbuilt
             Self::Interpolation => TrackingIssue::INTERPOLATION,
             Self::TypeGrade => TrackingIssue::TYPE_GRADE,
             Self::TypeAbstraction => TrackingIssue::TYPE_ABSTRACTION,
-            Self::Val => TrackingIssue::VAL,
             Self::StatedType | Self::MethodCall => TrackingIssue::UNCARRIED_DECLARATION,
             Self::Presentation => TrackingIssue::PRESENTATION,
             Self::RecordedMove | Self::DialogueMove => TrackingIssue::MOVES,

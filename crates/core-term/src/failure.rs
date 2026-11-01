@@ -182,8 +182,6 @@ impl TrackingIssue
     pub const TYPE_GRADE: Self = Self(2650);
     /// The type abstraction `fn [T] { … }`.
     pub const TYPE_ABSTRACTION: Self = Self(2651);
-    /// The statement `val p = e ;`.
-    pub const VAL: Self = Self(2652);
     /// A stated type or a method call whose declaration the collection does
     /// not carry.
     pub const UNCARRIED_DECLARATION: Self = Self(2654);

@@ -2545,7 +2545,7 @@ fn session_stmt(keyword: TileLabel) -> Regex
 fn statement_alt() -> Regex
 {
     alt([
-        val_statement(),
+        let_statement(),
         bind_statement(),
         unpack_statement(),
         seq([
@@ -2619,12 +2619,13 @@ fn hold_statement() -> Regex
     ])
 }
 
-/// Build a variable-binding statement: `val PAT = E ;`.
+/// Build a binding statement: `let PAT = E ;`, or `let PAT : T = E ;` with
+/// the bound value's type stated.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a val keyword and pattern hole, then an equals-delimited
-///   expression and semicolon.
+/// - ensures: a let keyword and pattern hole, an optional colon-led type, then
+///   an equals-delimited expression and semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2634,12 +2635,13 @@ fn hold_statement() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "val")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
-fn val_statement() -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "let")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+fn let_statement() -> Regex
 {
     seq([
-        t(TileLabel("val")),
+        t(TileLabel("let")),
         h(Sort::Pattern),
+        opt(seq([t(TileLabel(":")), h(Sort::Type)])),
         t(TileLabel("=")),
         h(Sort::Expression),
         t(TileLabel(";")),
@@ -4184,7 +4186,7 @@ fn primary_expressions(
     ));
     let mut block_rule = r(RuleName("block"), Provenance("block"), s, p, block());
     for statement in [
-        "val_statement",
+        "let_statement",
         "bind_statement",
         "unpack_statement",
         "leta_statement",
@@ -4208,7 +4210,7 @@ fn primary_expressions(
     // after it — `(` versus `[`. Declaring them as two rules gives `fn` two molds
     // that tie on the molder's local key and fire a lookahead window per `fn`;
     // they are factored into one form whose tail alternates on that discriminating
-    // tile (the `def` / `val` idiom), so `fn` owns one mold and the choice is
+    // tile (the `def` / `let` idiom), so `fn` owns one mold and the choice is
     // locally decidable. The folded kind is an adaptation for the parity inventory.
     let mut lambda = r(
         RuleName("lambda_expression"),

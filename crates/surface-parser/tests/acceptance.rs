@@ -404,15 +404,19 @@ fn command_substitution_molds_with_zero_obligations() -> Result<(), Box<dyn Erro
 }
 
 #[test]
-fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
+fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let renamed = ["def use() -> -F Integer { val value = expression; pure value }"];
-    for src in renamed {
+    let written = [
+        "def use() -> -F Integer { let value = expression; pure value }",
+        "def use() -> -F Integer { let value : Integer = expression; pure value }",
+        "def use() -> -F Integer { let (a, b) = expression; pure a }",
+    ];
+    for src in written {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
             bool::from(result.is_clean()),
-            "`val PAT = E;` molds clean in {src:?}; obligations: {:?}",
+            "`let PAT (: A)? = E;` molds clean in {src:?}; obligations: {:?}",
             result
                 .obligations()
                 .iter()
@@ -421,10 +425,13 @@ fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
         );
     }
 
-    let retired = parse(pbg, SourceText::from("let value = expression;"))?;
+    let retired = parse(
+        pbg,
+        SourceText::from("def use() -> -F Integer { val value = expression; pure value }"),
+    )?;
     assert!(
         !bool::from(retired.is_clean()),
-        "the retired `let PAT = E;` spelling must require repair"
+        "the retired `val PAT = E;` spelling must require repair"
     );
     Ok(())
 }
@@ -545,14 +552,6 @@ fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
                 .collect::<Vec<_>>()
         );
     }
-
-    // The annotation rides the computation bind alone: the value bind keeps the
-    // unannotated spelling the binder lane landed.
-    let rejected = parse(pbg, SourceText::from("val value : Integer = expression;"))?;
-    assert!(
-        !bool::from(rejected.is_clean()),
-        "the value bind takes no annotation slot"
-    );
     Ok(())
 }
 
@@ -799,7 +798,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def sort = 1;",
         "def node = 1;",
         "def feed = 1;",
-        "def use() -> -F Integer { val node = 1; pure node }",
+        "def use() -> -F Integer { let node = 1; pure node }",
         "def project(sort: Integer) -> -F Integer { return sort }",
         "def record = #{ node = 1, feed = 2 };",
     ];
@@ -2448,7 +2447,7 @@ fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn 
             "def g() -> -F Integer { run value <- action; pure value }",
             [false].as_slice(),
         ),
-        ("def g() -> -F Integer { val v = run f(x); pure v }", &[
+        ("def g() -> -F Integer { let v = run f(x); pure v }", &[
             true,
         ]),
         (

@@ -1,6 +1,15 @@
 /// `block`: a block: statements, then the computation it ends in.
 @[ checks ]
 def answer() -> -F Integer {
-  run n <- { pure 41 };
-  return n + 1
+  run n <- { pure 40 };
+  let one = 1;
+  let m : Integer = n + one;
+  return m + one
+}
+
+/// A value a `let` names is the value itself where the name is read.
+@[ checks ]
+def three() -> -F Path(Integer, 3, 3) {
+  let x = 3;
+  return here(x)
 }

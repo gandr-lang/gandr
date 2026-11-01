@@ -159,11 +159,11 @@ const KEYWORDS: &[&str] = &[
     "break", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else",
     "end", "ext", "extern", "face", "feed", "flow", "fn", "for", "force", "fork", "from", "glob",
     "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "law",
-    "leta", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers",
-    "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure", "rec",
-    "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send", "shape",
-    "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
-    "unwind", "val", "via", "where", "while", "with", "world",
+    "let", "leta", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer",
+    "offers", "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure",
+    "rec", "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send",
+    "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
+    "unwind", "via", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -1117,7 +1117,7 @@ mod tests
         let table = RoleTable::build(&pbg).expect("the role table builds");
         let classes: &[(&str, &str, HlRole)] = &[
             ("def", "def_value", HlRole::Keyword),
-            ("val", "block", HlRole::Keyword),
+            ("let", "block", HlRole::Keyword),
             ("->", "function_type", HlRole::Operator),
             ("<>", "redirection_operator", HlRole::Operator),
             (";", "list_operator", HlRole::Operator),

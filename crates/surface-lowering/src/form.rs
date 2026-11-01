@@ -206,7 +206,7 @@ impl FormName
         Self::ATTRIBUTE,
         Self::DECLARATION,
         Self::BIND_STATEMENT,
-        Self::VAL_STATEMENT,
+        Self::LET_STATEMENT,
         Self::UNPACK_STATEMENT,
         Self::LETA_STATEMENT,
         Self::HOLD_STATEMENT,
@@ -341,8 +341,9 @@ impl FormName
     pub const UNIT: Self = Self("unit");
     /// The statement `unpack … = e ;`, inlined into its block.
     pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
-    /// The statement `val p = e ;`, inlined into its block.
-    pub const VAL_STATEMENT: Self = Self("val_statement");
+    /// The statement `let p = e ;` or `let p : A = e ;`, inlined into its
+    /// block.
+    pub const LET_STATEMENT: Self = Self("let_statement");
     /// The data declaration `data T(a : A) : U where { … }`.
     pub const DATA: Self = Self("data_declaration");
     /// The world declaration `world w ;`.
@@ -707,8 +708,8 @@ impl TileName
     /// The mode word `consumed` of a method's receiver, which the call gives
     /// up.
     pub const CONSUMED: Self = Self("consumed");
-    /// The keyword `val`, opening a statement.
-    pub const VAL: Self = Self("val");
+    /// The keyword `let`, opening a statement.
+    pub const LET: Self = Self("let");
     /// The match keyword `match`.
     pub const MATCH: Self = Self("match");
     /// A constructor name written as one of a form's own tiles: a data
