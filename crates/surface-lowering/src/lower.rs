@@ -15500,6 +15500,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .filter(|written| owns(&written.node))
                     .copied(),
             )
+            // A type a call's omitted model slot fixes a sort to is read when
+            // the call files its slot, which the sweep below may reach first
+            // (#4403).
+            .chain(
+                self.planned_models
+                    .iter()
+                    .filter(|&(call, _)| owns(call))
+                    .flat_map(|(_, planned)| {
+                        planned
+                            .iter()
+                            .flat_map(|slot| slot.fixed.iter().map(|&(_, stated)| stated))
+                    }),
+            )
             .collect();
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
