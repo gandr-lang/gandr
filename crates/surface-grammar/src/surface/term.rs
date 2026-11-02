@@ -3862,10 +3862,10 @@ fn member_sep() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends plain definitions, attributed definitions and type
-///   members, a plain type member, a nested module, a model include, a law's
-///   admission and an inner attribute block, all at the module-member sort with
-///   module provenance.
+/// - ensures: appends plain definitions, recursive or regular as at the top
+///   level, attributed definitions and type members, a plain type member, a
+///   nested module, a model include, a law's admission and an inner attribute
+///   block, all at the module-member sort with module provenance.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3896,7 +3896,7 @@ fn module_members(
         Provenance("module_declaration"),
         s,
         p,
-        seq([t(TileLabel("def")), regular_def_tail()]),
+        def_family(),
     ));
     out.push(r(
         RuleName("attributed_module_member"),
@@ -3967,7 +3967,8 @@ fn module_members(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one mandatory attribute block and any following attribute blocks
-///   before a def and its regular tail, a type member or a law's admission.
+///   before a def and its recursive or regular tail, a type member or a law's
+///   admission.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3983,11 +3984,7 @@ fn attributed_module_member() -> Regex
     seq([
         attr_block_inline(),
         repeat(attr_block_inline()),
-        alt([
-            seq([t(TileLabel("def")), regular_def_tail()]),
-            type_member_tail(),
-            law_admission_tail(),
-        ]),
+        alt([def_family(), type_member_tail(), law_admission_tail()]),
     ])
 }
 
