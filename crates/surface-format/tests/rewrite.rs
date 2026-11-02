@@ -855,6 +855,39 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
     );
 }
 
+/// A parenthesised list inside a level-two shape, `chain(m, (a₁, …, aₘ))`,
+/// is its column heights, not a tuple: the explicit form keeps the
+/// whisker's shape and withdraws nothing, while a tuple read as a value
+/// beside it is written `#{…}` (#4475).
+#[test]
+fn a_level_two_shape_s_heights_are_not_a_tuple_4475()
+{
+    let grammar = grammar();
+    let source = "def w(a : Type, x : a, y : a, z : a, fm : Path(a, x, y), fp : Path(a, x, y), fa \
+                  : Path(Path(a, x, y), fm, fp), g : Path(a, y, z)) -> Path(a, x, z) {\n  \
+                  compose[5, 11](chain(2, (1, 0)), (fa, g))\n}\n\ndef pair = (1, 0) ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(
+        formatted.withdrawn(),
+        &[],
+        "no declaration keeps its spelling"
+    );
+    let text = formatted.into_text();
+    assert!(
+        text.contains("compose[5, 11](chain(2, (1, 0)), (fa, g))"),
+        "the heights stay a list: {text}"
+    );
+    assert!(
+        text.contains("def pair = #{1, 0};"),
+        "a tuple is braced: {text}"
+    );
+}
+
 /// A composite of two flows is no path composite: it has no transport to
 /// write, so the explicit form keeps its `then`.
 #[test]
