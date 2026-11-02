@@ -120,6 +120,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: the directed-univalence design (§ The surface family) — `flow` between two signatures, and an import's `via`.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — an import names its translation.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a renaming is written as a definition by one name.
+- `vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7` — lineage: the closing-class derivation design — the closing class is the form's, and a completion ending at a block hole ends at the block's `}`.
 
 ## License
 

@@ -19,6 +19,7 @@ use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Spelling as GrammarSpelling;
 use gandr_surface_grammar::UNRESTRICTED;
+use gandr_surface_lowering::written_children;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -1498,7 +1499,13 @@ impl<'source> Respelling<'_, 'source>
         let leaf = self.leaf(node.span())?;
         let role = match node.label() {
             NodeLabel::Space => Role::Comment,
-            NodeLabel::Tile(_) if self.rule(at) == Some(parent) => Role::Own(leaf.text),
+            // A shared block's tiles stand among its host's parts only, read
+            // through `written_children`, and are the host's own there.
+            NodeLabel::Tile(_)
+                if self.rule(at) == Some(parent) || self.rule(at) == Some(STATEMENT_BLOCK) =>
+            {
+                Role::Own(leaf.text)
+            },
             NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::Tile(_)
@@ -1509,7 +1516,9 @@ impl<'source> Respelling<'_, 'source>
         Some((role, Vec::from([leaf]), leaf.span))
     }
 
-    /// The parts of the form at `at`, in source order, and its extent.
+    /// The parts of the form at `at`, in source order, and its extent: its
+    /// written children, a shared block's braces and statements standing in
+    /// the block's place as the host once held them inline.
     ///
     /// # Specification
     /// trivial.
@@ -1521,7 +1530,7 @@ impl<'source> Respelling<'_, 'source>
         let rule = self.rule(at).unwrap_or(MoldName(""));
         let mut parts: Vec<Part<'source>> = Vec::new();
         let mut extent: Option<ByteSpan> = None;
-        for child in self.tree.children(at) {
+        for child in written_children(self.grammar, self.tree, at) {
             let Some((role, leaves, span)) = self.part(rule, child)
             else {
                 continue;
@@ -3296,7 +3305,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 34] = [
+const RULES: [MoldName; 35] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3331,7 +3340,12 @@ const RULES: [MoldName; 34] = [
     MoldName("return_expression"),
     MoldName("thunk_expression"),
     MoldName("become_expression"),
+    STATEMENT_BLOCK,
 ];
+
+/// The block a form reaches through a `Sort::Block` hole, read among its
+/// host's parts.
+const STATEMENT_BLOCK: MoldName = MoldName("statement_block");
 
 /// `#{`.
 const OPEN_TELESCOPE: Spelling = Spelling("#{");

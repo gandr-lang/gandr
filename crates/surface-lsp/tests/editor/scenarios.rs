@@ -75,6 +75,7 @@ use super::typist::Stride;
 /// than counted silently, and so does a row whose kind the corpus no longer
 /// has.
 const COUNTED: &[&str] = &[
+    "block block",
     "expression abort_expression",
     "expression abort_expression name",
     "expression access_expression",

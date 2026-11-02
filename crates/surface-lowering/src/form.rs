@@ -1807,7 +1807,7 @@ fn rule_name<'source>(
 /// A rule's identity: its name, unique in its grammar.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct RuleIdentity(&'static str);
+pub struct RuleIdentity(&'static str);
 
 /// What holds a node's children: a form of one rule, or the root.
 ///
@@ -1825,7 +1825,7 @@ struct RuleIdentity(&'static str);
 ///   foreign number tile; its root reads the declaration as an operand.
 /// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Holder
+pub enum Holder
 {
     /// A form, whose own tiles are the tiles of this rule.
     Rule(RuleIdentity),
@@ -2063,6 +2063,76 @@ impl Default for Pieces
     }
 }
 
+/// The rule of the block a form reaches through a `Sort::Block` hole.
+const STATEMENT_BLOCK: RuleIdentity = RuleIdentity("statement_block");
+
+/// The children of the node at `position` a form reads as its own, each
+/// beside the holder whose tiles it may be.
+///
+/// A block after a form's tile is a `statement_block` form of its own in the
+/// tree, so the molder ranks one block's candidates for every host. Every
+/// reader of the host reads it as the braces the host once held inline: the
+/// block's children stand in its place, its tiles held by its own rule.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the children of `position` in order, each beside
+///   [`Holder::Root`], save a `statement_block` form, whose own children stand
+///   in its place in order, each beside that rule's holder.
+/// - panics: none.
+/// - executable: none — the iterator is lazy, and [`read_pieces`] checks the
+///   pieces it reads from it against the same expansion.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thunk's block reads as its braces, statements and last
+///   computation; a block expression stays one operand.
+/// - witness: `form::tests::a_shared_block_reads_as_its_host_s_braces`
+pub fn own_children<'tree>(
+    pbg: &'tree Pbg,
+    tree: &'tree SyntaxTree<'_>,
+    position: NodeIndex,
+) -> impl Iterator<Item = (NodeIndex, Holder)> + 'tree
+{
+    tree.children(position).flat_map(move |child| {
+        let block = tree.node(child).is_some_and(|held| {
+            matches!(held.label(), NodeLabel::Meld(mold)
+                if pbg.rule_of(mold).is_ok_and(|rule| RuleIdentity(rule.name) == STATEMENT_BLOCK))
+        });
+        core::iter::once((child, Holder::Root))
+            .filter(move |_| !block)
+            .chain(
+                tree.children(child)
+                    .take_while(move |_| block)
+                    .map(|inner| (inner, Holder::Rule(STATEMENT_BLOCK))),
+            )
+    })
+}
+
+/// The children of the node at `position` a reader takes as the form's own:
+/// its children in order, a shared block's children in the block's place.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the children [`own_children`] yields, in its order, without their
+///   holders.
+/// - panics: none.
+/// - executable: none — the iterator is lazy, and the clause restates
+///   [`own_children`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`own_children`], through the outline's name of a root
+///   thunk.
+/// - witness: `form::tests::a_shared_block_reads_as_its_host_s_braces`
+#[inline]
+pub fn written_children<'tree>(
+    pbg: &'tree Pbg,
+    tree: &'tree SyntaxTree<'_>,
+    position: NodeIndex,
+) -> impl Iterator<Item = NodeIndex> + 'tree
+{
+    own_children(pbg, tree, position).map(|(child, _)| child)
+}
+
 /// Read the children of the node at `position` against its own rule, into
 /// `read`.
 ///
@@ -2071,17 +2141,19 @@ impl Default for Pieces
 /// - ensures: `read` is refilled from nothing: a one-tile form reads as itself,
 ///   its one own tile; a form of several tiles reads each child tile of its own
 ///   rule as an own tile and every other written child as an operand, in child
-///   order; the root reads every written child as an operand; layout and
-///   documentation are dropped everywhere, and the first grout or minted close
-///   among the children is reported beside the pieces rather than read as one.
-///   When that first repair is a minted close of a form of several tiles and a
-///   form inside it holds a repair too, the deepest such repair — the first in
-///   source order among equals — is reported instead, naming the form that
-///   holds it: the outer close follows from the inner form's. A minted close or
-///   a ghost end, the form's own or the inner one reported, gives way to the
-///   point where its form first leaves its rule's shape when that point comes
-///   before it ([`earliest`]). Reading layout, documentation or a repair node
-///   itself leaves both fields empty.
+///   order, save a child `statement_block`, whose children read in its place
+///   with its tiles as own tiles ([`own_children`]); the root reads every
+///   written child as an operand; layout and documentation are dropped
+///   everywhere, and the first grout or minted close among the children is
+///   reported beside the pieces rather than read as one. When that first repair
+///   is a minted close of a form of several tiles and a form inside it holds a
+///   repair too, the deepest such repair — the first in source order among
+///   equals — is reported instead, naming the form that holds it: the outer
+///   close follows from the inner form's. A minted close or a ghost end, the
+///   form's own or the inner one reported, gives way to the point where its
+///   form first leaves its rule's shape when that point comes before it
+///   ([`earliest`]). Reading layout, documentation or a repair node itself
+///   leaves both fields empty.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2139,7 +2211,7 @@ impl Default for Pieces
                         && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
                 },
                 | NodeLabel::Wald | NodeLabel::Meld(_) => {
-                    let written = tree.children(position).filter_map(|child| {
+                    let written = own_children(pbg, tree, position).filter_map(|(child, _)| {
                         let held = tree.node(child)?;
                         match held.label() {
                             | NodeLabel::Space
@@ -2149,9 +2221,8 @@ impl Default for Pieces
                             | _ => Some(Placed::of(child, held)),
                         }
                     });
-                    let first_repair = tree
-                        .children(position)
-                        .find_map(|child| {
+                    let first_repair = own_children(pbg, tree, position)
+                        .find_map(|(child, _)| {
                             let held = tree.node(child)?;
                             let repair = match held.label() {
                                 | NodeLabel::Grout { shape, .. } => {
@@ -2237,12 +2308,16 @@ pub fn read_pieces<'source>(
             return Ok(());
         },
     };
-    for child in tree.children(position) {
+    for (child, holder) in own_children(pbg, tree, position) {
         let Some(held) = tree.node(child)
         else {
             continue;
         };
         let placed = Placed::of(child, held);
+        let holder = match (own, holder) {
+            (Holder::Rule(_), Holder::Rule(block)) => Holder::Rule(block),
+            (_, Holder::Root) | (Holder::Root, _) => own,
+        };
         let piece = match held.label() {
             NodeLabel::Space | NodeLabel::Doc => continue,
             NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
@@ -2251,7 +2326,7 @@ pub fn read_pieces<'source>(
                 }
                 continue;
             },
-            NodeLabel::Tile(mold) => own_tile(pbg, held, own, mold, placed)?,
+            NodeLabel::Tile(mold) => own_tile(pbg, held, holder, mold, placed)?,
             NodeLabel::Meld(_) | NodeLabel::Wald => Piece::Operand(placed),
         };
         read.pieces.push(piece);
@@ -2320,7 +2395,7 @@ pub fn stop_of(
     ) {
         return absent;
     }
-    let first = tree.children(position).find_map(|child| {
+    let first = own_children(pbg, tree, position).find_map(|(child, _)| {
         let held = tree.node(child)?;
         match held.label() {
             NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
@@ -2405,8 +2480,12 @@ fn unended(
         Some(NodeLabel::Meld(mold)) => pbg.rule_of(mold).ok().map(|rule| rule.name),
         _ => None,
     };
-    let own = |mold| pbg.rule_of(mold).is_ok_and(|held| Some(held.name) == rule);
-    for child in tree.children(form) {
+    let own = |mold, holder: Holder| {
+        pbg.rule_of(mold).is_ok_and(|held| {
+            Some(held.name) == rule || holder == Holder::Rule(RuleIdentity(held.name))
+        })
+    };
+    for (child, holder) in own_children(pbg, tree, form) {
         let Some(held) = tree.node(child)
         else {
             continue;
@@ -2414,16 +2493,18 @@ fn unended(
         let span = held.span();
         if let NodeLabel::Tile(mold) = held.label()
             && span.start() >= point
-            && own(mold)
+            && own(mold, holder)
             && matches!(after, Maybe::Absent(_))
         {
             after = Maybe::Present(mold);
         }
         match held.label() {
-            NodeLabel::Tile(mold) if span.end() == point && span.start() < point && own(mold) => {
+            NodeLabel::Tile(mold)
+                if span.end() == point && span.start() < point && own(mold, holder) =>
+            {
                 frontier = Maybe::Present((mold, span));
             },
-            NodeLabel::Tile(mold) if span.end() < point && own(mold) => {
+            NodeLabel::Tile(mold) if span.end() < point && own(mold, holder) => {
                 before = Maybe::Present(mold);
             },
             NodeLabel::Tile(_) | NodeLabel::Meld(_) | NodeLabel::Wald
@@ -2571,7 +2652,7 @@ fn nested_repair<'source>(
         if !matches!(holder.label(), NodeLabel::Meld(_)) {
             continue;
         }
-        for child in tree.children(form) {
+        for (child, _) in own_children(pbg, tree, form) {
             let Some(held) = tree.node(child)
             else {
                 continue;
@@ -2734,11 +2815,11 @@ fn diverged(
     else {
         return absent;
     };
-    let own_tile = |held: &Node| match held.label() {
+    let own_tile = |held: &Node, holder: Holder| match held.label() {
         NodeLabel::Tile(child)
-            if pbg
-                .rule_of(child)
-                .is_ok_and(|held_rule| held_rule.name == rule.name) =>
+            if pbg.rule_of(child).is_ok_and(|held_rule| {
+                held_rule.name == rule.name || holder == Holder::Rule(RuleIdentity(held_rule.name))
+            }) =>
         {
             Some(child)
         },
@@ -2756,8 +2837,8 @@ fn diverged(
     let mut own: Maybe<MoldId, nested::Absent> = Maybe::Absent(nested::Absent::Own);
     let mut operand_before = false;
     let mut end = ByteOffset::from(0_usize);
-    let mut children = tree.children(form);
-    while let Some(child) = children.next() {
+    let mut children = own_children(pbg, tree, form);
+    while let Some((child, holder)) = children.next() {
         let Some(held) = tree.node(child)
         else {
             continue;
@@ -2771,7 +2852,7 @@ fn diverged(
         ) {
             continue;
         }
-        if let Some(tile) = own_tile(held) {
+        if let Some(tile) = own_tile(held, holder) {
             own = Maybe::Present(tile);
             operand_before = false;
         }
@@ -2787,7 +2868,11 @@ fn diverged(
                     at: ByteSpan::new(end, end).unwrap_or_else(|_| held.span()),
                     ending: next_tile(pbg, own),
                     closing: operand_before
-                        && !children.any(|later| tree.node(later).and_then(own_tile).is_some()),
+                        && !children.any(|(later, holder)| {
+                            tree.node(later)
+                                .and_then(|held| own_tile(held, holder))
+                                .is_some()
+                        }),
                 });
             }
             operand_before = true;
@@ -4087,6 +4172,41 @@ mod tests
         assert!(
             matches!(read.repair, Maybe::Absent(_)),
             "a clean form carries no repair"
+        );
+    }
+
+    #[test]
+    fn a_shared_block_reads_as_its_host_s_braces()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let tree = parsed(&pbg, SourceText::from("def x = thunk { 3 } ;"));
+        let thunk = first_declaration(&pbg, &tree)
+            .pieces
+            .into_iter()
+            .find_map(|piece| match piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            })
+            .unwrap();
+        let mut read = Pieces::new();
+        read_pieces(&pbg, &tree, thunk.node, &mut read).unwrap();
+        assert_eq!(
+            sketch(&read),
+            [
+                Sketch::Tile(TileName::THUNK, at(8_usize, 13_usize)),
+                Sketch::Tile(TileName::BRACE_OPEN, at(14_usize, 15_usize)),
+                Sketch::Operand(at(16_usize, 17_usize)),
+                Sketch::Tile(TileName::BRACE_CLOSE, at(18_usize, 19_usize)),
+            ],
+            "the block after the keyword reads as the thunk's own braces around its computation"
+        );
+
+        let tree = parsed(&pbg, SourceText::from("def x = { 3 } ;"));
+        assert_eq!(
+            sketch(&first_declaration(&pbg, &tree)).get(3_usize),
+            Some(&Sketch::Operand(at(8_usize, 13_usize))),
+            "a block written where a value stands stays one operand of its declaration"
         );
     }
 

@@ -274,7 +274,7 @@ impl Names
 /// - hypothesis: L3 — the slot witness offers a family in a type, a constructor
 ///   in a pattern and a function in a body, each nowhere else.
 /// - witness: `complete::tests::each_slot_offers_its_own_names`
-#[spec(ensures: |ret| ret.is_none() || !matches!(category, Category::Item | Category::Member | Category::Instantiation))]
+#[spec(ensures: |ret| ret.is_none() || !matches!(category, Category::Item | Category::Member | Category::Instantiation | Category::Block))]
 const fn offered_as(
     category: Category,
     kind: NameKind,

@@ -68,6 +68,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Sort;
 use gandr_surface_lowering::Visibility;
+use gandr_surface_lowering::written_children;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
@@ -210,7 +211,7 @@ pub fn declarations(
         }
         else {
             if let Some(&covered) = roots.get(&at)
-                && let Some(symbol) = root_symbol(tree, index, at, covered)
+                && let Some(symbol) = root_symbol(grammar, tree, index, at, covered)
             {
                 found.push((Declarer::Root(at), symbol));
             }
@@ -411,6 +412,7 @@ fn declares(
 /// # Specification
 /// trivial.
 fn root_symbol(
+    grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
     at: NodeIndex,
@@ -418,7 +420,7 @@ fn root_symbol(
 ) -> Option<DocumentSymbol>
 {
     Some(DocumentSymbol {
-        name: root_name(tree, at)?,
+        name: root_name(grammar, tree, at)?,
         kind: SymbolKind::EVENT,
         range: range_of(index, rooted.span)?,
         selection_range: range_of(index, tree.node(at)?.span())?,
@@ -430,18 +432,20 @@ fn root_symbol(
 }
 
 /// The name of the root form at `at`: what it writes up to its first own
-/// `{`, then `{ … }`, or all it writes without a final `;` when it opens no
-/// brace, its layout collapsed; none when that is empty.
+/// `{`, a shared block's among them, then `{ … }`, or all it writes without a
+/// final `;` when it opens no brace, its layout collapsed; none when that is
+/// empty.
 ///
 /// # Specification
 /// trivial.
 fn root_name(
+    grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
 ) -> Option<String>
 {
     let span = tree.node(at)?.span();
-    let brace = tree.children(at).find_map(|child| {
+    let brace = written_children(grammar, tree, at).find_map(|child| {
         let node = tree.node(child)?;
         (matches!(node.label(), NodeLabel::Tile(_))
             && tree.fragment(child).map(<&str>::from) == Some("{"))

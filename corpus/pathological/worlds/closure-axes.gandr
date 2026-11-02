@@ -91,7 +91,7 @@ def regioned() -> () => Integer {
 @[ entry((operator, seat)) ]
 def graded() -> () => Integer {
   migrate [seat] {
-    hold [1] c = 0;
+    hold[1] c = 0;
     pure thunk { pure c + c }
   }
 }

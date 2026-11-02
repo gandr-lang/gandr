@@ -427,6 +427,7 @@ pub use crate::form::Repair;
 pub use crate::form::StrayKeyword;
 pub use crate::form::TileName;
 pub use crate::form::former_of;
+pub use crate::form::written_children;
 pub use crate::import::ImportBinding;
 pub use crate::import::ImportDeclaration;
 pub use crate::import::ImportIndex;

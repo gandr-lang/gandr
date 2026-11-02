@@ -294,6 +294,8 @@ pub enum Category
     Member,
     /// A resident of an instantiation slot.
     Instantiation,
+    /// A braced block of statements after a form's tile.
+    Block,
 }
 
 impl Category
@@ -333,6 +335,7 @@ impl Category
             Sort::Item => Self::Item,
             Sort::ModuleMember => Self::Member,
             Sort::Instantiation => Self::Instantiation,
+            Sort::Block => Self::Block,
         }
     }
 
@@ -369,6 +372,7 @@ impl Category
             (Sort::Item, _) => Self::Item,
             (Sort::ModuleMember, _) => Self::Member,
             (Sort::Instantiation, _) => Self::Instantiation,
+            (Sort::Block, _) => Self::Block,
         }
     }
 
@@ -385,6 +389,7 @@ impl Category
             Self::Item => Sort::Item,
             Self::Member => Sort::ModuleMember,
             Self::Instantiation => Sort::Instantiation,
+            Self::Block => Sort::Block,
         }
     }
 
@@ -402,6 +407,7 @@ impl Category
             Self::Item => "item",
             Self::Member => "member",
             Self::Instantiation => "instantiation",
+            Self::Block => "block",
         })
     }
 }
@@ -1108,14 +1114,17 @@ fn whole_fit(
 ///
 /// # Specification
 /// - ensures: each tile as its label and each hole as [`Category::of_hole`]
-///   names it, in order; a tile of an unknown mold is left out.
+///   names it, in order, save a block hole, which writes its braces around a
+///   computation hole as the block itself does; a tile of an unknown mold is
+///   left out.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the category witness asserts each placeholder; naming a
-///   hole by its sort alone changes them.
+///   hole by its sort alone changes them, and a block hole written bare changes
+///   the braces a thunk's material shows.
 /// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
-#[spec(ensures: |ret| ret.len() <= steps.len()
+#[spec(ensures: |ret| ret.len() <= steps.len().saturating_mul(3)
     && ret.iter().filter(|part| matches!(part, Part::Hole(_))).count()
         == steps.iter().filter(|step| matches!(step, Step::Hole { .. })).count())]
 fn parts(
@@ -1123,16 +1132,27 @@ fn parts(
     steps: &[Step],
 ) -> Vec<Part>
 {
-    steps
-        .iter()
-        .filter_map(|&step| match step {
-            Step::Tile(mold) => grammar
-                .mold(mold)
-                .ok()
-                .map(|def| Part::Tile(TileLabel(def.label))),
-            Step::Hole { sort, after } => Some(Part::Hole(Category::of_hole(grammar, sort, after))),
-        })
-        .collect()
+    let mut out = Vec::with_capacity(steps.len());
+    for &step in steps {
+        match step {
+            Step::Tile(mold) => {
+                if let Ok(def) = grammar.mold(mold) {
+                    out.push(Part::Tile(TileLabel(def.label)));
+                }
+            },
+            Step::Hole {
+                sort: Sort::Block, ..
+            } => out.extend([
+                Part::Tile(TileLabel("{")),
+                Part::Hole(Category::Computation),
+                Part::Tile(TileLabel("}")),
+            ]),
+            Step::Hole { sort, after } => {
+                out.push(Part::Hole(Category::of_hole(grammar, sort, after)));
+            },
+        }
+    }
+    out
 }
 
 /// Whether the tile `tile` is typed as its own text: its label read back

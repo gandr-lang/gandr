@@ -112,9 +112,10 @@ use crate::model::Sym;
 /// # Specification
 /// - requires: nothing.
 /// - ensures: item, declaration, attribute, extern, module member, pattern,
-///   instantiation, expression and lexical forms, in that order, over
+///   instantiation, expression, lexical and block forms, in that order, over
 ///   [`Sort::Item`], [`Sort::ModuleMember`], [`Sort::Pattern`],
-///   [`Sort::Expression`], [`Sort::Type`] and [`Sort::Instantiation`] holes.
+///   [`Sort::Expression`], [`Sort::Type`], [`Sort::Instantiation`] and
+///   [`Sort::Block`] holes.
 /// - fails: a group `precs` does not hold.
 /// - panics: none.
 ///
@@ -130,7 +131,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 111 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 101..=102 => Sort::Pattern, 32..=36 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 112 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 101..=102 => Sort::Pattern, 32..=36 => Sort::Instantiation, 111 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -174,6 +175,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
         atom,
     });
     lexical(&mut out, pat_atom, atom);
+    out.push(statement_block(atom));
     Ok(out)
 }
 
@@ -2217,7 +2219,9 @@ fn expressions(
     // A view-answering method's call lends its view over a block, `s.first()
     // as w { … }`: postfix, so the block takes the whole call. The lowering
     // refuses an operand that is not such a call. The tree-sitter grammar has
-    // no temporary access, so the kind is in `PBG_ONLY_KINDS`.
+    // no temporary access, so the kind is in `PBG_ONLY_KINDS`. The braces stay
+    // inline: a form that opens and ends on a required hole reads as an infix
+    // operator, so a shared block hole would end the view at `w`.
     out.push(r(
         RuleName("view_expression"),
         Provenance("view_expression"),
@@ -2227,7 +2231,7 @@ fn expressions(
             h(s),
             t(TileLabel("as")),
             t(TileLabel("identifier")),
-            block(),
+            braced_statements(),
         ]),
     ));
     // A place of a value, `s.#[e]`, its index a whole expression: the body a
@@ -2865,7 +2869,8 @@ fn repeat1(element: Regex) -> Regex
     seq([element.clone(), repeat(element)])
 }
 
-/// Build an inline block with semicolon-bearing statement alternatives.
+/// Build the braced statements of a block: `{`, the statements, an optional
+/// final expression, `}`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2881,7 +2886,7 @@ fn repeat1(element: Regex) -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
-fn block() -> Regex
+fn braced_statements() -> Regex
 {
     seq([
         t(TileLabel("{")),
@@ -2889,6 +2894,43 @@ fn block() -> Regex
         opt(h(Sort::Expression)),
         t(TileLabel("}")),
     ])
+}
+
+/// Build the body a form opens as a block: a hole of [`Sort::Block`], which
+/// [`statement_block`] fills.
+///
+/// # Specification
+/// trivial.
+fn block() -> Regex
+{
+    h(Sort::Block)
+}
+
+/// Build the one rule of [`Sort::Block`]: the braced statements every form
+/// whose body is a block holds by reference, so each statement alternative
+/// is molded once for them all rather than once per form.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the rule `statement_block` at [`Sort::Block`] and the band `p`,
+///   its provenance `block`, its body the braced statements.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch a changed name, sort, band or body.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.name().0 == "statement_block" && ret.sort() == Sort::Block && ret.prec() == p && ret.provenance().0 == "block")]
+fn statement_block(p: Prec) -> Rule
+{
+    r(
+        RuleName("statement_block"),
+        Provenance("block"),
+        Sort::Block,
+        p,
+        braced_statements(),
+    )
 }
 
 /// Build a leading-dot label: `.` then a name, or `.` then an index for a
@@ -3143,14 +3185,14 @@ fn grade() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "if")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "else")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "if")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "else")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Block))))]
 fn if_tail() -> Regex
 {
     seq([
         t(TileLabel("if")),
         h(Sort::Expression),
         opt(answer_type()),
-        block(),
+        braced_statements(),
         t(TileLabel("else")),
         block(),
     ])
@@ -4118,7 +4160,10 @@ fn regular_def_tail() -> Regex
             seq([
                 params(),
                 alt([
-                    seq([opt(seq([t(TileLabel("->")), h(Sort::Type)])), block()]),
+                    seq([
+                        opt(seq([t(TileLabel("->")), h(Sort::Type)])),
+                        braced_statements(),
+                    ]),
                     seq([
                         t(TileLabel(":")),
                         h(Sort::Type),
@@ -4323,7 +4368,13 @@ fn primary_expressions(
             t(TileLabel("]")),
         ]),
     ));
-    let mut block_rule = r(RuleName("block"), Provenance("block"), s, p, block());
+    let mut block_rule = r(
+        RuleName("block"),
+        Provenance("block"),
+        s,
+        p,
+        braced_statements(),
+    );
     for statement in [
         "let_statement",
         "bind_statement",
@@ -4467,7 +4518,7 @@ fn primary_expressions(
                 t(TileLabel("=")),
                 h(Sort::Type),
             ])),
-            block(),
+            braced_statements(),
             opt(seq([
                 t(TileLabel("with")),
                 alt([
@@ -4492,7 +4543,7 @@ fn primary_expressions(
             t(TileLabel("if")),
             h(s),
             opt(answer_type()),
-            block(),
+            braced_statements(),
             t(TileLabel("else")),
             alt([block(), if_tail()]),
         ]),
@@ -4525,7 +4576,7 @@ fn primary_expressions(
             t(TileLabel("identifier")),
             t(TileLabel("in")),
             h(s),
-            block(),
+            braced_statements(),
         ]),
     ));
     out.push(r(
@@ -4533,14 +4584,18 @@ fn primary_expressions(
         Provenance("while_expression"),
         s,
         p,
-        seq([t(TileLabel("while")), h(s), block()]),
+        seq([t(TileLabel("while")), h(s), braced_statements()]),
     ));
     out.push(r(
         RuleName("loop_expression"),
         Provenance("loop_expression"),
         s,
         p,
-        seq([t(TileLabel("loop")), block()]),
+        // `loop` is a contextual keyword, a constructor's name elsewhere
+        // (`loop : base <-> base`): its braces stay its own successor, so the
+        // molder reads `loop {` as the form at the keyword rather than as a
+        // name beside a block.
+        seq([t(TileLabel("loop")), braced_statements()]),
     ));
     out.push(r(
         RuleName("break_expression"),

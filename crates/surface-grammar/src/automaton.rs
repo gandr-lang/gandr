@@ -100,7 +100,7 @@ use crate::mold::MoldTable;
 use crate::mold::StepSym;
 
 /// How many sorts a hole can hold: the [`Sort`] tags run below it.
-const SORTS: usize = 6;
+const SORTS: usize = 7;
 
 /// How many tile sets the table holds: a fill and an absorb set per sort,
 /// and four more.
@@ -114,12 +114,14 @@ const SETS: [TileSet; SET_COUNT] = [
     TileSet::Fills(Sort::Type),
     TileSet::Fills(Sort::Instantiation),
     TileSet::Fills(Sort::ModuleMember),
+    TileSet::Fills(Sort::Block),
     TileSet::Absorbs(Sort::Item),
     TileSet::Absorbs(Sort::Pattern),
     TileSet::Absorbs(Sort::Expression),
     TileSet::Absorbs(Sort::Type),
     TileSet::Absorbs(Sort::Instantiation),
     TileSet::Absorbs(Sort::ModuleMember),
+    TileSet::Absorbs(Sort::Block),
     TileSet::Prefixes,
     TileSet::LeftOperators,
     TileSet::FirstMids,
@@ -217,16 +219,18 @@ impl TileSet
             Self::Fills(Sort::Type) => 3,
             Self::Fills(Sort::Instantiation) => 4,
             Self::Fills(Sort::ModuleMember) => 5,
-            Self::Absorbs(Sort::Item) => 6,
-            Self::Absorbs(Sort::Pattern) => 7,
-            Self::Absorbs(Sort::Expression) => 8,
-            Self::Absorbs(Sort::Type) => 9,
-            Self::Absorbs(Sort::Instantiation) => 10,
-            Self::Absorbs(Sort::ModuleMember) => 11,
-            Self::Prefixes => 12,
-            Self::LeftOperators => 13,
-            Self::FirstMids => 14,
-            Self::Continuations => 15,
+            Self::Fills(Sort::Block) => 6,
+            Self::Absorbs(Sort::Item) => 7,
+            Self::Absorbs(Sort::Pattern) => 8,
+            Self::Absorbs(Sort::Expression) => 9,
+            Self::Absorbs(Sort::Type) => 10,
+            Self::Absorbs(Sort::Instantiation) => 11,
+            Self::Absorbs(Sort::ModuleMember) => 12,
+            Self::Absorbs(Sort::Block) => 13,
+            Self::Prefixes => 14,
+            Self::LeftOperators => 15,
+            Self::FirstMids => 16,
+            Self::Continuations => 17,
         })
     }
 }

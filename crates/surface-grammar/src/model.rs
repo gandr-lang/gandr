@@ -231,6 +231,12 @@ pub enum Sort
     /// precedence-bounded grammar has: rules recur through sorts, never through
     /// rule names. Nesting is unbounded and costs one rule.
     ModuleMember,
+    /// A block of statements, `{ s… e }`.
+    ///
+    /// Every form whose body is a block holds it by reference, so a statement
+    /// alternative is molded once for the block rather than once per form
+    /// that opens one.
+    Block,
 }
 
 impl Sort
@@ -239,16 +245,16 @@ impl Sort
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the tags are `0` to `5` in declaration order, and
+    /// - ensures: the tags are `0` to `6` in declaration order, and
     ///   [`try_from_tag`](Self::try_from_tag) reads each back to its sort.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: For all six sorts, L2 exhaustive tag observations catch
+    /// - hypothesis: For all seven sorts, L2 exhaustive tag observations catch
     ///   reordered, aliased or shifted discriminants; decoding rejection beyond
     ///   the closed set is checked separately.
     /// - witness: `tests::surface::sort_decode_contract`
-    #[spec(ensures: |ret| u16::from(ret) == match self { Self::Item => 0, Self::Pattern => 1, Self::Expression => 2, Self::Type => 3, Self::Instantiation => 4, Self::ModuleMember => 5 })]
+    #[spec(ensures: |ret| u16::from(ret) == match self { Self::Item => 0, Self::Pattern => 1, Self::Expression => 2, Self::Type => 3, Self::Instantiation => 4, Self::ModuleMember => 5, Self::Block => 6 })]
     #[inline]
     #[must_use]
     pub fn grout_sort(self) -> GroutSort
@@ -260,6 +266,7 @@ impl Sort
             Self::Type => 3,
             Self::Instantiation => 4,
             Self::ModuleMember => 5,
+            Self::Block => 6,
         })
     }
 
@@ -278,6 +285,7 @@ impl Sort
             Self::Type => SortName("type"),
             Self::Instantiation => SortName("instantiation"),
             Self::ModuleMember => SortName("module_member"),
+            Self::Block => SortName("block"),
         }
     }
 
@@ -296,11 +304,11 @@ impl Sort
     /// [`PbgError::InvalidSort`] for a tag past the closed set.
     ///
     /// # Adequacy
-    /// - hypothesis: For the six legal tags and the first illegal tag, L3
+    /// - hypothesis: For the seven legal tags and the first illegal tag, L3
     ///   boundary observations catch missing sorts, swapped tags and mistaken
     ///   acceptance; larger rejected tags are not individually enumerated.
     /// - witness: `tests::surface::sort_decode_contract`
-    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::InvalidSort { sort: rejected } if *rejected == sort) && u16::from(sort) > 5, |decoded| decoded.grout_sort() == sort))]
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::InvalidSort { sort: rejected } if *rejected == sort) && u16::from(sort) > 6, |decoded| decoded.grout_sort() == sort))]
     #[inline]
     pub fn try_from_tag(sort: GroutSort) -> Result<Self, PbgError>
     {
@@ -311,6 +319,7 @@ impl Sort
             3 => Ok(Self::Type),
             4 => Ok(Self::Instantiation),
             5 => Ok(Self::ModuleMember),
+            6 => Ok(Self::Block),
             _ => Err(PbgError::InvalidSort { sort }),
         }
     }

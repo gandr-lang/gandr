@@ -924,6 +924,10 @@ primitive_copy_wrapper!(
     struct TailExtension(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether an incoming tile continues a required-tail form after its tail.
+    struct TailContinuation(bool);
+);
+primitive_copy_wrapper!(
     /// Whether a required-tail frontier's tail is a whole operand run.
     struct TailWhole(bool);
 );
@@ -1633,7 +1637,7 @@ impl FormTable
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all six sorts distinguish declaration positions from
+/// - hypothesis: L3 — all seven sorts distinguish declaration positions from
 ///   value and instantiation slots. Omitting module members or accepting a
 ///   value sort changes whether declaration-boundary repair can cross it.
 /// - witness: `meld::tests::declaration_positions_are_exactly_item_and_module_member`
@@ -3088,6 +3092,7 @@ impl<'pbg> MeldState<'pbg>
         while let Some(frontier) = self.nearest_open_form() {
             if !bool::from(self.tail_is_whole(frontier))
                 || bool::from(self.extends_tail(frontier, incoming))
+                || bool::from(self.continues_frontier(frontier, incoming))
             {
                 break;
             }
@@ -3102,6 +3107,59 @@ impl<'pbg> MeldState<'pbg>
             };
             self.close_form(end);
         }
+    }
+
+    /// Whether `incoming` — the tile, or any mold a label of the token may
+    /// take — `≐`-continues the form whose frontier is at `frontier`: the
+    /// next tile of that form after its filled tail, as an access's `unwind`
+    /// after its block.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the frontier is a form tile and one of
+    ///   `incoming`'s molds is adjacent to it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through
+    ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
+    ///   access whose block is followed by `unwind` keeps its form open, and
+    ///   one followed by `;` closes; dropping the test closes the first.
+    /// - witness: `meld::tests::a_filled_tail_keeps_its_form_open_for_the_next_tile`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu of the token's labels"
+        )
+    )]
+    #[spec(ensures: |ret| bool::from(ret) == self.stack.get(usize::from(frontier)).is_some_and(|cell| match cell.role {
+        Role::FormTile { mold, .. } => match incoming {
+            Incoming::Tile(tile) => bool::from(self.adjacent(mold, tile)),
+            Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().flat_map(|&label| self.pbg.label_candidates(label).iter().copied()).any(|tile| bool::from(self.adjacent(mold, tile))),
+        },
+        Role::Operand | Role::Operator { .. } => false,
+    }))]
+    fn continues_frontier(
+        &self,
+        frontier: FrontierIndex,
+        incoming: Incoming<'_>,
+    ) -> TailContinuation
+    {
+        let Some(Role::FormTile { mold, .. }) =
+            self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+        else {
+            return TailContinuation::from(false);
+        };
+        TailContinuation::from(match incoming {
+            Incoming::Tile(tile) => bool::from(self.adjacent(mold, tile)),
+            Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().any(|&label| {
+                self.pbg
+                    .label_candidates(label)
+                    .iter()
+                    .any(|&tile| bool::from(self.adjacent(mold, tile)))
+            }),
+        })
     }
 
     /// Whether the open frontier at `frontier` carries a required tail that
@@ -8514,7 +8572,7 @@ fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
 ///   the closed sort vocabulary and cursor position. Ignoring the high byte,
 ///   accepting an unknown sort or advancing on truncation changes the result.
 /// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
-#[spec(captures: before = (reader.pos, reader.pos.checked_add(2).and_then(|end| reader.bytes.as_ref().get(reader.pos .. end)).and_then(|bytes| <[u8; 2]>::try_from(bytes).ok()).map(u16::from_le_bytes)), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember].get(usize::from(tag)).copied().ok_or(CheckpointError::Malformed)) && reader.pos == if before.1.is_some() { before.0.saturating_add(2) } else { before.0 })]
+#[spec(captures: before = (reader.pos, reader.pos.checked_add(2).and_then(|end| reader.bytes.as_ref().get(reader.pos .. end)).and_then(|bytes| <[u8; 2]>::try_from(bytes).ok()).map(u16::from_le_bytes)), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember, Sort::Block].get(usize::from(tag)).copied().ok_or(CheckpointError::Malformed)) && reader.pos == if before.1.is_some() { before.0.saturating_add(2) } else { before.0 })]
 fn read_sort(reader: &mut Reader<'_>) -> Result<Sort, CheckpointError>
 {
     let wire_tag = reader.u16()?;
@@ -8940,6 +8998,7 @@ mod tests
             (Sort::Pattern, false),
             (Sort::Type, false),
             (Sort::Instantiation, false),
+            (Sort::Block, false),
         ] {
             assert_eq!(
                 bool::from(super::is_item_position(sort)),
@@ -9486,6 +9545,7 @@ mod tests
             Sort::Type,
             Sort::Instantiation,
             Sort::ModuleMember,
+            Sort::Block,
         ];
         for (index, &variant) in variants.iter().enumerate() {
             let mut writer = super::Writer { bytes: vec![0xee] };
@@ -11195,6 +11255,41 @@ mod tests
             vec!["+U[1] C".to_owned()],
             spans_of("def g : +U[1] C * D ;", "u_type")?,
             "a bridge binds tighter than the product, which takes it as an operand"
+        );
+        Ok(())
+    }
+
+    /// A form whose filled tail its own next tile follows stays open for that
+    /// tile: an access's block followed by `unwind` is one access, and one
+    /// followed by `;` closes at its block.
+    #[test]
+    fn a_filled_tail_keeps_its_form_open_for_the_next_tile() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let accesses = |source: &'static str| -> Result<Vec<String>, Box<dyn Error>> {
+            let result = crate::parse::parse(&pbg, SourceText::from(source))?;
+            assert!(bool::from(result.is_clean()), "{source} reads cleanly");
+            let tree = result.into_tree();
+            let mut spans = Vec::new();
+            for position in tree.positions() {
+                if let Some(NodeLabel::Meld(mold)) = label(&tree, position)
+                    && pbg.named_kind(mold)?.0 == "access_expression"
+                    && let Some(text) = tree.fragment(position)
+                {
+                    spans.push(AsRef::<str>::as_ref(&text).to_owned());
+                }
+            }
+            Ok(spans)
+        };
+        assert_eq!(
+            vec!["access c as v { abort(v) } unwind { pure unit }".to_owned()],
+            accesses("def g() -> Integer { access c as v { abort(v) } unwind { pure unit } }")?,
+            "the `unwind` clause continues the access after its block"
+        );
+        assert_eq!(
+            vec!["access c as v { resume(v, 1) }".to_owned()],
+            accesses("def g() -> Integer { access c as v { resume(v, 1) }; pure c }")?,
+            "a `;` after the block closes the access"
         );
         Ok(())
     }
