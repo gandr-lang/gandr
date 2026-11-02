@@ -549,8 +549,6 @@ corpus/model/identity/derived-associator.gandr Tense 9df6939706644fac
 corpus/model/identity/equiv-data.gandr Tense 03b69565a60187a3
 corpus/model/identity/equiv-data.gandr Tense 2c985434ebb3a4c9
 corpus/model/identity/equivalence-call.gandr Tense f52b2dda59b7c02d
-corpus/model/identity/equivalence-parts.gandr Passive 98fba54e97f7e559
-corpus/model/identity/equivalence-parts.gandr Passive e65ba0f964b9a807
 corpus/model/identity/equivalence.gandr Passive ad560de3894a651e
 corpus/model/identity/equivalence.gandr Tense 95a70f9d4050a08d
 corpus/model/identity/flow-data.gandr Tense 072abee8d8f7b568

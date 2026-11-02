@@ -1586,8 +1586,8 @@ model/identity/equivalence-parts.gandr:<file> unshaped:HeadParagraphs
 model/identity/equivalence-parts.gandr:<file> unshaped:ReferenceOutsideReferences
 model/identity/equivalence-parts.gandr:<file> unshaped:SentenceLength
 model/identity/equivalence-parts.gandr:<file> unshaped:WhatLength
-model/identity/equivalence-parts.gandr:comment:98fba54e97f7e559 unshaped:ItemShape
-model/identity/equivalence-parts.gandr:comment:e65ba0f964b9a807 unshaped:ItemShape
+model/identity/equivalence-parts.gandr:comment:4fc38c4c98ea0f25 unshaped:ItemShape
+model/identity/equivalence-parts.gandr:comment:a97e37f68d7ec4ac unshaped:ItemShape
 model/identity/equivalence.gandr:<file> unshaped:HeadParagraphs
 model/identity/equivalence.gandr:<file> unshaped:ReferenceOutsideReferences
 model/identity/equivalence.gandr:<file> unshaped:WhatLength

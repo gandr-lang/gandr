@@ -23,18 +23,18 @@ def leftOf(a : Type, b : Type, e : a ≃ b) -> b => a {
   }
 }
 
-/// The map back of a quasi-inverse, by its label: the forward map is named
-/// `to`, its label (#670).
-def backByLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
+/// A quasi-inverse's map back, which the pattern reads by its label `from`
+/// (#670).
+def fromByLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
   match i {
-    #{.back = k} => k
+    #{.from = k} => k
   }
 }
 
-/// The map back, bound to the forward map's label: the forward map is named
-/// `to′` (#670).
-def backAsTo(a : Type, b : Type, i : a ≅ b) -> b => a {
+/// The map back, which the pattern binds to `into`, the forward map's own
+/// label (#670).
+def fromAsInto(a : Type, b : Type, i : a ≅ b) -> b => a {
   match i {
-    #{.back = to} => to
+    #{.from = into} => into
   }
 }

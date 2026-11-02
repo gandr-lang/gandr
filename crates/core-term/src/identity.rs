@@ -205,10 +205,10 @@ fn round_trip(
 ///
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{to : +U (A -> -F B), back : +U (B -> -F
-///   A), sect : (a : A) => Path(A, back(to(a)), a), retr : (b : B) => Path(B,
-///   to(back(b)), b)}` lowers to: `Σ to. Σ back. sect × retr`, each occurrence
-///   of `A` and `B` shifted past the binders it stands under.
+/// - ensures: the core the written `#{into : +U (A -> -F B), from : +U (B -> -F
+///   A), sect : (a : A) => Path(A, from(into(a)), a), retr : (b : B) => Path(B,
+///   into(from(b)), b)}` lowers to: `Σ into. Σ from. sect × retr`, each
+///   occurrence of `A` and `B` shifted past the binders it stands under.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -241,11 +241,11 @@ pub fn quasi_inverse(
 ///
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{to : +U (A -> -F B), linv : #{g : +U (B
-///   -> -F A), sect : (a : A) => Path(A, g(to(a)), a)}, rinv : #{h : +U (B ->
-///   -F A), retr : (b : B) => Path(B, to(h(b)), b)}}` lowers to: `Σ to. (Σ g.
-///   sect) × (Σ h. retr)`, each occurrence of `A` and `B` shifted past the
-///   binders it stands under.
+/// - ensures: the core the written `#{into : +U (A -> -F B), linv : #{from : +U
+///   (B -> -F A), sect : (a : A) => Path(A, from(into(a)), a)}, rinv : #{from :
+///   +U (B -> -F A), retr : (b : B) => Path(B, into(from(b)), b)}}` lowers to:
+///   `Σ into. (Σ from. sect) × (Σ from. retr)`, each occurrence of `A` and `B`
+///   shifted past the binders it stands under.
 /// - fails: never.
 /// - panics: none.
 ///

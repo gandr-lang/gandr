@@ -98,8 +98,8 @@ def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
 /// The words and the integers are equivalent by winding, spinning and the
 /// two round trips. The record nests its entries to the right.
 def wordsWinding : #{
-  to : Words => Int,
-  back : Int => Words,
-  sect : (c : Words) => Path(Words, back(to(c)), c),
-  retr : (n : Int) => Path(Int, to(back(n)), n)
+  into : Words => Int,
+  from : Int => Words,
+  sect : (c : Words) => Path(Words, from(into(c)), c),
+  retr : (n : Int) => Path(Int, into(from(n)), n)
 } = (windWords, (spinWords, (sectWords, retrWords)));

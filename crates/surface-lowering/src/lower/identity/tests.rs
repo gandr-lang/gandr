@@ -2594,10 +2594,10 @@ fn a_relation_lowers_to_the_type_it_abbreviates()
         SourceText::from(concat!(
             "def isoGlyph : Bool ≅ Integer;\n",
             "def isoAlias : Iso(Bool, Integer);\n",
-            "def isoRecord : #{to : +U (Bool -> -F Integer), back : +U (Integer -> -F Bool), sect : (a : Bool) => Path(Bool, back(to(a)), a), retr : (b : Integer) => Path(Integer, to(back(b)), b)};\n",
+            "def isoRecord : #{into : +U (Bool -> -F Integer), from : +U (Integer -> -F Bool), sect : (a : Bool) => Path(Bool, from(into(a)), a), retr : (b : Integer) => Path(Integer, into(from(b)), b)};\n",
             "def equivGlyph : Bool ≃ Integer;\n",
             "def equivAlias : Bool <~> Integer;\n",
-            "def equivRecord : #{to : +U (Bool -> -F Integer), linv : #{g : +U (Integer -> -F Bool), sect : (a : Bool) => Path(Bool, g(to(a)), a)}, rinv : #{h : +U (Integer -> -F Bool), retr : (b : Integer) => Path(Integer, to(h(b)), b)}};\n",
+            "def equivRecord : #{into : +U (Bool -> -F Integer), linv : #{from : +U (Integer -> -F Bool), sect : (a : Bool) => Path(Bool, from(into(a)), a)}, rinv : #{from : +U (Integer -> -F Bool), retr : (b : Integer) => Path(Integer, into(from(b)), b)}};\n",
             "def flowGlyph : Bool ⇝ Integer;\n",
             "def flowAlias : Bool ~~> Integer;\n",
             "def flowRecord : Flow(Type, Bool, Integer);\n",
@@ -2680,8 +2680,8 @@ fn a_pattern_at_a_relation_splits_its_record()
         SourceText::from(concat!(
             "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
             "def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
-            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { match e { #{.linv = #{.g = g, .sect = s}} => return g } }\n",
-            "def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) { match i { #{.back = k} => return k } }\n",
+            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { match e { #{.linv = #{.from = g, .sect = s}} => return g } }\n",
+            "def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) { match i { #{.from = k} => return k } }\n",
         )),
         &mut arena,
     );
@@ -2690,7 +2690,7 @@ fn a_pattern_at_a_relation_splits_its_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{.rinv = #{.h = h}} => return h } }\n",
+            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{.rinv = #{.from = h}} => return h } }\n",
         ),
         &mut arena,
     );
@@ -2716,7 +2716,7 @@ fn a_relation_split_names_each_written_component_665()
     );
     assert_eq!(
         component_names(source),
-        ["back", "k", "r", "s", "sect", "t"],
+        ["from", "k", "r", "s", "sect", "t"],
         "every written component is named, the unused `t`, `s` and `r` with `k`, and each rest by \
          its first label"
     );
@@ -2737,7 +2737,7 @@ fn a_run_binder_splits_the_relation_its_call_returns_656()
             "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
             "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { run j <- kept(i); match j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
             "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { run e <- made(i); match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
-            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.back = k} => return k } }\n",
+            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.from = k} => return k } }\n",
         )),
         &mut arena,
     );
@@ -2756,7 +2756,7 @@ fn a_run_binder_splits_the_relation_a_bare_result_returns_2255()
             "def kept(i : Bool ≅ Integer) -> Bool ≅ Integer { i }\n",
             "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { match i { #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}} } }\n",
             "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { run e <- made(i); match e { #{t, #{g, s}, #{h, r}} => t } }\n",
-            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.back = k} => k } }\n",
+            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.from = k} => k } }\n",
         )),
         &mut arena,
     );
@@ -2770,11 +2770,11 @@ fn a_run_binder_splits_the_relation_a_bare_result_returns_2255()
 fn an_unwritten_field_is_named_by_its_label_670()
 {
     let source = SourceText::from(
-        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { match i { #{.back = k} => k } }\n",
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { match i { #{.from = k} => k } }\n",
     );
     assert_eq!(
         component_names(source),
-        ["back", "k", "retr", "sect", "sect", "to"],
+        ["from", "into", "k", "retr", "sect", "sect"],
         "the written `k` by its variable, the omitted fields and the rests by their labels"
     );
 }

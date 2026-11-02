@@ -1,0 +1,17 @@
+error[UnresolvedName]: `back` is not defined
+   ╭▸ corpus/pathological/identity/translator-labels.gandr:15:8
+   │
+15 │     #{.back = k} => k
+   │        ━━━━ not found in this scope
+   │
+   ├ note: `backByOtherLabel` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `back`, or import the module that exports it
+
+error[UnresolvedName]: `g` is not defined
+   ╭▸ corpus/pathological/identity/translator-labels.gandr:24:18
+   │
+24 │     #{.linv = #{.g = k}} => k
+   │                  ━ not found in this scope
+   │
+   ├ note: `leftByOtherLabel` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `g`, or import the module that exports it
