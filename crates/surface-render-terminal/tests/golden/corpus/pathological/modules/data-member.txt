@@ -1,0 +1,26 @@
+error[UnknownMember]: the module `M` has no member `Nope`
+   ╭▸ corpus/pathological/modules/data-member.gandr:24:22
+   │
+24 │ def nope : M.Box = M.Nope(1);
+   │                      ━━━━ no member of this name
+   │
+   ├ note: `nope` is refused with UnknownMember, as its expectation states
+   ╰ help: use a member that `M` declares, or add `Nope` to `M`
+
+error[UnknownMember]: the module `Box` has no member `Nope`
+   ╭▸ corpus/pathological/modules/data-member.gandr:28:27
+   │
+28 │ def under : M.Box = M.Box.Nope(1);
+   │                           ━━━━ no member of this name
+   │
+   ├ note: `under` is refused with UnknownMember, as its expectation states
+   ╰ help: use a member that `Box` declares, or add `Nope` to `Box`
+
+error[UnresolvedName]: `B` is not defined
+   ╭▸ corpus/pathological/modules/data-member.gandr:32:20
+   │
+32 │ def bare : M.Box = B(3);
+   │                    ━ not found in this scope
+   │
+   ├ note: `bare` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `B`, or import the module that exports it

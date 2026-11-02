@@ -73,6 +73,7 @@ use gandr_core_term::RuleNode;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
@@ -85,6 +86,7 @@ use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
+use super::Container;
 use super::DeclarationSlot;
 use super::Half;
 use super::Operand;
@@ -550,21 +552,21 @@ impl<'source> Collector<'_, 'source>
         })
     }
 
-    /// Collect the data declaration `declaration`, decorated by the attribute
-    /// blocks `decorations` standing before it.
+    /// Collect the data declaration `declaration`, standing in `container` and
+    /// decorated by the attribute blocks `decorations` standing before it.
     ///
     /// # Specification
     /// - requires: `declaration` is a data declaration form and every entry of
     ///   `decorations` an attribute block standing on its own before it.
-    /// - ensures: the family's name takes its slot, which owns the declaration
-    ///   and its decorations; a clean form is pushed onto the data list, its
-    ///   constructors entered by name, and its definition half and attributes
-    ///   filed; the form's first fault is offered to the slot instead. A name
-    ///   the grammar spells as a tile of its own refuses the slot
-    ///   [`LoweringRefusal::ShadowedBuiltin`] at the name, held on a signature
-    ///   half with the declaration's attributes. A cell member's fault refuses
-    ///   the slot once the form is filed, so the attributes stating what the
-    ///   declaration expects stay with it.
+    /// - ensures: the family's name takes its slot in `container`, which owns
+    ///   the declaration and its decorations; a clean form is pushed onto the
+    ///   data list, its constructors entered by name, and its definition half
+    ///   and attributes filed; the form's first fault is offered to the slot
+    ///   instead. A name the grammar spells as a tile of its own refuses the
+    ///   slot [`LoweringRefusal::ShadowedBuiltin`] at the name, held on a
+    ///   signature half with the declaration's attributes. A cell member's
+    ///   fault refuses the slot once the form is filed, so the attributes
+    ///   stating what the declaration expects stay with it.
     /// - provides: the data half of [`super::collect_source`].
     /// - fails: when the form has no name to file a refusal under.
     /// - panics: none.
@@ -586,13 +588,14 @@ impl<'source> Collector<'_, 'source>
     )]
     pub(super) fn data(
         &mut self,
+        container: Container,
         declaration: Placed,
         decorations: &[Placed],
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         let outcome = read_pieces(self.pbg, self.tree, declaration.node, &mut pieces)
-            .and_then(|()| self.read_data(declaration, &pieces, decorations));
+            .and_then(|()| self.read_data(container, declaration, &pieces, decorations));
         self.pieces = pieces;
 
         outcome
@@ -615,6 +618,7 @@ impl<'source> Collector<'_, 'source>
     #[spec(ensures: |ret| ret.is_err() || matches!(self.collected.owner_of(declaration.node), Maybe::Present(_)))]
     fn read_data(
         &mut self,
+        container: Container,
         declaration: Placed,
         pieces: &Pieces,
         decorations: &[Placed],
@@ -627,12 +631,7 @@ impl<'source> Collector<'_, 'source>
             return Err(misplaced_in(FormName::DATA, cursor.here()));
         };
         let name = self.name_of(named);
-        let slot = self.admit(
-            self.collected.top(declaration.span.start()),
-            name,
-            declaration,
-            named,
-        );
+        let slot = self.admit(container, name, declaration, named);
         self.collected.own(declaration.node, slot);
         for &block in decorations {
             self.document(slot, block.node, block.span.end(), declaration.node);
@@ -787,6 +786,7 @@ impl<'source> Collector<'_, 'source>
     ///   name is fresh, each entered with its family, tag and arity, in place
     ///   of a constructor of `Theory`'s of that name, which is recorded among
     ///   [`Collected::shadowed`](crate::module::Collected::shadowed); a
+    ///   constructor of a family a module declares is recorded there too; a
     ///   multi-output constructor entered once, with its ports, among
     ///   [`Collected::ports`](crate::module::Collected::ports) and never among
     ///   the constructors; otherwise the refusal of the first constructor this
@@ -797,9 +797,11 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two families with distinct constructors, and a second
     ///   family reusing a name, separate entry from refusal; a two-output
-    ///   constructor enters its name once.
+    ///   constructor enters its name once; a module family's constructor is
+    ///   recorded as written through its module.
     /// - witness: `lower::native::tests::a_constructor_named_twice_is_refused`
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
     #[spec(
         captures: before = (self.collected.data.len(), self.collected.constructors.len()),
         ensures: |ret| match ret {
@@ -884,6 +886,16 @@ impl<'source> Collector<'_, 'source>
             if let Some(theory) = displaced {
                 let _first = self.collected.shadowed.insert((theory.family, name));
             }
+            // A module's constructor names nothing bare outside the module, so
+            // a printer writes it through the module (#4298).
+            if let Some(Container::Module(_)) = self
+                .collected
+                .slots
+                .get(usize::from(form.slot))
+                .map(|entry| entry.container)
+            {
+                let _first = self.collected.shadowed.insert((form.slot, name));
+            }
         }
         self.collected.data.push(form);
 
@@ -940,7 +952,7 @@ impl<'source> Collector<'_, 'source>
             .slots
             .get(family.0)
             .map_or_else(|| SurfaceName::from(""), |slot| slot.name);
-        let top = self.collected.top(declaration.span.start());
+        let top = self.family_container(family, declaration.span.start());
         for (point, cells) in points {
             let index = self.collected.words.len();
             let words = SlotIndex(self.collected.slots.len());
@@ -1212,11 +1224,13 @@ impl<'source> Collector<'_, 'source>
             },
             Some(_) | None => faulted,
         };
-        let (cells, faulted) =
-            match faulted.and_then(|()| self.loops(&written, &generators, &parameters)) {
-                Ok(cells) => (cells, Ok(())),
-                Err(refusal) => (Vec::new(), Err(refusal)),
-            };
+        let container = self.family_container(slot, declaration.span.start());
+        let (cells, faulted) = match faulted
+            .and_then(|()| self.loops(container, &written, &generators, &parameters))
+        {
+            Ok(cells) => (cells, Ok(())),
+            Err(refusal) => (Vec::new(), Err(refusal)),
+        };
         Ok(Formed {
             form: DataForm {
                 declaration,
@@ -1234,7 +1248,8 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Read each written cell `written` as a loop of the declaration whose
-    /// generators are `generators` and parameters `parameters`.
+    /// generators are `generators` and parameters `parameters`, standing in
+    /// `container`.
     ///
     /// # Specification
     /// - requires: `generators` are every generator of the declaration.
@@ -1243,8 +1258,8 @@ impl<'source> Collector<'_, 'source>
     /// - fails: a cell of a parameterised declaration, and a side that is no
     ///   closed term of the declaration's generators, as outside the fragment
     ///   by the cell member's name; a cell named as an earlier cell or an
-    ///   earlier declaration is; [`LoweringRefusal::CellNotALoop`] for sides
-    ///   that spell distinct terms.
+    ///   earlier declaration of `container` is;
+    ///   [`LoweringRefusal::CellNotALoop`] for sides that spell distinct terms.
     /// - panics: none.
     ///
     /// # Errors
@@ -1257,6 +1272,7 @@ impl<'source> Collector<'_, 'source>
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |cells| cells.len() == written.len()))]
     fn loops(
         &self,
+        container: Container,
         written: &[WrittenCell],
         generators: &[GeneratorForm],
         parameters: &[DataParameter],
@@ -1295,7 +1311,7 @@ impl<'source> Collector<'_, 'source>
             let declared = self
                 .collected
                 .by_name
-                .get(&(self.collected.top(cell.named.span.start()), name))
+                .get(&(container, name))
                 .and_then(|&slot| self.collected.slots.get(slot.0))
                 .map(|slot| slot.named.span);
             if let Some(first) = declared.or(earlier) {
@@ -1912,11 +1928,15 @@ impl<'source> Collector<'_, 'source>
                 routed.push((name, named, span, plan));
             }
         }
+        let container = match self.collected.owner_of(declaration.node) {
+            Maybe::Present(family) => self.family_container(family, declaration.span.start()),
+            Maybe::Absent(_) => self.collected.top(declaration.span.start()),
+        };
         for (name, named, span, plan) in routed {
             let minted = SlotIndex(self.collected.slots.len());
             self.collected.slots.push(DeclarationSlot {
                 name,
-                container: self.collected.top(named.span.start()),
+                container,
                 role: Role::Operation,
                 constant: ConstantIndex::from(minted.0),
                 introduced_by: Placed {
@@ -1941,6 +1961,36 @@ impl<'source> Collector<'_, 'source>
                 .operation_names
                 .insert((source, name), minted);
         }
+    }
+
+    /// The container the family at `slot` was admitted to: a module's body,
+    /// or the top level of its source.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the container of the slot at `slot`; the top level of the
+    ///   source holding `at` when no slot stands there.
+    /// - provides: where a family's words, loops and operations are named, the
+    ///   container its declaration stands in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family at the top level and one in a module body
+    ///   each name their words and operations where they stand.
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    #[must_use]
+    #[spec(ensures: |ret| self.collected.slots.get(slot.0).is_none_or(|entry| entry.container == ret))]
+    fn family_container(
+        &self,
+        slot: SlotIndex,
+        at: ByteOffset,
+    ) -> Container
+    {
+        self.collected
+            .slots
+            .get(slot.0)
+            .map_or_else(|| self.collected.top(at), |entry| entry.container)
     }
 
     /// What the module's families offer an operation's rules so far: every

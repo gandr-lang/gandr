@@ -446,6 +446,7 @@ use crate::module::Container;
 use crate::module::DataIndex;
 use crate::module::Generators;
 use crate::module::Half;
+use crate::module::Member;
 use crate::module::Operand;
 use crate::module::Ported;
 use crate::module::SlotIndex;
@@ -773,6 +774,12 @@ pub(super) struct Decoded(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct TypeDescent(bool);
+
+/// Whether a family's container encloses a declaration, so the family's bare
+/// constructors name there.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Encloses(bool);
 
 /// What an instantiation's resident claims of the self-call it heads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2520,7 +2527,9 @@ impl<'source> Lowerer<'_, 'source>
     /// in `site`'s own source or, when that declares none, in one source it
     /// imports unqualified. A data family's argument at a place the family
     /// declares a universe names no constructor: no constructor is a value of
-    /// a universe, so the name there is a type's.
+    /// a universe, so the name there is a type's. A family a module body
+    /// declares lends its bare constructors only to declarations inside that
+    /// module; outside it, `M.B` names them.
     ///
     /// # Specification
     /// - requires: `site` is the name's node or the form holding it.
@@ -2528,7 +2537,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   argument at a parameter or index the family declares a universe;
     ///   otherwise the constructor entered under `name` in the site's source,
     ///   or else the one its unqualified imports answer, when its family's
-    ///   admission position is strictly earlier than the site's declaration's;
+    ///   admission position is strictly earlier than the site's declaration's
+    ///   and its family stands in a container enclosing the site's declaration;
     ///   otherwise the unnamed absence, two imports answering included.
     /// - fails: never.
     /// - panics: none.
@@ -2542,6 +2552,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `lower::native::tests::a_constructor_is_no_value_inside_its_own_family`
     /// - witness: `lower::native::tests::a_type_argument_names_the_type_its_constructor_shares_a_name_with_1855`
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
             self.collected.owner_of(site.at.node),
@@ -2593,13 +2604,81 @@ impl<'source> Lowerer<'_, 'source>
                 },
             },
         };
-        if found.family >= own {
+        if found.family >= own || self.encloses(found.family, own) == Encloses(false) {
             return Maybe::Absent(constructed::Absent::Unnamed);
         }
         if let Some(import) = import {
             self.collected.reach(import);
         }
         Maybe::Present(found)
+    }
+
+    /// Whether the container the slot `family` stands in encloses the
+    /// declaration at `own`: the top level encloses every declaration of its
+    /// source, and a module's body its own members and those of the modules
+    /// nested in it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: enclosing for a family at a top level, or one in a module the
+    ///   container chain outward from `own`'s container reaches; not for a
+    ///   family in a module the chain does not reach, and for slots the
+    ///   collection does not hold.
+    /// - provides: the scope of a module family's bare constructors.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step moves from a module to the container it was opened in; the
+    /// containers form a tree rooted at a top level, so the walk ends there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's bare constructor names inside the module
+    ///   and names nothing at the top level.
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    #[spec(ensures: |ret| ret.0
+        || !matches!(
+            self.collected.slots.get(usize::from(family)).map(|entry| entry.container),
+            Some(Container::TopLevel(_))
+        )
+        || self.collected.slots.get(usize::from(own)).is_none())]
+    fn encloses(
+        &self,
+        family: SlotIndex,
+        own: SlotIndex,
+    ) -> Encloses
+    {
+        let container = |slot: SlotIndex| {
+            self.collected
+                .slots
+                .get(usize::from(slot))
+                .map(|entry| entry.container)
+        };
+        let (Some(stands), Some(mut here)) = (container(family), container(own))
+        else {
+            return Encloses(false);
+        };
+        if let Container::TopLevel(_) = stands {
+            return Encloses(true);
+        }
+        loop {
+            if here == stands {
+                return Encloses(true);
+            }
+            let Container::Module(module) = here
+            else {
+                return Encloses(false);
+            };
+            let Some(outer) = self
+                .collected
+                .structures
+                .get(usize::from(module))
+                .map(|structure| structure.container)
+            else {
+                return Encloses(false);
+            };
+            here = outer;
+        }
     }
 
     /// The multi-output constructor `name` names at `site`.
@@ -2659,15 +2738,19 @@ impl<'source> Lowerer<'_, 'source>
     /// The family is resolved as any global name is at `site`, and the
     /// constructor read from its own generators, so a constructor whose bare
     /// name the source gives another family's constructor is still named:
-    /// `Theory.App` beside a source's own `App`.
+    /// `Theory.App` beside a source's own `App`. A name that resolves to no
+    /// declaration and names a module is that module, `M.B` naming the
+    /// constructor `B` of a family the module exports.
     ///
     /// # Specification
     /// - requires: `site` is the qualified form or the form holding it.
     /// - ensures: the constructor of that name among the generators of the data
     ///   family or the `Theory` code `family` resolves to, or among the terms
-    ///   of the theory it resolves to, `S.op` naming the operation `op`, when
-    ///   its family's admission position is strictly earlier than the site's
-    ///   declaration's; otherwise the unnamed absence.
+    ///   of the theory it resolves to, `S.op` naming the operation `op`, or
+    ///   among the generators of a family the module `family` names exports, as
+    ///   [`Self::module_constructor`] reads it, when its family's admission
+    ///   position is strictly earlier than the site's declaration's; otherwise
+    ///   the unnamed absence.
     /// - fails: as [`Self::resolve_name`] at the family's name.
     /// - panics: none.
     ///
@@ -2680,6 +2763,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   operation applied and matched as a term, each lower to the family's
     ///   constructor.
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
     /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
     pub(super) fn qualified_constructor(
@@ -2694,9 +2778,15 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unnamed);
         };
-        let Maybe::Present(constant) = self.qualified_family(site, family)?
-        else {
-            return Ok(unnamed);
+        let constant = match self.qualified_family(site, family) {
+            Ok(Maybe::Present(constant)) => constant,
+            resolved => {
+                if let Maybe::Present(found) = self.module_constructor(site, family, None, name)? {
+                    return Ok(Maybe::Present(found));
+                }
+                let _unresolved = resolved?;
+                return Ok(unnamed);
+            },
         };
         let slot_of = |slot: SlotIndex| {
             self.collected
@@ -2767,6 +2857,103 @@ impl<'source> Lowerer<'_, 'source>
         else {
             None
         };
+        Ok(match found {
+            Some(found) if found.family < own => Maybe::Present(found),
+            Some(_) | None => unnamed,
+        })
+    }
+
+    /// The constructor `name` of a family the module `module` names exports,
+    /// written `module.name`, or `module.family.name` when `family` names the
+    /// family, at `site`.
+    ///
+    /// # Specification
+    /// - requires: `site` is the qualified form or the form holding it, and
+    ///   `module` a bare name tile or name form.
+    /// - ensures: the constructor of that name among the generators of a data
+    ///   family the module exports, the one named `family` when given, where
+    ///   `module` names a module as [`Self::opened_module`] finds it and the
+    ///   family's admission position is strictly earlier than the site's
+    ///   declaration's; the unnamed absence for a name no module answers, and
+    ///   for a module exporting no such family or constructor.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the module's walk
+    ///   outruns the allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.B` and `M.Box.B` name the constructor in a value
+    ///   and `M.B(x)` in a pattern, and a family the module does not hold is no
+    ///   answer.
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    pub(super) fn module_constructor(
+        &mut self,
+        site: Site,
+        module: Placed,
+        family: Option<SurfaceName<'source>>,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(unnamed);
+        };
+        let structure = match self.opened_module(site, module, &[]) {
+            Ok(structure) => structure,
+            Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+            Err(_) => return Ok(unnamed),
+        };
+        let Some(exported) = self
+            .collected
+            .structures
+            .get(usize::from(structure))
+            .map(|entry| {
+                entry
+                    .exports
+                    .iter()
+                    .filter_map(|export| match *export {
+                        Member::Slot(slot) => Some(slot),
+                        Member::Module(_) => None,
+                    })
+                    .collect::<BTreeSet<SlotIndex>>()
+            })
+        else {
+            return Ok(unnamed);
+        };
+        let found = self
+            .collected
+            .data
+            .iter()
+            .enumerate()
+            .filter(|&(_, form)| {
+                exported.contains(&form.slot)
+                    && family.is_none_or(|family| {
+                        self.collected
+                            .slots
+                            .get(usize::from(form.slot))
+                            .is_some_and(|slot| slot.name == family)
+                    })
+            })
+            .find_map(|(position, form)| {
+                form.generators
+                    .iter()
+                    .enumerate()
+                    .find(|&(_, generator)| {
+                        matches!(generator.port, Maybe::Absent(_))
+                            && SurfaceName::from(self.text_at(generator.named)) == name
+                    })
+                    .map(|(tag, generator)| Constructor {
+                        family: form.slot,
+                        form: Generators::Written(position),
+                        tag,
+                        arity: generator.fields.len(),
+                        named: generator.named,
+                    })
+            });
         Ok(match found {
             Some(found) if found.family < own => Maybe::Present(found),
             Some(_) | None => unnamed,
@@ -2943,16 +3130,20 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `head` is the form at `site` or one of its operands.
     /// - ensures: as [`Self::qualified_constructor`] for a selection whose
     ///   target is a bare capitalised name, the unnamed absence where that
-    ///   name's resolution refuses; the unnamed absence for any other form, so
-    ///   a module's member, a record's field and a family's field keep their
-    ///   own readings.
+    ///   name's resolution refuses; as [`Self::module_family_selected`] for a
+    ///   selection off a family named through a module, `M.Box.B`; the unnamed
+    ///   absence for any other form, so a module's member, a record's field and
+    ///   a family's field keep their own readings.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold; [`LoweringRefusal::UnknownMember`] for a capitalised member
-    ///   of a data family that declares no constructor of that name.
+    ///   of a data family that declares no constructor of that name;
+    ///   [`LoweringRefusal::BudgetExceeded`] when a module's walk outruns the
+    ///   allowance.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
+    /// [`LoweringRefusal::UnknownMold`], [`LoweringRefusal::UnknownMember`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::qualified_constructor`]; a module's member
@@ -2960,7 +3151,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   constructor a data family lacks is named as its unknown member.
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
     /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::BudgetExceeded { .. })))]
     pub(super) fn selected_constructor(
         &mut self,
         site: Site,
@@ -2976,13 +3167,19 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unnamed);
         };
-        let Shape::Form {
-            former: Former::Constructor,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Ok(unnamed);
-        };
+        match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::Constructor,
+                ..
+            } => {},
+            Shape::Form {
+                former: Former::Projection | Former::TypePath,
+                ..
+            } => return self.module_family_selected(site, family, member),
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                return Ok(unnamed);
+            },
+        }
         let name = SurfaceName::from(self.text_at(member));
         // A family name that does not resolve is the projection's to refuse.
         let found = self
@@ -3013,6 +3210,82 @@ impl<'source> Lowerer<'_, 'source>
         Ok(found)
     }
 
+    /// The constructor `member` of the family the selection `family` names
+    /// through a module, `M.Box` in `M.Box.B`, written at `site`.
+    ///
+    /// # Specification
+    /// - requires: `family` is a projection or a type path the selection at
+    ///   `site` selects `member` from.
+    /// - ensures: as [`Self::module_constructor`] for a one-link `family` whose
+    ///   target is a bare module name; the unnamed absence for any other
+    ///   `family`.
+    /// - fails: [`LoweringRefusal::UnknownMember`], naming the family, for a
+    ///   capitalised `member` the module's family declares no constructor of;
+    ///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold;
+    ///   [`LoweringRefusal::BudgetExceeded`] when the module's walk outruns the
+    ///   allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMember`], [`LoweringRefusal::UnknownMold`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.Box.B` names the constructor, and `M.Box.Nope` is
+    ///   refused naming `Box`.
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    fn module_family_selected(
+        &mut self,
+        site: Site,
+        family: Placed,
+        member: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        let mut link = self.linked_selection(site, family)?;
+        if link.is_none() {
+            let mut pieces = Pieces::new();
+            read_pieces(self.pbg, self.tree, family.node, &mut pieces)?;
+            if let Ok((module, Maybe::Absent(_), selected)) =
+                Self::type_link(site, &pieces.pieces, family.span)
+            {
+                link = Some((module, selected));
+            }
+        }
+        let Some((module, selected)) = link
+        else {
+            return Ok(unnamed);
+        };
+        let family_name = SurfaceName::from(self.text_at(selected));
+        let name = SurfaceName::from(self.text_at(member));
+        let found = self.module_constructor(site, module, Some(family_name), name)?;
+        if let Maybe::Absent(_) = found
+            && name.as_ref().starts_with(char::is_uppercase)
+            && let Ok(structure) = self.opened_module(site, module, &[])
+            && self
+                .collected
+                .structures
+                .get(usize::from(structure))
+                .is_some_and(|entry| {
+                    entry.exports.iter().any(|export| {
+                        matches!(*export, Member::Slot(slot) if self
+                            .collected
+                            .slots
+                            .get(usize::from(slot))
+                            .is_some_and(|held| held.name == family_name))
+                    })
+                })
+        {
+            return Err(LoweringRefusal::UnknownMember {
+                span: member.span,
+                module: family_name,
+                member: name,
+            });
+        }
+        Ok(found)
+    }
+
     /// The constructor `head`, the head of a call written at `site`, names.
     ///
     /// # Specification
@@ -3021,19 +3294,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::selected_constructor`] for a selection; the unnamed absence
     ///   for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
-    ///   not hold; [`LoweringRefusal::UnknownMember`] as
-    ///   [`Self::selected_constructor`] for a selection.
+    ///   not hold; [`LoweringRefusal::UnknownMember`] and
+    ///   [`LoweringRefusal::BudgetExceeded`] as [`Self::selected_constructor`]
+    ///   for a selection.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
+    /// [`LoweringRefusal::UnknownMold`], [`LoweringRefusal::UnknownMember`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor head and a function head take their own
     ///   readings.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::BudgetExceeded { .. })))]
     pub(super) fn constructor_head(
         &mut self,
         site: Site,
@@ -4318,17 +4593,19 @@ impl<'source> Lowerer<'_, 'source>
     ///   answers it, where the type grammar molds the parentheses; the unnamed
     ///   absence for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`];
-    ///   [`LoweringRefusal::UnknownMember`] as [`Self::constructor_head`].
+    ///   [`LoweringRefusal::UnknownMember`] and
+    ///   [`LoweringRefusal::BudgetExceeded`] as [`Self::constructor_head`].
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::UnknownMember`].
+    /// [`LoweringRefusal::UnknownMold`], [`LoweringRefusal::UnknownMember`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::annotated`].
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::BudgetExceeded { .. })))]
     fn applied_constructor(
         &mut self,
         site: Site,

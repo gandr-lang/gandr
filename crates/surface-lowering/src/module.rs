@@ -1589,9 +1589,10 @@ pub struct Collected<'source>
     /// source declaring it and its name: its ports, which are no constructor
     /// of that name.
     pub ports: BTreeMap<(SourceIndex, SurfaceName<'source>), Ported>,
-    /// Each constructor of `Theory` a source's own constructor shadows, by
-    /// the family's slot and the name the two share: the bare name is the
-    /// source's, so `Theory`'s is written `Theory.Constructor`.
+    /// Each constructor a printer writes by its family's path, by the family's
+    /// slot and the constructor's name: one of `Theory`'s a source's own
+    /// constructor shadows, so `Theory`'s is written `Theory.Constructor`, and
+    /// one of a family a module declares, written `M.Constructor`.
     pub shadowed: BTreeSet<(SlotIndex, SurfaceName<'source>)>,
     /// Each callable operation's plan, by its slot.
     pub operations: BTreeMap<SlotIndex, crate::operation::OperationPlan>,
@@ -4027,7 +4028,8 @@ pub fn collect_source<'source>(
             }
         }
         if former == Maybe::Present(Former::Data) {
-            collector.data(child, &decorations)?;
+            let top = collector.collected.top(child.span.start());
+            collector.data(top, child, &decorations)?;
             collector.hold_described_refusals(child);
             collector.route_operations(child);
             decorations.clear();
@@ -5146,7 +5148,11 @@ impl<'source> Collector<'_, 'source>
                             .marks
                             .insert(member.node, core::mem::take(&mut mark_docs));
                     }
-                    self.data(member, &decorations)?;
+                    self.data(
+                        self.collected.top(member.span.start()),
+                        member,
+                        &decorations,
+                    )?;
                     self.hold_described_refusals(member);
                     self.route_operations(member);
                     decorations.clear();
@@ -8626,12 +8632,16 @@ impl<'source> Collector<'_, 'source>
     ///   opening on `law` admits the law it names, as [`Self::admitted_law`]
     ///   reads it, and is refused at the member when it does not read; a form
     ///   opening on `module` is a nested module, opened onto `stack` or refused
-    ///   as a whole under its name; a form opening on a word one edit from
+    ///   as a whole under its name; a data declaration in a module no opaque
+    ///   ascription seals is collected into the module, its family, its
+    ///   constructors, its words and its operations named there, and a refusal
+    ///   of its form held at the member; a form opening on a word one edit from
     ///   `def` and a name after it is a definition with its keyword misspelt,
     ///   refused at the word and held in the module under that name, as the top
     ///   level holds the stray forms such a definition molds to (#2484); every
-    ///   other form is a malformed member, refused under the module's name at
-    ///   the member, and the module's other members are kept.
+    ///   other form, a data declaration in a sealed module among them, is a
+    ///   malformed member, refused under the module's name at the member, and
+    ///   the module's other members are kept.
     /// - provides: the per-member half of [`Self::module`].
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
@@ -8692,6 +8702,25 @@ impl<'source> Collector<'_, 'source>
                 former: Former::Module | Former::Declaration,
                 name,
             } => name,
+            Shape::Form {
+                former: Former::Data,
+                ..
+            } if !self
+                .collected
+                .structures
+                .get(structure.0)
+                .is_some_and(|entry| entry.sealed.0) =>
+            {
+                if let Some(open) = stack.last_mut().filter(|open| open.structure == structure) {
+                    open.leading = Leading(false);
+                }
+                if let Err(refusal) = self.data(container, member, &[]) {
+                    self.fault_at(structure, member, refusal);
+                }
+                self.hold_described_refusals(member);
+                self.route_operations(member);
+                return Ok(());
+            },
             Shape::Form { name, .. } => {
                 if let Some((word, named)) = self.misspelt_definition(member) {
                     let declared = self.tree.fragment(named.node).map_or("", <&str>::from);

@@ -84,6 +84,7 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::ConstructorSpelling;
+use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
@@ -1176,10 +1177,11 @@ impl Families
     ///   holds, at its constant's position, its constructors named as written
     ///   in tag order with the field count the signature gives each, a
     ///   constructor whose bare name the module reports shadowed qualified by
-    ///   its family's path, `Theory.App`; then its loops named as written, the
-    ///   words declaring them in module order; the words of a family's loops
-    ///   are consed, their empty word written `here(a)` as a value at their
-    ///   point `a`; no case.
+    ///   its family's path, `Theory.App`, or by its module's path for a family
+    ///   a module declares, `M.B`; then its loops named as written, the words
+    ///   declaring them in module order; the words of a family's loops are
+    ///   consed, their empty word written `here(a)` as a value at their point
+    ///   `a`; no case.
     /// - provides: the constructor names a [`CoreSource`] over any arena spells
     ///   a constructor value with.
     /// - fails: never.
@@ -1250,11 +1252,22 @@ impl Families
                             == ConstructorSpelling::Qualified
                         {
                             if qualifier.is_empty() {
-                                for segment in module.path_of(declaration) {
+                                let path = module.path_of(declaration);
+                                // A module family's constructor is written
+                                // through its module, `M.B`, the spelling a
+                                // pattern reads (#4298).
+                                let segments = match declaration.container() {
+                                    Container::Module(_) => {
+                                        path.split_last().map_or(&[][..], |(_, within)| within)
+                                    },
+                                    Container::TopLevel(_) => path.as_slice(),
+                                };
+                                for segment in segments {
                                     if !qualifier.is_empty() {
                                         qualifier.push('.');
                                     }
-                                    qualifier.push_str(<&str>::from(SourceFragment::from(segment)));
+                                    qualifier
+                                        .push_str(<&str>::from(SourceFragment::from(*segment)));
                                 }
                             }
                             alloc::format!("{qualifier}.{name}")
