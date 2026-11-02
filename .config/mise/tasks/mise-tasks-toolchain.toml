@@ -127,3 +127,45 @@ run = '''
 cargo build --release --locked -p gandr-lang --bin gandr
 target/release/gandr toolchain link dev target/release
 '''
+
+# Each host's toolchain follows `main` (#4499): every `interval` seconds the
+# follower fetches `origin main` into the main checkout, fast-forwards it,
+# builds the driver in its warm `target/` and deploys the build as the
+# default toolchain `main`. Every relay re-execs into it on its next message
+# (#4380). The builds live under `$XDG_DATA_HOME/gandr/builds/<commit>/`, the
+# current one and the one before it, linked as `previous` for a rollback; a
+# build a process still runs stays until the next deploy (`prune.jq`). A
+# checkout off `main` or dirty is never touched, and it and a failed build
+# are paged once per commit (`.config/follow/follow.bash`). `--once` reads
+# once and exits. `--install` runs the follower as a host service from this
+# checkout, as `stall:watch --install` does (`.config/service/`), and
+# `--remove` stops and deletes it. The checkout, the interval and the page
+# command are configuration, never the tree's.
+["toolchain:follow"]
+description = "Build and deploy main as the default toolchain whenever main moves; --install runs it as a service"
+quiet = true
+tools.jq = "1.8.1"
+usage = '''
+flag "--once" help="read once and exit"
+flag "--install" help="install and start the service that keeps toolchain:follow running from this checkout"
+flag "--remove" help="stop and delete that service"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/service/service.bash
+source .config/follow/follow.bash
+description='gandr toolchain follower (toolchain:follow)'
+if [[ ${usage_remove:-false} == true ]]; then service_unit remove toolchain-follow toolchain:follow "$description"; exit; fi
+config=$(follow_configuration) || exit 2
+# The service starts only on a configuration the loop reads.
+if [[ ${usage_install:-false} == true ]]; then service_unit install toolchain-follow toolchain:follow "$description"; exit; fi
+mapfile -t follow_page_command < <(jq -r '.page[]' <<< "$config")
+checkout=$(jq -r .checkout <<< "$config")
+while :; do
+  (follow_once "$checkout") || echo "toolchain:follow: the reading failed; reading again next interval" >&2
+  if [[ ${usage_once:-false} == true ]]; then exit; fi
+  sleep "$(jq .interval <<< "$(follow_configuration)")"
+done
+{% endraw %}
+'''

@@ -4304,7 +4304,7 @@ exit 2
 # Each reading records its time in the detector's memory as `read`.
 # `stall:watch --install` runs it as a service that starts it again 20
 # seconds after any exit, a `systemd --user` unit on Linux and a `launchd`
-# agent on macOS (`.config/stall/service.jq`, #4167), and `--remove` stops
+# agent on macOS (`.config/service/service.jq`, #4167), and `--remove` stops
 # and deletes that service. One runs per fleet, on the triage lane's host.
 # A finding standing `escalate` minutes after its first page stalls its pull
 # request: a comment opening `<!-- stall -->` names the finding and the seat,
