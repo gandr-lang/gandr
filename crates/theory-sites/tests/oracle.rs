@@ -1,14 +1,15 @@
-//! The Leclerc–Mimram oracle: Θ₂ by Definition 1 of Leclerc and Mimram's
-//! cellular type theory, set beside the chain restriction.
+//! The Leclerc–Mimram oracle: Θ₂ and Θ₃ by Definition 1 of Leclerc and
+//! Mimram's cellular type theory, set beside the chain restriction at levels
+//! two and three.
 //!
 //! Definition 1 builds Θₙ₊₁ as the wreath `Δ ≀ Θₙ`. A map `[P_1, …, P_n] →
 //! [Q_1, …, Q_m]` is a monotone map `f` of the outer points `0 … n` into `0 …
 //! m`. It carries one inner map `P_i → Q_k` for each target interval `k` that
 //! lies inside the image of a source interval `i`. At Θ₂ each inner map is Δ's,
-//! a monotone map of points. The enumeration here follows the definition as
-//! the formalisation `pasting-schemes-agda` states it, and never reads the
-//! site. The closed form `|Δ([p], [q])| = C(p + q + 1, p + 1)` checks it by
-//! hand on small pairs.
+//! a monotone map of points, and at Θ₃ each is a Θ₂ map. The enumeration here
+//! follows the definition as the formalisation `pasting-schemes-agda` states
+//! it, and never reads the site. The closed form `|Δ([p], [q])| = C(p + q + 1,
+//! p + 1)` checks it by hand on small pairs.
 //!
 //! The site reads a map's points off its wires. An outer chain's wire `j` runs
 //! between vertices `j - 1` and `j`, so it is the point `j`. An empty column is
@@ -203,11 +204,13 @@ fn covered(
 ///
 /// # Specification
 /// trivial.
-fn widen(
-    partial: Vec<Vec<(Cover, Points)>>,
+fn widen<Inner>(
+    partial: Vec<Vec<(Cover, Inner)>>,
     cover: Cover,
-    choices: &[Points],
-) -> Vec<Vec<(Cover, Points)>>
+    choices: &[Inner],
+) -> Vec<Vec<(Cover, Inner)>>
+where
+    Inner: Clone,
 {
     partial
         .into_iter()
@@ -480,6 +483,347 @@ fn the_site_names_a_part_of_definition_one()
     assert_eq!(
         (theta, lacked, first.as_deref()),
         (81_005, 79_961, Some("[1](0) → [1](0): points (0, 0)"))
+    );
+}
+
+/// Level three over the chains.
+type Three = Wreath<Two>;
+
+/// A map of level three.
+type ThreeMap = WreathMap<TwoMap>;
+
+/// A Θ₃ object `[n](T_1, …, T_n)`: one Θ₂ object per outer vertex.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ThetaThree(Vec<Theta>);
+
+impl fmt::Display for ThetaThree
+{
+    /// Writes `[n](T_1, …, T_n)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let written: Vec<String> = self.0.iter().map(ToString::to_string).collect();
+        write!(f, "[{}]({})", self.0.len(), written.join(", "))
+    }
+}
+
+/// A Θ₃ map by Definition 1: the outer map of points, and the Θ₂ map at each
+/// target interval the outer image covers, in interval order.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ThetaThreeMap
+{
+    /// The outer map of points.
+    outer: Points,
+    /// Each cover with its Θ₂ map, in interval order.
+    inner: Vec<(Cover, ThetaMap)>,
+}
+
+impl fmt::Display for ThetaThreeMap
+{
+    /// Writes the outer points, then each covered interval's Θ₂ map.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "points {}", self.outer)?;
+        for &(cover, ref map) in &self.inner {
+            write!(f, ", interval {} by [{map}]", cover.interval)?;
+        }
+        Ok(())
+    }
+}
+
+/// A level-three site map as Definition 1 reads it: its outer points, and each
+/// cover with its column's Θ₂ reading. A map out of an empty column names no
+/// map.
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ReadingThree
+{
+    /// The outer wires, as points.
+    outer: Points,
+    /// Each image vertex with its source vertex, and the column's reading.
+    inner: Vec<(Cover, Option<Reading>)>,
+}
+
+/// Every Θ₃ map from `source` to `target` by Definition 1.
+///
+/// # Specification
+/// trivial.
+fn theta_three_maps(
+    source: &ThetaThree,
+    target: &ThetaThree,
+) -> Vec<ThetaThreeMap>
+{
+    let mut maps = Vec::new();
+    for outer in monotone(Length(source.0.len()), Length(target.0.len())) {
+        let mut partial: Vec<Vec<(Cover, ThetaMap)>> = vec![Vec::new()];
+        for cover in covered(&outer, Length(target.0.len())) {
+            let choices = theta_maps(&source.0[cover.source], &target.0[cover.interval]);
+            partial = widen(partial, cover, &choices);
+        }
+        maps.extend(partial.into_iter().map(|inner| ThetaThreeMap {
+            outer: outer.clone(),
+            inner,
+        }));
+    }
+    maps
+}
+
+/// `map`, out of `source`, as Definition 1 reads it.
+///
+/// # Specification
+/// trivial.
+fn read_three(
+    map: &ThreeMap,
+    source: &ThetaThree,
+) -> ReadingThree
+{
+    let mut inner: Vec<(Cover, Option<Reading>)> = (0 .. source.0.len())
+        .flat_map(|vertex| {
+            map.column(Edge::from(vertex))
+                .iter()
+                .map(move |&(image, ref column)| {
+                    let from = &source.0[vertex];
+                    let named = (!from.0.is_empty()).then(|| read(column, from));
+                    let cover = Cover {
+                        interval: usize::from(image),
+                        source: vertex,
+                    };
+                    (cover, named)
+                })
+        })
+        .collect();
+    inner.sort_unstable();
+    ReadingThree {
+        outer: points(map.outer().wires()),
+        inner,
+    }
+}
+
+/// Whether `reading`, from `source` to `target`, is a map of Definition 1
+/// with its empty columns' maps left open.
+///
+/// # Specification
+/// trivial.
+fn conforms_three(
+    reading: &ReadingThree,
+    source: &ThetaThree,
+    target: &ThetaThree,
+) -> Membership
+{
+    let outer = &reading.outer;
+    let covers: Vec<Cover> = reading.inner.iter().map(|&(cover, _)| cover).collect();
+    let conforming = outer.0.len() == source.0.len().saturating_add(1)
+        && outer.0.windows(2).all(|pair| pair.first() <= pair.last())
+        && outer.0.iter().all(|point| *point <= target.0.len())
+        && covered(outer, Length(target.0.len())) == covers
+        && reading.inner.iter().all(|&(cover, ref named)| {
+            named.as_ref().is_none_or(|column| {
+                conforms(column, &source.0[cover.source], &target.0[cover.interval])
+                    == Membership::Inside
+            })
+        });
+    if conforming {
+        Membership::Inside
+    }
+    else {
+        Membership::Outside
+    }
+}
+
+/// The maps of Definition 1 `reading` names into `target`: its outer map,
+/// and at each cover the Θ₂ maps its column's reading names, or every Θ₂ map
+/// out of the point where an empty column names none.
+///
+/// # Specification
+/// trivial.
+fn named_three(
+    reading: &ReadingThree,
+    target: &ThetaThree,
+) -> Vec<ThetaThreeMap>
+{
+    let mut partial: Vec<Vec<(Cover, ThetaMap)>> = vec![Vec::new()];
+    for &(cover, ref column) in &reading.inner {
+        let into = &target.0[cover.interval];
+        let choices = column.as_ref().map_or_else(
+            || theta_maps(&Theta(Vec::new()), into),
+            |column| named(column, into),
+        );
+        partial = widen(partial, cover, &choices);
+    }
+    partial
+        .into_iter()
+        .map(|inner| ThetaThreeMap {
+            outer: reading.outer.clone(),
+            inner,
+        })
+        .collect()
+}
+
+/// The level-three restriction's pasting schemes as Θ₃ objects, in index
+/// order. Each one's outer shape is a chain, and each column a Θ₂ pasting
+/// scheme or the point.
+///
+/// # Specification
+/// trivial.
+fn schemes_three(restriction: &Three) -> Vec<(ShapeIndex, ThetaThree)>
+{
+    let free = |shape: &Shape| usize::from(shape.point_count()) == 0;
+    restriction
+        .objects()
+        .iter()
+        .enumerate()
+        .filter(|&(_, object)| {
+            usize::from(object.outer().vertex_count()) > 0
+                && free(object.outer())
+                && object
+                    .columns()
+                    .iter()
+                    .all(|column| free(column.outer()) && column.columns().iter().all(free))
+        })
+        .map(|(at, object)| {
+            assert_eq!(
+                *object.outer(),
+                column(Length(object.columns().len())),
+                "{object}'s outer chain"
+            );
+            let columns = object
+                .columns()
+                .iter()
+                .map(|scheme| {
+                    let lengths: Vec<usize> = scheme
+                        .columns()
+                        .iter()
+                        .map(|shape| usize::from(shape.vertex_count()))
+                        .collect();
+                    assert_eq!(
+                        *scheme.outer(),
+                        column(Length(lengths.len())),
+                        "{object}'s column's outer chain"
+                    );
+                    for (shape, length) in scheme.columns().iter().zip(&lengths) {
+                        assert_eq!(*shape, column(Length(*length)), "{object}'s column");
+                    }
+                    Theta(lengths)
+                })
+                .collect();
+            (ShapeIndex::from(at), ThetaThree(columns))
+        })
+        .collect()
+}
+
+/// Definition 1's counts at Θ₃ on three small pairs. A map between two
+/// suspensions `[1](A) → [1](B)` is one of the two constants or the identity
+/// carrying a Θ₂ map `A → B`, so it counts `2 + |Θ₂(A, B)|`.
+///
+/// | Pair | Θ₂ factor | Maps |
+/// | --- | --- | --- |
+/// | `[1]([0]()) → [1]([0]())` | one point to one | 3 |
+/// | `[1]([0]()) → [1]([1](0))` | the point to two | 4 |
+/// | `[1]([1](0)) → [1]([1](0))` | three, as `[1](0) → [1](0)` counts | 5 |
+#[test]
+fn definition_one_at_level_three_counts_the_suspensions_maps()
+{
+    let point = || Theta(Vec::new());
+    let edge = || Theta(vec![0]);
+    let cases = [
+        (vec![point()], vec![point()], 3_usize),
+        (vec![point()], vec![edge()], 4),
+        (vec![edge()], vec![edge()], 5),
+    ];
+    for (source, target, count) in cases {
+        let (source, target) = (ThetaThree(source), ThetaThree(target));
+        assert_eq!(
+            theta_three_maps(&source, &target).len(),
+            count,
+            "{source} → {target}"
+        );
+    }
+}
+
+/// Over the level-three restriction's 53 pasting schemes at total size
+/// thirteen, Θ₃ holds 148,475 maps by Definition 1 and the site 1,008. Each
+/// site map is a map of Definition 1 once its empty columns name a map, and
+/// no two read alike, so the site is a faces-only sub-category of Θ₃ on these
+/// objects. The site's maps name 1,493 of Definition 1's and lack 146,982.
+/// The first lacked map runs from `[1]([0]())` to itself: the constant at
+/// point 0, a degeneracy the faces-only site drops.
+#[test]
+fn the_site_at_level_three_names_a_part_of_definition_one()
+{
+    let bound = ShapeSize::from(13_usize);
+    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+    let restriction = Wreath::build(&chains, &restriction(bound), bound);
+    let schemes = schemes_three(&restriction);
+    let (mut theta, mut site, mut lacked) = (0_usize, 0_usize, 0_usize);
+    let mut names: BTreeSet<ThetaThreeMap> = BTreeSet::new();
+    let mut first: Option<String> = None;
+    let mut readings: Vec<ReadingThree> = Vec::new();
+    for &(from, ref source) in &schemes {
+        for &(to, ref target) in &schemes {
+            let hom = restriction.hom(from, to);
+            readings.clear();
+            readings.extend(hom.iter().map(|map| read_three(map, source)));
+            for (reading, map) in readings.iter().zip(hom) {
+                assert_eq!(
+                    conforms_three(reading, source, target),
+                    Membership::Inside,
+                    "{map} from {source} to {target} is a map of Definition 1"
+                );
+            }
+            readings.sort_unstable();
+            assert!(
+                readings.windows(2).all(|pair| pair.first() != pair.last()),
+                "no two maps from {source} to {target} read alike"
+            );
+            let maps = theta_three_maps(source, target);
+            theta += maps.len();
+            site += readings.len();
+            names.clear();
+            names.extend(
+                readings
+                    .iter()
+                    .flat_map(|reading| named_three(reading, target)),
+            );
+            let mut found = 0_usize;
+            for map in &maps {
+                if names.contains(map) {
+                    found += 1;
+                }
+                else {
+                    lacked += 1;
+                    first.get_or_insert_with(|| format!("{source} → {target}: {map}"));
+                }
+            }
+            assert_eq!(
+                found,
+                names.len(),
+                "each map the site names from {source} to {target} is one of Definition 1's"
+            );
+        }
+    }
+    assert_eq!(
+        (schemes.len(), site),
+        (53, 1_008),
+        "the schemes and the site's maps"
+    );
+    assert_eq!(
+        (theta, lacked, first.as_deref()),
+        (
+            148_475,
+            146_982,
+            Some("[1]([0]()) → [1]([0]()): points (0, 0)")
+        )
     );
 }
 

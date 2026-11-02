@@ -74,11 +74,6 @@ impl Lead
     /// # Specification
     /// trivial.
     pub const ONE: Self = Self(1);
-    /// The lead of a level-two image.
-    ///
-    /// # Specification
-    /// trivial.
-    pub const TWO: Self = Self(2);
 }
 
 wrapper! {

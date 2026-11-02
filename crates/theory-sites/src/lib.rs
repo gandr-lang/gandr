@@ -284,14 +284,16 @@ mod units;
 mod wreath;
 
 pub use ascent::Cell;
-pub use ascent::InnerGraft;
+pub use ascent::Certificate;
+pub use ascent::ColumnGlue;
+pub use ascent::Cover;
 pub use ascent::LevelDefect;
 pub use ascent::LevelFailure;
 pub use ascent::LevelUncertified;
 pub use ascent::Spot;
 pub use ascent::WreathCocone;
 pub use ascent::WreathStratum;
-pub use ascent::segal_two;
+pub use ascent::segal_above;
 pub use catalogue::Catalogue;
 pub use catalogue::Family;
 pub use catalogue::ShapeIndex;
