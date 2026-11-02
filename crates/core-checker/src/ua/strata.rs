@@ -534,6 +534,7 @@ impl Strata
     /// - hypothesis: L3 — a 3-cell whiskered by a 1-cell is admitted at level
     ///   three, and a bound past the allowance is refused by it.
     /// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+    /// - witness: `ua::tests::level_three_is_kept_recalled_and_refused_by_the_store_4437`
     #[spec(ensures: |ref ret| match *ret {
         | Ok(ref stratum) => at.bound <= above_two_allowance() && stratum.degree() == at.degree,
         | Err(StratumDefect::Allowance { .. } | StratumDefect::Degree { .. } | StratumDefect::Condition { .. }) => true,
@@ -804,6 +805,7 @@ where
 /// - hypothesis: L3 — as [`Strata::level_two`] and [`Strata::level_three`].
 /// - witness: `ua::tests::level_two_is_kept_recalled_and_refused_by_the_store_4123`
 /// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+/// - witness: `ua::tests::level_three_is_kept_recalled_and_refused_by_the_store_4437`
 fn ascend<Below>(
     store: &dyn StratumStore,
     wreath: Arc<Wreath<Below::Level>>,
