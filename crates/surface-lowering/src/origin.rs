@@ -727,6 +727,14 @@ pub struct OriginTable
     /// link. Every other link holds the next link there, which names its own
     /// first field (#3934).
     seconds: Vec<(ValueTypeId, Origin)>,
+    /// Where each label a sum is written over is written, one per summand in
+    /// written order, by the sum, ascending by id. The core erases a sum's
+    /// labels to positions, and the printer reads them here (#4395).
+    sum_labels: Vec<(ValueTypeId, Vec<Origin>)>,
+    /// Where each label a lazy record type is written over is written, one
+    /// per entry in written order, by the lazy product, ascending by id
+    /// (#4395).
+    with_labels: Vec<(CompTypeId, Vec<Origin>)>,
     /// Each variable written in the source, with its binder's span, ascending
     /// by id.
     bindings: Vec<(ValueId, ByteSpan)>,
@@ -858,6 +866,41 @@ where
     found.map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
 }
 
+/// The labels one family of written labels holds for `id`.
+///
+/// # Specification
+/// - requires: entries are strictly ascending by id.
+/// - ensures: the labels whose key equals `id`, or none when no entry has that
+///   key.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`find`], over a family holding several labels per id.
+/// - witness: `origin::tests::a_carried_type_keeps_its_origin_and_its_labels`
+#[spec(
+    ensures: |ret| {
+        let bound = entries.get(entries.partition_point(|&(held, _)| held < id));
+        ret.map_or_else(
+            || bound.is_none_or(|&(held, _)| held != id),
+            |labels| bound.is_some_and(|&(held, ref found)| held == id && **found == *labels),
+        )
+    },
+)]
+fn labels_of<Id>(
+    entries: &[(Id, Vec<Origin>)],
+    id: Id,
+) -> Option<&[Origin]>
+where
+    Id: Copy + Ord,
+{
+    entries
+        .binary_search_by_key(&id, |&(held, _)| held)
+        .ok()
+        .and_then(|position| entries.get(position))
+        .map(|&(_, ref labels)| labels.as_slice())
+}
+
 /// What a computation a rewrite minted stands for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Source
@@ -982,6 +1025,36 @@ impl OriginTable
         record(&mut self.seconds, id, label);
     }
 
+    /// Record where the labels of a freshly minted sum are written, one per
+    /// summand in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn record_sum_labels(
+        &mut self,
+        id: ValueTypeId,
+        labels: Vec<Origin>,
+    )
+    {
+        self.sum_labels.push((id, labels));
+    }
+
+    /// Record where the labels of a freshly minted lazy product are written,
+    /// one per entry in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn record_with_labels(
+        &mut self,
+        id: CompTypeId,
+        labels: Vec<Origin>,
+    )
+    {
+        self.with_labels.push((id, labels));
+    }
+
     /// Record that the data case `match` eliminates a value of the data
     /// declaration `family`.
     ///
@@ -1022,7 +1095,8 @@ impl OriginTable
     ///   run `binds` pairs it with, the run first and the first pair after it;
     ///   a rebuilt opener records its source's binder, a rebuilt data case the
     ///   family its source eliminates, a rebuilt dependent arrow the name its
-    ///   source binds, and a rebuilt variable its source's binder span; a
+    ///   source binds, a rebuilt sum or lazy product the labels its source is
+    ///   written over, and a rebuilt variable its source's binder span; a
     ///   minted bind records no binder; nothing recorded before changes, and
     ///   every family stays ascending.
     /// - provides: the nodes of a body the checker elaborated, located as the
@@ -1038,6 +1112,7 @@ impl OriginTable
     ///   names and the run's precedence; a source with no origin leaves its
     ///   copy unrecorded.
     /// - witness: `origin::tests::an_elaborated_node_answers_where_its_source_is_written`
+    /// - witness: `origin::tests::a_carried_type_keeps_its_origin_and_its_labels`
     #[spec(
         captures: before = (self.values.len(), self.computations.len(), self.declarations.len()),
         ensures: self.values.len() >= before.0
@@ -1094,6 +1169,10 @@ impl OriginTable
             if let Maybe::Present(label) = find(&self.seconds, held) {
                 self.record_second(written, label);
             }
+            if let Some(labels) = labels_of(&self.sum_labels, held) {
+                let labels = labels.to_vec();
+                self.record_sum_labels(written, labels);
+            }
         }
         for (&written, &held) in sources.comp_types() {
             if let Maybe::Present(origin) = self.comp_type(held) {
@@ -1101,6 +1180,10 @@ impl OriginTable
             }
             if let Maybe::Present(binder) = find(&self.arrows, held) {
                 self.record_arrow(written, binder);
+            }
+            if let Some(labels) = labels_of(&self.with_labels, held) {
+                let labels = labels.to_vec();
+                self.record_with_labels(written, labels);
             }
         }
     }
@@ -1552,6 +1635,30 @@ impl OriginTable
     pub fn seconds(&self) -> &[(ValueTypeId, Origin)]
     {
         &self.seconds
+    }
+
+    /// Each sum written over labels with where each of its labels is written,
+    /// in written order, ascending by the sum.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sum_labels(&self) -> &[(ValueTypeId, Vec<Origin>)]
+    {
+        &self.sum_labels
+    }
+
+    /// Each lazy product written over labels with where each of its labels is
+    /// written, in written order, ascending by the product.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_labels(&self) -> &[(CompTypeId, Vec<Origin>)]
+    {
+        &self.with_labels
     }
 
     /// Each data case a match's tree holds, with the data declaration it
@@ -2959,13 +3066,33 @@ mod tests
         table.record_comp_type(arrow, at(NodeIndex::from(4_usize)));
         table.record_arrow(arrow, at(NodeIndex::from(5_usize)));
         table.record_elimination(case, ConstantIndex::from(7_usize));
+        let [sum, copied_sum] = [(); 2].map(|()| arena.value_type_sum(&[pair, pair]));
+        let [with, copied_with] = [(); 2].map(|()| arena.comp_type_with(&[arrow, arrow]));
+        let written = [at(NodeIndex::from(9_usize)), at(NodeIndex::from(10_usize))];
+        table.record_sum_labels(sum, written.to_vec());
+        table.record_with_labels(with, written.to_vec());
         table.carry(
             &[
                 Carried::ValueType(pair, copied_pair),
                 Carried::CompType(arrow, copied_arrow),
                 Carried::Computation(case, rebuilt_case),
+                Carried::ValueType(sum, copied_sum),
+                Carried::CompType(with, copied_with),
             ],
             &[],
+        );
+        assert_eq!(
+            (
+                super::labels_of(table.sum_labels(), copied_sum),
+                super::labels_of(table.with_labels(), copied_with),
+            ),
+            (Some(written.as_slice()), Some(written.as_slice())),
+            "a copied sum and lazy product keep every label in order"
+        );
+        assert_eq!(
+            super::labels_of(table.sum_labels(), copied_pair),
+            None,
+            "a type written with no labels gains none"
         );
         assert_eq!(
             table.value_type(copied_pair),

@@ -34,6 +34,16 @@ def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer {
 @[ runs("30") ]
 def gone() -> -F Integer { pick(+{.2 = unit}) }
 
+/// A sum written at its label injects into the summand the label names. The
+/// printer spells its signature under those labels.
+def signed : +{ok : Integer, err : String, gone : Unit};
+def signed = +{.err = "no"};
+
+/// `pick` takes the arm of the summand `signed` injects into. It runs to
+/// that arm's answer.
+@[ runs("20") ]
+def signed_picked() -> -F Integer { pick(signed) }
+
 @[ checks ]
 def unwrap(v : +{only : Integer}) -> -F Integer {
   match v {

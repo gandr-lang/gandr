@@ -27,6 +27,7 @@ use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::model_slots;
 use gandr_surface_diagnostics::telescopes;
+use gandr_surface_diagnostics::written_entry_names;
 use gandr_surface_diagnostics::written_names;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
@@ -1008,13 +1009,31 @@ fn read(
     let implicits = telescopes(&module);
     let slots = model_slots(&module);
     // Each dependent pair's binder and second label as the source writes
-    // them, as the language server's spellings name them (#3278).
+    // them, as the language server's spellings name them (#3278), and each
+    // labelled sum's and lazy product's labels (#4395).
     let naming = Naming::of(&module, SourceText::from(text.as_str()));
     let pairs: Vec<_> = written_names(naming.pairs().iter().copied(), naming.text()).collect();
     let seconds: Vec<_> = written_names(naming.seconds().iter().copied(), naming.text()).collect();
+    let sum_labels: Vec<_> = written_entry_names(
+        naming
+            .sum_labels()
+            .iter()
+            .map(|&(sum, ref spans)| (sum, spans.iter().copied())),
+        naming.text(),
+    )
+    .collect();
+    let with_labels: Vec<_> = written_entry_names(
+        naming
+            .with_labels()
+            .iter()
+            .map(|&(with, ref spans)| (with, spans.iter().copied())),
+        naming.text(),
+    )
+    .collect();
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
         .naming_pairs(&pairs, &seconds)
+        .naming_entries(&sum_labels, &with_labels)
         .crossing(&crossings)
         .forgetting(&forgettings)
         .forgetting_maps(&maps)

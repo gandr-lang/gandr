@@ -29,6 +29,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::WrittenModel;
@@ -93,6 +94,12 @@ pub struct Naming
     /// Each such pair with where the label of its second component is
     /// written, ascending by id.
     seconds: Vec<(ValueTypeId, ByteSpan)>,
+    /// Each sum written over labels with where each label is written, in
+    /// written order, ascending by id.
+    sum_labels: Vec<(ValueTypeId, Vec<ByteSpan>)>,
+    /// Each lazy product written over labels with where each label is
+    /// written, in written order, ascending by id.
+    with_labels: Vec<(CompTypeId, Vec<ByteSpan>)>,
     /// Each type written as a relation between types, with the relation,
     /// ascending by id.
     relations: Vec<(ValueTypeId, Relation)>,
@@ -211,6 +218,16 @@ impl Naming
             .iter()
             .map(|&(pair, origin)| (pair, origin.span()))
             .collect();
+        let sum_labels = origins
+            .sum_labels()
+            .iter()
+            .map(|&(sum, ref labels)| (sum, labels.iter().map(Origin::span).collect()))
+            .collect();
+        let with_labels = origins
+            .with_labels()
+            .iter()
+            .map(|&(with, ref labels)| (with, labels.iter().map(Origin::span).collect()))
+            .collect();
         let mut relations = origins.relations().to_vec();
         relations.sort_by_key(|&(related, _)| related);
         let mut models = origins.models().to_vec();
@@ -243,6 +260,8 @@ impl Naming
             arrows,
             pairs,
             seconds,
+            sum_labels,
+            with_labels,
             relations,
             models,
             uses,
@@ -342,6 +361,30 @@ impl Naming
         &self.seconds
     }
 
+    /// Each sum written over labels with where each label is written, in
+    /// written order, ascending by sum.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sum_labels(&self) -> &[(ValueTypeId, Vec<ByteSpan>)]
+    {
+        &self.sum_labels
+    }
+
+    /// Each lazy product written over labels with where each label is
+    /// written, in written order, ascending by product.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_labels(&self) -> &[(CompTypeId, Vec<ByteSpan>)]
+    {
+        &self.with_labels
+    }
+
     /// Each type written as a relation between types, ascending by type.
     ///
     /// # Specification
@@ -371,8 +414,8 @@ impl Naming
     /// # Specification
     /// - requires: `carried` is in the order its copies were minted.
     /// - ensures: every list stays ascending by its key; each copy whose source
-    ///   is a written arrow, pair, relation or model type is kept as that
-    ///   source, as [`carry_labels`] reads it.
+    ///   is a written arrow, pair, labelled sum or lazy product, relation or
+    ///   model type is kept as that source, as [`carry_labels`] reads it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -394,12 +437,16 @@ impl Naming
             arrows: &mut self.arrows,
             pairs: &mut self.pairs,
             seconds: &mut self.seconds,
+            sum_labels: &mut self.sum_labels,
+            with_labels: &mut self.with_labels,
             relations: &mut self.relations,
             models: &mut self.models,
         });
         self.arrows.sort_by_key(|&(arrow, _)| arrow);
         self.pairs.sort_by_key(|&(pair, _)| pair);
         self.seconds.sort_by_key(|&(pair, _)| pair);
+        self.sum_labels.sort_by_key(|&(sum, _)| sum);
+        self.with_labels.sort_by_key(|&(with, _)| with);
         self.relations.sort_by_key(|&(related, _)| related);
         self.models.sort_by_key(|&(modelled, _)| modelled);
     }
@@ -667,9 +714,42 @@ where
     })
 }
 
-/// The lists a reader names written arrows, record pairs, relations and
-/// model types by, each beside its id: an arrow's binder name as `Arrow`,
-/// and a pair's label and its second component's as `Label`.
+/// Each id of `written` with the names `text` writes at its spans, in order.
+///
+/// The ids stay in `written`'s order; an id one of whose spans `text` does
+/// not hold is left out. The lists [`Naming`] keeps for a labelled sum and a
+/// labelled lazy product, read this way, are what [`CoreSource`] spells
+/// their entries' labels by.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn written_entry_names<Id, Spans, Written>(
+    written: Written,
+    text: SourceText<'_>,
+) -> impl Iterator<Item = (Id, Vec<Name<'_>>)>
+where
+    Spans: IntoIterator<Item = ByteSpan>,
+    Written: IntoIterator<Item = (Id, Spans)>,
+{
+    written.into_iter().filter_map(move |(id, spans)| {
+        let names: Option<Vec<Name<'_>>> = spans
+            .into_iter()
+            .map(|span| {
+                let fragment = text.fragment(span).ok()?;
+                Some(Name::from(<&str>::from(fragment)))
+            })
+            .collect();
+        names.map(|names| (id, names))
+    })
+}
+
+/// The lists a reader names written arrows, pairs, labelled types,
+/// relations and model types by.
+///
+/// Each list holds its entries beside their ids: an arrow's binder name as
+/// `Arrow`, and a pair's label, its second component's and each label of a
+/// sum or a lazy product as `Label`.
 #[derive(Debug)]
 pub struct WrittenLabels<'lists, Arrow, Label>
 {
@@ -679,6 +759,11 @@ pub struct WrittenLabels<'lists, Arrow, Label>
     pub pairs: &'lists mut Vec<(ValueTypeId, Label)>,
     /// Each such pair with the label of its second component.
     pub seconds: &'lists mut Vec<(ValueTypeId, Label)>,
+    /// Each sum written over labels with its labels in written order.
+    pub sum_labels: &'lists mut Vec<(ValueTypeId, Vec<Label>)>,
+    /// Each lazy product written over labels with its labels in written
+    /// order.
+    pub with_labels: &'lists mut Vec<(CompTypeId, Vec<Label>)>,
     /// Each type written as a relation between types, with the relation.
     pub relations: &'lists mut Vec<(ValueTypeId, Relation)>,
     /// Each type written as a model type, with the theory and sorts written.
@@ -721,12 +806,16 @@ pub fn carry_labels<Copies, Arrow, Label>(
         ref mut arrows,
         ref mut pairs,
         ref mut seconds,
+        ref mut sum_labels,
+        ref mut with_labels,
         ref mut relations,
         ref mut models,
     } = *labelled;
     let mut named = firsts(arrows);
     let mut binders = firsts(pairs);
     let mut labels = firsts(seconds);
+    let mut summed = firsts(sum_labels);
+    let mut entered = firsts(with_labels);
     let mut related = firsts(relations);
     let mut modelled = firsts(models);
     let mut latest: BTreeMap<ValueTypeId, ValueTypeId> = BTreeMap::new();
@@ -734,10 +823,12 @@ pub fn carry_labels<Copies, Arrow, Label>(
         match copy {
             Carried::CompType(source, image) => {
                 copied(arrows, &mut named, (source, image), Clone::clone);
+                copied(with_labels, &mut entered, (source, image), Clone::clone);
             },
             Carried::ValueType(source, image) => {
                 copied(pairs, &mut binders, (source, image), Clone::clone);
                 copied(seconds, &mut labels, (source, image), Clone::clone);
+                copied(sum_labels, &mut summed, (source, image), Clone::clone);
                 copied(relations, &mut related, (source, image), Clone::clone);
                 copied(models, &mut modelled, (source, image), |model| {
                     WrittenModel {
@@ -1115,6 +1206,8 @@ mod tests
         let mut arrows = Vec::from([(arrow, "r")]);
         let mut pairs = Vec::from([(written, "x"), (written, "later"), (labelled, "own")]);
         let mut seconds = Vec::from([(written, "y")]);
+        let mut sum_labels = Vec::from([(copy, Vec::from(["ok", "err"]))]);
+        let mut with_labels = Vec::from([(arrow, Vec::from(["get", "put"]))]);
         let mut relations = Vec::new();
         let mut models = Vec::new();
         carry_labels(
@@ -1129,6 +1222,8 @@ mod tests
                 arrows: &mut arrows,
                 pairs: &mut pairs,
                 seconds: &mut seconds,
+                sum_labels: &mut sum_labels,
+                with_labels: &mut with_labels,
                 relations: &mut relations,
                 models: &mut models,
             },
@@ -1158,6 +1253,22 @@ mod tests
             arrows,
             [(arrow, "r"), (arrow_copy, "r")],
             "an arrow's copy binds its source's name"
+        );
+        assert_eq!(
+            sum_labels,
+            [
+                (copy, Vec::from(["ok", "err"])),
+                (copy_of_copy, Vec::from(["ok", "err"]))
+            ],
+            "a sum's copy is written over its source's labels, every one in order"
+        );
+        assert_eq!(
+            with_labels,
+            [
+                (arrow, Vec::from(["get", "put"])),
+                (arrow_copy, Vec::from(["get", "put"]))
+            ],
+            "a lazy product's copy is written over its source's labels"
         );
         assert!(
             relations.is_empty() && models.is_empty(),

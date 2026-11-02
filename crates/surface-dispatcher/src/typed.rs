@@ -164,6 +164,7 @@ use gandr_surface_diagnostics::WrittenLabels;
 use gandr_surface_diagnostics::carry_labels;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::written_entry_names;
 use gandr_surface_diagnostics::written_names;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ClauseBinder;
@@ -826,10 +827,40 @@ fn labelled<'names>(
     labelled
 }
 
+/// Each sum and each lazy product of `named` with the labels `text` writes at
+/// its spans, and each `reread` names, ascending by the type.
+///
+/// # Specification
+/// trivial.
+fn entries_labelled<'names, Id>(
+    named: &[(Id, Vec<ByteSpan>)],
+    text: SourceText<'names>,
+    reread: &'names [(Id, Vec<String>)],
+) -> Vec<(Id, Vec<Name<'names>>)>
+where
+    Id: Copy + Ord,
+{
+    let mut labelled: Vec<(Id, Vec<Name<'names>>)> = named
+        .iter()
+        .filter_map(|&(id, ref spans)| {
+            written_entry_names([(id, spans.iter().copied())], text).next()
+        })
+        .chain(reread.iter().map(|&(id, ref names)| {
+            (
+                id,
+                names.iter().map(|name| Name::from(name.as_str())).collect(),
+            )
+        }))
+        .collect();
+    labelled.sort_by_key(|&(id, _)| id);
+    labelled
+}
+
 /// What a reprint's own lowering keeps beside the types it read, at their
 /// images in the table's arena: the name each dependent arrow binds, the
-/// labels each dependent pair was written with, the relation each type
-/// was written as and the model type each was written as.
+/// labels each dependent pair was written with, the labels each sum and lazy
+/// product was written over, the relation each type was written as and the
+/// model type each was written as.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Read
 {
@@ -839,6 +870,11 @@ struct Read
     pairs: Vec<(ValueTypeId, String)>,
     /// Each dependent pair's image with the label its second was written as.
     seconds: Vec<(ValueTypeId, String)>,
+    /// Each labelled sum's image with the labels it was written over.
+    sum_labels: Vec<(ValueTypeId, Vec<String>)>,
+    /// Each labelled lazy product's image with the labels it was written
+    /// over.
+    with_labels: Vec<(CompTypeId, Vec<String>)>,
     /// Each related type's image with the relation it was written as.
     relations: Vec<(ValueTypeId, Relation)>,
     /// Each model type's image with the theory and sorts it was written
@@ -3845,6 +3881,16 @@ impl TypeTable
         arrows.sort_by_key(|&(arrow, _)| arrow);
         let pairs = labelled(self.naming.pairs(), self.naming.text(), &read.pairs);
         let seconds = labelled(self.naming.seconds(), self.naming.text(), &read.seconds);
+        let sum_labels = entries_labelled(
+            self.naming.sum_labels(),
+            self.naming.text(),
+            &read.sum_labels,
+        );
+        let with_labels = entries_labelled(
+            self.naming.with_labels(),
+            self.naming.text(),
+            &read.with_labels,
+        );
         let mut relations: Vec<(ValueTypeId, Relation)> = self
             .naming
             .relations()
@@ -3923,6 +3969,7 @@ impl TypeTable
             .naming(&constructors)
             .naming_arrows(&arrows)
             .naming_pairs(&pairs, &seconds)
+            .naming_entries(&sum_labels, &with_labels)
             .relating(&relations)
             .modeling(&models)
             .naming_implicits(&implicits)
@@ -4523,6 +4570,31 @@ impl TypeTable
                         }
                     }
                 }
+                let spelled = |labels: &[Origin]| -> Option<Vec<String>> {
+                    labels
+                        .iter()
+                        .map(|label| {
+                            let span = label.span();
+                            augmented
+                                .get(usize::from(span.start()) .. usize::from(span.end()))
+                                .map(String::from)
+                        })
+                        .collect()
+                };
+                for &(sum, ref labels) in module.origins().sum_labels() {
+                    if let (Some(image), Some(names)) =
+                        (importer.value_type_image(sum), spelled(labels))
+                    {
+                        read_back.sum_labels.push((image, names));
+                    }
+                }
+                for &(with, ref labels) in module.origins().with_labels() {
+                    if let (Some(image), Some(names)) =
+                        (importer.comp_type_image(with), spelled(labels))
+                    {
+                        read_back.with_labels.push((image, names));
+                    }
+                }
                 for &(related, relation) in module.origins().relations() {
                     if let Some(image) = importer.value_type_image(related) {
                         read_back.relations.push((image, relation));
@@ -4617,14 +4689,16 @@ impl TypeTable
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
         }
         // A type the lowering recorded as written as a relation or a model
-        // type, a pair it recorded labels for, or a dependent arrow it
-        // recorded its binder's name for, stands at each copy a shift made of
-        // it, so a type read under a dropped binder reprints as written (#674,
-        // #1655, #1751, #2254).
+        // type, a pair, a sum or a lazy product it recorded labels for, or a
+        // dependent arrow it recorded its binder's name for, stands at each
+        // copy a shift made of it, so a type read under a dropped binder
+        // reprints as written (#674, #1655, #1751, #2254, #4395).
         carry_labels(carried, &mut WrittenLabels {
             arrows: &mut read_back.arrows,
             pairs: &mut read_back.pairs,
             seconds: &mut read_back.seconds,
+            sum_labels: &mut read_back.sum_labels,
+            with_labels: &mut read_back.with_labels,
             relations: &mut read_back.relations,
             models: &mut read_back.models,
         });

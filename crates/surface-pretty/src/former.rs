@@ -1456,19 +1456,21 @@ pub trait Source
     ) -> Option<Self::Node>;
 
     /// The label of entry `index` of the record, the record update, the record
-    /// type, the handler or the offer `node` names.
+    /// type, the handler, the offer, the sum or the lazy product `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the label of the entry [`component`] answers at `index` when
     ///   [`read`] answers a [`Former::Record`], a [`Former::RecordUpdate`] or a
     ///   [`Former::RecordType`] — its field's label —, a [`Former::Handle`] or
-    ///   a [`Former::Scope`] — the operation its clause answers — or a
-    ///   [`Former::Offer`] — its arm's label — for `node` and `index` is below
-    ///   its arity; none otherwise.
-    /// - provides: the labels a record's fields, a handler's clauses and an
-    ///   offer's arms are written under, which a [`Former`] counts but does not
-    ///   hold.
+    ///   a [`Former::Scope`] — the operation its clause answers —, a
+    ///   [`Former::Offer`] — its arm's label — or a [`Former::Sum`] or a
+    ///   [`Former::With`] the source writes over labels — the label its entry
+    ///   is written under — for `node` and `index` is below its arity; none
+    ///   otherwise.
+    /// - provides: the labels a record's fields, a handler's clauses, an
+    ///   offer's arms and a labelled sum's or lazy record's entries are written
+    ///   under, which a [`Former`] counts but does not hold.
     /// - fails: never; a missing label is an absence, which the printer spells
     ///   `?`.
     /// - panics: none.
@@ -1480,10 +1482,12 @@ pub trait Source
     /// # Adequacy
     /// - hypothesis: L3 — core-backed records of two fields spell each field
     ///   under its own label, and a handler's clauses each under its operation;
-    ///   a shifted or swapped label changes the golden.
+    ///   a sum and a lazy record type written over labels spell each entry
+    ///   under its label; a shifted or swapped label changes the golden.
     /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
     /// - witness: `tests::goldens::a_record_update_spells_its_base_and_the_fields_it_writes`
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_sum_and_a_lazy_record_spell_their_written_labels_4395`
     fn label(
         &self,
         node: Self::Node,

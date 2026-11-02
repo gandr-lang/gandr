@@ -127,6 +127,7 @@ pub use crate::binders::Naming;
 pub use crate::binders::Scoped;
 pub use crate::binders::WrittenLabels;
 pub use crate::binders::carry_labels;
+pub use crate::binders::written_entry_names;
 pub use crate::binders::written_names;
 pub use crate::culprit::Culprit;
 pub use crate::frame::Sentence;

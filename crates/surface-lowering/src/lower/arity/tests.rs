@@ -634,6 +634,64 @@ fn each_record_link_keeps_its_labels_3934()
     );
 }
 
+/// #4395: the core erases a sum's and a lazy record type's labels to
+/// positions, so the printer spelled a labelled one at positions. Each keeps
+/// where its labels are written, in written order. A sum or a lazy record
+/// written at positions, or as a chain, keeps none.
+#[test]
+fn a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395()
+{
+    let mut arena = CoreArena::new();
+    let source = "def picked : +{ok : Integer, err : String} ; def placed : +{Integer, String} ; \
+                  def chained : Integer + String ; def got : +U &{put : -F String, get : -F \
+                  Integer} ; def held : +U &{-F String, -F Integer} ; def joined : +U (-F String \
+                  & -F Integer) ;";
+    let module = lowered(source, &mut arena);
+    let origins = module.origins();
+    let written = |labels: &[crate::origin::Origin]| -> Vec<&str> {
+        labels
+            .iter()
+            .map(|label| {
+                source
+                    .get(usize::from(label.span().start()) .. usize::from(label.span().end()))
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    let sums: Vec<(usize, Vec<&str>)> = origins
+        .sum_labels()
+        .iter()
+        .map(|&(sum, ref labels)| {
+            let arity = match arena.value_type(sum) {
+                Some(&ValueType::Sum(ref parts)) => parts.len(),
+                Some(_) | None => 0,
+            };
+            (arity, written(labels))
+        })
+        .collect();
+    assert_eq!(
+        sums,
+        [(2_usize, Vec::from(["ok", "err"]))],
+        "the labelled sum alone keeps its labels, one per summand in written order"
+    );
+    let lazies: Vec<(usize, Vec<&str>)> = origins
+        .with_labels()
+        .iter()
+        .map(|&(with, ref labels)| {
+            let arity = match arena.comp_type(with) {
+                Some(&CompType::With(ref components)) => components.len(),
+                Some(_) | None => 0,
+            };
+            (arity, written(labels))
+        })
+        .collect();
+    assert_eq!(
+        lazies,
+        [(2_usize, Vec::from(["put", "get"]))],
+        "the labelled lazy record alone keeps its labels, in written order"
+    );
+}
+
 /// A selection off a name written with a dependent record projects the
 /// entry its label names along the nesting, each inner link read as the
 /// value its projection returns; a label the type lacks is refused.
