@@ -445,6 +445,7 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
         Sort::Type,
         Sort::Instantiation,
         Sort::ModuleMember,
+        Sort::Block,
     ] {
         assert_has_checked_form(&pbg, sort);
     }
@@ -522,6 +523,7 @@ fn sort_decode_contract()
         (3, Sort::Type),
         (4, Sort::Instantiation),
         (5, Sort::ModuleMember),
+        (6, Sort::Block),
     ];
     for (tag, sort) in cases {
         assert_eq!(GroutSort::from(tag), sort.grout_sort());
@@ -529,9 +531,9 @@ fn sort_decode_contract()
     }
     assert_eq!(
         Err(PbgError::InvalidSort {
-            sort: GroutSort::from(6)
+            sort: GroutSort::from(7)
         }),
-        Sort::try_from_tag(GroutSort::from(6))
+        Sort::try_from_tag(GroutSort::from(7))
     );
 }
 

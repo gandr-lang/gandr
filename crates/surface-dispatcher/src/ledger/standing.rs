@@ -779,6 +779,7 @@ fn slot(
         Sort::Pattern => format!("def probe = match x {{ {text} => 1 }} ;"),
         Sort::Type => format!("def probe : {text} ;"),
         Sort::Instantiation => format!("def probe = f[{text}](1) ;"),
+        Sort::Block => format!("def probe = thunk {text} ;"),
     }
 }
 
@@ -828,6 +829,7 @@ fn reading(
                         Sort::Expression | Sort::Pattern => "x",
                         Sort::Type => "T",
                         Sort::Instantiation => "<",
+                        Sort::Block => "{ }",
                     }
                     .to_owned(),
                     holds: Holds::Nothing,

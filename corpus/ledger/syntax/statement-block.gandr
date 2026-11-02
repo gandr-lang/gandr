@@ -1,0 +1,8 @@
+/// `statement_block`: the block a form writes after its tile, its statements
+/// then the computation it ends in.
+@[ checks ]
+def later : () => Integer;
+def later = thunk {
+  let one = 1;
+  return one + 1
+};

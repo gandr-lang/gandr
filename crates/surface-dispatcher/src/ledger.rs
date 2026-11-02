@@ -2157,7 +2157,7 @@ mod tests
             "‹number› ‖ ‹typed_number› ‖ \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ‖ true ‖ false"
         );
         assert!(
-            form("lambda_expression").contains("⟨block⟩"),
+            form("while_expression").contains("⟨block⟩"),
             "a part equal to the block's whole form is written as the block"
         );
         assert!(

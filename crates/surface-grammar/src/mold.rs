@@ -107,6 +107,12 @@
 //!   with an exit; a search that rescans the rule's adjacency at every step is
 //!   cubic on the alternation-heavy rules.
 //! - Reversal: a rule shape whose condensation dominates the build.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7` — lineage: the closing class
+//!   is the form's, so a completion that ends at a block hole ends at the
+//!   block's `}` and derives the brace.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -382,9 +388,9 @@ impl HoleSorts
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every label of the built-in grammar is asked after a
-    ///   form of each of the six sorts, and its answer compared with its molds'
-    ///   left steps; two sorts sharing a bit, or a bit at another tag, admit a
-    ///   token after a form of a sort none of its molds faces.
+    ///   form of each of the seven sorts, and its answer compared with its
+    ///   molds' left steps; two sorts sharing a bit, or a bit at another tag,
+    ///   admit a token after a form of a sort none of its molds faces.
     /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
     #[spec(ensures: |ret| ret.0.is_power_of_two() && ret.0.trailing_zeros() == u32::from(u16::from(sort.grout_sort())))]
     #[inline]
@@ -398,6 +404,7 @@ impl HoleSorts
             Sort::Type => 0b1000,
             Sort::Instantiation => 0b1_0000,
             Sort::ModuleMember => 0b10_0000,
+            Sort::Block => 0b100_0000,
         })
     }
 
@@ -443,7 +450,8 @@ impl HoleSorts
             | Sort::Expression
             | Sort::Type
             | Sort::Instantiation
-            | Sort::ModuleMember => self.0 & Self::of(sort).0 != 0,
+            | Sort::ModuleMember
+            | Sort::Block => self.0 & Self::of(sort).0 != 0,
         })
     }
 }
@@ -463,7 +471,7 @@ impl HoleSorts
 ///   compares the answer the set gives; a dropped step, a tile step counted as
 ///   a sort, or the right steps read instead change one of its rows.
 /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
-#[spec(ensures: |ret| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember].into_iter().all(|sort| (ret.union(HoleSorts::of(sort)) == ret) == usize::try_from(u32::from(mold)).ok().and_then(|at| molds.get(at)).and_then(|def| usize::try_from(u32::from(def.rctx)).ok()).and_then(|at| rctxs.get(at)).is_some_and(|data| data.left_steps.iter().any(|step| step.crossed == StepSym::Sort(sort)))))]
+#[spec(ensures: |ret| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember, Sort::Block].into_iter().all(|sort| (ret.union(HoleSorts::of(sort)) == ret) == usize::try_from(u32::from(mold)).ok().and_then(|at| molds.get(at)).and_then(|def| usize::try_from(u32::from(def.rctx)).ok()).and_then(|at| rctxs.get(at)).is_some_and(|data| data.left_steps.iter().any(|step| step.crossed == StepSym::Sort(sort)))))]
 #[inline]
 fn left_holes(
     mold: MoldId,
@@ -697,7 +705,7 @@ impl MoldTable
             // Derived per rule, not table-wide: the class is a property of this
             // form's completions, and a table-wide walk would cross into other
             // rules.
-            closing.extend(closing_classes(&occurrences, &facet));
+            closing.extend(closing_classes(&occurrences, &facet, &interner.data));
             adjacent_keys.extend(facet.adjacent);
             for occurrence in occurrences {
                 let key = TileKey::new(TileLabel(occurrence.label), occurrence.rctx);
@@ -2372,6 +2380,9 @@ impl EdgeSource for TileGraph
 ///   completions end at `;`.
 /// - **Paired, not merely closing.** A terminal `}` counts only when the rule
 ///   also writes an opener of that family.
+/// - **Through a block.** A tile whose completion ends at a [`Sort::Block`]
+///   hole and nothing else ends where the block does, at its `}`: every form of
+///   that sort opens and closes the brace itself.
 ///
 /// The derivation runs on the rule's condensation. Every node in one
 /// strongly connected component reaches the same endings, so each component is
@@ -2385,7 +2396,8 @@ impl EdgeSource for TileGraph
 /// - requires: `occurrences` and `facet` come from one [`collect_occurrences`]
 ///   call.
 /// - ensures: element `i` is `Some(c)` exactly when every completion path from
-///   occurrence `i` ends at a closer of family `c` that the rule opens.
+///   occurrence `i` ends at a closer of family `c` that the rule opens, or at a
+///   [`Sort::Block`] hole when `c` is the brace.
 /// - panics: none.
 /// - intension: one condensation and one sinks-first fold, linear in the rule's
 ///   tiles and adjacencies; a graph the condensation refuses gives every
@@ -2398,10 +2410,11 @@ impl EdgeSource for TileGraph
 ///   provenance, not arbitrary reachability or the linear-time cost.
 /// - witness: `tests::closing_class::closing_class_is_form_level`
 /// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
-#[spec(ensures: |ret| ret.len() == occurrences.len() && ret.iter().flatten().all(|&class| occurrences.iter().any(|occurrence| ClosingClass::opening(DelimSpelling::from(occurrence.label)) == Some(class)) && occurrences.iter().any(|occurrence| ClosingClass::closing(DelimSpelling::from(occurrence.label)) == Some(class))))]
+#[spec(ensures: |ret| ret.len() == occurrences.len() && ret.iter().flatten().all(|&class| class == ClosingClass::Brace || (occurrences.iter().any(|occurrence| ClosingClass::opening(DelimSpelling::from(occurrence.label)) == Some(class)) && occurrences.iter().any(|occurrence| ClosingClass::closing(DelimSpelling::from(occurrence.label)) == Some(class)))))]
 fn closing_classes(
     occurrences: &[Occurrence],
     facet: &TileFacet,
+    contexts: &[RCtxData],
 ) -> Vec<Option<ClosingClass>>
 {
     // The families the rule opens; a closer of any other family is unpaired.
@@ -2519,9 +2532,31 @@ fn closing_classes(
                 if has_successors && !facet.last.contains(&key) {
                     continue;
                 }
-                verdict = ClosingClass::closing(DelimSpelling::from(key.label().0))
-                    .filter(|reached| opened.contains(reached))
-                    .map_or(EndingVerdict::Divergent, |class| verdict.merge_class(class));
+                // A tile completing only through a block hole ends at the
+                // block's own `}`; the tiles it may continue with instead are
+                // its successors, folded below.
+                let through_block = !facet.complete_last.contains(&key)
+                    && usize::try_from(u32::from(key.rctx()))
+                        .ok()
+                        .and_then(|at| contexts.get(at))
+                        .is_some_and(|data| {
+                            let mut sorts =
+                                data.right_steps
+                                    .iter()
+                                    .filter_map(|step| match step.crossed {
+                                        StepSym::Sort(sort) => Some(sort),
+                                        StepSym::Tile(_) => None,
+                                    });
+                            sorts.clone().next().is_some() && sorts.all(|sort| sort == Sort::Block)
+                        });
+                verdict = if through_block {
+                    verdict.merge_class(ClosingClass::Brace)
+                }
+                else {
+                    ClosingClass::closing(DelimSpelling::from(key.label().0))
+                        .filter(|reached| opened.contains(reached))
+                        .map_or(EndingVerdict::Divergent, |class| verdict.merge_class(class))
+                };
             }
         }
         if let Some(row) = successors.get(component) {
@@ -3000,6 +3035,15 @@ impl TileKey
     const fn label(self) -> TileLabel
     {
         self.0.0
+    }
+
+    /// The key's context.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn rctx(self) -> RCtxId
+    {
+        self.0.1
     }
 }
 

@@ -2604,6 +2604,7 @@ INSERT INTO purpose VALUES('surface-lowering','form::TileName','struct','Names t
 INSERT INTO purpose VALUES('surface-lowering','form::former::Absent','enum','Names why a form''s kind is read as no former, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::former_of','function','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::nested::Absent','enum','Names why a form''s kind is read as no nested form, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::written_children','function','Yields a node''s children with a shared block''s children in its place, so a reader sees its host''s braces as written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportBinding','enum','Names an import''s binding, so the import''s binding is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportDeclaration','struct','Holds an import declaration, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportIndex','struct','Names the index of an import, so the import''s target is resolved.',NULL,'fits','sound',NULL);

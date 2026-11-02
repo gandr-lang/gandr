@@ -102,7 +102,7 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
    │
 92 │ ┌  def graded() -> () => Integer {
 93 │ │┌   migrate [seat] {
-94 │ ││     hold [1] c = 0;
+94 │ ││     hold[1] c = 0;
    │ ││     ──── checked against `-F (() => Integer)`; while checking the scope of this hold
 95 │ ││     pure thunk { pure c + c }
    │ ││     ┬────┯━━━━━━━━━━━━━━━━━━━

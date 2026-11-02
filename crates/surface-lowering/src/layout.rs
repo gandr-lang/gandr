@@ -57,6 +57,7 @@ use crate::form::FormName;
 use crate::form::Repair;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::own_children;
 use crate::form::shape_of;
 use crate::form::tile_label;
 
@@ -131,12 +132,13 @@ pub fn nesting(label: TileName) -> Nesting
 }
 
 /// The form a bracket tile of `tree` belongs to: the form holding the tile at
-/// `bracket` among its children.
+/// `bracket` among its own children, a shared block's braces its host's.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the name of the form whose child is a tile spanning `bracket`;
-///   [`FormName::ROOT`] when no form holds one.
+/// - ensures: the name of the first form in preorder whose own children
+///   ([`own_children`]) hold a tile spanning `bracket`; [`FormName::ROOT`] when
+///   no form holds one.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search of the tree.
@@ -156,7 +158,7 @@ pub fn bracket_form(
     // an admitted tree never pays for it.
     tree.positions()
         .find(|&position| {
-            tree.children(position).any(|child| {
+            own_children(pbg, tree, position).any(|(child, _)| {
                 tree.node(child).is_some_and(|node| {
                     node.span() == bracket && matches!(node.label(), NodeLabel::Tile(_))
                 })

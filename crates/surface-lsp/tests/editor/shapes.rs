@@ -114,8 +114,9 @@ enum Shape
 ///   variable [`Shape::Subject`], a pattern's constructor name
 ///   [`Shape::Constructor`]; a pattern form [`Shape::Subject`]; a literal
 ///   [`Shape::Native`] at its native type; any other type form
-///   [`Shape::Universe`]; any other term form [`Shape::Form`]; any other
-///   declaration form [`Shape::Declaration`].
+///   [`Shape::Universe`]; any other term form and a block a form writes after
+///   its tile [`Shape::Form`]; any other declaration form
+///   [`Shape::Declaration`].
 /// - panics: a kind of no sort the sweep knows.
 /// - executable: none — the ensures clause is the table the body is; a
 ///   predicate restating it would be its second copy.
@@ -139,7 +140,10 @@ fn shape_of(owner: &Owner) -> Shape
         named if named.ends_with(" name") => Shape::Subject,
         pattern if pattern.starts_with("pattern ") => Shape::Subject,
         ty if ty.starts_with("type ") => Shape::Universe,
-        term if term.starts_with("expression ") || term.starts_with("instantiation ") => {
+        term if term.starts_with("expression ")
+            || term.starts_with("instantiation ")
+            || term.starts_with("block ") =>
+        {
             Shape::Form
         },
         declaration
