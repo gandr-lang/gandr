@@ -454,11 +454,11 @@ jobs:
   #   run.
   # Always trigger the workflow: a skipped workflow supplies no required
   # check, whereas a skipped job succeeds. Dependency updates land through a
-  # maintainer's pull request, so a dependabot pull request runs nothing:
+  # maintainer's pull request, so a Renovate pull request runs nothing:
   # this job skips, and every job after it skips without its outputs.
   prepare:
     name: prepare the run
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    if: ${{ github.actor != 'renovate[bot]' }}
     runs-on: *linux
     permissions:
       contents: read
@@ -2013,7 +2013,7 @@ jobs:
   format-gate:
     name: check formatting and lint gates (treefmt)
     needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -2095,7 +2095,7 @@ jobs:
   prose-gate:
     name: check the prose against its ledger
     needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
