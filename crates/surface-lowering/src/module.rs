@@ -5706,15 +5706,18 @@ impl<'source> Collector<'_, 'source>
     ///   report order, each at its member's span with the declaration itself as
     ///   its signature half, so the attributes the decorations file under it
     ///   are read off every one of them; the first owns the declaration and its
-    ///   decorations, and an unreadable decoration refuses it.
+    ///   decorations, and an unreadable decoration refuses it ahead of the
+    ///   refusals inside the operation.
     /// - provides: refusals inside a top-level operation an expectation can
     ///   state.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused operation keeps its span, a decoration
-    ///   before it states it, and its name enters no namespace.
+    ///   before it states it, its name enters no namespace, and a decoration
+    ///   out of shape refuses it at the decoration's stray material.
     /// - witness: `description::theory::tests::a_refused_top_level_operation_states_its_refusal`
+    /// - witness: `description::theory::tests::an_unreadable_decoration_refuses_a_refused_operation_first_4113`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() >= before.0 && self.collected.by_name.len() == before.1,
@@ -5738,6 +5741,7 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, child.node, &mut attributes);
             }
         }
+        let mut unreadable = attributed.err();
         let mut first = Maybe::Absent(slot_owner::Absent::Unowned);
         for (span, refusal) in self.described_refusals(child) {
             let introduced = Placed {
@@ -5752,6 +5756,9 @@ impl<'source> Collector<'_, 'source>
                     named,
                     operand: Operand::Signature,
                 });
+                if let Some(fault) = unreadable.take() {
+                    slot.refuse(child.node, fault);
+                }
                 slot.refuse(child.node, refusal);
             }
             if let Maybe::Absent(_) = first {
@@ -5768,9 +5775,6 @@ impl<'source> Collector<'_, 'source>
         }
         if let Some(slot) = self.collected.slots.get_mut(owner.0) {
             slot.attributes.append(&mut attributes);
-            if let Err(refusal) = attributed {
-                slot.refuse(child.node, refusal);
-            }
         }
     }
 
