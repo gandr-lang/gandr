@@ -3754,10 +3754,15 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
     let held = arena.value_returned(held);
     let held = arena.computation_return(held);
     let held_body = arena.value_thunk(held);
+    let along_call = arena.computation_path_transport(motive, path, reflexivity);
+    let along_call = arena.value_returned(along_call);
+    let along_call = arena.computation_return(along_call);
+    let along_call_body = arena.value_thunk(along_call);
     let unfoldings = Unfoldings::new(Vec::from([
         Unfoldable::Body(path_body),
         Unfoldable::Body(operand_body),
         Unfoldable::Body(held_body),
+        Unfoldable::Body(along_call_body),
     ]));
     let operand = arena.value_constant(ConstantIndex::from(1_usize));
     let operand = arena.computation_force(operand);
@@ -3805,10 +3810,32 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
         "a run holds the call an endpoint it returns holds"
     );
     // `⟨y ← force w; return y⟩`: a bind, no call, whose run reaches the same
-    // endpoint through its continuation. The run reads on only into the
-    // endpoint a call returns, so this one leaves the operand as it was, and
-    // the transport stands on its path, apart from `return ⟨force g⟩`.
+    // endpoint through its continuation. The endpoint is a transport along a
+    // reflexivity, which the run moves, so the run reads on into it as into
+    // the endpoint a call returns.
     let call = arena.value_constant(ConstantIndex::from(1_usize));
+    let call = arena.computation_force(call);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let bound = arena.computation_return(bound);
+    let operand = arena.computation_bind(call, bound);
+    let operand = arena.value_returned(operand);
+    let moved = arena.computation_path_transport(motive, path, operand);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, composite),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "a bind's run reads on into a transport along a reflexivity it returns"
+    );
+    // `⟨y ← force v; return y⟩`, `v = thunk (return ⟨tr(y. Path(Unit, (), y),
+    // ⟨force g⟩, here(()))⟩)`: the endpoint's transport stands along a
+    // returned path, which the run holds, so the operand stays as it was and
+    // the transport stands on its path, apart from `return ⟨force g⟩`.
+    let call = arena.value_constant(ConstantIndex::from(3_usize));
     let call = arena.computation_force(call);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
     let bound = arena.computation_return(bound);
@@ -3826,7 +3853,7 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
         refused(ReplayRefusal::Inapplicable {
             at: TracePosition::default(),
         }),
-        "a bind's run leaves the endpoint it returns unread"
+        "a bind's run leaves a transport along a held path it returns unread"
     );
 }
 
@@ -3957,6 +3984,84 @@ fn a_returned_transport_runs_its_held_path_s_call_4413()
             at: TracePosition::default(),
         }),
         "a returned transport the append reads keeps its held path"
+    );
+}
+
+#[test]
+fn a_returned_transport_along_a_reflexivity_reads_on_4419()
+{
+    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path(Unit, (),
+    // y)`, `w = thunk (return ⟨tr(Q, here(()), here(()))⟩)` in `Q = y.
+    // Path(Unit, y, ())` and `r` opaque: the second whisker of a defined
+    // chain at reflexivities, returned by a bind's run, in miniature. The
+    // evaluator's run moves `here(())` along the reflexivity, so the outer
+    // transport moves the empty word and returns its path.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let reflexivity = arena.value_here(unit);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let appended_family = arena.value_type_path(unit_type, unit, moving);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let backward_family = arena.value_type_path(unit_type, moving, unit);
+    let returning = |arena: &mut TermArena, along| {
+        let whisker = arena.computation_path_transport(backward_family, along, reflexivity);
+        let whisker = arena.value_returned(whisker);
+        let whisker = arena.computation_return(whisker);
+        arena.value_thunk(whisker)
+    };
+    let plain_body = returning(&mut arena, reflexivity);
+    let returned_unit = arena.computation_return(unit);
+    let returned_unit = arena.value_returned(returned_unit);
+    let at_returned = arena.value_here(returned_unit);
+    let held_body = returning(&mut arena, at_returned);
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Opaque,
+        Unfoldable::Body(plain_body),
+        Unfoldable::Body(held_body),
+    ]));
+    let outer = arena.value_constant(ConstantIndex::from(0_usize));
+    let outer = arena.computation_force(outer);
+    let outer = arena.value_returned(outer);
+    let path = arena.computation_return(outer);
+    let moved_by = |arena: &mut TermArena, index: usize| {
+        let constant = arena.value_constant(ConstantIndex::from(index));
+        let call = arena.computation_force(constant);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.computation_return(bound);
+        let operand = arena.computation_bind(call, bound);
+        let operand = arena.value_returned(operand);
+        arena.computation_path_transport(appended_family, outer, operand)
+    };
+    let moved = moved_by(&mut arena, 1);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, path),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "a returned transport along a reflexivity reads on"
+    );
+    // The same transport along `here(⟨return ()⟩)`: the reflexivity holds a
+    // run, which the evaluator holds too, so the run leaves the operand as
+    // it was, and the outer transport stands on its path, apart from
+    // `return ⟨force r⟩`.
+    let moved = moved_by(&mut arena, 2);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, path),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::default(),
+        }),
+        "a returned transport along a reflexivity at a returned endpoint stays held"
     );
 }
 

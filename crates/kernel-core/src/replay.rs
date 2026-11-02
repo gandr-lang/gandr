@@ -9057,12 +9057,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// read and along a held call of a definition, runs that call under the
     /// transport: the evaluator's run stance runs the call a stuck transport's
     /// held path holds and puts the transport back on its result, as
-    /// `back(assoc(…))` reads on to `here(…)`. Any other endpoint such a run
-    /// returns is left unread, and so is the operand. A run that sticks at a
-    /// head no definition unfolds, or at a call an endpoint holds, leaves the
-    /// operand as it was, and the transport stands on its held path: `H(b)
-    /// then ⟨ap(G, here(b))⟩` on `ap`, and `assoc(f, g, h) then
-    /// ⟨whiskerRight(…)⟩` on `whiskerRight`, which the dialogue unfolds next.
+    /// `back(assoc(…))` reads on to `here(…)`. A transport such a run
+    /// returns along a reflexivity at a point the run does not hold reads on
+    /// as a returned endpoint: the evaluator's run moves it, as the second
+    /// whisker of a defined chain at reflexivities moves to `here(here(x))`.
+    /// Any other endpoint such a run returns is left unread, and so is the
+    /// operand. A run that sticks at a head no definition unfolds, or at a
+    /// call an endpoint holds, leaves the operand as it was, and the
+    /// transport stands on its held path: `H(b) then ⟨ap(G, here(b))⟩` on
+    /// `ap`, and `assoc(f, g, h) then ⟨whiskerRight(…)⟩` on `whiskerRight`,
+    /// which the dialogue unfolds next.
     /// [`Self::reduce`] runs the operand by its search-free steps and takes
     /// the step this names at each weak head the run reaches.
     ///
@@ -9070,13 +9074,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - requires: nothing.
     /// - ensures: `Returns(v)` when `read` is `return v` and `v` is no returned
     ///   endpoint; `Reads(c, Returned)` when `read` is `return ⟨c⟩` and
-    ///   `reading` is no operand; `Reads(c, Call)` when `read` is `return ⟨c⟩`,
-    ///   `reading` is an operand and `c` is a call; `RunsPath(c, h, k)` when
-    ///   `read` is `return ⟨c⟩`, `reading` is an operand and `c` is a transport
-    ///   the append does not read along `⟨h⟩`, a call the definition `k` heads;
-    ///   `Unfolds(k)` when `reading` is a call or an operand, the definition
-    ///   `k` heads `read`, and a constructor opens its gate if `k` is a
-    ///   recursive definition; `Sticks` otherwise.
+    ///   `reading` is no operand, or `reading` is an operand and `c` is a
+    ///   transport along `here(p)` for a `p` no returned endpoint; `Reads(c,
+    ///   Call)` when `read` is `return ⟨c⟩`, `reading` is an operand and `c` is
+    ///   a call; `RunsPath(c, h, k)` when `read` is `return ⟨c⟩`, `reading` is
+    ///   an operand and `c` is a transport the append does not read along
+    ///   `⟨h⟩`, a call the definition `k` heads; `Unfolds(k)` when `reading` is
+    ///   a call or an operand, the definition `k` heads `read`, and a
+    ///   constructor opens its gate if `k` is a recursive definition; `Sticks`
+    ///   otherwise.
     /// - provides: the replay's reading of the evaluator's held-operand run.
     /// - fails: never.
     /// - panics: none.
@@ -9097,12 +9103,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   transport the run of a transport returns, left held on its path's
     ///   call, keeps `back(assoc(…))` where the checker's run reached
     ///   reflexivity; read on into any transport, the run closes
-    ///   `coneSuspended3` early.
+    ///   `coneSuspended3` early. A transport along a reflexivity, left held,
+    ///   keeps the whisker of `cylinderCompositeAtHere` where the checker's run
+    ///   moved it; read on along a reflexivity at a returned endpoint, the run
+    ///   closes `coneSuspended3` early.
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
     /// - witness: `replay::tests::an_operand_s_run_runs_the_call_it_returns_4412`
     /// - witness: `replay::tests::a_returned_transport_runs_its_held_path_s_call_4413`
+    /// - witness: `replay::tests::a_returned_transport_along_a_reflexivity_reads_on_4419`
     #[spec(ensures: |ret| match ret {
         RunStep::Returns(read) => self.arena.value(read).is_some(),
         RunStep::Reads(read, next) => self.arena.computation(read).is_some() && next != HeldReading::Operand,
@@ -9125,6 +9135,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         if let Some((call, constant)) = self.held_path_call(computation) =>
                     {
                         RunStep::RunsPath(computation, call, constant)
+                    },
+                    HeldReading::Operand if self.along_reflexivity(computation).is_some() => {
+                        RunStep::Reads(computation, HeldReading::Returned)
                     },
                     HeldReading::Operand => RunStep::Sticks,
                     HeldReading::Call | HeldReading::Returned => {
@@ -9211,6 +9224,48 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             return None;
         };
         Some((call, constant))
+    }
+
+    /// The point `p` of the reflexivity `here(p)` that `transport` moves
+    /// along, when `p` is no returned endpoint: a transport the evaluator's
+    /// run moves.
+    ///
+    /// The evaluator evaluates a returned endpoint by running it, so a
+    /// transport along a reflexivity at a point it holds no run of moves on.
+    /// A reflexivity at `⟨c⟩` holds `c`'s run, which the evaluator holds too.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some(p)` exactly when `transport` is a path transport along
+    ///   `here(p)` and `p` is no `Value::Returned`; `None` otherwise.
+    /// - provides: the transports [`Self::run_step`] reads on into.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the second whisker of `cylinderCompositeAtHere` moves
+    ///   to `here(here(x))`, as the checker's run moves it; along a reflexivity
+    ///   at `⟨return v⟩`, `coneSuspended3` stays held.
+    /// - witness: `replay::tests::a_returned_transport_along_a_reflexivity_reads_on_4419`
+    #[spec(ensures: |ret| ret.is_none_or(|point| self.arena.value(point).is_some()
+        && matches!(self.arena.computation(transport), Some(&Computation::PathTransport { .. }))))]
+    fn along_reflexivity(
+        &self,
+        transport: ComputationId,
+    ) -> Option<ValueId>
+    {
+        let Some(&Computation::PathTransport { path, .. }) = self.arena.computation(transport)
+        else {
+            return None;
+        };
+        let Some(&Value::Here { point, .. }) = self.arena.value(path)
+        else {
+            return None;
+        };
+        match self.arena.value(point) {
+            Some(&Value::Returned(_)) | None => None,
+            Some(_) => Some(point),
+        }
     }
 
     /// How a held operand's run first reads `operand`: as a call when a
