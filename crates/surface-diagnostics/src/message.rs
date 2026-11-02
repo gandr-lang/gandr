@@ -57,6 +57,7 @@ use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
+use gandr_core_term::compose::Form;
 use gandr_surface_corpus::BoundaryClause;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
@@ -1031,22 +1032,18 @@ fn checked(
         CheckRefusal::ComposeUncertified { .. } => {
             f.write_str("`compose` needs a stratum the chain sub-site certifies")
         },
-        CheckRefusal::ComposeNotAShape { pasting, .. }
-            if pasting.level() == gandr_core_term::compose::Level::ONE =>
-        {
-            f.write_str("`compose` needs a chain within the degree and the bound of its stratum")
-        },
-        CheckRefusal::ComposeNotAShape { pasting, .. }
-            if pasting.level() == gandr_core_term::compose::Level::TWO =>
-        {
-            f.write_str(
+        CheckRefusal::ComposeNotAShape { pasting, .. } => f.write_str(match pasting.form() {
+            Form::Chain(_) => {
+                "`compose` needs a chain within the degree and the bound of its stratum"
+            },
+            Form::Columns(_) => {
                 "`compose` needs a level-two shape the wreath holds within the degree and the \
-                 bound of its stratum",
-            )
-        },
-        CheckRefusal::ComposeNotAShape { .. } => {
-            f.write_str("`compose` reads a pasting at level one or two, and no stratum past them")
-        },
+                 bound of its stratum"
+            },
+            Form::Tree { .. } => {
+                "`compose` reads a pasting at level one or two, and no stratum past them"
+            },
+        }),
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,
             ..

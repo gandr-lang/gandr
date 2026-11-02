@@ -5204,22 +5204,24 @@ fn universe(
 /// trivial.
 fn spelled(pasting: Pasting) -> Spelled
 {
-    let tree = pasting.tree();
-    if pasting.level() == gandr_core_term::compose::Level::ONE {
-        return Spelled(alloc::format!("chain({})", usize::from(pasting.cells())));
-    }
-    if pasting.level() == gandr_core_term::compose::Level::TWO {
-        let columns: Vec<String> = tree
-            .columns()
-            .map(|height| alloc::format!("{}", usize::from(height)))
-            .collect();
-        return Spelled(alloc::format!(
-            "chain({}, ({}))",
-            columns.len(),
-            columns.join(", ")
-        ));
-    }
-    let mut text = alloc::format!("tree({}, [", usize::from(pasting.level()));
+    let (level, tree) = match pasting.form() {
+        gandr_core_term::compose::Form::Chain(cells) => {
+            return Spelled(alloc::format!("chain({})", usize::from(cells)));
+        },
+        gandr_core_term::compose::Form::Columns(tree) => {
+            let columns: Vec<String> = tree
+                .columns()
+                .map(|height| alloc::format!("{}", usize::from(height)))
+                .collect();
+            return Spelled(alloc::format!(
+                "chain({}, ({}))",
+                columns.len(),
+                columns.join(", ")
+            ));
+        },
+        gandr_core_term::compose::Form::Tree { level, tree } => (level, tree),
+    };
+    let mut text = alloc::format!("tree({}, [", usize::from(level));
     let mut after_sibling = false;
     for step in tree.walk() {
         match step {
@@ -5851,7 +5853,7 @@ impl Walk<'_, '_>
         pasting: Pasting,
     ) -> Spelled
     {
-        if pasting.level() > gandr_core_term::compose::Level::TWO {
+        if matches!(pasting.form(), gandr_core_term::compose::Form::Tree { .. }) {
             self.note(Unspelled::Notation(Notation::Tree));
         }
         spelled(pasting)

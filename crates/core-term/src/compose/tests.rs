@@ -7,6 +7,7 @@ use gandr_theory_sites::ShapeSize;
 use super::CellCount;
 use super::Composite;
 use super::Ends;
+use super::Form;
 use super::Level;
 use super::Pasting;
 use super::PastingError;
@@ -266,6 +267,31 @@ fn a_pasting_stands_at_its_tree_s_height_or_above()
         empty_columns.cells(),
         chain.cells(),
         "both read the two 1-cells"
+    );
+}
+
+#[test]
+fn a_pasting_reads_at_the_form_its_level_names()
+{
+    let chain = Pasting::chain(CellCount::from(2_usize)).expect("the 2-chain packs");
+    let empty_columns =
+        Pasting::columns(&[CellCount::from(0_usize); 2]).expect("two empty columns pack");
+    assert_eq!(
+        chain.form(),
+        Form::Chain(CellCount::from(2_usize)),
+        "the tree [2] at level one is a chain of two cells"
+    );
+    assert_eq!(
+        empty_columns.form(),
+        Form::Columns(chain.tree()),
+        "the same tree at level two is two empty columns"
+    );
+    let three = Level::try_from(3_usize).expect("a byte holds three");
+    let tree = two_three_cells();
+    assert_eq!(
+        Pasting::new(three, tree).map(Pasting::form),
+        Ok(Form::Tree { level: three, tree }),
+        "two 3-cells read as a tree at level three"
     );
 }
 

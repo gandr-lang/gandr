@@ -693,6 +693,62 @@ impl Pasting
     {
         self.tree.leaves()
     }
+
+    /// The form the pasting stands at: a chain at level one, columns at level
+    /// two, and a tree no stratum certifies past them.
+    ///
+    /// # Specification
+    /// - ensures: [`Form::Chain`] with [`Self::cells`] at level one,
+    ///   [`Form::Columns`] with the tree at level two, and [`Form::Tree`] with
+    ///   the level and the tree past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain, a level-two shape and a level-three tree
+    ///   each read at their own form.
+    /// - witness: `compose::tests::a_pasting_reads_at_the_form_its_level_names`
+    #[spec(ensures: |ret| match ret {
+        | Form::Chain(cells) => self.level == Level::ONE && cells == self.cells(),
+        | Form::Columns(tree) => self.level == Level::TWO && tree == self.tree,
+        | Form::Tree { level, tree } => level == self.level && level > Level::TWO && tree == self.tree,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn form(self) -> Form
+    {
+        if self.level == Level::ONE {
+            Form::Chain(self.cells())
+        }
+        else if self.level == Level::TWO {
+            Form::Columns(self.tree)
+        }
+        else {
+            Form::Tree {
+                level: self.level,
+                tree: self.tree,
+            }
+        }
+    }
+}
+
+/// A pasting read at its level: the two forms a stratum certifies, and the
+/// tree past them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Form
+{
+    /// `chain(m)`: `m` cells composed along one chain.
+    Chain(CellCount),
+    /// `chain(m, (a₁, …, aₘ))`: the tree whose columns are the chains of
+    /// 2-cells.
+    Columns(Tree),
+    /// A tree past level two, which the source does not spell.
+    Tree
+    {
+        /// The dimension of the cells it composes.
+        level: Level,
+        /// The shape.
+        tree: Tree,
+    },
 }
 
 /// The stratum a composite is made at and the shape it composes.

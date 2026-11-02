@@ -92,7 +92,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::compose::Level;
+use gandr_core_term::compose::Form;
 use gandr_core_term::compose::Seam;
 use gandr_core_term::compose::Tree;
 use gandr_core_term::identity;
@@ -579,27 +579,24 @@ pub fn realise(
     if entry_types.len() != written.len() {
         return Err(CheckRefusal::MachineInvariant);
     }
-    let (level, tree) = (composite.pasting.level(), composite.pasting.tree());
-    let listing = if level == Level::ONE
-        && written.len()
-            == usize::from(tree.leaves())
-                .saturating_mul(2)
-                .saturating_add(1)
-    {
-        Listing::Pasting
-    }
-    else if level == Level::TWO
-        && written.len() != tree.columns().count()
-        && written.len()
-            == tree
-                .columns()
-                .map(|height| usize::from(height).saturating_mul(2).saturating_add(1))
-                .sum::<usize>()
-    {
-        Listing::Columns(tree)
-    }
-    else {
-        Listing::Cells
+    let form = composite.pasting.form();
+    let listing = match form {
+        Form::Chain(cells)
+            if written.len() == usize::from(cells).saturating_mul(2).saturating_add(1) =>
+        {
+            Listing::Pasting
+        },
+        Form::Columns(tree)
+            if written.len() != tree.columns().count()
+                && written.len()
+                    == tree
+                        .columns()
+                        .map(|height| usize::from(height).saturating_mul(2).saturating_add(1))
+                        .sum::<usize>() =>
+        {
+            Listing::Columns(tree)
+        },
+        Form::Chain(_) | Form::Columns(_) | Form::Tree { .. } => Listing::Cells,
     };
     let Curried {
         domains,
@@ -670,7 +667,7 @@ pub fn realise(
     };
     // The cells listed at a level-two shape name the cells of `X`: a column
     // of one 2-cell each, and an empty column each other cell.
-    if level == Level::TWO
+    if let Form::Columns(tree) = form
         && listing == Listing::Cells
         && (tree.columns().count() != read.len()
             || !tree.columns().zip(&read).all(|(height, cell)| {
