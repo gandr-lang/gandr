@@ -4542,3 +4542,169 @@ fn a_name_no_toolchain_answers_is_refused_by_its_source()
         stderr(&misnamed)
     );
 }
+
+/// A fake toolchain's description: its name, its version and the features
+/// it meets.
+#[cfg(unix)]
+#[derive(Clone, Copy)]
+struct Fake<'fake>
+{
+    /// Its name, and its directory's.
+    name: &'fake str,
+    /// The version it describes.
+    version: &'fake str,
+    /// The features it describes.
+    features: &'fake [&'fake str],
+}
+
+/// A toolchain directory under `scratch` named as `fake` is, whose `gandr`
+/// describes itself as `fake` does on this host's system, noting each
+/// description in `log`, and otherwise prints `ran <name> <its arguments>`.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn described_toolchain(
+    scratch: &Scratch,
+    fake: Fake<'_>,
+    log: &Path,
+) -> PathBuf
+{
+    use core::fmt::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let Fake {
+        name,
+        version,
+        features,
+    } = fake;
+    let mut description = format!(
+        "version {version}\\nsystem {}-{}\\n",
+        std::env::consts::ARCH,
+        std::env::consts::OS
+    );
+    for feature in features {
+        write!(description, "feature {feature}\\n").expect("a string takes a line");
+    }
+    let script = format!(
+        "#!/bin/sh\nif [ \"$1 $2\" = \"toolchain describe\" ]; then\n  echo {name} >> '{}'\n  printf '{description}'\n  exit 0\nfi\necho \"ran {name} $*\"\n",
+        log.display()
+    );
+    let executable = scratch.file(
+        &Path::new("builds").join(name).join("gandr"),
+        Text::from(&*script),
+    );
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
+        .expect("the fake build is executable");
+    executable
+        .parent()
+        .expect("the build has a directory")
+        .to_path_buf()
+}
+
+/// A package's constraint chooses among the installed toolchains: the default
+/// when it meets it, else the highest version that does; a pin naming one
+/// that does not is refused by its source, and a constraint none meets by
+/// each clause. Each toolchain describes itself once per image.
+#[cfg(unix)]
+#[test]
+fn a_package_s_constraint_chooses_among_the_toolchains()
+{
+    let scratch = Scratch::new(Path::new("toolchain-constrained"));
+    let data = scratch.0.join("data");
+    let package = scratch.0.join("package");
+    std::fs::create_dir_all(&package).expect("the package's directory is made");
+    let log = scratch.0.join("described");
+    for (name, version, features) in [
+        ("old", "0.1.0", &["shared"][..]),
+        ("new", "0.3.0", &["shared"][..]),
+        ("bare", "0.4.0", &[][..]),
+    ] {
+        let fake = Fake {
+            name,
+            version,
+            features,
+        };
+        let build = described_toolchain(&scratch, fake, &log);
+        let link = proxied(
+            &["toolchain", "link", name, &build.to_string_lossy()],
+            &scratch.0,
+            &data,
+            Maybe::Absent(()),
+        );
+        assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    }
+    let manifest = |gandr: &str| {
+        std::fs::write(
+            package.join("gandr.toml"),
+            format!(
+                "[toolchain]\ngandr = \"{gandr}\"\nfeatures = [\n  \"shared\",\n]\nsystems = []\n"
+            ),
+        )
+        .expect("the manifest is written");
+    };
+    let checked = |working: &Path| {
+        let output = proxied(&["check"], working, &data, Maybe::Absent(()));
+        (code(&output), stdout(&output), stderr(&output))
+    };
+    manifest(">= 0.1");
+    assert_eq!(
+        checked(&package),
+        (Code(0_i32), String::from("ran old check\n"), String::new()),
+        "the default meets the constraint, and runs"
+    );
+    manifest(">= 0.2");
+    assert_eq!(
+        checked(&package),
+        (Code(0_i32), String::from("ran new check\n"), String::new()),
+        "the highest version that meets the constraint runs; `bare` lacks the feature"
+    );
+    let described = || std::fs::read_to_string(&log).map_or(0_usize, |lines| lines.lines().count());
+    let once = described();
+    let _again = checked(&package);
+    assert_eq!(
+        described(),
+        once,
+        "each toolchain is described once per image"
+    );
+    assert_eq!(
+        checked(&scratch.0),
+        (Code(0_i32), String::from("ran old check\n"), String::new()),
+        "outside the package no constraint holds"
+    );
+    let pin = scratch.file(Path::new("package/gandr-toolchain"), Text::from("old\n"));
+    let (pinned, _, refusal) = checked(&package);
+    assert_eq!(pinned, Code(2_i32));
+    assert!(
+        refusal.starts_with(&format!(
+            "gandr: the pin {} names the toolchain `old`, which leaves the constraint of {} unmet\n  ToolchainUnmet.gandr:",
+            pin.display(),
+            package.join("gandr.toml").display()
+        )),
+        "{refusal}"
+    );
+    std::fs::remove_file(&pin).expect("the pin is removed");
+    manifest(">= 0.5");
+    let (unmeetable, _, refusal) = checked(&package);
+    assert_eq!(unmeetable, Code(2_i32));
+    assert!(
+        refusal.starts_with(&format!(
+            "gandr: no installed toolchain meets the constraint of {}; the nearest, `old`, leaves it unmet\n  ToolchainUnmet.gandr:",
+            package.join("gandr.toml").display()
+        )),
+        "{refusal}"
+    );
+    let describe = ran(gandr(&["toolchain", "describe"]));
+    assert_eq!(code(&describe), Code(0_i32), "{}", stderr(&describe));
+    let description = stdout(&describe);
+    assert!(
+        description.starts_with("version ")
+            && description.contains(&format!(
+                "\nsystem {}-{}\n",
+                std::env::consts::ARCH,
+                std::env::consts::OS
+            ))
+            && description.contains("\nfeature project-manifest\n"),
+        "the build describes its version, its system and the features its ledger meets: {description}"
+    );
+}
