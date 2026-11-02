@@ -96,6 +96,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::Column;
 use gandr_core_term::compose::Composite;
+use gandr_core_term::compose::Form;
 use gandr_core_term::compose::Seam;
 use gandr_core_term::compose::Tree;
 use gandr_theory_sites::Boundary;
@@ -185,28 +186,30 @@ pub fn admit(
         bound: composite.stratum.bound,
         degree: composite.stratum.degree,
     };
-    let pasting = composite.pasting;
-    if pasting.level() == gandr_core_term::compose::Level::ONE {
-        let Ok(shape) = Shape::chain(usize::from(pasting.cells()).into())
-        else {
-            return Err(not_a_shape);
-        };
-        if usize::from(shape.vertex_count()) == 1 {
+    let tree = match composite.pasting.form() {
+        Form::Chain(cells) => {
+            let Ok(shape) = Shape::chain(usize::from(cells).into())
+            else {
+                return Err(not_a_shape);
+            };
+            if usize::from(shape.vertex_count()) == 1 {
+                return Ok(shape);
+            }
+            let stratum = strata
+                .certified(&Family::Chains, written, chain_budget())
+                .map_err(|stratum| CheckRefusal::ComposeUncertified { at, stratum })?;
+            if !stratum.catalogue().shapes().contains(&shape)
+                || Degree::of(&shape) > stratum.degree()
+            {
+                return Err(not_a_shape);
+            }
             return Ok(shape);
-        }
-        let stratum = strata
-            .certified(&Family::Chains, written, chain_budget())
-            .map_err(|stratum| CheckRefusal::ComposeUncertified { at, stratum })?;
-        if !stratum.catalogue().shapes().contains(&shape) || Degree::of(&shape) > stratum.degree() {
-            return Err(not_a_shape);
-        }
-        return Ok(shape);
-    }
-    if pasting.level() != gandr_core_term::compose::Level::TWO {
-        return Err(not_a_shape);
-    }
+        },
+        Form::Columns(tree) => tree,
+        Form::Tree { .. } => return Err(not_a_shape),
+    };
     let mut columns = Vec::new();
-    for height in pasting.tree().columns() {
+    for height in tree.columns() {
         let column = if usize::from(height) == 0 {
             Shape::default()
         }

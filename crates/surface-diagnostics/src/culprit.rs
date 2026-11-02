@@ -71,6 +71,7 @@ use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
+use gandr_core_term::compose::Form;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -396,17 +397,11 @@ fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::ComposeUncertified { .. } | CheckRefusal::FillUncertified { .. } => {
             "a stratum the chains do not certify"
         },
-        CheckRefusal::ComposeNotAShape { pasting, .. }
-            if pasting.level() == gandr_core_term::compose::Level::ONE =>
-        {
-            "a chain past its stratum"
+        CheckRefusal::ComposeNotAShape { pasting, .. } => match pasting.form() {
+            Form::Chain(_) => "a chain past its stratum",
+            Form::Columns(_) => "a level-two shape past its stratum",
+            Form::Tree { .. } => "a pasting past level two",
         },
-        CheckRefusal::ComposeNotAShape { pasting, .. }
-            if pasting.level() == gandr_core_term::compose::Level::TWO =>
-        {
-            "a level-two shape past its stratum"
-        },
-        CheckRefusal::ComposeNotAShape { .. } => "a pasting past level two",
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,
             ..

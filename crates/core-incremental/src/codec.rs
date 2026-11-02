@@ -3072,29 +3072,32 @@ fn write_pasting<Out>(
 where
     Out: Sink,
 {
-    let tree = pasting.tree();
-    if pasting.level() == gandr_core_term::compose::Level::ONE {
-        writer.tag(Tag(0));
-        return writer.count(Count(usize::from(pasting.cells())));
+    match pasting.form() {
+        gandr_core_term::compose::Form::Chain(cells) => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(cells)))
+        },
+        gandr_core_term::compose::Form::Columns(tree) => {
+            writer.tag(Tag(1));
+            writer.count(Count(tree.columns().count()))?;
+            for height in tree.columns() {
+                writer.count(Count(usize::from(height)))?;
+            }
+            Ok(())
+        },
+        gandr_core_term::compose::Form::Tree { level, tree } => {
+            writer.tag(Tag(2));
+            writer.count(Count(usize::from(level)))?;
+            writer.count(Count(tree.walk().count()))?;
+            for step in tree.walk() {
+                writer.tag(Tag(match step {
+                    gandr_core_term::compose::Step::Down => 0,
+                    gandr_core_term::compose::Step::Up => 1,
+                }));
+            }
+            Ok(())
+        },
     }
-    if pasting.level() == gandr_core_term::compose::Level::TWO {
-        writer.tag(Tag(1));
-        writer.count(Count(tree.columns().count()))?;
-        for height in tree.columns() {
-            writer.count(Count(usize::from(height)))?;
-        }
-        return Ok(());
-    }
-    writer.tag(Tag(2));
-    writer.count(Count(usize::from(pasting.level())))?;
-    writer.count(Count(tree.walk().count()))?;
-    for step in tree.walk() {
-        writer.tag(Tag(match step {
-            gandr_core_term::compose::Step::Down => 0,
-            gandr_core_term::compose::Step::Up => 1,
-        }));
-    }
-    Ok(())
 }
 
 /// Read a pasting [`write_pasting`] wrote.

@@ -56,6 +56,7 @@ use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
+use gandr_core_term::compose::Form;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::world::World;
@@ -1468,28 +1469,29 @@ impl fmt::Display for Checked
                 },
             },
             | CheckRefusal::ComposeUncertified { stratum, .. } => uncertified(f, Chained::Composition, stratum),
-            | CheckRefusal::ComposeNotAShape { pasting, .. } if pasting.level() == gandr_core_term::compose::Level::ONE => write!(
-                f,
-                "a chain of m = {} cells has size 2m + 1 and degree 2m - 1, which must lie within the stratum's bound and degree",
-                usize::from(pasting.cells())
-            ),
-            | CheckRefusal::ComposeNotAShape { pasting, .. } if pasting.level() == gandr_core_term::compose::Level::TWO => {
-                let tree = pasting.tree();
-                f.write_str("the level-two shape [")?;
-                write!(f, "{}](", tree.columns().count())?;
-                for (position, height) in tree.columns().enumerate() {
-                    if position > 0 {
-                        f.write_str(", ")?;
+            | CheckRefusal::ComposeNotAShape { pasting, .. } => match pasting.form() {
+                | Form::Chain(cells) => write!(
+                    f,
+                    "a chain of m = {} cells has size 2m + 1 and degree 2m - 1, which must lie within the stratum's bound and degree",
+                    usize::from(cells)
+                ),
+                | Form::Columns(tree) => {
+                    f.write_str("the level-two shape [")?;
+                    write!(f, "{}](", tree.columns().count())?;
+                    for (position, height) in tree.columns().enumerate() {
+                        if position > 0 {
+                            f.write_str(", ")?;
+                        }
+                        write!(f, "{}", usize::from(height))?;
                     }
-                    write!(f, "{}", usize::from(height))?;
-                }
-                f.write_str(") must be an object of the wreath of the chains within the stratum's bound, and its degree within the stratum's")
+                    f.write_str(") must be an object of the wreath of the chains within the stratum's bound, and its degree within the stratum's")
+                },
+                | Form::Tree { level, .. } => write!(
+                    f,
+                    "a pasting at level {} reads no stratum: only levels one and two are certified",
+                    usize::from(level)
+                ),
             },
-            | CheckRefusal::ComposeNotAShape { pasting, .. } => write!(
-                f,
-                "a pasting at level {} reads no stratum: only levels one and two are certified",
-                usize::from(pasting.level())
-            ),
             | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Outer, defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
             | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Column(before), defect, .. } => write!(
                 f,

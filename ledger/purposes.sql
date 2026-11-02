@@ -676,6 +676,7 @@ INSERT INTO purpose VALUES('core-term','compose::CellCount','struct','How many c
 INSERT INTO purpose VALUES('core-term','compose::Column','struct','The position of a column in a level-two shape, from zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Composite','struct','The stratum a composite is made at and the pasting shape it composes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Ends','struct','A path type as the level-two realisation reads it: its carrier and its two endpoints.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','compose::Form','enum','A pasting read at its level: a chain at level one, columns at level two, or a tree past them that no stratum certifies.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Level','struct','The level of a pasting: the dimension of the cells it composes, at least its tree''s height.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::Pasting','struct','The pasting shape a composite names: one Batanin tree at the level of its cells, the chain at level one and a level-two shape its two smallest instances.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','compose::PastingError','enum','Why a tree or a pasting does not pack: past the word, a word that is no tree, or a tree taller than its level.',NULL,'fits','sound',NULL);
