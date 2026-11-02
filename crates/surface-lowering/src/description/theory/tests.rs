@@ -857,6 +857,58 @@ fn a_refused_top_level_operation_states_its_refusal()
     );
 }
 
+/// A decoration out of shape before a refused top-level operation refuses it
+/// at the decoration's stray tile, ahead of the operation's own refusal, so
+/// the stray tile is where its first error stands (#4113, #4114).
+#[test]
+fn an_unreadable_decoration_refuses_a_refused_operation_first_4113()
+{
+    let operation =
+        "oper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+    // The `(` deleted leaves the payload an operand after the name; the `)`
+    // doubled leaves the second one an operand after the attribute.
+    for (decoration, stray) in [
+        ("@[ refuses\"OperationFiller\") ]\n", 10_usize .. 27_usize),
+        ("@[ refuses(\"OperationFiller\")) ]\n", 29_usize .. 30_usize),
+    ] {
+        let source = alloc::format!("{decoration}{operation}");
+        let grammar = grammar();
+        let tree = parse(&grammar, SourceText::from(source.as_str()))
+            .unwrap()
+            .into_tree();
+        let mut arena = gandr_core_term::CoreArena::new();
+        let module = crate::lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            crate::LoweringBudget::DEFAULT,
+            crate::namespace::Recognition::default(),
+        )
+        .unwrap();
+        let [split] = *module.declarations().iter().collect::<Vec<_>>()
+        else {
+            panic!(
+                "{decoration:?}: one declaration: {:?}",
+                module.declarations()
+            )
+        };
+        let crate::DeclarationOutcome::Refused(crate::LoweringRefusal::MalformedForm {
+            span, ..
+        }) = split.outcome()
+        else {
+            panic!(
+                "{decoration:?}: the decoration refuses it: {:?}",
+                split.outcome()
+            )
+        };
+        assert_eq!(
+            usize::from(span.start()) .. usize::from(span.end()),
+            stray,
+            "{decoration:?}: the refusal stands at the stray material"
+        );
+    }
+}
+
 /// A top-level operation with no filler is refused at itself by its own name,
 /// and the block before it decorates it rather than standing where a
 /// declaration is expected (#3073).

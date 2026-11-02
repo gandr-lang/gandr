@@ -67,3 +67,8 @@ sites = [
   { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*(return )?Err\(LoweringRefusal::UnresolvedName \{$' },
   { file = "crates/surface-lowering/src/lower/native.rs", pattern = '^\s*Ok\(LoweringRefusal::UnresolvedName \{$' },
 ]
+
+[refusal.ExtraOperand]
+sites = [
+  { file = "crates/surface-lowering/src/module.rs", pattern = 'Err\(extra_operand\(FormName::ATTRIBUTE, (stray|extra)\)\)' },
+]
