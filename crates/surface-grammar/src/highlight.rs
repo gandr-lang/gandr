@@ -475,9 +475,9 @@ impl RoleTable
     ///   node span the seam's range refuses, which no tree holds, since a
     ///   [`ByteSpan`] is ordered.
     /// - panics: none.
-    /// - intension: one pass over the tree's positions in level order, then one
-    ///   sort by range; the tree's root lists its layout after its forms, so
-    ///   the sort, not the walk, puts the spans in source order.
+    /// - intension: one pass over the tree's positions in ascending order, then
+    ///   one sort by range; the tree's root lists its layout after its forms,
+    ///   so the sort, not the walk, puts the spans in source order.
     ///
     /// # Errors
     /// [`HighlightError::GrammarMismatch`], [`HighlightError::UnknownMold`],

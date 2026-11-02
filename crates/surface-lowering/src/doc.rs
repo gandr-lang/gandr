@@ -420,7 +420,7 @@ mod tests
         built_in().unwrap()
     }
 
-    /// Every documentation node of `tree`, in level order.
+    /// Every documentation node of `tree`, in ascending position order.
     ///
     /// # Specification
     /// trivial.

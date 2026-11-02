@@ -1,5 +1,5 @@
 //! Building a tree: [`TreeBuilder`], the [`StagedId`] it hands out, and the
-//! level-order layout it finishes into.
+//! layout by form it finishes into.
 //!
 //! # Two id spaces, deliberately different types
 //!
@@ -24,8 +24,8 @@
 //! A child must already be staged when its parent is staged, so every edge
 //! points at a strictly earlier staged node and no cycle is expressible. A
 //! staged node is accepted as a child at most once, so no node has two parents.
-//! Together those two make the level-order walk finite without a visited set:
-//! it visits each reachable node exactly once.
+//! Together those two make the layout walk finite without a visited set: it
+//! visits each reachable node exactly once.
 //!
 //! # A refusal leaves the builder at the failure point
 //!
@@ -155,7 +155,7 @@ impl BuilderIdCounter
 /// handle offered to a different builder is refused rather than resolving
 /// against whatever that builder staged at the same position.
 ///
-/// It is not an arena position: the level-order layout permutes the staging
+/// It is not an arena position: the layout by form permutes the staging
 /// order, so reading one as the other would silently name a different node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StagedId
@@ -231,7 +231,7 @@ struct StagedNode
     attached: Attached,
 }
 
-/// Stages the nodes of one tree and lays them out in level order.
+/// Stages the nodes of one tree and lays them out by form.
 ///
 /// Deliberately not `Clone`: a clone would carry the original's identity and
 /// an equal-length staging vector, so the two would accept each other's
@@ -543,7 +543,9 @@ impl<'source> TreeBuilder<'source>
         minted
     }
 
-    /// Lay the subtree rooted at `root` out in level order.
+    /// Lay the subtree rooted at `root` out by form: `root`, then its
+    /// children side by side, then each child's descendants in level order,
+    /// one child after another.
     ///
     /// # Specification
     /// - requires: `root` was minted by this builder. A staged node that is not
@@ -551,7 +553,8 @@ impl<'source> TreeBuilder<'source>
     ///   abandoned a partially built form does not have to unstage it.
     /// - ensures: the tree holds exactly the nodes reachable from `root`, with
     ///   `root` at position zero, every node's children occupying one
-    ///   contiguous range of positions strictly above its own, and siblings in
+    ///   contiguous range of positions strictly above its own, each of `root`'s
+    ///   children's descendants occupying one contiguous range, and siblings in
     ///   the order they were given; each top-level form is digested once, over
     ///   its significant nodes in preorder, and the tree over its forms.
     /// - provides: the finished tree, and the end of the staged identity space.
@@ -559,9 +562,10 @@ impl<'source> TreeBuilder<'source>
     ///   builder's stamp or names no node here.
     /// - panics: none.
     ///
-    /// The walk is a level-order traversal over an explicit queue, so it is
-    /// iterative at any tree depth and needs no visited set: the staged graph
-    /// is a forest, so each reachable node is enqueued exactly once.
+    /// The walk lays each of `root`'s children's subtrees out in level order
+    /// over an explicit queue, so it is iterative at any tree depth and needs
+    /// no visited set: the staged graph is a forest, so each reachable node is
+    /// enqueued exactly once.
     ///
     /// # Errors
     /// [`SyntaxError::UnknownStagedNode`] when `root` names no staged node of
@@ -587,6 +591,7 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::an_edit_reaches_its_form_and_the_tree`
     /// - witness: `build::tests::a_tree_records_its_grammar`
     /// - witness: `build::tests::a_foreign_identity_at_a_live_position_is_refused`
+    /// - witness: `build::tests::each_form_s_descendants_are_one_range`
     #[inline]
     #[spec(
         captures: [
@@ -606,11 +611,17 @@ impl<'source> TreeBuilder<'source>
         root: StagedId,
     ) -> Result<SyntaxTree<'source>, SyntaxError>
     {
+        // The root first, then its children side by side, then each child's
+        // descendants in level order, one child after another: a top-level
+        // form's descendants are one contiguous range.
         let mut order: Vec<StagedId> = Vec::with_capacity(self.staged.len());
         let mut nodes: Vec<Node> = Vec::with_capacity(self.staged.len());
         order.push(root);
-        let mut cursor = 0_usize;
-        while let Some(staged_id) = order.get(cursor).copied() {
+        let lay = |at: usize, order: &mut Vec<StagedId>, nodes: &mut Vec<Node>| {
+            let staged_id = order
+                .get(at)
+                .copied()
+                .ok_or(SyntaxError::UnknownStagedNode { node: root })?;
             let position = self.resolve(staged_id)?;
             let Some(staged) = self.staged.get(position.0)
             else {
@@ -620,13 +631,34 @@ impl<'source> TreeBuilder<'source>
             let edge_end = staged.first_edge.saturating_add(staged.child_count);
             let edges = self.edges.get(staged.first_edge .. edge_end).unwrap_or(&[]);
             order.extend_from_slice(edges);
-            nodes.push(Node::new(
-                staged.label,
-                staged.span,
-                first_child,
-                ChildCount::from(staged.child_count),
-            ));
-            cursor = cursor.saturating_add(1_usize);
+            nodes.resize(
+                order.len(),
+                Node::new(
+                    NodeLabel::Wald,
+                    staged.span,
+                    NodeIndex::from(0_usize),
+                    ChildCount::from(0_usize),
+                ),
+            );
+            if let Some(slot) = nodes.get_mut(at) {
+                *slot = Node::new(
+                    staged.label,
+                    staged.span,
+                    first_child,
+                    ChildCount::from(staged.child_count),
+                );
+            }
+            Ok(())
+        };
+        lay(0_usize, &mut order, &mut nodes)?;
+        let tops = order.len();
+        for top in 1_usize .. tops {
+            let mut cursor = order.len();
+            lay(top, &mut order, &mut nodes)?;
+            while cursor < order.len() {
+                lay(cursor, &mut order, &mut nodes)?;
+                cursor = cursor.saturating_add(1_usize);
+            }
         }
 
         Ok(SyntaxTree::from_layout(self.source, self.grammar, nodes))
@@ -1025,6 +1057,120 @@ mod tests
                 .is_some_and(|whole| whole != first && whole != second),
             "the tree's identity is neither form's"
         );
+    }
+
+    /// Every position reachable from `form` in `tree` but `form` itself, in
+    /// ascending order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reachable(
+        tree: &SyntaxTree<'_>,
+        form: NodeIndex,
+    ) -> Vec<NodeIndex>
+    {
+        let mut found = Vec::new();
+        let mut pending: Vec<NodeIndex> = tree.children(form).collect();
+        while let Some(at) = pending.pop() {
+            found.push(at);
+            pending.extend(tree.children(at));
+        }
+        found.sort_unstable();
+        found
+    }
+
+    #[test]
+    fn each_form_s_descendants_are_one_range()
+    {
+        // Two depth-four forms: level order over the whole tree would lay the
+        // second form's second level between the first form's second and
+        // third.
+        let text = format!("{LAMBDA_SOURCE} {LAMBDA_SOURCE}");
+        let source = SourceText::from(text.as_str());
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
+        let mut form = |shift: usize| {
+            let at = |start: usize, end: usize| {
+                span(
+                    ByteOffset::from(start.saturating_add(shift)),
+                    ByteOffset::from(end.saturating_add(shift)),
+                )
+            };
+            let name = builder.node(word(), at(4, 5), &[]).unwrap();
+            let binder = builder.node(word(), at(9, 10), &[]).unwrap();
+            let body = builder.node(word(), at(19, 20), &[]).unwrap();
+            let returned = builder.node(returner(), at(12, 20), &[body]).unwrap();
+            let abstraction = builder
+                .node(lambda(), at(8, 20), &[binder, returned])
+                .unwrap();
+            builder
+                .node(definition(), at(0, 22), &[name, abstraction])
+                .unwrap()
+        };
+        let first = form(0);
+        let second = form(23);
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let layout = builder.node(NodeLabel::Space, at(22, 23), &[]).unwrap();
+        let root = builder
+            .node(NodeLabel::Wald, at(0, 45), &[first, layout, second])
+            .unwrap();
+        let tree = builder.finish(root).unwrap();
+
+        let forms = tree.forms();
+        assert_eq!(forms.len(), 2);
+        let mut covered: Vec<NodeIndex> = children(&tree, tree.root());
+        covered.push(tree.root());
+        for &form in forms {
+            let range: Vec<NodeIndex> = tree.descendants(form).unwrap().collect();
+            assert_eq!(range.len(), 5, "a form holds five nodes below itself");
+            assert_eq!(
+                range,
+                reachable(&tree, form),
+                "the range is the form's descendants"
+            );
+            covered.extend(range);
+        }
+        covered.sort_unstable();
+        assert!(
+            covered.iter().copied().eq(tree.positions()),
+            "the root, its children and the forms' ranges cover the layout once"
+        );
+        let layout_at = children(&tree, tree.root())[1];
+        assert_eq!(
+            tree.descendants(layout_at).map(Iterator::count),
+            None,
+            "layout is no form"
+        );
+        assert_eq!(
+            tree.descendants(tree.root()).map(Iterator::count),
+            None,
+            "the root is no form"
+        );
+        let nested = tree.descendants(forms[0]).unwrap().next().unwrap();
+        assert_eq!(
+            tree.descendants(nested).map(Iterator::count),
+            None,
+            "a nested node is no form"
+        );
+        assert_eq!(
+            tree.descendants(NodeIndex::from(99_usize))
+                .map(Iterator::count),
+            None
+        );
+
+        let joined_text = format!("{text}{text}");
+        let joined =
+            SyntaxTree::joined(&tree, &tree, SourceText::from(joined_text.as_str())).unwrap();
+        assert_eq!(joined.forms().len(), 4);
+        let mut range: Vec<NodeIndex> = Vec::new();
+        for &form in joined.forms() {
+            range.clear();
+            range.extend(joined.descendants(form).unwrap());
+            assert_eq!(
+                range,
+                reachable(&joined, form),
+                "a join moves each form's range with its nodes"
+            );
+        }
     }
 
     #[test]

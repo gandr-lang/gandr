@@ -1,5 +1,5 @@
 //! The **concrete syntax tree of the gandr surface**: the molded node
-//! vocabulary, byte spans, and a flat level-order arena whose every node
+//! vocabulary, byte spans, and a flat arena laid out by form whose every node
 //! carries an arena position and, below the root, a cross-tree key.
 //!
 //! - [`NodeLabel`] is what a node is: a form or a tile named by its mold, grout

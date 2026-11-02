@@ -69,7 +69,7 @@ pub enum SyntaxError
     /// A staged node was offered as a child a second time.
     ///
     /// The staged forest gives every node at most one parent, which is what
-    /// makes the level-order layout finite: a node reachable twice would be
+    /// makes the layout by form finite: a node reachable twice would be
     /// copied twice, and a node reachable along two paths of different depths
     /// would have no single arena position.
     ChildAlreadyAttached

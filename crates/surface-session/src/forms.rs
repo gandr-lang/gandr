@@ -80,15 +80,16 @@
 //! and prunes itself in place. The commit hashes every form once, one call
 //! each, which costs less than per-node digests in the parked units would. What
 //! remains is linear in the module, and each stage names what removes it. The
-//! commit still stages every node into the level-order tree and the join copies
-//! every parked unit; a tree laid out by form, each form's subtree contiguous,
-//! would let the commit take an unchanged form up as a block. The lowering
-//! reads the whole tree, and its classification cannot be kept per form: it
-//! writes about twelve index spaces keyed by the tree's level-order positions —
-//! plans, readings, operand, statement and parameter stretches, binder scopes,
-//! case forms, answers, descents, hole identities, which are positions
-//! themselves — so a kept form needs every index remapped. One arena segment
-//! per form, over the same per-form layout, carries a form's identity through
+//! commit still stages every node into the tree and the join copies every
+//! parked unit. The tree is laid out by form, each form's descendants one
+//! contiguous range (`SyntaxTree::descendants`), so the commit could take an
+//! unchanged form up as a block. The lowering reads the whole tree, and its
+//! classification cannot be kept per form: it writes about twelve index spaces
+//! keyed by the tree's positions — plans, readings, operand, statement and
+//! parameter stretches, binder scopes, case forms, answers, descents, hole
+//! identities, which are positions themselves — so a kept form needs every
+//! index remapped. One arena segment per form, over the same per-form layout,
+//! carries a form's identity through
 //! tree, arena and origins, hole and case origins included, and removes the
 //! lowering's whole-module pass with the commit's. The incremental checker's
 //! resume and the edit snapshot re-encode every item from the arena, and an

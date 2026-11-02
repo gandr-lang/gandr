@@ -49,8 +49,9 @@
 //! # One refusal per declaration, and the run continues
 //!
 //! A declaration reports its first refusal and the module keeps going with the
-//! next one. "First" is by arena position, which the level-order layout makes
-//! the shallowest and then leftmost refusing node. Distinct positions have a
+//! next one. "First" is by arena position. A declaration is one top-level
+//! form, whose descendants the layout keeps in level order, so the first
+//! refusing node is the shallowest and then leftmost. Distinct positions have a
 //! traversal-independent winner; equal positions retain the first offered
 //! refusal. A fault in the declaration form's own tiles is offered at the
 //! declaration node itself, so it outranks every refusal from inside its

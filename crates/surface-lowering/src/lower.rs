@@ -1,12 +1,13 @@
 //! The lowering itself: [`lower_module`], the [`LoweringBudget`] that bounds
 //! it, and the two sweeps over the arena it is made of.
 //!
-//! # Two sweeps over one level-order arena, and no recursion anywhere
+//! # Two sweeps over one arena laid out by form, and no recursion anywhere
 //!
-//! The molded tree lays its nodes out in level order, so a walk in ascending
-//! position order visits every parent before any of its children and a walk in
-//! descending order visits every child before its parent. Lowering needs both
-//! directions and gets each as a plain loop with no stack of its own.
+//! The molded tree lays its nodes out by form, each form's descendants in
+//! level order, so a walk in ascending position order visits every parent
+//! before any of its children and a walk in descending order visits every
+//! child before its parent. Lowering needs both directions and gets each as a
+//! plain loop with no stack of its own.
 //!
 //! The **ascending sweep classifies**. A node's sort is fixed by its parent —
 //! the same identifier is a binder, a type head or a term name depending on
@@ -481,13 +482,14 @@
 //!
 //! # Two sweeps, no recursion, one allowance
 //!
-//! The tree is laid out in level order, so ascending position order visits
-//! every parent before its children and descending order every child before its
-//! parent. The ascending sweep classifies and plans; the descending sweep
-//! mints, and can fail at nothing but the allowance, because every decision was
-//! made on the way down. It mints each manifest type component's form first, in
-//! signature order, so a type head standing for that component adopts a type
-//! already minted wherever the head sits. Each is a plain loop: no descent, no
+//! The tree is laid out by form, each form's descendants in level order, so
+//! ascending position order visits every parent before its children and
+//! descending order every child before its parent. The ascending sweep
+//! classifies and plans; the descending sweep mints, and can fail at nothing
+//! but the allowance, because every decision was made on the way down. It
+//! mints each manifest type component's form first, in signature order, so a
+//! type head standing for that component adopts a type already minted
+//! wherever the head sits. Each is a plain loop: no descent, no
 //! frame stack, no depth a module can overflow; nested modules are collected
 //! from an explicit stack. Every node visit, every binder frame walked, every
 //! module child and every attribute spends one step of the `LoweringBudget`;
@@ -3725,7 +3727,7 @@ struct Lowerer<'run, 'source>
     /// The source the passes are lowering, and where its share of each list
     /// they read begins.
     current: Current,
-    /// The current source's own positions, in level order.
+    /// The current source's own positions, in ascending order.
     own: Vec<NodeIndex>,
 }
 
@@ -3980,7 +3982,7 @@ const fn half_at(half: Half) -> HalfAt
     }
 }
 
-/// The positions `source_of` gives to `source`, in level order.
+/// The positions `source_of` gives to `source`, in ascending order.
 ///
 /// # Specification
 /// - ensures: exactly the positions whose source is `source`, ascending.
@@ -15381,15 +15383,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   next, the same way, so a `cong` in a type, and a match or a field read
     ///   deeper than the types it reads, find those types minted, and every
     ///   application not yet renamed is renamed. Every other planned node is
-    ///   then minted, with its children already minted because the level-order
-    ///   layout puts them at strictly higher positions; every minted node gets
-    ///   an origin naming the syntax node that produced it, terms and types
-    ///   alike, while an adopted child keeps its own. A node whose position
-    ///   bridges its sort has the bridge minted over its own core node, with
-    ///   the same syntax node's origin marked as inserted. A node under a
-    ///   declaration that refused is not minted, and neither is any node above
-    ///   it, unless it lies inside an attribute payload or is a type a module
-    ///   signature states for it: the side table files a payload whatever its
+    ///   then minted, with its children already minted because the layout puts
+    ///   them at strictly higher positions; every minted node gets an origin
+    ///   naming the syntax node that produced it, terms and types alike, while
+    ///   an adopted child keeps its own. A node whose position bridges its sort
+    ///   has the bridge minted over its own core node, with the same syntax
+    ///   node's origin marked as inserted. A node under a declaration that
+    ///   refused is not minted, and neither is any node above it, unless it
+    ///   lies inside an attribute payload or is a type a module signature
+    ///   states for it: the side table files a payload whatever its
     ///   declaration's outcome, so an expectation about a refused declaration
     ///   stays readable, and a signature's type is the signature's text, which
     ///   answers for itself. The record type an enclosing signature states a
