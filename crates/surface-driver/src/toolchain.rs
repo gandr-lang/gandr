@@ -695,6 +695,9 @@ quenchant_shape::reason_enum! {
             Unselected,
             /// The selection, or the image it names, cannot be read.
             Unreadable,
+            /// The face follows no selection: its socket is named, or its own
+            /// image cannot be read.
+            Unfollowed,
         }
     }
 }
@@ -747,10 +750,10 @@ pub fn moved(running: Image) -> Maybe<PathBuf, unmoved::Absent>
     }
 }
 
-/// The variable naming the handover file a language-server relay of another
-/// build left for the image it execs.
+/// The variable naming the handover file a face's relay of another build left
+/// for the image it execs, the language server's or the model server's.
 #[cfg(unix)]
-pub const HANDOVER: &str = "GANDR_LSP_HANDOVER";
+pub const HANDOVER: &str = "GANDR_HANDOVER";
 
 /// Replace this process with `path`, run with this process's arguments and
 /// [`HANDOVER`] naming the file `handover`.

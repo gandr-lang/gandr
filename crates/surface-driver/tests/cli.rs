@@ -2997,6 +2997,194 @@ fn a_relay_reaches_only_a_hub_of_its_own_build()
     );
 }
 
+/// Two builds of this driver, one byte apart, linked as the toolchains
+/// `first` and `second` under a scratch data directory, `first` the default;
+/// a workspace beside them, and a runtime directory for their hubs.
+#[cfg(target_os = "linux")]
+struct Builds
+{
+    /// The first build's directory.
+    first: PathBuf,
+    /// The second build's directory.
+    second: PathBuf,
+    /// The directory every command runs in.
+    workspace: PathBuf,
+    /// The data directory holding the toolchains.
+    data: PathBuf,
+    /// The runtime directory holding the hubs.
+    runtime: PathBuf,
+}
+
+#[cfg(target_os = "linux")]
+impl Builds
+{
+    /// The two builds under `scratch`, linked.
+    ///
+    /// # Specification
+    /// trivial.
+    fn linked(scratch: &Scratch) -> Self
+    {
+        let built = PathBuf::from(env!("CARGO_BIN_EXE_gandr"));
+        let builds = Self {
+            first: scratch.0.join("first"),
+            second: scratch.0.join("second"),
+            workspace: scratch.0.join("workspace"),
+            data: scratch.0.join("data"),
+            runtime: scratch.0.join("run"),
+        };
+        std::fs::create_dir_all(&builds.workspace).expect("the workspace is made");
+        for (directory, byte) in [&builds.first, &builds.second]
+            .into_iter()
+            .zip([0_u8, 1_u8])
+        {
+            std::fs::create_dir_all(directory).expect("the build's directory is made");
+            let driver = directory.join("gandr");
+            let _copied = std::fs::copy(&built, &driver).expect("the driver is copied");
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&driver)
+                .and_then(|mut file| file.write_all(&[byte]))
+                .expect("each copy is made a build of its own");
+        }
+        for (name, directory) in [("first", &builds.first), ("second", &builds.second)] {
+            builds.toolchain(&[
+                std::ffi::OsStr::new("toolchain"),
+                std::ffi::OsStr::new("link"),
+                std::ffi::OsStr::new(name),
+                directory.as_os_str(),
+            ]);
+        }
+        builds
+    }
+
+    /// The first build's driver run with `arguments` in the workspace.
+    ///
+    /// # Specification
+    /// trivial.
+    fn command(
+        &self,
+        arguments: &[&std::ffi::OsStr],
+    ) -> Command
+    {
+        let mut command = Command::new(self.first.join("gandr"));
+        for (key, value) in gandr::<&str>(&[]).get_envs() {
+            if let Some(value) = value {
+                let _set = command.env(key, value);
+            }
+        }
+        let _configured = command
+            .args(arguments)
+            .current_dir(&self.workspace)
+            .env("XDG_DATA_HOME", &self.data)
+            .env("XDG_RUNTIME_DIR", &self.runtime);
+        command
+    }
+
+    /// `command` started. A test thread forking while a copy was open for
+    /// writing holds it until that child execs, and the kernel refuses to run
+    /// it meanwhile, so a busy executable is retried.
+    ///
+    /// # Specification
+    /// trivial.
+    fn started(command: &mut Command) -> std::process::Child
+    {
+        loop {
+            match command.spawn() {
+                Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(core::time::Duration::from_millis(20));
+                },
+                started => break started.expect("the driver starts"),
+            }
+        }
+    }
+
+    /// Run `arguments` to completion, asserting it exits `0`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn toolchain(
+        &self,
+        arguments: &[&std::ffi::OsStr],
+    )
+    {
+        let output = Self::started(
+            self.command(arguments)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+        .wait_with_output()
+        .expect("the driver runs");
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    }
+
+    /// The face `face` started with piped standard streams, its hub lingering
+    /// 3 s.
+    ///
+    /// # Specification
+    /// trivial.
+    fn face(
+        &self,
+        face: &std::ffi::OsStr,
+    ) -> std::process::Child
+    {
+        let os = std::ffi::OsStr::new;
+        Self::started(
+            self.command(&[face, os("--linger-ms"), os("3000")])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+    }
+
+    /// Make `second` the default.
+    ///
+    /// # Specification
+    /// trivial.
+    fn switch(&self)
+    {
+        let os = std::ffi::OsStr::new;
+        self.toolchain(&[os("toolchain"), os("default"), os("second")]);
+    }
+
+    /// Assert that each build served the session from a hub of its own, and
+    /// that the next build removed the handover it read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn served_by_both(&self)
+    {
+        let hubs = std::fs::read_dir(self.runtime.join("gandr"))
+            .expect("the runtime directory holds the hubs")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<String>>();
+        assert_eq!(
+            hubs.iter()
+                .filter(|name| Path::new(name)
+                    .extension()
+                    .is_some_and(|extension| extension == "sock"))
+                .count(),
+            2_usize,
+            "each build serves the session from a hub of its own: {hubs:?}"
+        );
+        assert!(
+            hubs.iter().all(|name| !name.starts_with("handover-")),
+            "the next build removes the handover it read: {hubs:?}"
+        );
+    }
+}
+
+/// The path of the image the process `child` runs.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+fn image(child: &std::process::Child) -> PathBuf
+{
+    std::fs::read_link(format!("/proc/{}/exe", child.id())).expect("the image is read")
+}
+
 /// One language-server session follows a switch of the default toolchain:
 /// the change after the switch reaches the next build's hub, which publishes
 /// its diagnostics, and the session ends cleanly in the next build.
@@ -3011,73 +3199,8 @@ fn a_language_server_follows_a_toolchain_switch()
 
     // The name is short: a socket path must fit the platform's limit.
     let scratch = Scratch::new(Path::new("switch"));
-    let runtime = scratch.0.join("run");
-    let data = scratch.0.join("data");
-    let workspace = scratch.0.join("workspace");
-    std::fs::create_dir_all(&workspace).expect("the workspace is made");
-    let built = PathBuf::from(env!("CARGO_BIN_EXE_gandr"));
-    let builds = [scratch.0.join("first"), scratch.0.join("second")];
-    for (directory, byte) in builds.iter().zip([0_u8, 1_u8]) {
-        std::fs::create_dir_all(directory).expect("the build's directory is made");
-        let driver = directory.join("gandr");
-        let _copied = std::fs::copy(&built, &driver).expect("the driver is copied");
-        std::fs::OpenOptions::new()
-            .append(true)
-            .open(&driver)
-            .and_then(|mut file| file.write_all(&[byte]))
-            .expect("each copy is made a build of its own");
-    }
-    let [ref first, ref second] = builds;
-    let driver = first.join("gandr");
-    let command = |arguments: &[&std::ffi::OsStr]| {
-        let mut command = Command::new(&driver);
-        for (key, value) in gandr::<&str>(&[]).get_envs() {
-            if let Some(value) = value {
-                let _set = command.env(key, value);
-            }
-        }
-        let _configured = command
-            .args(arguments)
-            .current_dir(&workspace)
-            .env("XDG_DATA_HOME", &data)
-            .env("XDG_RUNTIME_DIR", &runtime);
-        command
-    };
-    // A test thread forking while a copy was open for writing holds it until
-    // that child execs, and the kernel refuses to run it meanwhile.
-    let started = |command: &mut Command| loop {
-        match command.spawn() {
-            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
-                std::thread::sleep(core::time::Duration::from_millis(20));
-            },
-            started => break started.expect("the driver starts"),
-        }
-    };
-    let toolchain = |arguments: &[&std::ffi::OsStr]| {
-        let output = started(
-            command(arguments)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped()),
-        )
-        .wait_with_output()
-        .expect("the driver runs");
-        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
-    };
-    let os = std::ffi::OsStr::new;
-    toolchain(&[os("toolchain"), os("link"), os("first"), first.as_os_str()]);
-    toolchain(&[
-        os("toolchain"),
-        os("link"),
-        os("second"),
-        second.as_os_str(),
-    ]);
-    let mut editor = started(
-        command(&[os("lsp"), os("--linger-ms"), os("3000")])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped()),
-    );
+    let builds = Builds::linked(&scratch);
+    let mut editor = builds.face(std::ffi::OsStr::new("lsp"));
     let mut to_editor = editor.stdin.take().expect("standard input is piped");
     let mut from_editor = BufReader::new(editor.stdout.take().expect("standard output is piped"));
     let mut answers: Vec<serde_json::Value> = Vec::new();
@@ -3112,16 +3235,12 @@ fn a_language_server_follows_a_toolchain_switch()
         before.to_string().contains("UnresolvedName"),
         "the first build judges the opened text: {before}"
     );
-    let running = || {
-        std::fs::read_link(format!("/proc/{}/exe", editor.id()))
-            .expect("the editor's image is read")
-    };
     assert_eq!(
-        running(),
-        first.join("gandr"),
+        image(&editor),
+        builds.first.join("gandr"),
         "the session starts in the first build"
     );
-    toolchain(&[os("toolchain"), os("default"), os("second")]);
+    builds.switch();
     to_editor
         .write_all(
             frames(&[Text::from(
@@ -3136,28 +3255,11 @@ fn a_language_server_follows_a_toolchain_switch()
         "the next build judges the changed text: {after}"
     );
     assert_eq!(
-        running(),
-        second.join("gandr"),
+        image(&editor),
+        builds.second.join("gandr"),
         "the change found the switch, and the session runs in the second build"
     );
-    let hubs = std::fs::read_dir(runtime.join("gandr"))
-        .expect("the runtime directory holds the hubs")
-        .filter_map(Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect::<Vec<String>>();
-    assert_eq!(
-        hubs.iter()
-            .filter(|name| Path::new(name)
-                .extension()
-                .is_some_and(|extension| extension == "sock"))
-            .count(),
-        2_usize,
-        "each build serves the session from a hub of its own: {hubs:?}"
-    );
-    assert!(
-        hubs.iter().all(|name| !name.starts_with("handover-")),
-        "the next build removes the handover it read: {hubs:?}"
-    );
+    builds.served_by_both();
     to_editor
         .write_all(
             frames(&[
@@ -3186,6 +3288,81 @@ fn a_language_server_follows_a_toolchain_switch()
         "the client sees one answer to each of its requests, and none to the replay"
     );
     let ended = editor.wait_with_output().expect("the editor's server runs");
+    assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
+}
+
+/// One model session follows a switch of the default toolchain: the request
+/// after the switch reaches the next build's hub, opened by the client's
+/// replayed `initialize`, whose answer the client never sees.
+///
+/// Linux alone, as [`a_language_server_follows_a_toolchain_switch`].
+#[cfg(target_os = "linux")]
+#[test]
+fn a_model_session_follows_a_toolchain_switch()
+{
+    use std::io::BufRead as _;
+    use std::io::BufReader;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("mswitch"));
+    let builds = Builds::linked(&scratch);
+    let mut model = builds.face(std::ffi::OsStr::new("mcp"));
+    let mut to_model = model.stdin.take().expect("standard input is piped");
+    let mut from_model = BufReader::new(model.stdout.take().expect("standard output is piped"));
+    let mut answered = || {
+        let mut line = String::new();
+        let _read = from_model.read_line(&mut line).expect("a line");
+        serde_json::from_str::<serde_json::Value>(&line).expect("a line is JSON")
+    };
+    to_model
+        .write_all(concat!(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}"#,
+            "\n",
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            "\n",
+        ).as_bytes())
+        .expect("the opening is written");
+    let opened = answered();
+    assert_eq!(
+        opened.get("id"),
+        Some(&serde_json::json!(1_i32)),
+        "{opened}"
+    );
+    assert_eq!(
+        image(&model),
+        builds.first.join("gandr"),
+        "the session starts in the first build"
+    );
+    builds.switch();
+    to_model
+        .write_all(concat!(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"documents","arguments":{}}}"#,
+            "\n",
+        ).as_bytes())
+        .expect("the call is written");
+    let called = answered();
+    assert_eq!(
+        (
+            called.get("id"),
+            called.pointer("/result/structuredContent/documents")
+        ),
+        (
+            Some(&serde_json::json!(2_i32)),
+            Some(&serde_json::json!([]))
+        ),
+        "the next build answers the call, and the replay's answer is dropped: {called}"
+    );
+    assert_eq!(
+        image(&model),
+        builds.second.join("gandr"),
+        "the call found the switch, and the session runs in the second build"
+    );
+    builds.served_by_both();
+    drop(to_model);
+    let mut rest = String::new();
+    std::io::Read::read_to_string(&mut from_model, &mut rest).expect("the model's output ends");
+    assert_eq!(rest, "", "nothing follows the last answer");
+    let ended = model.wait_with_output().expect("the model's server runs");
     assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
 }
 

@@ -18,8 +18,28 @@
 //!
 //! **Reversal.** A third protocol whose first byte cannot be told from these
 //! two moves the hub to a socket per protocol.
+//!
+//! # A session across builds
+//!
+//! **Choice.** The relay reads its client a line at a time and keeps the
+//! client's `initialize` and `notifications/initialized` itself. The face holds
+//! no documents per connection, so that opening is the whole replay the next
+//! build needs, and the hub answers no request for it. Before a line, while
+//! none of the client's requests waits for its answer, the relay asks whether
+//! the selection moved; the driver then hands the opening and the held line to
+//! the selected build, as `gandr lsp` does.
+//!
+//! **Alternatives.** A replay request to the hub, as the language server's
+//! relay sends, would add a method the line face answers for one caller.
+//!
+//! **Reversal.** A face that keeps per-connection state on the hub moves the
+//! replay to the hub, as the language server's.
 
 use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::io;
 use std::io::BufRead as _;
 use std::io::BufReader;
@@ -33,8 +53,12 @@ use std::sync::PoisonError;
 use std::sync::mpsc::channel;
 use std::thread;
 
+use gandr_surface_lsp::Body;
+use gandr_surface_lsp::Carried;
 use gandr_surface_lsp::DocumentUri;
+use gandr_surface_lsp::Handover;
 use gandr_surface_lsp::Peer;
+use gandr_surface_lsp::REPLAY;
 use gandr_surface_lsp::Workspace;
 use serde_json::Value;
 
@@ -165,65 +189,257 @@ pub fn serve(
     });
 }
 
-/// Carry lines between a client and the hub at the other end of `hub`: every
-/// byte `input` holds to the hub, each line the hub sends to `output`, until
-/// the hub closes the connection.
+/// How a relayed model session ended.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Relayed
+{
+    /// The input ended, and the hub closed once it had answered it.
+    Ended,
+    /// The selection moved to another build: the session goes on in that
+    /// build's image, which takes the handover.
+    Switched(Handover),
+}
+
+/// How a line reads to a relay, its payload skipped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Line
+{
+    /// The client's `initialize` request.
+    Initialize,
+    /// The client's `notifications/initialized`.
+    Initialized,
+    /// Another request.
+    Request,
+    /// A response under the identifier [`REPLAY`].
+    Replay,
+    /// A response under another identifier.
+    Answer,
+    /// A notification, or no message.
+    Other,
+}
+
+/// The envelope of a line, its payload skipped unread.
+#[derive(serde::Deserialize)]
+struct Envelope<'line>
+{
+    /// The identifier, when the message carries one.
+    #[serde(default)]
+    id: Option<Value>,
+    /// The method, when the message calls one.
+    #[serde(default, borrow)]
+    method: Option<alloc::borrow::Cow<'line, str>>,
+}
+
+/// One line of the wire, its terminator included or not.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Message<'line>(&'line [u8]);
+
+impl Message<'_>
+{
+    /// How the line reads to a relay.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a message with an identifier and a method is a request, the
+    ///   `initialize` one told apart; one with an identifier and no method is
+    ///   an answer, the one to [`REPLAY`] told apart;
+    ///   `notifications/initialized` is told apart from every other line.
+    /// - panics: none.
+    /// - executable: none — a predicate would read the envelope a second time,
+    ///   which is the whole of the function.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relay keeps the opening, counts the pending
+    ///   requests and drops the replay's answer.
+    /// - witness: `face::tests::a_relay_switches_once_nothing_is_pending`
+    fn read(self) -> Line
+    {
+        match serde_json::from_slice::<Envelope<'_>>(self.0) {
+            Ok(Envelope {
+                id: Some(_),
+                method: Some(method),
+            }) if method == "initialize" => Line::Initialize,
+            Ok(Envelope {
+                id: Some(_),
+                method: Some(_),
+            }) => Line::Request,
+            Ok(Envelope {
+                id: Some(id),
+                method: None,
+            }) if id.as_str() == Some(REPLAY) => Line::Replay,
+            Ok(Envelope {
+                id: Some(_),
+                method: None,
+            }) => Line::Answer,
+            Ok(Envelope {
+                id: None,
+                method: Some(method),
+            }) if method == "notifications/initialized" => Line::Initialized,
+            Ok(_) | Err(_) => Line::Other,
+        }
+    }
+
+    /// The line as a replay keeps it, read as `read`: its terminator dropped,
+    /// and an `initialize` request under the identifier [`REPLAY`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept(
+        self,
+        read: Line,
+    ) -> Body
+    {
+        let message = self.0.trim_ascii_end();
+        if read != Line::Initialize {
+            return Body::from(message.to_vec());
+        }
+        serde_json::from_slice::<Value>(message)
+            .ok()
+            .and_then(|mut request| {
+                *request.get_mut("id")? = Value::from(REPLAY);
+                serde_json::to_vec(&request).ok()
+            })
+            .map_or_else(|| Body::from(message.to_vec()), Body::from)
+    }
+}
+
+/// Carry lines between a client and the hub at the other end of `hub`, until
+/// the hub closes the connection or the session moves to another build.
+///
+/// `opening` goes to the hub first, a line each. Then every line `input` holds
+/// goes to the hub, and each line the hub sends goes to `output`, until the hub
+/// closes or `moved` answers that the session belongs to another build.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: bytes pass unchanged and in order both ways, `output` flushed
-///   after each line. Once `input` ends or fails, the hub's end is shut for
-///   writing.
-/// - provides: `gandr mcp`, a client's whole session with a hub.
+/// - ensures: lines pass unchanged and in order both ways, `output` flushed
+///   after each, but for the hub's answers to the requests in `opening`, which
+///   are dropped. Once `input` ends or fails, the hub's end is shut for
+///   writing, and the session is [`Relayed::Ended`]. `moved` is asked before
+///   each line from `input` while none of the client's requests waits for its
+///   answer; once it answers `true`, that line and every byte read past it are
+///   held, the hub's end is shut for writing, and the session ends
+///   [`Relayed::Switched`] with the client's opening and the held bytes. The
+///   opening is `opening` until `input` carries `initialize`, then that request
+///   under the identifier [`REPLAY`] and the `notifications/initialized` after
+///   it.
+/// - provides: `gandr mcp`, a client's whole session with a hub, across builds.
 /// - fails: when a line from the hub cannot be read or written to `output`.
 /// - panics: none.
 /// - executable: none — the bytes go to a socket and to `output`, which the
 ///   call consumes or writes but cannot read back.
 ///
 /// # Errors
-/// The error reading the hub's lines or writing them to `output`.
+/// The error writing `opening` to the hub, reading the hub's lines or writing
+/// them to `output`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a session of discovery and a tool call is carried whole
-///   through a running hub.
+///   through a running hub; a switch waits for the client's pending request and
+///   hands over the line it held with the client's opening.
 /// - witness: `face::tests::a_relay_carries_a_model_session`
+/// - witness: `face::tests::a_relay_switches_once_nothing_is_pending`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
         pool_only_threads,
-        reason = "io: the relay's input thread copies the model's frames to the hub until the input ends"
+        reason = "io: the relay's input thread blocks on the model's lines for the session's life"
     )
 )]
 #[inline]
-pub fn relay<Input, Output>(
+pub fn relay<Input, Output, Moved>(
     input: Input,
     output: &mut Output,
     hub: UnixStream,
-) -> io::Result<()>
+    opening: &[Body],
+    mut moved: Moved,
+) -> io::Result<Relayed>
 where
     Input: Read + Send + 'static,
     Output: Write,
+    Moved: FnMut() -> bool + Send + 'static,
 {
     let mut forward = hub.try_clone()?;
+    let mut replayed = 0_usize;
+    for body in opening {
+        if matches!(
+            Message(body.as_ref()).read(),
+            Line::Initialize | Line::Request
+        ) {
+            replayed = replayed.saturating_add(1);
+        }
+        forward.write_all(body.as_ref())?;
+        forward.write_all(b"\n")?;
+    }
+    let pending = Arc::new(AtomicUsize::new(replayed));
+    let waiting = Arc::clone(&pending);
+    let mut opened = opening.to_vec();
+    let (switching, switched) = channel::<Handover>();
     drop(thread::spawn(move || {
-        let mut input = input;
-        drop(io::copy(&mut input, &mut forward));
+        let mut input = BufReader::new(input);
+        let mut held = Vec::new();
+        while input
+            .read_until(b'\n', &mut held)
+            .is_ok_and(|read| read != 0)
+        {
+            if waiting.load(Ordering::Acquire) == 0 && moved() {
+                let mut carried = core::mem::take(&mut held);
+                carried.extend_from_slice(input.buffer());
+                // The handover is waiting before the hub closes, so the
+                // reader finds it at the end of the hub's lines.
+                drop(switching.send(Handover::new(opened, Carried(carried))));
+                break;
+            }
+            let read = Message(&held).read();
+            match read {
+                Line::Initialize => {
+                    opened.clear();
+                    opened.push(Message(&held).kept(read));
+                },
+                Line::Initialized => opened.push(Message(&held).kept(read)),
+                Line::Request | Line::Replay | Line::Answer | Line::Other => {},
+            }
+            if matches!(read, Line::Initialize | Line::Request) {
+                let _counted = waiting.fetch_add(1, Ordering::AcqRel);
+            }
+            if forward.write_all(&held).is_err() {
+                break;
+            }
+            held.clear();
+        }
         drop(forward.shutdown(Shutdown::Write));
     }));
     let mut reading = BufReader::new(hub);
-    let mut line = String::new();
-    while reading.read_line(&mut line)? != 0 {
-        output.write_all(line.as_bytes())?;
-        output.flush()?;
-        line.clear();
+    let mut answer = Vec::new();
+    while reading.read_until(b'\n', &mut answer)? != 0 {
+        let read = Message(&answer).read();
+        if matches!(read, Line::Replay | Line::Answer) {
+            let _answered = pending.try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                Some(count.saturating_sub(1))
+            });
+        }
+        if read == Line::Replay && replayed > 0 {
+            replayed = replayed.saturating_sub(1);
+        }
+        else {
+            output.write_all(&answer)?;
+            output.flush()?;
+        }
+        answer.clear();
     }
-    Ok(())
+    Ok(switched
+        .try_recv()
+        .map_or(Relayed::Ended, Relayed::Switched))
 }
 
 #[cfg(test)]
 mod tests
 {
     use alloc::string::String;
+    use alloc::sync::Arc;
+    use core::sync::atomic::AtomicBool;
+    use core::sync::atomic::Ordering;
     use core::time::Duration;
     use std::io;
     use std::io::BufRead as _;
@@ -243,6 +459,7 @@ mod tests
     use serde_json::Value;
     use serde_json::json;
 
+    use super::Relayed;
     use super::relay;
     use super::serve;
 
@@ -581,12 +798,15 @@ mod tests
                 "params": { "name": "documents", "arguments": {} } }),
         );
         let mut output = alloc::vec::Vec::new();
-        relay(
+        let relayed = relay(
             io::Cursor::new(session.into_bytes()),
             &mut output,
             UnixStream::connect(scratch.socket()).expect("the hub accepts"),
+            &[],
+            || false,
         )
         .expect("the relay carries the session");
+        assert_eq!(relayed, Relayed::Ended);
         let replies: alloc::vec::Vec<Value> = String::from_utf8(output)
             .expect("UTF-8")
             .lines()
@@ -601,6 +821,89 @@ mod tests
             replies[1].pointer("/result/structuredContent/documents"),
             Some(&json!([]))
         );
+        hub.join().expect("the hub exits");
+    }
+
+    /// A relay asked to move hands over the client's opening and the line it
+    /// held, and the next relay replays the opening, drops its answer, and
+    /// carries the held line on.
+    #[test]
+    fn a_relay_switches_once_nothing_is_pending()
+    {
+        let scratch = Scratch::new(&json!("switch"));
+        let hub = hub(&scratch);
+        let (mut client, input) = UnixStream::pair().expect("a pair of sockets");
+        let (output, answers) = UnixStream::pair().expect("a pair of sockets");
+        let flag = Arc::new(AtomicBool::new(false));
+        let asked = Arc::clone(&flag);
+        let socket = scratch.socket();
+        let first = thread::spawn(move || {
+            let mut output = output;
+            relay(
+                input,
+                &mut output,
+                UnixStream::connect(socket).expect("the hub accepts"),
+                &[],
+                move || asked.load(Ordering::Acquire),
+            )
+        });
+        let initialize = json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": { "protocolVersion": "2025-06-18", "capabilities": {} } });
+        let initialized = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+        let held = json!({ "jsonrpc": "2.0", "id": 2_i32, "method": "server/discover" });
+        writeln!(client, "{initialize}\n{initialized}").expect("the opening is written");
+        let mut reading = BufReader::new(answers);
+        let mut opened = String::new();
+        let _read = reading
+            .read_line(&mut opened)
+            .expect("the opening is answered");
+        assert!(opened.contains(r#""id":1"#), "{opened}");
+        flag.store(true, Ordering::Release);
+        writeln!(client, "{held}").expect("the held line is written");
+        let Relayed::Switched(handover) = first
+            .join()
+            .expect("the relay ends")
+            .expect("the relay carries the session")
+        else {
+            panic!("the relay switches once asked");
+        };
+        let replay: alloc::vec::Vec<Value> = handover
+            .replay()
+            .iter()
+            .map(|body| serde_json::from_slice(body.as_ref()).expect("JSON"))
+            .collect();
+        let mut replayed = initialize.clone();
+        replayed["id"] = json!(gandr_surface_lsp::REPLAY);
+        assert_eq!(replay, [replayed, initialized]);
+        assert_eq!(
+            handover.carried().0,
+            alloc::format!("{held}\n").into_bytes()
+        );
+        drop(client);
+        let mut output = alloc::vec::Vec::new();
+        let next = relay(
+            io::Cursor::new(handover.carried().0.clone()),
+            &mut output,
+            UnixStream::connect(scratch.socket()).expect("the hub accepts"),
+            handover.replay(),
+            || false,
+        )
+        .expect("the next relay carries the session");
+        assert_eq!(next, Relayed::Ended);
+        let replies: alloc::vec::Vec<Value> = String::from_utf8(output)
+            .expect("UTF-8")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("JSON"))
+            .collect();
+        assert_eq!(
+            replies
+                .iter()
+                .map(|reply| reply.get("id").cloned())
+                .collect::<alloc::vec::Vec<Option<Value>>>(),
+            [Some(json!(2_i32))],
+            "the held line is answered, and the replay's answer dropped: {replies:?}"
+        );
+        drop(reading);
         hub.join().expect("the hub exits");
     }
 }
