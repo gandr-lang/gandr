@@ -1937,22 +1937,50 @@ echo "bench check OK: $(jq length .config/bench/cases.json) cases read as record
 
 # The stall detector's readings (#2785): `facts.jq` reads the open pull
 # requests off one answer to `.config/stall/query.graphql`, `detect.jq`
-# decides the stalls among them, what to page and what to remember, and
-# `reports.jq` the stall reports whose event is over (#3112), `live.jq`
-# whether the detector itself still reads, and `service.jq` the service that
-# keeps it running (#4167). Each case in
+# decides the stalls among them, what to page and what to remember,
+# `reports.jq` the stall reports whose event is over (#3112), and `live.jq`
+# whether the detector itself still reads. Each case in
 # `.config/stall/cases.json` holds a recorded reading, no network, and the
 # output it must give: a case per kind, its threshold's edge, the page-once
-# memory, the reports closed and kept, the detector's liveness at two
-# intervals, and each host's service.
+# memory, the reports closed and kept, and the detector's liveness at two
+# intervals.
 ["check:stall"]
 description = "The stall detector's readings give each recorded case its findings"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq --raw service.jq -L .config/claims
+.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq -L .config/claims
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
+'''
+
+# The host service that keeps a task running (#4167): `service.jq` writes the
+# `systemd --user` unit or the `launchd` agent that `stall:watch --install`
+# and `toolchain:follow --install` install. Each case in
+# `.config/service/cases.json` holds a host and the unit text it must give,
+# and a host neither Linux nor macOS is refused.
+["check:service"]
+description = "The host service's unit or agent reads as recorded for each host and task"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash service .config/service/cases.json --programs .config/service --raw service.jq
+echo "service check OK: $(jq length .config/service/cases.json) cases read as recorded"
+'''
+
+# The toolchain follower's pruning (#4499): `prune.jq` names the build
+# directories a deploy removes, keeping the current build, the one before it
+# and any build a live process runs. Each case in `.config/follow/cases.json`
+# holds the builds on disk and the ones it must remove.
+["check:follow"]
+description = "The toolchain follower removes every build but the current, the previous and a live one"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash follow .config/follow/cases.json --program .config/follow/prune.jq --mode c
+echo "follow check OK: $(jq length .config/follow/cases.json) cases read as recorded"
 '''
 
 # The hotpath verdict's report (#1468): `report.jq` reads the head's hotpath

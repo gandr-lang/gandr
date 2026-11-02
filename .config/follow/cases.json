@@ -1,0 +1,27 @@
+[
+  {
+    "name": "the first deploy keeps its own build and removes nothing",
+    "input": { "builds": ["c3"], "current": "c3", "previous": null, "live": [] },
+    "output": []
+  },
+  {
+    "name": "a deploy keeps the current and the previous build and removes the older ones",
+    "input": { "builds": ["c1", "c2", "c3", "c4"], "current": "c4", "previous": "c3", "live": [] },
+    "output": ["c1", "c2"]
+  },
+  {
+    "name": "a build a live process runs stays until a deploy finds it idle",
+    "input": {
+      "builds": ["c1", "c2", "c3", "c4"],
+      "current": "c4",
+      "previous": "c3",
+      "live": ["c1"]
+    },
+    "output": ["c2"]
+  },
+  {
+    "name": "a live process on a kept build removes nothing more",
+    "input": { "builds": ["c2", "c3", "c4"], "current": "c4", "previous": "c3", "live": ["c4"] },
+    "output": ["c2"]
+  }
+]
