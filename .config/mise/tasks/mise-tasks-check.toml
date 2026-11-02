@@ -1254,12 +1254,19 @@ echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, 
 # file (`library <path>`) and the vault's checkout (`vault <path>`), each key
 # must be a citation key there or a page's `mint:`; without it, a key is read
 # for its shape alone. A site whose source has changed since its last reading
-# is reported stale, never refused. Each case in
+# is reported stale, never refused. The citation window refuses a work the
+# crates or the corpus cite that appeared before the cutoff year
+# `.config/references/window.toml` states, at a site no entry there covers;
+# a work whose year neither its key nor a `work` row of the ledger states; and
+# an entry covering no such work (`window.sql`). Each case in
 # `.config/references/cases.json` holds sources and the lines `cites.awk`
-# prints for them. Every finding is printed before the gate fails.
+# prints for them, and each case in `.config/references/window.json` the
+# citations, the years and the policy, and the window's findings. Every
+# finding is printed before the gate fails.
 ["check:references"]
-description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys"
+description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys, and every work older than the citation window allowed where it is cited"
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -1281,6 +1288,21 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/references/cases.json)
+while IFS= read -r case; do
+  dir=$(mktemp -d "$fresh/window.XXXXXX")
+  jq -r '.cite[]' <<< "$case" > "$dir/cites.tsv"
+  jq -r '.policy' <<< "$case" > "$dir/window.toml"
+  sqlite3 -bail "$dir/case.db" < ledger/references.sql
+  sqlite3 -bail -tabs "$dir/case.db" 'DELETE FROM reference;' 'DELETE FROM work;' \
+    "$(jq -r '.work[] | "INSERT INTO work VALUES('"'"'\(.[0])'"'"', \(.[1]), \(if .[2] then "'"'"'\(.[2])'"'"'" else "NULL" end));"' <<< "$case")" \
+    'CREATE TABLE cite(kind TEXT, key TEXT, crate TEXT, module TEXT, role TEXT, location TEXT);' \
+    ".import $dir/cites.tsv cite"
+  got=$(references_window "$dir/case.db" "$dir/window.toml")
+  if [[ "$got" != "$(jq -r '.output | join("\n")' <<< "$case")" ]]; then
+    printf 'references window case FAILED: %s\n  gave:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/references/window.json)
 db=$fresh/references.db
 references_load "$db"
 references_fresh "$db"
@@ -1329,6 +1351,12 @@ if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
 fi
+if ! window=$(references_window "$db" .config/references/window.toml); then
+  failed=1
+elif [[ -n $window ]]; then
+  printf '%s\n' "$window" >&2
+  failed=1
+fi
 sqlite3 -bail "$db" "
 SELECT s.shown || ': \`' || r.key || '\` was read on ' || r.read_date || ' at ' || substr(r.read_commit, 1, 12) || ', and ' || s.path || ' has changed since; read it again against the change, then run \`mise run refs:read ' || s.shown || ' ' || r.key || '\`'
 FROM reference r JOIN source s USING (crate, module)
@@ -1343,7 +1371,7 @@ SELECT count(*) || ' rows, ' || count(DISTINCT key) || ' sources at ' || count(D
   || count(*) FILTER (WHERE key NOT GLOB 'doi:*' AND key NOT GLOB 'arXiv:*') || ' by key, the rest by locator; '
   || count(*) FILTER (WHERE read_blob IS NOT NULL) || ' read, '
   || (SELECT count(*) FROM reference r JOIN source s USING (crate, module) WHERE r.read_blob <> s.blob) || ' of them stale'
-FROM reference;"); keys read $resolved"
+FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation window opens in ' || (SELECT cutoff FROM window) || ', ' || count(*) || ' allowlist entries holding what it refuses' FROM allow;")"
 {% endraw %}'''
 
 # The stacking rule's readings (#1264): `open.jq` reads the open pull

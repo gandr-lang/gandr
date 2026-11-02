@@ -1,0 +1,169 @@
+# The citation window: `check:references` refuses a work the crates or the
+# corpus cite that appeared before `cutoff`, unless an entry here covers its
+# site. The cutoff is a fixed year. A ruling moves it forward, in one change
+# that allows whatever the move newly refuses.
+#
+# A `[[crate]]` entry covers a crate whole by its directory under `crates/`,
+# and a `[[corpus]]` entry a corpus subject whole: the directory under
+# `corpus/` holding the sources. A `[[site]]` entry keeps one work at one
+# site: `site` is `<crate>::<module>`, the crate alone at its root, or a
+# corpus source's path; `work` is the key or locator the site cites; and
+# `exemplar` says why no newer work states what the site builds. A work's
+# lineage alone is no reason to keep it: the newest work cites what it builds
+# on. An entry that covers no citation older than the cutoff is refused.
+#
+# Every crate and corpus subject citing an older work starts whole. Refreshing
+# a crate's citations deletes its whole entry and adds a `[[site]]` entry for
+# each work it keeps.
+
+cutoff = 2019
+
+[[crate]]
+name = "core-checker"
+
+[[crate]]
+name = "core-incremental"
+
+[[crate]]
+name = "core-nbe"
+
+[[crate]]
+name = "core-sequent"
+
+[[crate]]
+name = "core-session"
+
+[[crate]]
+name = "core-term"
+
+[[crate]]
+name = "core-unify"
+
+[[crate]]
+name = "kernel-core"
+
+[[crate]]
+name = "runtime-stencils"
+
+[[crate]]
+name = "storage-chunker"
+
+[[crate]]
+name = "storage-records"
+
+[[crate]]
+name = "storage-schema"
+
+[[crate]]
+name = "storage-values"
+
+[[crate]]
+name = "surface-grammar"
+
+[[crate]]
+name = "surface-layout"
+
+[[crate]]
+name = "surface-lowering"
+
+[[crate]]
+name = "surface-lsp"
+
+[[crate]]
+name = "surface-pretty"
+
+[[crate]]
+name = "surface-render-remote"
+
+[[crate]]
+name = "theory-cell-complexes"
+
+[[crate]]
+name = "theory-cell-complexes-tools"
+
+[[crate]]
+name = "theory-circuit-algebras"
+
+[[crate]]
+name = "theory-coherent-resolutions"
+
+[[crate]]
+name = "theory-computads"
+
+[[crate]]
+name = "theory-decomposition-spaces"
+
+[[crate]]
+name = "theory-deep-inference"
+
+[[crate]]
+name = "theory-dynamic-graphs"
+
+[[crate]]
+name = "theory-graphs"
+
+[[crate]]
+name = "theory-levitation"
+
+[[crate]]
+name = "theory-nominal-automata"
+
+[[crate]]
+name = "theory-order-maintenance"
+
+[[crate]]
+name = "theory-path-orders"
+
+[[crate]]
+name = "theory-shapes"
+
+[[crate]]
+name = "theory-sites"
+
+[[corpus]]
+subject = "ledger/features"
+
+[[corpus]]
+subject = "model/circuit"
+
+[[corpus]]
+subject = "model/completion"
+
+[[corpus]]
+subject = "model/control"
+
+[[corpus]]
+subject = "model/data"
+
+[[corpus]]
+subject = "model/desc"
+
+[[corpus]]
+subject = "model/drop"
+
+[[corpus]]
+subject = "model/higher-cells"
+
+[[corpus]]
+subject = "model/identity"
+
+[[corpus]]
+subject = "model/metaprograms"
+
+[[corpus]]
+subject = "model/modules"
+
+[[corpus]]
+subject = "model/moves"
+
+[[corpus]]
+subject = "model/sessions"
+
+[[corpus]]
+subject = "model/universe"
+
+[[corpus]]
+subject = "pathological/completion"
+
+[[corpus]]
+subject = "pathological/sessions"

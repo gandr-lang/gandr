@@ -1,7 +1,8 @@
-# The citations the crates' documentation makes: run as
+# The citations the crates' documentation and the corpus make: run as
 # `LC_ALL=C awk -f cites.awk <path>...` from the workspace root over crates'
 # README files and module sources, paths as `crates/<crate>/README.md` and
-# `crates/<crate>/src/<module>.rs`. One tab-separated line each: kind, key,
+# `crates/<crate>/src/<module>.rs`, and over corpus sources, paths as
+# `corpus/<subject>/<name>.gandr`. One tab-separated line each: kind, key,
 # crate, module, role, location.
 #
 #   cite     a key line of a module's `# References`:
@@ -15,6 +16,9 @@
 #            lower case, or `arXiv:` and the identifier without its version;
 #            its role `background`; a README's at the crate root
 #   file     a module source read, its location its path
+#   corpus   a DOI or arXiv locator in a corpus source's comment, its key as
+#            a locator's; its crate `corpus` and its module the source's
+#            path under `corpus/`
 #   refused  a line refused, the reason in the key column
 #
 # A module is its source's path under `src/`: `lib.rs` and `main.rs` the root,
@@ -74,7 +78,7 @@ function locators(text,    rest, found, key, seen) {
       sub(/v[0-9]+$/, "", found)
       key = "arXiv:" found
     } else key = "doi:" found
-    if (!(key in seen)) { seen[key] = 1; emit("locator", key, "background") }
+    if (!(key in seen)) { seen[key] = 1; emit(locator_kind, key, "background") }
   }
   rest = tolower(text)
   while (match(rest, /arxiv(\.org\/(abs|pdf)\/|:[[:space:]]*|[[:space:]]+)([0-9][0-9][0-9][0-9]\.[0-9][0-9][0-9][0-9][0-9]?|[a-z-]+(\.[a-z][a-z])?\/[0-9][0-9][0-9][0-9][0-9][0-9][0-9])/)) {
@@ -82,7 +86,7 @@ function locators(text,    rest, found, key, seen) {
     rest = substr(rest, RSTART + RLENGTH)
     sub(/^arxiv(\.org\/(abs|pdf)\/|:[[:space:]]*|[[:space:]]+)/, "", found)
     key = "arXiv:" found
-    if (!(key in seen)) { seen[key] = 1; emit("locator", key, "background") }
+    if (!(key in seen)) { seen[key] = 1; emit(locator_kind, key, "background") }
   }
 }
 
@@ -109,12 +113,21 @@ function cited(key, said,    why) {
 BEGIN { dash = " — " }
 
 FNR == 1 {
-  site(FILENAME)
+  corpus = FILENAME ~ /^corpus\//
+  locator_kind = corpus ? "corpus" : "locator"
+  if (corpus) { crate = "corpus"; module = substr(FILENAME, length("corpus/") + 1); readme = 0 }
+  else site(FILENAME)
   block = ""
   refs = 0
   entry = ""
   fence = 0
-  if (!readme) printf "file\t\t%s\t%s\t\t%s\n", crate, module, FILENAME
+  if (!readme && !corpus) printf "file\t\t%s\t%s\t\t%s\n", crate, module, FILENAME
+}
+
+# A corpus source's citations are its comments' locators, a line at a time.
+corpus {
+  if (match($0, /^[[:space:]]*\/\/+!?/)) locators(substr($0, RSTART + RLENGTH))
+  next
 }
 
 {

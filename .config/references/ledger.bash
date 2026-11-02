@@ -13,14 +13,21 @@ references_sources() {
     | while IFS= read -r path; do if [[ -e $path ]]; then printf '%s\n' "$path"; fi; done
 }
 
-# Builds the database named: `reference`, the ledger as committed; `cite`, one
-# row per line `cites.awk` prints; `source`, each module's source with its
-# blob id now; `derived`, the rows the citations make, each key at each site
-# once, its role the one its key lines state or `background`.
+# The corpus sources, whose comments' locators the citation window reads.
+references_corpus() {
+  git ls-files --cached --others --exclude-standard -- ':(glob)corpus/**/*.gandr' \
+    | while IFS= read -r path; do if [[ -e $path ]]; then printf '%s\n' "$path"; fi; done
+}
+
+# Builds the database named: `reference` and `work`, the ledger as committed;
+# `cite`, one row per line `cites.awk` prints over the crates and the corpus;
+# `source`, each module's source with its blob id now; `derived`, the rows the
+# crates' citations make, each key at each site once, its role the one its key
+# lines state or `background`.
 references_load() {
   local db=$1 dir sources
   dir=$(dirname "$db")
-  mapfile -t sources < <(references_sources)
+  mapfile -t sources < <(references_sources; references_corpus)
   LC_ALL=C awk -f .config/references/cites.awk "${sources[@]}" > "$dir/cites.tsv"
   awk -F'\t' '$1 == "file" { print $6 }' "$dir/cites.tsv" > "$dir/paths"
   git hash-object --stdin-paths < "$dir/paths" > "$dir/blobs"
@@ -36,12 +43,34 @@ references_load() {
 }
 
 # Builds `fresh.db` beside the database named: the ledger the tree makes, the
-# rows `derived` holds, each carrying its committed reading.
+# rows `derived` holds, each carrying its committed reading, and the committed
+# `work` rows of the works the crates or the corpus still cite.
 references_fresh() {
   local db=$1 dir
   dir=$(dirname "$db")
   rm -f "$dir/fresh.db"
-  sqlite3 -bail "$db" '.schema reference' | sqlite3 -bail "$dir/fresh.db"
+  sqlite3 -bail "$db" '.schema reference' '.schema work' | sqlite3 -bail "$dir/fresh.db"
   sqlite3 -bail "$dir/fresh.db" "ATTACH '$db' AS tree;" \
-    'INSERT INTO reference SELECT d.key, d.crate, d.module, d.role, r.read_commit, r.read_date, r.read_blob FROM tree.derived d LEFT JOIN tree.reference r USING (key, crate, module);'
+    'INSERT INTO reference SELECT d.key, d.crate, d.module, d.role, r.read_commit, r.read_date, r.read_blob FROM tree.derived d LEFT JOIN tree.reference r USING (key, crate, module);' \
+    "INSERT INTO work SELECT * FROM tree.work w WHERE EXISTS (SELECT 1 FROM tree.cite c WHERE c.key = w.key AND c.kind IN ('cite', 'locator', 'corpus'));"
+}
+
+# Prints the citation window's findings over the database named, which holds
+# `cite` and `work` as `references_load` builds them, under the policy file
+# named: its cutoff year and its allowlist, read by `window.jq`.
+references_window() {
+  local db=$1 policy=$2 dir json cutoff
+  dir=$(dirname "$db")
+  json=$(yq -p toml -o json '.' "$policy")
+  if ! cutoff=$(jq -er '.cutoff | select(type == "number" and . == floor)' <<< "$json"); then
+    echo "$policy: \`cutoff\` is the year the citation window opens, a whole number" >&2
+    return 1
+  fi
+  jq -r -f .config/references/window.jq <<< "$json" > "$dir/allow.tsv"
+  sqlite3 -bail -tabs "$db" \
+    'DROP TABLE IF EXISTS allow;' 'DROP TABLE IF EXISTS window;' \
+    'CREATE TABLE allow(kind TEXT, crate TEXT, subject TEXT, site TEXT, work TEXT, why TEXT, entry TEXT);' \
+    ".import $dir/allow.tsv allow" \
+    "CREATE TABLE window(cutoff INTEGER); INSERT INTO window VALUES($cutoff);" \
+    '.mode list' '.read .config/references/window.sql'
 }
