@@ -62,7 +62,7 @@ pub const UNUSED_IMPORT: &str = "UnusedImport";
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an unused parameter, `run` binder, pattern variable and
+/// - hypothesis: L3 — an unused parameter, `let` binder, pattern variable and
 ///   lambda binder are hinted; a used binder, a name starting with `_`, an
 ///   unused fork end and an unused consumable capability are not.
 /// - witness: `server::tests::a_binder_no_use_refers_to_is_published_unnecessary`

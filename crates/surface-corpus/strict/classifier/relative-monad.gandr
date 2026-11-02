@@ -11,7 +11,7 @@ def raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {
 
 def unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = (
   fun (a) { (a, a) },
-  fun (m) { fun (k) { run p <- force m; become (force k)(1) } }
+  fun (m) { fun (k) { let p = force m; become (force k)(1) } }
 );
 
 def unit_and_bind_elided : raw_rel_monad_elided(

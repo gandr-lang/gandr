@@ -14,7 +14,7 @@ import "./divergence.gandr";
 /// Reading a file, then a loop: the row joins `peek`'s `Fs` and `once`'s
 /// `Div`.
 def performsBoth(c : Cap { read }) -> [Fs, Div] Integer {
-  run _ <- peek(c);
+  let _ = peek(c);
   once(1)
 }
 

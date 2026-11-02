@@ -1,5 +1,5 @@
 error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
-   ╭▸ corpus/pathological/universe/decoded-descent.gandr:29:44
+   ╭▸ corpus/pathological/universe/decoded-descent.gandr:29:43
    │
 21 │       def rec totalDirect(c : UL) -> elL(c) => Nat {
    │       │                   ─ checked against `(a : UL) -> -F (elL(a) => Nat)`; while checking the body of this function; binds c : UL
@@ -14,15 +14,15 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
 25 │ ││││┌       match v -> -F Nat {
 26 │ │││││         Nil => Zero,
 27 │ │││││         Cons(h, t) => {
-28 │ │││││           run each <- totalDirect[<](a);
+28 │ │││││           let each = totalDirect[<](a);
    │ │││││           ─── checked against `-F Nat`; while checking the body under this binding; binds _ : elL(a) => Nat
-29 │ │││││           run rest <- totalDirect[<](ListL(a));
-   │ │││││           ┬──         ┬──────────────┬─────┯──
-   │ │││││           │           │              │     │
-   │ │││││           │           │              │     not below the stage its recursion wants
-   │ │││││           │           │              checked against `UL`; while finishing the type of this
-   │ │││││           │           synthesised; while checking the argument of this application
-   │ │││││           checked against `-F Nat`; while synthesising the computation this binds
+29 │ │││││           let rest = totalDirect[<](ListL(a));
+   │ │││││           ┬──        ┬──────────────┬─────┯──
+   │ │││││           │          │              │     │
+   │ │││││           │          │              │     not below the stage its recursion wants
+   │ │││││           │          │              checked against `UL`; while finishing the type of this
+   │ │││││           │          synthesised; while checking the argument of this application
+   │ │││││           checked against `-F Nat`; while synthesising the computation this runs where a value is read
    ┆ ┆┆┆┆┆
 32 │ │││││       }
    │ ││││└───────┘ checked against `-F Nat`; while checking the body of this function; binds _ : elL(a), _ : List(elL(a))

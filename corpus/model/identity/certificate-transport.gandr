@@ -56,7 +56,7 @@ def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> Path(
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S(Z)") ]
 def carriedRun() -> Int {
-  run g <- transport(
+  let g = transport(
     fun (X) { X => Int },
     certificates(Z),
     fun (c) { transport(fun (y) { Int }, c, S(Z)) }

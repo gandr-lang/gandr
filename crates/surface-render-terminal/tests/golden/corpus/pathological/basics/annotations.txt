@@ -76,14 +76,14 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/basics/annotations.gandr:31:45
+   ╭▸ corpus/pathological/basics/annotations.gandr:31:39
    │
 30 │ ┌ def splitWrong() -> Integer {
-31 │ │   run (y, z) : Integer * String <- pure (1, 2);
-   │ │   ┬──                    ┬─────    ┬────────┯─
-   │ │   │                      │         │        │
-   │ │   │                      │         │        its type does not convert: expected `String`, found `Integer`
-   │ │   │                      │         checked against `-F (Integer * String)`; while judging the value this returns
+31 │ │   let (y, z) : Integer * String = (1, 2);
+   │ │   ┬──                    ┬─────   ┬───┯─
+   │ │   │                      │        │   │
+   │ │   │                      │        │   its type does not convert: expected `String`, found `Integer`
+   │ │   │                      │        checked against `-F (Integer * String)`; while judging the value this returns
    │ │   │                      the type it is checked against
    │ │   checked against `-F Integer`; while finishing the type of this
 32 │ │   y

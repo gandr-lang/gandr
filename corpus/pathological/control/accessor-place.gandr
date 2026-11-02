@@ -5,7 +5,7 @@ def pair : List(Integer) = cons(1, cons(2, nil));
 /// index.
 @[ refuses("PlaceUnindexed") ]
 def unindexed() -> Integer {
-  hold c = 0;
+  var c = 0;
   access shared c[0] as w { pure w }
 }
 
@@ -13,8 +13,8 @@ def unindexed() -> Integer {
 /// lent shared with its place, so it is frozen for the access's body.
 @[ refuses("HeldLent") ]
 def index_frozen() -> Unit {
-  hold i = 0;
-  hold xs = pair;
+  var i = 0;
+  var xs = pair;
   access shared xs[i] as w { access i as v { resume(v, w) } }
 }
 
@@ -22,6 +22,6 @@ def index_frozen() -> Unit {
 /// an exclusive view of one element excludes a view of another.
 @[ refuses("HeldLent") ]
 def two_places() -> Unit {
-  hold xs = pair;
+  var xs = pair;
   access xs[0] as v { access xs[1] as w { resume(w, v) }; resume(v, 0) }
 }

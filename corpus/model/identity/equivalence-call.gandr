@@ -15,7 +15,7 @@ def kept(a : Type, b : Type, i : a ≅ b) -> a ≅ b {
 /// A quasi-inverse a call returns is bi-invertible, split as `isoToEquiv`
 /// splits its parameter (#656).
 def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
-  run j <- kept(a, b, i);
+  let j = kept(a, b, i);
   match j {
     #{t, k, s, r} => (t, ((k, s), (k, r)))
   }
@@ -24,7 +24,7 @@ def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
 /// An equivalence a call returns, split along its nesting and put back
 /// together (#656).
 def madeAgain(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
-  run e <- isoToEquiv(a, b, i);
+  let e = isoToEquiv(a, b, i);
   match e {
     #{t, #{g, s}, #{h, r}} => (t, ((g, s), (h, r)))
   }

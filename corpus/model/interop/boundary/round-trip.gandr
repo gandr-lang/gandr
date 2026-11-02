@@ -40,7 +40,7 @@ extern "rust" from "boundary" as Boundary {
 
 /// Four times its argument: Rust adds it to itself, then the sum to itself.
 pub def quadrupled(x : u32) -> [Boundary] u32 {
-  run y <- Boundary.add(x, x);
+  let y = Boundary.add(x, x);
   Boundary.add(y, y)
 }
 
@@ -66,6 +66,6 @@ def lessened() -> Integer { less(19, 7) }
 /// `adder` at 5, applied to 7.
 @[ runs("12") ]
 def added() -> Integer {
-  run add <- adder(5);
+  let add = adder(5);
   add(7)
 }

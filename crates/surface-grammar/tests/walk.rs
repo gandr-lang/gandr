@@ -52,17 +52,18 @@ use gandr_theory_graphs::WalkChainLength;
 /// sort, which every block after a tile reaches through one hole, then by a
 /// module member taking the top level's definition family (#4145), then by a
 /// record type's faces block (#4453), then by the lambda keyword `fun` (#4484),
-/// then by the static abstraction folding into `fun` (#4508).
-const BUILT_IN_FINGERPRINT: u64 = 0x68c7_d0a7_455f_5ae8;
+/// then by the static abstraction folding into `fun` (#4508),
+/// then by the block's statements losing the `run` and `hold` heads (#4466).
+const BUILT_IN_FINGERPRINT: u64 = 0xe920_1244_af7d_499b;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3028);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2953);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 99;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 96;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -97,12 +98,11 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (".#{", 1),
     ("..", 3),
     (".@", 1),
-    (":", 278),
+    (":", 263),
     (":>", 2),
-    (";", 153),
+    (";", 138),
     ("<", 18),
     ("<&", 1),
-    ("<-", 15),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
@@ -185,7 +185,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("fun", 1),
     ("glob", 1),
     ("handle", 1),
-    ("hold", 16),
+    ("hold", 1),
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
@@ -225,7 +225,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("resume", 1),
     ("return", 1),
     ("rule", 15),
-    ("run", 16),
+    ("run", 1),
     ("select", 1),
     ("send", 1),
     ("shape", 1),

@@ -65,7 +65,7 @@
 //! through its passes as the fixpoint's accumulator. With one slot:
 //!
 //! ```text
-//! (fix k. λ s. hold c = s; b) c
+//! (fix k. λ s. var c = s; b) c
 //! ```
 //!
 //! - The first pass takes the slot's content. Each pass holds it again under
@@ -1207,8 +1207,8 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The loop whose passes run `under`, the body of the loop whose block is
     /// `body`: `fix k. under` when the loop threads no slot; when it threads
-    /// one, `(fix k. λ s. hold c = s; under) c`, and when it threads several,
-    /// `(fix k. λ p. split p (s₁, …, sₙ); hold c₁ = s₁; …; hold cₙ = sₙ;
+    /// one, `(fix k. λ s. var c = s; under) c`, and when it threads several,
+    /// `(fix k. λ p. split p (s₁, …, sₙ); var c₁ = s₁; …; var cₙ = sₙ;
     /// under) (c₁, …, cₙ)`.
     ///
     /// # Specification

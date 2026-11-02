@@ -1,7 +1,7 @@
-//! The `run` statements the sugared form writes away, as the source's lowering
+//! The `let` statements the sugared form writes away, as the source's lowering
 //! lists them.
 //!
-//! A `run x <- c ;` whose binder the next step reads once, as the first thing
+//! A `let x = c ;` whose binder the next step reads once, as the first thing
 //! that step runs or reads, only sequences the call `c`: written at the read,
 //! the checker runs `c` there, at the same point. Which statements stand so is
 //! the lowering's to say (`gandr_surface_lowering::LinearRun`); this module
@@ -20,7 +20,7 @@ use gandr_surface_syntax::ByteSpan;
 
 use crate::composite::within;
 
-/// The `run` statements the sugared form writes away: each one's call and the
+/// The `let` statements the sugared form writes away: each one's call and the
 /// read the call is written at.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Runs

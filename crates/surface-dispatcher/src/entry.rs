@@ -1812,7 +1812,7 @@ mod tests
         };
         // The nested call is judged by the second run, over the bind the
         // first run elaborated it to; the bound twin by the first run alone.
-        for written in [fold("S(tell[<](x))"), fold("{ run t <- tell[<](x); S(t) }")] {
+        for written in [fold("S(tell[<](x))"), fold("{ let t = tell[<](x); S(t) }")] {
             let text = SourceText::from(written.as_str());
             let start = written.find("match n").expect("the match");
             let end = written.rfind("  }\n}").expect("the case's close") + "  }".len();

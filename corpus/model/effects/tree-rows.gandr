@@ -90,13 +90,13 @@ def failing : Prog(Either(ExnOp, Void), Integer) = Op(
 /// an applied type passed for its type parameter (#2512).
 @[ runs("Returned(50)") ]
 def handled() -> Outcome(Integer) {
-  run p <- runExn(Either(StateOp, Void), Integer, guarded);
+  let p = runExn(Either(StateOp, Void), Integer, guarded);
   pureOf(Outcome(Integer), runState(Void, Outcome(Integer), p, 4))
 }
 
 /// The raise ends the program with the state it read.
 @[ runs("Raised(4)") ]
 def handledRaise() -> Outcome(Integer) {
-  run p <- runExn(Either(StateOp, Void), Integer, raising);
+  let p = runExn(Either(StateOp, Void), Integer, raising);
   pureOf(Outcome(Integer), runState(Void, Outcome(Integer), p, 4))
 }

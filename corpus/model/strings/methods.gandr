@@ -27,7 +27,7 @@ pub module Str where {
   /// A byte written before the zero of a string lent to the write, which
   /// writes it back.
   def push(self : Repr, b : Integer) -> Unit {
-    access self as v { run w <- pushInPlace(v, b); run t <- written(w); resume(v, t) }
+    access self as v { let w = pushInPlace(v, b); let t = written(w); resume(v, t) }
   }
   /// The bytes of a string taken: nothing reads the string after.
   def bytes(self : consumed Repr) -> List(Integer) {
@@ -42,17 +42,17 @@ pub module Str where {
 /// four.
 @[ runs("7") ]
 def lengths() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  run n <- s.len();
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  let n = s.len();
   s.push(33);
-  run m <- s.len();
+  let m = s.len();
   pure n + m
 }
 
 /// `hi` with `!` pushed, then taken: the bytes the string ended with.
 @[ runs("Cons(104, Cons(105, Cons(33, Cons(0, Nil))))") ]
 def taken() -> List(Integer) {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   s.push(33);
   s.bytes()
 }
@@ -61,7 +61,7 @@ def taken() -> List(Integer) {
 /// starts from the hold as the match found it, and the hold ends after the
 /// match (#1488).
 def takenInOneArm(t : Repr) -> List(Integer) {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   match t {
     Inline(bs) => s.bytes(),
     Shared(n, bs) => bs
@@ -85,7 +85,7 @@ def keptOnShared() -> List(Integer) {
 /// the string the match found, not the one the other arm took.
 @[ runs("3") ]
 def readWhereNotTaken() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   match Shared(1, (Nil : List(Integer))) {
     Inline(bs) => { count(s.bytes()) },
     Shared(n, bs) => s.len()

@@ -1,16 +1,16 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/control/kept-view.gandr:14:58
+   ╭▸ corpus/pathological/control/kept-view.gandr:14:57
    │
 11 │ ┌  def unkept() -> Integer {
-12 │ │    hold s = 3;
-   │ │    ──── checked against `-F Integer`; while checking the scope of this hold
+12 │ │    var s = 3;
+   │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 13 │ │┌   handle c : Proc {
-14 │ ││     run k : () => Integer <- access shared s as w { pure thunk { pure w } };
-   │ ││     ┬──                      ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
-   │ ││     │                        │                      │    │
-   │ ││     │                        │                      │    a view outliving its access
-   │ ││     │                        │                      checked against `-F (() => Integer)`; while judging the value this returns
-   │ ││     │                        checked against `-F (() => Integer)`; while checking the body of this access
+14 │ ││     let k : () => Integer = access shared s as w { pure thunk { pure w } };
+   │ ││     ┬──                     ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
+   │ ││     │                       │                      │    │
+   │ ││     │                       │                      │    a view outliving its access
+   │ ││     │                       │                      checked against `-F (() => Integer)`; while judging the value this returns
+   │ ││     │                       checked against `-F (() => Integer)`; while checking the body of this access
    │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
 15 │ ││     force k
 16 │ ││   } with {
@@ -25,18 +25,16 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/control/kept-view.gandr:29:44
+   ╭▸ corpus/pathological/control/kept-view.gandr:29:38
    │
 25 │ ┌   def keptExclusive() -> Integer {
-26 │ │     hold s = 3;
-   │ │     ──── checked against `-F Integer`; while checking the scope of this hold
+26 │ │     var s = 3;
+   │ │     ─── checked against `-F Integer`; while checking the scope of this hold
 27 │ │┌    handle c : Proc {
 28 │ ││┌     access s as v {
-29 │ │││       run k : (() => Integer) at c <- pure thunk { pure v };
-   │ │││       ┬──                             ┬────┯━━━━━━━━━━━━━━━
-   │ │││       │                               │    │
-   │ │││       │                               │    a view outliving its access
-   │ │││       │                               checked against `-F ((() => Integer) at c)`; while judging the value this returns
+29 │ │││       let k : (() => Integer) at c = thunk { pure v };
+   │ │││       ┬──                            ━━━━━━━━━━━━━━━━ a view outliving its access
+   │ │││       │
    │ │││       synthesised; while finishing the type of this
 30 │ │││       resume(v, v)
 31 │ │││     };
@@ -55,10 +53,10 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    ╭▸ corpus/pathological/control/kept-view.gandr:46:5
    │
 42 │ ┌  def written() -> Integer {
-43 │ │    hold s = 3;
-   │ │    ──── checked against `-F Integer`; while checking the scope of this hold
+43 │ │    var s = 3;
+   │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 44 │ │┌   handle c : Proc {
-45 │ ││     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+45 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
 46 │ ││     access s as v { resume(v, v + 1) };
    │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
@@ -73,19 +71,17 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    ╰ note: `written` is refused with HeldKept, as its expectation states
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
-   ╭▸ corpus/pathological/control/kept-view.gandr:61:35
+   ╭▸ corpus/pathological/control/kept-view.gandr:61:29
    │
 57 │ ┌  def rewrapped() -> Integer {
-58 │ │    hold s = 3;
-   │ │    ──── checked against `-F Integer`; while checking the scope of this hold
+58 │ │    var s = 3;
+   │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 59 │ │┌   handle c : Proc {
-60 │ ││     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+60 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
-61 │ ││     run j : () => Integer <- pure thunk { force k };
-   │ ││     ┬──                      ┬────┯━━━━━━━━━━━━━━━━
-   │ ││     │                        │    │
-   │ ││     │                        │    a value kept in the scope's own region
-   │ ││     │                        checked against `-F (() => Integer)`; while judging the value this returns
+61 │ ││     let j : () => Integer = thunk { force k };
+   │ ││     ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
+   │ ││     │
    │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
 62 │ ││     force j
    ┆ ┆┆
@@ -105,10 +101,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │    │                 ───────────── the type it is checked against
    │ ┌──┘
    │ │
-73 │ │    hold s = 3;
-   │ │    ──── checked against `-F (() => Integer)`; while checking the scope of this hold
+73 │ │    var s = 3;
+   │ │    ─── checked against `-F (() => Integer)`; while checking the scope of this hold
 74 │ │┌   handle c : Proc {
-75 │ ││     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+75 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ┬──     ──────────────────── the type it synthesises
    │ ││     │
    │ ││     checked against `-F [Proc, c : Proc] (() => Integer)`; while checking the body under this binding; binds k : (() => Integer) at c
@@ -132,9 +128,9 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    ╭▸ corpus/pathological/control/kept-view.gandr:89:3
    │
 86 │ ┌ def writtenInHold() -> Integer {
-87 │ │   hold s = 3;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
-88 │ │   run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } };
+87 │ │   var s = 3;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
+88 │ │   let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() => Integer) at s
 89 │ │   access s as v { resume(v, v + 1) };
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
@@ -145,18 +141,16 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    ╰ note: `writtenInHold` is refused with HeldKept, as its expectation states
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
-    ╭▸ corpus/pathological/control/kept-view.gandr:99:33
+    ╭▸ corpus/pathological/control/kept-view.gandr:99:27
     │
  96 │ ┌ def leftHold() -> Integer {
- 97 │ │   hold s = 3;
-    │ │   ──── checked against `-F Integer`; while checking the scope of this hold
- 98 │ │   run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } };
+ 97 │ │   var s = 3;
+    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
+ 98 │ │   let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
     │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() => Integer) at s
- 99 │ │   run j : () => Integer <- pure thunk { force k };
-    │ │   ┬──                      ┬────┯━━━━━━━━━━━━━━━━
-    │ │   │                        │    │
-    │ │   │                        │    a value kept in the scope's own region
-    │ │   │                        checked against `-F (() => Integer)`; while judging the value this returns
+ 99 │ │   let j : () => Integer = thunk { force k };
+    │ │   ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
+    │ │   │
     │ │   checked against `-F Integer`; while finishing the type of this
 100 │ │   force j
 101 │ │ }

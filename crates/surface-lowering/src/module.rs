@@ -11834,7 +11834,7 @@ pub struct LoweredModule<'source>
     /// Every written `return` the lowering would infer were it left out, in
     /// source order.
     elidable_exits: Vec<ElidableExit>,
-    /// Every `run` statement whose binder the next step reads once, first, in
+    /// Every `let` statement whose binder the next step reads once, first, in
     /// source order.
     linear_runs: Vec<LinearRun>,
     /// What the lowering recorded of each syntax node it held a computation
@@ -12365,7 +12365,7 @@ impl<'source> LoweredModule<'source>
         &self.elidable_exits
     }
 
-    /// Every `run x <- c ;` statement whose binder the next step reads once,
+    /// Every `let x = c ;` statement whose binder the next step reads once,
     /// first, in source order: `c` and the read, which the sugared form
     /// writes as `c` at the read.
     ///
@@ -14640,7 +14640,7 @@ mod tests
         };
 
         let doubled =
-            "def give_up() -> -F Unit {\n  hold c = 0;\n  access c as v { abort(v) }}\n}\n";
+            "def give_up() -> -F Unit {\n  var c = 0;\n  access c as v { abort(v) }}\n}\n";
         assert_eq!(
             refusals(doubled),
             [LoweringRefusal::MalformedForm {
@@ -14651,7 +14651,7 @@ mod tests
             "the stray is refused at the second `}}` of the access line"
         );
 
-        let nested = "module M where {\n  def give_up() -> -F Unit {\n    hold c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
+        let nested = "module M where {\n  def give_up() -> -F Unit {\n    var c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
         assert_eq!(
             refusals(nested),
             [LoweringRefusal::MalformedForm {
@@ -14662,7 +14662,7 @@ mod tests
             "the module's closer stands where the definition's belonged"
         );
 
-        let settled = "def done() -> -F Unit {\n  hold c = 0;\n  access c as v { abort(v) } }\ndef next = 1 ;\n}\n";
+        let settled = "def done() -> -F Unit {\n  var c = 0;\n  access c as v { abort(v) } }\ndef next = 1 ;\n}\n";
         let refused = refusals(settled);
         assert!(
             matches!(

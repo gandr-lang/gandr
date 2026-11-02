@@ -16,8 +16,8 @@
 /// Accept one stream, read its ping, answer `pong`, disconnect, and return
 /// the ping.
 pub def serve() -> [Net] String {
-  run (peer, stream) <- Net.accept();
-  run ping <- Net.receive(stream);
+  let (peer, stream) = Net.accept();
+  let ping = Net.receive(stream);
   Net.transmit(stream, "pong");
   Net.disconnect(stream);
   ping
@@ -26,9 +26,9 @@ pub def serve() -> [Net] String {
 /// Dial `peer`, send `ping`, read the answer, disconnect, and return the
 /// answer.
 pub def ping(peer : String) -> [Net] String {
-  run stream <- Net.connect(peer);
+  let stream = Net.connect(peer);
   Net.transmit(stream, "ping");
-  run pong <- Net.receive(stream);
+  let pong = Net.receive(stream);
   Net.disconnect(stream);
   pong
 }
@@ -53,7 +53,7 @@ def pingAnswered() -> String {
 /// names otherwise, print what came back, and exit with 0.
 def main(args : List(String)) -> [Net, Console] Integer {
   match args {
-    [] => { run got <- serve(); Console.print(got); 0 },
-    [peer, .._] => { run got <- ping(peer); Console.print(got); 0 }
+    [] => { let got = serve(); Console.print(got); 0 },
+    [peer, .._] => { let got = ping(peer); Console.print(got); 0 }
   }
 }

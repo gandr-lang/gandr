@@ -10958,7 +10958,7 @@ mod tests
                         lines(divided_at, below(divided_at, 5), 1),
                         span(divided_at, 8, 15)
                     ),
-                    &[span(below(divided_at, 3), 26, 31)]
+                    &[span(below(divided_at, 3), 25, 30)]
                 ),
                 call(
                     "from",
@@ -10968,7 +10968,7 @@ mod tests
                         lines(halved_at, below(halved_at, 5), 1),
                         span(halved_at, 8, 16)
                     ),
-                    &[span(below(halved_at, 3), 26, 31)]
+                    &[span(below(halved_at, 3), 25, 30)]
                 ),
                 call("from", &difference, &[span(difference_at, 29, 34)]),
             ]),
@@ -13523,7 +13523,7 @@ mod tests
         );
     }
 
-    /// #764: the hint of `r`, bound by `run r <- minus(p, d)` in a corpus
+    /// #764: the hint of `r`, bound by `let r = minus(p, d)` in a corpus
     /// importer, names `Nat`, which the importer's base declares. A client
     /// that resolves no hint, or resolves other properties alone (#1620), gets
     /// the name located at once; one that resolves a label's locations gets it
@@ -13544,7 +13544,7 @@ mod tests
             Line::from(
                 crate::anchor::line_of(
                     crate::anchor::Source(&text),
-                    crate::anchor::Held("run r <- minus(p, d)"),
+                    crate::anchor::Held("let r = minus(p, d)"),
                 )
                 .0,
             ),

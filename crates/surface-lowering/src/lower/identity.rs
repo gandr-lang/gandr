@@ -17,7 +17,7 @@
 //! endpoint the checker compares by what it computes and admits only when
 //! it is pure. The alternative, refusing every endpoint that is not a value,
 //! is the reading that made `Path(Integer, mul(neutral, x), x)` unwritable; a
-//! statement the author must name first, `run m <- mul(neutral, x)`, cannot
+//! statement the author must name first, `let m = mul(neutral, x)`, cannot
 //! stand in a type. Reversal: an endpoint language with its own let, which
 //! would bind the computation once and reuse it in both the type and the
 //! body.
@@ -1557,9 +1557,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a pattern at a parameter written with each relation
     ///   splits its record, positionally and by label, and so does one at a
-    ///   `run` binder whose callee's result is written with one.
+    ///   `let` binder whose callee's result is written with one.
     /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
-    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Maybe::Absent(_) | Maybe::Present(Layout::Isomorphism | Layout::Equivalence))))]
     pub(super) fn stated_relation(
         &mut self,

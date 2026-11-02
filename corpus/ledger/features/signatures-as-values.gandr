@@ -10,7 +10,7 @@ theory Monoid where {
 @[ checks ]
 def rec operations(chain : Theory) -> -F Integer {
   match chain {
-    Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); return r + 1 },
+    Oper(name, inputs, outputs, rest) => { let r = operations[<](rest); return r + 1 },
     _ => return 0
   }
 }

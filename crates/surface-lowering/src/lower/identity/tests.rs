@@ -815,7 +815,7 @@ fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
 fn an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801()
 {
     let source = "def t(A : Type, x : A, y : A, f : Path(A, x, y), u : A, it : Path(Path(A, x, y), \
-                  f, (thunk { fun (q : Path(A, x, y)) { run c : Path(A, x, y) <- pure q ; c } } : \
+                  f, (thunk { fun (q : Path(A, x, y)) { let c : Path(A, x, y) = q ; c } } : \
                   Path(A, x, y) => Path(A, x, y))(f))) -> -F Unit { return unit }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -929,16 +929,20 @@ fn an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801()
     );
     let Some(&Computation::Bind(bound, _)) = arena.computation(rest)
     else {
-        panic!("the typed bind is bound over the block's end");
+        panic!("the typed let is bound over the block's end");
     };
-    let Some(&Computation::Ascribe { ty: annotated, .. }) = arena.computation(bound)
+    let Some(&Computation::Return(returned_value)) = arena.computation(bound)
     else {
-        panic!("the bound computation is ascribed the annotation");
+        panic!("the typed let returns its value");
+    };
+    let Some(&Value::Ascribe { ty: annotated, .. }) = arena.value(returned_value)
+    else {
+        panic!("the returned value is ascribed the annotation");
     };
     assert_eq!(
-        returned(annotated).and_then(carrier),
+        carrier(annotated),
         Some(5),
-        "the typed bind reads `A` past the lambda's binder and the parameter's bind"
+        "the typed let reads `A` past the lambda's binder and the parameter's bind"
     );
 }
 
@@ -2701,22 +2705,22 @@ fn a_relation_split_names_each_written_component_665()
     );
 }
 
-/// A pattern at a `run` binder splits the record the relation its callee
+/// A pattern at a `let` binder splits the record the relation its callee
 /// returns abbreviates, as one at a parameter does: the callee's signature is
 /// minted before the caller's body is read, so its layout comes from the
 /// written glyph. Positionally, nested as the equivalence's inverses nest,
 /// and by label (#656).
 #[test]
-fn a_run_binder_splits_the_relation_its_call_returns_656()
+fn a_let_binder_splits_the_relation_its_call_returns_656()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
             "def kept(i : Bool ≅ Integer) -> -F (Bool ≅ Integer) { return i }\n",
             "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { run j <- kept(i); match j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { run e <- made(i); match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
-            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.from = k} => return k } }\n",
+            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { let j = kept(i); match j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { let e = made(i); match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
+            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { let j = kept(i); match j { #{.from = k} => return k } }\n",
         )),
         &mut arena,
     );
@@ -2724,18 +2728,18 @@ fn a_run_binder_splits_the_relation_its_call_returns_656()
 }
 
 /// A callee whose result is written bare, `-> A`, returns `A` as one written
-/// `-> -F A` does: the lowering inserts the returner, so a pattern at a `run`
+/// `-> -F A` does: the lowering inserts the returner, so a pattern at a `let`
 /// binder of its call splits the record `A` abbreviates (#2255).
 #[test]
-fn a_run_binder_splits_the_relation_a_bare_result_returns_2255()
+fn a_let_binder_splits_the_relation_a_bare_result_returns_2255()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
             "def kept(i : Bool ≅ Integer) -> Bool ≅ Integer { i }\n",
             "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { match i { #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { run e <- made(i); match e { #{t, #{g, s}, #{h, r}} => t } }\n",
-            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { run j <- kept(i); match j { #{.from = k} => k } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { let e = made(i); match e { #{t, #{g, s}, #{h, r}} => t } }\n",
+            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { let j = kept(i); match j { #{.from = k} => k } }\n",
         )),
         &mut arena,
     );

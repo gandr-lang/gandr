@@ -25,6 +25,6 @@ def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> Path(
 /// spins back to its word, gains a loop and winds to its successor, by a run.
 @[ runs("S(S(S(Z)))") ]
 def funRun() -> Int {
-  run g <- transport(fun (X) { X => X }, loopsAreIntegers, fun (l) { loopOn(l) });
+  let g = transport(fun (X) { X => X }, loopsAreIntegers, fun (l) { loopOn(l) });
   g(S(S(Z)))
 }

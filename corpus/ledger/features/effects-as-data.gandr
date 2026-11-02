@@ -133,13 +133,13 @@ def pureAt(p : Prog(Void, Outcome(Integer))) -> Outcome(Integer) {
 /// read sees the stored five.
 @[ runs("Returned(50)") ]
 def handled() -> Outcome(Integer) {
-  run p <- runExnAt(guarded);
+  let p = runExnAt(guarded);
   pureAt(runStateAt(p, 4))
 }
 
 /// The raise ends the program with the state it read.
 @[ runs("Raised(4)") ]
 def handledRaise() -> Outcome(Integer) {
-  run p <- runExnAt(raising);
+  let p = runExnAt(raising);
   pureAt(runStateAt(p, 4))
 }

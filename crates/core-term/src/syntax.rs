@@ -864,7 +864,7 @@ pub enum Computation
     /// synthesised; it runs as `M` runs, and the kernel replays it at a
     /// typed position of its own rather than trusting it.
     ///
-    /// The surface writes one as the typed bind `run x : A <- c ;`, which
+    /// The surface writes one as the typed bind `let x : A = c ;`, which
     /// ascribes `c` the pure `-F A`: the annotation writes no row, so an
     /// effectful `c` is refused there. Alternatives: ascribing the returned
     /// value instead, `x ← c ; (return x : F A)`, which keeps `c`'s row but

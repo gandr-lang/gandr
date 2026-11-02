@@ -786,10 +786,10 @@ pub fn refined_case(
 ///   binder replaced by `v` read one binder out, still under the binder, which
 ///   stands unread. The refined body carries each node the replacement rewrote
 ///   and mints none. [`unrefined::Absent::Unshaped`] for a bound of another
-///   form or a value that does not copy, [`unrefined::Absent::Unsolved`] for a
-///   body that does not read its binder, and [`unrefined::Absent::Located`]
-///   when `migrating` is [`Migrating::Judged`] or the body holds a migration
-///   ([`migrates`]).
+///   form, a bare thunk or a value that does not copy,
+///   [`unrefined::Absent::Unsolved`] for a body that does not read its binder,
+///   and [`unrefined::Absent::Located`] when `migrating` is
+///   [`Migrating::Judged`] or the body holds a migration ([`migrates`]).
 /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold.
 /// - panics: none.
 ///
@@ -823,7 +823,11 @@ pub fn defined_body(
             });
         },
     };
-    if copies(context.arena(), value)? == Copies::No {
+    // A bare thunk names a suspension, whose type its body synthesises: the
+    // binder reads that type, and a force of it runs the body.
+    if matches!(context.arena().value(value), Some(&Value::Thunk(_)))
+        || copies(context.arena(), value)? == Copies::No
+    {
         return Ok(Maybe::Absent(unrefined::Absent::Unshaped));
     }
     let binder = DeBruijnIndex::from(0_u32);

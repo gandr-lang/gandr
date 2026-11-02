@@ -761,8 +761,7 @@ impl From<bool> for CandidateRank
 ///   otherwise, so `"hi"` reads as the expression string at an expression slot
 ///   and the pattern string in a pattern slot. At the top level the slot is an
 ///   item's, which an expression fills only as an expression statement, so a
-///   candidate opening an item-position declaration matches there too: `run`
-///   opening a bind statement and `run` opening an expression tie, and the
+///   candidate opening an item-position declaration matches there too, and the
 ///   lookahead reads which follows.
 /// * The **operand continuation** rank is `0` when the candidate extends the
 ///   operand at the head and `1` otherwise.
@@ -969,10 +968,10 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// deliberately NOT reserved: they mold as contextual tiles only where the
 /// `op`-led fixity form expects them, so they remain ordinary identifiers
 /// everywhere else.
-/// `run` is reserved as the lead of the computation-result statement and
-/// never enters the ordinary identifier menu. `let`, the binding statement's
-/// lead, stays contextual: a theory names an operation `let`, and the
-/// statement's slot is the only one where its tile stands.
+/// `run` is reserved as the lead of the inline run and never enters the
+/// ordinary identifier menu. `let`, the binding statement's lead, stays
+/// contextual: a theory names an operation `let`, and the statement's slot is
+/// the only one where its tile stands.
 ///
 /// The circuit block form reserves exactly its two **item-position**
 /// leads, `theory` and `oper`: at a fresh top-level slot a lowercase word is
@@ -2295,7 +2294,7 @@ impl<'pbg> Molder<'pbg>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a statement that lost its `<-` before the next `run`,
+    /// - hypothesis: L3 — a statement that lost its `=` before the next `let`,
     ///   and a `fork` that lost its `as` before the next `recv`, expose both
     ///   sides of the window: closing the first keeps the next statement whole,
     ///   and closing the second would owe its `as`, name and `;` again where
@@ -2780,10 +2779,10 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — the ranks are the full key's; a floor above a found
     ///   key is what lets [`least_candidates`](Self::least_candidates) skip a
     ///   candidate's dry-run. A floor carrying a nonempty delta, or ranks that
-    ///   differ from the key's, changes which candidates are kept; a top-level
-    ///   bind statement read as the expression `run` leaves its `<-` stranded.
+    ///   differ from the key's, changes which candidates are kept; a `let`
+    ///   statement whose lead is read as another form leaves its `=` stranded.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
-    /// - witness: `tests::acceptance::bind_statement_uses_run_keyword`
+    /// - witness: `tests::acceptance::value_statement_uses_let_keyword`
     #[spec(ensures: |ret| bool::from(ret.delta.is_empty()))]
     fn floor_key(
         &self,

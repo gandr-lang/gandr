@@ -16,7 +16,7 @@ pub theory Monoid where {
 /// `Oper` link, zero at its end.
 def rec operations(chain : Theory) -> Integer {
   match chain {
-    Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); r + 1 },
+    Oper(name, inputs, outputs, rest) => { let r = operations[<](rest); r + 1 },
     _ => 0
   }
 }

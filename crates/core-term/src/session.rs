@@ -1352,7 +1352,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The continuation, under the parent's end's linear binder.
         parent: C,
     },
-    /// `run b <- c.alloc(n) ;`, after its bind: place `payload`, a buffer the
+    /// `let b = c.alloc(n) ;`, after its bind: place `payload`, a buffer the
     /// bind returned, live in one linear binder and run `body` under it. The
     /// slot opens available, and only a send, a resumption or an operation's
     /// payload that returns the buffer spends it.

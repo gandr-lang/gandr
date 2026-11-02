@@ -1,8 +1,8 @@
 error[OutOfFragment.WrongSort]: a splice expression cannot stand where a computation is expected
-   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:27:12
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:27:3
    │
-27 │   run y <- ~assumption;
-   │            ━━━━━━━━━━━ a form of another sort than this position takes
+27 │   ~assumption;
+   │   ━━━━━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `ranSplice` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a computation in this position

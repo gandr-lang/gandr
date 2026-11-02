@@ -282,6 +282,8 @@ pub enum FrameRole
     Unknowing,
     /// A thunk's body is being checked.
     ThunkBody,
+    /// The body of a thunk a `let` binds is being synthesised.
+    LetThunk,
     /// A return's value is being judged.
     ReturnValue,
     /// An injection's payload is being checked.
@@ -473,6 +475,7 @@ impl fmt::Display for FrameRole
             Self::StaticOperand => "StaticOperand",
             Self::Unknowing => "Unknowing",
             Self::ThunkBody => "ThunkBody",
+            Self::LetThunk => "LetThunk",
             Self::ReturnValue => "ReturnValue",
             Self::InjectionPayload => "InjectionPayload",
             Self::Spliced => "Spliced",

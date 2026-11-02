@@ -8742,15 +8742,15 @@ fn runs_on(
 ///
 /// An endpoint's computation is pure, so a bind over a call no unfolding
 /// reaches is its continuation run with the call, held as an endpoint, for
-/// the bound value: `wind(Loop(x))` sticks at `run n <- wind(x); return
+/// the bound value: `wind(Loop(x))` sticks at `let n = wind(x); return
 /// S(n)` and reads as `S(wind(x))`. The reading takes the continuation when
 /// it returns, so an arm that cases on the call stays stuck at the bind; a
 /// call a definition heads waits for the conversion to unfold it as a
 /// recorded step; and a call a binder heads stands as the reading, so
-/// `post((), s + 1)`, bound ahead as `run t <- add(s, 1); post((), t)`, reads
+/// `post((), s + 1)`, bound ahead as `let t = add(s, 1); post((), t)`, reads
 /// as `post((), ⟨add(s, 1)⟩)`, the call a fold handing `post` the sum held
 /// reads to. A continuation stuck at a bind of its own is read the same
-/// way before it is judged, so a decoder's arm `run x <- el(a); run y <-
+/// way before it is judged, so a decoder's arm `let x = el(a); let y = ///
 /// el(b); return (x => y)` reads as `⟨el(a)⟩ => ⟨el(b)⟩`. The kernel mirrors
 /// the reading in its replay of an endpoint, by the same forced run, so it
 /// records no decision of its own.

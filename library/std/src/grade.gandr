@@ -245,7 +245,7 @@ pub def collapse : Hom(count, usage) = Map(collapsed);
 
 /// Whether `have` covers `need` in the algebra `a`.
 pub def fits(a : Model(Grade), need : a.G, have : a.G) -> Bool {
-  run l <- a.le;
+  let l = a.le;
   l(need, have)
 }
 

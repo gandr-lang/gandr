@@ -41,7 +41,7 @@ const SIGN: &str = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: 
 
 /// The category of discrete setoids: types and functions, composition by
 /// sequencing, each law holding by computation.
-const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    run y <- f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) { return here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) { return here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
+const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) { return here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) { return here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
 
 /// The signature `Model(CatShape)` derives, written out by hand, its laws
 /// stated over the operations of the module `Derived` so the two signatures
@@ -137,8 +137,8 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
     let source = format!(
         "{INCLUDED}def endo : Model(Monoid) ;\ndef endo = pack Endo at Model(Monoid) ;\ndef \
          multiplies(s : Model(Semigroup)) -> -F Integer {{\n  match s {{ #{{.mul = m}} => 0 }}\n}}\ndef \
-         asked() -> -F Integer {{ become multiplies(endo) }}\ndef named() -> -F Integer {{\n  run s \
-         <- Monoid.Semigroup(endo) ;\n  become multiplies(s)\n}}\n"
+         asked() -> -F Integer {{ become multiplies(endo) }}\ndef named() -> -F Integer {{\n  let s \
+         = Monoid.Semigroup(endo) ;\n  become multiplies(s)\n}}\n"
     );
     let mut lowered = lower(source.as_str());
     let listed: BTreeSet<_> = lowered.module.reducts().iter().collect();
@@ -1470,8 +1470,8 @@ fn an_operation_is_selected_off_a_model_binder_2246()
                    --> C;\n  oper read : (c : C) --> Integer;\n}\n";
     let stepped = |model: &str, counted: &str| {
         let source = format!(
-            "{counter}def step(m : {model}, n : {model}) -> -F Integer {{\n  run z <- \
-             {counted}.zero ; run i <- m.incr ; run r <- m.read ; r(i(z))\n}}\n"
+            "{counter}def step(m : {model}, n : {model}) -> -F Integer {{\n  let z = \
+             {counted}.zero ; let i = m.incr ; let r = m.read ; r(i(z))\n}}\n"
         );
         let mut lowered = lower(source.as_str());
         let step = super::declaration(&lowered, "step", Role::Declared).constant();
@@ -1503,10 +1503,10 @@ fn an_operation_is_selected_off_a_model_binder_2246()
             &|source| LoweringRefusal::OutOfFragment {
                 span: span_of(source, "m.C", 0_usize),
                 form: FormName::from(NamedKind("projection_expression")),
-                sort: FragmentSort::Computation,
+                sort: FragmentSort::Value,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "a sort the type fixes is no member a computation reads",
+            "a sort the type fixes is no member a value reads",
         ),
         (
             "Model(Counter)",
@@ -1521,7 +1521,7 @@ fn an_operation_is_selected_off_a_model_binder_2246()
     ];
     for (model, member, refusal, why) in cases {
         let source = format!(
-            "{counter}def selected(m : {model}) -> -F Integer {{ run c <- m.{member} ; 0 }}\n"
+            "{counter}def selected(m : {model}) -> -F Integer {{ let c = m.{member} ; 0 }}\n"
         );
         let found: Vec<_> = rows(&lower(source.as_str()))
             .into_iter()
@@ -1824,7 +1824,7 @@ fn a_pattern_at_a_model_type_splits_its_fields()
 {
     let source = format!(
         "{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{\n  match m {{\n    #{{.start = s, \
-         .step = f, .read = r}} => {{\n      run z <- s();\n      run once <- f(z);\n      become \
+         .step = f, .read = r}} => {{\n      let z = s();\n      let once = f(z);\n      become \
          r(once)\n    }}\n  }}\n}}\ndef packed : Model(Counter) ;\ndef packed = pack Open at \
          Model(Counter) ;\ndef observed : () => Integer ;\ndef observed = thunk {{ become \
          observe(packed) }} ;\n"
@@ -1858,7 +1858,7 @@ fn a_derived_rule_reads_the_model_it_quantifies_over()
 {
     let source = format!(
         "{GROUP}derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp\ndef \
-         uses(m : Model(Grp)) -> -F Unit {{\n  run law <- Grp.invMul(m);\n  return unit\n}}\n"
+         uses(m : Model(Grp)) -> -F Unit {{\n  let law = Grp.invMul(m);\n  return unit\n}}\n"
     );
     let mut lowered = lower(source.as_str());
     let found = rows(&lowered);

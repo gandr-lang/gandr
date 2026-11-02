@@ -10,7 +10,7 @@
 /// reads the value the pass before wrote back, so the loop stops at zero.
 @[ runs("0") ]
 def countdown() -> [Div] Integer {
-  hold n = 3;
+  var n = 3;
   while n > 0 { access n as v { resume(v, v - 1) } };
   pure n
 }
@@ -19,8 +19,8 @@ def countdown() -> [Div] Integer {
 /// while the second counts up.
 @[ runs("704") ]
 def opposed() -> [Div] Integer {
-  hold a = 10;
-  hold b = 1;
+  var a = 10;
+  var b = 1;
   while b < 4 {
     access b as v { resume(v, v + 1) };
     access a as w { resume(w, w - 1) }
@@ -32,8 +32,8 @@ def opposed() -> [Div] Integer {
 /// count down, so the total ends as three plus two plus one.
 @[ runs("6") ]
 def sum() -> [Div] Integer {
-  hold i = 3;
-  hold total = 0;
+  var i = 3;
+  var total = 0;
   while i > 0 {
     access total as t { resume(t, t + i) };
     access i as v { resume(v, v - 1) }
@@ -45,8 +45,8 @@ def sum() -> [Div] Integer {
 /// unchanged.
 @[ runs("7") ]
 def beside() -> [Div] Integer {
-  hold a = 4;
-  hold b = 3;
+  var a = 4;
+  var b = 3;
   while b > 0 { access b as v { resume(v, v - 1) } };
   pure a + 3
 }
@@ -54,7 +54,7 @@ def beside() -> [Div] Integer {
 /// A pass ending in `continue` hands the next pass the slot as it left it.
 @[ runs("0") ]
 def skipping() -> [Div] Integer {
-  hold n = 3;
+  var n = 3;
   while n > 0 {
     access n as v { resume(v, v - 1) };
     continue
@@ -66,10 +66,10 @@ def skipping() -> [Div] Integer {
 /// wrote, and the statement binds it.
 @[ runs("5") ]
 def climb() -> [Div] Integer {
-  hold n = 0;
-  run m <- loop {
+  var n = 0;
+  let m = loop {
     access n as v { resume(v, v + 1) };
-    run done <- n >= 5;
+    let done = n >= 5;
     match done {
       true => break(n),
       false => continue,
@@ -81,10 +81,10 @@ def climb() -> [Div] Integer {
 /// A bare `break`: what follows the loop reads the slot the last pass left.
 @[ runs("4") ]
 def stride() -> [Div] Integer {
-  hold n = 0;
+  var n = 0;
   loop {
     access n as v { resume(v, v + 2) };
-    run done <- n >= 4;
+    let done = n >= 4;
     match done {
       true => break,
       false => continue,

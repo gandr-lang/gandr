@@ -1,12 +1,12 @@
 error[HeldShared]: `var[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
-   ╭▸ corpus/pathological/control/held-unique.gandr:9:15
+   ╭▸ corpus/pathological/control/held-unique.gandr:9:14
    │
  8 │   def entered(n : Integer) -> Unit {
    │   │           ─ checked against `Integer -> -F Unit`; while checking the body of this function; binds n : Integer
    │ ┌─┘
    │ │
- 9 │ │   hold[1] c = n;
-   │ │               ━ a value that may have another holder
+ 9 │ │   var[1] c = n;
+   │ │              ━ a value that may have another holder
 10 │ │   pure unit
 11 │ │ }
    │ └─┘ checked against `Integer => Unit`; while checking the body of this thunk
@@ -17,8 +17,8 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
    ╭▸ corpus/pathological/control/held-unique.gandr:17:8
    │
 15 │ ┌ def read_held() -> Integer {
-16 │ │   hold[1] c = 0;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+16 │ │   var[1] c = 0;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 17 │ │   pure c
    │ │   ┬────┯
    │ │   │    │
@@ -33,8 +33,8 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
    ╭▸ corpus/pathological/control/held-unique.gandr:25:33
    │
 23 │ ┌ def read_twice() -> Unit {
-24 │ │   hold[1] c = 3;
-   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+24 │ │   var[1] c = 3;
+   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 25 │ │   access c as v { resume(v, v + v) }
    │ │   ┬───────────────┬─────────┬───┯───
    │ │   │               │         │   │
@@ -51,8 +51,8 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
    ╭▸ corpus/pathological/control/held-unique.gandr:32:31
    │
 30 │ ┌ def read_shared() -> Integer {
-31 │ │   hold[1] c = 0;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+31 │ │   var[1] c = 0;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 32 │ │   access shared c as w { pure w }
    │ │   ┬──────────────────────┬────┯──
    │ │   │                      │    │
@@ -65,15 +65,15 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
    ╰ note: `read_shared` is refused with HeldCopied, as its expectation states
 
 error[ViewMoved]: the view's value was read out, so the view ends with `resume`, which writes a value back; `abort` would leave the held slot empty
-   ╭▸ corpus/pathological/control/held-unique.gandr:40:37
+   ╭▸ corpus/pathological/control/held-unique.gandr:40:36
    │
 38 │ ┌ def moved_then_aborted() -> Integer {
-39 │ │   hold[1] c = 0;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
-40 │ │   access c as v { run n <- succ(v); abort(v); pure n } unwind { pure unit }
-   │ │   ┬───────────────┬─────────────────┯━━━━━━━───────────────────────────────
-   │ │   │               │                 │
-   │ │   │               │                 an abort after the value was moved out
+39 │ │   var[1] c = 0;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
+40 │ │   access c as v { let n = succ(v); abort(v); pure n } unwind { pure unit }
+   │ │   ┬───────────────┬────────────────┯━━━━━━━───────────────────────────────
+   │ │   │               │                │
+   │ │   │               │                an abort after the value was moved out
    │ │   │               checked against `-F Integer`; while checking the body under this binding; binds n : Integer
    │ │   checked against `-F Integer`; while checking the body of this access
 41 │ │ }

@@ -95,7 +95,7 @@ theory Skipping where {
 def discarding() -> Integer {
   handle st : Skipping with sort S = Integer {
     st.put(1);
-    run a <- st.get();
+    let a = st.get();
     pure a
   } with {
     pure(x) => pure x,

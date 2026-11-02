@@ -124,7 +124,7 @@ enum Start
     Bound,
 }
 
-/// The chain `run q <- cong(inner, p); cong(outer, q)` and its path
+/// The chain `let q = cong(inner, p); cong(outer, q)` and its path
 /// returned, `p` the innermost variable.
 ///
 /// # Specification
@@ -405,7 +405,7 @@ fn a_cong_chain_composing_to_the_identity_is_its_path()
         assert_eq!(
             verdict,
             MachineVerdict::Convertible,
-            "`run q <- cong(unlooped, p); cong(looped, q)` is `p` at {sides:?}: {decisions:?}"
+            "`let q = cong(unlooped, p); cong(looped, q)` is `p` at {sides:?}: {decisions:?}"
         );
         assert_eq!(
             replayed(&identity, sides, &decisions),

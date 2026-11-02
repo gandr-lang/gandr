@@ -30,7 +30,7 @@ def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
 @[ entry((operator, seat)) ]
 def suspendedBack() -> () => Seat.Dispatch {
   migrate [seat] {
-    run task <- pure Seat.task;
+    let task = Seat.task;
     pure thunk { pure task }
   }
 }

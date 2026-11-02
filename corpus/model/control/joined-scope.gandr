@@ -13,10 +13,10 @@ data Nat : Type where {
 /// The arm holds its own `c` and writes 2 back to it; the rest's `c` is the
 /// one held before the match.
 def shadowed(rounds : Nat) -> Integer {
-  hold c = 100;
-  run settled <- match rounds {
+  var c = 100;
+  let settled = match rounds {
     Zero => return 7,
-    Succ(fewer) => { hold c = 1; access c as v { resume(v, v + 1) }; pure c }
+    Succ(fewer) => { var c = 1; access c as v { resume(v, v + 1) }; pure c }
   };
   pure c
 }
@@ -32,8 +32,8 @@ def shadowedExited : () => Integer = shadowed(Zero);
 /// The arm forks, and its parent end closes before the rest: the rest reads
 /// the held count, not the end.
 def forked(rounds : Nat) -> Integer {
-  hold c = 100;
-  run settled <- match rounds {
+  var c = 100;
+  let settled = match rounds {
     Zero => return 7,
     Succ(fewer) => { let desk = fork (seat : end) { close(seat) }; close(desk) }
   };
@@ -42,7 +42,7 @@ def forked(rounds : Nat) -> Integer {
 
 /// A fork in an arm whose block ends at the unit the match settles.
 def forkPastAnExit(rounds : Nat) -> Unit {
-  run settled <- match rounds {
+  let settled = match rounds {
     Zero => return unit,
     Succ(fewer) => { let desk = fork (seat : end) { close(seat) }; close(desk) }
   };

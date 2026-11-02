@@ -40,14 +40,14 @@ theory Vacuous where {
 def rec fieldsOf(term : Theory) -> Integer {
   match term {
     Bind(var, body) => {
-      run r <- fieldsOf[<](body);
+      let r = fieldsOf[<](body);
       r + 1
     },
     Abs(atom, body) => fieldsOf[<](body),
     App(name, args) => fieldsOf[<](args),
     Arg(head, rest) => {
-      run here <- fieldsOf[<](head);
-      run r <- fieldsOf[<](rest);
+      let here = fieldsOf[<](head);
+      let r = fieldsOf[<](rest);
       here + r
     },
     _ => 0
@@ -59,14 +59,14 @@ def rec fieldsOf(term : Theory) -> Integer {
 def rec abstractionsOf(term : Theory) -> Integer {
   match term {
     Abs(atom, body) => {
-      run r <- abstractionsOf[<](body);
+      let r = abstractionsOf[<](body);
       r + 1
     },
     Bind(var, body) => abstractionsOf[<](body),
     App(name, args) => abstractionsOf[<](args),
     Arg(head, rest) => {
-      run here <- abstractionsOf[<](head);
-      run r <- abstractionsOf[<](rest);
+      let here = abstractionsOf[<](head);
+      let r = abstractionsOf[<](rest);
       here + r
     },
     _ => 0

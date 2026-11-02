@@ -23,7 +23,7 @@ theory Cells where {
 /// Structural recursion over a face chain: one per `Face`.
 def rec faces(chain : Theory) -> Integer {
   match chain {
-    Face(name, points, rest) => { run r <- faces[<](rest); r + 1 },
+    Face(name, points, rest) => { let r = faces[<](rest); r + 1 },
     _ => 0
   }
 }

@@ -64,8 +64,8 @@ def peek(s : +U Stream) -> Integer {
 def rec sums(s : +U Stream, t : +U Stream) -> Stream {
   &{
     .head => {
-      run x <- peek(s);
-      run y <- peek(t);
+      let x = peek(s);
+      let y = peek(t);
       x + y
     },
     .tail => sums[>](s.tail, t.tail)

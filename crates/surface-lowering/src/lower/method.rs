@@ -30,7 +30,7 @@
 //! A method whose receiver is written through holds the receiver over its
 //! body under the name `self`, so the body reads and lends it as a held slot,
 //! and returns the slot's last value beside its answer: the body `b` of `def
-//! f(self : T, …) -> -F R` lowers as `hold self = self ; r <- b ; pure (self,
+//! f(self : T, …) -> -F R` lowers as `var self = self ; r <- b ; pure (self,
 //! r)`, and its declared result is `-F (T, R)`. Every exit of `b` ends `b`
 //! inside the hold, so its value is the answer paired.
 //!
@@ -40,8 +40,8 @@
 //! f[m : Mode] (self : m T, …) -> -F View[m](a) { self.#[e] }`, answers the
 //! place `self.#[e]` of its receiver: never a value, and never a lens. It
 //! lowers to the function answering the place's index, which lends its
-//! receiver's place shared to judge the element there at `a`: `hold p = self ;
-//! access shared p.#[e] as v { run _ : a <- pure v ; pure e }`, declared `-F
+//! receiver's place shared to judge the element there at `a`: `var p = self ;
+//! access shared p.#[e] as v { let _ : a = v ; pure e }`, declared `-F
 //! Integer`. Its body is that place alone; any other body, or a result other
 //! than `-F View[m](a)` over the receiver's own mode, is
 //! [`LoweringRefusal::ViewNotPlace`]. A call lends the place of a held
@@ -1018,7 +1018,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is an index `s.#[e]` or an instantiation `s[0]`.
     /// - ensures: the binder of the innermost name the head spells, when the
-    ///   head is a bare name, that binder is a slot a `hold` binds, and an
+    ///   head is a bare name, that binder is a slot a `var` binds, and an
     ///   instantiation's bracket holds one number; nothing is planned or
     ///   recorded.
     /// - fails: a fault reading the form's pieces or the head's form; the
@@ -1636,9 +1636,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `body` was minted under the receiver's linear binder past
     ///   every parameter.
-    /// - ensures: `hold self = x ; r <- body ; pure (self, r)`, `x` the
-    ///   receiver parameter, every node marked as inserted for the method at
-    ///   `origin`.
+    /// - ensures: `var self = x ; r <- body ; pure (self, r)`, `x` the receiver
+    ///   parameter, every node marked as inserted for the method at `origin`.
     /// - fails: never.
     /// - panics: none.
     ///

@@ -2,8 +2,8 @@
 @[ refuses("BufferReturnedTwice") ]
 def freedTwice() -> -F Unit {
   handle r : Ring {
-    run b <- r.alloc(4096);
-    run first <- r.free(b);
+    let b = r.alloc(4096);
+    let first = r.free(b);
     r.free(b)
   } with {
     pure(x) => pure x,

@@ -11,8 +11,8 @@ import "../../model/strings/methods.gandr";
 /// A string read after it was taken: the take ended its hold.
 @[ refuses("HeldConsumed") ]
 def readAfterTaken() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  run bs <- s.bytes();
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  let bs = s.bytes();
   s.len()
 }
 
@@ -20,12 +20,12 @@ def readAfterTaken() -> Integer {
 /// the hold, which it may run other than once.
 @[ refuses("HeldCaptured") ]
 def readInThunk() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  run k : () => Integer <- pure thunk { s.len() };
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  let k : () => Integer = thunk { s.len() };
   force k
 }
 
-/// A push onto a string no hold holds: nothing would keep what it writes back.
+/// A push onto a string no var holds: nothing would keep what it writes back.
 @[ refuses("OutOfFragment.Held") ]
 def pushedUnheld(t : Repr) -> -F Unit {
   t.push(33)
@@ -34,16 +34,16 @@ def pushedUnheld(t : Repr) -> -F Unit {
 /// A string read while a view of it is live: the access already lends it.
 @[ refuses("HeldLent") ]
 def readWhileLent() -> Unit {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { run n <- s.len(); resume(v, v) }
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access s as v { let n = s.len(); resume(v, v) }
 }
 
 /// A push onto a string a read lends: the push would write the string the
 /// read's view still reads.
 @[ refuses("HeldLent") ]
 def pushedWhileRead() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access shared s as w { s.push(33); run bs <- bytes(w); count(bs) }
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  access shared s as w { s.push(33); let bs = bytes(w); count(bs) }
 }
 
 /// A string read after a match one of whose arms took it: the match ends the
@@ -51,8 +51,8 @@ def pushedWhileRead() -> Integer {
 /// (#1488).
 @[ refuses("HeldConsumed") ]
 def readAfterTakenInOneArm(t : Repr) -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  run xs <- match t -> -F List(Integer) {
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  let xs = match t -> -F List(Integer) {
     Inline(bs) => s.bytes(),
     Shared(n, bs) => pure bs
   };

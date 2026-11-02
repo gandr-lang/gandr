@@ -31,7 +31,7 @@ def pending() -> Seat.Dispatch {
 @[ entry((operator, seat)) ]
 def dispatched() -> () => Seat.Dispatch {
   migrate [seat] {
-    run task <- pure Seat.task;
+    let task = Seat.task;
     pure thunk { pure task }
   }
 }
@@ -42,7 +42,7 @@ def dispatched() -> () => Seat.Dispatch {
 @[ entry((operator, seat)) ]
 def pointing() -> () => (Seat.Dispatch at seat) {
   migrate [seat] {
-    run held : Seat.Dispatch at seat <- (hold Seat.task);
+    var held : Seat.Dispatch at seat = Seat.task;
     pure thunk { pure held }
   }
 }
@@ -68,7 +68,7 @@ def heldHomed() -> -F ((() => Seat.Dispatch) at seat) {
 @[ entry((operator, seat)) ]
 def through() -> () => Integer {
   migrate [seat] {
-    run later : () => Integer <- pure thunk { pure 3 };
+    let later : () => Integer = thunk { pure 3 };
     pure later
   }
 }
@@ -79,8 +79,8 @@ def through() -> () => Integer {
 @[ entry((operator, seat)) ]
 def regioned() -> () => Integer {
   migrate [seat] {
-    hold s = 3;
-    run k : (() => Integer) at s <- access shared s as w { pure pure w };
+    var s = 3;
+    let k : (() => Integer) at s = access shared s as w { pure pure w };
     pure thunk { force k }
   }
 }
@@ -91,7 +91,7 @@ def regioned() -> () => Integer {
 @[ entry((operator, seat)) ]
 def graded() -> () => Integer {
   migrate [seat] {
-    hold[1] c = 0;
+    var[1] c = 0;
     pure thunk { pure c + c }
   }
 }

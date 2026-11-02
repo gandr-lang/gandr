@@ -57,7 +57,7 @@
 //!
 //! A judged copy's names also carry how the judgement reads them
 //! ([`Resolved::marks`]): `declaration` on each binder's own name and each
-//! declaration's — a parameter, a pattern variable, a `run` or lambda binder,
+//! declaration's — a parameter, a pattern variable, a `let` or lambda binder,
 //! a constructor, a definition's name — and the custom pair `value` and
 //! `computation` by the name's polarity. A called name, which the lowering
 //! forces, is a `computation`; a binder, a constructor's name and an argument

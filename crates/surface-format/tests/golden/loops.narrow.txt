@@ -1,5 +1,5 @@
 def first(n : Nat) -> -F Nat {
-  run m <- loop { break(Succ(n)) };
+  let m = loop { break(Succ(n)) };
   return Succ(m)
 }
 

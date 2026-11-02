@@ -20,7 +20,7 @@
 //! `hold v` is a computation returning the handle, read as a value where a
 //! value stands by the nesting every computation there takes. `leta x = v ;`
 //! opens the handle over the rest of its block, binding `x` intuitionistically
-//! as `run x <- c ;` does, so the rest's indices shift as a bind's do.
+//! as `let x = c ;` does, so the rest's indices shift as a bind's do.
 //! `migrate [w] { t }` reads its block where the migration stands, its last
 //! computation the result returned to the world it left. The capability a
 //! migration spends is no term: the checker's entry introduces it.
@@ -30,11 +30,9 @@
 //!   variables no consumer needs yet.
 //! - Reversal: world variables — the name resolves to a binder as well.
 //!
-//! A block statement that opens with `hold` is the access statement `hold x
-//! = v ;`, so a handle made at a block's tail is written in parentheses,
-//! `(hold v)`. A handle bound for the rest of a block is written `var x : A at
-//! w = v ;`, the statement `run x : A at w <- (hold v) ;` spells: the stated
-//! handle type tells it from a held slot.
+//! A handle made at a block's tail is written in parentheses, `(hold v)`. A
+//! handle bound for the rest of a block is written `var x : A at w = v ;`: the
+//! stated handle type tells it from a held slot.
 //!
 //! # The mark and the entry are written where the source already decides
 //!

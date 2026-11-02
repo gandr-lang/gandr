@@ -85,7 +85,7 @@ def pred(n : Nat) -> Nat {
 def rec halved_through_pred(n : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run q <- pred(p); Succ(halved_through_pred[<](q)) }
+    Succ(p) => { let q = pred(p); Succ(halved_through_pred[<](q)) }
   }
 }
 
@@ -98,7 +98,7 @@ def rec halved_through_pred(n : Nat) -> Nat {
 def rec looping_through_bound(n : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run q <- boundedAt(p, n); looping_through_bound[<](q) }
+    Succ(p) => { let q = boundedAt(p, n); looping_through_bound[<](q) }
   }
 }
 
@@ -126,6 +126,6 @@ def suppliedApart[j : Size, k : Size](f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
 /// so nothing holds `i` at the `j` supplied (#1227).
 @[ refuses("OutOfFragment.Stage") ]
 def suppliedUnshown[j : Size](n : Nat) -> Nat {
-  run m <- predAt[.i = j](n);
+  let m = predAt[.i = j](n);
   m
 }

@@ -17,15 +17,15 @@ import "../../../library/std/src/grade.gandr";
 
 /// Three steps: a charge of one, a charge of two, then seven.
 def threeSteps() -> [cost : Cost with sort N = Nat => Nat] Integer {
-  run _a <- cost.charge(costs((1 : Nat)));
-  run _b <- cost.charge(costs((2 : Nat)));
+  let _a = cost.charge(costs((1 : Nat)));
+  let _b = cost.charge(costs((2 : Nat)));
   pure 7
 }
 
 /// The steps under the counting model.
 def countedSteps() -> (Nat => Nat) => Nat {
   handle cost : Cost with sort N = Nat => Nat {
-    run _answer <- threeSteps();
+    let _answer = threeSteps();
     pure counted
   } with Counting
 }

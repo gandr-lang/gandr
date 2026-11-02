@@ -3,7 +3,7 @@ error[NotOpen.Capture]: a thunk crossing to another world captures this, but its
    │
 20 │ ┌  def pointing() -> () => (Seat.Dispatch at seat) {
 21 │ │┌   migrate [seat] {
-22 │ ││     run held : Seat.Dispatch at seat <- (hold Seat.task);
+22 │ ││     var held : Seat.Dispatch at seat = Seat.task;
 23 │ ││     pure thunk { pure held }
    │ ││                       ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
 24 │ ││   }

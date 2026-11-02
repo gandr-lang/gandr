@@ -2,9 +2,9 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
    ╭▸ corpus/ledger/diagnostics/HeldConsumed.gandr:16:3
    │
 13 │ ┌ def readAfterTaken() -> -F Integer {
-14 │ │   hold n = 3;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
-15 │ │   run m <- n.take();
+14 │ │   var n = 3;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
+15 │ │   let m = n.take();
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds m : Integer
 16 │ │   n.look()
    │ │   ━━━━━━━━ a held value a consumed receiver already took

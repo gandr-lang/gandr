@@ -157,7 +157,7 @@ fn thunk_body(
 }
 
 /// The call a thunk's body is, when the body is one call delivered
-/// unchanged: `become f(…)`, `f(…)`, or `run p <- f(…); return p`, the tail
+/// unchanged: `become f(…)`, `f(…)`, or `let p = f(…); return p`, the tail
 /// written `p` alone as the sugared form writes it (#1327).
 ///
 /// # Specification
@@ -183,8 +183,8 @@ fn direct_call(body: SourceFragment<'_>) -> Option<String>
     let call = if let Some(call) = spaced.strip_prefix("become ") {
         call
     }
-    else if let Some(bound) = spaced.strip_prefix("run ") {
-        let (pattern, rest) = bound.split_once(" <- ")?;
+    else if let Some(bound) = spaced.strip_prefix("let ") {
+        let (pattern, rest) = bound.split_once(" = ")?;
         let (call, tail) = rest.split_once("; ")?;
         let returned = tail.strip_prefix("return ").unwrap_or(tail);
         if returned.trim_end_matches(';').trim() != pattern {

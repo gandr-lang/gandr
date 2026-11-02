@@ -25,7 +25,7 @@ module PutGet : Model(StatePutGet) with sort S = Integer where {
   type C = +U (Integer -> -F Integer);
   /// Reading hands the current state on.
   def get(k : +U (Integer -> -F +U (Integer -> -F Integer))) -> +U (Integer -> -F Integer) {
-    thunk { fun (s) { run after <- k(s); after(s) } }
+    thunk { fun (s) { let after = k(s); after(s) } }
   }
   /// Storing runs what comes after at the stored value.
   def put(s : Integer, k : +U (Integer -> -F Integer)) -> +U (Integer -> -F Integer) {

@@ -1116,7 +1116,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `scrutinee` is a match's scrutinee.
     /// - ensures: the written type of the binder or the declaration a name
-    ///   resolves to; for a `run` binder written with no type, the type its
+    ///   resolves to; for a `let` binder written with no type, the type its
     ///   computation returns, as [`Self::ran_type`] reads it; for a call, the
     ///   type it returns, as [`Self::called_type`] reads it; nothing for any
     ///   other scrutinee or an untyped name.
@@ -1131,10 +1131,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a match over a typed parameter reads its sum's arity,
-    ///   one over an untyped name refuses a sum pattern, and one over a `run`
+    ///   one over an untyped name refuses a sum pattern, and one over a `let`
     ///   binder or a call splits the record its callee returns.
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
-    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
     /// - witness: `lower::native::tests::a_call_as_the_scrutinee_splits_the_record_it_returns_1141`
     #[spec(ensures: |ret| ret.is_ok() || !matches!(ret, Err(LoweringRefusal::MalformedForm { .. })))]
     pub(super) fn scrutinee_type(
@@ -1167,13 +1167,13 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// The type the `run` binder `binder` holds, as the function its
+    /// The type the `let` binder `binder` holds, as the function its
     /// computation calls wrote it: `A` of the function's result, `-F A` or a
     /// bare `A`, as [`Self::called_type`] reads it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the node of `A` when `binder` is a `run` binder written with
+    /// - ensures: the node of `A` when `binder` is a `let` binder written with
     ///   no type whose computation [`Self::called_type`] reads, under the frame
     ///   the computation reads in; the untyped absence otherwise.
     /// - provides: the record layout of a call's result to a match on it, so a
@@ -1188,9 +1188,9 @@ impl<'source> Lowerer<'_, 'source>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a match over a `run` binder of a call returning a
+    /// - hypothesis: L3 — a match over a `let` binder of a call returning a
     ///   quasi-inverse splits its four components positionally and by label.
-    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
     #[spec(ensures: |ret| ret.is_err()
         || matches!(ret, Ok(Maybe::Absent(binder_type::Absent::Untyped)))
         || self.ran.contains_key(&binder))]
@@ -1232,8 +1232,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::ran_type`] and [`Self::scrutinee_type`],
     ///   and a callee whose result is written bare splits as one written under
     ///   its returner.
-    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
-    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_a_bare_result_returns_2255`
+    /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_a_bare_result_returns_2255`
     /// - witness: `lower::native::tests::a_call_as_the_scrutinee_splits_the_record_it_returns_1141`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
         Maybe::Present(node) => node != written,

@@ -1,5 +1,5 @@
 error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second time
-   ╭▸ corpus/pathological/completion/stack-resumed-twice.gandr:27:51
+   ╭▸ corpus/pathological/completion/stack-resumed-twice.gandr:27:50
    │
 14 │ ┌  def resumedTwice() -> Unit {
 15 │ │┌   handle c : Proc {
@@ -7,8 +7,8 @@ error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second 
 17 │ ││       let sqe = recv(kernel);
 18 │ ││       send(kernel, Ring.done);
    ┆ ┆┆
-27 │ ││     oper exit(code, k) => { run first <- k(unit); k(unit) }
-   │ ││                             ┬──                   ━━━━━━━ a continuation already ended
+27 │ ││     oper exit(code, k) => { let first = k(unit); k(unit) }
+   │ ││                             ┬──                  ━━━━━━━ a continuation already ended
    │ ││                             │
    │ ││                             checked against `-F Unit`; while checking the body under this binding; binds first : Unit
 28 │ ││   }

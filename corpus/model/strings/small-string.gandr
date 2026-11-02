@@ -19,8 +19,8 @@ pub data Place : Type where {
 /// A string holding `bs`: inline when they fit the inline capacity, else in a
 /// buffer of its own on the heap, held once.
 pub def store(bs : List(Integer)) -> Repr {
-  run n <- count(bs);
-  run fits <- n <= inlineCapacity;
+  let n = count(bs);
+  let fits = n <= inlineCapacity;
   match fits {
     true => Inline(bs),
     false => Shared(1, bs)
@@ -44,8 +44,8 @@ pub def place(s : Repr) -> Place {
 /// carries the list and the count left. The loop may run forever, so the row
 /// states `Div` (#1481).
 pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Div] List(Integer) {
-  hold acc = onto;
-  hold left = n;
+  var acc = onto;
+  var left = n;
   while left > 0 {
     access acc as a { resume(a, (Cons(c, a) : List(Integer))) };
     access left as v { resume(v, v - 1) }
@@ -60,14 +60,14 @@ def hiPlace() -> Place { place(own((Cons(104, Cons(105, Nil)) : List(Integer))))
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
 def fullPlace() -> [Div] Place {
-  run cs <- repeatOnto(97, 23, (Nil : List(Integer)));
+  let cs = repeatOnto(97, 23, (Nil : List(Integer)));
   place(own(cs))
 }
 
 /// One byte more and the string's bytes go to the heap.
 @[ runs("OnHeap") ]
 def spilledPlace() -> [Div] Place {
-  run cs <- repeatOnto(97, 24, (Nil : List(Integer)));
+  let cs = repeatOnto(97, 24, (Nil : List(Integer)));
   place(own(cs))
 }
 
@@ -78,7 +78,7 @@ def hiBytes() -> List(Integer) { bytes(own((Cons(104, Cons(105, Nil)) : List(Int
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]
 def spilledCount() -> [Div] Integer {
-  run cs <- repeatOnto(97, 24, (Nil : List(Integer)));
-  run s <- own(cs);
+  let cs = repeatOnto(97, 24, (Nil : List(Integer)));
+  let s = own(cs);
   count(bytes(s))
 }

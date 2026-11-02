@@ -51,7 +51,7 @@ def rec parity(n : Nat) -> Nat {
   match n {
     Zero => Zero,
     Succ(p) => {
-      run q <- parity[<](p);
+      let q = parity[<](p);
       match q {
         Zero => Succ(Zero),
         Succ(r) => Zero

@@ -347,7 +347,7 @@ fn a_script_runs_through_what_it_imports_2970()
 fn a_script_passes_its_arguments_to_its_entry_1881()
 {
     let counted = "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    \
-                   [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
+                   [x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
                    List(String)) -> -F Integer { become count(args) }\n";
     let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
     for arguments in [vec![], vec![String::from("one"), String::from("two")]] {
@@ -723,10 +723,10 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
         "pub world operator;\npub world seat;\npub world gate;\n\ndef rec size(xs : \
          List(Integer)) -> Integer {{\n  match xs {{\n    [] => 0,\n    [x, ..rest] => 1 + \
          size[<](rest)\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
-         main() -> Integer {{\n  run listed : List(Integer) at seat <- migrate [seat] {{ (hold \
-         [{listed}]) }};\n  leta xs = listed;\n  run edited : List(Integer) at seat <- migrate \
-         [seat] {{ (hold cons(0, xs)) }};\n  leta ys = edited;\n  run opened <- migrate [gate] \
-         {{ pure 0 }};\n  run before <- migrate [seat] {{ size(xs) }};\n  run after <- migrate \
+         main() -> Integer {{\n  let listed : List(Integer) at seat = migrate [seat] {{ (hold \
+         [{listed}]) }};\n  leta xs = listed;\n  let edited : List(Integer) at seat = migrate \
+         [seat] {{ (hold cons(0, xs)) }};\n  leta ys = edited;\n  let opened = migrate [gate] \
+         {{ pure 0 }};\n  let before = migrate [seat] {{ size(xs) }};\n  let after = migrate \
          [seat] {{ size(ys) }};\n  pure (after - before + 41 + opened)\n}}\n"
     );
     let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));

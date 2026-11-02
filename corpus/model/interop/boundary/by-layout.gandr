@@ -63,15 +63,15 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) {
   match fuel {
     Zero => None,
     Succ(rest) => {
-      run n <- u64.to_integer(w);
-      run bit <- int.mod(n, 2);
+      let n = u64.to_integer(w);
+      let bit = int.mod(n, 2);
       match bit == 1 {
         true => Some(TagNil),
         false => {
-          run h <- Memory.word(w);
-          run head <- low(h);
-          run t <- Memory.word(past(n, 8));
-          run tail <- readTagged[<](rest, t);
+          let h = Memory.word(w);
+          let head = low(h);
+          let t = Memory.word(past(n, 8));
+          let tail = readTagged[<](rest, t);
           match tail {
             None => None,
             Some(l) => Some(TagCons(head, l))
@@ -89,20 +89,20 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
   match fuel {
     Zero => None,
     Succ(rest) => {
-      run n <- u64.to_integer(w);
-      run tag <- int.mod(n, 4);
+      let n = u64.to_integer(w);
+      let tag = int.mod(n, 4);
       match tag == 0 {
         true => Some(Empty),
         false => match tag == 1 {
           true => Some(One(i32.from_integer(int.div(n, 4)))),
           false => match tag == 2 {
             true => {
-              run xy <- Memory.word(past(n, -2));
-              run m <- u64.to_integer(xy);
-              run x <- i32.from_integer(m);
-              run y <- i32.from_integer(int.div(m, 4294967296));
-              run r <- Memory.word(past(n, 6));
-              run tail <- readPacked[<](rest, r);
+              let xy = Memory.word(past(n, -2));
+              let m = u64.to_integer(xy);
+              let x = i32.from_integer(m);
+              let y = i32.from_integer(int.div(m, 4294967296));
+              let r = Memory.word(past(n, 6));
+              let tail = readPacked[<](rest, r);
               match tail {
                 None => None,
                 Some(l) => Some(Many(x, y, l))
@@ -118,11 +118,11 @@ def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
 
 /// The length of the tagged list at `w`, or `-1` when it does not read.
 pub def taggedLengthAt(w : u64) -> [Memory] Integer {
-  run read <- readTagged(fuel, w);
+  let read = readTagged(fuel, w);
   match read {
     None => -1,
     Some(l) => {
-      run f <- transport(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
+      let f = transport(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
       f(l)
     }
   }
@@ -130,11 +130,11 @@ pub def taggedLengthAt(w : u64) -> [Memory] Integer {
 
 /// The length of the packed list at `w`, or `-1` when it does not read.
 pub def packedLengthAt(w : u64) -> [Memory] Integer {
-  run read <- readPacked(fuel, w);
+  let read = readPacked(fuel, w);
   match read {
     None => -1,
     Some(l) => {
-      run f <- transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
+      let f = transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
       f(l)
     }
   }
@@ -143,7 +143,7 @@ pub def packedLengthAt(w : u64) -> [Memory] Integer {
 /// `deref_or(x: Option<&u32>, d: u32) -> u32`: `d` at the null word, and the
 /// `u32` the word addresses at any other.
 pub def derefOr(x : u64, d : u32) -> [Memory] u32 {
-  run n <- u64.to_integer(x);
+  let n = u64.to_integer(x);
   match n == 0 {
     true => d,
     false => Memory.half(x)

@@ -6,7 +6,7 @@
 def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> Integer {
   match m {
     #{.start = s, .step = t} => {
-      run zero <- s();
+      let zero = s();
       t(t(zero))
     }
   }

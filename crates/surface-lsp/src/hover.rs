@@ -2299,7 +2299,7 @@ mod tests
             ),
             (
                 "the name of a function the lowering refused",
-                "def $0f(x: Integer) -> -F Integer { run y <- return x ; return y }\n",
+                "def $0f(x: Integer) -> -F Integer { let y = return x ; return y }\n",
                 Ok(String::from(
                     "```gandr\nf\n```\n\nrefused: no path reaches this code: every path \
                      through the statement before it exits",
@@ -2372,7 +2372,7 @@ mod tests
             ),
             (
                 "a term past a refusal in its body",
-                "def g(x: Integer) -> -F Integer { run y <- force 1 ; return $0x }\n",
+                "def g(x: Integer) -> -F Integer { let y = force 1 ; return $0x }\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
@@ -2457,7 +2457,7 @@ mod tests
         let call = |marked_at: &str| {
             marked(SourceText::from(
                 format!(
-                    "def quotientOf(c : Integer) -> -F Integer {{\n  run lead <- {marked_at}(c, \
+                    "def quotientOf(c : Integer) -> -F Integer {{\n  let lead = {marked_at}(c, \
                      64);\n  return lead\n}}\n"
                 )
                 .as_str(),

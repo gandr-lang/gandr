@@ -115,7 +115,7 @@
 //!   clause resuming with unit, which leaves the handler no buffer to recycle.
 //! - reversal: a clause former whose binders are read off its operation.
 //!
-//! A run statement `run b <- c.alloc(n) ;` binds the reply under a binder no
+//! A `let` statement `let b = c.alloc(n) ;` binds the reply under a binder no
 //! name reaches and places it under `b`'s linear binder, so the rest of the
 //! block holds `b` live: it hands `b` back to a `free`, or on through a send,
 //! exactly once, and never reads it.
@@ -1733,7 +1733,7 @@ impl<'source> Lowerer<'_, 'source>
         self.collected.interface(at, &interface).map(|_| interface)
     }
 
-    /// Whether the computation `bound` a run statement binds, read where
+    /// Whether the computation `bound` a `let` statement binds, read where
     /// `frame` stands, exercises an operation the scope handling it mints a
     /// buffer for, so the statement places the buffer live.
     ///
@@ -1748,8 +1748,8 @@ impl<'source> Lowerer<'_, 'source>
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `run b <- r.alloc(n) ;` places `b`, a run of any
-    ///   other exercise names its reply.
+    /// - hypothesis: L3 — `let b = r.alloc(n) ;` places `b`, a run of any other
+    ///   exercise names its reply.
     /// - witness: `lower::capability::tests::an_allocated_buffer_is_placed_live_and_freed`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn placing(

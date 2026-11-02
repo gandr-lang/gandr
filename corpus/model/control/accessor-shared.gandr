@@ -8,7 +8,7 @@
 /// A shared view beside its held value: both read the one value.
 @[ runs("6") ]
 def read_beside() -> Integer {
-  hold c = 3;
+  var c = 3;
   access shared c as w { pure w + c }
 }
 
@@ -16,7 +16,7 @@ def read_beside() -> Integer {
 /// reads.
 @[ runs("9") ]
 def shared_nested() -> Integer {
-  hold c = 3;
+  var c = 3;
   access shared c as v { access shared c as w { pure v + w + c } }
 }
 
@@ -29,8 +29,8 @@ def twice(n : Integer) -> Integer {
 /// writes back what the shared view read.
 @[ runs("8") ]
 def in_turn() -> Integer {
-  hold c = 4;
-  run n <- access shared c as w { twice(w) };
+  var c = 4;
+  let n = access shared c as w { twice(w) };
   access c as v { resume(v, n) };
   pure c
 }
@@ -38,7 +38,7 @@ def in_turn() -> Integer {
 /// `exclusive` spells the mode an access takes when it names none.
 @[ runs("2") ]
 def spelled() -> Integer {
-  hold c = 1;
+  var c = 1;
   access exclusive c as v { resume(v, v + 1) } unwind { pure unit };
   pure c
 }

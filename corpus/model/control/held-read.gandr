@@ -8,7 +8,7 @@
 /// type, and the read synthesises the slot's (#1142).
 @[ runs("3") ]
 def bound() -> Integer {
-  hold i = 3;
-  run k <- pure i;
+  var i = 3;
+  let k = i;
   pure k
 }

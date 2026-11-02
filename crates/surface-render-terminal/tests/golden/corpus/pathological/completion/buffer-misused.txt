@@ -3,7 +3,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
 10 │ ┌  def neverFreed() -> Unit {
 11 │ │┌   handle r : Ring {
-12 │ ││     run b <- r.alloc(4096);
+12 │ ││     let b = r.alloc(4096);
    │ ││     ━━━ a buffer never handed back
 13 │ ││     pure unit
 14 │ ││   } with {
@@ -21,9 +21,9 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    │
 23 │ ┌  def freedTwice() -> Unit {
 24 │ │┌   handle r : Ring {
-25 │ ││     run b <- r.alloc(4096);
+25 │ ││     let b = r.alloc(4096);
    │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
-26 │ ││     run first <- r.free(b);
+26 │ ││     let first = r.free(b);
    │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the body under this binding; binds first : Unit
 27 │ ││     r.free(b)
    │ ││     ┬──────┯─
@@ -40,17 +40,15 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    ╰ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states
 
 error[BufferRead]: a buffer can be used only by the `send`, the operation or the resumption that hands it back
-   ╭▸ corpus/pathological/completion/buffer-misused.gandr:40:30
+   ╭▸ corpus/pathological/completion/buffer-misused.gandr:40:24
    │
 37 │ ┌  def readWhileHeld() -> Unit {
 38 │ │┌   handle r : Ring {
-39 │ ││     run b <- r.alloc(4096);
+39 │ ││     let b = r.alloc(4096);
    │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
-40 │ ││     run copied : Buf <- pure b;
-   │ ││     ┬──                 ┬────┯
-   │ ││     │                   │    │
-   │ ││     │                   │    a buffer read other than by its return
-   │ ││     │                   checked against `-F Buf`; while judging the value this returns
+40 │ ││     let copied : Buf = b;
+   │ ││     ┬──                ━ a buffer read other than by its return
+   │ ││     │
    │ ││     checked against `-F [Ring, r : Ring] Unit`; while finishing the type of this
 41 │ ││     r.free(b)
    ┆ ┆┆
@@ -67,7 +65,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
 52 │ ┌  def mintDropped() -> Unit {
 53 │ │┏   handle r : Ring {
-54 │ │┃     run b <- r.alloc(4096);
+54 │ │┃     let b = r.alloc(4096);
 55 │ │┃     r.free(b)
 56 │ │┃   } with {
    ┆ ┆┇
@@ -84,7 +82,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
 66 │ ┌  def receivedKept() -> Unit {
 67 │ │┌   handle r : Ring {
-68 │ ││     run b <- r.alloc(4096);
+68 │ ││     let b = r.alloc(4096);
 69 │ ││     r.free(b)
 70 │ ││   } with {
    ┆ ┆┆
@@ -106,7 +104,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
     │
  86 │ ┌  def receivedReturnedTwice() -> Unit {
  87 │ │┌   handle r : Ring {
- 88 │ ││     run b <- r.alloc(4096);
+ 88 │ ││     let b = r.alloc(4096);
  89 │ ││     r.free(b)
  90 │ ││   } with {
     ┆ ┆┆
@@ -138,7 +136,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
     │ ┌───┘
     │ │
 113 │ │┌    handle r : Ring {
-114 │ ││      run b <- r.alloc(4096);
+114 │ ││      let b = r.alloc(4096);
     │ ││      ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
 115 │ ││┌     match flag {
 116 │ │││       true => r.free(b),

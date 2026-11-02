@@ -1409,6 +1409,10 @@ enum Read
     /// call of any other type is suspended, each keeping the value's typing
     /// (#3935).
     Head,
+    /// A nested computation a `let` binds with no stated type: a returner
+    /// runs and a computation of any other type is suspended, each keeping
+    /// the value's typing.
+    Let,
 }
 
 /// How a computation written where a thunk is read is judged.
@@ -2376,6 +2380,13 @@ enum Frame
     /// A thunk waits on its body's check against the computation type it
     /// suspends.
     ThunkBody,
+    /// A thunk a `let` with no stated type binds waits on its computation's
+    /// synthesis: the binder's type is the thunk of that type.
+    LetThunk
+    {
+        /// The thunk the `let` binds.
+        at: ValueId,
+    },
     /// A return waits on its value: checked against the result of the returner
     /// it is checked against, or synthesised for the pure returner the return
     /// then synthesises.
@@ -2694,6 +2705,7 @@ impl Frame
             Self::StaticOperand { .. } => FrameRole::StaticOperand,
             Self::Unknowing(_) => FrameRole::Unknowing,
             Self::ThunkBody => FrameRole::ThunkBody,
+            Self::LetThunk { .. } => FrameRole::LetThunk,
             Self::ReturnValue => FrameRole::ReturnValue,
             Self::InjectionPayload => FrameRole::InjectionPayload,
             Self::Spliced { .. } => FrameRole::Spliced,
@@ -2847,6 +2859,7 @@ impl Frame
             | Self::StaticOperand { .. }
             | Self::Unknowing(_)
             | Self::ThunkBody
+            | Self::LetThunk { .. }
             | Self::ReturnValue
             | Self::InjectionPayload
             | Self::Spliced { .. }
@@ -3272,6 +3285,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::UnivalenceChecked { .. }
                 | Frame::ReturnedEndpoint { .. }
                 | Frame::Ran { .. }
+                | Frame::LetThunk { .. }
                 | Frame::NestedCall { .. }
                 | Frame::ElementTransportPath { .. }
                 | Frame::ElementTransportMotive { .. }
@@ -6063,10 +6077,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: a force awaits its value's synthesised type, and a force of a
     ///   nested call the call's, read under [`Read::Head`] so a second frame
     ///   waits, the run's (#3935); a return awaits its value's; an application
-    ///   awaits its head's; a bind awaits its bound computation's; a transport
-    ///   awaits its path's, a data case or a split its scrutinee's and a
-    ///   projection its record's, each read by [`Self::unsuspended`], so a
-    ///   computation nested there waits a second frame, the run's; an
+    ///   awaits its head's; a bind awaits its bound computation's, and a bind
+    ///   of a `let`'s value waits two frames further, its run's or its thunk's;
+    ///   a transport awaits its path's, a data case or a split its scrutinee's
+    ///   and a projection its record's, each read by [`Self::unsuspended`], so
+    ///   a computation nested there waits a second frame, the run's; an
     ///   ascription forms its stated type, checks its body against it and
     ///   synthesises it; a hole and a mark have the unknown computation type,
     ///   minted, and ascend.
@@ -6087,7 +6102,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_)))
             && (self.frames.len().checked_sub(before) == Some(1)
                 || (self.frames.len().checked_sub(before) == Some(2)
-                    && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { .. })))))
+                    && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { .. })))
+                || (self.frames.len().checked_sub(before) == Some(3)
+                    && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { read: Read::Let, .. } | Frame::LetThunk { .. })))))
             || (matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))) && self.frames.len() == before),
     )]
     fn synthesise_comp(
@@ -6661,10 +6678,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: `bound` and `body` are the two halves of the bind `at`.
     /// - ensures: for such a discarded case checked against a returner, the
     ///   case's check against the unit's returner at that returner's row is the
-    ///   next goal, with the bind's frame awaiting it; otherwise the bound
-    ///   computation's synthesis is the next goal, with the bind's frame
-    ///   awaiting its type; either frame holds the direction the body is judged
-    ///   in.
+    ///   next goal, with the bind's frame awaiting it; for a bound computation
+    ///   that returns a nested computation, a `let` with no stated type, the
+    ///   nested computation's synthesis is the next goal, a returner run and
+    ///   any other type suspended, with the return's frame and the bind's
+    ///   awaiting it; for one that returns a thunk, the thunk's body's
+    ///   synthesis is the next goal, the name bound to the thunk of its type;
+    ///   otherwise the bound computation's synthesis is the next goal, with the
+    ///   bind's frame awaiting its type; either bind frame holds the direction
+    ///   the body is judged in.
     /// - provides: the one rule both computation faces share.
     /// - fails: the expected type's unfolding refusal.
     /// - panics: none.
@@ -6684,14 +6706,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_whose_type_mentions_its_binder_is_refused`
     /// - witness: `judgement::tests::a_discarded_case_checks_at_the_expected_row`
+    /// - witness: `judgement::tests::a_let_suspends_a_nested_computation_that_is_no_returner`
     #[spec(
         captures: before = self.frames.len(),
-        ensures: |ret| ret.is_err() || (self.frames.len().checked_sub(before) == Some(1)
-            && match self.frames.last().map(|waiting| waiting.frame) {
-                | Some(Frame::BindChecked { against, .. }) => ret == Ok(Step::Descend(Goal::Computation { term: bound, direction: Direction::Check(against) })),
-                | Some(Frame::BindBound { .. }) => ret == Ok(Step::Descend(Goal::Computation { term: bound, direction: Direction::Synthesise })),
-                | _ => false,
-            }),
+        ensures: |ret| ret.is_err() || match self.frames.get(before).map(|waiting| waiting.frame) {
+            | Some(Frame::BindChecked { against, .. }) => self.frames.len() == before.saturating_add(1) && ret == Ok(Step::Descend(Goal::Computation { term: bound, direction: Direction::Check(against) })),
+            | Some(Frame::BindBound { .. }) if self.frames.len() == before.saturating_add(1) => ret == Ok(Step::Descend(Goal::Computation { term: bound, direction: Direction::Synthesise })),
+            | Some(Frame::BindBound { .. }) => self.frames.len() == before.saturating_add(3) && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { read: Read::Let, .. } | Frame::LetThunk { .. })),
+            | _ => false,
+        },
     )]
     fn bind(
         &mut self,
@@ -6722,6 +6745,40 @@ impl<'context, 'arena> Machine<'context, 'arena>
             body,
             direction,
         });
+        // A `let` with no stated type returns what it binds: a returner
+        // runs, and a computation of any other type is suspended. A thunk
+        // it binds, the suspension elaborated or one written, is the thunk of
+        // its body, and what it captures is fenced as any thunk's is.
+        let arena = self.context.arena();
+        if let Some(&Computation::Return(value)) = arena.computation(bound) {
+            match arena.value(value) {
+                Some(&Value::Nested(nested)) => {
+                    self.wait(Frame::ReturnValue);
+                    self.wait(Frame::Ran {
+                        at: value,
+                        read: Read::Let,
+                    });
+                    return Ok(Step::Descend(Goal::Computation {
+                        term: nested,
+                        direction: Direction::Synthesise,
+                    }));
+                },
+                Some(&Value::Thunk(suspended)) => {
+                    self.fence(Goal::Value {
+                        term: value,
+                        direction: Direction::Synthesise,
+                    })?;
+                    self.wait(Frame::ReturnValue);
+                    self.wait(Frame::LetThunk { at: value });
+                    self.forming(value);
+                    return Ok(Step::Descend(Goal::Computation {
+                        term: suspended,
+                        direction: Direction::Synthesise,
+                    }));
+                },
+                _ => {},
+            }
+        }
 
         Ok(Step::Descend(Goal::Computation {
             term: bound,
@@ -9144,6 +9201,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.native_types.truncate(base);
                 self.composed(at, &types)
             },
+            (Frame::LetThunk { at }, Produced::CompType(synthesised)) => {
+                self.formed();
+                let suspended = self.context.arena_mut().value_type_thunk(synthesised);
+                self.keep_value_typing(at, suspended);
+                Ok(Step::Ascend(Produced::ValueType(suspended.into())))
+            },
             (Frame::Ran { at, read }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 let (result, purity) = match comp_type_view(self.context.arena(), head)? {
@@ -9162,9 +9225,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         else {
                             return Err(CheckRefusal::MachineInvariant);
                         };
-                        // A head call of any other type is suspended, and the
-                        // force reads it in place: a curried call stays one.
-                        if read == Read::Head {
+                        // A head call or a call a `let` binds of any other type
+                        // is suspended, and the force reads a head in place: a
+                        // curried call stays one.
+                        if matches!(read, Read::Head | Read::Let) {
                             self.context.record_nesting(at, Nesting::Suspended);
                             let suspended = self.context.arena_mut().value_type_thunk(synthesised);
                             self.keep_value_typing(at, suspended);
@@ -9195,7 +9259,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 // A value read without a goal of its own keeps its typing here,
                 // at what it returns: the patterns of a case on it are read at
                 // that type.
-                if matches!(read, Read::Unsuspended | Read::Head) {
+                if matches!(read, Read::Unsuspended | Read::Head | Read::Let) {
                     self.keep_value_typing(at, result);
                 }
                 Ok(Step::Ascend(Produced::ValueType(result.into())))
@@ -10230,6 +10294,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::CompBridge { .. }
                 | Frame::ReturnedEndpoint { .. }
                 | Frame::Ran { .. }
+                | Frame::LetThunk { .. }
                 | Frame::NestedCall { .. }
                 | Frame::BindBound { .. }
                 | Frame::Project { .. }

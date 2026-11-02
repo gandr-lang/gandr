@@ -531,8 +531,8 @@ pub def restFree(
   ),
   wf : chain(rest, blocks)
 } {
-  run set <- nthSet(heads, order, headOf(rest), y);
-  run p <- set(h);
+  let set = nthSet(heads, order, headOf(rest), y);
+  let p = set(h);
   #{head = p, wf = link}
 }
 

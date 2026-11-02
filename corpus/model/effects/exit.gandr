@@ -53,7 +53,7 @@ def summed() -> Integer {
   } with {
     pure(x) => pure x + 100,
     oper exit(code, k) => {
-      run rest <- k(unit);
+      let rest = k(unit);
       pure rest + code
     }
   }
@@ -70,7 +70,7 @@ def printed() -> Integer {
   } with {
     pure(x) => pure 0,
     oper print(line, k) => {
-      run rest <- k(unit);
+      let rest = k(unit);
       pure rest + 1
     }
   }

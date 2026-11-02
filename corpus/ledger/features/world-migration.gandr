@@ -16,7 +16,7 @@ import "../../model/worlds/seat-and-operator.gandr";
 /// The seat holds the work done, and a second migration answers the progress there.
 @[ entry((operator, seat, seat)), runs("#{.done = 3, .left = 4}") ]
 def progress() -> #{done : Integer, left : Integer} {
-  run held : Integer at seat <- migrate [seat] { (hold 3) };
+  let held : Integer at seat = migrate [seat] { (hold 3) };
   leta done = held;
   migrate [seat] { pure #{done = done, left = 7 - done} }
 }

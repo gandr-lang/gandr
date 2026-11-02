@@ -5,7 +5,7 @@
 /// #1831: whether a band's bounds stand low below high, the high one at most
 /// one, in millionths; `false` stands as the answer of an arm.
 def banded(low : Integer, high : Integer) -> Bool {
-  run below <- low < high;
+  let below = low < high;
   match below {
     true => high <= 1000000,
     false => false

@@ -110,7 +110,7 @@ def descendRuns() -> Integer {
   } with {
     pure(x) => pure x,
     oper print(line, k) => {
-      run n <- k(unit);
+      let n = k(unit);
       pure (n + 1)
     }
   }

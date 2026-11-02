@@ -1,4 +1,4 @@
-// The typed bind `run x : A <- c`: the annotation states the type the
+// The typed bind `let x : A = c`: the annotation states the type the
 // computation returns, so a computation that only checks may be bound.
 
 /// The naturals the bound computations return.
@@ -9,7 +9,7 @@ data Nat : Type where {
 
 /// A return checks only against a type, and the annotation states it.
 def next(n : Nat) -> Nat {
-  run m : Nat <- pure Succ(n);
+  let m : Nat = Succ(n);
   Succ(m)
 }
 
@@ -19,13 +19,13 @@ def three() -> Nat { next(Succ(Zero)) }
 
 /// A suspended function is named at its written type and called.
 def apply(n : Nat) -> Nat {
-  run f : Nat => Nat <- pure fun (x) { Succ(x) };
+  let f : Nat => Nat = fun (x) { Succ(x) };
   f(n)
 }
 
 /// A computation that returns a `Nat` is no `Unit`.
 @[ refuses("TypeMismatch") ]
 def mistyped(n : Nat) -> Nat {
-  run m : Unit <- pure Succ(n);
+  let m : Unit = Succ(n);
   n
 }

@@ -10,7 +10,7 @@
 //! longer matches and a by-design kind whose every node has its entry. A few
 //! nodes are by design whatever their kind, by where they stand — inside an
 //! attribute, inside a declaration the lowering or the checker refused,
-//! heading a call, or the value a `run _ <-` discards — and `Placed` names
+//! heading a call, or the value a `let _ = ` discards — and `Placed` names
 //! them.
 //!
 //! Every pull-request profile walks a stated sample, where an owed count is
@@ -411,8 +411,8 @@ enum Placed
     /// one lazy product of every operand, however it associates, and the
     /// outermost link answers.
     Chained,
-    /// The value a `run _ <- c` discards, where `c` gives it with `pure`:
-    /// `r` in `run _ <- case p { Succ(r) => pure r, … }`, or a `run x <- c`
+    /// The value a `let _ = c` discards, where `c` gives it with `pure`:
+    /// `r` in `let _ = case p { Succ(r) => pure r, … }`, or a `let x = c`
     /// whose binder no later statement of the block reads (#2325). The
     /// lowering commutes the bind into each arm of `c` and drops a value
     /// nothing reads, so no core node holds it for a judgement to type; the
@@ -827,7 +827,7 @@ fn gated(
             .get(usize::from(span.start()) .. usize::from(span.end()))
             .unwrap_or("");
         // A bind's tiles stand among its block's children: the computation
-        // after `run _ <-` is discarded, and so is the one after a named
+        // after `let _ = ` is discarded, and so is the one after a named
         // binder no later child of the block reads (#2325); the one after a
         // binder the rest reads is kept, and every other child stands as its
         // parent does.
@@ -845,7 +845,7 @@ fn gated(
                     .map_or("", |&before| spelled(Some(before)))
             };
             let discarded = bound.take().unwrap_or(discarding);
-            if spelled(Some(child)) == "<-" && previous(2) == "run" {
+            if spelled(Some(child)) == "=" && previous(2) == "let" {
                 let binder = previous(1);
                 let read = children
                     .get(at.saturating_add(2) ..)

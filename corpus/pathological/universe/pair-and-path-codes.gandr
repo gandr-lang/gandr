@@ -37,7 +37,7 @@ rec {
     match u {
       NatR => return Nat,
       SigR(a, b) => {
-        run t <- elSigRun[<](a);
+        let t = elSigRun[<](a);
         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
       }
     }

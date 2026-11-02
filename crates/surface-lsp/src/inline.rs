@@ -282,7 +282,7 @@ pub enum Category
 {
     /// A value: a returned, bound or passed expression.
     Value,
-    /// A computation: a body, a statement, or what `run` binds.
+    /// A computation: a body, a statement, or what `let` binds.
     Computation,
     /// A type.
     Type,
@@ -305,8 +305,8 @@ impl Category
     ///
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] after `{`, `;`,
-    ///   `<-`, `=>`, `become`, `run` or `#!{`, [`Category::Value`] after any
-    ///   other tile, an unknown mold included; every other sort's own category.
+    ///   `=>`, `become`, `run` or `#!{`, [`Category::Value`] after any other
+    ///   tile, an unknown mold included; every other sort's own category.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -326,7 +326,7 @@ impl Category
             Sort::Expression => {
                 let before = grammar.mold(after).map(|def| def.label);
                 match before {
-                    Ok("{" | ";" | "<-" | "=>" | "become" | "run" | "#!{") => Self::Computation,
+                    Ok("{" | ";" | "=>" | "become" | "run" | "#!{") => Self::Computation,
                     Ok(_) | Err(_) => Self::Value,
                 }
             },
@@ -2401,11 +2401,7 @@ mod tests
         for (before, after, first) in [
             ("def x = thunk { return", " }", " ${1:value}"),
             ("def x = thunk {", " }", " ${1:computation}"),
-            (
-                "def f(x: Nat) -> -F Nat { run y <-",
-                "",
-                " ${1:computation}; \\}",
-            ),
+            ("def f(x: Nat) -> -F Nat { let y = ", "", "${1:value}; \\}"),
             ("def g :", "", " ${1:type};"),
             ("def g : Integer ≃", "", " ${1:type};"),
             ("def g : Integer <~>", "", " ${1:type};"),

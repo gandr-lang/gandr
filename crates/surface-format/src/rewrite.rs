@@ -103,7 +103,7 @@ pub enum RewriteName
     /// The value-function alias at its shortest: `(A) => B` and `A => B`, a
     /// binder nothing later reads left out; only the sugared form moves it.
     ShortAlias,
-    /// A `run` statement that only sequences a call: `run x <- c ; f(x)` and
+    /// A `let` statement that only sequences a call: `let x = c ; f(x)` and
     /// `f(c)`, where the lowering finds the binder read once, first; only the
     /// sugared form moves it, and only beside a checker that elaborates both.
     LinearRun,
@@ -395,7 +395,7 @@ pub const REWRITES: [Rewrite; 33] = [
         name: RewriteName::LinearRun,
         direction: Direction::Sugar,
         mold: MoldName("block"),
-        from: Spelling("run x <- c ; f(x)"),
+        from: Spelling("let x = c ; f(x)"),
         to: Spelling("f(c)"),
         enabled: Enabled::On,
     },
@@ -893,7 +893,7 @@ struct Respelling<'run, 'source>
     motives: &'source Motives,
     /// The `return` forms written as their value.
     tails: &'source Tails,
-    /// The `run` statements written away, each call at its binder's read.
+    /// The `let` statements written away, each call at its binder's read.
     runs: &'source Runs,
     /// Where a thunk is left to the checker.
     thunks: &'source Thunks,
@@ -1061,7 +1061,7 @@ enum Visit
 
 /// What one formatting's rewrites read: the rewrites chosen, the spans they
 /// do not enter, the motives of the path composites the lowering derived, the
-/// tails whose `return` it would infer, the `run` statements that only
+/// tails whose `return` it would infer, the `let` statements that only
 /// sequence a call, where a thunk is left to the checker, and the reducts the
 /// checker applies.
 #[derive(Clone, Copy, Debug)]
@@ -1076,7 +1076,7 @@ pub struct Rewrites<'run, 'source>
     pub motives: &'source Motives,
     /// The `return` forms written as their value.
     pub tails: &'source Tails,
-    /// The `run` statements written away, each call at its binder's read.
+    /// The `let` statements written away, each call at its binder's read.
     pub runs: &'source Runs,
     /// Where a thunk is left to the checker.
     pub thunks: &'source Thunks,
@@ -1691,7 +1691,7 @@ impl<'source> Respelling<'_, 'source>
     /// and a parenthesis around one alone dropped once the operand binds
     /// tightest or, where its own position admits a band tighter than an
     /// arrow, fits that band. Where the form is `open` to rewrites and opens a
-    /// block, each `run` statement the lowering lists as linear is written
+    /// block, each `let` statement the lowering lists as linear is written
     /// away ([`Self::linear`]); where it is open and the explicit form writes
     /// reducts, each operand the checker applies a reduct to is written as the
     /// reduct's call.
@@ -1918,7 +1918,7 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Write away, in `leaves`, the leaves of a form whose parts are `parts`,
-    /// each `run x <- c ;` statement among the parts whose call the lowering
+    /// each `let x = c ;` statement among the parts whose call the lowering
     /// lists as a linear run: the call's leaves written in place of the
     /// binder's read, which stands in a later part, and the statement left
     /// out. `starts` holds, for each part, where its layout and its own leaves
@@ -1963,11 +1963,11 @@ impl<'source> Respelling<'_, 'source>
                     Child::Node(at) => self.extents.get(&at).copied()?,
                     Child::Leaf(leaf) => leaf.span,
                 };
-                (own(first, "run")
+                (own(first, "let")
                     // The binder is a tile of a rule the table reads no
                     // rewrite of, so it may read as one of the form's own.
                     && !matches!(parts.get(first.checked_add(1)?)?.role, Role::Comment)
-                    && own(first.checked_add(2)?, "<-")
+                    && own(first.checked_add(2)?, "=")
                     && own(first.checked_add(4)?, ";")
                     && self.runs.calls().binary_search(&called).is_ok())
                 .then_some((first, called))
@@ -1980,7 +1980,7 @@ impl<'source> Respelling<'_, 'source>
         for &(first, called) in statements.iter().rev() {
             let after = first.saturating_add(5);
             let adjacent = following.map_or_else(
-                || !(after .. parts.len()).any(|part| own(part, "run")),
+                || !(after .. parts.len()).any(|part| own(part, "let")),
                 |next| {
                     parts.get(after .. next).is_some_and(|between| {
                         between

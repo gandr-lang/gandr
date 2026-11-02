@@ -13,7 +13,7 @@
 /// qualifies the path, and the path answers for it (#1170).
 @[ checks ]
 def quotientOf(c : Integer) -> Integer {
-  run lead <- int.div(c, 64);
+  let lead = int.div(c, 64);
   lead
 }
 
@@ -21,7 +21,7 @@ def quotientOf(c : Integer) -> Integer {
 /// first string's characters, then the second's.
 @[ runs("\"types are machines\"") ]
 def stated() -> String {
-  run joined <- string.append("types are ", "machines");
+  let joined = string.append("types are ", "machines");
   joined
 }
 
@@ -29,6 +29,6 @@ def stated() -> String {
 /// exactly when their bytes are, which these are not.
 @[ runs("+{.1 = unit}") ]
 def compared() -> Bool {
-  run equal <- string.eq("types are ", "machines");
+  let equal = string.eq("types are ", "machines");
   equal
 }

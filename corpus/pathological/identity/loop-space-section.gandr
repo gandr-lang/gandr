@@ -52,6 +52,6 @@ def rec forged(c : Circle) -> Path(Circle, spin(wind(c)), c) {
   match c {
     Base => here(Base),
     Loop(x) => forged[<](x),
-    Unloop(x) => { run p <- forged[<](x); cong(unaround, p) }
+    Unloop(x) => { let p = forged[<](x); cong(unaround, p) }
   }
 }

@@ -6,8 +6,8 @@ def one() -> -F Integer {
 
 @[ refuses("DependentBind") ]
 def bound() -> -F Integer {
-  run p <- {
-    run n <- one();
+  let p = {
+    let n = one();
     pure here(n)
   };
   pure 1

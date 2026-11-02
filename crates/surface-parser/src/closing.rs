@@ -38,7 +38,7 @@
 //! context does not admit the tile directly, and after the last tile when it
 //! ends the form only once a required tail is filled; the first hole is dropped
 //! when anything already stands above the frontier. So `( x` expects `)`, `def
-//! x = [1, 2` expects `]` and `;`, and `run y <-` inside a block expects an
+//! x = [1, 2` expects `]` and `;`, and `let y = ` inside a block expects an
 //! expression, `;` and `}`. An operator's missing operand adds no hole when a
 //! form is open where the operand goes, since closing that form supplies it;
 //! its obligation still stands, keeping the bound above.
@@ -53,7 +53,7 @@
 //!
 //! - Alternatives: the first `≐`-successor in mold order, which names an
 //!   optional tile as often as the closer (`@[` after `def x`, `,` in a
-//!   parameter list, `;` after `run y <-` with no expression before it); a walk
+//!   parameter list, `;` after `let y =` with no expression before it); a walk
 //!   that commits a copy and reads its ghost closes, which names closers but
 //!   not the keywords and holes between them.
 //! - Reversal: the bound keeps one closing because the molder ranks by its
@@ -1207,7 +1207,7 @@ mod tests
             ]),
             ("def f = [1, 2", LeadingSlot::Occupied, vec![tile("]")]),
             (
-                "def f(x: Nat) -> -F Nat { run y <-",
+                "def f(x: Nat) -> -F Nat { let y =",
                 LeadingSlot::Empty,
                 vec![hole(Sort::Expression), tile(";"), tile("}")],
             ),

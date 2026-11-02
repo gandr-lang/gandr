@@ -2353,7 +2353,7 @@ fn ring(arena: &mut CoreArena) -> gandr_core_term::effect::EffectSig
         .ring
 }
 
-/// The program `run b <- alloc(0) ; body` over `ring`, with `b` placed live
+/// The program `let b = alloc(0) ; body` over `ring`, with `b` placed live
 /// over `body`, which `rest` mints from the placement's linear variable; and
 /// the placement.
 ///

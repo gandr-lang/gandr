@@ -3385,7 +3385,7 @@ fn share<'source>(
 ///   member judged after a large closure builds tables its own size.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — parameters, `run` binders, pattern variables and lambda
+/// - hypothesis: L3 — parameters, `let` binders, pattern variables and lambda
 ///   binders used and unused, a binder read only in a type, a constructor's
 ///   telescope, a handled capability, a placement's binders, refused
 ///   declarations' binders before and after their refusal, and a consumable
@@ -4264,7 +4264,7 @@ pub fn checking_context<'arena>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `run` statement read once first and the call written at
+/// - hypothesis: L3 — a `let` statement read once first and the call written at
 ///   its read elaborate to one body, so the sugared form writes it away, and so
 ///   do a `thunk { e }` and the `e` the checker wraps in one where it checks
 ///   `e` against a thunk type, and a model and the reduct's call the checker
@@ -6767,10 +6767,10 @@ def delivered() -> -F Unit {
              def called_elided(n : Integer) -> -F Integer { kept(n) }\n\
              def called_printed : +U (Integer -> -F Integer) ;\n\
              def called_printed = thunk { fun (a) { kept(a) } } ;\n\
-             def sequenced(n : Integer) -> -F Integer { run m <- kept(n) ; become kept(m) }\n\
-             def sequenced_elided(n : Integer) -> -F Integer { run m <- kept(n) ; kept(m) }\n\
+             def sequenced(n : Integer) -> -F Integer { let m = kept(n) ; become kept(m) }\n\
+             def sequenced_elided(n : Integer) -> -F Integer { let m = kept(n) ; kept(m) }\n\
              def sequenced_printed : +U (Integer -> -F Integer) ;\n\
-             def sequenced_printed = thunk { fun (a) { run b <- kept(a) ; kept(b) } } ;\n\
+             def sequenced_printed = thunk { fun (a) { let b = kept(a) ; kept(b) } } ;\n\
              def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept(n) } }\n\
              def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept(n) } }\n\
              def suspended_printed : +U (Integer -> -F (+U (-F Integer))) ;\n\
@@ -6825,7 +6825,7 @@ def delivered() -> -F Unit {
         for (written, expected) in [
             ("kept", "fun (a) { a }"),
             ("called", "fun (a) { kept(a) }"),
-            ("sequenced", "fun (a) { run b <- kept(a) ; kept(b) }"),
+            ("sequenced", "fun (a) { let b = kept(a) ; kept(b) }"),
             ("suspended", "fun (a) { thunk { kept(a) } }"),
         ] {
             let (elided, restated) = (format!("{written}_elided"), format!("{written}_printed"));
@@ -7077,7 +7077,7 @@ def delivered() -> -F Unit {
         let grammar = grammar();
         let source = SourceText::from(
             "def kept(n : Integer) -> -F Integer { n }\n\
-             def bound(n : Integer) -> -F Integer { run m <- kept(n) ; kept(m) }\n\
+             def bound(n : Integer) -> -F Integer { let m = kept(n) ; kept(m) }\n\
              def nested(n : Integer) -> -F Integer { kept(kept(n)) }\n\
              def nested_printed : +U (Integer -> -F Integer) ;\n\
              def nested_printed = thunk { fun (a) { kept(kept(a)) } } ;\n\
@@ -7136,7 +7136,7 @@ def delivered() -> -F Unit {
             (presentation.to_string(), presentation.fidelity())
         };
         for (name, expected) in [
-            ("bound", "fun (a) { run b <- kept(a) ; kept(b) }"),
+            ("bound", "fun (a) { let b = kept(a) ; kept(b) }"),
             ("nested", "fun (a) { kept(kept(a)) }"),
             ("nested_printed", "fun (a) { kept(kept(a)) }"),
             ("written", "fun (a) { kept(run kept(a)) }"),
@@ -7234,7 +7234,7 @@ def delivered() -> -F Unit {
             .within(&context);
         for (source, expected) in [
             (plain.restoring(&restoration), "fun (a) { S(S(dbl(a))) }"),
-            (plain, "fun (a) { run b <- dbl(a) ; S(S(b)) }"),
+            (plain, "fun (a) { let b = dbl(a) ; S(S(b)) }"),
         ] {
             let presentation = present_computation(
                 &source,
@@ -7310,11 +7310,11 @@ def delivered() -> -F Unit {
         assert_eq!(
             unused(
                 "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef pick(n : Nat, \
-                 m : Nat) -> -F Nat {\n  run k <- pure Succ(n) ;\n  match n {\n    Zero => n,\n    \
+                 m : Nat) -> -F Nat {\n  let k = Succ(n) ;\n  match n {\n    Zero => n,\n    \
                  Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fun (y) { Zero } } ;\n"
             ),
             ["5:m", "6:k", "9:p", "13:y"],
-            "the unused parameter, `run` binder, pattern variable and lambda binder, the last in \
+            "the unused parameter, `let` binder, pattern variable and lambda binder, the last in \
              the second half of a name declared in two; not the used parameter nor the \
              constructor's telescope binder"
         );
@@ -7345,10 +7345,10 @@ def delivered() -> -F Unit {
         assert_eq!(
             unused(&misused),
             [
-                declared(&misused, "run first <-", "first"),
-                declared(&misused, "run copied : Buf <-", "copied")
+                declared(&misused, "let first = r.free", "first"),
+                declared(&misused, "let copied : Buf =", "copied")
             ],
-            "each misused buffer is refused, yet a `run` binder no use reads may be dropped, \
+            "each misused buffer is refused, yet a `let` binder no use reads may be dropped, \
              even one whose own head the checker refused (#1504)"
         );
         let flow = corpus("surface/control-flow.gandr");

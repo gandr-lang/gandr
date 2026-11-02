@@ -4,8 +4,8 @@
 /// forever, so the row states `Div` (#1481).
 @[ refuses("HeldCaptured") ]
 def nested() -> [Div] Integer {
-  hold n = 0;
-  hold i = 3;
+  var n = 0;
+  var i = 3;
   while i > 0 {
     while n < 3 {
       access n as v { resume(v, v + 1) }

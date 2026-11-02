@@ -7,14 +7,14 @@
 13:18-13:21 ) -> ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-13:28
 13:23-13:26 Bool ⇒ Bool : Type @13:23-13:27
 13:28-13:28 { ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
-14:3-14:5 run ⇒ -F Bool @14:3-14:6
+14:3-14:5 let ⇒ -F Bool @14:3-14:6
 14:7-14:7 c ⇒ c : Bool @14:7-14:8
-14:9-14:10 <- ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
-14:12-14:19 exchange ⇒ exchange : Bool => Bool @14:12-14:20
-14:20-14:20 ( ⇒ -F Bool @14:12-14:23
-14:21-14:21 b ⇒ b : Bool @14:21-14:22
-14:22-14:22 ) ⇒ -F Bool @14:12-14:23
-14:23-14:23 ; ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
+14:9-14:9 = ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
+14:11-14:18 exchange ⇒ exchange : Bool => Bool @14:11-14:19
+14:19-14:19 ( ⇒ -F Bool @14:11-14:22
+14:20-14:20 b ⇒ b : Bool @14:20-14:21
+14:21-14:21 ) ⇒ -F Bool @14:11-14:22
+14:22-14:22 ; ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
 15:3-15:10 exchange ⇒ exchange : Bool => Bool @15:3-15:11
 15:11-15:11 ( ⇒ -F Bool @15:3-15:24
 15:12-15:19 exchange ⇒ exchange : Bool => Bool @15:12-15:20

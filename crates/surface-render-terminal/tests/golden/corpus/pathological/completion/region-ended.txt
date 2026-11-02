@@ -2,9 +2,9 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
    ╭▸ corpus/pathological/completion/region-ended.gandr:19:3
    │
 16 │ ┌ def regionEnded() -> Unit {
-17 │ │   hold buf = Ring.read;
-   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
-18 │ │   run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } };
+17 │ │   var buf = Ring.read;
+   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
+18 │ │   let buffer : (() => Ring.Sqe) at buf = access shared buf as w { pure thunk { pure w } };
    │ │   ─── checked against `-F Unit`; while checking the body under this binding; binds buffer : (() => Ring.Sqe) at buf
 19 │ │   let ring = fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {
    │ │   ━━━ a value kept in the scope's own region

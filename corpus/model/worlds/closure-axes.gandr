@@ -31,7 +31,7 @@ def suspendedBack() -> () => Seat.Report {
 @[ entry((operator, seat)), runs("thunk { 3 + 1 }") ]
 def counted() -> () => Integer {
   migrate [seat] {
-    run n <- pure 3;
+    let n = 3;
     pure thunk { pure n + 1 }
   }
 }
@@ -41,7 +41,7 @@ def counted() -> () => Integer {
 @[ entry((operator, seat)), runs("thunk { \"progress\" }") ]
 def reported() -> () => Seat.Report {
   migrate [seat] {
-    run report <- pure Seat.progress;
+    let report = Seat.progress;
     pure thunk { pure report }
   }
 }
@@ -50,7 +50,7 @@ def reported() -> () => Seat.Report {
 @[ entry((operator, seat)), runs("thunk { 3 }") ]
 def pointing() -> () => (Integer at seat) {
   migrate [seat] {
-    run held : Integer at seat <- (hold 3);
+    var held : Integer at seat = 3;
     pure thunk { pure held }
   }
 }
@@ -59,8 +59,8 @@ def pointing() -> () => (Integer at seat) {
 /// with its capture.
 @[ entry((operator, seat)), runs("4") ]
 def forced() -> Integer {
-  run later : () => Integer <- migrate [seat] {
-    run n <- pure 3;
+  let later : () => Integer = migrate [seat] {
+    let n = 3;
     pure thunk { pure n + 1 }
   };
   force later
@@ -69,8 +69,8 @@ def forced() -> Integer {
 /// A function over the seat's integer applies at the operator.
 @[ entry((operator, seat)), runs("5") ]
 def applied() -> Integer {
-  run bump : Integer => Integer <- migrate [seat] {
-    run n <- pure 3;
+  let bump : Integer => Integer = migrate [seat] {
+    let n = 3;
     pure thunk { fun (x) { pure x + n } }
   };
   bump(2)

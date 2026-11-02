@@ -155,7 +155,7 @@
 //! body ends is written as its value, `n`, never `return n`; any other
 //! computation there bare, `f(n)`, never `become f(n)`; a returner anywhere
 //! else is `pure v`, since a written `return` there would leave the body. A
-//! bind is `run x <- c ; rest`, its statements one per line when the body
+//! bind is `let x = c ; rest`, its statements one per line when the body
 //! does not fit; a force is `force v`, and a force at a call's head is the
 //! value it forces, `f(a, b)`, as the surface writes a call; a lambda is
 //! `fun (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
@@ -938,11 +938,11 @@ where
 /// - ensures: the root written as the body of a definition: a returner where a
 ///   path through the body ends written as its value and any other computation
 ///   there bare, never `return` or `become`; a returner anywhere else `pure v`;
-///   a bind `run x <- c ; rest`, the computation it runs a block `{ … }` when
-///   it is itself a bind; a force `force v`, a call `f(a, b)` with a forced
-///   value at its head written as the value; a lambda `fun (x) { c }` and a
-///   thunk `thunk { c }`; binders named as a dependent arrow's are; values and
-///   types inside as [`present_value`] and [`present_type`] write them, but for
+///   a bind `let x = c ; rest`, the computation it runs a block `{ … }` when it
+///   is itself a bind; a force `force v`, a call `f(a, b)` with a forced value
+///   at its head written as the value; a lambda `fun (x) { c }` and a thunk
+///   `thunk { c }`; binders named as a dependent arrow's are; values and types
+///   inside as [`present_value`] and [`present_type`] write them, but for
 ///   thunks. Every computation without a surface spelling here is `?`,
 ///   approximate. The body's statements break together: on one line when it
 ///   fits the page, one per line otherwise, a block's body two columns in.

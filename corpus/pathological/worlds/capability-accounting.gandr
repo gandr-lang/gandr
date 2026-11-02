@@ -11,7 +11,7 @@ import "../../model/worlds/seat-and-operator.gandr";
 @[ refuses("CapabilityMissing") ]
 @[ entry((operator, seat)) ]
 def twice() -> Seat.Report {
-  run first : Seat.Report <- migrate [seat] { pure Seat.progress };
+  let first : Seat.Report = migrate [seat] { pure Seat.progress };
   migrate [seat] { pure first }
 }
 

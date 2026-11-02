@@ -54,8 +54,7 @@ pub theory StatePutLaws where {
 /// Reading twice is reading once at the same state. The inner `get` is an
 /// instance of the rule's own left side through its pattern, and both
 /// reducts read once and continue at that state three times (#2116). A
-/// scope over this theory runs its subject normalised by the rule: `run a <-
-/// st.get(); run b <- st.get(); pure a + b` reads once, `run a <- st.get();
+/// scope over this theory runs its subject normalised by the rule: `let a = /// st.get(); let b = st.get(); pure a + b` reads once, `let a = st.get();
 /// pure a + a` with `b` bound to `a` (`state-laws.gandr`'s `readTwice`).
 pub theory StateGetGet where {
   sort S : Type+;

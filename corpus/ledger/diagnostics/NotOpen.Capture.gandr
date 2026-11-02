@@ -19,7 +19,7 @@ world seat;
 @[ entry((operator, seat)) ]
 def pointing() -> () => (Seat.Dispatch at seat) {
   migrate [seat] {
-    run held : Seat.Dispatch at seat <- (hold Seat.task);
+    var held : Seat.Dispatch at seat = Seat.task;
     pure thunk { pure held }
   }
 }

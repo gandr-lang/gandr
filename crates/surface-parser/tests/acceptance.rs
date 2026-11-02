@@ -428,34 +428,21 @@ fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn bind_statement_uses_run_keyword() -> Result<(), Box<dyn Error>>
+fn retired_binding_spellings_require_repair() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let renamed = ["def bind() -> -F Integer { run value <- action; pure value }"];
-    for src in renamed {
+    for src in [
+        "def bind() -> -F Integer { run value <- action; pure value }",
+        "def bind() -> -F Integer { run value : -F Integer <- action; pure value }",
+        "let value <- action;",
+        "value <- action;",
+    ] {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
-            bool::from(result.is_clean()),
-            "`run PAT <- E;` molds clean in {src:?}; obligations: {:?}",
-            result
-                .obligations()
-                .iter()
-                .map(|obligation| obligation.class)
-                .collect::<Vec<_>>()
+            !bool::from(result.is_clean()),
+            "the retired binding spelling {src:?} must require repair"
         );
     }
-
-    let retired = parse(pbg, SourceText::from("let value <- action;"))?;
-    assert!(
-        !bool::from(retired.is_clean()),
-        "the retired `let PAT <- E;` spelling must require repair"
-    );
-
-    let bare = parse(pbg, SourceText::from("value <- action;"))?;
-    assert!(
-        !bool::from(bare.is_clean()),
-        "a binding arrow without the `run` lead must require repair"
-    );
     Ok(())
 }
 
@@ -515,32 +502,6 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
         assert!(
             !bool::from(result.is_clean()),
             "an answer type outside its slot must require repair in {src:?}"
-        );
-    }
-    Ok(())
-}
-
-#[test]
-fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
-{
-    // `run PAT : B <- E ;` names the bound computation's type. No pattern form
-    // carries a top-level `:`, so the annotated and bare spellings discriminate
-    // on the tile after the pattern.
-    let pbg = built();
-    let annotated = [
-        "def bind() -> -F Integer { run value : -F Integer <- action; pure value }",
-        "def bind() -> -F Integer { run (left, right) : -F Integer <- action; pure left }",
-    ];
-    for src in annotated {
-        let result = parse(pbg, SourceText::from(src))?;
-        assert!(
-            bool::from(result.is_clean()),
-            "`run PAT : B <- E;` molds clean in {src:?}; obligations: {:?}",
-            result
-                .obligations()
-                .iter()
-                .map(|obligation| obligation.class)
-                .collect::<Vec<_>>()
         );
     }
     Ok(())
@@ -657,7 +618,7 @@ fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn
 }
 
 /// The arrow grid does not disturb the shorter tiles it extends: a case arm's
-/// `=>`, a bind statement's `<-`, and the `<=` / `==` comparisons all still
+/// `=>`, a `let` statement's `=`, and the `<=` / `==` comparisons all still
 /// mold exactly as before. This is the parser half of the lexical check; the
 /// labeler half is
 /// `label::tests::circuit_arrows_munch_past_the_shorter_tiles_they_extend`.
@@ -667,7 +628,7 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let unchanged: &[&str] = &[
         "match x { A => 1, B => 2 }",
-        "def bind() -> -F Integer { run value <- action; pure value }",
+        "def bind() -> -F Integer { let value = action; pure value }",
         "def le() -> -F Boolean { return a <= b }",
         "def eq() -> -F Boolean { return a == b }",
         "def arrow : A -> B;",
@@ -1359,18 +1320,18 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
     Ok(())
 }
 
-/// #1090: a statement that lost its `<-` closes at the next statement
-/// keyword, which starts the next statement. Every obligation the parse owes
-/// lies at or before that keyword. Read as a run-expression inside the broken
-/// statement, the keyword would swallow the next statement and owe its `:`
-/// and `<-` and the handler's `with` after it.
+/// #1090: a statement that lost its `=` closes at the next statement keyword,
+/// which starts the next statement. Every obligation the parse owes lies at or
+/// before that keyword. Read inside the broken statement, the keyword would
+/// swallow the next statement and owe its `:` and `=` and the handler's
+/// `with` after it.
 #[test]
 fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
 {
-    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      run d : Cap {exit} at e pure c ;\n      run f : Cap {exit} at c <- pure e ;\n      return unit\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return unit\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return unit\n  }\n}\n";
+    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return unit\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return unit\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return unit\n  }\n}\n";
     let result = parse(built(), SourceText::from(source))?;
     let next = source
-        .find("run f")
+        .find("let f")
         .ok_or("the next statement is written")?;
     let owed: Vec<_> = result
         .obligations()
@@ -1383,7 +1344,7 @@ fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Er
             )
         })
         .collect();
-    assert!(!owed.is_empty(), "the statement missing its `<-` owes it");
+    assert!(!owed.is_empty(), "the statement missing its `=` owes it");
     assert!(
         owed.iter().all(|&(_, _, end)| end <= next),
         "every obligation lies at or before the next statement's keyword; got {owed:?}"
@@ -2437,25 +2398,24 @@ fn push_prefix<'pbg>(
     state
 }
 
-/// `run` opens a bind statement where `<-` follows its pattern and an inline
-/// run everywhere else — in a statement's expression, in a body, and in an
-/// argument list, where a declaration head would otherwise close the
-/// declaration around it.
+/// `run` is an inline run wherever it stands — at a statement's start, in a
+/// statement's expression, in a body, and in an argument list, where a
+/// declaration head would otherwise close the declaration around it.
 #[test]
-fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn Error>>
+fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     for (src, inline) in [
         (
-            "def g() -> -F Integer { run value <- action; pure value }",
-            [false].as_slice(),
+            "def g() -> -F Integer { run f(x); pure 0 }",
+            [true].as_slice(),
         ),
         ("def g() -> -F Integer { let v = run f(x); pure v }", &[
             true,
         ]),
         (
-            "def g() -> -F Integer { run r <- f(run h(x)); pure g(run f(r), r) }",
-            &[false, true, true],
+            "def g() -> -F Integer { let r = f(run h(x)); pure g(run f(r), r) }",
+            &[true, true],
         ),
         ("def g() -> -F Nat { Succ(run plus(n, p)) }", &[true]),
     ] {
@@ -2477,7 +2437,7 @@ fn run_reads_as_a_bind_or_an_inline_run_by_what_follows() -> Result<(), Box<dyn 
                 _ => None,
             })
             .collect();
-        assert_eq!(read, inline, "{src:?} reads each `run` by what follows it");
+        assert_eq!(read, inline, "{src:?} reads each `run` as an inline run");
     }
     Ok(())
 }

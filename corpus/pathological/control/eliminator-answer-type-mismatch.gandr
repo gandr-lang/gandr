@@ -6,6 +6,6 @@
 /// (#2089).
 @[ refuses("TypeMismatch") ]
 def answered() -> String {
-  run s <- if true -> -F String { pure 1 } else { pure 2 };
+  let s = if true -> -F String { pure 1 } else { pure 2 };
   pure s
 }

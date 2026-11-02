@@ -13,11 +13,11 @@ def rec stores(p : Program) -> Integer {
   match p {
     Done(_x) => 0,
     Get(k) => {
-      run q <- k(0);
+      let q = k(0);
       stores[<](q)
     },
     Put(_t, k) => {
-      run r <- stores[<](k);
+      let r = stores[<](k);
       r + 1
     }
   }

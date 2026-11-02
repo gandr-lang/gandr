@@ -94,8 +94,8 @@ theory StateGetGet where {
 @[ runs("8") ]
 def readTwice() -> Integer {
   handle st : StateGetGet with sort S = Integer {
-    run a <- st.get();
-    run b <- st.get();
+    let a = st.get();
+    let b = st.get();
     pure a + b
   } with {
     pure(x) => pure x,

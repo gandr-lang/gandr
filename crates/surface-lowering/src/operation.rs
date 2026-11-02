@@ -3,7 +3,7 @@
 //! `oper divmod : (m : N, n : N) --> (q : N, r : N)` with its rules is, besides
 //! the frame and the cells [`crate::desc_cells`] admits, a function of the
 //! module: `divmod : +U (N -> N -> -F (N * N))`, called as `divmod(m, n)` from
-//! any later declaration and bound with `run (q, r) <- divmod(m, n);`. The
+//! any later declaration and bound with `let (q, r) = divmod(m, n);`. The
 //! collection pass plans each operation once its family is read; the mint pass
 //! writes the plan into the core arena after the module's other declarations.
 //!

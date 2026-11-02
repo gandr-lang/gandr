@@ -24,7 +24,7 @@ data U : Type where {
 def rec el(u : U) -> -F Type {
   match u {
     NatC => return Nat,
-    Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (+U (x -> -F y)) }
+    Arrow(a, b) => { let x = el[<](a); let y = el[<](b); return (+U (x -> -F y)) }
   }
 }
 

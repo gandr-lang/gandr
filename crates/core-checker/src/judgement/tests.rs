@@ -1914,6 +1914,106 @@ fn a_bind_of_a_non_returner_is_a_shape_mismatch()
     );
 }
 
+/// An unannotated `let` returns what it binds. A nested computation that
+/// returns runs, its name bound to what it returns. Any other computation is
+/// suspended, its name bound to its thunk. The thunk the elaboration leaves
+/// binds the same name at the same type.
+#[test]
+fn a_let_suspends_a_nested_computation_that_is_no_returner()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let arrow = arena.comp_type_arrow(integer, returns_integer);
+    let suspended_arrow = arena.value_type_thunk(arrow);
+    let returns_function = arena.comp_type_returner(suspended_arrow);
+    let suspended_integer = arena.value_type_thunk(returns_integer);
+    let function = arena.value_constant(ConstantIndex::from(0_usize));
+    let produce = arena.value_constant(ConstantIndex::from(1_usize));
+    let partial = arena.computation_force(function);
+    let produced = arena.computation_force(produce);
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let body = arena.computation_return(variable);
+    let let_bound = |arena: &mut CoreArena, value: ValueId| {
+        let returned = arena.computation_return(value);
+        arena.computation_bind(returned, body)
+    };
+    let nested_partial = arena.value_nested(partial);
+    let nested_produced = arena.value_nested(produced);
+    let thunked_partial = arena.value_thunk(partial);
+    let suspends = let_bound(&mut arena, nested_partial);
+    let runs = let_bound(&mut arena, nested_produced);
+    let elaborated = let_bound(&mut arena, thunked_partial);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[suspended_arrow, suspended_integer]);
+    let function_type = form_comp_type(&mut context, returns_function).unwrap();
+    let integer_type = form_comp_type(&mut context, returns_integer).unwrap();
+
+    assert!(
+        check_comp(&mut context, suspends, function_type).is_ok(),
+        "a computation of a function type binds its thunk"
+    );
+    assert_eq!(
+        context.nesting().get(&nested_partial),
+        Some(&crate::nested::Nesting::Suspended),
+        "the bound function is suspended where the let stands"
+    );
+    assert!(
+        check_comp(&mut context, runs, integer_type).is_ok(),
+        "a returner runs, and the name binds what it returns"
+    );
+    assert!(
+        matches!(
+            context.nesting().get(&nested_produced),
+            Some(&crate::nested::Nesting::Ran(_))
+        ),
+        "the bound returner runs where the let stands"
+    );
+    assert!(
+        check_comp(&mut context, elaborated, function_type).is_ok(),
+        "the thunk the elaboration leaves binds at the type the suspension gave"
+    );
+    assert!(
+        check_comp(&mut context, suspends, integer_type).is_err(),
+        "the suspended name is no integer"
+    );
+    assert_eq!(
+        context.binders().depth(Zone::Intuitionistic),
+        BinderDepth::from(0_usize),
+        "every binder the checks opened is closed"
+    );
+}
+
+/// The thunk a `let` binds stands under its name: the name reads the thunk's
+/// type, so a force of it applied checks, while the thunk is never written
+/// in the name's place, where a forced thunk would have no type to read.
+#[test]
+fn a_let_s_thunk_is_forced_through_its_name()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let arrow = arena.comp_type_arrow(integer, returns_integer);
+    let suspended_arrow = arena.value_type_thunk(arrow);
+    let function = arena.value_constant(ConstantIndex::from(0_usize));
+    let partial = arena.computation_force(function);
+    let thunk = arena.value_thunk(partial);
+    let bound = arena.computation_return(thunk);
+    let name = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(name);
+    let two = arena.value_literal(integer_literal());
+    let applied = arena.computation_application(forced, two);
+    let bind = arena.computation_bind(bound, applied);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[suspended_arrow]);
+    let expected = form_comp_type(&mut context, returns_integer).unwrap();
+
+    assert!(
+        check_comp(&mut context, bind, expected).is_ok(),
+        "the name reads the thunk of the function's arrow, and its call returns an integer"
+    );
+}
+
 #[test]
 fn an_ascription_checks_its_body_and_synthesises_its_type()
 {

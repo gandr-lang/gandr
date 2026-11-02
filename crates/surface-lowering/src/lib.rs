@@ -137,7 +137,7 @@
 //!
 //! `return v` and `become c` leave the nearest function, lambda or thunk from
 //! wherever a path through its body passes: a nested match, the computation
-//! of a `run`, a block inside an arm. Where a path ends the keyword may go
+//! of a `let`, a block inside an arm. Where a path ends the keyword may go
 //! unwritten: the lowering infers the exit the tail's polarity names —
 //! `return` over a value, `become` over a computation — checks it as a
 //! written one, and lists it in [`LoweredModule::inferred_exits`]; the
@@ -225,9 +225,8 @@
 //! enclosing computation, never out of a `thunk` or a `match` arm. *Where*:
 //! the checker's elaboration, each minted bind carrying the nested call's
 //! span. `run c` is the written spelling of the same run, an expression
-//! wherever a value is read; first in a block's statement or at an
-//! application's head it is parenthesised, `(run c)`, because there `run`
-//! opens a bind or takes the whole application.
+//! wherever a value is read; at an application's head it is parenthesised,
+//! `(run c)`, because there `run` would take the whole application.
 //!
 //! The recorded decision was the lowering's: it inserted every bridge,
 //! because the checker returned verdicts rather than terms, so a computation

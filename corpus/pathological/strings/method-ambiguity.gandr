@@ -20,6 +20,6 @@ module Bytes where {
 /// type does not yet choose between them (#1470).
 @[ refuses("AmbiguousMethod") ]
 def measured() -> -F Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   s.len()
 }

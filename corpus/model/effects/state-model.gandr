@@ -20,7 +20,7 @@ module Passing : Model(State) with sort S = Integer where {
   type C = Integer => Integer;
   /// Reading hands the current state to what runs after, at that same state.
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
-    thunk { fun (s) { run after <- k(s); after(s) } }
+    thunk { fun (s) { let after = k(s); after(s) } }
   }
   /// Storing runs what comes after at the stored value, whatever the state
   /// was.
@@ -33,8 +33,8 @@ module Passing : Model(State) with sort S = Integer where {
 /// the stored four both times, put-get at a point.
 @[ runs("44") ]
 def putThenGet() -> Integer {
-  run read <- Passing.get(fun (s) { pure fun (t) { pure s * 10 + t } });
-  run program <- Passing.put(4, read);
+  let read = Passing.get(fun (s) { pure fun (t) { pure s * 10 + t } });
+  let program = Passing.put(4, read);
   program(0)
 }
 
@@ -46,7 +46,7 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where {
   type C = Integer => Integer;
   /// As `Passing.get`.
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
-    thunk { fun (s) { run after <- k(s); after(s) } }
+    thunk { fun (s) { let after = k(s); after(s) } }
   }
   /// As `Passing.put`.
   def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
@@ -76,7 +76,7 @@ def shown(c : Unit + (Unit + Unit)) -> Integer {
 /// State passing over the counts with both sorts manifest, so a model is the
 /// record of its two operations.
 def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
-  .get = fun (k) { pure fun (s) { run after <- k(s); after(s) } },
+  .get = fun (k) { pure fun (s) { let after = k(s); after(s) } },
   .put = fun (s) { fun (k) { pure fun (_old) { k(s) } } }
 };
 
@@ -94,10 +94,10 @@ def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 def putGet(m : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
   match m {
     #{.get = g, .put = p} => {
-      run read <- g(fun (s) {
-        pure fun (t) { run a <- shown(s); run b <- shown(t); pure a * 10 + b }
+      let read = g(fun (s) {
+        pure fun (t) { let a = shown(s); let b = shown(t); pure a * 10 + b }
       });
-      run program <- p(+{.1 = +{.0 = unit}}, read);
+      let program = p(+{.1 = +{.0 = unit}}, read);
       program(+{.0 = unit})
     }
   }

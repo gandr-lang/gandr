@@ -779,7 +779,7 @@ impl Token
 /// | grid glyph | shorter tile it extends | live use of the shorter tile      |
 /// | ---------- | ----------------------- | --------------------------------- |
 /// | `-->`      | `->`                    | the term-language function arrow  |
-/// | `<->`      | `<-`                    | the `run PAT <- E ;` bind arrow   |
+/// | `<->`      | `<-`                    | the `let PAT = E ;` bind arrow   |
 /// | `==>`      | `==`                    | the equality operator             |
 /// | `<=>`      | `<=`                    | the less-or-equal operator        |
 ///

@@ -46,6 +46,6 @@ def either(a : Nat, b : Nat) -> -F (+U (-F Nat)) {
 /// The thunk `either` returns, forced, answers the second natural when the first is zero.
 @[ runs("Succ(Zero)") ]
 def forced() -> -F Nat {
-  run k <- either(Zero, Succ(Zero));
+  let k = either(Zero, Succ(Zero));
   force k
 }

@@ -18,9 +18,9 @@ import "./state-model.gandr";
 @[ runs("9") ]
 def constant() -> Integer {
   handle st : State with sort S = Integer {
-    run a <- st.get();
+    let a = st.get();
     st.put(a);
-    run b <- st.get();
+    let b = st.get();
     pure a + b + 1
   } with {
     pure(x) => pure x,
@@ -37,8 +37,8 @@ def constant() -> Integer {
 def answeredByPassing() -> Integer => Integer {
   handle st : State with sort S = Integer {
     st.put(4);
-    run a <- st.get();
-    run b <- st.get();
+    let a = st.get();
+    let b = st.get();
     pure fun (_s) { pure a * 10 + b }
   } with Passing
 }
@@ -46,7 +46,7 @@ def answeredByPassing() -> Integer => Integer {
 /// The handled program from an initial zero.
 @[ runs("44") ]
 def answeredFromZero() -> Integer {
-  run f <- answeredByPassing();
+  let f = answeredByPassing();
   f(0)
 }
 
@@ -55,8 +55,8 @@ def answeredFromZero() -> Integer {
 def answeredInScope() -> Integer => Integer {
   handle st : State with sort S = Integer {
     st.put(4);
-    run a <- st.get();
-    run b <- st.get();
+    let a = st.get();
+    let b = st.get();
     pure fun (_s) { pure a * 10 + b }
   }
 }
@@ -64,6 +64,6 @@ def answeredInScope() -> Integer => Integer {
 /// The program the model in scope answers, from an initial zero.
 @[ runs("44") ]
 def inScopeFromZero() -> Integer {
-  run f <- answeredInScope();
+  let f = answeredInScope();
   f(0)
 }

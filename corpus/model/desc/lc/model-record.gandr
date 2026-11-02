@@ -106,7 +106,7 @@ def lcModel : Model(LC) = lcSyntax;
 /// argument into the body, to `λx. x`.
 @[ runs("Lam(Ix(Z))") ]
 def betaIdentity() -> Term {
-  run q <- LCSyntax.qTm(Z);
-  run identity <- LCSyntax.lam(Z, q);
+  let q = LCSyntax.qTm(Z);
+  let identity = LCSyntax.lam(Z, q);
   LCSyntax.subTm(S(Z), Z, q, LCSyntax.singleTm(Z, identity))
 }

@@ -18,7 +18,7 @@ def deepField() -> Integer { nest.inner.y }
 /// A field of the record a run binds, its type written nowhere.
 @[ runs("1") ]
 def boundField() -> Integer {
-  run held <- nest.inner;
+  let held = nest.inner;
   held.x
 }
 

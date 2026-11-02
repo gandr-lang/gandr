@@ -498,7 +498,7 @@ mod tests
         );
         assert_eq!(
             edits(
-                SourceText::from("def  a = thunk { run x <- pure 1 ; return x } ;\n"),
+                SourceText::from("def  a = thunk { let x = 1 ; return x } ;\n"),
                 Scope::Closing(at(0_u32, 34_u32))
             )
             .expect("the document formats"),

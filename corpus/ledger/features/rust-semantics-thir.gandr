@@ -24,7 +24,7 @@ def exampleSpecified : #{
   m : Expr,
   meets : (b : Value, post : Value => Type, exampleSpec(b, post)) => wpFn(identitySpec, m, b, post)
 } = (exampleBody, fun (b) { fun (post) { fun (h) {
-  run meets <- exampleMeets(b, post);
+  let meets = exampleMeets(b, post);
   meets(h)
 } } });
 

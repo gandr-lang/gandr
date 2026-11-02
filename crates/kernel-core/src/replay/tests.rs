@@ -2934,7 +2934,7 @@ fn a_compared_pair_reads_presented_points_by_their_rules_1723()
 #[test]
 fn a_cong_chain_composing_to_the_identity_replays_as_its_path()
 {
-    // `run q <- cong(inner, p); cong(outer, q)` against `return p`, read
+    // `let q = cong(inner, p); cong(outer, q)` against `return p`, read
     // engine-free as a respect obligation is: the rules δ-free, the two
     // functions `looped` (constant 1) and `unlooped` (constant 2) read
     // only by the chain's composite.

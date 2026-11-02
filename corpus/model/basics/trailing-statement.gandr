@@ -9,7 +9,7 @@ def plain() -> Unit {
 /// A statement after a bind: the bind runs, then the statement, then the
 /// unit is returned.
 def after(n : Integer) -> Unit {
-  run m : Integer <- pure (n + 1);
+  let m : Integer = (n + 1);
   pure unit;
 }
 

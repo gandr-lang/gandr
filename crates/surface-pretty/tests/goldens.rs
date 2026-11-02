@@ -2925,7 +2925,7 @@ fn a_block_body_holds_its_sequence_bare()
     agrees(&core, &[], CoreNode::Computation(recursive));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(recursive))),
-        faithful(Written("loop { run b <- pure 1 ; break(b) }"))
+        faithful(Written("loop { let b = pure 1 ; break(b) }"))
     );
 }
 
@@ -4754,7 +4754,7 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     );
     pin(&source, body(sequenced), Pinned {
         name: "elided-body",
-        flat: "fun (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }",
+        flat: "fun (a) { let b = { let b = pure 1 ; pure b } ; kept(b) }",
         fidelity: Fidelity::Faithful,
     });
     // Written on one line, each body is its layout at a page no line
@@ -5336,7 +5336,7 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     assert_eq!(
         declared_whole(&source, (ty_two, two), wide),
         written(
-            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat {\n  match c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
+            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat {\n  match c { Zero => a, Succ(d) => { let e = down[<](a, b, d) ; b(e) } }\n}"
         ),
         "a call passes both uniform parameters in order, a call of one passes nothing more"
     );
@@ -5690,7 +5690,7 @@ fn a_thunk_the_checker_inserts_is_left_out_1457()
     );
     assert_eq!(
         spelled(&source, definition(block)),
-        faithful(Written("thunk { run a <- pure 1 ; a }")),
+        faithful(Written("thunk { let a = pure 1 ; a }")),
         "a definition's thunk over statements is kept"
     );
 }
@@ -5828,7 +5828,7 @@ fn an_ascribed_lambda_is_written_without_its_thunk_3872()
     );
 }
 
-/// The sugared form writes a block's `run` statements that only sequence
+/// The sugared form writes a block's `let` statements that only sequence
 /// calls at their binders' reads, as the formatter does: each read once, in
 /// the statements' order, as an argument or a field, with no call reading a
 /// binder before it. A binder read twice, read as the tail's whole value or
@@ -5883,24 +5883,24 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
         (
             in_order,
             "g(f(1), f(2))",
-            "run a <- f(1) ; run b <- f(2) ; g(a, b)",
+            "let a = f(1) ; let b = f(2) ; g(a, b)",
         ),
         (
             swapped,
-            "run a <- f(1) ; g(f(2), a)",
-            "run a <- f(1) ; run b <- f(2) ; g(b, a)",
+            "let a = f(1) ; g(f(2), a)",
+            "let a = f(1) ; let b = f(2) ; g(b, a)",
         ),
-        (twice, "run a <- f(1) ; g(a, a)", "run a <- f(1) ; g(a, a)"),
-        (whole, "run a <- f(1) ; a", "run a <- f(1) ; a"),
+        (twice, "let a = f(1) ; g(a, a)", "let a = f(1) ; g(a, a)"),
+        (whole, "let a = f(1) ; a", "let a = f(1) ; a"),
         (
             chained,
-            "run a <- f(1) ; g(f(a))",
-            "run a <- f(1) ; run b <- f(a) ; g(b)",
+            "let a = f(1) ; g(f(a))",
+            "let a = f(1) ; let b = f(a) ; g(b)",
         ),
         (
             branched,
             "match 1 { +{.0 = a} => g(f(1), f(2)) }",
-            "match 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
+            "match 1 { +{.0 = a} => { let b = f(1) ; let c = f(2) ; g(b, c) } }",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -6017,7 +6017,7 @@ fn a_case_nothing_types_writes_its_motive_815()
             .map(gandr_kernel_term::FieldCount::from)
             .to_vec(),
     );
-    // `run b <- case a -> -F Nat { … } ; b`: a bind's run states no type.
+    // `let b = case a -> -F Nat { … } ; b`: a bind's run states no type.
     let run = core.computation_bind(case, returned);
     let running = core.computation_lambda(run);
     // `Succ(thunk { fun (a) { case a -> -F Nat { … } } })`: nor does a
@@ -6062,7 +6062,7 @@ fn a_case_nothing_types_writes_its_motive_815()
     for (root, expected) in [
         (
             running,
-            "fun (a) { run b <- match a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fun (a) { let b = match a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
         ),
         (
             holding,
@@ -6079,7 +6079,7 @@ fn a_case_nothing_types_writes_its_motive_815()
         (returns_nested, "pure (pure Zero)"),
         (
             depending,
-            "fun (a) { run b <- match a { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fun (a) { let b = match a { Zero => pure Zero, Succ(b) => pure b } ; b }",
         ),
     ] {
         assert_eq!(
@@ -6332,7 +6332,7 @@ fn a_loop_arm_is_written_under_its_loop_813()
 
 /// What an endpoint receives is bound as the surface reads a receive,
 /// `let x = recv(e); rest`, the rest under the payload's linear binder: under
-/// `run x <- …` a receive reads as a statement that cannot stand there, and
+/// `let x = …` a receive reads as a statement that cannot stand there, and
 /// the source does not parse (#815).
 #[test]
 fn a_received_payload_is_bound_as_the_surface_reads_it_815()
@@ -6353,9 +6353,8 @@ fn a_received_payload_is_bound_as_the_surface_reads_it_815()
     );
 }
 
-/// A hold of a value at its world is written parenthesized, as the surface
-/// writes it: bare at a block's head, `hold` would open a hold statement and
-/// the block would not parse (#815).
+/// A hold of a value at its world is written parenthesized at a block's head,
+/// as the surface writes it (#815).
 #[test]
 fn a_held_handle_is_written_parenthesized_815()
 {
@@ -6723,8 +6722,8 @@ fn a_body_answering_a_type_keeps_its_pure_815()
     );
 }
 
-/// A body that ends answering a `run` keeps its `pure`: bare at a statement's
-/// head, `run down(a)` opens a bind, `run x <- c ; …`, and does not parse
+/// A body that ends answering a `run` keeps its `pure`: a bare `run down(a)`
+/// at a body's end is the run's own computation, not the value it returns
 /// (#815).
 #[test]
 fn a_body_answering_a_run_keeps_its_pure_815()
@@ -6858,7 +6857,7 @@ fn a_typed_bind_spells_as_written()
     assert_eq!(
         spelled(&source, body(typed)),
         (
-            "run a : Integer <- pure 1 ; a".to_owned(),
+            "let a : Integer = pure 1 ; a".to_owned(),
             Fidelity::Faithful
         ),
         "the typed bind spells its annotation"
@@ -6910,12 +6909,12 @@ fn a_stated_parameter_spells_as_written_3943()
     );
     assert_eq!(
         spelled(&source, computation(holding)),
-        faithful(Written("fun (a) { run b : Integer <- pure held ; a }")),
+        faithful(Written("fun (a) { let b : Integer = pure held ; a }")),
         "a bind holding another value is a statement"
     );
     assert_eq!(
         spelled(&source, computation(reading)),
-        faithful(Written("fun (a) { run b : Integer <- pure a ; b }")),
+        faithful(Written("fun (a) { let b : Integer = pure a ; b }")),
         "a bind whose binder the body reads is a statement"
     );
     assert_eq!(
@@ -6960,13 +6959,13 @@ fn a_returned_typed_bind_in_an_argument_is_a_block_3942()
     for (root, sugared, explicit) in [
         (
             over_integer,
-            "Path(Integer, { run a : Integer <- pure held ; pure a }, held)",
-            "Path(Integer, { run a : Integer <- pure held ; pure a }, held)",
+            "Path(Integer, { let a : Integer = pure held ; pure a }, held)",
+            "Path(Integer, { let a : Integer = pure held ; pure a }, held)",
         ),
         (
             over_universe,
-            "Path(Type, { run a : Type <- pure type(Unit * Integer) ; pure a }, Unit * Integer)",
-            "Path(Type, { run a : Type <- pure #{Unit, Integer} ; pure a }, #{Unit, Integer})",
+            "Path(Type, { let a : Type = pure type(Unit * Integer) ; pure a }, Unit * Integer)",
+            "Path(Type, { let a : Type = pure #{Unit, Integer} ; pure a }, #{Unit, Integer})",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -7011,12 +7010,12 @@ fn a_statement_outside_its_block_is_a_block_3972()
     let source = CoreSource::new(&core, &names);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(called))).0,
-        "kept({ run a <- pure 1 ; pure a })",
+        "kept({ let a = pure 1 ; pure a })",
         "a call's argument takes the statements as a block"
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(path))).0,
-        "Path(Integer, { run a <- pure 1 ; pure a }, kept)",
+        "Path(Integer, { let a = pure 1 ; pure a }, kept)",
         "a path's endpoint takes the statements as a block"
     );
 }
@@ -7251,7 +7250,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : Proc { run b : Integer at a <- pure a ; b } with { pure(a) => a }"
+            "handle a : Proc { let b : Integer at a = pure a ; b } with { pure(a) => a }"
         ))
     );
     let bound = core.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
@@ -7267,7 +7266,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
             Root::Computation(CoreNode::Computation(bound_scoped))
         ),
         approximate(Written(
-            "handle a : Proc { run b : Integer at ? <- pure a ; b } with { pure(a) => a }"
+            "handle a : Proc { let b : Integer at ? = pure a ; b } with { pure(a) => a }"
         ))
     );
 }
@@ -7429,7 +7428,7 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
     agrees(&core, &[], CoreNode::Computation(holds));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(holds))),
-        faithful(Written("var a = unit ; run b : Unit at a <- pure a ; b"))
+        faithful(Written("var a = unit ; let b : Unit at a = pure a ; b"))
     );
 }
 
@@ -7687,7 +7686,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(whiled)),
         faithful(Written(
-            "fun (a) {\n  while force a { run e <- force a ; match e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
+            "fun (a) {\n  while force a { let e = force a ; match e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
         )),
         "a while a rest follows writes its exits"
     );
@@ -7893,7 +7892,7 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
             grade: HoldGrade::Many,
         })
     };
-    // `fun (a) { hold b = a ; loop { … } }`: the passes under the lambda's
+    // `fun (a) { var b = a ; loop { … } }`: the passes under the lambda's
     // binder, the hold's, the loop's own, the content and its hold again.
     let one = |core: &mut CoreArena, under| {
         let content = variable(core, Zone::Intuitionistic, 0_u32);
@@ -7906,7 +7905,7 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
         let held = hold(core, parameter, applied);
         core.computation_lambda(held)
     };
-    // `fun (a) { hold b = a ; hold c = a ; loop { … } }`: the passes under the
+    // `fun (a) { var b = a ; var c = a ; loop { … } }`: the passes under the
     // tuple, its two components and their holds again.
     let two = |core: &mut CoreArena, under| {
         let second = variable(core, Zone::Intuitionistic, 0_u32);
@@ -7977,7 +7976,7 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
     );
 }
 
-/// A placed buffer is written by its bind's name, `run b <- a.alloc(4096) ;
+/// A placed buffer is written by its bind's name, `let b = a.alloc(4096) ;
 /// a.free(b)`, and a clause minting a buffer writes the payload, the mint
 /// and the continuation, `oper alloc(c, d, b)`, the split and the placement
 /// unwritten; a split of any other shape stays the case it is.
@@ -8044,7 +8043,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : Ring { run b <- a.alloc(4096) ; a.free(b\n  ) } with { pure(a) => a, oper \
+            "handle a : Ring { let b = a.alloc(4096) ; a.free(b\n  ) } with { pure(a) => a, oper \
              alloc(c, d, b) => b(d), oper free(a, b) => b(unit) }"
         ))
     );

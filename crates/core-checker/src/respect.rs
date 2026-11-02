@@ -26,7 +26,7 @@
 //! A body holding a computation written where a value is read is judged
 //! twice (`nested`), and the obligation is judged on the second run only,
 //! over the elaborated body: there `S(S(dbl(x)))` is the bind its explicit
-//! spelling `run d <- dbl(x); S(S(d))` writes, so the fixpoint unfolds the
+//! spelling `let d = dbl(x); S(S(d))` writes, so the fixpoint unfolds the
 //! call as it unfolds the written bind, and one fold checks to one term
 //! whichever way it is spelled. Read in place, on the first run, the call is
 //! a value no conversion unfolds, and a fold that respects its rules would

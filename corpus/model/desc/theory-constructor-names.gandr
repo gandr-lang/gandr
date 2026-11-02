@@ -28,7 +28,7 @@ data Kind : Type where {
 /// One per `Oper` link of a presentation's operation chain, zero at its end.
 def rec opsOf(chain : Theory) -> Integer {
   match chain {
-    Oper(name, inputs, outputs, rest) => { run r <- opsOf[<](rest); r + 1 },
+    Oper(name, inputs, outputs, rest) => { let r = opsOf[<](rest); r + 1 },
     _ => 0
   }
 }

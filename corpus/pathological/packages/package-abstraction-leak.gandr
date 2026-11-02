@@ -7,7 +7,7 @@
 @[ refuses("OutOfFragment.unpack_statement") ]
 def leak(p : package [T] +U[ω] (-F #{seed : T})) -> -F Integer {
   unpack m : package [T] +U[ω] (-F #{seed : T}) = p;
-  run r <- force m;
+  let r = force m;
   r.seed
 }
 

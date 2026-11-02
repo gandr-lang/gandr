@@ -3,7 +3,7 @@
 /// anything there.
 @[ refuses("UnwindEffect") ]
 def noisy(p : Cap { exit }) -> Integer {
-  hold c = 0;
+  var c = 0;
   access c as v { abort(v) } unwind { p.exit(1) };
   pure c
 }

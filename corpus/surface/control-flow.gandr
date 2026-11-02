@@ -20,7 +20,7 @@ def spin(n : Nat) -> [Div] Nat {
 
 /// A `break` with a value leaves the loop with it, and what follows reads it.
 def first(n : Nat) -> [Div] Nat {
-  run m <- loop { break(Succ(n)) };
+  let m = loop { break(Succ(n)) };
   Succ(m)
 }
 
@@ -30,7 +30,7 @@ def first_zero() -> [Div] Nat { become first(Zero) }
 
 /// Each arm of a case leaves the loop with its own value.
 def pick(n : Nat) -> [Div] Nat {
-  run m <- loop {
+  let m = loop {
     match n {
       Zero => break(n),
       Succ(p) => break(p),
@@ -98,7 +98,7 @@ def sift_zero() -> [Div] Nat { become sift(Zero) }
 /// A loop inside a handler's body leaves with its value to the body.
 def handled(n : Nat) -> [Div] Nat {
   handle c : Proc {
-    run m <- loop { break(Succ(n)) };
+    let m = loop { break(Succ(n)) };
     pure m
   } with {
     pure(x) => pure Succ(x),
@@ -123,7 +123,7 @@ def skip(n : Nat) -> -F Nat {
 @[ refuses("OutsideLoop") ]
 def held(n : Nat) -> -F Nat {
   loop {
-    run t <- pure thunk { break(n) };
+    let t = thunk { break(n) };
     continue
   }
 }
@@ -159,6 +159,6 @@ def for_each(xs : List(Nat)) -> Unit {
 /// another type does not check (#283).
 @[ refuses("TypeMismatch") ]
 def for_value(xs : List(Nat)) -> Nat {
-  run m <- for x in xs { break(x) };
+  let m = for x in xs { break(x) };
   m
 }

@@ -18,7 +18,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` o
     │
  96 │ ┏   handle st : Skipping with sort S = Integer {
  97 │ ┃     st.put(1);
- 98 │ ┃     run a <- st.get();
+ 98 │ ┃     let a = st.get();
  99 │ ┃     pure a
     ┆ ┇
 103 │ ┃     oper put(s, k) => pure 9

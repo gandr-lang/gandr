@@ -93,7 +93,7 @@ rec {
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
     match t {
-      Node(kids) => { run s <- forestSize[<](kids); Succ(s) }
+      Node(kids) => { let s = forestSize[<](kids); Succ(s) }
     }
   }
 
@@ -102,7 +102,7 @@ rec {
   def rec forestSize(ts : Forest) -> Nat {
     match ts {
       Empty => Zero,
-      More(t, rest) => { run a <- treeSize[<](t); run b <- forestSize[<](rest); plus(a, b) }
+      More(t, rest) => { let a = treeSize[<](t); let b = forestSize[<](rest); plus(a, b) }
     }
   }
 }

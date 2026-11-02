@@ -74,7 +74,7 @@ def eight() -> Integer {
 def headed(xs : List(Integer)) -> Integer {
   match xs {
     all @ [a, .._] => {
-      run counted <- shortLength(all);
+      let counted = shortLength(all);
       a + counted
     },
     [] => 0

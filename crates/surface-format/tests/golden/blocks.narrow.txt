@@ -31,7 +31,7 @@ module Facts : #{
 def pairs = thunk {
   fun (m) {
     fun (k) {
-      run p <- force m;
+      let p = force m;
       become (force k)(1)
     }
   }

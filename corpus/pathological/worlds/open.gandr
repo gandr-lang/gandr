@@ -21,7 +21,7 @@ import "../../model/worlds/seat-and-operator.gandr";
 @[ entry((operator, seat)) ]
 def heldThunk() -> -F ((() => Seat.Dispatch) at seat) {
   migrate [seat] {
-    run task <- pure Seat.task;
+    let task = Seat.task;
     (hold thunk { pure task })
   }
 }
@@ -32,7 +32,7 @@ def heldThunk() -> -F ((() => Seat.Dispatch) at seat) {
 @[ entry((operator, seat)) ]
 def heldRecord() -> -F (#{done : Integer, later : () => Seat.Dispatch} at seat) {
   migrate [seat] {
-    run task <- pure Seat.task;
+    let task = Seat.task;
     (hold #{done = 3, later = thunk { pure task }})
   }
 }
@@ -43,7 +43,7 @@ def heldRecord() -> -F (#{done : Integer, later : () => Seat.Dispatch} at seat) 
 @[ entry((operator, seat)) ]
 def bareRecord() -> #{done : Integer, later : () => Seat.Dispatch} {
   migrate [seat] {
-    run task <- pure Seat.task;
+    let task = Seat.task;
     pure #{done = 3, later = thunk { pure task }}
   }
 }

@@ -10,7 +10,7 @@
 @[ runs("0") ]
 def statement() -> Integer {
   handle c : Proc {
-    run n <- { c.exit(1); pure 0 };
+    let n = { c.exit(1); pure 0 };
     pure n
   } with {
     pure(y) => pure y,

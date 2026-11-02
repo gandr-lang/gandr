@@ -8,7 +8,7 @@ module Places where {
 }
 @[ checks ]
 def raised() -> -F List(Integer) {
-  hold xs = pair;
+  var xs = pair;
   xs.first() as w { resume(w, 2) };
   pure xs
 }

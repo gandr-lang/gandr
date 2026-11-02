@@ -93,7 +93,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
   fwdAlong(a, b, p, bwdAlong(a, b, p, y)),
   y
 ) {
-  run r <- retrAll(a, b, p);
+  let r = retrAll(a, b, p);
   r(y)
 }
 

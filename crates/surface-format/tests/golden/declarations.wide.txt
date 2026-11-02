@@ -7,7 +7,7 @@ def compose(
   g : +U[ω] (u -> -F v),
   x : t
 ) -> -F v {
-  run y <- f(x);
+  let y = f(x);
   become g(y)
 }
 

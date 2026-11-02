@@ -20,31 +20,31 @@ def trio = (3 : f64);
 /// The exponential of a half, the same double on every host.
 @[ runs("1.6487212707001282f64") ]
 def grown() -> f64 {
-  run e <- float64.exp(0.5f64);
+  let e = float64.exp(0.5f64);
   e
 }
 
 /// A sum rounded to an integer: a tie goes to the even neighbour.
 @[ runs("2") ]
 def rounded() -> Integer {
-  run sum <- float64.add(1.25f64, (1.25 : f64));
-  run whole <- float64.round(sum);
+  let sum = float64.add(1.25f64, (1.25 : f64));
+  let whole = float64.round(sum);
   whole
 }
 
 /// A third is less than a half.
 @[ runs("+{.0 = unit}") ]
 def lesser() -> Bool {
-  run third <- float64.div(1f64, 3f64);
-  run less <- float64.lt(third, 0.5f64);
+  let third = float64.div(1f64, 3f64);
+  let less = float64.lt(third, 0.5f64);
   less
 }
 
 /// An integer read as a float, scaled by a power of ten.
 @[ runs("12.5f64") ]
 def scaled() -> f64 {
-  run whole <- float64.from_integer(125);
-  run tenth <- float64.mul(whole, 1e-1f64);
+  let whole = float64.from_integer(125);
+  let tenth = float64.mul(whole, 1e-1f64);
   tenth
 }
 
@@ -52,8 +52,8 @@ def scaled() -> f64 {
 /// of a half, whose exponential is the half again.
 @[ runs("0.5f64") ]
 def restored() -> f64 {
-  run logprob <- -0.6931471805599453f64;
-  run half <- float64.exp(logprob);
+  let logprob = -0.6931471805599453f64;
+  let half = float64.exp(logprob);
   half
 }
 

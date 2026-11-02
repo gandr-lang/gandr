@@ -6,7 +6,7 @@
 //!
 //! ```text
 //! def give_up() -> -F Unit {
-//!   hold c = 0;
+//!   var c = 0;
 //!   access c as v { abort(v) }}
 //! }
 //! ```

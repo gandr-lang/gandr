@@ -82,17 +82,17 @@ pub enum Scheduling<'pool>
     Concurrent(&'pool Pool),
 }
 
-/// The writers `typed` shows to run apart: the head of each bind it typed,
-/// when every typing of that head is a returner with the closed empty row
-/// whose captures and answer lay out in a store of its own.
+/// The writers `typed` shows to run apart: the computation each bind it typed
+/// runs, when every typing of that computation is a returner with the closed
+/// empty row whose captures and answer lay out in a store of its own.
 ///
 /// # Specification
 /// - requires: `typed` is the typed run of a module judged over `core`.
-/// - ensures: a computation is named exactly when it is the head of a bind
-///   `typed` typed, every typing of it is a returner with the closed empty row,
-///   and under each typing its answer's type and each intuitionistic binder it
-///   captures holds no run's own value, as the module's boundaries read them,
-///   and it captures no linear binder.
+/// - ensures: a computation is named exactly when a bind `typed` typed runs it
+///   ([`bound_run`]), every typing of it is a returner with the closed empty
+///   row, and under each typing its answer's type and each intuitionistic
+///   binder it captures holds no run's own value, as the module's boundaries
+///   read them, and it captures no linear binder.
 /// - panics: none.
 /// - executable: none — unwitnessable provenance: the typings must be the run
 ///   of a module over `core`, and the call holds no judgement to check them
@@ -133,11 +133,31 @@ pub fn independent(
     standing
         .keys()
         .filter_map(|&term| match core.computation(term) {
-            Some(&Computation::Bind(head, _)) => Some(head),
+            Some(&Computation::Bind(head, _)) => Some(bound_run(core, head)),
             Some(_) | None => None,
         })
         .filter(|head| matches!(standing.get(head), Some(Standing::Independent)))
         .collect()
+}
+
+/// The computation a bind whose head is `head` runs: the call a `let` nests
+/// in a return, which the elaboration binds in the return's place (#4466),
+/// or `head` itself.
+///
+/// # Specification
+/// trivial.
+fn bound_run(
+    core: &CoreArena,
+    head: ComputationId,
+) -> ComputationId
+{
+    if let Some(&Computation::Return(returned)) = core.computation(head)
+        && let Some(&Value::Nested(nested)) = core.value(returned)
+    {
+        return nested;
+    }
+
+    head
 }
 
 /// Whether a computation may run apart from its binder.

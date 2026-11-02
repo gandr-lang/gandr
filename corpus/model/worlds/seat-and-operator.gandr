@@ -47,7 +47,7 @@ def opened(report : Seat.Report at seat) -> Seat.Report {
 /// report is read through a second migration, spending a second capability.
 @[ entry((operator, seat, seat)), runs("\"progress\"") ]
 def review() -> Seat.Report {
-  run held : Seat.Report at seat <- migrate [seat] { (hold Seat.progress) };
+  let held : Seat.Report at seat = migrate [seat] { (hold Seat.progress) };
   leta report = held;
   migrate [seat] { pure report }
 }

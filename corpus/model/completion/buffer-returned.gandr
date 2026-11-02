@@ -12,7 +12,7 @@
 /// completion, before the clause resumes with it.
 def bufferReturned() -> Unit {
   handle r : Ring {
-    run b <- r.alloc(4096);
+    let b = r.alloc(4096);
     r.free(b)
   } with {
     pure(x) => pure x,
@@ -35,7 +35,7 @@ def bufferReturned() -> Unit {
 /// the case found it live, and every arm hands it back.
 def freedInEachArm(flag : Bool) -> Unit {
   handle r : Ring {
-    run b <- r.alloc(4096);
+    let b = r.alloc(4096);
     match flag {
       true => r.free(b),
       false => r.free(b)

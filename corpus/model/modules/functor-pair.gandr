@@ -45,4 +45,4 @@ def a_once() -> A.T { A.step(A.seed) }
 
 /// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
-def b_twice() -> Integer { run one <- B.step(B.seed); B.read(B.step(one)) }
+def b_twice() -> Integer { let one = B.step(B.seed); B.read(B.step(one)) }

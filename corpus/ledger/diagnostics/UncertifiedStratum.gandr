@@ -35,7 +35,7 @@ def keep(xs : List(Bool)) -> -F List(Bool) {
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) {
   match entry {
-    #{b, xs} => { run c <- not(b); (c, xs) }
+    #{b, xs} => { let c = not(b); (c, xs) }
   }
 }
 

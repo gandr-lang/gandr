@@ -822,13 +822,13 @@ mod tests
                       \n\
                       def apply(t : () => Nat) -> Nat { force t }\n\
                       \n\
-                      def field(n : Nat) -> Nat {\n  run m <- twice(n);\n  Succ(m)\n}\n\
+                      def field(n : Nat) -> Nat {\n  let m = twice(n);\n  Succ(m)\n}\n\
                       \n\
-                      def paired(n : Nat) -> Nat {\n  run p <- twice(n);\n  run q <- twice(Zero);\n  second(p, q)\n}\n\
+                      def paired(n : Nat) -> Nat {\n  let p = twice(n);\n  let q = twice(Zero);\n  second(p, q)\n}\n\
                       \n\
-                      def chained(n : Nat) -> Nat {\n  run a <- twice(n);\n  run b <- twice(a);\n  become twice(b)\n}\n\
+                      def chained(n : Nat) -> Nat {\n  let a = twice(n);\n  let b = twice(a);\n  become twice(b)\n}\n\
                       \n\
-                      def suspended(n : Nat) -> Nat {\n  run t <- make(n);\n  apply(t)\n}\n";
+                      def suspended(n : Nat) -> Nat {\n  let t = make(n);\n  apply(t)\n}\n";
         let sugared = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                        \n\
                        def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
@@ -843,9 +843,9 @@ mod tests
                        \n\
                        def paired(n : Nat) -> Nat {\n  second(twice(n), twice(Zero))\n}\n\
                        \n\
-                       def chained(n : Nat) -> Nat {\n  run a <- twice(n);\n  become twice(twice(a))\n}\n\
+                       def chained(n : Nat) -> Nat {\n  let a = twice(n);\n  become twice(twice(a))\n}\n\
                        \n\
-                       def suspended(n : Nat) -> Nat {\n  run t <- make(n);\n  apply(t)\n}\n";
+                       def suspended(n : Nat) -> Nat {\n  let t = make(n);\n  apply(t)\n}\n";
         let options = FormatOptions {
             form: gandr_surface_format::Form::Sugared,
             ..FormatOptions::default()
@@ -889,7 +889,7 @@ mod tests
         assert_eq!(
             format(source, None),
             (String::from(source), Vec::new()),
-            "without a checker no run statement is written away"
+            "without a checker no `let` statement is written away"
         );
     }
 

@@ -7,7 +7,7 @@ data Nat : Type where {
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined(n : Nat) -> -F Nat {
-  run m <- match n -> -F Nat {
+  let m = match n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
   } ;

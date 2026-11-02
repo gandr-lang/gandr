@@ -24,6 +24,6 @@ def resumedTwice() -> Unit {
     close(ring)
   } with {
     pure(x) => pure x,
-    oper exit(code, k) => { run first <- k(unit); k(unit) }
+    oper exit(code, k) => { let first = k(unit); k(unit) }
   }
 }

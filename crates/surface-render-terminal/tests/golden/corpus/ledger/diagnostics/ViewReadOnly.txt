@@ -2,8 +2,8 @@ error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view i
   ╭▸ corpus/ledger/diagnostics/ViewReadOnly.gandr:5:26
   │
 3 │ ┌ def written() -> -F Unit {
-4 │ │   hold c = 0;
-  │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+4 │ │   var c = 0;
+  │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 5 │ │   access shared c as w { resume(w, 1) }
   │ │   ┬──────────────────────┯━━━━━━━━━━━──
   │ │   │                      │

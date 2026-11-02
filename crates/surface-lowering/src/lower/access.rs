@@ -34,8 +34,8 @@
 //!
 //! `p = e ;` writes the held place `p`, a name a `var` holds or its index
 //! `x.#[i]`, and `p += e ;`, `p -= e ;` and `p *= e ;` write the operator's
-//! prelude row over the place's value and `e`. The statement lowers to `run t
-//! <- pure e ; access p as v { resume(v, t) }`, or `{ run w <- op(v, t) ;
+//! prelude row over the place's value and `e`. The statement lowers to `let t =
+//! e ; access p as v { resume(v, t) }`, or `{ let w = op(v, t) ;
 //! resume(v, w) }` for a compound: `e` is read before the place is lent, so
 //! `n = n + 1` reads the slot while it is not lent, and a computation `e`
 //! runs once there, as a `let` runs one. Any other place is
@@ -226,22 +226,21 @@ pub(super) const ASSIGNING: [TileName; 4] = [
 impl<'source> Lowerer<'_, 'source>
 {
     /// Read one `var x = e ;`, `var[g] x = e ;` or `var x : T = e ;`
-    /// statement, its keyword tile already read; `hold` is read as `var` until
-    /// the corpus moves.
+    /// statement, its keyword tile already read.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the statement's tile `var` or
-    ///   `hold`; `frame` is the frame the statement reads under.
+    /// - requires: `cursor` stands just past the statement's tile `var`;
+    ///   `frame` is the frame the statement reads under.
     /// - ensures: the grade is read when a bracket follows the keyword, `ω`
     ///   otherwise; `e` is read as a value under `frame`, and a stated `T` as a
     ///   value type there. A stated handle type `A at w` makes the statement
-    ///   the world's hold of `e` bound at that type, `run x : A at w <- (hold
-    ///   e) ;`, and the frame binding `x` over `frame` is returned. Otherwise
-    ///   the statement is recorded as the hold of `e`, ascribed `T` when one is
-    ///   stated, at the grade over the rest of the block, and the frame binding
-    ///   `x` linearly over `frame`, which the rest of the block reads under, is
-    ///   returned, its binder recorded as a held slot.
-    /// - fails: a fault naming the hold statement for a tile out of shape and
+    ///   the world's hold of `e` bound at that type, the bind of `(hold e)` at
+    ///   `A at w`, and the frame binding `x` over `frame` is returned.
+    ///   Otherwise the statement is recorded as the hold of `e`, ascribed `T`
+    ///   when one is stated, at the grade over the rest of the block, and the
+    ///   frame binding `x` linearly over `frame`, which the rest of the block
+    ///   reads under, is returned, its binder recorded as a held slot.
+    /// - fails: a fault naming the `var` statement for a tile out of shape and
     ///   for a grade beside a handle type, the grade's refusal, each hole's own
     ///   fault and the binder's own refusal.
     /// - panics: none.
@@ -271,7 +270,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let statement = Site {
             at: hold,
-            name: FormName::HOLD_STATEMENT,
+            name: FormName::VAR_STATEMENT,
             reading: Reading::Computation(frame),
         };
         let grade = match cursor.tile(TileName::BRACKET_OPEN) {
@@ -782,12 +781,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the memory form over its children's lowered nodes at
     ///   `origin`, an access's blocks minted as blocks, its index as a value,
     ///   and an exclusive access's missing unwind minted as `pure unit` at
-    ///   `origin`; a method's place `self.#[e]` minted as `hold p = self ;
-    ///   access shared p.#[e] as v { run _ : a <- pure v ; pure e }`, `a` the
-    ///   element type, every node below the hold marked as inserted for the
-    ///   method; a held slot's element `s.#[e]` minted as `access shared s.#[e]
-    ///   as v { pure v }`, its body marked as inserted for the read; the first
-    ///   absence among the children otherwise.
+    ///   `origin`; a method's place `self.#[e]` minted as `var p = self ;
+    ///   access shared p.#[e] as v { let _ : a = v ; pure e }`, `a` the element
+    ///   type, every node below the hold marked as inserted for the method; a
+    ///   held slot's element `s.#[e]` minted as `access shared s.#[e] as v {
+    ///   pure v }`, its body marked as inserted for the read; the first absence
+    ///   among the children otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -938,9 +937,9 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint the place assignment of `value` to the slot `held` at `place`:
-    /// `run t <- pure e ; access x as v { resume(v, t) }`, or with a row `op`,
-    /// `run t <- pure e ; access x as v { run w <- op(v, t) ; resume(v, w) }`;
-    /// a computation `e` is bound itself, `run t <- e`.
+    /// `let t = e ; access x as v { resume(v, t) }`, or with a row `op`,
+    /// `let t = e ; access x as v { let w = op(v, t) ; resume(v, w) }`;
+    /// a computation `e` is bound itself, `let t = e`.
     ///
     /// # Specification
     /// - requires: the right side and the place's index are minted or absent.

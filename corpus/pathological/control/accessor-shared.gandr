@@ -2,21 +2,21 @@
 /// shared access's body, so it is not lent exclusively there.
 @[ refuses("HeldLent") ]
 def frozen() -> Unit {
-  hold c = 0;
+  var c = 0;
   access shared c as w { access c as v { resume(v, w) } }
 }
 
 /// A resume through a shared view: a shared view is read-only.
 @[ refuses("ViewReadOnly") ]
 def written() -> Unit {
-  hold c = 0;
+  var c = 0;
   access shared c as w { resume(w, 1) }
 }
 
 /// An abort through a shared view: a shared view ends with its body.
 @[ refuses("ViewReadOnly") ]
 def aborted() -> Unit {
-  hold c = 0;
+  var c = 0;
   access shared c as w { abort(w) }
 }
 
@@ -24,6 +24,6 @@ def aborted() -> Unit {
 /// it runs an unwind.
 @[ refuses("MalformedForm") ]
 def unwound() -> -F Unit {
-  hold c = 0;
+  var c = 0;
   access shared c as w { pure unit } unwind { pure unit }
 }

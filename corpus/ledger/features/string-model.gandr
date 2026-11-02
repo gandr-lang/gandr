@@ -36,7 +36,7 @@ def bytes(s : Repr) -> List(Integer) {
 def rec count(bs : List(Integer)) -> Integer {
   match bs {
     Nil => 0,
-    Cons(b, rest) => { run n <- count[<](rest); n + 1 }
+    Cons(b, rest) => { let n = count[<](rest); n + 1 }
   }
 }
 

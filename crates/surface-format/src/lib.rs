@@ -93,7 +93,7 @@
 //! written `become` keep their keyword, and the explicit form writes none it
 //! was not given. A value-function alias written longer than the printer
 //! writes it, `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared
-//! to its shortest, `A => B`. The `run x <- c ;` statements ending a block
+//! to its shortest, `A => B`. The `let x = c ;` statements ending a block
 //! whose binders its tail reads once each, first and in order, are written
 //! away, each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`), a
 //! match branch's as any other's; a block left with no statement is written as
@@ -125,7 +125,7 @@
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //! | `inserted-returner` | `-> -F B`, as written | `-> B`, at a definition's result |
 //! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
-//! | `linear-run`     | `run x <- c ; f(x)`, as written | `f(c)`, beside a checker |
+//! | `linear-run`     | `let x = c ; f(x)`, as written | `f(c)`, beside a checker |
 //! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
 //! | `inserted-reduct` | `T.S(m)`, beside a checker | `m`, beside a checker |
 //! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
@@ -789,7 +789,7 @@ pub fn declared_form(
 /// - ensures: as [`format`], each lowering the meaning check reads lowered in
 ///   `beside`'s unit, so a declaration that reads an imported name is rewritten
 ///   as one that does not; a withdrawal's span is in the source's own text.
-///   With `checker`, the sugared form also writes away each `run` statement the
+///   With `checker`, the sugared form also writes away each `let` statement the
 ///   lowering lists as linear and each tail's `return` of a call, and a
 ///   declaration whose two lowerings differ agrees when `checker` elaborates
 ///   both to one body; without it, neither is written away.

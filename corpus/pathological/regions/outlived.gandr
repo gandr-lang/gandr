@@ -8,10 +8,10 @@ def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) { pu
 /// Binds what `pass` hands back at a type kept in no region.
 @[ refuses("TypeMismatch") ]
 def outlived() -> Integer {
-  hold s = 4;
+  var s = 4;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
-    run back : () => Integer <- pass(k);
+    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
+    let back : () => Integer = pass(k);
     force back
   } with {
     pure(x) => pure x,

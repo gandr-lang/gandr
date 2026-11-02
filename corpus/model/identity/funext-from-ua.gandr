@@ -133,10 +133,10 @@ def carryInjective(
     transport(fun (Z) { Z => b }, back(p), v)
   )
 ) -> Path(y => b, u, v) {
-  run all <- roundTrip(b, x, y, p);
-  run l <- all(u);
-  run m <- all(v);
-  run c <- carryPath(
+  let all = roundTrip(b, x, y, p);
+  let l = all(u);
+  let m = all(v);
+  let c = carryPath(
     b,
     x,
     y,

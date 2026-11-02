@@ -93,9 +93,9 @@ const FORCE: &str = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 }
 const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1)(2) } \
                                ;\n";
 
-/// A mismatch under a `run` binder.
+/// A mismatch under a `let` binder.
 const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Integer) -> -F \
-                         String { run m <- id(n) ; return m }\n";
+                         String { let m = id(n) ; return m }\n";
 
 /// Unary naturals, addition, Fibonacci both ways and two closed points.
 const FIBONACCI: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
@@ -944,8 +944,8 @@ fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "def f() -> -F Unit {\n  hold s = 3;\n  handle c : Proc {\n    run k : Integer at s <- \
-         pure 1 ;\n    run m <- pure k ;\n    c.exit(1)\n  } with {\n    pure(x) => return x,\n    \
+        "def f() -> -F Unit {\n  var s = 3;\n  handle c : Proc {\n    let k : Integer at s = \
+         pure 1 ;\n    let m = k ;\n    c.exit(1)\n  } with {\n    pure(x) => return x,\n    \
          oper exit(code, k) => return unit\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -956,9 +956,9 @@ fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
         panic!("the source is one module");
     };
     let used = <&str>::from(text)
-        .find("pure k")
+        .find("let m = k")
         .expect("the body uses the kept value")
-        .saturating_add(5);
+        .saturating_add(8);
     let variables: Vec<_> = module
         .origins()
         .values()
@@ -1447,13 +1447,13 @@ fn a_mismatch_under_a_binder_names_it()
     let named = contexts(SourceText::from(BOUND), &diagnostic);
     assert!(
         named.contains(&(
-            String::from("run"),
+            String::from("let"),
             String::from(
                 "checked against `-F String`; while checking the body under this binding; \
                      binds m : Integer"
             )
         )),
-        "the run names the binder it opened and its type: {named:?}"
+        "the let names the binder it opened and its type: {named:?}"
     );
     assert_eq!(
         diagnostic
@@ -1646,16 +1646,16 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
         (
             "c",
             SourceText::from(
-                "def traced() -> -F Integer {\n  hold s = 3;\n  handle c : Proc {\n    run k : (() => \
-                 Integer) at c <- access shared s as w { pure thunk { pure thunk { pure w } } } ;\n    \
+                "def traced() -> -F Integer {\n  var s = 3;\n  handle c : Proc {\n    let k : (() => \
+                 Integer) at c = access shared s as w { pure thunk { pure thunk { pure w } } } ;\n    \
                  force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
             ),
         ),
         (
             "l",
             SourceText::from(
-                "def traced() -> -F Integer {\n  handle c : Proc {\n    hold l = 42;\n    run k : (() => \
-                 Integer) at l <- access shared l as w { pure thunk { pure thunk { pure w } } } ;\n    \
+                "def traced() -> -F Integer {\n  handle c : Proc {\n    var l = 42;\n    let k : (() => \
+                 Integer) at l = access shared l as w { pure thunk { pure thunk { pure w } } } ;\n    \
                  force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
             ),
         ),
@@ -1686,7 +1686,7 @@ fn a_mismatch_between_two_region_binders_names_both_2138()
     let text = SourceText::from(
         "def read[r : Region](k : (() => Integer) at r) -> -F Integer { force k }\n\ndef crossed \
          [r : Region, s : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F \
-         Integer {\n  run m : (() => Integer) at s <- pure k ;\n  read(m)\n}\n",
+         Integer {\n  let m : (() => Integer) at s = k ;\n  read(m)\n}\n",
     );
     let diagnostic = only(Path::new("crossed.gandr"), text);
     assert_eq!(
@@ -2121,7 +2121,7 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
     };
     let (inner, before_inner) = call("{ id(id(n)) }", 5_usize);
     let (returned, before_returned) = call("{ return id(n) }", 9_usize);
-    let (leading, _) = call("{ id(n) + 1 }", 2_usize);
+    let (leading, before_leading) = call("{ id(n) + 1 }", 2_usize);
     let (grouped, _) = call("{ return n + 1 }", 9_usize);
     let finding = |diagnostic: &Diagnostic| {
         (
@@ -2178,13 +2178,12 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
         [
             found(inner, (before_inner, "run ")),
             found(returned, (before_returned, "run ")),
-            found(leading, (leading, "(run id(n))")),
+            found(leading, (before_leading, "run ")),
             found(grouped, (grouped, "run (n + 1)")),
         ],
-        "the lint enabled by the run finds every inferred run, each in source order; one \
-             that begins a block's tail is written parenthesised, where a bare `run` would begin \
-             a bind, and an operator call is grouped after `run`, which would otherwise run its \
-             first operand alone"
+        "the lint enabled by the run finds every inferred run, each in source order; an \
+             operator call is grouped after `run`, which would otherwise run its first operand \
+             alone"
     );
     let mut fixed = String::from(text);
     for diagnostic in everywhere.iter().rev() {
@@ -2199,7 +2198,7 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
         fixed,
         "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n: Integer) \
              -> -F Integer { id(run id(n)) }\ndef returned(n: Integer) -> -F Integer { return run \
-             id(n) }\ndef leading(n: Integer) -> -F Integer { (run id(n)) + 1 }\ndef grouped(n: \
+             id(n) }\ndef leading(n: Integer) -> -F Integer { run id(n) + 1 }\ndef grouped(n: \
              Integer) -> -F Integer { return run (n + 1) }\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));

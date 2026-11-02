@@ -82,7 +82,7 @@ def parityGroup : Model(Group) = pack Parity at Model(Group);
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.
 def invMulParity() -> Path(Bit, One, One) {
-  run law <- Group.invMul(parityGroup);
+  let law = Group.invMul(parityGroup);
   law(One, Zero)
 }
 

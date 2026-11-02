@@ -2073,7 +2073,7 @@ pub(super) fn comp_type_origin(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a match carried under a binder keeps its patterns, a
-///   match bound by a `run` whose block continues its local ends answers its
+///   match bound by a `let` whose block continues its local ends answers its
 ///   patterns at the copy's scrutinee, and a match written in an arm that binds
 ///   a field names its own arms in the leaf's copy.
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`

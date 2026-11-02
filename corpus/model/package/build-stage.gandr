@@ -19,7 +19,7 @@ def rec lines(modules : List(String)) -> String {
   match modules {
     Nil => "",
     Cons(path, rest) => {
-      run more <- lines[<](rest);
+      let more = lines[<](rest);
       "  \"${ path }\",\n${ more }"
     }
   }
@@ -30,7 +30,7 @@ def listed(modules : List(String)) -> String {
   match modules {
     Nil => "[]",
     Cons(_, _) => {
-      run each <- lines(modules);
+      let each = lines(modules);
       "[\n${ each }]"
     }
   }
@@ -38,7 +38,7 @@ def listed(modules : List(String)) -> String {
 
 /// A manifest's body: the `[package]` table with the name, the version and the modules.
 def body(name : String, version : String, modules : List(String)) -> String {
-  run array <- listed(modules);
+  let array = listed(modules);
   "\n[package]\nname = \"${ name }\"\nversion = \"${ version }\"\nmodules = ${ array }\n"
 }
 

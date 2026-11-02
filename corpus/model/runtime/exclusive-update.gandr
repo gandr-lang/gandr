@@ -44,16 +44,16 @@ pub def first(q : Pair) -> Integer {
 /// A pair held once, its first component bumped through the exclusive view.
 @[ runs("Pair(2, 2)") ]
 def heldOnce() -> Pair {
-  hold[1] p = Pair(1, 2);
-  access p as v { run q <- bump(v); resume(v, q) };
+  var[1] p = Pair(1, 2);
+  access p as v { let q = bump(v); resume(v, q) };
   p.take()
 }
 
 /// The same update at the default grade answers the same.
 @[ runs("Pair(2, 2)") ]
 def heldMany() -> Pair {
-  hold p = Pair(1, 2);
-  access p as v { run q <- bump(v); resume(v, q) };
+  var p = Pair(1, 2);
+  access p as v { let q = bump(v); resume(v, q) };
   p.take()
 }
 
@@ -61,9 +61,9 @@ def heldMany() -> Pair {
 /// is still one where the held pair's is two.
 @[ runs("Pair(1, 2)") ]
 def copyKept() -> Pair {
-  hold p = Pair(1, 2);
-  run keep <- pure p;
-  access p as v { run q <- bump(v); resume(v, q) };
-  run q <- p.take();
+  var p = Pair(1, 2);
+  let keep = p;
+  access p as v { let q = bump(v); resume(v, q) };
+  let q = p.take();
   pure Pair(first(keep), first(q))
 }

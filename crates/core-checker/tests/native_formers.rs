@@ -3141,7 +3141,7 @@ fn a_returned_value_defines_the_binder_it_binds()
 fn a_returned_call_binds_as_written()
 {
     let mut arena = CoreArena::new();
-    // `run x <- return ((return 3 as a nested value) : Integer); return
+    // `let x = return ((return 3 as a nested value) : Integer); return
     // here(x)`: a value holding a computation runs it once, so its binder
     // stays opaque.
     let value = three(&mut arena);

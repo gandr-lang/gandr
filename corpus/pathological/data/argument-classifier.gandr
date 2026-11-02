@@ -27,7 +27,7 @@ def rec size(a : Type, xs : List(a)) -> Integer {
   match xs {
     Nil => 0,
     Cons(_, rest) => {
-      run n <- size[<](a, rest);
+      let n = size[<](a, rest);
       n + 1
     }
   }

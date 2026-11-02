@@ -1,11 +1,11 @@
-error[OutOfFragment.WrongSort]: a projection expression cannot stand where a computation is expected
-   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:84:12
+error[OutOfFragment.WrongSort]: a projection expression cannot stand where a value is expected
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:84:11
    │
-84 │   run c <- a.C;
-   │            ━━━ a form of another sort than this position takes
+84 │   let c = a.C;
+   │           ━━━ a form of another sort than this position takes
    │
    ├ note: `stepOfCarrier` is refused with OutOfFragment.WrongSort, as its expectation states
-   ╰ help: write a computation in this position
+   ╰ help: write a value in this position
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:33:11
@@ -104,9 +104,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │   │             │                   checked against `Model(Counter) -> a.0 -> -F Integer`; while checking the body of this function; binds b : Model(Counter)
    │ ┌─┘             checked against `(a : Model(Counter)) -> Model(Counter) -> a.0 -> -F Integer`; while checking the body of this function; binds a : Model(Counter)
    │ │
-68 │ │   run i <- b.incr;
+68 │ │   let i = b.incr;
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds i : b.0 => b.0
-69 │ │   run r <- b.read;
+69 │ │   let r = b.read;
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds r : b.0 => Integer
 70 │ │   r(i(c))
    │ │   ┬─┬─┯──
@@ -121,10 +121,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[UnknownMember]: the module `a` has no member `nothing`
-   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:76:14
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:76:13
    │
-76 │   run i <- a.nothing;
-   │              ━━━━━━━ no member of this name
+76 │   let i = a.nothing;
+   │             ━━━━━━━ no member of this name
    │
    ├ note: `stepOfNothing` is refused with UnknownMember, as its expectation states
    ╰ help: use a member that `a` declares, or add `nothing` to `a`

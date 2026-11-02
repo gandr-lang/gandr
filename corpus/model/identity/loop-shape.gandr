@@ -23,7 +23,7 @@ theory CircleShape where {
 /// The number of laws in a presentation's rule chain.
 def rec laws(chain : Theory) -> Integer {
   match chain {
-    Rule(name, left, right, rest) => { run r <- laws[<](rest); r + 1 },
+    Rule(name, left, right, rest) => { let r = laws[<](rest); r + 1 },
     _ => 0
   }
 }
@@ -88,7 +88,7 @@ pub module NativeWinding : Model(CircleShape) where {
 
   @[ runs("2") ]
   def wound() -> Integer {
-    run n <- turn(base);
+    let n = turn(base);
     turn(n)
   }
 }

@@ -3,12 +3,12 @@
 //! the source leaves out, drawn where the explicit form writes it.
 //!
 //! A binder is an entry the type table keeps as one, written in the source:
-//! a lambda's parameter, a pattern's field, a `run` or `for` binder, a
+//! a lambda's parameter, a pattern's field, a `let` or `for` binder, a
 //! handler's arguments. Its name is one tile of the copy's reading that
 //! nothing refers through: a use, a constructor in a pattern and a
 //! declaration's own name each answer a referent, and none is hinted. A
 //! binder whose form follows its name with `:` writes its type, as a
-//! parameter `(n : Nat)` and an annotated `run m : Nat <-` do, and is not
+//! parameter `(n : Nat)` and an annotated `let m : Nat = ` do, and is not
 //! hinted either.
 //!
 //! A label is cut where the printer wrote a declaration's name
@@ -86,8 +86,8 @@ const HINT_WIDTH: u32 = 1_000;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a lambda's, a pattern's, a `run`'s, a `for`'s and a
-///   handler's binders are hinted; a parameter, an annotated `run`, a use, a
+/// - hypothesis: L3 — a lambda's, a pattern's, a `let`'s, a `for`'s and a
+///   handler's binders are hinted; a parameter, an annotated `let`, a use, a
 ///   constructor in a pattern and a declaration's name are not; a window holds
 ///   only the hints inside it; a type's family names are parts linked to their
 ///   declarations, in the document or a sibling; an inferred `return` and
@@ -418,15 +418,15 @@ mod tests
                 "def find_succ+4:13 : Nat",
                 "def for_each+1:8 : Nat",
                 "def for_value+1:8 : Nat",
-                "def for_value+1:17 : Nat",
+                "def for_value+1:16 : Nat",
             ],
-            "each `run`, `for`, pattern and handler binder, an unread one among them (#1439), and \
+            "each `let`, `for`, pattern and handler binder, an unread one among them (#1439), and \
              no parameter, use or constructor"
         );
         assert_eq!(
             hinted("surface/typed-bind.gandr", &whole),
-            ["def apply+1:36 : Nat"],
-            "the lambda's binder, and no annotated `run`"
+            ["def apply+1:30 : Nat"],
+            "the lambda's binder, and no annotated `let`"
         );
         assert_eq!(
             hinted("surface/control-flow.gandr", &|text| {

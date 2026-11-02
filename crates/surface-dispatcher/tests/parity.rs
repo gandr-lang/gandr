@@ -1232,7 +1232,7 @@ fn reading_back(
 /// substituted into `written` together, mean different programs: the two
 /// lowerings share one arena and are compared as the formatter's meaning
 /// check compares them, by the lowered core and, where that parts, by the
-/// bodies the checker elaborates — a call written at its read and the `run`
+/// bodies the checker elaborates — a call written at its read and the `let`
 /// statement binding it lower apart and elaborate alike (#1416).
 ///
 /// # Specification

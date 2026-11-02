@@ -14,21 +14,21 @@ import "./state.gandr";
 def counter() -> (Integer => Integer) {
   handle st : StatePutLaws with sort S = Integer {
     st.put(1);
-    run a <- st.get();
+    let a = st.get();
     st.put(a + 1);
-    run b <- st.get();
+    let b = st.get();
     pure fun (s : Integer) { pure b }
   } with {
     pure(x) => pure x,
-    oper get(k) => pure fun (s : Integer) { run g <- k(s); g(s) },
-    oper put(s, k) => pure fun (t : Integer) { run g <- k(unit); g(s) }
+    oper get(k) => pure fun (s : Integer) { let g = k(s); g(s) },
+    oper put(s, k) => pure fun (t : Integer) { let g = k(unit); g(s) }
   }
 }
 
 /// Whatever the state starts at, the second read sees the first's successor.
 @[ runs("2") ]
 def counted() -> Integer {
-  run f <- counter();
+  let f = counter();
   f(0)
 }
 
@@ -38,8 +38,8 @@ def counted() -> Integer {
 @[ runs("8") ]
 def readTwice() -> Integer {
   handle st : StateGetGet with sort S = Integer {
-    run a <- st.get();
-    run b <- st.get();
+    let a = st.get();
+    let b = st.get();
     pure a + b
   } with {
     pure(x) => pure x,

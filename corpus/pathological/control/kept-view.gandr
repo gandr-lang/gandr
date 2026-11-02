@@ -9,9 +9,9 @@
 /// access that lent it.
 @[ refuses("ViewEscaped") ]
 def unkept() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : () => Integer <- access shared s as w { pure thunk { pure w } };
+    let k : () => Integer = access shared s as w { pure thunk { pure w } };
     force k
   } with {
     pure(x) => pure x,
@@ -23,10 +23,10 @@ def unkept() -> Integer {
 /// resumes, so nothing may read through it afterwards.
 @[ refuses("ViewEscaped") ]
 def keptExclusive() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
     access s as v {
-      run k : (() => Integer) at c <- pure thunk { pure v };
+      let k : (() => Integer) at c = thunk { pure v };
       resume(v, v)
     };
     pure 0
@@ -40,9 +40,9 @@ def keptExclusive() -> Integer {
 /// the kept thunk would read the value while it is written.
 @[ refuses("HeldKept") ]
 def written() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
     access s as v { resume(v, v + 1) };
     force k
   } with {
@@ -55,10 +55,10 @@ def written() -> Integer {
 /// leave its region inside it.
 @[ refuses("KeptEscaped") ]
 def rewrapped() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
-    run j : () => Integer <- pure thunk { force k };
+    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
+    let j : () => Integer = thunk { force k };
     force j
   } with {
     pure(x) => pure x,
@@ -70,9 +70,9 @@ def rewrapped() -> Integer {
 /// kept in a region never stands outside it.
 @[ refuses("TypeMismatch") ]
 def answered() -> () => Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
     pure k
   } with {
     pure(x) => pure x,
@@ -84,8 +84,8 @@ def answered() -> () => Integer {
 /// the kept thunk would read the value while it is written.
 @[ refuses("HeldKept") ]
 def writtenInHold() -> Integer {
-  hold s = 3;
-  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } };
+  var s = 3;
+  let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
   access s as v { resume(v, v + 1) };
   force k
 }
@@ -94,8 +94,8 @@ def writtenInHold() -> Integer {
 /// the kept thunk would leave the hold's region inside it.
 @[ refuses("KeptEscaped") ]
 def leftHold() -> Integer {
-  hold s = 3;
-  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } };
-  run j : () => Integer <- pure thunk { force k };
+  var s = 3;
+  let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
+  let j : () => Integer = thunk { force k };
   force j
 }

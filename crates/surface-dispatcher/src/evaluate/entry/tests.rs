@@ -76,7 +76,7 @@ fn an_entry_runs_to_its_exit_status_1881()
     for (source, wanted) in [
         ("def main() -> -F Integer { return 3 }\n", 3_u8),
         (
-            "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : List(String)) -> -F Integer { become count(args) }\n",
+            "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    [x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : List(String)) -> -F Integer { become count(args) }\n",
             3_u8,
         ),
         (
@@ -168,7 +168,7 @@ fn an_exit_status_keeps_the_low_byte_1881()
 #[test]
 fn a_hole_reached_stops_the_entry_by_name_1881()
 {
-    let source = "def helper(n : Integer) -> -F Integer { return n + 1 }\ndef main(args : List(String)) -> -F Integer {\n  match args {\n    [] => 2,\n    [x, ..rest] => { run y <- helper(41); ?todo }\n  }\n}\n";
+    let source = "def helper(n : Integer) -> -F Integer { return n + 1 }\ndef main(args : List(String)) -> -F Integer {\n  match args {\n    [] => 2,\n    [x, ..rest] => { let y = helper(41); ?todo }\n  }\n}\n";
     let mut ran = program(source);
     let Maybe::Present(entry) = ran.entry()
     else {
@@ -262,8 +262,8 @@ fn an_entry_prints_through_its_authority_2970()
 fn an_entry_reads_and_writes_the_three_streams_2970()
 {
     let source = "def main() -> -F [Console, Stderr, Stdin] Unit {\n  \
-                  run first <- Stdin.read_line(unit);\n  \
-                  run second <- Stdin.read_line(unit);\n  \
+                  let first = Stdin.read_line(unit);\n  \
+                  let second = Stdin.read_line(unit);\n  \
                   Console.print(first);\n  \
                   Stderr.eprint(second)\n}\n";
     let mut ran = program(source);

@@ -19,12 +19,12 @@ import "../effects/state.gandr";
 /// unit. The scope answers the increment's predicate transformer.
 def incrObserved() -> ((Unit, Integer) => Type, Integer) => Type {
   handle st : StateLaws with sort S = Integer {
-    run n <- st.get();
+    let n = st.get();
     st.put(n + 1);
     pure fun (q) { fun (s) { q(unit, s) } }
   } with {
     pure(w) => pure w,
-    oper get(k) => pure fun (q) { fun (s) { run w <- k(s); w(q, s) } },
-    oper put(s, k) => pure fun (q) { fun (_old) { run w <- k(unit); w(q, s) } }
+    oper get(k) => pure fun (q) { fun (s) { let w = k(s); w(q, s) } },
+    oper put(s, k) => pure fun (q) { fun (_old) { let w = k(unit); w(q, s) } }
   }
 }

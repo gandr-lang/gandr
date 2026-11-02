@@ -20,10 +20,10 @@ def loose = ~assumption;
 @[ refuses("UnknownTactic") ]
 def named(x : Integer) -> Integer { ~x }
 
-/// A splice bound by `run`, where a computation is read: a tactic answers a
-/// value, so the splice is a form of the wrong sort there.
+/// A splice stands as a statement here, in a computation's place. A tactic
+/// answers a value, so the splice has the wrong sort there.
 @[ refuses("OutOfFragment.WrongSort") ]
 def ranSplice(x : Integer) -> -F Integer {
-  run y <- ~assumption;
-  y
+  ~assumption;
+  x
 }

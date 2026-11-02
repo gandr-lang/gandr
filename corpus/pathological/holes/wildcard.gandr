@@ -15,10 +15,10 @@ def loose() -> Integer { idAt(Integer, _) }
 @[ refuses("TypeMismatch") ]
 def disagreeing() -> Unit { idAt(_, 3) }
 
-/// A wildcard bound by `run`, where a computation is read: the solver binds
-/// values, so a wildcard is a form of the wrong sort there.
+/// A wildcard stands as a statement here, in a computation's place. The
+/// solver binds values, so the wildcard has the wrong sort there.
 @[ refuses("OutOfFragment.WrongSort") ]
 def ranWildcard() -> -F Integer {
-  run x <- _;
-  x
+  _;
+  0
 }

@@ -66,7 +66,7 @@ def nested() -> Integer {
 /// A `case` whose one arm returns and whose other arm continues the body.
 def branch(n : Integer) -> Integer {
   handle c : Proc {
-    run m <- match n {
+    let m = match n {
       0 => return 8,
       _ => pure n,
     };
@@ -92,7 +92,7 @@ def branch_one() -> Integer { become branch(1) }
 @[ runs("105") ]
 def looped() -> [Div] Integer {
   handle c : Proc {
-    run v <- loop {
+    let v = loop {
       break(5)
     };
     pure v

@@ -608,7 +608,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
     /// a corpus-shaped definition.
     const STRAYS: [&str; 6] = [
         "def f(x : In[: Nat]) -> Nat { pure x }",
-        "def g(b : Unit) -> Unit { run c <- not b); become not(c) }",
+        "def g(b : Unit) -> Unit { let c = not b); become not(c) }",
         "too_big = Type ;\ndef wrong_sort : Type ;",
         "def : Integer ;\ndef y = 1 ;",
         "def h(x : List[Nat) -> Nat { pure x }",

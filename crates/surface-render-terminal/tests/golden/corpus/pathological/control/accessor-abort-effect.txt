@@ -5,8 +5,8 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
   │   │         ─ checked against `Cap {exit} -> -F Integer`; while checking the body of this function; binds p : Cap {exit}
   │ ┌─┘
   │ │
-6 │ │   hold c = 0;
-  │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+6 │ │   var c = 0;
+  │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 7 │ │   access c as v { abort(v) } unwind { p.exit(1) };
   │ │   ┬───────────────────────────────────┯━━━━━━━━──
   │ │   │                                   │

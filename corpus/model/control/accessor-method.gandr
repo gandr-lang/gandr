@@ -28,16 +28,16 @@ pub module Places where {
 /// The first element, read by a call without a block.
 @[ runs("1") ]
 def head() -> Integer {
-  hold xs = pair;
-  run h <- xs.first();
+  var xs = pair;
+  let h = xs.first();
   pure h
 }
 
 /// The element after the first, read through a sum as its index.
 @[ runs("2") ]
 def later() -> Integer {
-  hold xs = pair;
-  run y <- xs.after(0);
+  var xs = pair;
+  let y = xs.after(0);
   pure y
 }
 
@@ -46,15 +46,15 @@ def later() -> Integer {
 /// read.
 @[ runs("2") ]
 def bare() -> Integer {
-  hold xs = pair;
-  run y <- xs[1];
+  var xs = pair;
+  let y = xs[1];
   pure y
 }
 
 /// The same read at an index a parameter carries.
 def bareAt(i : Integer) -> Integer {
-  hold xs = pair;
-  run y <- xs[i];
+  var xs = pair;
+  let y = xs[i];
   pure y
 }
 
@@ -68,7 +68,7 @@ def bareFirst() -> Integer {
 /// only reads it.
 @[ runs("2") ]
 def readTwice() -> Integer {
-  hold xs = pair;
+  var xs = pair;
   xs.first() as w { pure w + w }
 }
 
@@ -76,7 +76,7 @@ def readTwice() -> Integer {
 /// exclusively: the resume asks it, and only that element moved.
 @[ runs("cons(1, cons(5, nil))") ]
 def raised() -> List(Integer) {
-  hold xs = pair;
+  var xs = pair;
   xs.nth(1) as w { resume(w, w + 3) };
   pure xs
 }
@@ -84,7 +84,7 @@ def raised() -> List(Integer) {
 /// An abort asks an exclusive lend as well and writes nothing back.
 @[ runs("cons(1, cons(2, nil))") ]
 def abandonedView() -> List(Integer) {
-  hold xs = pair;
+  var xs = pair;
   xs.first() as w { abort(w) };
   pure xs
 }

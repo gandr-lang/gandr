@@ -199,9 +199,9 @@ fn a_refused_declaration_keeps_the_names_it_resolved_836()
 const MUTUAL: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nrec {\n  \
                       data Rose : Type where { | Node : (kids : Forest) --> Rose }\n  data Forest : \
                       Type where { | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest \
-                      }\n  def rec size(t : Rose) -> -F Nat { match t { Node(kids) => { run s \
-                      <- sizes[<](kids); return Succ(s) } } }\n  def rec sizes(ts : Forest) \
-                      -> -F Nat { match ts { Empty => return Zero, More(t, rest) => { run a <- \
+                      }\n  def rec size(t : Rose) -> -F Nat { match t { Node(kids) => { let s \
+                      = sizes[<](kids); return Succ(s) } } }\n  def rec sizes(ts : Forest) \
+                      -> -F Nat { match ts { Empty => return Zero, More(t, rest) => { let a = \
                       size[<](t); sizes[<](rest) } } }\n}\n";
 
 /// #827: a call head written with its descent marker keeps what its name
@@ -281,7 +281,7 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         "the endpoint a `fork` binds, used inside the refused `dup`, names its binder"
     );
     let joined = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef joined(n : \
-                  Nat) -> -F Nat {\n  run m <- match n -> -F Nat {\n    Zero => return n,\n    \
+                  Nat) -> -F Nat {\n  let m = match n -> -F Nat {\n    Zero => return n,\n    \
                   Succ(p) => pure p,\n  } ;\n  return m\n}\n";
     assert!(
         resolved(SourceText::from(joined), SourceText::from("match n"))

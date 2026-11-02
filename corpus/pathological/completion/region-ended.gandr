@@ -14,8 +14,8 @@ import "../../model/completion/ring-base.gandr";
 /// pending and the kernel still holding the view.
 @[ refuses("KeptEscaped") ]
 def regionEnded() -> Unit {
-  hold buf = Ring.read;
-  run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } };
+  var buf = Ring.read;
+  let buffer : (() => Ring.Sqe) at buf = access shared buf as w { pure thunk { pure w } };
   let ring = fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {
     let sqe = recv(kernel);
     send(kernel, Ring.done);

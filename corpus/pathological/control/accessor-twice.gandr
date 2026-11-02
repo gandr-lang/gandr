@@ -2,7 +2,7 @@
 /// has nothing to end.
 @[ refuses("ViewSpent") ]
 def twice() -> Unit {
-  hold c = 0;
+  var c = 0;
   access c as v { resume(v, 1); abort(v) }
 }
 
@@ -10,6 +10,6 @@ def twice() -> Unit {
 /// or an unwind.
 @[ refuses("ViewUnended") ]
 def unended() -> Unit {
-  hold c = 0;
+  var c = 0;
   access c as v { pure unit }
 }

@@ -1215,7 +1215,7 @@ fn checked(
             f.write_str("this code lives in a larger universe than the one expected")
         },
         CheckRefusal::DependentBind { .. } => {
-            f.write_str("the result type of this `run` depends on the value it binds")
+            f.write_str("the result type of this `let` depends on the value it binds")
         },
         CheckRefusal::Undecided { .. } => {
             f.write_str("the checker could not decide what this code unfolds to")

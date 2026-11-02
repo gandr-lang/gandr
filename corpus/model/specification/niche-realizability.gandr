@@ -241,19 +241,19 @@ def marshalled(vt : (Nat, Heap) => Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) 
   match w {
     Zero => match h {
       Emp => return fun (ok) {
-        run meets <- fromOptMeets(vt, Zero, Emp);
-        run e <- meets(ok);
+        let meets = fromOptMeets(vt, Zero, Emp);
+        let e = meets(ok);
         return (Tag(Zero, Zero), e)
       },
       Cell(l, v, rest) => return fun (ok) {
-        run meets <- fromOptMeets(vt, Zero, Cell(l, v, rest));
-        run e <- meets(ok);
+        let meets = fromOptMeets(vt, Zero, Cell(l, v, rest));
+        let e = meets(ok);
         return (Tag(Zero, Zero), e)
       }
     },
     Succ(n) => return fun (ok) {
-      run meets <- fromOptMeets(vt, Succ(n), h);
-      run e <- meets(ok);
+      let meets = fromOptMeets(vt, Succ(n), h);
+      let e = meets(ok);
       return (Tag(Succ(Zero), Succ(n)), e)
     }
   }
@@ -268,13 +268,13 @@ def unmarshalledNone(vt : (Nat, Heap) => Type, h : Heap, p : Nat) -> (vTag(
   match p {
     Zero => match h {
       Emp => return fun (ok) {
-        run meets <- toOptMeets(vt, Tag(Zero, Zero), Emp);
-        run e <- meets(ok);
+        let meets = toOptMeets(vt, Tag(Zero, Zero), Emp);
+        let e = meets(ok);
         return (Zero, e)
       },
       Cell(l, v, rest) => return fun (ok) {
-        run meets <- toOptMeets(vt, Tag(Zero, Zero), Cell(l, v, rest));
-        run e <- meets(ok);
+        let meets = toOptMeets(vt, Tag(Zero, Zero), Cell(l, v, rest));
+        let e = meets(ok);
         return (Zero, e)
       }
     },
@@ -292,8 +292,8 @@ def unmarshalledSome(vt : (Nat, Heap) => Type, h : Heap, s : Nat, p : Nat) -> (v
     Zero => match p {
       Zero => return fun (none) { match (none : Void) {} },
       Succ(n) => return fun (ok) {
-        run meets <- toOptMeets(vt, Tag(Succ(Zero), Succ(n)), h);
-        run e <- meets(ok);
+        let meets = toOptMeets(vt, Tag(Succ(Zero), Succ(n)), h);
+        let e = meets(ok);
         return (Succ(n), e)
       }
     },
@@ -331,7 +331,7 @@ def toTagged(vt : (Nat, Heap) => Type, h : Heap, x : #{w : Nat, ok : vOpt(vt, w,
 } {
   match x {
     #{w, ok} => {
-      run m <- marshalled(vt, h, w);
+      let m = marshalled(vt, h, w);
       m(ok)
     }
   }
@@ -344,7 +344,7 @@ def fromTagged(vt : (Nat, Heap) => Type, h : Heap, y : #{r : Tagged, ok : vTag(v
 } {
   match y {
     #{r, ok} => {
-      run u <- unmarshalled(vt, h, r);
+      let u = unmarshalled(vt, h, r);
       u(ok)
     }
   }
@@ -373,7 +373,7 @@ def nicheSect(vt : (Nat, Heap) => Type, h : Heap, x : #{w : Nat, ok : vOpt(vt, w
 ) {
   match x {
     #{w, ok} => {
-      run s <- sectAt(vt, h, w);
+      let s = sectAt(vt, h, w);
       s(ok)
     }
   }
@@ -452,7 +452,7 @@ def taggedRetr(vt : (Nat, Heap) => Type, h : Heap, y : #{r : Tagged, ok : vTag(v
 ) {
   match y {
     #{r, ok} => {
-      run s <- retrTagged(vt, h, r);
+      let s = retrTagged(vt, h, r);
       s(ok)
     }
   }

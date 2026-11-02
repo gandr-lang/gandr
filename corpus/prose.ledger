@@ -130,7 +130,7 @@ corpus/ledger/features/floating-point.gandr Tense 900133f38ee07c29
 corpus/ledger/features/footprint-separation.gandr Tense 9303c85920e72daf
 corpus/ledger/features/function-extensionality.gandr Tense 3e90aeccd34a677f
 corpus/ledger/features/grades.gandr Passive 7188f0b847880553
-corpus/ledger/features/grades.gandr Tense e32d54ca8a0b6a7e
+corpus/ledger/features/grades.gandr Tense 547b0c59c5dc2313
 corpus/ledger/features/implicit-arguments.gandr Passive 155afcd3fecf85fe
 corpus/ledger/features/implicit-arguments.gandr Passive 3739972c20984d4d
 corpus/ledger/features/implicit-arguments.gandr Passive a9d215b4e36d59ba
@@ -923,7 +923,6 @@ corpus/pathological/holes/pattern-hole-in-a-payload.gandr Tense f520957a01bc3e08
 corpus/pathological/holes/pattern-hole-shadows-a-later-arm.gandr Passive 32f85d88b7eabff1
 corpus/pathological/holes/suspended-decode.gandr Passive 419d47e9d1932313
 corpus/pathological/holes/wildcard.gandr Passive 055a65411e716db7
-corpus/pathological/holes/wildcard.gandr Passive f02b62cafb4249ea
 corpus/pathological/identity/atom-identity.gandr Tense 09561bd59416955d
 corpus/pathological/identity/atom-identity.gandr Tense 48c26cb86ce719e6
 corpus/pathological/identity/atom-identity.gandr Tense b67a7638cfb9a816
@@ -972,7 +971,6 @@ corpus/pathological/interop/thir/example.gandr Passive ca8ff99f96d82b26
 corpus/pathological/layouts/ribbit-list.gandr Tense f788c724d377466c
 corpus/pathological/metaprograms/tactics-over-goals.gandr Passive 305239ce76c3d167
 corpus/pathological/metaprograms/tactics-over-goals.gandr Passive 930098d0bfb49445
-corpus/pathological/metaprograms/tactics-over-goals.gandr Passive fc6d6c90db80ceca
 corpus/pathological/modules/dotted-prefix-clash.gandr Tense a5780ef38675ec8e
 corpus/pathological/modules/functor-mistyped.gandr Tense ba8b9d26aa706269
 corpus/pathological/modules/functor-unexported.gandr Tense eb09a012f4d90d2e
@@ -1173,7 +1171,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CorollaTab
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CrossBlockReference.txt Procedure 94d1ded30dae8e77
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DataFieldLevel.txt Procedure 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DataKindNotUniverse.txt Procedure 3e8ce436153ed57e
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DependentBind.txt Procedure d517aa4e32eec111
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DependentBind.txt Procedure b3bc6f1cc17c1ad1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DerivedComponent.txt Procedure 4e7265ef20d36612
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DescentOnSeveralParameters.txt Procedure 82cfda2e0c36480c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DialogueInverted.txt Procedure 37ac15076bb61227

@@ -8,10 +8,10 @@ pub def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) 
 /// Reads what `pass` hands back inside the handler whose region keeps it.
 @[ runs("4") ]
 def passed() -> Integer {
-  hold s = 4;
+  var s = 4;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w };
-    run back : (() => Integer) at c <- pass(k);
+    let k : (() => Integer) at c = access shared s as w { pure pure w };
+    let back : (() => Integer) at c = run pass(k);
     force back
   } with {
     pure(x) => pure x,

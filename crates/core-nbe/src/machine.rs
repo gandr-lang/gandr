@@ -2759,9 +2759,9 @@ where
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `run q <- cong(unlooped, p); cong(looped, q)`
-    ///   converts with `return p` over the presented circle under a rigid run,
-    ///   and a chain composing to `looped ∘ looped` does not.
+    /// - hypothesis: L3 — `let q = cong(unlooped, p); cong(looped, q)` converts
+    ///   with `return p` over the presented circle under a rigid run, and a
+    ///   chain composing to `looped ∘ looped` does not.
     /// - witness: `fusion::tests::a_cong_chain_composing_to_the_identity_is_its_path`
     #[spec(
         captures: [spent = self.spent.0, depth = goal.depth],

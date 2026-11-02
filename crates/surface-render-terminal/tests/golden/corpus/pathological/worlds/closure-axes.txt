@@ -3,7 +3,7 @@ error[Immobile.Capture]: a thunk crossing to another world captures this, but it
    │
 32 │ ┌  def dispatched() -> () => Seat.Dispatch {
 33 │ │┌   migrate [seat] {
-34 │ ││     run task <- pure Seat.task;
+34 │ ││     let task = Seat.task;
 35 │ ││     pure thunk { pure task }
    │ ││                       ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
 36 │ ││   }
@@ -19,7 +19,7 @@ error[NotOpen.Capture]: a thunk crossing to another world captures this, but its
    │
 43 │ ┌  def pointing() -> () => (Seat.Dispatch at seat) {
 44 │ │┌   migrate [seat] {
-45 │ ││     run held : Seat.Dispatch at seat <- (hold Seat.task);
+45 │ ││     var held : Seat.Dispatch at seat = Seat.task;
 46 │ ││     pure thunk { pure held }
    │ ││                       ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
 47 │ ││   }
@@ -65,7 +65,7 @@ error[Immobile]: this value crosses to another world, but its type is not mobile
    │
 69 │ ┌  def through() -> () => Integer {
 70 │ │┏   migrate [seat] {
-71 │ │┃     run later : () => Integer <- pure thunk { pure 3 };
+71 │ │┃     let later : () => Integer = thunk { pure 3 };
 72 │ │┃     pure later
 73 │ │┃   }
    │ │┗━━━┛ a value whose type holds a former that is not mobile: found `() => Integer`
@@ -80,9 +80,9 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
    │
 80 │ ┌  def regioned() -> () => Integer {
 81 │ │┌   migrate [seat] {
-82 │ ││     hold s = 3;
-   │ ││     ──── checked against `-F (() => Integer)`; while checking the scope of this hold
-83 │ ││     run k : (() => Integer) at s <- access shared s as w { pure pure w };
+82 │ ││     var s = 3;
+   │ ││     ─── checked against `-F (() => Integer)`; while checking the scope of this hold
+83 │ ││     let k : (() => Integer) at s = access shared s as w { pure pure w };
    │ ││     ─── checked against `-F (() => Integer)`; while checking the body under this binding; binds k : (() => Integer) at s
 84 │ ││     pure thunk { force k }
    │ ││     ┬────┯━━━━━━━━━━━━━━━━
@@ -102,8 +102,8 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
    │
 92 │ ┌  def graded() -> () => Integer {
 93 │ │┌   migrate [seat] {
-94 │ ││     hold[1] c = 0;
-   │ ││     ──── checked against `-F (() => Integer)`; while checking the scope of this hold
+94 │ ││     var[1] c = 0;
+   │ ││     ─── checked against `-F (() => Integer)`; while checking the scope of this hold
 95 │ ││     pure thunk { pure c + c }
    │ ││     ┬────┯━━━━━━━━━━━━━━━━━━━
    │ ││     │    │

@@ -2,10 +2,10 @@ error[HeldCaptured]: the held value is used inside a fixpoint, which may run it 
    ╭▸ corpus/pathological/control/accessor-loop-nested.gandr:10:5
    │
  6 │ ┌   def nested() -> [Div] Integer {
- 7 │ │     hold n = 0;
-   │ │     ──── checked against `-F [Div] Integer`; while checking the scope of this hold
- 8 │ │     hold i = 3;
-   │ │     ──── checked against `-F [Div] Integer`; while checking the scope of this hold
+ 7 │ │     var n = 0;
+   │ │     ─── checked against `-F [Div] Integer`; while checking the scope of this hold
+ 8 │ │     var i = 3;
+   │ │     ─── checked against `-F [Div] Integer`; while checking the scope of this hold
  9 │ │┌    while i > 0 {
 10 │ ││┏     while n < 3 {
 11 │ ││┃       access n as v { resume(v, v + 1) }

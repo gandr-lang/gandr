@@ -11,7 +11,7 @@ import "../../model/effects/state.gandr";
 def forgetful() -> Integer {
   handle st : StatePutGet with sort S = Integer {
     st.put(1);
-    run a <- st.get();
+    let a = st.get();
     pure a
   } with {
     pure(x) => pure x,
@@ -27,11 +27,11 @@ def forgetful() -> Integer {
 def accumulating() -> (Integer => Integer) {
   handle st : StatePutLaws with sort S = Integer {
     st.put(1);
-    run a <- st.get();
+    let a = st.get();
     pure thunk { fun (s : Integer) { pure a } }
   } with {
     pure(x) => pure x,
-    oper get(k) => pure thunk { fun (s : Integer) { run g <- k(s); g(s) } },
-    oper put(s, k) => pure thunk { fun (t : Integer) { run g <- k(unit); g(s + t) } }
+    oper get(k) => pure thunk { fun (s : Integer) { let g = k(s); g(s) } },
+    oper put(s, k) => pure thunk { fun (t : Integer) { let g = k(unit); g(s + t) } }
   }
 }

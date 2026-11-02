@@ -27,18 +27,12 @@
 //! loose as itself, so a nested computation written with an operator or a
 //! prefix keyword, as `id(n) + 1` is, is grouped after it: `run (id(n) + 1)`.
 //! A call, a projection, an instantiation and every atom go after it bare.
-//! A block reads `run` where a statement or its tail begins as the bind
-//! statement `run x <- c ;`, so a nested computation that begins one, as
-//! `f(x)` does in `{ f(x) + 1 }`, is written `(run f(x))`. A call written at
-//! an application's head is grouped the same way, `(run f(n))(1)`, since
-//! `run f(n)(1)` reads as the run of the whole application (#3935). The
-//! alternative was a parser that reads `run` at a statement's start inline
-//! unless a binder and `<-` follow, which moves the statement grammar for one
-//! spelling. Reversal: that parser.
+//! A call written at an application's head is grouped, `(run f(n))(1)`,
+//! since `run f(n)(1)` reads as the run of the whole application (#3935).
 //!
-//! # Which `run` statements only sequence a call
+//! # Which `let` statements only sequence a call
 //!
-//! The `run x <- c ;` statements ending a block whose binders the tail reads
+//! The `let x = c ;` statements ending a block whose binders the tail reads
 //! once each, in the statements' order, before it runs anything, only
 //! linearise the code: written nested, each `c` stands where its `x` is read
 //! and the checker runs them there, in that order, at the same point. The
@@ -60,15 +54,15 @@
 //!   other computation before the last of them.
 //!
 //! The suffix is listed whole, so one pass writes away all a block allows and
-//! a second finds none. A read as the tail's whole value (`run m <- c ; m`)
+//! a second finds none. A read as the tail's whole value (`let m = c ; m`)
 //! stays: written as `c` alone it is a computation rather than a run of one,
 //! a different core. A read under a thunk, a function or an arm stays, since
 //! there `c` would run later or more than once. A read out of the statements'
 //! order stays, since nested the calls would run in the reads' order. A read
 //! in a later statement's computation stays too, a chain of statements among
 //! them: the checker runs a nested run inside the computation that holds it,
-//! so `run y <- g(c) ;` binds `c` inside `g`'s computation where
-//! `run x <- c ; run y <- g(x) ;` binds it before — one program by the bind's
+//! so `let y = g(c) ;` binds `c` inside `g`'s computation where
+//! `let x = c ; let y = g(x) ;` binds it before — one program by the bind's
 //! associativity, two cores. Such a chain sheds its last link and then stays,
 //! its next read standing after the nested run.
 //! Whether the two spellings mean one program is still the checker's to say:
@@ -144,25 +138,25 @@ pub enum AskedRuns
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one variant for a computation that begins no statement of its
-///   block, written after a bare `run`, and one for a computation that begins
-///   one, written parenthesised after `run`.
+/// - ensures: one variant for a computation written after a bare `run`, and one
+///   for a call at an application's head, written parenthesised after `run`.
 /// - provides: the fix a face proposes, which the parser reads back as the run
 ///   it means.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a nested call after `return` and one first in a block's
-///   tail, each written as spelled and checked again.
+/// - hypothesis: L3 — a nested call after `return`, one first in a block's tail
+///   and one at an application's head, each written as spelled and checked
+///   again.
 /// - witness: `lower::runs::tests::a_nested_run_is_spelled_as_its_written_run_reads_back`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RunSpelling
 {
-    /// `run c`: the computation begins no statement.
+    /// `run c`: the computation stands anywhere but an application's head.
     #[default]
     Bare,
-    /// `(run c)`: the computation begins a statement or a block's tail.
+    /// `(run c)`: the computation is a call at an application's head.
     Parenthesised,
 }
 
@@ -247,7 +241,7 @@ pub struct InferredRun
     pub site: NestedSite,
 }
 
-/// A `run x <- c ;` statement the sugared form writes away: `c` written at
+/// A `let x = c ;` statement the sugared form writes away: `c` written at
 /// the binder's one read, the statement left out.
 ///
 /// # Specification
@@ -283,9 +277,8 @@ impl Lowerer<'_, '_>
     /// - ensures: one entry per syntax node a value of `origins` was nested at,
     ///   a value past `resumed`'s mark when it is given, asked the widest ask
     ///   an `explicit_runs` attribute reaching its declaration makes, or none,
-    ///   spelled parenthesised exactly when its first byte begins a statement
-    ///   or tail of a block or it stands at an application's head, and its
-    ///   operand grouped unless its form binds tighter than `run`.
+    ///   spelled parenthesised exactly when it stands at an application's head,
+    ///   and its operand grouped unless its form binds tighter than `run`.
     /// - provides: the lowering's half of the join
     ///   [`LoweredModule::inferred_runs`](crate::LoweredModule::inferred_runs)
     ///   makes.
@@ -316,9 +309,7 @@ impl Lowerer<'_, '_>
                     Maybe::Present(slot) => self.asked_runs.get(&slot).copied().unwrap_or_default(),
                     Maybe::Absent(_) => AskedRuns::Unasked,
                 };
-                let spelling = if self.leading.contains(&origin.span().start())
-                    || matches!(self.reading(origin.node()), super::Reading::Head(_))
-                {
+                let spelling = if matches!(self.reading(origin.node()), super::Reading::Head(_)) {
                     RunSpelling::Parenthesised
                 }
                 else {
@@ -378,13 +369,13 @@ impl Lowerer<'_, '_>
         }
     }
 
-    /// The `run` statements a block's tail reads once each, first and in
+    /// The `let` statements a block's tail reads once each, first and in
     /// order, each as a [`LinearRun`] in source order, read off the core
     /// minted into `arena` with its origins `origins`.
     ///
     /// # Specification
     /// - requires: the mint sweep has run, so each statement's binds are
-    ///   recorded in `origins` at its `run` tile; the attribute pass has run,
+    ///   recorded in `origins` at its `let` tile; the attribute pass has run,
     ///   so every asking slot is marked.
     /// - ensures: one entry per statement binding a plain name with its rest
     ///   bound, whose computation is a call and whose declaration no
@@ -408,7 +399,7 @@ impl Lowerer<'_, '_>
         origins: &OriginTable,
     ) -> Vec<LinearRun>
     {
-        // Every bind minted for a statement, by the statement's `run` tile.
+        // Every bind minted for a statement, by the statement's `let` tile.
         let mut binds: Vec<(NodeIndex, ComputationId)> = origins
             .computations()
             .iter()
@@ -527,7 +518,7 @@ impl Lowerer<'_, '_>
         statement: &super::Statement,
     ) -> Option<ByteSpan>
     {
-        if !matches!(statement.binding, super::StatementBinding::Named(_))
+        if !matches!(statement.binding, super::StatementBinding::Let(_))
             || statement.rest != super::exits::Rest::Bound
         {
             return None;

@@ -8,8 +8,8 @@
 /// is refused, its type named with `Div` in the row (#1481).
 @[ refuses("TypeMismatch") ]
 def spinPure(x : Bool) -> Bool {
-  run y <- loop {
-    run below <- 1 < 0;
+  let y = loop {
+    let below = 1 < 0;
     match below {
       true => break(x),
       false => continue,
@@ -20,8 +20,8 @@ def spinPure(x : Bool) -> Bool {
 
 /// The loop at the row it needs.
 def spin(x : Bool) -> [Div] Bool {
-  run y <- loop {
-    run below <- 1 < 0;
+  let y = loop {
+    let below = 1 < 0;
     match below {
       true => break(x),
       false => continue,
@@ -54,7 +54,7 @@ def tamed(x : Bool) -> Bool {
 @[ refuses("EndpointMismatch") ]
 def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> Path(
   +U (a -> -F [Div] b),
-  thunk { fun (x) { run v <- g(x); f(x) } },
+  thunk { fun (x) { let _ = g(x); f(x) } },
   thunk { fun (x) { f(x) } }
 ) {
   here(thunk { fun (x) { f(x) } })

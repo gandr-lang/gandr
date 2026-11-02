@@ -1,4 +1,4 @@
-// Temporary access. `hold c = e;` keeps a value for the rest of a block, and
+// Temporary access. `var c = e;` keeps a value for the rest of a block, and
 // `access c as v { … }` lends it to the view `v`, which the body ends exactly
 // once: `resume(v, e)` writes `e` back, `abort(v)` leaves the held value as it
 // was and runs the access's `unwind` clause instead. The unwind runs under the
@@ -16,8 +16,8 @@ pub def succ(n : Integer) -> Integer {
 /// `resume` and none on `abort`.
 @[ runs("1") ]
 def counter() -> Integer {
-  hold c = 0;
-  access c as v { run n <- succ(v); resume(v, n) };
+  var c = 0;
+  access c as v { let n = succ(v); resume(v, n) };
   access c as v { abort(v) } unwind { pure unit };
   pure c
 }
@@ -26,7 +26,7 @@ def counter() -> Integer {
 /// it.
 @[ runs("12") ]
 def doubled() -> Integer {
-  hold c = 3;
+  var c = 3;
   access c as v { resume(v, v + v) };
   access c as v { resume(v, v + 6) };
   pure c
@@ -35,7 +35,7 @@ def doubled() -> Integer {
 /// A held value beside a parameter: the write-back reads both, and an access
 /// that aborts without an `unwind` clause unwinds by doing nothing.
 def add_to(n : Integer) -> Integer {
-  hold c = 1;
+  var c = 1;
   access c as v { resume(v, v + n) };
   access c as v { abort(v) };
   pure c

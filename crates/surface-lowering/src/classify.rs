@@ -1400,7 +1400,7 @@ mod tests
         );
         assert_eq!(
             FragmentFeature::of(
-                FormName::HOLD_STATEMENT,
+                FormName::VAR_STATEMENT,
                 FragmentSort::Declaration,
                 FragmentBoundary::WrongSort
             ),

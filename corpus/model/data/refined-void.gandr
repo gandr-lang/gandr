@@ -31,6 +31,6 @@ pub def absurdArm(n : Nat) -> (isVoid(n)) => Nat {
 /// Past zero, the family is `Unit`, and the arm answers zero.
 @[ runs("Zero") ]
 def absurdPast() -> Nat {
-  run arm <- absurdArm(Succ(Zero));
+  let arm = absurdArm(Succ(Zero));
   arm(unit)
 }

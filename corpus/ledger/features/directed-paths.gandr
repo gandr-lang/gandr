@@ -42,13 +42,13 @@ module Versions where {
   /// Both translations in sequence.
   @[ checks ]
   def both() -> Flow(Type, V1, V3) {
-    run start <- early() ;
+    let start = early() ;
     start then second
   }
   /// A record ridden along the composite.
   @[ checks ]
   def moved(record : V1) -> V3 {
-    run along <- both() ;
+    let along = both() ;
     ride(fun (X) { X }, along, record)
   }
   /// A first-version record migrated to the third by a run.

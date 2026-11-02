@@ -1,6 +1,6 @@
 @[ runs("<fun>") ]
 def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {
-  run y <- f(x);
+  let y = f(x);
   become g(y)
 }
 

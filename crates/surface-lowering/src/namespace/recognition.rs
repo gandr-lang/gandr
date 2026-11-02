@@ -26,7 +26,7 @@
 //!
 //! # Binders are reported, not bound
 //!
-//! A lambda, function or `run` binder is checked against the outermost roots
+//! A lambda, function or `let` binder is checked against the outermost roots
 //! where it is introduced ([`Recognition::note_binder`]) and reported under the
 //! same policy, but it binds nothing here: resolving a binder is the binder
 //! chain's job, and the outermost scope stays as it was.
@@ -69,7 +69,7 @@
 //! entry winning. `lower_module` declares every top-level declaration over it
 //! in admission order, then every top-level module as a namespace governing
 //! exactly the components it exports, each displacing the whole builtin subtree
-//! under its name, and reports every lambda, parameter and `run` binder against
+//! under its name, and reports every lambda, parameter and `let` binder against
 //! it without rebinding. Under `ShadowPolicy::WarnAndAllow` a source name over
 //! a builtin is recorded in `shadowed`; under `Reject` its declaration is
 //! refused as `ShadowedBuiltin`. `resolve_path` reports a path complete, an
@@ -931,7 +931,7 @@ impl Recognition
     /// - ensures: the scope is unchanged whatever the outcome; a binder whose
     ///   one-segment path is bound to a builtin is one shadow event, recorded
     ///   at `site`; a binder over a source root or over nothing is none.
-    /// - provides: the outermost report on a lambda, function or `run` binder.
+    /// - provides: the outermost report on a lambda, function or `let` binder.
     /// - fails: under [`ShadowPolicy::Reject`] on a builtin root.
     /// - panics: none.
     ///

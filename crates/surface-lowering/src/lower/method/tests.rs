@@ -37,9 +37,9 @@ const COUNTER: &str = r"module Counter where {
 }
 def used() -> -F Integer {
   var s = 1;
-  run n <- s.read();
-  run _ <- s.bump(2);
-  run m <- s.spend();
+  let n = s.read();
+  let _ = s.bump(2);
+  let m = s.spend();
   pure n + m
 }
 ";
@@ -121,7 +121,7 @@ fn a_written_through_body_returns_its_receiver()
 fn a_receiver_not_held_is_passed_or_refused()
 {
     let source = format!(
-        "{COUNTER}def passed(t : Integer) -> -F Integer {{\n  run n <- t.read();\n  t.spend()\n}}\n\
+        "{COUNTER}def passed(t : Integer) -> -F Integer {{\n  let n = t.read();\n  t.spend()\n}}\n\
          def written(t : Integer) -> -F Unit {{ t.bump(1) }}\n"
     );
     let mut arena = CoreArena::new();
@@ -263,7 +263,7 @@ module Places where {
   def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self.#[0] }
   def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self.#[i] }
 }
-def head() -> -F Integer { var xs = pair; run h <- xs.first(); pure h }
+def head() -> -F Integer { var xs = pair; let h = xs.first(); pure h }
 def doubled() -> -F Integer { var xs = pair; xs.first() as w { pure w + w } }
 def raised() -> -F Integer { var xs = pair; xs.nth(1) as w { resume(w, w + 3) }; pure 0 }
 def untouched() -> -F Integer { var xs = pair; xs.first() as w { abort(w) }; pure 0 }
@@ -347,7 +347,7 @@ fn a_view_method_answering_no_place_is_refused()
          View[m](Integer) {{ pure 0 }}\n  def crossed[m : Mode, n : Mode](self : m \
          List(Integer)) -> -F View[n](Integer) {{ self.#[0] }}\n}}\ndef stray(v : \
          View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(xs : List(Integer), i : Integer) \
-         -> -F Integer {{ run y <- xs.#[i]; pure y }}\n"
+         -> -F Integer {{ let y = xs.#[i]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -378,8 +378,8 @@ fn a_view_method_answering_no_place_is_refused()
 fn a_bare_index_reads_its_held_element()
 {
     let source = format!(
-        "{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; run y <- xs.#[i]; pure \
-         y }}\ndef zeroth() -> -F Integer {{ var xs = pair; run y <- xs.#[0]; pure y }}\n"
+        "{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; let y = xs.#[i]; pure \
+         y }}\ndef zeroth() -> -F Integer {{ var xs = pair; let y = xs.#[0]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

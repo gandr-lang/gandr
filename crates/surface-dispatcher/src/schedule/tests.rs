@@ -16,6 +16,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_syntax::SourceText;
 
+use super::bound_run;
 use super::independent;
 use crate::compose::Lowered;
 use crate::compose::LoweringCount;
@@ -120,7 +121,8 @@ fn named_calls(source: SourceText<'_>) -> Vec<(String, Independence)>
         .filter_map(|typing| match typing.term {
             TermNode::Computation(term) => match core.computation(term) {
                 Some(&Computation::Bind(head, _)) => {
-                    callee(core, head).map(|called| (name(called), writers.independence(head)))
+                    let run = bound_run(core, head);
+                    callee(core, run).map(|called| (name(called), writers.independence(run)))
                 },
                 _ => None,
             },
@@ -144,11 +146,11 @@ data Tree : Type where {
 def rec sum(t : Tree) -> Integer {
   match t {
     Leaf(n) => n,
-    Node(l, r) => { run a <- sum[<](l); run b <- sum[<](r); a + b }
+    Node(l, r) => { let a = sum[<](l); let b = sum[<](r); a + b }
   }
 }
 def say(s : String) -> [Console] Unit { Console.print(s) }
-def shout(s : String) -> [Console] Integer { run u <- say(s); 1 }
+def shout(s : String) -> [Console] Integer { let u = say(s); 1 }
 "#,
     ));
     assert_eq!(
@@ -169,8 +171,8 @@ fn a_writer_over_a_capability_stays_fused()
 def count(c : Cap { read }) -> Integer { 1 }
 def twice(n : Integer) -> Integer { n + n }
 def both(c : Cap { read }, k : Integer) -> Integer {
-  run a <- count(c);
-  run b <- twice(k);
+  let a = count(c);
+  let b = twice(k);
   a + b
 }
 "#,
@@ -196,9 +198,9 @@ fn a_writer_answering_a_kept_value_stays_fused_2954()
     let source = SourceText::from(
         r#"
 def keptView() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w };
+    let k : (() => Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
     pure(x) => pure x,

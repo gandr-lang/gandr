@@ -14,7 +14,7 @@ def paired = ((3, "three") : Integer * String);
 
 /// A value run as an annotated `pure`, then annotated where the body ends.
 def ran() -> Integer {
-  run n <- pure (3 : Integer);
+  let n = (3 : Integer);
   (n : Integer)
 }
 
@@ -43,7 +43,7 @@ def chosen(b : Bool) -> Integer {
 /// the pair's type.
 @[ runs("2") ]
 def bound() -> Integer {
-  run (b, n) <- pure ((true : Bool), 2);
+  let (b, n) = ((true : Bool), 2);
   n
 }
 
@@ -52,7 +52,7 @@ def bound() -> Integer {
 /// keeps no type, so the annotation ascribes it (#2168).
 @[ runs("2") ]
 def injected() -> Integer {
-  run (b, n) <- pure ((+{.yes = unit} : +{yes : Unit, no : Unit}), 2);
+  let (b, n) = ((+{.yes = unit} : +{yes : Unit, no : Unit}), 2);
   n
 }
 
@@ -60,7 +60,7 @@ def injected() -> Integer {
 /// ascribed as `(false : Bool)` is, and reads as that word (#2168).
 @[ runs("2") ]
 def falsity() -> Integer {
-  run (b, n) <- pure ((+{.1 = unit} : Bool), 2);
+  let (b, n) = ((+{.1 = unit} : Bool), 2);
   n
 }
 
@@ -79,6 +79,6 @@ def headed() -> Integer { (doubled : Integer => Integer)(3) }
 /// annotated with.
 @[ runs("1") ]
 def split() -> Integer {
-  run (y, z) : Integer * Integer <- pure (1, 2);
+  let (y, z) : Integer * Integer = (1, 2);
   y
 }

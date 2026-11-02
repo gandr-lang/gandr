@@ -15,8 +15,8 @@ import "../../model/strings/unique-write.gandr";
 /// copied from, so the hold would hold a string another string holds.
 @[ refuses("HeldShared") ]
 def heldCopy() -> [Div] Integer {
-  run s <- force long;
-  run c <- copy(s);
-  hold[1] h = c;
-  access h as v { run w <- pushInPlace(v, 33); run t <- written(w); resume(v, t); copies(w) }
+  let s = force long;
+  let c = copy(s);
+  var[1] h = c;
+  access h as v { let w = pushInPlace(v, 33); let t = written(w); resume(v, t); copies(w) }
 }

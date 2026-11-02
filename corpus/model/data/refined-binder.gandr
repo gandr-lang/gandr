@@ -35,7 +35,7 @@ pub def refinedPred(n : Nat) -> (natOr(n)) => Nat {
 /// Two's predecessor at zero's family runs to one.
 @[ runs("Succ(Zero)") ]
 def predTwo() -> Nat {
-  run pred <- refinedPred(Zero);
+  let pred = refinedPred(Zero);
   pred(two)
 }
 
@@ -60,6 +60,6 @@ def twoAlone : List(Nat) = Cons(two, Nil);
 /// The list that holds two has an entry, so the count is one.
 @[ runs("Succ(Zero)") ]
 def twoOccupied() -> Nat {
-  run entered <- occupied(ListL(NatL));
+  let entered = occupied(ListL(NatL));
   entered(twoAlone)
 }

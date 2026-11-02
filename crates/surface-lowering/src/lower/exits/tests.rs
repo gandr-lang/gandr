@@ -187,11 +187,11 @@ fn the_paths_of_a_computation_are_surveyed_through_nesting()
 {
     let source = format!(
         "{NAT}def f(n : Nat) -> -F Nat {{\n\
-         run a <- match n {{ Zero => pure n, Succ(p) => pure p }} ;\n\
-         run b <- match n {{ Zero => return n, Succ(p) => pure p }} ;\n\
-         run c <- match n {{ Zero => pure n, Succ(p) => match p {{ Zero => return p, Succ(q) => pure q }} }} ;\n\
-         run d <- match n {{ Zero => pure n, Succ(p) => match p {{ Zero => pure p, Succ(q) => pure q }} }} ;\n\
-         run e <- match n {{ Zero => return n, Succ(p) => match p {{ Zero => return p, Succ(q) => return q }} }} ;\n\
+         let a = match n {{ Zero => pure n, Succ(p) => pure p }} ;\n\
+         let b = match n {{ Zero => return n, Succ(p) => pure p }} ;\n\
+         let c = match n {{ Zero => pure n, Succ(p) => match p {{ Zero => return p, Succ(q) => pure q }} }} ;\n\
+         let d = match n {{ Zero => pure n, Succ(p) => match p {{ Zero => pure p, Succ(q) => pure q }} }} ;\n\
+         let e = match n {{ Zero => return n, Succ(p) => match p {{ Zero => return p, Succ(q) => return q }} }} ;\n\
          match n {{ Zero => return n, Succ(p) => return p }}\n\
          }}\n\
          def g : +U (-F Nat) ;\ndef g = thunk {{ return Zero }} ;\n\
@@ -240,9 +240,9 @@ fn the_paths_of_a_computation_are_surveyed_through_nesting()
 fn a_bound_match_continues_its_block_at_each_local_arm()
 {
     let source = format!(
-        "{NAT}def once(n : Nat) -> -F Nat {{ run m <- match n {{ Zero => return n, Succ(p) => pure p }} ; return Succ(m) }}\n\
+        "{NAT}def once(n : Nat) -> -F Nat {{ let m = match n {{ Zero => return n, Succ(p) => pure p }} ; return Succ(m) }}\n\
          def once_by_hand(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => return Succ(p) }} }}\n\
-         def kept(n : Nat) -> -F Nat {{ run m <- match n -> -F Nat {{ Zero => pure n, Succ(p) => pure p }} ; return Succ(m) }}\n"
+         def kept(n : Nat) -> -F Nat {{ let m = match n -> -F Nat {{ Zero => pure n, Succ(p) => pure p }} ; return Succ(m) }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -267,8 +267,8 @@ fn a_bound_match_continues_its_block_at_each_local_arm()
 fn a_bound_match_continues_its_block_through_a_split_arm()
 {
     let source = format!(
-        "{NAT}def split(n : Nat) -> -F Nat {{ run m <- match n {{ Zero => return n, Succ(p) => {{ run (a, b) <- pure (p, n) ; pure a }} }} ; return Succ(m) }}\n\
-         def split_by_hand(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ run (a, b) <- pure (p, n) ; return Succ(a) }} }} }}\n"
+        "{NAT}def split(n : Nat) -> -F Nat {{ let m = match n {{ Zero => return n, Succ(p) => {{ let (a, b) = (p, n) ; pure a }} }} ; return Succ(m) }}\n\
+         def split_by_hand(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ let (a, b) = (p, n) ; return Succ(a) }} }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -319,7 +319,7 @@ fn a_block_ending_in_a_statement_returns_the_unit_1205()
 fn a_use_a_local_end_replaces_keeps_its_bytes()
 {
     let source = format!(
-        "{NAT}def twice(n : Nat) -> -F Nat {{ run m <- match n {{ Zero => return n, Succ(p) => {{ run q <- match p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} ; return Succ(m) }}\n"
+        "{NAT}def twice(n : Nat) -> -F Nat {{ let m = match n {{ Zero => return n, Succ(p) => {{ let q = match p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} ; return Succ(m) }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -361,9 +361,9 @@ fn an_exit_under_nesting_leaves_its_function()
 {
     let source = format!(
         "{NAT}def pick(n : Nat) -> -F Nat {{\n\
-         run m <- match n {{\n\
+         let m = match n {{\n\
          Zero => return n,\n\
-         Succ(p) => {{ run q <- match p {{ Zero => return n, Succ(r) => pure r }} ; pure q }},\n\
+         Succ(p) => {{ let q = match p {{ Zero => return n, Succ(r) => pure r }} ; pure q }},\n\
          }} ;\n\
          return Succ(m)\n\
          }}\n\
@@ -374,7 +374,7 @@ fn an_exit_under_nesting_leaves_its_function()
          }}\n\
          }}\n\
          def deep(n : Nat) -> -F Nat {{\n\
-         run m <- match n {{ Succ(Succ(q)) => return q, Succ(Zero) => pure n, Zero => pure n }} ;\n\
+         let m = match n {{ Succ(Succ(q)) => return q, Succ(Zero) => pure n, Zero => pure n }} ;\n\
          return Succ(m)\n\
          }}\n\
          def deep_by_hand(n : Nat) -> -F Nat {{\n\
@@ -427,13 +427,13 @@ fn an_exit_under_nesting_leaves_its_function()
 fn code_no_path_reaches_is_refused()
 {
     let source = format!(
-        "{NAT}def after(n : Nat) -> -F Nat {{ run m <- match n {{ Zero => return n, Succ(p) => return p }} ; run k <- pure m ; return k }}\n\
-         def last(n : Nat) -> -F Nat {{ run m <- match n {{ Zero => return n, Succ(p) => return p }} ; return m }}\n\
-         def nested(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ run q <- become pure p ; return Succ(q) }} }} }}\n"
+        "{NAT}def after(n : Nat) -> -F Nat {{ let m = match n {{ Zero => return n, Succ(p) => return p }} ; let k = m ; return k }}\n\
+         def last(n : Nat) -> -F Nat {{ let m = match n {{ Zero => return n, Succ(p) => return p }} ; return m }}\n\
+         def nested(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ let q = become pure p ; return Succ(q) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut CoreArena::new());
     for (name, unreached) in [
-        ("after", "run k <- pure m ; return k"),
+        ("after", "let k = m ; return k"),
         ("last", "return m"),
         ("nested", "return Succ(q)"),
     ] {
@@ -510,10 +510,10 @@ fn a_tail_without_an_exit_takes_the_one_its_polarity_names()
          def produced_returned(n : Nat) -> -F Nat {{ return n }}\n\
          def arms(n : Nat) -> -F Nat {{ match n {{ Zero => n, Succ(p) => value(p) }} }}\n\
          def arms_by_hand(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => become value(p) }} }}\n\
-         def sequenced(n : Nat) -> -F Nat {{ run m <- value(n) ; Succ(m) }}\n\
-         def sequenced_by_hand(n : Nat) -> -F Nat {{ run m <- value(n) ; return Succ(m) }}\n\
-         def early(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ run q <- match p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} }}\n\
-         def early_by_hand(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ run q <- match p {{ Zero => return p, Succ(r) => pure r }} ; become pure q }} }} }}\n\
+         def sequenced(n : Nat) -> -F Nat {{ let m = value(n) ; Succ(m) }}\n\
+         def sequenced_by_hand(n : Nat) -> -F Nat {{ let m = value(n) ; return Succ(m) }}\n\
+         def early(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ let q = match p {{ Zero => return p, Succ(r) => pure r }} ; pure q }} }} }}\n\
+         def early_by_hand(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => {{ let q = match p {{ Zero => return p, Succ(r) => pure r }} ; become pure q }} }} }}\n\
          def suspended(n : Nat) -> -F (+U (-F Nat)) {{ thunk {{ value(n) }} }}\n\
          def suspended_by_hand(n : Nat) -> -F (+U (-F Nat)) {{ return thunk {{ become value(n) }} }}\n"
     );
@@ -707,7 +707,7 @@ fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
          def succeeded_bare(n : Nat) -> -F Nat {{ Succ(n) }}\n\
          def arms(m : Nat) -> -F Nat {{ match m {{ Zero => return m, Succ(p) => return p }} }}\n\
          def arms_bare(m : Nat) -> -F Nat {{ match m {{ Zero => m, Succ(p) => p }} }}\n\
-         def early(k : Nat) -> -F Nat {{ match k {{ Zero => return k, Succ(j) => {{ run q <- match j {{ Zero => return j, Succ(r) => pure r }} ; pure q }} }} }}\n\
+         def early(k : Nat) -> -F Nat {{ match k {{ Zero => return k, Succ(j) => {{ let q = match j {{ Zero => return j, Succ(r) => pure r }} ; pure q }} }} }}\n\
          def computed(n : Nat) -> -F Nat {{ return succeeded(n) }}\n\
          def stated(n : Nat) -> -F Nat {{ return n ; }}\n\
          def grouped(n : Nat) -> -F Nat {{ return (Succ(n)) }}\n\
@@ -773,8 +773,8 @@ fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
 fn a_match_continuing_its_block_answers_what_the_block_does()
 {
     let source = format!(
-        "{NAT}def stated(n : Nat) -> -F Nat {{ run m <- match n -> (-F Nat) {{ Zero => return n, Succ(p) => pure p }} ; return m }}\n\
-         def taken(n : Nat) -> -F (+U (-F Nat)) {{ run m <- match n {{ Zero => return thunk {{ return n }}, Succ(p) => pure p }} ; return thunk {{ return Succ(m) }} }}\n"
+        "{NAT}def stated(n : Nat) -> -F Nat {{ let m = match n -> (-F Nat) {{ Zero => return n, Succ(p) => pure p }} ; return m }}\n\
+         def taken(n : Nat) -> -F (+U (-F Nat)) {{ let m = match n {{ Zero => return thunk {{ return n }}, Succ(p) => pure p }} ; return thunk {{ return Succ(m) }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

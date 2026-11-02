@@ -3916,7 +3916,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
              T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
              Report, progress : Report } where {\n  type Report = String;\n  def progress = \
              \"progress\";\n}\ndef returned() -> Secret.T { Secret.seal(\"x\") }\ndef listed() \
-             -> List(Secret.T) {\n  run s <- Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() \
+             -> List(Secret.T) {\n  let s = Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() \
              -> Seat.Report { pure Seat.progress }\n",
         );
         for (path, spelled) in [
@@ -4611,11 +4611,13 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// Four loops a pass of runs through: a statement, a bound statement, a
     /// bound inner loop that breaks, and a `while` whose test always holds.
+    /// The bound statement's loop states its `Div`, so it checks and its call
+    /// runs as the bind the elaboration rebuilds it as.
     const LOOPS: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
          def tick(n : Nat) -> -F Unit { return unit }\n\
          def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
-         def bound : +U (-F Nat) ;\ndef bound = thunk { loop { run u <- tick(Zero) ; continue } } ;\n\
-         def broken : +U (-F Nat) ;\ndef broken = thunk { loop { run u <- loop { break } ; continue } } ;\n\
+         def bound : +U (-F [Div] Nat) ;\ndef bound = thunk { loop { let u = tick(Zero) ; continue } } ;\n\
+         def broken : +U (-F Nat) ;\ndef broken = thunk { loop { let u = loop { break } ; continue } } ;\n\
          def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick(Zero) } ; return Zero } ;\n";
 
     // One test per loop and tier: each spends its whole fuel, so the eight
@@ -4673,10 +4675,10 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
     const PICK: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
-         def pick(n : Nat) -> -F Nat {\n  run m <- match n {\n    Zero => return n,\n    \
-         Succ(p) => {\n      run q <- match p { Zero => return n, Succ(r) => pure r } ;\n      \
+         def pick(n : Nat) -> -F Nat {\n  let m = match n {\n    Zero => return n,\n    \
+         Succ(p) => {\n      let q = match p { Zero => return n, Succ(r) => pure r } ;\n      \
          pure q\n    },\n  } ;\n  return Succ(m)\n}\n\
-         def bound(n : Nat) -> -F Nat {\n  run m <- match n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
+         def bound(n : Nat) -> -F Nat {\n  let m = match n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
          return Succ(m)\n}\n\
          def zero : +U (-F Nat) ;\ndef zero = thunk { become pick(Zero) } ;\n\
          def one : +U (-F Nat) ;\ndef one = thunk { become pick(Succ(Zero)) } ;\n\
@@ -4870,12 +4872,12 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         format!(
             "data Depth : Type where {{\n  | Zero : Depth\n  | Succ : (p : Depth) --> Depth\n}}\n\
              data Tree : Type where {{\n  | Leaf : (n : Integer) --> Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n}}\n\
-             def rec full(d : Depth) -> Tree {{ match d {{ Zero => Leaf(1), Succ(p) => {{ run l <- full[<](p); run r <- full[<](p); Node(l, r) }} }} }}\n\
-             def rec sum(t : Tree) -> Integer {{ match t {{ Leaf(n) => n, Node(l, r) => {{ run a <- sum[<](l); run b <- sum[<](r); a + b }} }} }}\n\
-             def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\
+             def rec full(d : Depth) -> Tree {{ match d {{ Zero => Leaf(1), Succ(p) => {{ let l = full[<](p); let r = full[<](p); Node(l, r) }} }} }}\n\
+             def rec sum(t : Tree) -> Integer {{ match t {{ Leaf(n) => n, Node(l, r) => {{ let a = sum[<](l); let b = sum[<](r); a + b }} }} }}\n\
+             def half(d : Depth) -> Integer {{ let t = full(d); sum(t) }}\n\
              def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
              def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\
-             def both : +U (-F Integer) ;\ndef both = thunk {{ run a <- half({depth}); run b <- half({depth}); a + b }} ;\n"
+             def both : +U (-F Integer) ;\ndef both = thunk {{ let a = half({depth}); let b = half({depth}); a + b }} ;\n"
         )
     }
 

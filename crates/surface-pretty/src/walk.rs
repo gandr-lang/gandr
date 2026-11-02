@@ -127,7 +127,7 @@
 //!
 //! # A body's statements break together
 //!
-//! A body's statements, `run x <- c ; rest`, are separated by soft lines that
+//! A body's statements, `let x = c ; rest`, are separated by soft lines that
 //! break with the group around them rather than one choice each: the whole
 //! body, and the body of each lambda, thunk and block `{ … }` within it, is a
 //! group, on one line when it fits and one statement per line otherwise, a
@@ -1874,7 +1874,7 @@ enum Binding
     Relation,
     /// `A -> C`, `(x : A) -> C` or `A => B`.
     Arrow,
-    /// `run x <- c ; rest`, whose rest runs to the end of the block it stands
+    /// `let x = c ; rest`, whose rest runs to the end of the block it stands
     /// in; anywhere else it is a block of its own, `{ … }`.
     Sequence,
 }
@@ -2804,9 +2804,13 @@ enum Join
     /// A bind over the computation it runs and the rest, its binder named as
     /// a dependent arrow's is.
     Sequence,
+    /// A bind of a call whose binder the rest never reads, its binder
+    /// written `_`: `let _ = f(a) ; rest`, which runs the call, as a `let`
+    /// naming it would not (#4466).
+    DiscardedSequence,
     /// A typed bind over the computation it ascribes, the value type its
     /// returner returns, and the rest under the bind's binder, named as a
-    /// dependent arrow's is: `run x : A <- c ; rest`.
+    /// dependent arrow's is: `let x : A = c ; rest`.
     TypedSequence,
     /// A lambda over its body, its binder named as a dependent arrow's is.
     Lambda,
@@ -2892,12 +2896,14 @@ enum Listed
 
 /// The bound call and the rest of `node` when it is a run binding a call, `x
 /// ← f(a); …`: a bind whose bound computation applies a forced value to at
-/// least one argument.
+/// least one argument, written as it runs or as the return of the nested call
+/// a `let` names (#4466).
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the bind's bound and rest exactly when `node` reads as a bind
-///   whose bound is a call ([`call`]); absent otherwise.
+/// - ensures: the bind's bound call and rest exactly when `node` reads as a
+///   bind whose bound is a call ([`call`]), or the return of a nested one;
+///   absent otherwise.
 /// - provides: the runs [`linear_runs`] peels off a block.
 /// - fails: never.
 /// - panics: none.
@@ -2916,6 +2922,14 @@ where
     let Former::Bind(bound, rest) = source.read(node)
     else {
         return None;
+    };
+    let bound = if let Former::Return(returned) = source.read(bound)
+        && let Former::Nested(nested) = source.read(returned)
+    {
+        nested
+    }
+    else {
+        bound
     };
     call(source, bound).map(|bound| (bound, rest))
 }
@@ -3005,7 +3019,7 @@ where
 /// The bind `former` holds when it is a nested or returned computation whose
 /// statements stand where a value is read: one over a bind that
 /// [`nested_call`] does not write as the call it binds. Its slot writes them
-/// as a block, `{ run x <- c ; rest }` ([`Walk::bare_up_to`]).
+/// as a block, `{ let x = c ; rest }` ([`Walk::bare_up_to`]).
 ///
 /// # Specification
 /// - requires: nothing.
@@ -3041,7 +3055,7 @@ where
     }
 }
 
-/// The calls a block's `run` statements bind from `node` on, in order, and
+/// The calls a block's `let` statements bind from `node` on, in order, and
 /// the tail after them, when the statements only sequence the calls: the
 /// sugared form writes each call where its binder is read, `g(f(a))` for
 /// `x ← f(a); g(x)`, as the lowering lists such statements for the
@@ -3413,8 +3427,8 @@ enum Threads<Node>
 {
     /// None: the loop is its fixpoint alone.
     Unthreaded,
-    /// `count` slots: `(fix k. λ s. hold c = s; b) c` for one, and `(fix k. λ
-    /// p. split p (s₁, …, sₙ); hold c₁ = s₁; …; hold cₙ = sₙ; b) (c₁, …, cₙ)`
+    /// `count` slots: `(fix k. λ s. var c = s; b) c` for one, and `(fix k. λ
+    /// p. split p (s₁, …, sₙ); var c₁ = s₁; …; var cₙ = sₙ; b) (c₁, …, cₙ)`
     /// for several, each pass holding the slots again under their own names.
     Slots
     {
@@ -3835,8 +3849,8 @@ where
 }
 
 /// How many slots a threading loop's lambda body `each` holds again, and the
-/// passes it runs under them: `hold c = s; b` holding its one argument, or
-/// `split p (s₁, …, sₙ); hold c₁ = s₁; …; hold cₙ = sₙ; b` holding each
+/// passes it runs under them: `var c = s; b` holding its one argument, or
+/// `split p (s₁, …, sₙ); var c₁ = s₁; …; var cₙ = sₙ; b` holding each
 /// component of its argument in order.
 ///
 /// # Specification
@@ -7348,7 +7362,7 @@ impl Walk<'_, '_>
     ///   ascription to a pure returner; none when any link is anything else or
     ///   the walk's remaining visits run out first. Every link read is one
     ///   visit spent, so a recognised bind spends exactly two.
-    /// - provides: the shape the lowering gives `run x : A <- c ; rest`, which
+    /// - provides: the shape the lowering gives `let x : A = c ; rest`, which
     ///   the printer spells back as written.
     /// - fails: never.
     /// - panics: none.
@@ -8015,7 +8029,7 @@ impl Walk<'_, '_>
     ///   does and any other application its call as [`Self::call`] does, under
     ///   `become` where it ends a loop's pass; a nested computation or a
     ///   returned value over a bind binding no call is the block of its
-    ///   statements, `{ run x <- c ; rest }`, as [`Self::form`] writes it; a
+    ///   statements, `{ let x = c ; rest }`, as [`Self::form`] writes it; a
     ///   decode, a quote, a returner where the body ends, any other nested
     ///   computation or returned value and a reset where a body ends push their
     ///   child's visit alone, so the child's piece is theirs, the reset's child
@@ -8976,8 +8990,8 @@ impl Walk<'_, '_>
             },
             // A body that ends answering a type's code keeps its `pure`: the
             // lowering reads a type at a body's end only as a returned value.
-            // So does one that ends answering a `run`: bare at a statement's
-            // head, `run` opens a bind, `run x <- c ; …`. And so does one that
+            // So does one that ends answering a `run`: a bare `run e` at a
+            // body's end is the run's own computation. And so does one that
             // ends answering a nested computation, `pure pure v`: the lowering
             // keeps the `return` of a computation written, and the nested one
             // bare would be the body's own end.
@@ -9023,7 +9037,7 @@ impl Walk<'_, '_>
                 Production("force_expression"),
                 Join::Prefix(Prefix::Force),
             )),
-            // A block's `run` statements that only sequence calls, read once
+            // A block's `let` statements that only sequence calls, read once
             // each in order, are written at their reads in the sugared form,
             // as the formatter writes them (#1416), a match's branch's among
             // them.
@@ -9036,19 +9050,60 @@ impl Walk<'_, '_>
                 Self::read_at_binders(&bounds, rest, admits, below(depth, kind), tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
-            Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
-                Some((ascribed, result)) => {
-                    shaped = Some(Vec::from([
-                        Slot::of(ascribed, Admits::Computation(Tail::Continues), Binds::NONE),
-                        Slot::of(result, Admits::ValueType, Binds::NONE),
-                        Slot::of(rest, admits, Binds::ONE),
-                    ]));
-                    Some(writes(Production("block"), Join::TypedSequence))
-                },
-                None => Some(writes(Production("block"), Join::Sequence)),
+            Former::Bind(bound, rest)
+                if let Some((ascribed, result)) = self.typed_bind(source, bound) =>
+            {
+                shaped = Some(Vec::from([
+                    Slot::of(ascribed, Admits::Computation(Tail::Continues), Binds::NONE),
+                    Slot::of(result, Admits::ValueType, Binds::NONE),
+                    Slot::of(rest, admits, Binds::ONE),
+                ]));
+                Some(writes(Production("block"), Join::TypedSequence))
             },
+            // A `let` of a call nests it in a return, which the checker runs or
+            // suspends (#4466). It spells as written, the call itself the
+            // bound computation: `let x = f(a) ;`.
+            Former::Bind(bound, rest)
+                if let Former::Return(returned) = source.read(bound)
+                    && let Former::Nested(nested) = source.read(returned)
+                    && matches!(
+                        source.read(nested),
+                        Former::Application(..) | Former::Force(_)
+                    ) =>
+            {
+                shaped = Some(Vec::from([
+                    Slot::of(nested, Admits::Computation(Tail::Continues), Binds::NONE),
+                    Slot::of(rest, admits, Binds::ONE),
+                ]));
+                Some(writes(Production("block"), Join::Sequence))
+            },
+            // A `let` of an annotated value returns the ascription, and spells
+            // its annotation after the binder: `let x : A = v ;`.
+            Former::Bind(bound, rest)
+                if let Former::Return(returned) = source.read(bound)
+                    && let Former::Annotated { value, ty } = source.read(returned) =>
+            {
+                shaped = Some(Vec::from([
+                    Slot::of(value, Admits::Value, Binds::NONE),
+                    Slot::of(ty, Admits::ValueType, Binds::NONE),
+                    Slot::of(rest, admits, Binds::ONE),
+                ]));
+                Some(writes(Production("block"), Join::TypedSequence))
+            },
+            // A call bound and never read runs where it stands, and a `let`
+            // naming it would read it as a nested call: its binder is written
+            // `_`.
+            Former::Bind(bound, rest)
+                if matches!(
+                    source.read(bound),
+                    Former::Application(..) | Former::Force(_)
+                ) && reads_binders(source, rest, admits, Arity(1_usize)) == Reading::Unread =>
+            {
+                Some(writes(Production("block"), Join::DiscardedSequence))
+            },
+            Former::Bind(..) => Some(writes(Production("block"), Join::Sequence)),
             // A placement has no spelling of its own: the bind before it
-            // writes `run b <- c.alloc(n) ;`, and the placement stands as the
+            // writes `let b = c.alloc(n) ;`, and the placement stands as the
             // rest of the block, under the buffer's linear binder, which takes
             // the bind's name.
             Former::Place { body, .. } => {
@@ -11558,8 +11613,7 @@ impl Walk<'_, '_>
                 writes(Production("at_type"), Binding::Cons)
             },
             Former::WorldHold(_) => {
-                // Parenthesized, as the surface writes it: bare at a block's
-                // head, `hold` opens a hold statement, `hold x = v ; …`.
+                // Parenthesized, as the surface writes it.
                 let _ = parts.text("(hold ").piece(Binding::Prefix).text(")");
                 writes(
                     Production("parenthesized_expression"),
@@ -11824,7 +11878,7 @@ impl Walk<'_, '_>
     ///   first label so and its second by the next name, a break after the
     ///   comma; `f(a1, …, an)` with the operator parenthesized unless it is an
     ///   atom, a block when it is a bind; every list with a break after each
-    ///   comma and before the closer; `run x <- c ; rest` naming its binder so,
+    ///   comma and before the closer; `let x = c ; rest` naming its binder so,
     ///   the bound computation a block when it is itself a bind, a soft line
     ///   after the semicolon; `fun (x) { c }` and the static lambda `fun (a) {
     ///   v }` naming their binder so, and `thunk { c }`, each a block.
@@ -11867,7 +11921,7 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::TypedLambda | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::TypedLambda | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
@@ -11883,7 +11937,7 @@ impl Walk<'_, '_>
                     // a dependent pair, and the product otherwise.
                     Join::RecordProduct if piece.binding == Binding::Atom => Binding::Atom,
                     Join::RecordProduct => Infix::Product.binding(),
-                    Join::Sequence | Join::TypedSequence => Binding::Sequence,
+                    Join::Sequence | Join::DiscardedSequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
@@ -12229,18 +12283,23 @@ impl Walk<'_, '_>
                 };
                 (self.block(head, body)?, Binding::Prefix)
             },
-            Join::Sequence => {
+            Join::Sequence | Join::DiscardedSequence => {
                 let rest = self.pop()?;
                 let bound = self.pop()?;
                 let bound = self.bare_up_to(bound, Binding::Arrow)?;
-                let binder = self.binder(OpenBinders(0_usize))?;
-                let run = self.leaf(Glyphs("run "))?;
-                let arrow = self.leaf(Glyphs(" <- "))?;
+                let binder = if join == Join::DiscardedSequence {
+                    self.leaf(Glyphs("_"))?
+                }
+                else {
+                    self.binder(OpenBinders(0_usize))?
+                };
+                let lead = self.leaf(Glyphs("let "))?;
+                let equals = self.leaf(Glyphs(" = "))?;
                 let semicolon = self.leaf(Glyphs(" ;"))?;
                 let line = Doc::LINE;
                 (
                     self.builder
-                        .concat_all(&[run, binder, arrow, bound, semicolon, line, rest.doc])?,
+                        .concat_all(&[lead, binder, equals, bound, semicolon, line, rest.doc])?,
                     Binding::Sequence,
                 )
             },
@@ -12250,14 +12309,14 @@ impl Walk<'_, '_>
                 let bound = self.pop()?;
                 let bound = self.bare_up_to(bound, Binding::Arrow)?;
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let run = self.leaf(Glyphs("run "))?;
+                let lead = self.leaf(Glyphs("let "))?;
                 let colon = self.leaf(Glyphs(" : "))?;
-                let arrow = self.leaf(Glyphs(" <- "))?;
+                let equals = self.leaf(Glyphs(" = "))?;
                 let semicolon = self.leaf(Glyphs(" ;"))?;
                 let line = Doc::LINE;
                 (
                     self.builder.concat_all(&[
-                        run, binder, colon, result.doc, arrow, bound, semicolon, line, rest.doc,
+                        lead, binder, colon, result.doc, equals, bound, semicolon, line, rest.doc,
                     ])?,
                     Binding::Sequence,
                 )

@@ -2085,10 +2085,8 @@ fn expressions(
     ));
     // `run c` — the explicit spelling of the fourth bridge: the computation
     // runs before the computation around it and stands for the value it
-    // returns. `run` also opens a bind statement: at a statement's start
-    // inside a body the statement is the reading, so an inline run standing
-    // first in a statement is parenthesised; at the top level the token after
-    // the pattern, `<-` or not, tells the two apart.
+    // returns. It stands wherever an expression does, a statement's start
+    // included.
     out.push(r(
         RuleName("run_expression"),
         Provenance("run_expression"),
@@ -2579,7 +2577,7 @@ fn param() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the eight statement alternatives, each carrying its own
+/// - ensures: the seven statement alternatives, each carrying its own
 ///   terminating semicolon.
 /// - panics: none.
 ///
@@ -2590,12 +2588,11 @@ fn param() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 8 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 7 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn statement_alt() -> Regex
 {
     alt([
         let_statement(),
-        bind_statement(),
         unpack_statement(),
         seq([
             t(TileLabel("leta")),
@@ -2604,7 +2601,7 @@ fn statement_alt() -> Regex
             h(Sort::Expression),
             t(TileLabel(";")),
         ]),
-        hold_statement(),
+        var_statement(),
         seq([h(Sort::Expression), t(TileLabel(";"))]),
         assignment_statement(),
         // `import P ;` opens the module `P` names over the rest of the block.
@@ -2654,14 +2651,13 @@ fn assignment_statement() -> Regex
 
 /// Build the statement that holds a value: `var x = E ;`, or `var[1] x = E
 /// ;` at a grade, or `var x : T = E ;` with the value's type stated, a type
-/// `A at w` making it the handle the world `w` holds. `hold` is read in
-/// `var`'s place until the corpus moves.
+/// `A at w` making it the handle the world `w` holds.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the `var` or `hold` keyword, an optional bracketed numeral grade,
-///   the held name, an optional colon-led type, then an equals-delimited
-///   expression and a semicolon.
+/// - ensures: the `var` keyword, an optional bracketed numeral grade, the held
+///   name, an optional colon-led type, then an equals-delimited expression and
+///   a semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2671,11 +2667,11 @@ fn assignment_statement() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref leads) if leads.len() == 2 && leads.iter().zip(["var", "hold"]).all(|(lead, label)| matches!(lead.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
-fn hold_statement() -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "var")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+fn var_statement() -> Regex
 {
     seq([
-        alt([t(TileLabel("var")), t(TileLabel("hold"))]),
+        t(TileLabel("var")),
         opt(seq([
             t(TileLabel("[")),
             t(TileLabel("number")),
@@ -2749,44 +2745,6 @@ fn unpack_statement() -> Regex
         t(TileLabel(":")),
         h(Sort::Type),
         t(TileLabel("=")),
-        h(Sort::Expression),
-        t(TileLabel(";")),
-    ])
-}
-
-/// Build a computation-binding statement: `run PAT : B <- E ;`.
-///
-/// The optional `: B` names the **bound computation's** type, so it is a
-/// computation type (`-F A`, and the other negative formers) rather than the
-/// type of the name the pattern binds. The binder keyword already says which
-/// category is bound; the annotation says which computation type the source is
-/// checked against, and the lowerer spends it through the existing computation
-/// ascription.
-///
-/// No pattern form carries a top-level `:`, so the tile after the pattern
-/// discriminates the annotated and bare spellings with no lookahead.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: a run keyword and pattern, optional bound-type annotation and
-///   left-arrow source expression, terminated by a semicolon.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "run")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "<-")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
-fn bind_statement() -> Regex
-{
-    seq([
-        t(TileLabel("run")),
-        h(Sort::Pattern),
-        opt(seq([t(TileLabel(":")), h(Sort::Type)])),
-        t(TileLabel("<-")),
         h(Sort::Expression),
         t(TileLabel(";")),
     ])
@@ -4422,10 +4380,9 @@ fn primary_expressions(
     );
     for statement in [
         "let_statement",
-        "bind_statement",
         "unpack_statement",
         "leta_statement",
-        "hold_statement",
+        "var_statement",
         "expression_statement",
         "assignment_statement",
         "import_statement",

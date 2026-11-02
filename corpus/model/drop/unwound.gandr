@@ -13,9 +13,9 @@ def later : Integer => Unit;
 /// access's unwind runs, and its call of `later` blames the run (#1334).
 @[ runs("blame: `later` is owed its body") ]
 def unwound() -> Integer {
-  hold x = 1;
-  run r : Integer <- handle c : Proc {
-    access x as v { run _ <- c.exit(1); resume(v, 5) } unwind { later(1) };
+  var x = 1;
+  let r : Integer = handle c : Proc {
+    access x as v { let _ = c.exit(1); resume(v, 5) } unwind { later(1) };
     pure 0
   } with {
     pure(y) => pure y,
@@ -33,10 +33,10 @@ def built(a : Integer) -> List(Integer) {
 /// the unwind and the rest of the scope each hold the list.
 @[ runs("cons(9, cons(1, cons(2, nil)))") ]
 def unwound_kept() -> List(Integer) {
-  run ys <- built(1);
-  hold x = 1;
-  run r : Integer <- handle c : Proc {
-    access x as v { run _ <- c.exit(1); resume(v, 5) } unwind { run _ <- pure ys; pure unit };
+  let ys = built(1);
+  var x = 1;
+  let r : Integer = handle c : Proc {
+    access x as v { let _ = c.exit(1); resume(v, 5) } unwind { let _ = ys; pure unit };
     pure 0
   } with {
     pure(y) => pure y,

@@ -676,7 +676,7 @@ pub enum Former<'source, Node>
     /// `pure v` anywhere else.
     Return(Node),
     /// A sequencing bind over the computation it runs and the rest, which
-    /// stands under one binder for the value returned: `run x <- c ; rest`.
+    /// stands under one binder for the value returned: `let x = c ; rest`.
     Bind(Node, Node),
     /// A force of a thunk value: `force v`.
     Force(Node),
@@ -1037,7 +1037,7 @@ pub enum Former<'source, Node>
     Lazy(Arity),
     /// A computation checked against the computation type it is ascribed.
     /// The surface writes one only as the bound computation of a typed bind,
-    /// `run x : A <- c ; rest`, ascribed `-F A`; the printer spells that bind
+    /// `let x : A = c ; rest`, ascribed `-F A`; the printer spells that bind
     /// whole and any other ascription as its body, approximately.
     Ascription
     {
@@ -1074,7 +1074,7 @@ pub enum Former<'source, Node>
         /// The rest of the block.
         body: Node,
     },
-    /// A placement, the rest of `run b <- c.alloc(n) ;` after its bind: the
+    /// A placement, the rest of `let b = c.alloc(n) ;` after its bind: the
     /// rest under the buffer's linear binder. It has no spelling of its own:
     /// the bind before it writes the statement, and it stands as its body.
     Place

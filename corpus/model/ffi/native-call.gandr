@@ -13,7 +13,7 @@ extern "c" from "./testlib" as testlib {
 /// projection yet (#1106), and `testlib` is the extern block's (#327).
 @[ refuses("OutOfFragment.projection_expression") ]
 def measured() -> -F (i64 * i64) {
-  run doubled <- testlib.gandr_test_add(21i64, 21i64);
-  run length <- testlib.gandr_test_strlen("hello");
+  let doubled = testlib.gandr_test_add(21i64, 21i64);
+  let length = testlib.gandr_test_strlen("hello");
   pure (doubled, length)
 }

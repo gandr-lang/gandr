@@ -16,6 +16,6 @@ def namedTwice() -> -F [Fs, Fs] Integer { pure 1 }
 /// row `[Div]` does not hold.
 @[ refuses("TypeMismatch") ]
 def narrowedRow(c : Cap { read }) -> [Div] Integer {
-  run _ <- peek(c);
+  let _ = peek(c);
   once(2)
 }

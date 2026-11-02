@@ -29,9 +29,9 @@ def rec cView(bs : List(Integer)) -> CView {
   match bs {
     Nil => Interior,
     Cons(b, rest) => {
-      run zero <- b == 0;
-      run left <- count(rest);
-      run last <- left == 0;
+      let zero = b == 0;
+      let left = count(rest);
+      let last = left == 0;
       match last {
         true => {
           match zero {
@@ -43,7 +43,7 @@ def rec cView(bs : List(Integer)) -> CView {
           match zero {
             true => Interior,
             false => {
-              run tail <- cView[<](rest);
+              let tail = cView[<](rest);
               match tail {
                 Borrowed(t) => Borrowed(bs),
                 Interior => Interior
@@ -62,7 +62,7 @@ def hi() -> List(Integer) { terminated((Cons(104, Cons(105, Nil)) : List(Integer
 
 /// C reads `hi` as the bytes it is held in: it borrows them whole.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiForC() -> List(Integer) { run bs <- force hi; run v <- cView(bs); match v {
+def hiForC() -> List(Integer) { let bs = force hi; let v = cView(bs); match v {
   Borrowed(t) => t,
   Interior => Nil
 } }

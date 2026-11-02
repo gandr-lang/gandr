@@ -90,6 +90,6 @@ def parityGroup : Model(Group) = pack Parity at Model(Group) ;
 /// one.
 @[ checks ]
 def invMulParity() -> Path(Bit, One, One) {
-  run law <- Group.invMul(parityGroup);
+  let law = Group.invMul(parityGroup);
   law(One, Zero)
 }

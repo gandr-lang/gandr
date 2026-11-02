@@ -3,7 +3,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │
  3 │ ┌  def neverFreed() -> -F Unit {
  4 │ │┌   handle r : Ring {
- 5 │ ││     run b <- r.alloc(4096);
+ 5 │ ││     let b = r.alloc(4096);
    │ ││     ━━━ a buffer never handed back
  6 │ ││     pure unit
  7 │ ││   } with {

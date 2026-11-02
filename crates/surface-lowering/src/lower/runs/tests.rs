@@ -131,20 +131,20 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
             ),
             (
                 at("{ id(n) + 1 }", "id(n)"),
-                site(RunSpelling::Parenthesised, RunOperand::Tight)
+                site(RunSpelling::Bare, RunOperand::Tight)
             ),
             (
                 at("{ return n + 1 }", "n + 1"),
                 site(RunSpelling::Bare, RunOperand::Grouped)
             ),
         ],
-        "a call after `return` is spelled bare, one that begins a block's tail parenthesised, \
-         and an operator call is grouped after `run`"
+        "a call after `return` and one that begins a block's tail are spelled bare, and an \
+         operator call is grouped after `run`"
     );
     let written = SourceText::from(
         "def id(n: Integer) -> -F Integer { n }\n\
          def returned(n: Integer) -> -F Integer { return run id(n) }\n\
-         def leading(n: Integer) -> -F Integer { (run id(n)) + 1 }\n\
+         def leading(n: Integer) -> -F Integer { run id(n) + 1 }\n\
          def grouped(n: Integer) -> -F Integer { return run (n + 1) }\n",
     );
     let mut rewritten = CoreArena::new();
@@ -167,7 +167,7 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
 {
     let text = SourceText::from(
         "def plus(n : Integer) -> Integer => Integer { thunk { fun (m : Integer) { m + n } } }\n\
-         def applied(n : Integer) -> Integer { run h <- plus(n)(1) ; h }\n\
+         def applied(n : Integer) -> Integer { let h = plus(n)(1) ; h }\n\
          def dependent(A : Type) -> A => A { thunk { fun (x : A) { x } } }\n\
          def picked(A : Type, x : A) -> A { dependent(A)(x) }\n\
          def curried(n : Integer, m : Integer) -> Integer { n + m }\n\
@@ -192,7 +192,7 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
             .map(|run| (run.span, run.site))
             .collect::<Vec<_>>(),
         [
-            (at("run h <- plus(n)(1)", "plus(n)"), site),
+            (at("let h = plus(n)(1)", "plus(n)"), site),
             (at("{ dependent(A)(x) }", "dependent(A)"), site),
         ],
         "a head call returning a function runs, spelled grouped where a bound statement \
@@ -200,7 +200,7 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
     );
     let written = SourceText::from(
         "def plus(n : Integer) -> Integer => Integer { thunk { fun (m : Integer) { m + n } } }\n\
-         def applied(n : Integer) -> Integer { run h <- (run plus(n))(1) ; h }\n\
+         def applied(n : Integer) -> Integer { let h = (run plus(n))(1) ; h }\n\
          def dependent(A : Type) -> A => A { thunk { fun (x : A) { x } } }\n\
          def picked(A : Type, x : A) -> A { (run dependent(A))(x) }\n",
     );
@@ -220,17 +220,17 @@ fn a_run_read_once_first_is_linear()
 {
     let source = format!(
         "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
-         def field(n : Nat) -> -F Nat {{ run m <- twice(n) ; Succ(m) }}\n\
-         def chained(n : Nat) -> -F Nat {{ run a <- twice(n) ; run b <- twice(a) ; become twice(b) }}\n\
-         def later(n : Nat) -> -F Nat {{ run c <- twice(n) ; second(c, twice(n)) }}\n\
-         def doubled(n : Nat) -> -F Nat {{ run d <- twice(n) ; second(d, d) }}\n\
-         def after(n : Nat) -> -F Nat {{ run e <- twice(n) ; second(twice(n), e) }}\n\
-         def whole(n : Nat) -> -F Nat {{ run f <- twice(n) ; f }}\n\
-         def reread(n : Nat) -> -F Nat {{ run g <- twice(n) ; run h <- twice(g) ; second(g, h) }}\n\
-         def paired(n : Nat) -> -F Nat {{ run p <- twice(n) ; run q <- twice(Zero) ; second(p, q) }}\n\
-         def swapped(n : Nat) -> -F Nat {{ run r <- twice(n) ; run s <- twice(Zero) ; second(s, r) }}\n\
+         def field(n : Nat) -> -F Nat {{ let m = twice(n) ; Succ(m) }}\n\
+         def chained(n : Nat) -> -F Nat {{ let a = twice(n) ; let b = twice(a) ; become twice(b) }}\n\
+         def later(n : Nat) -> -F Nat {{ let c = twice(n) ; second(c, twice(n)) }}\n\
+         def doubled(n : Nat) -> -F Nat {{ let d = twice(n) ; second(d, d) }}\n\
+         def after(n : Nat) -> -F Nat {{ let e = twice(n) ; second(twice(n), e) }}\n\
+         def whole(n : Nat) -> -F Nat {{ let f = twice(n) ; f }}\n\
+         def reread(n : Nat) -> -F Nat {{ let g = twice(n) ; let h = twice(g) ; second(g, h) }}\n\
+         def paired(n : Nat) -> -F Nat {{ let p = twice(n) ; let q = twice(Zero) ; second(p, q) }}\n\
+         def swapped(n : Nat) -> -F Nat {{ let r = twice(n) ; let s = twice(Zero) ; second(s, r) }}\n\
          @[ explicit_runs ]\n\
-         def asked(n : Nat) -> -F Nat {{ run k <- twice(n) ; Succ(k) }}\n"
+         def asked(n : Nat) -> -F Nat {{ let k = twice(n) ; Succ(k) }}\n"
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();
@@ -246,13 +246,13 @@ fn a_run_read_once_first_is_linear()
     assert_eq!(
         module.linear_runs(),
         [
-            linear(("run m <- twice(n)", "twice(n)"), ("Succ(m) }", "m")),
-            linear(("run b <- twice(a)", "twice(a)"), ("twice(b) }", "b")),
-            linear(("run c <- twice(n)", "twice(n)"), ("(c,", "c")),
-            linear(("run h <- twice(g)", "twice(g)"), ("g, h) }", "h")),
-            linear(("run p <- twice(n)", "twice(n)"), ("(p,", "p")),
-            linear(("run q <- twice(Zero)", "twice(Zero)"), ("p, q) }", "q")),
-            linear(("run s <- twice(Zero)", "twice(Zero)"), ("(s,", "s")),
+            linear(("let m = twice(n)", "twice(n)"), ("Succ(m) }", "m")),
+            linear(("let b = twice(a)", "twice(a)"), ("twice(b) }", "b")),
+            linear(("let c = twice(n)", "twice(n)"), ("(c,", "c")),
+            linear(("let h = twice(g)", "twice(g)"), ("g, h) }", "h")),
+            linear(("let p = twice(n)", "twice(n)"), ("(p,", "p")),
+            linear(("let q = twice(Zero)", "twice(Zero)"), ("p, q) }", "q")),
+            linear(("let s = twice(Zero)", "twice(Zero)"), ("(s,", "s")),
         ],
         "the runs ending a block whose binders its tail reads once each, first and in their \
          order, are linear, a chain's last link, one before a later run and a pair among them; \
@@ -269,9 +269,9 @@ fn a_run_in_a_match_branch_is_linear_1935()
 {
     let source = format!(
         "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
-         def armed(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run d <- twice(b) ; Succ(d) }} }} }}\n\
-         def chained(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run e <- twice(b) ; run f <- twice(e) ; Succ(f) }} }} }}\n\
-         def reread(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ run g <- twice(b) ; second(g, g) }} }} }}\n"
+         def armed(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ let d = twice(b) ; Succ(d) }} }} }}\n\
+         def chained(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ let e = twice(b) ; let f = twice(e) ; Succ(f) }} }} }}\n\
+         def reread(a : Nat) -> -F Nat {{ match a {{ Zero => Zero, Succ(b) => {{ let g = twice(b) ; second(g, g) }} }} }}\n"
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();
@@ -287,8 +287,8 @@ fn a_run_in_a_match_branch_is_linear_1935()
     assert_eq!(
         module.linear_runs(),
         [
-            linear(("run d <- twice(b)", "twice(b)"), ("Succ(d) }", "d")),
-            linear(("run f <- twice(e)", "twice(e)"), ("Succ(f) }", "f")),
+            linear(("let d = twice(b)", "twice(b)"), ("Succ(d) }", "d")),
+            linear(("let f = twice(e)", "twice(e)"), ("Succ(f) }", "f")),
         ],
         "a branch's run read once and first is linear, a chain's last link among them; one \
          read twice is not"

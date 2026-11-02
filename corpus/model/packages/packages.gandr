@@ -7,9 +7,9 @@
 @[ refuses("OutOfFragment.unpack_statement") ]
 def consume(p : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T})) -> -F Integer {
   unpack m : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T}) = p;
-  run r <- force m;
-  run f <- r.read;
-  run s <- r.seed;
+  let r = force m;
+  let f = r.read;
+  let s = r.seed;
   f(s)
 }
 
@@ -31,8 +31,8 @@ def text_counter = pack [String] thunk {
 /// refused (#1108).
 @[ refuses("UnknownConstant") ]
 def total() -> Integer {
-  run a <- consume(int_counter);
-  run b <- consume(text_counter);
+  let a = consume(int_counter);
+  let b = consume(text_counter);
   return (a + b)
 }
 

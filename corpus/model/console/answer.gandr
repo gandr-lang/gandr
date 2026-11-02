@@ -20,7 +20,7 @@ import "../../../library/std/src/console.gandr";
 
 /// The entry: it reads one line and answers it.
 def main(authority : Authority) -> [Console, Stderr, Stdin] Unit {
-  run answer <- read_line(console(authority));
+  let answer = read_line(console(authority));
   if answer == "yes\n" {
     print(console(authority), "agreed")
   } else {

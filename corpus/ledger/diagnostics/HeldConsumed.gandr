@@ -11,7 +11,7 @@ module Taken where {
 
 @[ refuses("HeldConsumed") ]
 def readAfterTaken() -> -F Integer {
-  hold n = 3;
-  run m <- n.take();
+  var n = 3;
+  let m = n.take();
   n.look()
 }

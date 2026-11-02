@@ -9,7 +9,7 @@ import "../../../library/std/src/console.gandr";
 /// A line read from standard input, written back to standard output, and a
 /// note on standard error.
 pub def echo(authority : Authority) -> [Console, Stderr, Stdin] Unit {
-  run line <- read_line(console(authority));
+  let line = read_line(console(authority));
   print(console(authority), line);
   eprint(console(authority), "echoed")
 }

@@ -9,8 +9,8 @@
 /// A loop that breaks only when one is below zero: it never returns, and its
 /// row says it may not.
 def spin(x : Bool) -> [Div] Bool {
-  run y <- loop {
-    run below <- 1 < 0;
+  let y = loop {
+    let below = 1 < 0;
     match below {
       true => break(x),
       false => continue,
@@ -27,7 +27,7 @@ def spinOn(x : Bool) -> [Div] Bool {
 /// A loop that breaks at once states `Div` all the same: the row records what
 /// the loop may do, not what one run of it does.
 pub def once(x : Integer) -> [Div] Integer {
-  run y <- loop { break(x) };
+  let y = loop { break(x) };
   y
 }
 
@@ -48,7 +48,7 @@ def rec unused(x : Bool) -> Bool {
 /// function calling `g` and dropping what it returns is `f`.
 def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   a => b,
-  fun (x) { run v <- g(x); f(x) },
+  fun (x) { let _ = g(x); f(x) },
   f
 ) {
   here(f)
@@ -57,7 +57,7 @@ def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
 /// Two unread calls in a row are dropped one after the other.
 def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> Path(
   a => b,
-  fun (x) { run v <- g(x); run w <- h(x); f(x) },
+  fun (x) { let _ = g(x); let _ = h(x); f(x) },
   f
 ) {
   here(f)
@@ -73,7 +73,7 @@ def apply(a : Type, b : Type, h : a => b, x : a) -> b {
 /// reading does not do under a binder.
 def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   a => b,
-  fun (x) { run v <- g(x); apply(a, b, f, x) },
+  fun (x) { let _ = g(x); apply(a, b, f, x) },
   f
 ) {
   here(f)

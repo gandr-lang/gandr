@@ -19,7 +19,7 @@ def shielded() -> Unit {
   } with {
     pure(x) => pure x,
     oper exit(code, k) => {
-      hold n = 0;
+      var n = 0;
       access n as v { abort(v) } unwind { abandon(k) }
     }
   }

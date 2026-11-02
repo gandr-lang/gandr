@@ -85,7 +85,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/sized-higher-order.gandr:88:64
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:88:63
    │
 85 │    def rec halved_through_pred(n : Nat) -> Nat {
    │    │                           ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
@@ -93,12 +93,12 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ │
 86 │ │┌   match n {
 87 │ ││     Zero => Zero,
-88 │ ││     Succ(p) => { run q <- pred(p); Succ(halved_through_pred[<](q)) }
-   │ ││                  ┬──               ┬────┬──────────────────────┯──
-   │ ││                  │                 │    │                      │
-   │ ││                  │                 │    │                      not below the stage its recursion wants
-   │ ││                  │                 │    checked against `Nat`; while checking the argument of this application
-   │ ││                  │                 checked against `-F Nat`; while finishing the type of this
+88 │ ││     Succ(p) => { let q = pred(p); Succ(halved_through_pred[<](q)) }
+   │ ││                  ┬──              ┬────┬──────────────────────┯──
+   │ ││                  │                │    │                      │
+   │ ││                  │                │    │                      not below the stage its recursion wants
+   │ ││                  │                │    checked against `Nat`; while checking the argument of this application
+   │ ││                  │                checked against `-F Nat`; while finishing the type of this
    │ ││                  checked against `-F Nat`; while checking the body under this binding; binds _ : Nat
 89 │ ││   }
    │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds p : Nat
@@ -109,7 +109,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
-    ╭▸ corpus/pathological/data/sized-higher-order.gandr:101:40
+    ╭▸ corpus/pathological/data/sized-higher-order.gandr:101:39
     │
  98 │    def rec looping_through_bound(n : Nat) -> Nat {
     │    │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
@@ -117,13 +117,13 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
     │ │
  99 │ │┌   match n {
 100 │ ││     Zero => Zero,
-101 │ ││     Succ(p) => { run q <- boundedAt(p, n); looping_through_bound[<](q) }
-    │ ││                  ┬──      ┬────────────┯─
-    │ ││                  │        │            │
-    │ ││                  │        │            not below the stage its recursion wants
-    │ ││                  │        synthesised; while synthesising the function this applies
-    │ ││                  │        synthesised; while forcing this
-    │ ││                  checked against `-F Nat`; while synthesising the computation this binds
+101 │ ││     Succ(p) => { let q = boundedAt(p, n); looping_through_bound[<](q) }
+    │ ││                  ┬──     ┬────────────┯─
+    │ ││                  │       │            │
+    │ ││                  │       │            not below the stage its recursion wants
+    │ ││                  │       synthesised; while synthesising the function this applies
+    │ ││                  │       synthesised; while forcing this
+    │ ││                  checked against `-F Nat`; while synthesising the computation this runs where a value is read
 102 │ ││   }
     │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds p : Nat
 103 │ │  }
@@ -174,18 +174,18 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
     ╰ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
-    ╭▸ corpus/pathological/data/sized-higher-order.gandr:129:12
+    ╭▸ corpus/pathological/data/sized-higher-order.gandr:129:11
     │
 128 │   def suppliedUnshown[j : Size](n : Nat) -> Nat {
     │   │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
     │ ┌─┘
     │ │
-129 │ │   run m <- predAt[.i = j](n);
-    │ │   ┬──      ┯━━━━━───────────
-    │ │   │        │
-    │ │   │        no rule for this former
-    │ │   │        synthesised; while synthesising the function this applies
-    │ │   checked against `-F Nat`; while synthesising the computation this binds
+129 │ │   let m = predAt[.i = j](n);
+    │ │   ┬──     ┯━━━━━───────────
+    │ │   │       │
+    │ │   │       no rule for this former
+    │ │   │       synthesised; while synthesising the function this applies
+    │ │   checked against `-F Nat`; while synthesising the computation this runs where a value is read
 130 │ │   m
 131 │ │ }
     │ └─┘ checked against `Nat => Nat`; while checking the body of this thunk

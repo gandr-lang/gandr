@@ -776,7 +776,7 @@ fn an_extern_block_declares_an_interface_its_callers_perform_2901()
         "  def negate(x : i64) -> i64;\n",
         "}\n",
         "extern \"rust\" from \"idle\" as Idle { def peek(x : u64) -> u64; }\n",
-        "def twice(x : u32) -> -F [Boundary] u32 { run y <- Boundary.add(x, x) ; Boundary.add(y, y) }\n",
+        "def twice(x : u32) -> -F [Boundary] u32 { let y = Boundary.add(x, x) ; Boundary.add(y, y) }\n",
         "def flipped(x : i64) -> -F [Boundary] i64 { Boundary.negate(x) }\n",
         "def missing(x : u32) -> -F [Boundary] u32 { Boundary.sub(x, x) }\n",
     );
@@ -1132,7 +1132,7 @@ fn a_scope_handles_a_theory_s_operations_2272()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); st.put(a); run b <- st.get(); pure a + b + 1 }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
+        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get(); st.put(a); let b = st.get(); pure a + b + 1 }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let constant = tail_of(&module, &arena, "constant".into());
@@ -1191,7 +1191,7 @@ fn a_scope_records_the_theory_and_sorts_it_handles_2382()
     let source = alloc::format!(
         concat!(
             "{state}",
-            "def fixed() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
+            "def fixed() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
             "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} with {{ pure(x) => pure x, oper exit(code, k) => k(unit) }} }}\n",
         ),
         state = STATE,
@@ -1778,7 +1778,7 @@ const GET_GET: &str = concat!(
 fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
 {
     let mut arena = CoreArena::new();
-    let subject = "{ run a <- st.get(); run b <- st.get(); pure a * 10 + b }";
+    let subject = "{ let a = st.get(); let b = st.get(); pure a * 10 + b }";
     let source = alloc::format!(
         "{STATE}{GET_GET}def once() -> -F Integer {{ handle st : StateGetGet with sort S = Integer {subject} with {{ pure(x) => pure x, oper get(k) => k(4) }} }}\ndef twice() -> -F Integer {{ handle st : State with sort S = Integer {subject} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
     );
@@ -1870,7 +1870,7 @@ const PASSING: &str = concat!(
     "module Passing : Model(StatePutPut) with sort S = Integer where {\n",
     "  type C = Integer => Integer;\n",
     "  def get(k : Integer => Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fun (s) { run after <- k(s); after(s) } }\n",
+    "    thunk { fun (s) { let after = k(s); after(s) } }\n",
     "  }\n",
     "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {\n",
     "    thunk { fun (_old) { k(s) } }\n",
@@ -1902,7 +1902,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}",
-            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fun (_s) {{ pure a }} }} with Passing }}\n",
+            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); let a = st.get(); pure fun (_s) {{ pure a }} }} with Passing }}\n",
             "def unnamed() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} with Stateless }}\n",
             "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} with Passing }}\n",
         ),
@@ -2060,11 +2060,11 @@ const COUNTING: &str = concat!(
     "module Counting : Model(Cost) with sort N = Integer => Integer where {\n",
     "  type C = (Integer => Integer) => Integer;\n",
     "  def charge(c : Integer => Integer, k : (Integer => Integer) => Integer) -> (Integer => Integer) => Integer {\n",
-    "    thunk { fun (before) { k(thunk { fun (n) { run m <- c(n); before(m) } }) } }\n",
+    "    thunk { fun (before) { k(thunk { fun (n) { let m = c(n); before(m) } }) } }\n",
     "  }\n",
     "  def zero : Integer => Integer = thunk { fun (n) { pure n } };\n",
     "  def plus(a : Integer => Integer, b : Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fun (n) { run m <- b(n); a(m) } }\n",
+    "    thunk { fun (n) { let m = b(n); a(m) } }\n",
     "  }\n",
     "  def chargeZero(k : (Integer => Integer) => Integer) -> Path((Integer => Integer) => Integer, charge(zero, k), k) {\n",
     "    here(k)\n",
@@ -2138,7 +2138,7 @@ fn a_scope_records_the_model_answering_it_3196()
             "{state}{put_put}{passing}",
             "def named() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} with Passing }}\n",
             "def inScope() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} }}\n",
-            "def written() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
+            "def written() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
         ),
         state = STATE,
         put_put = PUT_PUT,
@@ -2192,7 +2192,7 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}{zero_and_one}",
-            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fun (_s) {{ pure a }} }} }}\n",
+            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); let a = st.get(); pure fun (_s) {{ pure a }} }} }}\n",
             "def ambiguous() -> Integer => Integer {{ handle st : State with sort S = Integer {{ pure fun (s) {{ pure s }} }} }}\n",
             "def unanswered() -> Integer => Integer {{ handle st : State with sort S = Unit {{ pure fun (s) {{ pure 1 }} }} }}\n",
             "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} }}\n",
@@ -2555,7 +2555,7 @@ fn an_exit_that_would_run_in_a_live_frame_is_refused()
             "def became() -> -F Integer { handle c : Proc { become one() } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
             "def broke() -> -F Integer { loop { handle c : Proc { break(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
             "def again() -> -F Integer { loop { handle c : Proc { continue } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
-            "def inner() -> -F Integer { handle c : Proc { run v <- loop { break(5) } ; pure v } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+            "def inner() -> -F Integer { handle c : Proc { let v = loop { break(5) } ; pure v } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
         )),
         &mut arena,
     );
@@ -2591,10 +2591,10 @@ fn a_capability_at_a_scope_lives_in_its_region()
     let mut arena = CoreArena::new();
     let clauses = "with { pure(x) => pure x, oper exit(code, k) => k(unit) }";
     let source = alloc::format!(
-        "def regions() -> -F Unit {{ handle c : Proc {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure c ; run f : Cap {{exit}} at e <- pure e ; pure unit }} {clauses} }} {clauses} }}\n\
-         def unbound(c : Integer) -> -F Unit {{ handle e : Proc {{ run d : Cap {{exit}} at c <- pure e ; pure unit }} {clauses} }}\n\
-         def plain() -> -F Unit {{ handle c : Proc {{ run d : Integer at c <- pure 1 ; pure unit }} {clauses} }}\n\
-         def held() -> -F Unit {{ var s = 1 ; handle c : Proc {{ run d : Integer at s <- pure 1 ; run e : Integer at c <- pure 2 ; pure unit }} {clauses} }}\n"
+        "def regions() -> -F Unit {{ handle c : Proc {{ handle e : Proc {{ let d : Cap {{exit}} at c = c ; let f : Cap {{exit}} at e = e ; pure unit }} {clauses} }} {clauses} }}\n\
+         def unbound(c : Integer) -> -F Unit {{ handle e : Proc {{ let d : Cap {{exit}} at c = e ; pure unit }} {clauses} }}\n\
+         def plain() -> -F Unit {{ handle c : Proc {{ let d : Integer at c = 1 ; pure unit }} {clauses} }}\n\
+         def held() -> -F Unit {{ var s = 1 ; handle c : Proc {{ let d : Integer at s = 1 ; let e : Integer at c = 2 ; pure unit }} {clauses} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let outer = tail_of(&module, &arena, "regions".into());
@@ -2606,19 +2606,19 @@ fn a_capability_at_a_scope_lives_in_its_region()
     else {
         panic!("the inner scope");
     };
-    // The region each typed bind of the inner subject ascribes, in order.
+    // The region each typed let of the inner subject ascribes, in order.
     let mut regions = Vec::new();
     let mut at = subject;
     while let Some(&Computation::Bind(bound, rest)) = arena.computation(at) {
-        let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
+        let Some(&Computation::Return(returned)) = arena.computation(bound)
         else {
-            panic!("a typed bind ascribes its computation");
+            panic!("a typed let returns its value");
         };
-        let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
+        let Some(&Value::Ascribe { ty, .. }) = arena.value(returned)
         else {
-            panic!("at a returner");
+            panic!("a typed let ascribes its value");
         };
-        regions.push(capability(&arena, result).2);
+        regions.push(capability(&arena, ty).2);
         at = rest;
     }
     assert_eq!(
@@ -2647,25 +2647,25 @@ fn a_capability_at_a_scope_lives_in_its_region()
         "a parameter names no region: {:?}",
         outcome_of(&module, "unbound".into())
     );
-    // The value type a typed bind keeps, and the region it keeps it in.
+    // The value type a typed let keeps, and the region it keeps it in.
     let kept = |bind: ComputationId| {
         let Some(&Computation::Bind(bound, _)) = arena.computation(bind)
         else {
-            panic!("the typed bind");
+            panic!("the typed let");
         };
-        let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
+        let Some(&Computation::Return(returned)) = arena.computation(bound)
         else {
-            panic!("a typed bind ascribes its computation");
+            panic!("a typed let returns its value");
         };
-        let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
+        let Some(&Value::Ascribe { ty, .. }) = arena.value(returned)
         else {
-            panic!("at a returner");
+            panic!("a typed let ascribes its value");
         };
-        let Some(&ValueType::Kept { value, region }) = arena.value_type(result)
+        let Some(&ValueType::Kept { value, region }) = arena.value_type(ty)
         else {
             panic!(
                 "an integer at a region is kept in it: {:?}",
-                arena.value_type(result)
+                arena.value_type(ty)
             );
         };
         (arena.value_type(value).cloned(), region)
@@ -2777,8 +2777,8 @@ fn an_allocated_buffer_is_placed_live_and_freed()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def ring() -> -F Unit { handle r : Ring { run b <- r.alloc(4096) ; r.free(b) } with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(b, k) => k(unit) } }\n\
-             def named() -> -F Unit { handle c : Proc { run code <- c.exit(1) ; pure code } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+            "def ring() -> -F Unit { handle r : Ring { let b = r.alloc(4096) ; r.free(b) } with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(b, k) => k(unit) } }\n\
+             def named() -> -F Unit { handle c : Proc { let code = c.exit(1) ; pure code } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
         ),
         &mut arena,
     );
@@ -2906,7 +2906,7 @@ fn an_allocated_buffer_is_placed_live_and_freed()
 #[test]
 fn a_scope_records_where_its_clauses_bind_1439()
 {
-    let written = "def ring() -> -F Unit { handle r : Ring { run b <- r.alloc(4096) ; r.free(b) } \
+    let written = "def ring() -> -F Unit { handle r : Ring { let b = r.alloc(4096) ; r.free(b) } \
                    with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(m, j) => \
                    j(unit) } }\n";
     let mut arena = CoreArena::new();

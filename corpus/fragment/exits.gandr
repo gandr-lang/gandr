@@ -22,13 +22,13 @@ def rec down_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def twice(n : Nat) -> -F Nat {
-  run once <- down(n);
+  let once = down(n);
   become down(once)
 }
 
 @[ checks ]
 def twice_elided(n : Nat) -> -F Nat {
-  run once <- down(n);
+  let once = down(n);
   down(once)
 }
 
@@ -100,13 +100,13 @@ def rec stated_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def sequenced(n : Nat) -> -F Nat {
-  run m <- down(n);
+  let m = down(n);
   return m;
 }
 
 @[ checks ]
 def sequenced_elided(n : Nat) -> -F Nat {
-  run m <- down(n);
+  let m = down(n);
   m
 }
 
@@ -124,7 +124,7 @@ def sequenced_run(n : Nat) -> -F Nat {
 /// natural cannot end in one (#1205).
 @[ refuses("ShapeMismatch") ]
 def discarded(n : Nat) -> -F Nat {
-  run m <- down(n);
+  let m = down(n);
   down(m);
 }
 
@@ -164,37 +164,37 @@ def discards_nat_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def discards_any(n : Nat) -> -F Nat {
-  run _ <- down(n);
+  let _ = down(n);
   return n
 }
 
 @[ checks ]
 def discards_any_elided(n : Nat) -> -F Nat {
-  run _ <- down(n);
+  let _ = down(n);
   n
 }
 
 @[ refuses("Unreachable") ]
 def early(n : Nat) -> -F Nat {
-  run m <- return n;
+  let m = return n;
   return m
 }
 
 @[ refuses("Unreachable") ]
 def early_elided(n : Nat) -> -F Nat {
-  run m <- return n;
+  let m = return n;
   m
 }
 
 @[ refuses("Unreachable") ]
 def local(n : Nat) -> -F Nat {
-  run m <- become down(n);
+  let m = become down(n);
   return m
 }
 
 @[ refuses("Unreachable") ]
 def local_elided(n : Nat) -> -F Nat {
-  run m <- become down(n);
+  let m = become down(n);
   m
 }
 
@@ -203,7 +203,7 @@ def returned = return Zero;
 
 @[ checks ]
 def predecessor(n : Nat) -> -F Nat {
-  run m <- match n {
+  let m = match n {
     Zero => return n,
     Succ(p) => pure p,
   };
@@ -212,7 +212,7 @@ def predecessor(n : Nat) -> -F Nat {
 
 @[ checks ]
 def predecessor_elided(n : Nat) -> -F Nat {
-  run m <- match n {
+  let m = match n {
     Zero => return n,
     Succ(p) => pure p,
   };
@@ -221,10 +221,10 @@ def predecessor_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def pick(n : Nat) -> -F Nat {
-  run m <- match n {
+  let m = match n {
     Zero => return n,
     Succ(p) => {
-      run q <- match p {
+      let q = match p {
         Zero => return n,
         Succ(r) => pure r,
       };
@@ -236,10 +236,10 @@ def pick(n : Nat) -> -F Nat {
 
 @[ checks ]
 def pick_elided(n : Nat) -> -F Nat {
-  run m <- match n {
+  let m = match n {
     Zero => return n,
     Succ(p) => {
-      run q <- match p {
+      let q = match p {
         Zero => return n,
         Succ(r) => pure r,
       };
@@ -269,7 +269,7 @@ def pick_three_elided() -> -F Nat { pick_elided(Succ(Succ(Succ(Zero)))) }
 
 @[ checks ]
 def handed(n : Nat) -> -F Nat {
-  run m <- match n {
+  let m = match n {
     Zero => become down(n),
     Succ(p) => pure p,
   };
@@ -278,7 +278,7 @@ def handed(n : Nat) -> -F Nat {
 
 @[ checks ]
 def handed_elided(n : Nat) -> -F Nat {
-  run m <- match n {
+  let m = match n {
     Zero => become down(n),
     Succ(p) => pure p,
   };
@@ -290,7 +290,7 @@ def rec skim(n : Nat) -> -F Nat {
   match n {
     Zero => return n,
     Succ(p) => {
-      run _ <- match p {
+      let _ = match p {
         Zero => return p,
         Succ(r) => pure r,
       };
@@ -304,7 +304,7 @@ def rec skim_elided(n : Nat) -> -F Nat {
   match n {
     Zero => n,
     Succ(p) => {
-      run _ <- match p {
+      let _ = match p {
         Zero => return p,
         Succ(r) => pure r,
       };
@@ -321,7 +321,7 @@ def skimmed_elided() -> -F Nat { skim_elided(Succ(Succ(Succ(Zero)))) }
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined(n : Nat) -> -F Nat {
-  run m <- match n -> -F Nat {
+  let m = match n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
   };
@@ -330,7 +330,7 @@ def joined(n : Nat) -> -F Nat {
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined_elided(n : Nat) -> -F Nat {
-  run m <- match n -> -F Nat {
+  let m = match n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
   };

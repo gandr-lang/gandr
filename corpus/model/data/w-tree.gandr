@@ -21,8 +21,8 @@ def rec size(t : Tree) -> Nat {
   match t {
     Leaf => Succ(Zero),
     Node(f) => {
-      run l <- f(L);
-      run r <- f(R);
+      let l = f(L);
+      let r = f(R);
       plus(size[<](l), size[<](r))
     }
   }

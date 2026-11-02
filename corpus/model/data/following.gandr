@@ -27,7 +27,7 @@ def rec minus(n : Nat, k : Nat) -> Nat {
 def rec divided(n : Nat, d : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run r <- minus(p, d); Succ(divided[<](r, d)) }
+    Succ(p) => { let r = minus(p, d); Succ(divided[<](r, d)) }
   }
 }
 
@@ -36,7 +36,7 @@ def rec divided(n : Nat, d : Nat) -> Nat {
 def rec halvedUp(n : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run q <- minus(p, Succ(Zero)); Succ(halvedUp[<](q)) }
+    Succ(p) => { let q = minus(p, Succ(Zero)); Succ(halvedUp[<](q)) }
   }
 }
 
@@ -45,7 +45,7 @@ def rec halvedUp(n : Nat) -> Nat {
 def rec digits(n : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run h <- halvedUp(p); Succ(digits[<](h)) }
+    Succ(p) => { let h = halvedUp(p); Succ(digits[<](h)) }
   }
 }
 

@@ -16,21 +16,21 @@ def twice(x : Integer) -> Integer {
 /// region (#1856).
 @[ runs("18") ]
 def chained() -> Integer {
-  run a <- inc(inc(0));
-  run b <- inc(a);
-  run c <- inc(b);
-  run d <- inc(c);
-  run e <- inc(d);
-  run f <- inc(e);
-  run g <- inc(f);
-  run h <- inc(g);
-  run i <- inc(h);
-  run j <- inc(i);
-  run k <- inc(j);
-  run l <- inc(k);
-  run m <- inc(l);
-  run n <- inc(m);
-  run o <- inc(n);
+  let a = inc(inc(0));
+  let b = inc(a);
+  let c = inc(b);
+  let d = inc(c);
+  let e = inc(d);
+  let f = inc(e);
+  let g = inc(f);
+  let h = inc(g);
+  let i = inc(h);
+  let j = inc(i);
+  let k = inc(j);
+  let l = inc(k);
+  let m = inc(l);
+  let n = inc(m);
+  let o = inc(n);
   inc(inc(o))
 }
 

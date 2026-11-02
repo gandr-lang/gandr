@@ -67,7 +67,7 @@ pub def predAt[i : Size](n : Nat[i]) -> Nat[i] {
 def rec halvedAt(n : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run q <- predAt(p); Succ(halvedAt[<](q)) }
+    Succ(p) => { let q = predAt(p); Succ(halvedAt[<](q)) }
   }
 }
 
@@ -90,7 +90,7 @@ pub def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[<j] 
 def rec boundedHelped(n : Nat) -> Nat {
   match n {
     Zero => Zero,
-    Succ(p) => { run q <- boundedAt(n, p); Succ(boundedHelped[<](q)) }
+    Succ(p) => { let q = boundedAt(n, p); Succ(boundedHelped[<](q)) }
   }
 }
 

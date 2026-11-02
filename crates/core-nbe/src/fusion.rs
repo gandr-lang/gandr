@@ -4,7 +4,7 @@
 //! `cong(f, p)` is derived: the transport `tr(y. Path(B, s, ⟨f y⟩), p,
 //! here(s))` of reflexivity at the start `s` along `p : Path(A, a, b)`, in
 //! the family whose right endpoint moves by `f`. Along a stuck path it is
-//! stuck, and so is a cong of it: `run q <- cong(f, p); cong(g, q)` stands as
+//! stuck, and so is a cong of it: `let q = cong(f, p); cong(g, q)` stands as
 //! the transport along `p` with the bind into `q. tr(y. Path(C, t, ⟨g y⟩), q,
 //! here(t))` on its spine. Two laws of the path type relate such a chain to
 //! its path:
@@ -178,9 +178,9 @@ enum Family
 /// - measure: the continuations, then the links, still to read.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — over the presented circle, `run q <- cong(unlooped, p);
+/// - hypothesis: L3 — over the presented circle, `let q = cong(unlooped, p);
 ///   cong(looped, q)` against `return p` converts under a rigid run and the
-///   kernel derives the same, `run q <- cong(looped, p); cong(looped, q)` stays
+///   kernel derives the same, `let q = cong(looped, p); cong(looped, q)` stays
 ///   apart from it, and over a free circle the identity chain stays apart too.
 /// - witness: `fusion::tests::a_cong_chain_composing_to_the_identity_is_its_path`
 /// - witness: `fusion::tests::a_chain_fuses_only_through_links_whose_image_is_the_point`

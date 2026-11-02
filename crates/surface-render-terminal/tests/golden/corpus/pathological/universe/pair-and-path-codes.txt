@@ -8,7 +8,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 37 │ │┌     match u {
 38 │ ││       NatR => return Nat,
 39 │ ││       SigR(a, b) => {
-40 │ ││         run t <- elSigRun[<](a);
+40 │ ││         let t = elSigRun[<](a);
    │ ││         ─── checked against `-F Type`; while checking the body under this binding; binds _ : Type
 41 │ ││         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
    │ ││         ┬───────┬──────┬───────┬─────────┬───────────┬─┯────────
@@ -39,7 +39,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 37 │ │┌     match u {
 38 │ ││       NatR => return Nat,
 39 │ ││       SigR(a, b) => {
-40 │ ││         run t <- elSigRun[<](a);
+40 │ ││         let t = elSigRun[<](a);
    │ ││         ─── checked against `-F Type`; while checking the body under this binding; binds _ : Type
 41 │ ││         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
    │ ││         ┬───────┬──────┬───────┬─────────┬───────────┬─┯────────

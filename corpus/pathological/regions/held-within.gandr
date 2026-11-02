@@ -9,8 +9,8 @@
 @[ refuses("ViewEscaped") ]
 def keptPastHold() -> Integer {
   handle inner : Proc {
-    hold l = 42;
-    run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } };
+    var l = 42;
+    let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
     force q
   } with {
     pure(y) => pure y,
@@ -23,9 +23,9 @@ def keptPastHold() -> Integer {
 @[ refuses("ViewEscaped") ]
 def keptPastNestedHold() -> Integer {
   handle outer : Proc {
-    run x : Integer <- handle inner : Proc {
-      hold l = 42;
-      run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } };
+    let x : Integer = handle inner : Proc {
+      var l = 42;
+      let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
       force q
     } with {
       pure(y) => pure y,

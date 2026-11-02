@@ -76,6 +76,7 @@ use super::typist::Stride;
 /// has.
 const COUNTED: &[&str] = &[
     "block block",
+    "block block name",
     "expression abort_expression",
     "expression abort_expression name",
     "expression access_expression",

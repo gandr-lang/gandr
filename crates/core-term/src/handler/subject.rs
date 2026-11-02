@@ -28,10 +28,10 @@
 //! ```text
 //! rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
 //!
-//! run a <- st.get(); run b <- st.get(); pure a + b
+//! let a = st.get(); let b = st.get(); pure a + b
 //! ```
 //!
-//! The second `get` is dropped and `b` is bound to `a`: `run a <- st.get(); b
+//! The second `get` is dropped and `b` is bound to `a`: `let a = st.get(); b
 //! ← return a; pure a + b`, one request where the subject wrote two.
 //!
 //! # References

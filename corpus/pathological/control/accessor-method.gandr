@@ -32,11 +32,11 @@ module Misplaced where {
 /// A view block after a call of a method that answers no place.
 @[ refuses("ViewOfNoPlace") ]
 def sized() -> -F Integer {
-  hold xs = pair;
+  var xs = pair;
   xs.size() as w { pure w }
 }
 
-/// A view block on a list no hold holds: nothing keeps what an exclusive
+/// A view block on a list no var holds: nothing keeps what an exclusive
 /// view would write back.
 @[ refuses("OutOfFragment.Held") ]
 def unheld(ys : List(Integer)) -> -F Integer {
@@ -46,14 +46,14 @@ def unheld(ys : List(Integer)) -> -F Integer {
 /// An exclusive view of a list a shared access already lends.
 @[ refuses("HeldLent") ]
 def raisedWhileRead() -> Integer {
-  hold xs = pair;
+  var xs = pair;
   access shared xs as v { xs.first() as w { resume(w, 3) }; pure 0 }
 }
 
-/// A bare index of a list no hold holds: there is no place to lend.
+/// A bare index of a list no var holds: there is no place to lend.
 @[ refuses("OutOfFragment.index_expression") ]
 def unheldIndex(ys : List(Integer), i : Integer) -> -F Integer {
-  run y <- ys[i];
+  let y = ys[i];
   pure y
 }
 

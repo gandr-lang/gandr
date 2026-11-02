@@ -18,7 +18,7 @@ data Expr : Type where {
 def rec size(e : Expr) -> -F Integer {
   match e {
     Lit(n) => return 1,
-    Add(a, b) => { run x <- size[<](a); run y <- size[<](b); return x + y + 1 },
+    Add(a, b) => { let x = size[<](a); let y = size[<](b); return x + y + 1 },
     Share(x).left => size[<](x),
     Share(x).right => size[<](x)
   }

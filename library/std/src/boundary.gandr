@@ -35,7 +35,7 @@ pub data Witness : Type where {
 
 /// A size rounded up to an alignment.
 def strideOf(size : Integer, align : Integer) -> Integer {
-  run q <- int.div(size + align - 1, align);
+  let q = int.div(size + align - 1, align);
   q * align
 }
 

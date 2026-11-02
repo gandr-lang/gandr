@@ -1,7 +1,4 @@
 fun (a) {
-  run b <- {
-    run b <- pure 1 ;
-    pure b
-  } ;
+  let b = { let b = pure 1 ; pure b } ;
   kept(b)
 }

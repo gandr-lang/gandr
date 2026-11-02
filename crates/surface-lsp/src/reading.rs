@@ -137,7 +137,7 @@ pub struct Tile
     pub declares: bool,
     /// Whether the next of its form's nodes, space and documentation aside,
     /// is the tile `:`: a name whose type the form writes, as a parameter's
-    /// `(n : Nat)` and an annotated `run m : Nat <-` do.
+    /// `(n : Nat)` and an annotated `let m : Nat =` do.
     pub annotated: bool,
 }
 

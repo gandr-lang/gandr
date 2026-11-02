@@ -15,4 +15,4 @@ def one() -> Seed.T { Seed.next(Seed.zero) }
 
 /// That value read back through the exposed reader.
 @[ runs("1") ]
-def shown() -> Integer { run n <- force one; Seed.read(n) }
+def shown() -> Integer { let n = force one; Seed.read(n) }

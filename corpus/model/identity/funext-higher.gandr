@@ -10,7 +10,7 @@ def at_truth(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
 
 /// A function at truth, its result bound and returned.
 def through(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
-  run b <- at_truth(f);
+  let b = at_truth(f);
   b
 }
 
@@ -26,8 +26,8 @@ def applied_twice(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
 
 /// A function applied twice from truth, both results bound.
 def twice_bound(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
-  run b <- f(+{.0 = unit});
-  run c <- f(b);
+  let b = f(+{.0 = unit});
+  let c = f(b);
   c
 }
 

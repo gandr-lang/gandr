@@ -14,13 +14,13 @@ import "../../model/layouts/ribbit-list.gandr";
 /// Two and five, laid out tagged, move to the packed layout as one pointer to both and nothing after.
 @[ runs("Many(2i32, 5i32, Empty)") ]
 def twoFivePacked() -> Packed {
-  run twoFive <- tag(Cons(2i32, Cons(5i32, Nil)));
+  let twoFive = tag(Cons(2i32, Cons(5i32, Nil)));
   relayout(taggedPath, packedPath, twoFive)
 }
 
 /// The length, written once over the list, counts two on the packed layout.
 @[ runs("2") ]
 def twoFiveLength() -> Integer {
-  run f <- transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
+  let f = transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
   f(Many(2i32, 5i32, Empty))
 }

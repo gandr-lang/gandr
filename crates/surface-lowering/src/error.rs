@@ -67,7 +67,8 @@
 //! parses and is declined by name — a recursive call's claim other than `<` —
 //! and classifies as unimplemented, naming its tracking issue.
 //! `Unadmitted`: the grammar reads the form and this fragment does not
-//! — a statement other than `run`, an annotated or patterned `run` binder, a
+//! — a statement the block does not read, a `let` binder pattern other than
+//! a name, a wildcard or a tuple, a
 //! recursive function with no parameter to recurse on, a claim on a name that
 //! is not a recursive function or that heads no call, an explicit parameter
 //! block, a parameter named as a type variable, an annotation, a grade on a
@@ -189,7 +190,7 @@ pub enum FragmentSort
     Value,
     /// A computation, reached under a thunk and to an application's left.
     Computation,
-    /// A pattern, the binder of a `run` statement.
+    /// A pattern, the binder of a `let` statement.
     Pattern,
     /// A session type's continuation: a session form, or a variable a `rec`
     /// around it binds.

@@ -5,9 +5,9 @@
 /// A thunk over the view handed out of the access after its resume (#1183).
 @[ refuses("ViewEscaped") ]
 def dangling() -> Integer {
-  hold x = 5;
-  run r : Integer <- handle c : Proc {
-    run k <- access x as v {
+  var x = 5;
+  let r : Integer = handle c : Proc {
+    let k = access x as v {
       c.exit(1);
       resume(v, v + 7);
       pure thunk { pure v }

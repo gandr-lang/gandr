@@ -12,7 +12,7 @@ import "./passed.gandr";
 
 /// Forces the thunk it is lent, then hands it back in the same region.
 pub def touch[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
-  run _ <- force k;
+  let _ = force k;
   pure k
 }
 
@@ -20,15 +20,15 @@ pub def touch[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r)
 /// `pass` at the inner region after its argument is widened.
 @[ runs("5") ]
 def passNatural() -> Integer {
-  hold s = 5;
+  var s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
+    let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : Proc {
-      run _ : Path(
+      let _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
-        fun (x) { run y : (() => Integer) at outer <- pass(x); pure y },
-        fun (x) { run z : (() => Integer) at inner <- pure x; pass(z) }
-      ) <- pure here(fun (x) { run y : (() => Integer) at outer <- pass(x); pure y });
+        fun (x) { let y : (() => Integer) at outer = pass(x); pure y },
+        fun (x) { let z : (() => Integer) at inner = x; pass(z) }
+      ) = here(fun (x) { let y : (() => Integer) at outer = pass(x); pure y });
       force k
     } with {
       pure(y) => pure y,
@@ -44,15 +44,15 @@ def passNatural() -> Integer {
 /// conversion reassociates them.
 @[ runs("5") ]
 def touchNatural() -> Integer {
-  hold s = 5;
+  var s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
+    let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : Proc {
-      run _ : Path(
+      let _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
-        fun (x) { run y : (() => Integer) at outer <- touch(x); pure y },
-        fun (x) { run z : (() => Integer) at inner <- pure x; touch(z) }
-      ) <- pure here(fun (x) { run y : (() => Integer) at outer <- touch(x); pure y });
+        fun (x) { let y : (() => Integer) at outer = touch(x); pure y },
+        fun (x) { let z : (() => Integer) at inner = x; touch(z) }
+      ) = here(fun (x) { let y : (() => Integer) at outer = touch(x); pure y });
       force k
     } with {
       pure(y) => pure y,

@@ -3644,7 +3644,7 @@ mod tests
         };
         assert_eq!(
             print(&CoreSource::new(&arena, &names)),
-            "fun (a) { run b <- f(a) ; f(b) }",
+            "fun (a) { let b = f(a) ; f(b) }",
             "unrestored, the minted bind is read"
         );
         assert_eq!(

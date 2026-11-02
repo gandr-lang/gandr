@@ -12,9 +12,9 @@
 /// view after the access that lent the view has ended.
 @[ runs("3") ]
 def keptView() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w };
+    let k : (() => Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
     pure(x) => pure x,
@@ -26,10 +26,10 @@ def keptView() -> Integer {
 /// that keeps it, and forces as the thunk it keeps.
 @[ runs("3") ]
 def keptAgain() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w };
-    run j : (() => Integer) at c <- pure k;
+    let k : (() => Integer) at c = access shared s as w { pure pure w };
+    let j : (() => Integer) at c = k;
     force j
   } with {
     pure(x) => pure x,
@@ -41,9 +41,9 @@ def keptAgain() -> Integer {
 /// access writes it back.
 @[ runs("4") ]
 def released() -> Integer {
-  hold s = 3;
-  run n : Integer <- handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w };
+  var s = 3;
+  let n : Integer = handle c : Proc {
+    let k : (() => Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
     pure(x) => pure x,
@@ -57,9 +57,9 @@ def released() -> Integer {
 /// copies it, so it needs no keep.
 @[ runs("3") ]
 def keptRead() -> Integer {
-  hold s = 3;
+  var s = 3;
   handle c : Proc {
-    run n : Integer at c <- access shared s as w { pure w };
+    let n : Integer at c = access shared s as w { pure w };
     access s as v { resume(v, v + 1) };
     pure 3
   } with {
@@ -72,8 +72,8 @@ def keptRead() -> Integer {
 /// the hold ends.
 @[ runs("3") ]
 def keptInHold() -> Integer {
-  hold s = 3;
-  run k : (() => Integer) at s <- access shared s as w { pure pure w };
+  var s = 3;
+  let k : (() => Integer) at s = access shared s as w { pure pure w };
   force k
 }
 
@@ -81,10 +81,10 @@ def keptInHold() -> Integer {
 /// value when the inner hold ends, so an exclusive access writes it back.
 @[ runs("4") ]
 def keptInInner() -> Integer {
-  hold s = 3;
-  run n : Integer <- {
-    hold r = 0;
-    run k : (() => Integer) at r <- access shared s as w { pure pure w };
+  var s = 3;
+  let n : Integer = {
+    var r = 0;
+    let k : (() => Integer) at r = access shared s as w { pure pure w };
     force k
   };
   access s as v { resume(v, n + 1) };

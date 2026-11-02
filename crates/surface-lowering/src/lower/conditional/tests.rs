@@ -100,11 +100,11 @@ fn an_else_if_tests_its_own_condition_in_the_false_branch()
 
 /// #2089: an `if` that writes its answer has its case ascribed that answer,
 /// so it synthesises where nothing states its type, as the computation a
-/// `run` binds; one that writes none leaves its case bare.
+/// `let` binds; one that writes none leaves its case bare.
 #[test]
 fn a_written_answer_ascribes_the_conditional_2089()
 {
-    let source = "def bound() -> -F Integer {\n  run m <- if true -> -F Integer { pure 1 } else { \
+    let source = "def bound() -> -F Integer {\n  let m = if true -> -F Integer { pure 1 } else { \
                   pure 2 } ;\n  pure (m + 1)\n}\ndef stated(b : Bool) -> -F Integer { if b { 1 } \
                   else { 2 } }\n";
     let mut arena = CoreArena::new();

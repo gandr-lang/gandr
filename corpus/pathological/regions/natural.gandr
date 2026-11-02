@@ -12,15 +12,15 @@ import "../../model/regions/natural.gandr";
 /// stand where the outer region's is asked.
 @[ refuses("TypeMismatch") ]
 def backwards() -> Integer {
-  hold s = 5;
+  var s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
+    let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : Proc {
-      run _ : Path(
+      let _ : Path(
         (() => Integer) at inner => (() => Integer) at outer,
-        thunk { fun (x) { run z : (() => Integer) at outer <- pure x; pass(z) } },
-        thunk { fun (x) { run y : (() => Integer) at inner <- pass(x); pure y } }
-      ) <- pure here(thunk { fun (x) { run z : (() => Integer) at outer <- pure x; pass(z) } });
+        thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } },
+        thunk { fun (x) { let y : (() => Integer) at inner = pass(x); pure y } }
+      ) = here(thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } });
       force k
     } with {
       pure(y) => pure y,
@@ -36,15 +36,15 @@ def backwards() -> Integer {
 /// forces the view first.
 @[ refuses("EndpointMismatch") ]
 def unequal() -> Integer {
-  hold s = 5;
+  var s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
+    let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : Proc {
-      run _ : Path(
+      let _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
-        thunk { fun (x) { run y : (() => Integer) at outer <- pass(x); pure y } },
-        thunk { fun (x) { run z : (() => Integer) at inner <- pure x; touch(z) } }
-      ) <- pure here(thunk { fun (x) { run y : (() => Integer) at outer <- pass(x); pure y } });
+        thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } },
+        thunk { fun (x) { let z : (() => Integer) at inner = x; touch(z) } }
+      ) = here(thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } });
       force k
     } with {
       pure(y) => pure y,

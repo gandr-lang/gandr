@@ -11,7 +11,7 @@ def rec node(nodes : List(Integer), i : Integer) -> Integer {
   match nodes {
     Nil => pure 0,
     Cons(n, rest) => {
-      run here <- i == 0;
+      let here = i == 0;
       match here { true => pure n, false => node[<](rest, i - 1) }
     }
   }
@@ -22,10 +22,10 @@ def rec node(nodes : List(Integer), i : Integer) -> Integer {
 /// states `Div` (#1481).
 @[ runs("1") ]
 def ring() -> [Div] Integer {
-  hold i = 0;
-  hold steps = 4;
+  var i = 0;
+  var steps = 4;
   while steps > 0 {
-    run j <- node((Cons(1, Cons(2, Cons(0, Nil))) : List(Integer)), i);
+    let j = node((Cons(1, Cons(2, Cons(0, Nil))) : List(Integer)), i);
     access i as v { resume(v, j) };
     access steps as s { resume(s, s - 1) }
   };

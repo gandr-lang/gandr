@@ -229,7 +229,7 @@ def early(k : Nat) -> -F Nat {
   match k {
     Zero => return k,
     Succ(j) => {
-      run q <- match j {
+      let q = match j {
         Zero => return j,
         Succ(r) => pure r,
       };
@@ -252,7 +252,7 @@ def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
 
 def blocked(n : Nat) -> -F Nat {
   match n {
-    Zero => { run y <- succeeded(n); return y },
+    Zero => { let y = succeeded(n); return y },
     Succ(p) => p,
   }
 }
@@ -277,7 +277,7 @@ def early(k : Nat) -> Nat {
   match k {
     Zero => k,
     Succ(j) => {
-      run q <- match j {
+      let q = match j {
         Zero => return j,
         Succ(r) => pure r,
       };
@@ -300,7 +300,7 @@ def nested(n : Nat) -> Nat => Nat {
 
 def blocked(n : Nat) -> Nat {
   match n {
-    Zero => { run y <- succeeded(n); y },
+    Zero => { let y = succeeded(n); y },
     Succ(p) => p,
   }
 }
@@ -1583,7 +1583,7 @@ impl Elaborate for Oracle
     }
 }
 
-/// A `run` statement the lowering lists as linear follows the checker: it is
+/// A `let` statement the lowering lists as linear follows the checker: it is
 /// written at its read where the checker elaborates both spellings to one
 /// body, withdrawn and reported where it elaborates them otherwise, and kept
 /// with nothing reported where it refuses the source as written. The
@@ -1596,7 +1596,7 @@ fn a_linear_run_follows_the_checker_s_elaborations()
                   \n\
                   def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                   \n\
-                  def field(n : Nat) -> Nat {\n  run m <- twice(n);\n  Succ(m)\n}\n";
+                  def field(n : Nat) -> Nat {\n  let m = twice(n);\n  Succ(m)\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1616,10 +1616,7 @@ fn a_linear_run_follows_the_checker_s_elaborations()
             .collect();
         (formatted.into_text(), withdrawn)
     };
-    let written = source.replace(
-        "\n  run m <- twice(n);\n  Succ(m)\n",
-        "\n  Succ(twice(n))\n",
-    );
+    let written = source.replace("\n  let m = twice(n);\n  Succ(m)\n", "\n  Succ(twice(n))\n");
     assert_eq!(
         format(Answer::Alike),
         (written, Vec::new()),
@@ -1718,16 +1715,16 @@ fn the_runs_ending_a_block_are_written_away_together()
                 def field(n : Nat) -> Nat {\n";
     for (body, written) in [
         (
-            "  run m <- twice(n) ;\n  run k <- twice(n) ;\n  both(m, k)\n",
+            "  let m = twice(n) ;\n  let k = twice(n) ;\n  both(m, k)\n",
             "  both(twice(n), twice(n))\n",
         ),
         (
-            "  run m <- twice(n) ;\n  // between\n  run k <- twice(n) ;\n  both(m, k)\n",
+            "  let m = twice(n) ;\n  // between\n  let k = twice(n) ;\n  both(m, k)\n",
             "  // between\n  both(twice(n), twice(n))\n",
         ),
         (
-            "  run m <- twice(n) ;\n  run k <- twice(m) ;\n  both(k, m)\n",
-            "  run m <- twice(n);\n  both(twice(m), m)\n",
+            "  let m = twice(n) ;\n  let k = twice(m) ;\n  both(k, m)\n",
+            "  let m = twice(n);\n  both(twice(m), m)\n",
         ),
     ] {
         let source = format!("{head}{body}}}\n");
@@ -1765,16 +1762,16 @@ fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
                 \n";
     for (body, written) in [
         (
-            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run d <- twice(b) ; Succ(d) } } }\n",
+            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { let d = twice(b) ; Succ(d) } } }\n",
             "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
         ),
         (
-            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run e <- twice(b) ; run f <- twice(Zero) ; both(e, f) } } }\n",
+            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { let e = twice(b) ; let f = twice(Zero) ; both(e, f) } } }\n",
             "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
         ),
         (
-            "def reread(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { run g <- twice(b) ; run h <- twice(g) ; both(h, g) } } }\n",
-            "def reread(a : Nat) -> Nat {\n  match a { Zero => Zero, Succ(b) => { run g <- twice(b); both(twice(g), g) } }\n}\n",
+            "def reread(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { let g = twice(b) ; let h = twice(g) ; both(h, g) } } }\n",
+            "def reread(a : Nat) -> Nat {\n  match a { Zero => Zero, Succ(b) => { let g = twice(b); both(twice(g), g) } }\n}\n",
         ),
     ] {
         let source = format!("{head}{body}");
@@ -1983,8 +1980,8 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             "call(\n  thunk // owned\n  { twice(n) }\n)",
         ),
         (
-            "thunk { run m <- twice(n) ; return m }",
-            "call(thunk { run m <- twice(n); m })",
+            "thunk { let m = twice(n) ; return m }",
+            "call(thunk { let m = twice(n); m })",
         ),
         (
             "thunk {\n    // kept\n    twice(n)\n  }",
@@ -2025,7 +2022,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
                   def becomes = thunk { become twice(1) } ;\n\
                   \n\
                   def block : () => Integer ;\n\
-                  def block = thunk { run m <- twice(1) ; return m } ;\n\
+                  def block = thunk { let m = twice(1) ; return m } ;\n\
                   \n\
                   def pair : () => Integer * Integer ;\n\
                   def pair = thunk { return (1, 2) } ;\n\
@@ -2067,7 +2064,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         @[ runs("2") ]
         def becomes() -> Integer { become twice(1) }
 
-        def block() -> Integer { run m <- twice(1); m }
+        def block() -> Integer { let m = twice(1); m }
 
         def pair() -> Integer * Integer { (1, 2) }
 
@@ -2089,7 +2086,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         @[ runs("2") ]
         def becomes() -> -F Integer { become twice(1) }
 
-        def block() -> -F Integer { run m <- twice(1); return m }
+        def block() -> -F Integer { let m = twice(1); return m }
 
         def pair() -> -F #{Integer, Integer} { return #{1, 2} }
 

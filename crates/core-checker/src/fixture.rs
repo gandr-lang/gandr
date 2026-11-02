@@ -1172,7 +1172,7 @@ pub enum Typing
 
 /// A generated function definition in the shape a lowering mints for a
 /// function tail: `U (A1 -> … -> An -> F B)` declared, and
-/// `thunk (λ … λ. run x1 <- force k1 ; … ; return v)` defined.
+/// `thunk (λ … λ. let x1 = force k1 ; … ; return v)` defined.
 #[derive(Clone, Debug)]
 pub struct FunctionRecipe
 {

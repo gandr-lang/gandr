@@ -136,8 +136,8 @@ def observedSharedUp() -> Integer { observeShared(upModel, upManifest) }
 /// A count of a counter stepped and read by the counter's own operations,
 /// read off its binder: `a.incr` steps a count of `a` (#2246).
 def stepOwn(a : Model(Counter), c : a.C) -> Integer {
-  run i <- a.incr;
-  run r <- a.read;
+  let i = a.incr;
+  let r = a.read;
   r(i(c))
 }
 
@@ -148,9 +148,9 @@ def ownUp() -> Integer { stepOwn(upModel, Up.zero) }
 /// A counter stepped once from its zero and read, by the operations read off
 /// its binder (#2246).
 def stepZero(a : Model(Counter)) -> Integer {
-  run z <- a.zero;
-  run i <- a.incr;
-  run r <- a.read;
+  let z = a.zero;
+  let i = a.incr;
+  let r = a.read;
   r(i(z))
 }
 
@@ -165,9 +165,9 @@ def selectedAlike() -> Path(Integer, stepZero(upModel), stepZero(downModel)) {
 /// carrier is no field, so the record is keyed by the operations, and
 /// `a.zero` is the zero it holds (#2246).
 def stepManifest(a : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Integer {
-  run z <- a.zero;
-  run i <- a.incr;
-  run r <- a.read;
+  let z = a.zero;
+  let i = a.incr;
+  let r = a.read;
   r(i(z))
 }
 

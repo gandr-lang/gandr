@@ -16,11 +16,11 @@ import "../../model/tasks/task-base.gandr";
 /// Both halves hold the capability attenuated to reading, so they share the file system only to read it.
 def reading(c : Cap { read }) -> [Fs] Unit {
   let found = fork (task : Task.Join) {
-    run text <- c.read(Task.notes);
+    let text = c.read(Task.notes);
     send(task, text);
     close(task)
   };
-  run mine <- c.read(Task.notes);
+  let mine = c.read(Task.notes);
   let text = recv(found);
   close(found)
 }

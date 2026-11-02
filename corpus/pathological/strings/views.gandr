@@ -12,7 +12,7 @@ import "../../model/strings/string-base.gandr";
 /// lent the view has ended, so the view would outlive its access.
 @[ refuses("ViewEscaped") ]
 def escaped() -> Repr {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { force thunk { resume(v, v) } };
   pure s
 }
@@ -21,7 +21,7 @@ def escaped() -> Repr {
 /// after it has nothing to end.
 @[ refuses("ViewSpent") ]
 def endedTwice() -> Unit {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { resume(v, v); abort(v) }
 }
 
@@ -29,7 +29,7 @@ def endedTwice() -> Unit {
 /// write-back nor an unwind.
 @[ refuses("ViewUnended") ]
 def unended() -> Unit {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { pure unit }
 }
 
@@ -37,12 +37,12 @@ def unended() -> Unit {
 /// in no region: the kept view would leave its region inside that thunk.
 @[ refuses("KeptEscaped") ]
 def keptPastRegion() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w); count(bs) }
+    let k : (() => Integer) at c = access shared s as w {
+      pure thunk { let bs = bytes(w); count(bs) }
     };
-    run j : () => Integer <- pure thunk { force k };
+    let j : () => Integer = thunk { force k };
     force j
   } with {
     pure(x) => pure x,
@@ -54,10 +54,10 @@ def keptPastRegion() -> Integer {
 /// view would read the string while it is written.
 @[ refuses("HeldKept") ]
 def writtenWhileKept() -> Integer {
-  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w); count(bs) }
+    let k : (() => Integer) at c = access shared s as w {
+      pure thunk { let bs = bytes(w); count(bs) }
     };
     access s as v { resume(v, v) };
     force k

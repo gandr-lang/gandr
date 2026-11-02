@@ -1726,8 +1726,23 @@ impl TypeTable
                             Some(_) | None => None,
                         },
                         Some(&Computation::Fixpoint { .. }) => Some(arena.value_type_thunk(ty)),
+                        // A `let` returns its value, a call nested there
+                        // included (#4466): the binder holds the type its
+                        // annotation states, or the type the run judged that
+                        // value at. Any other bind holds what its bound
+                        // computation returns.
                         Some(&Computation::Bind(bound, _)) => {
-                            match first_type(TermNode::Computation(bound)) {
+                            let value = match arena.computation(bound) {
+                                Some(&Computation::Return(value)) => match arena.value(value) {
+                                    Some(&Value::Ascribe { ty, .. }) => Some(ty),
+                                    Some(_) | None => match first_type(TermNode::Value(value)) {
+                                        Some(TypeNode::Value(ty)) => Some(ty),
+                                        Some(TypeNode::Computation(_)) | None => None,
+                                    },
+                                },
+                                Some(_) | None => None,
+                            };
+                            value.or_else(|| match first_type(TermNode::Computation(bound)) {
                                 Some(TypeNode::Computation(returned)) => {
                                     match arena.comp_type(returned) {
                                         Some(&CompType::Returner { result, .. }) => Some(result),
@@ -1735,7 +1750,7 @@ impl TypeTable
                                     }
                                 },
                                 Some(TypeNode::Value(_)) | None => None,
-                            }
+                            })
                         },
                         Some(_) | None => None,
                     }
@@ -2087,15 +2102,18 @@ impl TypeTable
                 }),
             });
         }
-        // Each parameter a lambda binds and no use answers, at the domain the
-        // lambda's first judgement states it binds, so a parameter nothing
-        // reads answers at its own type rather than at the lambda that opens
-        // it, written at the same name.
+        // Each parameter a lambda binds and each name a `let` binds that no
+        // use answers, at the type the opener's first judgement states it
+        // binds, so a binder nothing reads answers at its own type rather than
+        // at the term around it.
         for &(opener, name) in origins.binders() {
             let span = name.span();
             if name.provenance() != Provenance::Written
                 || binders.contains(&span)
-                || !matches!(arena.computation(opener), Some(&Computation::Lambda(_)))
+                || !matches!(
+                    arena.computation(opener),
+                    Some(&(Computation::Lambda(_) | Computation::Bind(..)))
+                )
             {
                 continue;
             }
@@ -2129,7 +2147,7 @@ impl TypeTable
         // use or pattern answers, at its place in the type the first judgement
         // of the split's tuple reads: a product's component, a dependent
         // pair's first, and its second, under the first named as the split
-        // names it when its type reads the first. A `run` tuple's component
+        // names it when its type reads the first. A `let` tuple's component
         // and a model's record field nothing reads answer at their own type.
         for &((split, component), ref name) in origins.components() {
             let ComponentName::Written(written) = *name
@@ -2207,7 +2225,7 @@ impl TypeTable
             });
         }
         // What each written computation returns, read at the first judgement
-        // the run finished of a computation written there: a `run` binder
+        // the run finished of a computation written there: a `let` binder
         // answers at what its bound computation returns, wherever a rewrite
         // of its block moved that computation (#298), and a computation judged
         // at a decode — `force m` with `m` at `+U (T(A))` — returns what the
@@ -3160,7 +3178,7 @@ impl TypeTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lambda binder, a `run` binder, a parameter, a
+    /// - hypothesis: L3 — a lambda binder, a `let` binder, a parameter, a
     ///   constructor's own name, a called name, the argument passed to it, a
     ///   binder's use, a value a body answers and a recursive call's name are
     ///   each read apart.
@@ -7189,7 +7207,7 @@ mod tests
     {
         let written = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef id : \
                        Nat => Nat ;\ndef id = thunk { fun (y) { pure y } } ;\ndef twice = thunk { fun \
-                       (x) { run a <- id(x) ; id(a) } } ;\ndef same(n : Nat) -> -F Nat { n }\n";
+                       (x) { let a = id(x) ; id(a) } } ;\ndef same(n : Nat) -> -F Nat { n }\n";
         let table = table(SourceText::from(written));
         let names: Vec<String> = table
             .readings()
@@ -7219,7 +7237,7 @@ mod tests
                 "6:y Binds Value",
                 "6:y Uses Value",
                 "7:x Binds Value",
-                "7:run Uses Computation",
+                "7:let Uses Computation",
                 "7:a Binds Value",
                 "7:id Uses Computation",
                 "7:x Uses Value",
@@ -7228,7 +7246,7 @@ mod tests
                 "8:n Binds Value",
                 "8:n Uses Value",
             ],
-            "a constructor's name, a telescope binder, a lambda binder, a `run` binder and a \
+            "a constructor's name, a telescope binder, a lambda binder, a `let` binder and a \
              parameter bind; a called name runs as a computation, the values passed to it are \
              values, and so is the value a body answers, its inferred `return` read as nothing"
         );
@@ -7358,7 +7376,7 @@ mod tests
         let source = SourceText::from(
             "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef f(x : Nat) -> \
              -F Nat { return x }\ndef h(a : Type, y : a) -> -F a { return y }\ndef k(a : Type, y : \
-             a) -> -F a { run z <- h(a, y) ; return z }\n",
+             a) -> -F a { let z = h(a, y) ; return z }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
@@ -7428,7 +7446,7 @@ mod tests
     fn a_scoped_capability_answers_at_its_scope()
     {
         let source = SourceText::from(
-            "def f() -> -F Unit {\n  handle c : Proc {\n    run d : Cap {exit} at c <- pure c ;\n    \
+            "def f() -> -F Unit {\n  handle c : Proc {\n    let d : Cap {exit} at c = c ;\n    \
              c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
              unit\n  }\n}\n",
         );
@@ -7456,8 +7474,8 @@ mod tests
     fn a_kept_type_answers_at_the_hold_it_is_kept_in()
     {
         let source = SourceText::from(
-            "def f() -> -F Unit {\n  hold s = 3;\n  handle c : Proc {\n    run d : Cap {exit} at \
-             c <- pure c ;\n    run k : Integer at s <- pure 1 ;\n    run m <- pure k ;\n    \
+            "def f() -> -F Unit {\n  var s = 3;\n  handle c : Proc {\n    let d : Cap {exit} at \
+             c = c ;\n    let k : Integer at s = 1 ;\n    let m = k ;\n    \
              c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
              unit\n  }\n}\n",
         );
@@ -7549,8 +7567,8 @@ mod tests
              S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
              -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
              back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
-             Base, Base) {\n  match n {\n    Z => return here(Base),\n    S(x) => { run c <- \
-             spin[<](x); return loop ∷ c },\n    P(x) => { run c <- spin[<](x); return \
+             Base, Base) {\n  match n {\n    Z => return here(Base),\n    S(x) => { let c = \
+             spin[<](x); return loop ∷ c },\n    P(x) => { let c = spin[<](x); return \
              back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  match x {\n    \
              Base => Base,\n    loop => back(loop)\n  }\n}\n",
         );
@@ -7634,12 +7652,12 @@ mod tests
             "a constructor's name at its type"
         );
         assert_eq!(
-            at("(x) => { run c"),
+            at("(x) => { let c"),
             pattern("S(x)", "Int"),
             "the constructor pattern at its family"
         );
         assert_eq!(
-            at("x) => { run c"),
+            at("x) => { let c"),
             pattern("x", "Int"),
             "the field at the constructor's field type"
         );
@@ -7691,7 +7709,7 @@ mod tests
     fn an_unread_clause_argument_answers_at_what_its_scope_binds_1439()
     {
         let source = SourceText::from(
-            "def handled() -> -F Unit {\n  handle c : Proc {\n    run code <- c.exit(1) ;\n    \
+            "def handled() -> -F Unit {\n  handle c : Proc {\n    let code = c.exit(1) ;\n    \
              pure code\n  } with {\n    pure(x) => pure unit,\n    oper exit(status, k) => pure \
              unit\n  }\n}\n",
         );
@@ -7751,7 +7769,7 @@ mod tests
         let source = SourceText::from(concat!(
             "def last(t : #{Integer, Bool, Integer}) -> -F Integer {\n",
             "  match t {\n    #{x, y, z} => return z\n  }\n}\n",
-            "def side(c : Integer) -> -F Integer {\n  run small <- c < 128;\n",
+            "def side(c : Integer) -> -F Integer {\n  let small = c < 128;\n",
             "  match small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
         ));
         let table = table(source);
@@ -7802,9 +7820,9 @@ mod tests
             "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
             "def multiplies(s : Model(Semigroup)) -> -F Integer {\n",
             "  match s {\n    #{.mul = m} => 0\n  }\n}\n",
-            "def bound() -> -F Integer {\n  run (p, n) <- pure ((true : Bool), 2);\n  n\n}\n",
+            "def bound() -> -F Integer {\n  let (p, n) = ((true : Bool), 2);\n  n\n}\n",
             "def split() -> -F Integer {\n",
-            "  run (y, z) : Integer * Integer <- pure (1, 2);\n  y\n}\n",
+            "  let (y, z) : Integer * Integer = (1, 2);\n  y\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [
@@ -8225,7 +8243,7 @@ mod tests
              rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) where {\n  type Ob = \
              Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \
              t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t \
-             -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    run y <- f(x);\n    become \
+             -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become \
              g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become \
              ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : \
              +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become \
@@ -8424,7 +8442,7 @@ mod tests
         assert_eq!(refused, Vec::new(), "no printed type reads back refused");
     }
 
-    /// #298: a `run` binder answers at what its bound computation returns,
+    /// #298: a `let` binder answers at what its bound computation returns,
     /// whether a use answers it or not: bound to a match with an exit, which
     /// the block's rewrite leaves no bind of, to a loop, unused, or `_`.
     #[test]
@@ -8432,18 +8450,18 @@ mod tests
     {
         let source = SourceText::from(
             "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef \
-             predecessor(n : Nat) -> -F Nat {\n  run m <- match n {\n    Zero => return n,\n    \
-             Succ(p) => pure p,\n  } ;\n  return m\n}\n\ndef first(n : Nat) -> -F Nat {\n  run k \
-             <- loop { break(Succ(n)) } ;\n  return Succ(k)\n}\n\ndef same(n : Nat) -> -F Nat {\n  \
-             return n\n}\n\ndef unused(n : Nat) -> -F Nat {\n  run u <- same(n) ;\n  run _ <- \
+             predecessor(n : Nat) -> -F Nat {\n  let m = match n {\n    Zero => return n,\n    \
+             Succ(p) => pure p,\n  } ;\n  return m\n}\n\ndef first(n : Nat) -> -F Nat {\n  let k \
+             = loop { break(Succ(n)) } ;\n  return Succ(k)\n}\n\ndef same(n : Nat) -> -F Nat {\n  \
+             return n\n}\n\ndef unused(n : Nat) -> -F Nat {\n  let u = same(n) ;\n  let _ = \
              same(n) ;\n  return n\n}\n",
         );
         let table = table(source);
         for (needle, reason) in [
-            ("m <-", "bound to a match with an exit"),
-            ("k <-", "bound to a loop"),
-            ("u <-", "used nowhere"),
-            ("_ <-", "discarded"),
+            ("m =", "bound to a match with an exit"),
+            ("k =", "bound to a loop"),
+            ("u =", "used nowhere"),
+            ("_ =", "discarded"),
         ] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
@@ -8468,7 +8486,7 @@ mod tests
         let scope = |name: &str, theory: &str| {
             format!(
                 "def {name}() -> -F Integer {{\n  handle st : {theory} with sort S = Integer {{\n    \
-                 run a <- st.get();\n    run b <- st.get();\n    pure a + b\n  }} with {{\n    \
+                 let a = st.get();\n    let b = st.get();\n    pure a + b\n  }} with {{\n    \
                  pure(x) => pure x,\n    oper get(k) => k(4)\n  }}\n}}\n\n"
             )
         };
@@ -8506,7 +8524,7 @@ mod tests
         };
         for name in ["def once", "def twice"] {
             let (Some(kept), Some(second)) = (
-                at(name, "st.get();\n    run b"),
+                at(name, "st.get();\n    let b"),
                 at(name, "st.get();\n    pure"),
             )
             else {
@@ -8525,14 +8543,14 @@ mod tests
         }
     }
 
-    /// #298: the patterns of a match a `run` binds answer at the scrutinee's
+    /// #298: the patterns of a match a `let` binds answer at the scrutinee's
     /// type, though the block's rewrite copies the match and its scrutinee.
     #[test]
     fn a_run_bound_match_s_patterns_answer_298()
     {
         let source = SourceText::from(
             "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec skim(n : \
-             Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
+             Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => {\n      let _ = \
              match p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
              become skim[<](p)\n    },\n  }\n}\n",
         );
@@ -8550,7 +8568,7 @@ mod tests
         }
     }
 
-    /// #298: a `run` binder bound to a computation the run judged at a decode
+    /// #298: a `let` binder bound to a computation the run judged at a decode
     /// answers at what the decode returns, used or not: `force m` with `m` at
     /// `+U (T(A))`, `T` a static abstraction, returns the abstraction's body at
     /// `A`.
@@ -8561,29 +8579,29 @@ mod tests
             "def raw : (Type -> Type[-]) -> Type -> Type -> Type ;\ndef raw = fun (T) { fun (A) { fun (B) { type(+U \
              (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;\n\ndef pairs : raw(fun (X) { -F (X \
              * X) }, Integer, Integer) ;\ndef pairs = (\n  thunk { fun (a) { return (a, a) } },\n  \
-             thunk { fun (m) { fun (k) { run p <- force m ; become (force k)(1) } } }\n) ;\n",
+             thunk { fun (m) { fun (k) { let p = force m ; become (force k)(1) } } }\n) ;\n",
         );
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("p <-")),
+            answer(&table, source, SourceText::from("p =")),
             agreed(Subject::Binder, SourceText::from("#{Integer, Integer}")),
             "the unused binder answers at what the decode returns"
         );
     }
 
-    /// #298: a `run`'s tuple pattern answers at the tuple its computation
+    /// #298: a `let`'s tuple pattern answers at the tuple its computation
     /// returns, as a named binder does.
     #[test]
     fn a_run_s_tuple_pattern_answers_at_the_tuple_298()
     {
         let source = SourceText::from(
             "data Nat : Type where {\n  | Zero : Nat\n}\n\ndef pair(n : Nat) -> -F (Nat * Nat) {\n  return \
-             (n, n)\n}\n\ndef first(n : Nat) -> -F Nat {\n  run (a, b) <- pair(n) ;\n  return \
+             (n, n)\n}\n\ndef first(n : Nat) -> -F Nat {\n  let (a, b) = pair(n) ;\n  return \
              a\n}\n",
         );
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("(a, b) <-")),
+            answer(&table, source, SourceText::from("(a, b) =")),
             agreed(Subject::Binder, SourceText::from("#{Nat, Nat}")),
             "the tuple pattern at what `pair` returns"
         );
@@ -9462,8 +9480,8 @@ mod tests
             "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat } data Both(a : Type, b : \
              Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } def apart(x : Nat, y : \
              Nat) -> -F Type { return Unit } rec { data Fresh : Type where { | FNil : Fresh | FCons : (x  : Nat, xs : Fresh, p : fresh(x, xs)) --> Fresh } def rec fresh(x : Nat, xs : \
-             Fresh) -> -F Type { match xs { FNil => return Unit, FCons(y, ys, q) => { run p <- \
-             apart(x, y); run r <- fresh[<](x, ys); return (Both(p, r)) } } } } rec { data \
+             Fresh) -> -F Type { match xs { FNil => return Unit, FCons(y, ys, q) => { let p = \
+             apart(x, y); let r = fresh[<](x, ys); return (Both(p, r)) } } } } rec { data \
              UD(d : Type) : Type where { | BaseD : UD(d) | PiD : (a : UD(d), b : +U (elD(d, a) -> -F \
              UD(d))) --> UD(d) } def rec elD(d : Type, u : UD(d)) -> -F Type { match u { BaseD \
              => return d, PiD(a, b) => return (+U ((x : elD[<](d, a)) -> -F elD[<](d, b(x)))) \

@@ -372,7 +372,7 @@ pub(super) fn judged(
                 Shape::Native(native) => block == native,
                 Shape::Form => parses(block) || typed(node).is_some_and(&mut parses),
                 Shape::Declaration => {
-                    // A statement's keyword in the body — `run`, `fork` — is a
+                    // A statement's keyword in the body — `let`, `fork` — is a
                     // tile of the declaration's own form, and answers the
                     // statement's computation about a range starting past the
                     // declaration's: a term form's answer.

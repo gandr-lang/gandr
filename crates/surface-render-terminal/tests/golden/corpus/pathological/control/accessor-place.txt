@@ -2,8 +2,8 @@ error[PlaceUnindexed]: an access at a place reads an element at an index; the he
    ╭▸ corpus/pathological/control/accessor-place.gandr:9:3
    │
  7 │ ┌ def unindexed() -> Integer {
- 8 │ │   hold c = 0;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+ 8 │ │   var c = 0;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
  9 │ │   access shared c[0] as w { pure w }
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a held value with no elements to index
 10 │ │ }
@@ -15,10 +15,10 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
    ╭▸ corpus/pathological/control/accessor-place.gandr:18:30
    │
 15 │ ┌ def index_frozen() -> Unit {
-16 │ │   hold i = 0;
-   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
-17 │ │   hold xs = pair;
-   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+16 │ │   var i = 0;
+   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
+17 │ │   var xs = pair;
+   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 18 │ │   access shared xs[i] as w { access i as v { resume(v, w) } }
    │ │   ┬──────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
    │ │   │                          │
@@ -34,8 +34,8 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
    ╭▸ corpus/pathological/control/accessor-place.gandr:26:23
    │
 24 │ ┌ def two_places() -> Unit {
-25 │ │   hold xs = pair;
-   │ │   ──── checked against `-F Unit`; while checking the scope of this hold
+25 │ │   var xs = pair;
+   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 26 │ │   access xs[0] as v { access xs[1] as w { resume(w, v) }; resume(v, 0) }
    │ │   ┬───────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━────────────────
    │ │   │                   │

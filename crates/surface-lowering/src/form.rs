@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 71_usize] = [
+    pub const ALL: [Self; 70_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -205,11 +205,10 @@ impl FormName
         Self::INTERPOLATION,
         Self::ATTRIBUTE,
         Self::DECLARATION,
-        Self::BIND_STATEMENT,
         Self::LET_STATEMENT,
         Self::UNPACK_STATEMENT,
         Self::LETA_STATEMENT,
-        Self::HOLD_STATEMENT,
+        Self::VAR_STATEMENT,
         Self::RECV_EXPRESSION,
         Self::FORK_EXPRESSION,
         Self::EXPRESSION_STATEMENT,
@@ -264,13 +263,10 @@ impl FormName
     ];
     /// The visibility mark `pub` before a root declaration.
     pub const VISIBILITY: Self = Self("pub_declaration");
-    /// An annotation: `(e : T)`, folded into the parenthesised expression, and
-    /// `run x : B <- c ;`, inlined with its statement into the block.
+    /// An annotation `(e : T)`, folded into the parenthesised expression.
     pub const ANNOTATION: Self = Self("annotation_expression");
     /// One attribute `name(payload)`, folded into the attribute block.
     pub const ATTRIBUTE: Self = Self("attribute");
-    /// The statement `run x <- c ;`, inlined into its block.
-    pub const BIND_STATEMENT: Self = Self("bind_statement");
     /// A block's statements, inlined into the form that opens the block.
     pub const BLOCK: Self = Self("block");
     /// The declaration family `def name …`, whose tail decides its variant.
@@ -284,8 +280,8 @@ impl FormName
     pub const FUNCTION: Self = Self("def_function");
     /// A grade annotation `[r]`, folded into the thunk and its type.
     pub const GRADE: Self = Self("grade");
-    /// The statement `hold x = e ;`, inlined into its block.
-    pub const HOLD_STATEMENT: Self = Self("hold_statement");
+    /// The statement `var x = e ;`, inlined into its block.
+    pub const VAR_STATEMENT: Self = Self("var_statement");
     /// The index `e.#[i]`, the place a view-answering method's body ends in.
     pub const INDEX: Self = Self("index_expression");
     /// An interpolation `${ e }`, folded into the string.
@@ -374,7 +370,7 @@ impl FormName
     /// The splice `~t`: a hole the elaborator answers by running the tactic
     /// `t` at the goal the hole stands at.
     pub const SPLICE: Self = Self("splice_expression");
-    /// The tuple pattern `(p, q, …)`: a bind statement's binder splits the
+    /// The tuple pattern `(p, q, …)`: a `let` statement's binder splits the
     /// tuple its computation returns.
     pub const TUPLE_PATTERN: Self = Self("tuple_pattern");
     /// A literal pattern: a number, a string or a boolean.
@@ -516,8 +512,6 @@ impl TileName
     pub const BAR: Self = Self("|");
     /// The arm bar `|` opening a constructor, a clause or a match arm.
     pub const ARM_BAR: Self = Self("arm_bar");
-    /// The bind arrow `<-` of a `run` statement.
-    pub const BIND: Self = Self("<-");
     /// The theory member `boundary` naming a shape parameter's points.
     pub const BOUNDARY: Self = Self("boundary");
     /// A bracket closer `]`.
@@ -629,7 +623,7 @@ impl TileName
     /// The capability scope's lead `handle`.
     pub const HANDLE: Self = Self("handle");
     /// The keyword `hold`: the located hold `hold v` that returns `v` held at
-    /// the current world, and `var`'s former spelling until the corpus moves.
+    /// the current world.
     pub const HOLD: Self = Self("hold");
     /// The keyword `migrate`, opening a migration `migrate [w] { t }`.
     pub const MIGRATE: Self = Self("migrate");
@@ -683,8 +677,7 @@ impl TileName
     pub const IF: Self = Self("if");
     /// The `else` before a conditional's false branch.
     pub const ELSE: Self = Self("else");
-    /// The bind keyword `run`, opening a statement or a run where a value is
-    /// read.
+    /// The keyword `run`, opening a run where a value is read.
     pub const RUN: Self = Self("run");
     /// The eager product's `*`.
     pub const STAR: Self = Self("*");
@@ -872,7 +865,7 @@ pub enum Former
     Thunk,
     /// The lambda `fun (x) { c }`.
     Lambda,
-    /// A block standing as a computation, `{ run x <- c ; … c }`: its
+    /// A block standing as a computation, `{ let x = c ; … c }`: its
     /// statements bound over its last computation.
     Block,
     /// The returner `ret v`.

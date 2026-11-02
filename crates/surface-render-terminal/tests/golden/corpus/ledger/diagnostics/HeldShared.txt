@@ -1,12 +1,12 @@
 error[HeldShared]: `var[1]` enters a value made in place — a constructor, a literal, a tuple, a record or a list; this one may have another holder
-  ╭▸ corpus/ledger/diagnostics/HeldShared.gandr:4:15
+  ╭▸ corpus/ledger/diagnostics/HeldShared.gandr:4:14
   │
 3 │   def entered(n : Integer) -> -F Unit {
   │   │           ─ checked against `Integer -> -F Unit`; while checking the body of this function; binds n : Integer
   │ ┌─┘
   │ │
-4 │ │   hold[1] c = n;
-  │ │               ━ a value that may have another holder
+4 │ │   var[1] c = n;
+  │ │              ━ a value that may have another holder
 5 │ │   pure unit
 6 │ │ }
   │ └─┘ checked against `Integer => Unit`; while checking the body of this thunk

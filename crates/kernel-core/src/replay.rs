@@ -3471,7 +3471,7 @@ where
     /// - measure: the binds still to peel, then the runs still to compose.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — over the presented circle, `run q <- cong(unlooped,
+    /// - hypothesis: L3 — over the presented circle, `let q = cong(unlooped,
     ///   p); cong(looped, q)` converts with `return p` in the forced loop with
     ///   the two definitions unfoldable, and a chain composing to `looped ∘
     ///   looped` does not. `cong(looped, p)` under binds into `cong(looped, x)`

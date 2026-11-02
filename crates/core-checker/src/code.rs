@@ -64,7 +64,7 @@
 //!
 //! A call on a binder runs as far as its scrutinee allows. Its run is read
 //! back under rigid binders, a definition's own recursion named as its source
-//! wrote it, so a decoder's arm `run x <- el(a); run y <- el(b); return (x =>
+//! wrote it, so a decoder's arm `let x = el(a); let y = el(b); return (x =>
 //! y)` steps `el(Arrow(a, b))` to `⌜U(El(el(a)) → F El(el(b)))⌝`, whose
 //! decodes are the ones a signature writes. A call stuck on its binder,
 //! `el(c)`, reads back as a returned code and stays a decode over a neutral

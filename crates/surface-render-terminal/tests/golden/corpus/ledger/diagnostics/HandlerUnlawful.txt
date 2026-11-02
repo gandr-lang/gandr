@@ -3,7 +3,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
    │
 13 │ ┏   handle st : Stored with sort S = Integer {
 14 │ ┃     st.put(1);
-15 │ ┃     run a <- st.get();
+15 │ ┃     let a = st.get();
 16 │ ┃     pure a
    ┆ ┇
 20 │ ┃     oper put(s, k) => k(unit)

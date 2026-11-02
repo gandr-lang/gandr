@@ -44,7 +44,7 @@
 //!
 //! The core is nameless: a lambda or a bind opens a binder by position. The
 //! table keeps, per lambda a function parameter lowers to and per bind a named
-//! `run` statement lowers to, the origin of the name the source wrote, so a
+//! `let` statement lowers to, the origin of the name the source wrote, so a
 //! diagnostic can say which name a hypothesis of the checker is. A split, a
 //! discarded statement and a lambda the lowering inserted record none.
 //!
@@ -157,8 +157,8 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
-///   return, classifier, match, fixpoint, endpoint, identity, nested, unwind,
-///   model, relation, parameter and implicit.
+///   return, classifier, match, fixpoint, endpoint, identity, nested, bound,
+///   unwind, model, relation, parameter and implicit.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -220,6 +220,10 @@ pub enum Insertion
     /// which runs it before the computation around it or suspends it as the
     /// type read there decides.
     Nested,
+    /// A computation a `let` binds, carried to the checker as a nested
+    /// computation is: the `let` is the run the source wrote, so no
+    /// `explicit-runs` finding asks for another.
+    Bound,
     /// The delimiter around a body a `return` in a handled subject leaves,
     /// and the capture that `return` is: the capture discards every handler
     /// frame up to the delimiter, which returns the value.
@@ -1829,7 +1833,7 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a function's parameter and a `run` statement's name
+    /// - hypothesis: L3 — a function's parameter and a `let` statement's name
     ///   are answered by their own openers; a split statement records none.
     /// - witness: `lower::tests::each_named_binder_records_where_its_name_is_written`
     #[spec(
@@ -2762,7 +2766,7 @@ pub enum Labelled
     /// The endpoint a session action names, at the session type the typed
     /// run found it standing at there.
     Endpoint(ComputationId),
-    /// A `run` binder, at the value type the computation written at the
+    /// A `let` binder, at the value type the computation written at the
     /// node returns, where the typed run judged that computation: the binder
     /// answers even where the block's rewrite leaves no bind or use naming
     /// it (#298).

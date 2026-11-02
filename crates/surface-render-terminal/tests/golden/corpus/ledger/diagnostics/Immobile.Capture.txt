@@ -3,7 +3,7 @@ error[Immobile.Capture]: a thunk crossing to another world captures this, but it
    │
 20 │ ┌  def dispatched() -> () => Seat.Dispatch {
 21 │ │┌   migrate [seat] {
-22 │ ││     run task <- pure Seat.task;
+22 │ ││     let task = Seat.task;
 23 │ ││     pure thunk { pure task }
    │ ││                       ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
 24 │ ││   }

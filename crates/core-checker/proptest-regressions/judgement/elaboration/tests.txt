@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 7be228d88cbb80c29942d2b48d43f3155bcf9468f2727759a52b26edbc898652 # shrinks to recipe = TermRecipe { steps: [Apply(Position(0), Position(0))] }, constants = [TypeRecipe { steps: [] }, TypeRecipe { steps: [] }, TypeRecipe { steps: [] }, TypeRecipe { steps: [] }], expected = TypeRecipe { steps: [] }
+cc 87cdc8aaa70fea24ce4ce6b591664e62f3968afb25f551c17542cb59eeff4a32 # shrinks to recipe = TermRecipe { steps: [Variable(0), Variable(0), Variable(0), Thunk(Position(0)), Force(Position(4))] }, constants = [TypeRecipe { steps: [] }, TypeRecipe { steps: [] }, TypeRecipe { steps: [] }, TypeRecipe { steps: [] }], expected = TypeRecipe { steps: [] }

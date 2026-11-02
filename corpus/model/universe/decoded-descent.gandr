@@ -33,7 +33,7 @@ rec {
     match u {
       NatL => return Nat,
       ListL(a) => {
-        run e <- elL[<](a);
+        let e = elL[<](a);
         return (List(e))
       },
       PiL(a, b) => return (+U ((x : elL[<](a)) -> -F elL[<](b(x))))
@@ -80,6 +80,6 @@ def lists = Cons(Cons(Succ(Zero), Nil), Cons(Cons(two, Nil), Nil));
 /// The lists summed at the list-of-lists code, whose decode they are: three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def summed() -> Nat {
-  run sum <- total(ListL(ListL(NatL)));
+  let sum = total(ListL(ListL(NatL)));
   sum(lists)
 }

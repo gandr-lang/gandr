@@ -241,14 +241,14 @@ fn a_terminator_touches_the_form_it_ends()
     let source = "import \"./base.gandr\" as prelude ;\n\
                   world seat ;\n\
                   def a = 1 ;\n\
-                  def f(a : Type, y : a) -> -F a {\n  run x : a <- same(a, y) ;\n  loop { break } ;\n  return x\n}\n\
+                  def f(a : Type, y : a) -> -F a {\n  let x : a = same(a, y) ;\n  loop { break } ;\n  return x\n}\n\
                   def t = (1, 2) ;\n";
     assert_eq!(
         text(&grammar, source, WIDE),
         "import \"./base.gandr\" as prelude;\n\
          world seat;\n\
          def a = 1;\n\
-         def f(a : Type, y : a) -> -F a {\n  run x : a <- same(a, y);\n  loop { break };\n  return x\n}\n\
+         def f(a : Type, y : a) -> -F a {\n  let x : a = same(a, y);\n  loop { break };\n  return x\n}\n\
          def t = (1, 2);\n",
         "no space stands before a `;`, whatever ends the form it closes"
     );
@@ -269,10 +269,10 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
 fn a_continuation_line_indents_under_its_statement()
 {
     let grammar = grammar();
-    let source = "def f(x : Integer) -> -F Integer {\nrun y <- inc(x)\n      ;\n         run z <- inc(y);\n  return z\n}\n";
+    let source = "def f(x : Integer) -> -F Integer {\nlet y = inc(x)\n      ;\n         let z = inc(y);\n  return z\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "def f(x : Integer) -> -F Integer {\n  run y <- inc(x)\n    ;\n  run z <- inc(y);\n  return z\n}\n",
+        "def f(x : Integer) -> -F Integer {\n  let y = inc(x)\n    ;\n  let z = inc(y);\n  return z\n}\n",
         "a line indented past its statement continues it; one after a separator starts a statement"
     );
 }
@@ -394,7 +394,7 @@ fn pieces_place_each_top_level_form()
 /// A source in the core's explicit spelling, its head declaring it:
 /// every run, force and thunk written out.
 const EXPLICIT: &str = "@[ form(explicit) ]\ndef  shown : +U (-F Integer) ;\ndef shown = \
-                            thunk {   run n <- force one ;  become read(n) } ;\n";
+                            thunk {   let n = force one ;  become read(n) } ;\n";
 
 /// #492: the gate's invariant made visible. The formatter keeps every
 /// token, so a source spelled in the explicit form comes back in the
@@ -406,14 +406,14 @@ const EXPLICIT: &str = "@[ form(explicit) ]\ndef  shown : +U (-F Integer) ;\ndef
 fn an_explicit_source_keeps_its_explicit_spelling()
 {
     let grammar = grammar();
-    let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer);\ndef shown = thunk { run n <- \
+    let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer);\ndef shown = thunk { let n = \
                 force one; become read(n) };\n";
     let imported = "import \"./base.gandr\" ;\n";
     let imported_kept = "import \"./base.gandr\";\n";
     let grouped = "rec {\n@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = \
-                   thunk {   run n <- force one ;  become read(n) } ;\n}\n";
+                   thunk {   let n = force one ;  become read(n) } ;\n}\n";
     let grouped_kept = "rec {\n  @[ form(explicit) ]\n  def shown : +U (-F Integer);\n  def \
-                        shown = thunk { run n <- force one; become read(n) };\n}\n";
+                        shown = thunk { let n = force one; become read(n) };\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),
         (

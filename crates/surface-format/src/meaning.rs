@@ -63,7 +63,7 @@ pub enum Agreement
 /// map.
 ///
 /// Two spellings of one program can lower to different cores and still be
-/// one program once the checker elaborates them: a nested call and the `run`
+/// one program once the checker elaborates them: a nested call and the `let`
 /// statement that binds it lower to a nested node and a bind, and the checker
 /// runs the nested node there, as the bind. A rewrite that moves between such
 /// spellings is checked by the bodies the checker elaborates, so the

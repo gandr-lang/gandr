@@ -762,7 +762,7 @@ fn a_binder_shadowing_a_builtin_is_rejected_under_policy()
             site(6_usize, 10_usize),
         ),
         (
-            "def x = thunk { run list <- pure 1 ; return list } ;",
+            "def x = thunk { let list = 1 ; return list } ;",
             site(20_usize, 24_usize),
         ),
     ] {
@@ -777,7 +777,7 @@ fn a_binder_shadowing_a_builtin_is_rejected_under_policy()
                 span: at,
             }]
             .as_slice(),
-            "a lambda, parameter or `run` binder over a builtin is reported at the binder"
+            "a lambda, parameter or `let` binder over a builtin is reported at the binder"
         );
 
         let refused = lowered(SourceText::from(written), seeded(ShadowPolicy::Reject));

@@ -9,6 +9,6 @@ module Sized where {
 
 @[ refuses("ViewOfNoPlace") ]
 def sized() -> -F Integer {
-  hold n = 3;
+  var n = 3;
   n.size() as w { pure w }
 }

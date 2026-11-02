@@ -57,8 +57,8 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
    ╭▸ corpus/pathological/control/accessor-method.gandr:50:27
    │
 48 │ ┌ def raisedWhileRead() -> Integer {
-49 │ │   hold xs = pair;
-   │ │   ──── checked against `-F Integer`; while checking the scope of this hold
+49 │ │   var xs = pair;
+   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 50 │ │   access shared xs as v { xs.first() as w { resume(w, 3) }; pure 0 }
    │ │   ┬───────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──────────
    │ │   │                       │
@@ -71,10 +71,10 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
    ╰ help: use the held value only after the `access` that lends it ends
 
 error[OutOfFragment.index_expression]: the index expression is not supported yet
-   ╭▸ corpus/pathological/control/accessor-method.gandr:56:12
+   ╭▸ corpus/pathological/control/accessor-method.gandr:56:11
    │
-56 │   run y <- ys[i];
-   │            ━━━━━ a form the fragment does not admit
+56 │   let y = ys[i];
+   │           ━━━━━ a form the fragment does not admit
    │
    ├ note: `unheldIndex` is refused with OutOfFragment.index_expression, as its expectation states
    ╰ note: tracked by #2670 <https://github.com/gandr-lang/gandr/issues/2670>

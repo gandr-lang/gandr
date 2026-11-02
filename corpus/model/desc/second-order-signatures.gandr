@@ -40,7 +40,7 @@ theory IdentityReturn where {
 /// for an ordinary `Sort`.
 def rec representable(chain : Theory) -> Integer {
   match chain {
-    Representable(name, indices, rest) => { run r <- representable[<](rest); r + 1 },
+    Representable(name, indices, rest) => { let r = representable[<](rest); r + 1 },
     Sort(name, indices, rest) => representable[<](rest),
     _ => 0
   }
@@ -50,7 +50,7 @@ def rec representable(chain : Theory) -> Integer {
 /// plain `Port`.
 def rec bound(chain : Theory) -> Integer {
   match chain {
-    Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); r + 1 },
+    Bound(name, sort, indices, binders, rest) => { let r = bound[<](rest); r + 1 },
     Port(name, sort, indices, rest) => bound[<](rest),
     _ => 0
   }

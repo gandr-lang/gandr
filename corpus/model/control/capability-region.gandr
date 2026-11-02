@@ -8,7 +8,7 @@
 /// The scope's own capability is bound at the type that names its region.
 def named() -> Unit {
   handle c : Proc {
-    run d : Cap { exit } at c <- pure c;
+    let d : Cap { exit } at c = c;
     return unit
   } with {
     pure(x) => x,
@@ -21,7 +21,7 @@ def named() -> Unit {
 @[ refuses("CapabilityEscaped") ]
 def held() -> Unit {
   handle c : Proc {
-    run d : Cap { exit } <- pure c;
+    let d : Cap { exit } = c;
     return unit
   } with {
     pure(x) => x,
@@ -33,7 +33,7 @@ def held() -> Unit {
 def outer() -> Unit {
   handle c : Proc {
     handle e : Proc {
-      run d : Cap { exit } at c <- pure c;
+      let d : Cap { exit } at c = c;
       return unit
     } with {
       pure(x) => x,
@@ -51,8 +51,8 @@ def outer() -> Unit {
 def swapped() -> Unit {
   handle c : Proc {
     handle e : Proc {
-      run d : Cap { exit } at e <- pure c;
-      run f : Cap { exit } at c <- pure e;
+      let d : Cap { exit } at e = c;
+      let f : Cap { exit } at c = e;
       return unit
     } with {
       pure(x) => x,
@@ -68,7 +68,7 @@ def swapped() -> Unit {
 @[ refuses("UnresolvedName") ]
 def unbound(c : Integer) -> -F Unit {
   handle e : Proc {
-    run d : Cap { exit } at c <- pure e;
+    let d : Cap { exit } at c = e;
     return unit
   } with {
     pure(x) => return x,
@@ -80,7 +80,7 @@ def unbound(c : Integer) -> -F Unit {
 /// binding `c` ends (`kept-view.gandr` keeps a view there).
 def plain() -> Unit {
   handle c : Proc {
-    run d : Integer at c <- pure 1;
+    let d : Integer at c = 1;
     return unit
   } with {
     pure(x) => x,

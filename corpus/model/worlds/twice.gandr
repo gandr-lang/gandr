@@ -19,7 +19,7 @@ import "./seat-and-operator.gandr";
 /// The seat holds an integer, and a second migration doubles it there.
 @[ entry((operator, seat, seat)), runs("42") ]
 def twice() -> Integer {
-  run held : Integer at seat <- migrate [seat] { (hold 21) };
+  let held : Integer at seat = migrate [seat] { (hold 21) };
   leta n = held;
   migrate [seat] { pure (n * 2) }
 }
@@ -27,7 +27,7 @@ def twice() -> Integer {
 /// The seat holds a record, and a second migration reads it there again.
 @[ entry((operator, seat, seat)), runs("#{.done = 3, .left = 4}") ]
 def reread() -> #{done : Integer, left : Integer} {
-  run held : #{done : Integer, left : Integer} at seat <- migrate [seat] {
+  let held : #{done : Integer, left : Integer} at seat = migrate [seat] {
     (hold #{done = 3, left = 4})
   };
   leta counts = held;

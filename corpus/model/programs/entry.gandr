@@ -8,7 +8,7 @@
 pub def rec count(xs : List(String)) -> Integer {
   match xs {
     [] => 0,
-    [x, ..rest] => { run n <- count[<](rest); n + 1 }
+    [x, ..rest] => { let n = count[<](rest); n + 1 }
   }
 }
 

@@ -8,11 +8,12 @@ data List(a : Type) : Type where {
   | Cons : (head : a, tail : List(a)) --> List(a)
 }
 
-/// A parenthesised value bound where a computation stands is refused.
+/// A parenthesised value standing as a statement, where a computation
+/// stands, is refused.
 @[ refuses("OutOfFragment.WrongSort") ]
 def refused(xs : List(Integer)) -> -F List(Integer) {
-  run held <- (Cons(1, xs) : List(Integer));
-  held
+  (Cons(1, xs) : List(Integer));
+  xs
 }
 
 /// A bare constructor passed to the refused declaration takes no type from

@@ -255,6 +255,7 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::PairSecond => "checking the first part of this list cell or dependent record",
         FrameRole::Unknowing => "checking this against the unknown type",
         FrameRole::ThunkBody => "checking the body of this thunk",
+        FrameRole::LetThunk => "synthesising the body of the thunk this binds",
         FrameRole::ReturnValue => "judging the value this returns",
         FrameRole::InjectionPayload => "checking the payload of this injection",
         FrameRole::Spliced => "checking the answer this splice's tactic gave",
@@ -312,7 +313,7 @@ pub fn sentence(role: FrameRole) -> Sentence
 /// # Adequacy
 /// - hypothesis: L3 — a force inside a thunk reads as the thunk checked against
 ///   its type while checking its body, with the force at the primary span left
-///   out; a mismatch under a `run` binder names the binder; a refusal inside a
+///   out; a mismatch under a `let` binder names the binder; a refusal inside a
 ///   checker-minted node keeps an unlocated context; a refusal inside a data
 ///   declaration names the declaration's binders.
 /// - witness: `tests::diagnostics::a_refusal_names_the_rules_it_stood_inside`
@@ -433,7 +434,7 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `run` binder and a function's parameters are named, and
+/// - hypothesis: L3 — a `let` binder and a function's parameters are named, and
 ///   a type over them spells them by those names; a record split's two binders,
 ///   the second's type naming the first, are named as the pattern writes them.
 /// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
@@ -561,7 +562,7 @@ fn split_binder(
 }
 
 /// The name the source writes for the first binder the former at `at` opens,
-/// read through `origins` and `text`: a `run`'s binder, a function's first
+/// read through `origins` and `text`: a `let`'s binder, a function's first
 /// parameter, a scope's capability, a hold's slot, a dependent arrow's binder
 /// or a dependent record's first label.
 ///

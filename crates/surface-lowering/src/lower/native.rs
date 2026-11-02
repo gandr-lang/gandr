@@ -3374,7 +3374,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — nullary, unary and three-field constructors, a wrong
     ///   field count and a parameterised family without its annotation, each
     ///   asserted as the exact plan's core node or refusal; a parameterised
-    ///   family at a signed thunk's tail, under a `run` and as a definition,
+    ///   family at a signed thunk's tail, under a `let` and as a definition,
     ///   its recursive field and its parameter field classified with it; and
     ///   one written as a data family's argument, classified by its place; one
     ///   passed to a parameter stating a closed type, classified by it; one

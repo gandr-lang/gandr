@@ -28,7 +28,7 @@ def disagreeing : String = (3 : Integer);
 /// have (#1543).
 @[ refuses("TypeMismatch") ]
 def splitWrong() -> Integer {
-  run (y, z) : Integer * String <- pure (1, 2);
+  let (y, z) : Integer * String = (1, 2);
   y
 }
 

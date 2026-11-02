@@ -2453,8 +2453,7 @@ impl<'pbg> MeldState<'pbg>
     ///   continues before anything is force-closed.
     /// - **No candidate may open a form of the open slot's own sort.** Such a
     ///   candidate fills the slot rather than ending the declaration: `run`
-    ///   heads a bind statement and opens an inline run, and inside `Succ(run
-    ///   f(x))` it is the run.
+    ///   opens an inline run, and inside `Succ(run f(x))` it is the run.
     /// - **The innermost open form must not be [`Sort::Item`].** An open item
     ///   form legitimately reaches past this point: a container (`module`,
     ///   `data`, `theory`) holds the next head as a **member** of its own rule,
@@ -2499,7 +2498,7 @@ impl<'pbg> MeldState<'pbg>
     ///   inline run in an argument list that closed its declaration would leave
     ///   the run's call unmolded.
     /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
-    /// - witness: `tests::acceptance::run_reads_as_a_bind_or_an_inline_run_by_what_follows`
+    /// - witness: `tests::acceptance::run_reads_as_an_inline_run_wherever_it_stands`
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
     /// - witness: `tests::contracts::declaration_boundary_stays_stable_under_layout`
     #[inline]

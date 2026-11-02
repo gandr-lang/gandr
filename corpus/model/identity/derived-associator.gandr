@@ -96,6 +96,6 @@ def signs : Model(Monoid) = pack Signs at Model(Monoid);
 /// The derived associator read at the signs, at minus, minus, plus and minus.
 /// Both sides are minus.
 def assoc4Signs() -> Path(Sign, Minus, Minus) {
-  run law <- Monoid.assoc4(signs);
+  let law = Monoid.assoc4(signs);
   law(Minus, Minus, Plus, Minus)
 }

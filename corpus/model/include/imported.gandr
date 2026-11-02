@@ -75,7 +75,7 @@ module Successor : Model(PointedMonoid) where {
 /// The chosen element, then doubling, at three.
 @[ runs("8") ]
 def pointed() -> Integer {
-  run p <- Successor.point();
-  run h <- Successor.mul(p, fun (n) { n * 2 });
+  let p = Successor.point();
+  let h = Successor.mul(p, fun (n) { n * 2 });
   h(3)
 }

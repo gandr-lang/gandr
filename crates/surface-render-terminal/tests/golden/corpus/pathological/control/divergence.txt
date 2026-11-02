@@ -1,14 +1,14 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/control/divergence.gandr:11:12
+   ╭▸ corpus/pathological/control/divergence.gandr:11:11
    │
 10 │    def spinPure(x : Bool) -> Bool {
    │    │            ┬            ──── the type it is checked against
    │    │            │
    │ ┌──┘            checked against `Bool -> -F Bool`; while checking the body of this function; binds x : Bool
    │ │
-11 │ │    run y <- loop {
-   │ │┏━━━━━━━━━━━━┛
-12 │ │┃     run below <- 1 < 0;
+11 │ │    let y = loop {
+   │ │┏━━━━━━━━━━━┛
+12 │ │┃     let below = 1 < 0;
 13 │ │┃     match below {
 14 │ │┃       true => break(x),
    ┆ ┆┇
@@ -74,8 +74,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
    │ ┌─┘             checked; while checking the body of this function; binds a : Type
    │ │
 56 │ │   +U (a -> -F [Div] b),
-57 │ │   thunk { fun (x) { run v <- g(x); f(x) } },
-   │ │   ───────────────────────────────────────── an endpoint the point does not convert to
+57 │ │   thunk { fun (x) { let _ = g(x); f(x) } },
+   │ │   ──────────────────────────────────────── an endpoint the point does not convert to
 58 │ │   thunk { fun (x) { f(x) } }
    │ │   ────────────────────────── an endpoint the point does not convert to
 59 │ │ ) {

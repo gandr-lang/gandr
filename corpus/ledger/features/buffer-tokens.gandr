@@ -16,7 +16,7 @@
 @[ checks ]
 def bufferReturned() -> Unit {
   handle r : Ring {
-    run b <- r.alloc(4096);
+    let b = r.alloc(4096);
     r.free(b)
   } with {
     pure(x) => pure x,
@@ -40,7 +40,7 @@ def bufferReturned() -> Unit {
 @[ checks ]
 def freedInEachArm(flag : Bool) -> Unit {
   handle r : Ring {
-    run b <- r.alloc(4096);
+    let b = r.alloc(4096);
     match flag {
       true => r.free(b),
       false => r.free(b)

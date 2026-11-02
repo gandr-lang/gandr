@@ -11,7 +11,7 @@ def rec dbl(n : Int) -> -F Int {
 def rec bound(n : Int) -> -F Int {
   match n {
     Z => Z,
-    S(x) => { run d <- bound[<](x) ; S(S(d)) },
-    P(x) => { run d <- bound[<](x) ; P(P(d)) }
+    S(x) => { let d = bound[<](x) ; S(S(d)) },
+    P(x) => { let d = bound[<](x) ; P(P(d)) }
   }
 }
