@@ -1,6 +1,7 @@
-//! The chain restriction's fixtures the Θ₂ suites share: a column chain, the
-//! restriction at level two, a Θ₂ object as the restriction writes it, an
-//! object's class, and level one certified at a catalogue's top degree.
+//! The chain restriction's fixtures the Θ₂ and Θ₃ suites share: a column
+//! chain, the restriction at level two, a Θ₂ object as the restriction writes
+//! it, an object's class, level one certified at a catalogue's top degree,
+//! level two certified at its wreath's, and the wreath at level three.
 
 use alloc::sync::Arc;
 
@@ -14,6 +15,7 @@ use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Wreath;
 use gandr_theory_sites::WreathShape;
+use gandr_theory_sites::WreathStratum;
 use quenchant_shape::shape::Maybe;
 
 /// A chain's vertex count, a column's, or a shift by that many vertices.
@@ -90,4 +92,42 @@ pub fn level_one(catalogue: &Arc<Catalogue>) -> SegalStratum
         .max()
         .expect("the catalogue holds shapes");
     SegalStratum::certify(Arc::clone(catalogue), top).expect("level one is certified")
+}
+
+/// Level two over `catalogue` to total size `bound`, certified at the top
+/// degree of its objects over [`level_one`].
+///
+/// # Specification
+/// trivial.
+pub fn level_two(
+    catalogue: &Arc<Catalogue>,
+    bound: ShapeSize,
+) -> WreathStratum
+{
+    let level: &Catalogue = catalogue;
+    let wreath = Arc::new(Wreath::build(level, level, bound));
+    let top = wreath
+        .objects()
+        .iter()
+        .map(Wreath::<Catalogue>::degree)
+        .max()
+        .expect("the wreath holds objects");
+    WreathStratum::certify(wreath, top, level_one(catalogue)).expect("level two is certified")
+}
+
+/// The wreath at level three over `below`'s catalogue and its level-two
+/// wreath, every object of total size at most `bound`.
+///
+/// # Specification
+/// trivial.
+pub fn level_three(
+    below: &WreathStratum,
+    bound: ShapeSize,
+) -> Arc<Wreath<Wreath<Catalogue>>>
+{
+    Arc::new(Wreath::build(
+        below.below().catalogue(),
+        below.wreath(),
+        bound,
+    ))
 }

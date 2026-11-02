@@ -1,35 +1,37 @@
-//! A level-two stratum as bytes, and its replay over a wreath.
+//! A stratum above level one as bytes, and its replay over a wreath.
 //!
-//! [`WreathStratum::image`] writes level two's canonical image: the count of
-//! the wreath's objects, the degree, and each cocone by its object's index,
-//! its cells, its outer grafts and its inner grafts. A cell is its column, its
-//! spot, its object's index and its map's position in the hom set from its
-//! object into the cocone's. Every number is a little-endian 64-bit word after
-//! one leading byte, which is not level one's, so neither level's image
-//! replays as the other's.
+//! [`WreathStratum::image`] writes the canonical image of a level above one:
+//! the count of the wreath's objects, the degree, and each cocone by its
+//! object's index, its cells, its outer grafts and its columns' glue. A cell
+//! is its column, its spot, its object's index and its map's position in the
+//! hom set from its object into the cocone's. A column's glue is its column
+//! and the words the certificate below spells it in. Every number is a
+//! little-endian 64-bit word after one leading byte, the level's number, so
+//! no level's image replays as another's.
 //!
-//! [`WreathStratum::replay`] reads an image back over a wreath and level one's
-//! certificate of its catalogue. The cocones stand at the wreath's objects of
-//! degree two to the degree, in wreath order. Each is the cocone level one
-//! gives its object, cell for cell and graft for graft. The replay walks no
-//! agreeing family and decides no directness. Those two verdicts are what a
+//! [`WreathStratum::replay`] reads an image back over a wreath and the
+//! certificate of the level below. The cocones stand at the wreath's objects
+//! of degree two to the degree, in wreath order. Each is the cocone the level
+//! below gives its object, cell for cell and glue for glue. The replay walks
+//! no agreeing family and decides no directness. Those two verdicts are what a
 //! store attests beside the image, under a key that adds the level.
 //!
 //! # Decisions
 //!
-//! - **The replay rebuilds each cocone from level one and compares.** A cocone
-//!   is read off level one's cocones of its outer shape and its columns, so the
-//!   rebuild reads one hom set per cell. At total size 13 and degree 11 the
-//!   replay checks in 0.43 ms what the certification decides in 30 ms, beside
-//!   the 6.9 ms both spend building the wreath. The alternative checks each
-//!   part against the wreath alone, as level one's replay does against its
-//!   catalogue. Reversal: a cocone level one does not determine.
+//! - **The replay rebuilds each cocone from the level below and compares.** A
+//!   cocone is read off the level below's cocones of its outer shape and its
+//!   columns, so the rebuild reads one hom set per cell. At level two, total
+//!   size 13 and degree 11, the replay checks in 0.43 ms what the certification
+//!   decides in 30 ms, beside the 6.9 ms both spend building the wreath. The
+//!   alternative checks each part against the wreath alone, as level one's
+//!   replay does against its catalogue. Reversal: a cocone the level below does
+//!   not determine.
 //!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: a store's
 //!   integrity never stands for validity, so the replay checks every cocone an
-//!   image names against the one level one gives.
+//!   image names against the one the level below gives.
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
 //!   strata persist in the store.
 
@@ -37,23 +39,24 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_theory_circuit_algebras::Edge;
-use gandr_theory_circuit_algebras::Wire;
 
+use super::Above;
+use super::AboveCocone;
 use super::Cell;
-use super::InnerGraft;
+use super::Certificate;
+use super::ColumnGlue;
 use super::Spot;
-use super::Two;
 use super::WreathCocone;
 use super::WreathStratum;
 use super::cocone;
+use super::graft_from;
+use super::graft_words;
 use super::within;
 use crate::catalogue::ShapeIndex;
 use crate::degree::Degree;
 use crate::level::Level as _;
 use crate::map::Membership;
 use crate::segal::Graft;
-use crate::segal::Leg;
-use crate::stratum::SegalStratum;
 use crate::stratum::StratumImage;
 use crate::stratum::Unreplayed;
 use crate::stratum::image::Lead;
@@ -71,10 +74,8 @@ impl StratumImage
         graft: Graft,
     )
     {
-        self.word(Word::from(usize::from(graft.wire)));
-        for leg in [graft.producer, graft.consumer] {
-            self.word(Word::from(usize::from(leg.vertex)));
-            self.word(Word::from(usize::from(leg.wire)));
+        for word in graft_words(graft) {
+            self.word(word);
         }
     }
 }
@@ -87,43 +88,36 @@ impl Reader<'_>
     /// trivial.
     fn graft(&mut self) -> Result<Graft, Unreplayed>
     {
-        let wire = Wire::from(usize::from(self.word()?));
-        let mut leg = || -> Result<Leg, Unreplayed> {
-            Ok(Leg {
-                vertex: Edge::from(usize::from(self.word()?)),
-                wire: Wire::from(usize::from(self.word()?)),
-            })
-        };
-        let producer = leg()?;
-        let consumer = leg()?;
-        Ok(Graft {
-            wire,
-            producer,
-            consumer,
-        })
+        let mut words = [Word::from(0_usize); super::GRAFT_WORDS];
+        for slot in &mut words {
+            *slot = self.word()?;
+        }
+        Ok(graft_from(words))
     }
 }
 
-impl WreathStratum
+impl<Below: Certificate> WreathStratum<Below>
 {
-    /// Level two's canonical image.
+    /// The level's canonical image.
     ///
     /// # Specification
-    /// - ensures: [`WreathStratum::replay`] over the stratum's wreath and level
-    ///   one's certificate reads the image back to a stratum of the same degree
+    /// - ensures: [`WreathStratum::replay`] over the stratum's wreath and the
+    ///   certificate below reads the image back to a stratum of the same degree
     ///   and cocones.
     /// - panics: none.
     /// - executable: none — the round trip is the witness's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — level two over the chains at total size 9 replays
-    ///   from its image to its own cocones.
+    ///   from its image to its own cocones, and level three over the chains at
+    ///   total size 7 to its own.
     /// - witness: `tests::stratum::level_two_replays_its_image_and_refuses_a_damaged_one_4123`
+    /// - witness: `tests::stratum::level_three_replays_its_image_and_refuses_level_twos`
     #[inline]
     #[must_use]
     pub fn image(&self) -> StratumImage
     {
-        let mut image = StratumImage::led(Lead::TWO);
+        let mut image = StratumImage::led(lead::<Below>());
         image.word(Word::from(self.wreath.objects().len()));
         image.word(Word::from(usize::from(self.degree)));
         image.word(Word::from(self.cocones.len()));
@@ -153,26 +147,27 @@ impl WreathStratum
             image.word(Word::from(cocone.inner.len()));
             for &inner in &cocone.inner {
                 image.word(Word::from(usize::from(inner.column)));
-                image.graft(inner.graft);
+                Below::write_glue(inner.glue, &mut |word| image.word(Word::from(word)));
             }
         }
         image
     }
 
-    /// Level two `image` holds over `wreath` and `below`, its structure
+    /// The level `image` holds over `wreath` and `below`, its structure
     /// checked.
     ///
     /// # Specification
-    /// - requires: `wreath` is built over `below`'s catalogue as both its outer
-    ///   and its inner level, as [`WreathStratum::certify`] requires.
+    /// - requires: `wreath` is built over `below`'s floor catalogue as its
+    ///   outer level and `below`'s level as its inner, as
+    ///   [`WreathStratum::certify`] requires.
     /// - ensures: on success, a stratum of the image's degree whose cocones
     ///   stand at the wreath's objects of degree two to the degree, each the
-    ///   cocone level one gives its object.
+    ///   cocone the level below gives its object.
     /// - fails: [`Unreplayed`], the first check that fails, in the order of the
     ///   image's parts.
     /// - panics: none.
-    /// - intension: the replay reads level one's cocones and one hom set per
-    ///   cell; it walks no agreeing family and decides no directness.
+    /// - intension: the replay reads the level below's cocones and one hom set
+    ///   per cell; it walks no agreeing family and decides no directness.
     /// - executable: none — the checks are the body's; the witness damages each
     ///   part.
     ///
@@ -183,16 +178,19 @@ impl WreathStratum
     /// - hypothesis: L3 — level two's own image replays, and an image damaged
     ///   at its leading byte, its object count, its degree, its cocones'
     ///   objects, a cell and a graft is refused under each name. A level-one
-    ///   image is refused as malformed.
+    ///   image is refused as malformed. Level three's own image replays, and
+    ///   level two's image and a level-three image damaged at a column's glue
+    ///   are refused.
     /// - witness: `tests::stratum::level_two_replays_its_image_and_refuses_a_damaged_one_4123`
+    /// - witness: `tests::stratum::level_three_replays_its_image_and_refuses_level_twos`
     #[inline]
     pub fn replay(
-        wreath: Arc<Two>,
-        below: SegalStratum,
+        wreath: Arc<Above<Below>>,
+        below: Below,
         image: &StratumImage,
     ) -> Result<Self, Unreplayed>
     {
-        let mut reader = Reader::opened(image, Lead::TWO)?;
+        let mut reader = Reader::opened(image, lead::<Below>())?;
         if usize::from(reader.word()?) != wreath.objects().len() {
             return Err(Unreplayed::Catalogue);
         }
@@ -201,7 +199,7 @@ impl WreathStratum
             || wreath
                 .objects()
                 .iter()
-                .all(|object| Two::degree(object) < degree)
+                .all(|object| <Above<Below>>::degree(object) < degree)
         {
             return Err(Unreplayed::Degree);
         }
@@ -224,12 +222,21 @@ impl WreathStratum
                 outer.push(reader.graft()?);
             }
             let mut inner = Vec::new();
-            for _graft in 0 .. usize::from(reader.word()?) {
+            for _glue in 0 .. usize::from(reader.word()?) {
                 let column = Edge::from(usize::from(reader.word()?));
-                inner.push(InnerGraft {
-                    column,
-                    graft: reader.graft()?,
+                let mut short = None;
+                let glue = Below::read_glue(&mut || match reader.word() {
+                    Ok(word) => Some(usize::from(word)),
+                    Err(refused) => {
+                        short = Some(refused);
+                        None
+                    },
                 });
+                match (glue, short) {
+                    (_, Some(refused)) => return Err(refused),
+                    (None, None) => return Err(Unreplayed::Malformed),
+                    (Some(glue), None) => inner.push(ColumnGlue { column, glue }),
+                }
             }
             read.push(Read {
                 object,
@@ -245,7 +252,9 @@ impl WreathStratum
             .objects()
             .iter()
             .enumerate()
-            .filter(|&(_, object)| within(object, degree) == Membership::Inside)
+            .filter(|&(_, object)| {
+                within(<Above<Below>>::degree(object), degree) == Membership::Inside
+            })
             .map(|(position, _)| ShapeIndex::from(position));
         if !expected.eq(read.iter().map(|cocone| cocone.object)) {
             return Err(Unreplayed::Cocones);
@@ -263,9 +272,21 @@ impl WreathStratum
     }
 }
 
+/// The byte the image of the level above `Below` leads with: that level's
+/// number.
+///
+/// # Specification
+/// trivial.
+fn lead<Below>() -> Lead
+where
+    Below: Certificate,
+{
+    Lead::from(Below::LEVEL.saturating_add(1))
+}
+
 /// One cocone as an image holds it: the object's index, each cell's column,
-/// spot, object and hom-set position, and the grafts.
-struct Read
+/// spot, object and hom-set position, and the glue.
+struct Read<Glue>
 {
     /// The object's index.
     object: ShapeIndex,
@@ -274,18 +295,18 @@ struct Read
     cells: Vec<(Edge, Spot, ShapeIndex, usize)>,
     /// The outer grafts.
     outer: Vec<Graft>,
-    /// The inner grafts.
-    inner: Vec<InnerGraft>,
+    /// The columns' glue.
+    inner: Vec<ColumnGlue<Glue>>,
 }
 
-/// The cocone `read` holds, checked against the one level one gives its
-/// object in `wreath`.
+/// The cocone `read` holds, checked against the one the level below gives
+/// its object in `wreath`.
 ///
 /// # Specification
 /// - ensures: on success, the cocone [`cocone`] builds at the object over
-///   `below`, cell for cell and graft for graft.
+///   `below`, cell for cell and glue for glue.
 /// - fails: [`Unreplayed::Cocone`] at the object when a cell's position is past
-///   its hom set, or the cocone is not level one's.
+///   its hom set, or the cocone is not the level below's.
 /// - panics: none.
 /// - executable: none — the checks are the body's; the witness damages a cell's
 ///   position and a graft.
@@ -296,11 +317,14 @@ struct Read
 /// # Adequacy
 /// - hypothesis: L3 — as [`WreathStratum::replay`].
 /// - witness: `tests::stratum::level_two_replays_its_image_and_refuses_a_damaged_one_4123`
-fn replayed(
-    wreath: &Two,
-    below: &SegalStratum,
-    read: Read,
-) -> Result<WreathCocone, Unreplayed>
+/// - witness: `tests::stratum::level_three_replays_its_image_and_refuses_level_twos`
+fn replayed<Below>(
+    wreath: &Above<Below>,
+    below: &Below,
+    read: Read<Below::Glue>,
+) -> Result<AboveCocone<Below>, Unreplayed>
+where
+    Below: Certificate,
 {
     let misplaced = Unreplayed::Cocone { shape: read.object };
     let mut cells = Vec::with_capacity(read.cells.len());

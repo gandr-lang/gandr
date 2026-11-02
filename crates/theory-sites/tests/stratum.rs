@@ -51,12 +51,15 @@ use gandr_theory_sites::WreathStratum;
 use gandr_theory_sites::direct_core;
 use gandr_theory_sites::restrict;
 use gandr_theory_sites::segal;
-use gandr_theory_sites::segal_two;
+use gandr_theory_sites::segal_above;
 use quenchant_shape::shape::Maybe;
 
 use crate::fixture::Length;
 use crate::fixture::column;
+use crate::fixture::index;
 use crate::fixture::level_one;
+use crate::fixture::level_three;
+use crate::fixture::level_two;
 use crate::fixture::restriction;
 use crate::fixture::theta;
 
@@ -746,7 +749,7 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
     let wreath = Arc::new(Wreath::build(level, level, small));
     let below = level_one(&wirings);
     assert_eq!(
-        segal_two(&wreath, &below, Degree::from(5_usize)),
+        segal_above(&wreath, &below, Degree::from(5_usize)),
         Outcome::Holds {
             cases: 46592.into()
         }
@@ -980,5 +983,148 @@ fn level_two_replays_its_image_and_refuses_a_damaged_one_4123()
             shape: ShapeIndex::from(grafted)
         }),
         "an outer graft level one does not give"
+    );
+}
+
+/// Level three over the chains at total size eleven, built from level two's
+/// certificate at its top degree. Its 153 objects' grounded ones are direct
+/// with automorphisms over 271 maps, and every object of degree two to nine
+/// is the colimit of its cells in 22,950 cases: 150 cocones of 401 cells. The
+/// suspension `[1]([1](2))` of the vertical composite has the composite's two
+/// cells, glued by the column's object. The whisker `[2]([1](1), [0]())` has
+/// the 2-cell's suspension and the empty column's 1-cell, glued by one outer
+/// graft.
+#[test]
+fn the_chains_at_level_three_are_certified_from_level_two()
+{
+    let bound = ShapeSize::from(11_usize);
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let two = level_two(&chains, bound);
+    assert_eq!(two.cocones().len(), 51);
+    let three = level_three(&two, bound);
+    assert_eq!(three.objects().len(), 153);
+    assert_eq!(direct_core(&Site::new(&*three)), Outcome::Holds {
+        cases: 271.into()
+    });
+    let top = Degree::from(9_usize);
+    assert_eq!(segal_above(&three, &two, top), Outcome::Holds {
+        cases: 22_950.into()
+    });
+    let stratum = WreathStratum::certify(Arc::clone(&three), top, two)
+        .expect("level three is certified at the bound's top");
+    assert_eq!(stratum.cocones().len(), 150);
+    let cells: usize = stratum
+        .cocones()
+        .iter()
+        .map(|cocone| cocone.cells().len())
+        .sum();
+    assert_eq!(cells, 401);
+    let [single, double] = [1_usize, 2].map(Length);
+    let suspended = |outer: Length, columns: Vec<WreathShape<Shape>>| {
+        WreathShape::new(column(outer), columns).expect("one column per outer vertex")
+    };
+    let cases = [
+        (
+            suspended(single, vec![theta(&[double])]),
+            vec![
+                Spot::Vertex(Edge::from(0_usize)),
+                Spot::Vertex(Edge::from(1_usize)),
+            ],
+            0,
+            1,
+        ),
+        (
+            suspended(double, vec![theta(&[single]), theta(&[])]),
+            vec![Spot::Vertex(Edge::from(0_usize)), Spot::Empty],
+            1,
+            1,
+        ),
+    ];
+    for (object, spots, outer, inner) in cases {
+        let at = index(&*three, &object);
+        let cocone = stratum
+            .cocones()
+            .iter()
+            .find(|cocone| cocone.object() == at)
+            .unwrap_or_else(|| panic!("{object} has a cocone"));
+        let read: Vec<Spot> = cocone.cells().iter().map(|cell| cell.spot).collect();
+        assert_eq!(read, spots, "{object}'s cells");
+        assert_eq!(
+            (cocone.outer().len(), cocone.inner().len()),
+            (outer, inner),
+            "{object}'s glue"
+        );
+    }
+}
+
+/// Level three over the chains at total size seven, certified at its top
+/// degree, replays from its image to its own cocones. Level two's image is no
+/// level-three image. An image whose column glue names another object is
+/// refused at the cocone that holds it.
+#[test]
+fn level_three_replays_its_image_and_refuses_level_twos()
+{
+    let bound = ShapeSize::from(7_usize);
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let two = level_two(&chains, bound);
+    let three = level_three(&two, bound);
+    let degree = Degree::from(5_usize);
+    let stratum = WreathStratum::certify(Arc::clone(&three), degree, two.clone())
+        .expect("level three is certified at its top");
+    let image = stratum.image();
+    let replay =
+        |image: &StratumImage| WreathStratum::replay(Arc::clone(&three), two.clone(), image);
+    let replayed = replay(&image).expect("level three's image replays");
+    assert_eq!(replayed.degree(), degree);
+    assert_eq!(replayed.cocones(), stratum.cocones());
+    assert_eq!(replayed.image(), image, "the image is canonical");
+    assert_eq!(
+        replay(&two.image()).err(),
+        Some(Unreplayed::Malformed),
+        "level two's image"
+    );
+
+    let words: Vec<u64> = image
+        .as_ref()
+        .get(1 ..)
+        .expect("an image leads with its level")
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|word| u64::from_le_bytes(*word))
+        .collect();
+    let at = |position: usize| {
+        usize::try_from(*words.get(position).expect("the word is in the image"))
+            .expect("the word counts")
+    };
+    // The first column glue's object, and the object whose cocone holds it:
+    // each cocone is its object, its cells of four words, its outer grafts of
+    // five and its columns' glue of two.
+    let past = |cursor: usize, by: usize| cursor.checked_add(by).expect("the image is short");
+    let times = |count: usize, by: usize| count.checked_mul(by).expect("the image is short");
+    let mut cursor = 3;
+    let mut glue = None;
+    for _cocone in 0 .. at(2) {
+        let object = at(cursor);
+        cursor = past(cursor, past(2, times(4, at(past(cursor, 1)))));
+        cursor = past(cursor, past(1, times(5, at(cursor))));
+        let inner = at(cursor);
+        if inner > 0 {
+            let _first = glue.get_or_insert_with(|| (past(cursor, 2), object));
+        }
+        cursor = past(cursor, past(1, times(2, inner)));
+    }
+    assert_eq!(cursor, words.len(), "the walk reads the whole image");
+    let (position, glued) = glue.expect("a cocone glues a column's cells");
+    let mut damaged = words.clone();
+    *damaged.get_mut(position).expect("the glue's object") += 1;
+    let mut bytes = vec![3_u8];
+    bytes.extend(damaged.iter().flat_map(|word| word.to_le_bytes()));
+    assert_eq!(
+        replay(&StratumImage::from(bytes)).err(),
+        Some(Unreplayed::Cocone {
+            shape: ShapeIndex::from(glued)
+        }),
+        "a column glue level two does not give"
     );
 }
