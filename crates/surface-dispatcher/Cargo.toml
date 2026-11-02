@@ -30,8 +30,9 @@ path = "tests/lib.rs"
 # the fork crate's trait, so every consumer forks on it through that trait.
 # The reader maps a source above its crossover through memmap2, and rewrites
 # a mapped source through the one writer. The `ledger`
-# verb writes the syntax ledger's machine form through serde_json. A
-# package's manifest
+# verb writes the syntax ledger's machine form through serde_json, and reads
+# a mold's left bound through the graph crate's `Bound` where its decision
+# table asks whether a hole faces an opener. A package's manifest
 # carries the BLAKE3 digest of its body, through blake3, so the checker
 # tells its own file from a hand edit; its address is the BLAKE3 digest of
 # its items' content keys, which the incremental checker's program states.
@@ -75,6 +76,7 @@ gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-cell-complexes.workspace = true
+gandr-theory-graphs.workspace = true
 gandr-theory-sites.workspace = true
 hotpath = { workspace = true, optional = true }
 memmap2.workspace = true

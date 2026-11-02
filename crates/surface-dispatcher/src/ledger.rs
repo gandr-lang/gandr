@@ -122,6 +122,7 @@
 //!
 //! [`TileKind`]: gandr_surface_grammar::TileKind
 
+mod decisions;
 mod exemplars;
 mod features;
 mod recovery;
@@ -598,8 +599,39 @@ struct RuleRow
     tree: Value,
     /// The highlight roles of its tiles, each once, first use first.
     roles: Vec<String>,
+    /// How the grammar decides the rule's own tokens.
+    decision: Decision,
     /// Whether a source can mold it.
     standing: Standing,
+}
+
+/// How the grammar decides one rule's own tokens, as [`decisions`] reads it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Decision
+{
+    /// How many molds the rule's tiles take.
+    molds: usize,
+    /// The labels the rule's form opens on, ascending.
+    opens: Vec<&'static str>,
+    /// The other rules of the rule's sort that open on one of those labels
+    /// with a hole facing the opener alike, ascending.
+    shares: Vec<&'static str>,
+    /// How many of the rule's molds one label continues at two molds or more.
+    forks: usize,
+}
+
+/// One label's menu: what the molder ranks when it reads the label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Menu
+{
+    /// The label.
+    label: &'static str,
+    /// How many molds the label can take.
+    molds: usize,
+    /// How many rules those molds belong to.
+    rules: usize,
+    /// How many of them can open a form.
+    opening: usize,
 }
 
 /// One attribute of the lowering's registry, as the ledger reads it.
@@ -625,6 +657,8 @@ pub struct SyntaxLedger
     rules: Vec<RuleRow>,
     /// One row per attribute, in registry order.
     attributes: Vec<AttributeRow>,
+    /// One menu per label, the largest first.
+    menus: Vec<Menu>,
 }
 
 impl SyntaxLedger
@@ -663,6 +697,7 @@ impl SyntaxLedger
         let roles = RoleTable::build(&pbg).map_err(LedgerFault::Grammar)?;
         let molds = molds_by_rule(&pbg)?;
         let abbreviations = abbreviations(&pbg);
+        let mut decided = decisions::decisions(&pbg, &molds)?.into_iter();
         let mut rules = Vec::with_capacity(pbg.rules().len());
         for (index, rule) in pbg.rules().iter().enumerate() {
             let rule_molds = molds.get(index).map_or(&[][..], Vec::as_slice);
@@ -708,6 +743,9 @@ impl SyntaxLedger
                 roles: tree.roles,
                 admission: None,
                 standing: standing::standing(&pbg, rule)?,
+                decision: decided
+                    .next()
+                    .ok_or(LedgerFault::Molds { rule: rule.name })?,
             });
         }
         let attributes = AttributeRegistry::names()
@@ -728,6 +766,7 @@ impl SyntaxLedger
         Ok(Self {
             fingerprint: format!("{:#018x}", u64::from(pbg.fingerprint())),
             molds: pbg.iter_molds().count(),
+            menus: decisions::menus(&pbg)?,
             rules,
             attributes,
         })
@@ -773,16 +812,18 @@ impl SyntaxLedger
     }
 
     /// The ledger for reading: a header naming the fingerprint and the
-    /// counts, how to read a form, a table per sort, the internal rules and
-    /// the attributes.
+    /// counts, how to read a form, a table per sort, the internal rules, the
+    /// attributes, each rule's decision and each label's menu.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the header names the fingerprint; every committed rule is one
     ///   table row under its sort's heading, the sorts in their declared order
     ///   and the rules in grammar order, and every internal rule one row of the
-    ///   internal table; every attribute is one row of the attribute table. A
-    ///   `|` inside a cell is escaped. The text ends with one newline.
+    ///   internal table; every attribute is one row of the attribute table;
+    ///   every rule is one row of the decision table, in grammar order, and
+    ///   every label one row of the menu table, largest first. A `|` inside a
+    ///   cell is escaped. The text ends with one newline.
     /// - provides: `syntax.md`.
     /// - fails: never.
     /// - panics: none.
@@ -936,6 +977,68 @@ impl SyntaxLedger
                 name = row.name
             )?;
         }
+        let decided = self
+            .rules
+            .iter()
+            .filter(|row| row.decision.shares.is_empty() && row.decision.forks == 0)
+            .count();
+        write!(
+            out,
+            "\n## Decisions — {decided} of {} decided at every token\n\n",
+            Counted {
+                count: self.rules.len(),
+                noun: "rule"
+            }
+        )?;
+        out.push_str("Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.\n\n");
+        out.push_str("| Rule | Sort | Molds | Opens on | Shares its opener with | Forks |\n");
+        out.push_str("| ---- | ---- | ----- | -------- | ---------------------- | ----- |\n");
+        for row in &self.rules {
+            write!(
+                out,
+                "| `{}` | {} | {} | ",
+                row.name,
+                row.sort.name(),
+                row.decision.molds
+            )?;
+            if row.decision.opens.is_empty() {
+                out.push('—');
+            }
+            for (index, label) in row.decision.opens.iter().enumerate() {
+                if index > 0 {
+                    out.push(' ');
+                }
+                write!(out, "{}", Code(label))?;
+            }
+            out.push_str(" | ");
+            if row.decision.shares.is_empty() {
+                out.push('—');
+            }
+            for (index, rule) in row.decision.shares.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "`{rule}`")?;
+            }
+            writeln!(out, " | {} |", row.decision.forks)?;
+        }
+        write!(out, "\n## Menus — {}\n\n", Counted {
+            count: self.menus.len(),
+            noun: "label"
+        })?;
+        out.push_str("Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.\n\n");
+        out.push_str("| Label | Molds | Rules | Opening |\n");
+        out.push_str("| ----- | ----- | ----- | ------- |\n");
+        for menu in &self.menus {
+            writeln!(
+                out,
+                "| {} | {} | {} | {} |",
+                Code(menu.label),
+                menu.molds,
+                menu.rules,
+                menu.opening
+            )?;
+        }
         Ok(())
     }
 
@@ -945,9 +1048,10 @@ impl SyntaxLedger
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one JSON object whose `fingerprint` is the grammar's, whose
-    ///   `rules` hold one compact object per rule in grammar order and whose
-    ///   `attributes` one per attribute in registry order, each element on a
-    ///   line of its own. The text ends with one newline.
+    ///   `rules` hold one compact object per rule in grammar order, each with
+    ///   its decision, whose `attributes` hold one per attribute in registry
+    ///   order and whose `menus` one per label, largest first, each element on
+    ///   a line of its own. The text ends with one newline.
     /// - provides: `syntax.json`.
     /// - fails: never.
     /// - panics: none.
@@ -957,7 +1061,7 @@ impl SyntaxLedger
     ///   fingerprint, rule names and attribute names are the ledger's, and
     ///   whose lines hold one element each.
     /// - witness: `ledger::tests::both_files_carry_the_fingerprint_and_every_row`
-    #[spec(ensures: |ret| ret.ends_with("}\n") && ret.lines().count() == self.rules.len().saturating_add(self.attributes.len()).saturating_add(10))]
+    #[spec(ensures: |ret| ret.ends_with("}\n") && ret.lines().count() == self.rules.len().saturating_add(self.attributes.len()).saturating_add(self.menus.len()).saturating_add(12))]
     #[inline]
     #[must_use]
     pub fn json(&self) -> String
@@ -972,6 +1076,19 @@ impl SyntaxLedger
             .iter()
             .map(|row| attribute_json(row).to_string())
             .collect();
+        let menus: Vec<String> = self
+            .menus
+            .iter()
+            .map(|menu| {
+                json!({
+                    "label": menu.label,
+                    "molds": menu.molds,
+                    "rules": menu.rules,
+                    "opening": menu.opening,
+                })
+                .to_string()
+            })
+            .collect();
         let mut out = String::new();
         out.push_str("{\n  \"ledger\": \"syntax\",\n  \"generator\": \"");
         out.push_str(REGENERATE);
@@ -983,6 +1100,8 @@ impl SyntaxLedger
         out.push_str(&elements(&rules));
         out.push_str("  ],\n  \"attributes\": [\n");
         out.push_str(&elements(&attributes));
+        out.push_str("  ],\n  \"menus\": [\n");
+        out.push_str(&elements(&menus));
         out.push_str("  ]\n}\n");
         out
     }
@@ -1084,6 +1203,15 @@ fn rule_json(row: &RuleRow) -> Value
         fields.insert("ascii".to_owned(), Value::from(ascii.clone()));
     }
     fields.insert("roles".to_owned(), json!(row.roles));
+    fields.insert(
+        "decision".to_owned(),
+        json!({
+            "molds": row.decision.molds,
+            "opens": row.decision.opens,
+            "shares": row.decision.shares,
+            "forks": row.decision.forks,
+        }),
+    );
     fields.insert("tree".to_owned(), row.tree.clone());
     match row.standing {
         Standing::Committed => {
@@ -2488,16 +2616,36 @@ mod tests
                 row.name,
                 json_row["roles"]
             );
+            assert_eq!(
+                json_row["decision"]["molds"], row.decision.molds,
+                "`{}` carries its decision",
+                row.name
+            );
+            assert_eq!(
+                json_row["decision"]["forks"], row.decision.forks,
+                "`{}` carries its forks",
+                row.name
+            );
         }
         let attributes = parsed["attributes"]
             .as_array()
             .expect("attributes are an array");
         assert_eq!(attributes.len(), ledger.attributes.len());
+        let menus = parsed["menus"].as_array().expect("menus are an array");
+        assert_eq!(menus.len(), ledger.menus.len());
+        assert!(
+            menus
+                .iter()
+                .zip(&ledger.menus)
+                .all(|(json_menu, menu)| json_menu["label"] == menu.label
+                    && json_menu["molds"] == menu.molds),
+            "each label's menu is the ledger's, in its order"
+        );
         assert_eq!(
             json.lines()
                 .filter(|line| line.starts_with("    {"))
                 .count(),
-            ledger.rules.len() + ledger.attributes.len(),
+            ledger.rules.len() + ledger.attributes.len() + ledger.menus.len(),
             "each element is a line of its own"
         );
     }

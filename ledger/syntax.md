@@ -262,3 +262,395 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
+
+## Decisions — 101 of 172 rules decided at every token
+
+Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
+
+| Rule | Sort | Molds | Opens on | Shares its opener with | Forks |
+| ---- | ---- | ----- | -------- | ---------------------- | ----- |
+| `def_value` | item | 270 | `def` | — | 68 |
+| `data_declaration` | item | 138 | `data` | — | 34 |
+| `codata_declaration` | item | 132 | `codata` | — | 52 |
+| `module_declaration` | item | 171 | `module` | — | 60 |
+| `flow_declaration` | item | 15 | `flow` | — | 0 |
+| `import_declaration` | item | 26 | `import` | — | 4 |
+| `world_declaration` | item | 20 | `world` | — | 4 |
+| `offers_declaration` | item | 14 | `offers` | — | 4 |
+| `rec_block` | item | 3 | `rec` | — | 0 |
+| `pub_declaration` | item | 1 | `pub` | — | 0 |
+| `attribute_block` | item | 12 | `@[` | — | 4 |
+| `inner_attribute_block` | item | 12 | `@![` | — | 4 |
+| `extern_block` | item | 43 | `extern` | — | 12 |
+| `module_definition_member` | module_member | 270 | `def` | — | 68 |
+| `attributed_module_member` | module_member | 310 | `@[` | — | 80 |
+| `module_type_member` | module_member | 12 | `type` | — | 4 |
+| `nested_module_member` | module_member | 106 | `module` | — | 40 |
+| `module_include_member` | module_member | 3 | `include` | — | 0 |
+| `module_law_member` | module_member | 4 | `law` | — | 0 |
+| `inner_attribute_member` | module_member | 12 | `@![` | — | 4 |
+| `wildcard` | pattern | 1 | `_` | — | 0 |
+| `constructor_pattern` | pattern | 8 | `constructor` | — | 2 |
+| `tuple_pattern` | pattern | 5 | `(` | — | 2 |
+| `telescope_pattern` | pattern | 14 | `#{` | — | 10 |
+| `labelled_sum_pattern` | pattern | 7 | `+` | — | 0 |
+| `list_pattern` | pattern | 7 | `#[` `[` | — | 3 |
+| `rest_pattern` | pattern | 1 | `..` | — | 0 |
+| `literal_pattern` | pattern | 8 | `"` `false` `number` `true` `typed_number` | — | 0 |
+| `hole.pattern` | pattern | 2 | `?` | — | 0 |
+| `cons_pattern` | pattern | 5 | `identifier` | `identifier.pattern` | 0 |
+| `or_pattern` | pattern | 1 | `\|` | — | 0 |
+| `as_pattern` | pattern | 2 | `.@` `@` | — | 0 |
+| `instantiation.type` | instantiation | 0 | — | — | 0 |
+| `instantiation.direction.descent` | instantiation | 1 | `<` | — | 0 |
+| `instantiation.direction.productivity` | instantiation | 1 | `>` | — | 0 |
+| `instantiation.explicit` | instantiation | 5 | `.` | — | 0 |
+| `instantiation.tail` | instantiation | 1 | `tail` | — | 0 |
+| `pure_expression` | expression | 1 | `pure` | — | 0 |
+| `return_expression` | expression | 1 | `return` | — | 0 |
+| `become_expression` | expression | 1 | `become` | — | 0 |
+| `bind_expression` | expression | 3 | `bind` | — | 0 |
+| `binary_expression.or` | expression | 1 | `\|\|` | — | 0 |
+| `binary_expression.and` | expression | 1 | `&&` | — | 0 |
+| `binary_expression.cmp.eq` | expression | 1 | `==` | — | 0 |
+| `binary_expression.cmp.ne` | expression | 1 | `!=` | — | 0 |
+| `binary_expression.cmp.lt` | expression | 1 | `<` | — | 0 |
+| `binary_expression.cmp.le` | expression | 1 | `<=` | — | 0 |
+| `binary_expression.cmp.gt` | expression | 1 | `>` | — | 0 |
+| `binary_expression.cmp.ge` | expression | 1 | `>=` | — | 0 |
+| `binary_expression.then` | expression | 1 | `then` | — | 0 |
+| `binary_expression.cons` | expression | 1 | `∷` | — | 0 |
+| `binary_expression.add.concat` | expression | 1 | `++` | — | 0 |
+| `binary_expression.add.plus` | expression | 1 | `+` | — | 0 |
+| `binary_expression.add.minus` | expression | 1 | `-` | — | 0 |
+| `binary_expression.mul.times` | expression | 1 | `*` | — | 0 |
+| `unary_expression` | expression | 1 | `-` | — | 0 |
+| `force_expression` | expression | 1 | `force` | — | 0 |
+| `run_expression` | expression | 1 | `run` | — | 0 |
+| `hold_expression` | expression | 1 | `hold` | — | 0 |
+| `splice_expression` | expression | 1 | `~` | — | 0 |
+| `pack_expression` | expression | 5 | `pack` | `pack_model_expression` | 2 |
+| `pack_model_expression` | expression | 2 | `pack` | `pack_expression` | 0 |
+| `call_expression` | expression | 4 | `(` | — | 2 |
+| `instantiation_expression` | expression | 4 | `[` | `index_expression` | 2 |
+| `projection_expression` | expression | 4 | `.` | — | 0 |
+| `record_selection_expression` | expression | 10 | `.#{` | — | 4 |
+| `view_expression` | expression | 76 | `as` | — | 14 |
+| `index_expression` | expression | 3 | `.#[` `[` | `instantiation_expression` | 0 |
+| `hole` | expression | 2 | `?` | — | 0 |
+| `wildcard.expression` | expression | 1 | `_` | — | 0 |
+| `parenthesized_expression` | expression | 10 | `(` | — | 4 |
+| `type_quote_expression` | expression | 2 | `type(` | — | 0 |
+| `list_expression` | expression | 5 | `#[` `[` | — | 3 |
+| `block` | expression | 74 | `{` | — | 14 |
+| `lambda_expression` | expression | 29 | `fn` | — | 14 |
+| `thunk_expression` | expression | 6 | `thunk` | — | 0 |
+| `match_expression` | expression | 24 | `match` | — | 9 |
+| `handle_expression` | expression | 118 | `handle` | — | 18 |
+| `if_expression` | expression | 154 | `if` | — | 28 |
+| `for_expression` | expression | 77 | `for` | — | 14 |
+| `while_expression` | expression | 75 | `while` | — | 14 |
+| `loop_expression` | expression | 75 | `loop` | — | 14 |
+| `break_expression` | expression | 1 | `break` | `break_value_expression` | 0 |
+| `break_value_expression` | expression | 3 | `break` | `break_expression` | 0 |
+| `continue_expression` | expression | 1 | `continue` | — | 0 |
+| `co_expression` | expression | 9 | `co` | — | 2 |
+| `glob_expression` | expression | 6 | `glob` | — | 0 |
+| `telescope_expression` | expression | 27 | `#{` | — | 12 |
+| `labelled_sum_expression` | expression | 7 | `+` | — | 0 |
+| `lazy_record_expression` | expression | 13 | `&` | `list_operator` | 2 |
+| `offer_expression` | expression | 22 | `offer` | — | 7 |
+| `migrate_expression` | expression | 4 | `migrate` | — | 0 |
+| `send_expression` | expression | 4 | `send` | — | 0 |
+| `close_expression` | expression | 3 | `close` | — | 0 |
+| `select_expression` | expression | 5 | `select` | — | 0 |
+| `dup_expression` | expression | 3 | `dup` | — | 0 |
+| `drop_expression` | expression | 3 | `drop` | — | 0 |
+| `access_expression` | expression | 10 | `access` | — | 0 |
+| `resume_expression` | expression | 5 | `resume` | — | 0 |
+| `abort_expression` | expression | 4 | `abort` | — | 0 |
+| `shell_block` | expression | 2 | `#!{` | — | 0 |
+| `identifier.pattern` | pattern | 1 | `identifier` | `cons_pattern` | 0 |
+| `unit.pattern` | pattern | 1 | `unit` | — | 0 |
+| `identifier.expression` | expression | 1 | `identifier` | — | 0 |
+| `constructor.expression` | expression | 1 | `constructor` | — | 0 |
+| `boolean.expression` | expression | 2 | `false` `true` | — | 0 |
+| `unit.expression` | expression | 1 | `unit` | — | 0 |
+| `number.expression` | expression | 1 | `number` | — | 0 |
+| `typed_number.expression` | expression | 1 | `typed_number` | — | 0 |
+| `character` | expression | 1 | `character` | — | 0 |
+| `string.expression` | expression | 6 | `"` | `double_quoted_string` | 0 |
+| `statement_block` | block | 74 | `{` | — | 14 |
+| `package_type` | type | 7 | `package` | — | 2 |
+| `function_type` | type | 1 | `->` | — | 0 |
+| `value_function_type` | type | 1 | `=>` | — | 0 |
+| `static_abstraction` | type | 4 | `\` | — | 0 |
+| `union_type` | type | 1 | `\|` | — | 0 |
+| `lazy_product_type` | type | 1 | `&` | — | 0 |
+| `equivalence_type` | type | 1 | `≃` | — | 0 |
+| `isomorphism_type` | type | 1 | `≅` | — | 0 |
+| `universe_flow_type` | type | 1 | `⇝` | — | 0 |
+| `manifest_type` | type | 1 | `with` | — | 0 |
+| `manifest_sort` | type | 3 | `sort` | — | 0 |
+| `sum_type` | type | 1 | `+` | — | 0 |
+| `product_type` | type | 1 | `*` | — | 0 |
+| `f_type.row` | type | 8 | `-F` | `f_type`, `f_type.row.labelled` | 2 |
+| `f_type` | type | 1 | `-F` | `f_type.row`, `f_type.row.labelled` | 0 |
+| `f_type.result` | type | 7 | `[` | `f_type.result.labelled` | 2 |
+| `u_type` | type | 6 | `+U` | — | 0 |
+| `universe_type` | type | 7 | `Type` | — | 0 |
+| `representable_universe_type` | type | 1 | `Type+` | — | 0 |
+| `at_type` | type | 2 | `at` | — | 0 |
+| `path_type` | type | 14 | `Path` | — | 0 |
+| `bridge_type` | type | 14 | `Bridge` | — | 0 |
+| `type_application` | type | 9 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 2 |
+| `type_path` | type | 4 | `.` | — | 0 |
+| `staged_type` | type | 8 | `[` | — | 2 |
+| `parenthesized_type` | type | 6 | `(` | — | 4 |
+| `telescope_type` | type | 6 | `#{` | — | 4 |
+| `send_session_type` | type | 3 | `!` | — | 0 |
+| `receive_session_type` | type | 3 | `?` | `unknown_type` | 0 |
+| `end_session_type` | type | 1 | `end` | — | 0 |
+| `labelled_sum_type` | type | 7 | `+` | — | 4 |
+| `lazy_record_type` | type | 7 | `&` | — | 4 |
+| `mu_session_type` | type | 6 | `mu` `rec` | — | 0 |
+| `primitive_type` | type | 17 | `Any` `Boolean` `Buf` `Char` `Integer` `Never` `String` `Symbol` `Unit` `Unknown` `Void` `f32` `f64` `i32` `i64` `u32` `u64` | — | 0 |
+| `unknown_type` | type | 1 | `?` | `receive_session_type` | 0 |
+| `type_identifier` | type | 1 | `type_identifier` | `type_application` | 0 |
+| `type_variable` | type | 1 | `type_variable` | `moded_type`, `type_application` | 0 |
+| `moded_type` | type | 1 | `type_variable` | `type_application`, `type_variable` | 0 |
+| `capability_type` | type | 12 | `Cap` | — | 2 |
+| `number.type` | type | 1 | `number` | — | 0 |
+| `list_operator` | expression | 3 | `&` `;` `newline` | `lazy_record_expression` | 0 |
+| `pipeline.pipe` | expression | 1 | `\|` | — | 0 |
+| `pipeline.pipe_both` | expression | 1 | `\|&` | — | 0 |
+| `environment_assignment` | expression | 1 | `environment_assignment` | — | 0 |
+| `shell_word` | expression | 1 | `shell_word` | — | 0 |
+| `single_quoted_string` | expression | 3 | `'` | — | 0 |
+| `double_quoted_string` | expression | 9 | `"` | `string.expression` | 0 |
+| `variable_expansion` | expression | 5 | `$` `${` | `host_escape` | 0 |
+| `variable_name` | expression | 1 | `variable_name` | — | 0 |
+| `command_substitution` | expression | 2 | `command_substitution_start` | — | 0 |
+| `host_escape` | expression | 3 | `$` | `variable_expansion` | 0 |
+| `subshell` | expression | 2 | `subshell_open` | — | 0 |
+| `file_descriptor` | expression | 1 | `file_descriptor` | — | 0 |
+| `redirection_operator` | expression | 6 | `<` `<&` `<>` `>` `>&` `>>` | — | 0 |
+| `theory_declaration` | item | 446 | `theory` | — | 122 |
+| `circuit_declaration` | item | 123 | `oper` `rule` | — | 38 |
+| `derive_declaration` | item | 9 | `derive` | — | 0 |
+| `forget_model_expression` | expression | 8 | `forget` | — | 2 |
+| `f_type.row.labelled` | type | 18 | `-F` | `f_type`, `f_type.row` | 4 |
+| `f_type.result.labelled` | type | 17 | `[` | `f_type.result` | 4 |
+
+## Menus — 206 labels
+
+Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
+
+| Label | Molds | Rules | Opening |
+| ----- | ----- | ----- | ------- |
+| `identifier` | 468 | 53 | 3 |
+| `:` | 307 | 31 | 0 |
+| `,` | 273 | 53 | 0 |
+| `;` | 226 | 25 | 1 |
+| `)` | 198 | 46 | 0 |
+| `(` | 194 | 45 | 4 |
+| `type_identifier` | 171 | 35 | 2 |
+| `=` | 142 | 31 | 0 |
+| `}` | 75 | 40 | 0 |
+| `type_variable` | 71 | 16 | 3 |
+| `.` | 70 | 33 | 3 |
+| `]` | 67 | 41 | 0 |
+| `as` | 64 | 14 | 1 |
+| `[` | 61 | 38 | 7 |
+| `{` | 58 | 31 | 2 |
+| `number` | 52 | 30 | 3 |
+| `_` | 48 | 7 | 2 |
+| `=>` | 45 | 10 | 1 |
+| `-->` | 31 | 5 | 0 |
+| `fork` | 30 | 11 | 0 |
+| `<=>` | 27 | 5 | 0 |
+| `==>` | 27 | 5 | 0 |
+| `<->` | 24 | 4 | 0 |
+| `shared` | 23 | 8 | 0 |
+| `type` | 23 | 5 | 1 |
+| `consumed` | 22 | 7 | 0 |
+| `arm_bar` | 21 | 8 | 0 |
+| `where` | 19 | 9 | 0 |
+| `<` | 18 | 9 | 3 |
+| `ω` | 17 | 5 | 0 |
+| `!` | 16 | 12 | 1 |
+| `hold` | 16 | 12 | 1 |
+| `import` | 16 | 12 | 1 |
+| `run` | 16 | 12 | 1 |
+| `*=` | 15 | 11 | 0 |
+| `+=` | 15 | 11 | 0 |
+| `-=` | 15 | 11 | 0 |
+| `<-` | 15 | 11 | 0 |
+| `acquire` | 15 | 11 | 0 |
+| `if` | 15 | 5 | 1 |
+| `let` | 15 | 11 | 0 |
+| `leta` | 15 | 11 | 0 |
+| `recv` | 15 | 11 | 0 |
+| `release` | 15 | 11 | 0 |
+| `rule` | 15 | 4 | 1 |
+| `unpack` | 15 | 11 | 0 |
+| `var` | 15 | 11 | 0 |
+| `with` | 15 | 8 | 1 |
+| `sort` | 14 | 8 | 1 |
+| `"` | 12 | 5 | 3 |
+| `->` | 12 | 8 | 1 |
+| `data` | 12 | 3 | 1 |
+| `mobile` | 10 | 2 | 0 |
+| `#{` | 9 | 5 | 4 |
+| `bind` | 9 | 3 | 1 |
+| `\|` | 9 | 9 | 3 |
+| `+` | 8 | 8 | 5 |
+| `pi+` | 8 | 2 | 0 |
+| `oper` | 7 | 5 | 1 |
+| `constructor` | 6 | 5 | 2 |
+| `escape_sequence` | 6 | 5 | 0 |
+| `-` | 5 | 5 | 2 |
+| `rec` | 5 | 5 | 2 |
+| `string_fragment` | 5 | 4 | 0 |
+| `variable_name` | 5 | 3 | 1 |
+| `&` | 4 | 4 | 4 |
+| `>` | 4 | 4 | 3 |
+| `?` | 4 | 4 | 4 |
+| `@[` | 4 | 3 | 2 |
+| `def` | 4 | 4 | 2 |
+| `$` | 3 | 3 | 2 |
+| `${` | 3 | 3 | 1 |
+| `-F` | 3 | 3 | 3 |
+| `..` | 3 | 2 | 1 |
+| `>>` | 3 | 3 | 1 |
+| `Type` | 3 | 3 | 1 |
+| `at` | 3 | 3 | 1 |
+| `feed` | 3 | 2 | 0 |
+| `law` | 3 | 3 | 1 |
+| `node` | 3 | 2 | 0 |
+| `pure` | 3 | 2 | 1 |
+| `~>` | 3 | 2 | 0 |
+| `#[` | 2 | 2 | 2 |
+| `'` | 2 | 1 | 1 |
+| `*` | 2 | 2 | 2 |
+| `.#[` | 2 | 2 | 1 |
+| `:>` | 2 | 2 | 0 |
+| `@![` | 2 | 2 | 2 |
+| `admitted` | 2 | 2 | 0 |
+| `break` | 2 | 2 | 2 |
+| `else` | 2 | 1 | 0 |
+| `false` | 2 | 2 | 2 |
+| `hole_name` | 2 | 2 | 0 |
+| `in` | 2 | 2 | 0 |
+| `include` | 2 | 2 | 1 |
+| `module` | 2 | 2 | 2 |
+| `pack` | 2 | 2 | 2 |
+| `true` | 2 | 2 | 2 |
+| `typed_number` | 2 | 2 | 2 |
+| `unit` | 2 | 2 | 2 |
+| `⇝` | 2 | 2 | 1 |
+| `∷` | 2 | 2 | 1 |
+| `!=` | 1 | 1 | 1 |
+| `#` | 1 | 1 | 0 |
+| `#!{` | 1 | 1 | 1 |
+| `&&` | 1 | 1 | 1 |
+| `++` | 1 | 1 | 1 |
+| `+U` | 1 | 1 | 1 |
+| `.#{` | 1 | 1 | 1 |
+| `.@` | 1 | 1 | 1 |
+| `<&` | 1 | 1 | 1 |
+| `<=` | 1 | 1 | 1 |
+| `<>` | 1 | 1 | 1 |
+| `==` | 1 | 1 | 1 |
+| `>&` | 1 | 1 | 1 |
+| `>=` | 1 | 1 | 1 |
+| `@` | 1 | 1 | 1 |
+| `Any` | 1 | 1 | 1 |
+| `Boolean` | 1 | 1 | 1 |
+| `Bridge` | 1 | 1 | 1 |
+| `Buf` | 1 | 1 | 1 |
+| `Cap` | 1 | 1 | 1 |
+| `Char` | 1 | 1 | 1 |
+| `Integer` | 1 | 1 | 1 |
+| `Never` | 1 | 1 | 1 |
+| `Path` | 1 | 1 | 1 |
+| `String` | 1 | 1 | 1 |
+| `Symbol` | 1 | 1 | 1 |
+| `Type+` | 1 | 1 | 1 |
+| `Unit` | 1 | 1 | 1 |
+| `Unknown` | 1 | 1 | 1 |
+| `Void` | 1 | 1 | 1 |
+| `\` | 1 | 1 | 1 |
+| `abort` | 1 | 1 | 1 |
+| `access` | 1 | 1 | 1 |
+| `become` | 1 | 1 | 1 |
+| `boundary` | 1 | 1 | 0 |
+| `character` | 1 | 1 | 1 |
+| `close` | 1 | 1 | 1 |
+| `co` | 1 | 1 | 1 |
+| `codata` | 1 | 1 | 1 |
+| `command_substitution_start` | 1 | 1 | 1 |
+| `continue` | 1 | 1 | 1 |
+| `derive` | 1 | 1 | 1 |
+| `double_string_fragment` | 1 | 1 | 0 |
+| `drop` | 1 | 1 | 1 |
+| `dup` | 1 | 1 | 1 |
+| `end` | 1 | 1 | 1 |
+| `environment_assignment` | 1 | 1 | 1 |
+| `exclusive` | 1 | 1 | 0 |
+| `ext` | 1 | 1 | 0 |
+| `extern` | 1 | 1 | 1 |
+| `f32` | 1 | 1 | 1 |
+| `f64` | 1 | 1 | 1 |
+| `face` | 1 | 1 | 0 |
+| `file_descriptor` | 1 | 1 | 1 |
+| `flow` | 1 | 1 | 1 |
+| `fn` | 1 | 1 | 1 |
+| `for` | 1 | 1 | 1 |
+| `force` | 1 | 1 | 1 |
+| `forget` | 1 | 1 | 1 |
+| `from` | 1 | 1 | 0 |
+| `glob` | 1 | 1 | 1 |
+| `handle` | 1 | 1 | 1 |
+| `i32` | 1 | 1 | 1 |
+| `i64` | 1 | 1 | 1 |
+| `is` | 1 | 1 | 0 |
+| `loop` | 1 | 1 | 1 |
+| `match` | 1 | 1 | 1 |
+| `migrate` | 1 | 1 | 1 |
+| `mu` | 1 | 1 | 1 |
+| `newline` | 1 | 1 | 1 |
+| `obs` | 1 | 1 | 0 |
+| `offer` | 1 | 1 | 1 |
+| `offers` | 1 | 1 | 1 |
+| `on` | 1 | 1 | 0 |
+| `op` | 1 | 1 | 0 |
+| `package` | 1 | 1 | 1 |
+| `pub` | 1 | 1 | 1 |
+| `requires` | 1 | 1 | 0 |
+| `resume` | 1 | 1 | 1 |
+| `return` | 1 | 1 | 1 |
+| `select` | 1 | 1 | 1 |
+| `send` | 1 | 1 | 1 |
+| `shape` | 1 | 1 | 0 |
+| `shell_word` | 1 | 1 | 1 |
+| `single_quoted_content` | 1 | 1 | 0 |
+| `subshell_close` | 1 | 1 | 0 |
+| `subshell_open` | 1 | 1 | 1 |
+| `tail` | 1 | 1 | 1 |
+| `then` | 1 | 1 | 1 |
+| `theory` | 1 | 1 | 1 |
+| `thunk` | 1 | 1 | 1 |
+| `type(` | 1 | 1 | 1 |
+| `u32` | 1 | 1 | 1 |
+| `u64` | 1 | 1 | 1 |
+| `under` | 1 | 1 | 0 |
+| `unwind` | 1 | 1 | 0 |
+| `via` | 1 | 1 | 0 |
+| `while` | 1 | 1 | 1 |
+| `world` | 1 | 1 | 1 |
+| `\|&` | 1 | 1 | 1 |
+| `\|\|` | 1 | 1 | 1 |
+| `~` | 1 | 1 | 1 |
+| `≃` | 1 | 1 | 1 |
+| `≅` | 1 | 1 | 1 |
