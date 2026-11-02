@@ -1,0 +1,84 @@
+/// A module body holds a recursive definition as the top level does.
+///
+/// A fold over a model's terms is a functor member that calls itself. A
+/// module groups a recursive definition with the definitions beside it.
+///
+/// `def rec` names the definition its body calls one stage below. It stands
+/// plain or under its attributes, in a module and in a functor over a theory's
+/// models. A caller outside the module reads each member by its path.
+///
+/// - see: #4145 — a `def rec` member was misread as a call missing its `)`
+
+/// The naturals the members count in.
+data Nat : Type where {
+  /// No count.
+  | Zero : Nat
+  /// One more than `n`.
+  | Succ : (n : Nat) --> Nat
+}
+
+/// A plain module holding two recursive definitions.
+module Counting where {
+  /// Doubles a count.
+  def rec double(n : Nat) -> Nat {
+    match n {
+      Zero => Zero,
+      Succ(k) => Succ(Succ(double[<](k)))
+    }
+  }
+
+  /// Halves a count down to the nearest whole. Its attribute stands before it.
+  @[ checks ]
+  def rec half(n : Nat) -> Nat {
+    match n {
+      Zero => Zero,
+      Succ(m) => match m {
+        Zero => Zero,
+        Succ(k) => Succ(half[<](k))
+      }
+    }
+  }
+}
+
+/// The double of two.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+def twoDoubled : () => Nat = Counting.double(Succ(Succ(Zero)));
+
+/// The half of four.
+@[ runs("Succ(Succ(Zero))") ]
+def halved : () => Nat = Counting.half(Succ(Succ(Succ(Succ(Zero)))));
+
+/// A carrier with a step.
+theory Stepping where {
+  /// The carrier.
+  sort M : Type;
+  /// One step along the carrier.
+  oper step : (x : M) --> M;
+}
+
+/// Steps in any model, once per successor of a count.
+module Iterating(S : Model(Stepping)) where {
+  /// Steps `x` once per successor of `n`.
+  def rec times(n : Nat, x : S.M) -> S.M {
+    match n {
+      Zero => x,
+      Succ(k) => S.step(times[<](k, x))
+    }
+  }
+}
+
+/// The integers, stepping by one.
+module Up : Model(Stepping) where {
+  /// The carrier, the integers.
+  type M = Integer;
+
+  /// One more than `x`.
+  def step(x : Integer) -> Integer { x + 1 }
+}
+
+/// The iteration over the integers.
+module UpIterated = Iterating(Up);
+
+/// Three steps up from four.
+@[ runs("7") ]
+def threeStepsUp() -> Integer { UpIterated.times(Succ(Succ(Succ(Zero))), 4) }

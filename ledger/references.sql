@@ -32,7 +32,7 @@ INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_i
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
+INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','6de02bb253a1b29fd88181f0a1bf888e5e741f78','2026-11-02','61525d6f105eac234db66eae6dabf1403fa68a71');
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','d38ffeaccc6639cb2a02ad7a18fd25b0d03a892d','2026-10-29','663ac54adb8b393f7ff7154d3c59eac7fcf7c44c');
 INSERT INTO reference VALUES('Pruiksma-2022-back_futures','runtime-emitter','cut','background','fc0387766eac4f5ffc7dc1a2622e7670e587c7b7','2026-10-29','40551b1269e78f7ae38d6f550f8e1e04de8adf84');
@@ -419,7 +419,7 @@ INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','theor
 INSERT INTO reference VALUES('vault:01a178aa-a1a9-7643-b2d9-98059c9273fb','runtime-emitter','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-term','rewrite','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','b2c8a4df8de0c7c5ff66936671cffeac70d29b8c','2026-10-27','e1dcbc647274f9f7095957e40ce3af95f7bc688b');
+INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','6de02bb253a1b29fd88181f0a1bf888e5e741f78','2026-11-02','b87e55bc6de0e06c75d5c67fb3bb8a6331151936');
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','ua::strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','record','lineage','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');

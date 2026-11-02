@@ -4045,3 +4045,33 @@ fn a_nested_module_is_named_from_inside_its_enclosing_module_1106()
         declared: span_of(later, "answer", 1_usize),
     });
 }
+
+/// #4145: a module body holds a recursive definition as the top level does,
+/// plain or under its attributes, and each member declares under its module
+/// and checks.
+#[test]
+fn a_recursive_member_declares_under_its_module_4145()
+{
+    let source = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nmodule M \
+                  where {\n  def rec down(n : Nat) -> Nat {\n    match n { Zero => Zero, Succ(k) => \
+                  down[<](k) }\n  }\n  @[ checks ]\n  def rec again(n : Nat) -> Nat {\n    match n { \
+                  Zero => Zero, Succ(k) => again[<](k) }\n  }\n}\n";
+    let mut lowered = lower(source);
+    let found = rows(&lowered);
+    for member in ["M.down", "M.again"] {
+        assert!(
+            found
+                .iter()
+                .any(|&(ref path, _, ref amounts)| path == member && *amounts == Amounts::Completed),
+            "`{member}` declares under its module, got {found:?}"
+        );
+    }
+    let judged = verdicts(&mut lowered);
+    assert!(
+        judged.iter().all(|&(_, judgement)| !matches!(
+            judgement,
+            Judgement::Refused | Judgement::Mismatched
+        )),
+        "each member checks, got {judged:?}"
+    );
+}
