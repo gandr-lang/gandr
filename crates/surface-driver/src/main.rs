@@ -876,6 +876,9 @@ enum ToolchainAction
     /// Print each installed toolchain and its directory, marking the default
     /// and the selected one.
     List,
+    /// Print this build's version, system and the features its ledger meets,
+    /// which another build reads to hold it to a package's constraint.
+    Describe,
 }
 
 /// The ledgers `gandr ledger` writes, verifies or reads.
@@ -2253,10 +2256,49 @@ fn toolchains(action: ToolchainAction) -> ExitCode
             .parse::<toolchain::Name>()
             .and_then(|name| toolchain::make_default(&name)),
         ToolchainAction::List => listed(),
+        ToolchainAction::Describe => return described(),
     };
     match done {
         Ok(()) => ExitCode::SUCCESS,
         Err(fault) => toolchain_fault(&fault),
+    }
+}
+
+/// Print this build's description: its version, its system, and each feature
+/// its ledger meets, as `gandr_surface_dispatcher::Described` reads it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the description on standard output and exit `0`; a ledger that
+///   does not read or an unwritable output is noted on standard error and exits
+///   `2`.
+/// - provides: what a proxy of another build holds this build to a package's
+///   constraint by.
+/// - fails: never; every fault is the exit code.
+/// - panics: none.
+/// - executable: none — the output is a stream's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the description names the running version and system.
+/// - witness: `tests::cli::a_package_s_constraint_chooses_among_the_toolchains`
+fn described() -> ExitCode
+{
+    let written = match gandr_surface_dispatcher::FeatureLedger::built_in() {
+        Ok(ledger) => write!(
+            std::io::stdout().lock(),
+            "{}",
+            gandr_surface_dispatcher::Running::this(&ledger)
+        )
+        .map_err(|error| error.to_string()),
+        Err(fault) => Err(fault.to_string()),
+    };
+    match written {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(fault) => match writeln!(std::io::stderr(), "gandr: {fault}") {
+            // When standard error is unwritable too, the exit code is the one
+            // channel left.
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        },
     }
 }
 
@@ -2266,8 +2308,9 @@ fn toolchains(action: ToolchainAction) -> ExitCode
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one line per installed toolchain, in name order.
-/// - fails: [`toolchain::ToolchainFault`] when the toolchains cannot be read,
-///   and its `Io` variant when standard output refuses a line.
+/// - fails: [`toolchain::ToolchainFault`] when the toolchains or the selection
+///   cannot be read or the package's constraint refuses the selection, and its
+///   `Io` variant when standard output refuses a line.
 /// - panics: none.
 /// - executable: none — the output is a stream's.
 ///

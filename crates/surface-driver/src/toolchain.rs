@@ -24,6 +24,10 @@
 //! for `gandr toolchain`, which manages the toolchains whatever is selected.
 //! A name that names no installed toolchain is refused before any verb runs.
 //!
+//! The nearest package manifest's `[toolchain]` constraint then holds the
+//! selection: [`constraint`] refuses a toolchain named outright that leaves
+//! it unmet, and otherwise picks the default or the highest version meeting it.
+//!
 //! **Choice.** The pin is a plain file, read in well under a millisecond
 //! before any build runs. The workspace's own source is a program: reading a
 //! field of it needs a build, and costs every invocation about four times the
@@ -42,6 +46,8 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
+
+mod constraint;
 
 /// The variable that names the selected toolchain, ahead of every other
 /// source.
@@ -125,6 +131,9 @@ pub enum Source
     Pin(PathBuf),
     /// The default, named in this file.
     Default(PathBuf),
+    /// The constraint of the package manifest at this path, which no
+    /// selection the default makes meets.
+    Manifest(PathBuf),
 }
 
 impl fmt::Display for Source
@@ -143,6 +152,7 @@ impl fmt::Display for Source
             Self::Environment => write!(f, "`{SELECTING}`"),
             Self::Pin(ref path) => write!(f, "the pin {}", path.display()),
             Self::Default(ref path) => write!(f, "the default {}", path.display()),
+            Self::Manifest(ref path) => write!(f, "the constraint of {}", path.display()),
         }
     }
 }
@@ -206,6 +216,36 @@ pub enum ToolchainFault
         /// The failure.
         error: io::Error,
     },
+    /// The toolchain's `gandr` prints no description of itself.
+    Undescribed
+    {
+        /// The toolchain's name.
+        name: Name,
+        /// Its `gandr`.
+        path: PathBuf,
+    },
+    /// The toolchain named outright leaves a package's constraint unmet.
+    Unmet
+    {
+        /// The toolchain's name.
+        name: Name,
+        /// Where the name came from.
+        source: Source,
+        /// The manifest stating the constraint.
+        manifest: PathBuf,
+        /// Each clause it leaves unmet.
+        unmet: Vec<gandr_surface_dispatcher::Unmet>,
+    },
+    /// No installed toolchain meets a package's constraint.
+    Unmeetable
+    {
+        /// The manifest stating the constraint.
+        manifest: PathBuf,
+        /// The nearest candidate, the default or else the highest version,
+        /// and each clause it leaves unmet.
+        nearest:
+            Maybe<(Name, Vec<gandr_surface_dispatcher::Unmet>), constraint::undescribed::Absent>,
+    },
 }
 
 impl fmt::Display for ToolchainFault
@@ -242,6 +282,44 @@ impl fmt::Display for ToolchainFault
                 ref path,
                 ref error,
             } => write!(f, "{}: {error}", path.display()),
+            Self::Undescribed { ref name, ref path } => write!(
+                f,
+                "the toolchain `{name}` describes no version and features: {} predates `gandr toolchain describe`",
+                path.display()
+            ),
+            Self::Unmet {
+                ref name,
+                ref source,
+                ref manifest,
+                ref unmet,
+            } => {
+                write!(
+                    f,
+                    "{source} names the toolchain `{name}`, which leaves the constraint of {} unmet",
+                    manifest.display()
+                )?;
+                for clause in unmet {
+                    write!(f, "\n  {clause}")?;
+                }
+                Ok(())
+            },
+            Self::Unmeetable {
+                ref manifest,
+                ref nearest,
+            } => {
+                write!(
+                    f,
+                    "no installed toolchain meets the constraint of {}",
+                    manifest.display()
+                )?;
+                if let Maybe::Present((ref name, ref unmet)) = *nearest {
+                    write!(f, "; the nearest, `{name}`, leaves it unmet")?;
+                    for clause in unmet {
+                        write!(f, "\n  {clause}")?;
+                    }
+                }
+                Ok(())
+            },
         }
     }
 }
@@ -420,11 +498,13 @@ pub enum Proxied
 /// - requires: called before the driver reads its arguments.
 /// - ensures: [`Proxied::Itself`] when nothing names a toolchain, when the
 ///   arguments open with `toolchain`, or when the selected toolchain's `gandr`
-///   is the running executable. Otherwise, on Unix, the process is replaced by
-///   that executable with the same arguments and environment; elsewhere it runs
-///   as a child and its status is returned.
+///   is the running executable. The selection is [`select`]'s, held to the
+///   nearest manifest's constraint as [`constraint::constrained`] holds it.
+///   Otherwise, on Unix, the process is replaced by that executable with the
+///   same arguments and environment; elsewhere it runs as a child and its
+///   status is returned.
 /// - fails: [`ToolchainFault`] when the selection cannot be read, names no
-///   installed toolchain, or the exec fails.
+///   installed toolchain, leaves the constraint unmet, or the exec fails.
 /// - panics: none.
 /// - executable: none — the outcome is another process's.
 ///
@@ -458,7 +538,12 @@ pub fn proxy() -> Result<Proxied, ToolchainFault>
         None if matches!(environment, Maybe::Absent(_)) => return Ok(Proxied::Itself),
         None => return Err(ToolchainFault::Homeless),
     };
-    let selected = match select(environment, &working, &default)? {
+    let chosen = constraint::constrained(
+        &toolchains,
+        &working,
+        select(environment, &working, &default)?,
+    )?;
+    let selected = match chosen {
         Maybe::Present(selected) => selected,
         Maybe::Absent(unselected::Absent::Unnamed) => return Ok(Proxied::Itself),
     };
@@ -642,7 +727,9 @@ pub fn moved(running: Image) -> Maybe<PathBuf, unmoved::Absent>
     };
     let environment =
         std::env::var_os(SELECTING).map_or(Maybe::Absent(named::Absent::Missing), Maybe::Present);
-    let selected = match select(environment, &working, &default) {
+    let chosen = select(environment, &working, &default)
+        .and_then(|selected| constraint::constrained(&toolchains, &working, selected));
+    let selected = match chosen {
         Ok(Maybe::Present(selected)) => selected,
         Ok(Maybe::Absent(unselected::Absent::Unnamed)) => {
             return Maybe::Absent(unmoved::Absent::Unselected);
@@ -834,9 +921,10 @@ pub fn installed() -> Result<BTreeMap<Name, PathBuf>, ToolchainFault>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: as [`select`] under the process's environment and working
-///   directory.
-/// - fails: as [`select`], and [`ToolchainFault::Io`] when the working
-///   directory cannot be read.
+///   directory, held to the nearest manifest's constraint as
+///   [`constraint::constrained`] holds it.
+/// - fails: as [`select`] and [`constraint::constrained`], and
+///   [`ToolchainFault::Io`] when the working directory cannot be read.
 /// - panics: none.
 /// - executable: none — the answer is the environment's.
 ///
@@ -848,14 +936,18 @@ pub fn installed() -> Result<BTreeMap<Name, PathBuf>, ToolchainFault>
 /// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
 pub fn selected() -> Result<Maybe<Selected, unselected::Absent>, ToolchainFault>
 {
-    let (_toolchains, default) = homes()?;
+    let (toolchains, default) = homes()?;
     let working = std::env::current_dir().map_err(|error| ToolchainFault::Io {
         path: PathBuf::from("."),
         error,
     })?;
     let environment =
         std::env::var_os(SELECTING).map_or(Maybe::Absent(named::Absent::Missing), Maybe::Present);
-    select(environment, &working, &default)
+    constraint::constrained(
+        &toolchains,
+        &working,
+        select(environment, &working, &default)?,
+    )
 }
 
 /// The toolchain the default's file names, or its absence.

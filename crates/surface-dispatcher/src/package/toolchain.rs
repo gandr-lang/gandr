@@ -36,6 +36,7 @@ use std::env::consts::ARCH;
 use std::env::consts::OS;
 
 use anodized::spec;
+use quenchant_shape::shape::Maybe;
 
 use super::Basic;
 use super::Listed;
@@ -220,16 +221,45 @@ impl Toolchain
         })
     }
 
+    /// The constraint, when it asks anything of the toolchain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the constraint itself when it names a least version, a
+    ///   feature or a system; [`asking::Absent::Nothing`] otherwise, which
+    ///   every toolchain meets.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a blank constraint asks nothing, and one naming a
+    ///   version asks it.
+    /// - witness: `package::toolchain::tests::a_model_s_strings_read_as_its_constraints`
+    #[spec(
+        captures: [asks = self.least.is_some() || !self.features.is_empty() || !self.systems.is_empty()],
+        ensures: |ref ret| matches!(ret, Maybe::Present(_)) == asks,
+    )]
+    #[inline]
+    pub fn asking(self) -> Maybe<Self, asking::Absent>
+    {
+        if self.least.is_none() && self.features.is_empty() && self.systems.is_empty() {
+            Maybe::Absent(asking::Absent::Nothing)
+        }
+        else {
+            Maybe::Present(self)
+        }
+    }
+
     /// Each constraint `running` leaves unmet, in the order the fields are
     /// written.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Unmet::Gandr`] when the least version is above the running
-    ///   one; then one [`Unmet::Feature`] per key, in order, the running ledger
-    ///   holds at no status [`Status::Implemented`] or [`Status::Partial`];
-    ///   then [`Unmet::System`] when systems are named and the running one is
-    ///   none of them. Nothing else.
+    ///   one; then one [`Unmet::Feature`] per key, in order, the running
+    ///   toolchain does not meet: its ledger holds it at no status
+    ///   [`Status::Implemented`] or [`Status::Partial`], or its description
+    ///   lists no such key; then [`Unmet::System`] when systems are named and
+    ///   the running one is none of them. Nothing else.
     /// - provides: the toolchain step of `gandr check`.
     /// - fails: never.
     /// - panics: none.
@@ -261,11 +291,12 @@ impl Toolchain
         unmet.extend(
             self.features
                 .iter()
-                .filter(|&key| {
-                    !matches!(
-                        running.ledger.status(key),
+                .filter(|&key| match running.met {
+                    Met::Ledger(ledger) => !matches!(
+                        ledger.status(key),
                         Ok(Status::Implemented | Status::Partial)
-                    )
+                    ),
+                    Met::Listed(keys) => !keys.contains(key),
                 })
                 .map(|key| Unmet::Feature { key: key.clone() }),
         );
@@ -303,6 +334,29 @@ impl fmt::Display for Toolchain
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a model's constraint is none to check.
+    pub mod asking {
+        /// The reason every toolchain meets the constraint.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The constraint names no version, feature or system.
+            Nothing,
+        }
+    }
+}
+
+/// The features a toolchain meets: its own ledger's, or another build's as
+/// its description lists them.
+#[derive(Clone, Copy, Debug)]
+enum Met<'ledger>
+{
+    /// The ledger the running build was built with.
+    Ledger(&'ledger FeatureLedger),
+    /// The ids a description lists.
+    Listed(&'ledger [FeatureId]),
+}
+
 /// The toolchain a package is checked by: its version, the features its
 /// ledger implements and the system it runs on.
 #[derive(Clone, Debug)]
@@ -310,8 +364,8 @@ pub struct Running<'ledger>
 {
     /// Its version.
     version: Version,
-    /// The features ledger it was built with.
-    ledger: &'ledger FeatureLedger,
+    /// The features it meets.
+    met: Met<'ledger>,
     /// Its system, `<architecture>-<os>`.
     system: String,
 }
@@ -329,9 +383,145 @@ impl<'ledger> Running<'ledger>
     {
         Self {
             version: Version::running(),
-            ledger,
+            met: Met::Ledger(ledger),
             system: format!("{ARCH}-{OS}"),
         }
+    }
+}
+
+impl fmt::Display for Running<'_>
+{
+    /// Writes the toolchain's description, which [`Described`] reads: a line
+    /// `version <version>`, a line `system <system>`, and a line
+    /// `feature <key>` per feature it meets.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        writeln!(f, "{VERSION} {}", self.version)?;
+        writeln!(f, "{SYSTEM} {}", self.system)?;
+        match self.met {
+            Met::Ledger(ledger) => {
+                for key in ledger.met() {
+                    writeln!(f, "{FEATURE} {key}")?;
+                }
+            },
+            Met::Listed(keys) => {
+                for key in keys {
+                    writeln!(f, "{FEATURE} {}", key.0)?;
+                }
+            },
+        }
+        Ok(())
+    }
+}
+
+/// The word a description's version line opens with.
+const VERSION: &str = "version";
+
+/// The word a description's system line opens with.
+const SYSTEM: &str = "system";
+
+/// The word each of a description's feature lines opens with.
+const FEATURE: &str = "feature";
+
+/// Another build's description of itself, as `gandr toolchain describe`
+/// writes it: what a package's constraint is checked against before that
+/// build runs.
+///
+/// # Specification
+/// - invariant: it reads back as [`Running`]'s display wrote it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a description written and read back meets what the
+///   running toolchain meets.
+/// - witness: `package::toolchain::tests::a_description_meets_what_its_toolchain_meets`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Described
+{
+    /// Its version.
+    version: Version,
+    /// Its system.
+    system: String,
+    /// The features it meets, in its ledger's order.
+    features: Vec<FeatureId>,
+}
+
+impl Described
+{
+    /// Its version.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn version(&self) -> Version
+    {
+        self.version
+    }
+
+    /// The toolchain it describes, as a constraint is checked against it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn running(&self) -> Running<'_>
+    {
+        Running {
+            version: self.version,
+            met: Met::Listed(&self.features),
+            system: self.system.clone(),
+        }
+    }
+}
+
+impl FromStr for Described
+{
+    type Err = Unconstrained;
+
+    /// Reads a description [`Running`]'s display wrote.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the version and the system its lines name, and each feature
+    ///   in order.
+    /// - fails: [`Unconstrained`] when the version or the system is missing,
+    ///   the version does not read, or a line opens with another word.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Unconstrained`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type's; a description missing its version or
+    ///   holding a stray line is refused.
+    /// - witness: `package::toolchain::tests::a_description_meets_what_its_toolchain_meets`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |described| !described.system.is_empty()))]
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        let mut version = None;
+        let mut system = None;
+        let mut features = Vec::new();
+        for line in text.lines() {
+            match line.split_once(' ') {
+                Some((VERSION, written)) => version = Some(written.parse::<Version>()?),
+                Some((SYSTEM, written)) if !written.is_empty() => system = Some(written.to_owned()),
+                Some((FEATURE, key)) if !key.is_empty() => features.push(FeatureId(key.to_owned())),
+                Some(_) | None => return Err(Unconstrained),
+            }
+        }
+        Ok(Self {
+            version: version.ok_or(Unconstrained)?,
+            system: system.ok_or(Unconstrained)?,
+            features,
+        })
     }
 }
 
@@ -404,8 +594,12 @@ impl fmt::Display for Unmet
 #[cfg(test)]
 mod tests
 {
+    use quenchant_shape::shape::Maybe;
+
+    use super::Described;
     use super::FeatureId;
     use super::FeatureLedger;
+    use super::Met;
     use super::Running;
     use super::Separated;
     use super::Toolchain;
@@ -470,6 +664,19 @@ mod tests
             (None, 0_usize, 0_usize),
             "a blank constraint asks nothing"
         );
+        assert!(
+            matches!(blank.asking(), Maybe::Absent(_)),
+            "a blank constraint is none to check"
+        );
+        assert!(
+            matches!(
+                Toolchain::read(String::from(">= 0.1"), Separated(""), Separated(""))
+                    .expect("the constraint reads")
+                    .asking(),
+                Maybe::Present(_)
+            ),
+            "a constraint naming a version asks it"
+        );
         for written in ["0.3", "<= 0.3", ">= ", ">= three"] {
             assert_eq!(
                 Toolchain::read(String::from(written), Separated(""), Separated("")),
@@ -485,7 +692,7 @@ mod tests
         let ledger = FeatureLedger::built_in().expect("the built-in ledger reads");
         let running = Running {
             version: version!("0.3"),
-            ledger: &ledger,
+            met: Met::Ledger(&ledger),
             system: String::from("x86_64-linux"),
         };
         let met = Toolchain::read(
@@ -542,5 +749,38 @@ mod tests
             ],
             "each refusal is named by its clause"
         );
+    }
+
+    #[test]
+    fn a_description_meets_what_its_toolchain_meets()
+    {
+        let ledger = FeatureLedger::built_in().expect("the built-in ledger reads");
+        let running = Running::this(&ledger);
+        let described = running
+            .to_string()
+            .parse::<Described>()
+            .expect("a description reads back");
+        let asked = Toolchain::read(
+            String::from(">= 0.0"),
+            Separated("strict-corpus-root, std-package, first-class-environments, not-a-feature"),
+            Separated(""),
+        )
+        .expect("the constraints read");
+        assert_eq!(
+            asked.unmet(&described.running()),
+            asked.unmet(&running),
+            "a description meets what its toolchain meets"
+        );
+        assert_eq!(described.version(), Version::running());
+        for written in [
+            "system x86_64-linux\n",
+            "version 0.3\nsystem x86_64-linux\nstray\n",
+        ] {
+            assert_eq!(
+                written.parse::<Described>(),
+                Err(Unconstrained),
+                "`{written}` is no description"
+            );
+        }
     }
 }

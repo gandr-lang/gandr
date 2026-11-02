@@ -709,6 +709,32 @@ impl FeatureLedger
             .ok_or_else(|| LedgerFault::NoFeature { id: id.0.clone() })
     }
 
+    /// The ids of the features a toolchain built with this ledger meets: each
+    /// row at [`Status::Implemented`] or [`Status::Partial`], in the ledger's
+    /// order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each id [`FeatureLedger::status`] answers implemented or
+    ///   partial for, and no other.
+    /// - provides: a toolchain's description, which another build compares a
+    ///   package's `features` against.
+    /// - panics: none.
+    /// - executable: none — the ids are an iterator the caller drains.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the implemented and partial rows of a scratch ledger
+    ///   are met, its declined and planned rows are not.
+    /// - witness: `ledger::features::tests::a_feature_stands_at_its_row_s_status`
+    #[inline]
+    pub fn met(&self) -> impl Iterator<Item = &str>
+    {
+        self.features
+            .iter()
+            .filter(|feature| matches!(feature.status, Status::Implemented | Status::Partial))
+            .map(|feature| feature.id.as_str())
+    }
+
     /// The features in `area`, when one is named, with `status`, when one is
     /// named, in the ledger's order.
     ///
@@ -1167,6 +1193,11 @@ mod tests
         assert!(
             matches!(absent, Err(LedgerFault::NoFeature { ref id }) if id == "absent"),
             "{absent:?}"
+        );
+        assert_eq!(
+            ledger.met().collect::<Vec<_>>(),
+            ["implemented", "partial"],
+            "a toolchain built with the ledger meets its implemented and partial rows"
         );
     }
 
