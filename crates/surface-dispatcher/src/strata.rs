@@ -704,4 +704,53 @@ mod tests
         );
         let _cleared = std::fs::remove_dir_all(&directory);
     }
+
+    /// #4437: the store keeps one image per level at one stratum, levels one
+    /// to four, and a second store recalls each level's own. Levels one and
+    /// two keep the roots they had before levels three and four, so a store
+    /// written then still recalls them.
+    #[test]
+    fn each_level_keeps_its_own_root_and_the_first_two_keep_theirs_4437()
+    {
+        let directory = std::env::temp_dir().join(format!(
+            "gandr-strata-{}-{}",
+            std::process::id(),
+            "each_level_keeps_its_own_root_and_the_first_two_keep_theirs_4437"
+        ));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        let root = Path::new(&directory).to_path_buf();
+        let signer = KernelSigner::from([7_u8; 32]);
+        let at = StratumAt {
+            bound: ShapeSize::from(9_usize),
+            degree: Degree::from(5_usize),
+        };
+        let levels = [
+            StratumLevel::One,
+            StratumLevel::Two,
+            StratumLevel::Three,
+            StratumLevel::Four,
+        ];
+        let image = |level: StratumLevel| StratumImage::from(level.to_string().into_bytes());
+        let first = StoredStrata::new(trusting(&signer), root.clone(), signer.clone());
+        for level in levels {
+            first.keep(&Family::Chains, at, level, &image(level));
+        }
+        let second = StoredStrata::new(trusting(&signer), root, signer.clone());
+        for level in levels {
+            assert_eq!(
+                second.recall(&Family::Chains, at, level),
+                Maybe::Present(image(level)),
+                "level {level} recalls its own image"
+            );
+        }
+        for (level, spelled) in [(StratumLevel::One, "1"), (StratumLevel::Two, "2")] {
+            let key = super::key_of(&Family::Chains, at, level);
+            assert_eq!(
+                super::root_of(at, level, key),
+                super::RootName::new(format!("stratum/{spelled}/9/5/{key}")),
+                "level {spelled} keeps the root it had before level three"
+            );
+        }
+        let _cleared = std::fs::remove_dir_all(&directory);
+    }
 }

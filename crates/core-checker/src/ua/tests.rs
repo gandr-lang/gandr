@@ -30,6 +30,7 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::ElementIndex;
 use gandr_theory_sites::Family;
 use gandr_theory_sites::GeneratorCount;
+use gandr_theory_sites::Level as _;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
 use gandr_theory_sites::SegalStratum;
@@ -1554,6 +1555,172 @@ fn level_two_is_kept_recalled_and_refused_by_the_store_4123()
             Err(StratumDefect::Degree { degree }) if degree == past
         ),
         "a degree past every object"
+    );
+}
+
+/// A store that answers, keeps and hears at one level alone, through the
+/// store it wraps, and recalls nothing at any other.
+#[derive(Debug)]
+struct AtLevel
+{
+    /// The level the store answers at.
+    level: StratumLevel,
+    /// The store it answers through.
+    inner: Arc<Answering>,
+}
+
+impl StratumStore for AtLevel
+{
+    /// The wrapped store's image at the level, and none elsewhere.
+    ///
+    /// # Specification
+    /// trivial.
+    fn recall(
+        &self,
+        family: &Family,
+        at: StratumAt,
+        level: StratumLevel,
+    ) -> Maybe<StratumImage, recalled::Absent>
+    {
+        if level == self.level {
+            self.inner.recall(family, at, level)
+        }
+        else {
+            Maybe::Absent(recalled::Absent::Unkept)
+        }
+    }
+
+    /// Hand the wrapped store a stratum at the level.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &self,
+        family: &Family,
+        at: StratumAt,
+        level: StratumLevel,
+        image: &StratumImage,
+    )
+    {
+        if level == self.level {
+            self.inner.keep(family, at, level, image);
+        }
+    }
+
+    /// Hand the wrapped store a refusal at the level.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refuse(
+        &self,
+        family: &Family,
+        at: StratumAt,
+        level: StratumLevel,
+        why: Unreplayed,
+    )
+    {
+        if level == self.level {
+            self.inner.refuse(family, at, level, why);
+        }
+    }
+}
+
+/// #4437: level three over the chains at total size nine and degree five,
+/// asked for twice of one context handed a store that answers at level
+/// three. Level three reads level two at that wreath's top degree. A store
+/// holding nothing is handed level three once. A store holding its image
+/// replays it and is handed nothing to keep. A store holding a damaged image
+/// hears it refused as malformed, and is handed level three certified
+/// afresh. A bound past the allowance is refused by it.
+#[test]
+fn level_three_is_kept_recalled_and_refused_by_the_store_4437()
+{
+    let at = StratumAt {
+        bound: ShapeSize::from(9),
+        degree: Degree::from(5),
+    };
+    let chains = Arc::new(Catalogue::chains(at.bound).expect("the chains build"));
+    let one = SegalStratum::certify(Arc::clone(&chains), chains.reach())
+        .expect("level one is certified at the chains' reach");
+    let level: &Catalogue = &chains;
+    let wreath = Arc::new(Wreath::build(level, level, at.bound));
+    let top = wreath
+        .objects()
+        .iter()
+        .map(<Wreath<Catalogue> as gandr_theory_sites::Level>::degree)
+        .max()
+        .expect("the wreath holds objects");
+    let two = WreathStratum::certify(wreath, top, one).expect("level two is certified at its top");
+    let above = Arc::new(Wreath::build(level, two.wreath(), at.bound));
+    let image = WreathStratum::certify(above, at.degree, two)
+        .expect("level three is certified at degree five")
+        .image();
+    let mut damaged = Vec::from(image.clone());
+    let _last = damaged.pop();
+    let stores = [
+        (
+            Answering::new(
+                Maybe::Absent(recalled::Absent::Unkept),
+                Unreplayed::Malformed,
+            ),
+            Counts {
+                kept: 1,
+                refused: 0,
+                other: 0,
+            },
+            "a store holding nothing keeps level three once",
+        ),
+        (
+            Answering::new(Maybe::Present(image.clone()), Unreplayed::Malformed),
+            Counts {
+                kept: 0,
+                refused: 0,
+                other: 0,
+            },
+            "a stored image replays, and nothing is certified",
+        ),
+        (
+            Answering::new(
+                Maybe::Present(StratumImage::from(damaged)),
+                Unreplayed::Malformed,
+            ),
+            Counts {
+                kept: 1,
+                refused: 1,
+                other: 0,
+            },
+            "a damaged image is refused by name and certified afresh",
+        ),
+    ];
+    for (store, counts, case) in stores {
+        let mut arena = CoreArena::new();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_strata_in(Arc::new(AtLevel {
+            level: StratumLevel::Three,
+            inner: Arc::clone(&store),
+        }));
+        for _asked in 0_usize .. 2_usize {
+            let stratum = context
+                .strata_mut()
+                .level_three(at)
+                .expect("level three is answered");
+            assert_eq!(stratum.image(), image, "{case}: level three's own image");
+        }
+        assert_eq!(store.counts(), counts, "{case}");
+    }
+    let past = StratumAt {
+        bound: ShapeSize::from(15),
+        ..at
+    };
+    let mut arena = CoreArena::new();
+    assert!(
+        matches!(
+            CheckingContext::new(&mut arena, CheckBudget::DEFAULT)
+                .strata_mut()
+                .level_three(past),
+            Err(StratumDefect::Allowance { bound }) if bound == past.bound
+        ),
+        "a bound past the allowance"
     );
 }
 
