@@ -1,0 +1,17 @@
+error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
+   ╭▸ corpus/pathological/desc/record-faces.gandr:20:24
+   │
+20 │     face bad = { port, cert };
+   │                        ━━━━ what the description check refuses
+   │
+   ├ note: `Outside` is refused with IllFormedDescription, as its expectation states
+   ╰ help: put in the face only names that the boundary lists
+
+error[IllFormedDescription]: the boundary `Twice` names the face `addr` twice
+   ╭▸ corpus/pathological/desc/record-faces.gandr:28:10
+   │
+28 │     face addr = { port };
+   │          ━━━━ what the description check refuses
+   │
+   ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
+   ╰ help: give each face of the boundary its own name

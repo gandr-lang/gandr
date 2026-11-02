@@ -5063,6 +5063,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         let reads = collected.reads();
+        // The faces each record type member of this source names: a closure's
+        // members are below `own` and keep theirs.
+        let record_faces = collected
+            .record_faces
+            .split_off(&own)
+            .into_values()
+            .collect();
         let module = LoweredModule::new(
             declarations,
             data,
@@ -5103,7 +5110,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_reducts(reducts)
         .with_forgets(forgets)
         .with_reading(collected.unit, reads)
-        .with_forgettings(forgettings);
+        .with_forgettings(forgettings)
+        .with_record_faces(record_faces);
         Ok(match resumed {
             Some(resumed) => {
                 module.after_closure(&resumed.finished.keyed, &resumed.finished.declarations)

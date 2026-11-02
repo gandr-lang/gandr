@@ -1,0 +1,24 @@
+// A record type's faces: each a set of the record's labels, named in a `where`
+// block after the type.
+//
+// A record type's labels are its boundary. A face over them names a part of
+// the record, so a later form restricts a value to that part.
+//
+// The block names each face as a theory's `face` member does. The block ends
+// the type member at its `}`, as a `data` block ends its declaration. A record
+// type with no block keeps its labels as its boundary all the same.
+//
+// - see: `pathological/desc/record-faces.gandr` — a face past the labels, and
+//   a face named twice, refused
+// - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
+//   faces
+// - see: #4454 — not implemented: the extension type over a face
+
+/// A server's configuration: the faces `secure` and `addr` meet at the port.
+type Config = #{host : String, port : Integer, tls : Bool} where {
+  face secure = { port, tls };
+  face addr = { host, port };
+}
+
+/// A configuration states the record whatever faces it names.
+def local : Config = #{.host = "localhost", .port = 443, .tls = true};

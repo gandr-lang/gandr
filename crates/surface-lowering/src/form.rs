@@ -588,6 +588,9 @@ impl TileName
     pub const SEQUENCE: Self = Self(">>");
     /// An escape sequence inside a string's own tiles.
     pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
+    /// The member `face`, naming a set of a boundary's points: a theory's
+    /// shape's, or a record type's labels in its faces block.
+    pub const FACE: Self = Self("face");
     /// An identifier written as one of a form's own tiles.
     pub const IDENTIFIER: Self = Self("identifier");
     /// The import keyword `import`.

@@ -486,6 +486,7 @@ pub use crate::module::LoweredStructure;
 pub use crate::module::ManifestComponent;
 pub use crate::module::Mark;
 pub use crate::module::Offered;
+pub use crate::module::RecordFaces;
 pub use crate::module::Required;
 pub use crate::module::Role;
 pub use crate::module::SealedComponent;

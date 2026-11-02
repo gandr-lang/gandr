@@ -1012,6 +1012,35 @@ pub struct TypeComponent<'source>
     pub held: SlotIndex,
 }
 
+/// The faces a record type member names over its labels, `type T = #{ … }
+/// where { face f = { a, b }; … }`: the labels are its boundary, and each face
+/// a set of them.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a face's subshape stands over the boundary's carrier, a label
+///   inside exactly when the face lists it; no two faces share a name.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — the collection's reading of the faces block is the
+///   producer that states it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record type's faces are read over its labels, and a
+///   face listing a label the record lacks is refused by the label.
+/// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+/// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordFaces<'source>
+{
+    /// The type member's name.
+    pub name: SurfaceName<'source>,
+    /// The record's labels, as a boundary.
+    pub boundary: gandr_theory_shapes::Boundary<SurfaceName<'source>>,
+    /// Each face by its name, with the labels it holds, in written order.
+    pub faces: Vec<(SurfaceName<'source>, gandr_theory_shapes::Subshape)>,
+}
+
 /// The type components a signature type sees: those of `structure` written
 /// before the component the type belongs to.
 ///
@@ -1619,6 +1648,9 @@ pub struct Collected<'source>
     /// The type members written at a source's top level, `type T = τ ;`, each
     /// with its source, in source order.
     pub top_types: Vec<(SourceIndex, TypeComponent<'source>)>,
+    /// The faces each record type member's faces block names, by the
+    /// member's held slot.
+    pub record_faces: BTreeMap<SlotIndex, RecordFaces<'source>>,
     /// The parameters of each manifest family component a signature writes,
     /// `type F(a : A, …) = τ`, in reading order.
     pub parameter_lists: Vec<Vec<FamilyParameter>>,
@@ -3520,6 +3552,7 @@ pub fn begin_collection<'source>(
         module_docs: Vec::new(),
         families: Vec::new(),
         top_types: Vec::new(),
+        record_faces: BTreeMap::new(),
         parameter_lists: Vec::new(),
         models: Layered::whole(BTreeMap::new()),
         model_theories: BTreeMap::new(),
@@ -11838,6 +11871,9 @@ pub struct LoweredModule<'source>
     /// Each forgetting map the module mints as a source writes it, ascending
     /// by the map's position.
     forgettings: Vec<Forgetting>,
+    /// The faces each record type member of the module's source names, in
+    /// written order.
+    record_faces: Vec<RecordFaces<'source>>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -11899,6 +11935,7 @@ impl<'source> LoweredModule<'source>
             reducts: Vec::new(),
             forgets: Vec::new(),
             forgettings: Vec::new(),
+            record_faces: Vec::new(),
         }
     }
 
@@ -12050,6 +12087,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.forgettings = forgettings;
+        self
+    }
+
+    /// This module, carrying `record_faces`, the faces each record type member
+    /// of its source names, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_record_faces(
+        mut self,
+        record_faces: Vec<RecordFaces<'source>>,
+    ) -> Self
+    {
+        self.record_faces = record_faces;
         self
     }
 
@@ -13001,6 +13054,19 @@ impl<'source> LoweredModule<'source>
     pub fn forgettings(&self) -> &[Forgetting]
     {
         &self.forgettings
+    }
+
+    /// The faces each record type member of this module's source names over
+    /// its labels, `type T = #{ … } where { face f = { a, b }; … }`, in written
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn record_faces(&self) -> &[RecordFaces<'source>]
+    {
+        &self.record_faces
     }
 
     /// The structured name of `declaration`: the path of the module it is
