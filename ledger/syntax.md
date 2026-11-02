@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xa2919502bf29d3d5`
-- Rules: 172 — 171 committed, 1 internal
-- Molds: 3512
+- Grammar fingerprint: `0x9c85664b2ec2e7c9`
+- Rules: 176 — 175 committed, 1 internal
+- Molds: 3032
 - Attributes: 17
 
 ## Reading a form
@@ -29,7 +29,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
-| [`def_value`](../corpus/ledger/syntax/def-value.gandr) | `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ recv ( EXPRESSION ) as ‹identifier› ; ‖ acquire ( EXPRESSION ) as ‹identifier› ; ‖ release ( EXPRESSION ) as ‹identifier› ; ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⟨block⟩ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` | `item.singleton` | `def_value` | admitted | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
+| [`def_value`](../corpus/ledger/syntax/def-value.gandr) | `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⟨block⟩ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` | `item.singleton` | `def_value` | admitted | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
 | [`data_declaration`](../corpus/ledger/syntax/data-declaration.gandr) | `data ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : ⦅ TYPE ‖ ( ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> ⦅ TYPE ‖ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ⦆? where { ⦅ \| ⦅ ‹constructor› : ⦅ TYPE ‖ ( ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> ⦅ TYPE ‖ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ‖ ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ‖ ⦅ oper ‖ op ⦆ ‹identifier› : ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) --> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ‖ TYPE ⦆ ; ‖ rule ⦅ ‹identifier› ⦆? : EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ; ⦆* }` or `data ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : ⦅ TYPE ‖ ( ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> ⦅ TYPE ‖ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ⦆? where { ⦅ \| ⦅ ‹constructor› : ⦅ TYPE ‖ ( ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> ⦅ TYPE ‖ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ‖ ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ‖ ⦅ oper ‖ op ⦆ ‹identifier› : ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) --> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ‖ TYPE ⦆ ; ‖ rule ⦅ ‹identifier› ⦆? : EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ; ⦆* }` | `item.singleton` | `data_declaration` * | admitted | Keyword, Type, Other, TypeVariable, VariableParam, Number, Operator, Constructor, Member, FunctionDef |
 | [`codata_declaration`](../corpus/ledger/syntax/codata-declaration.gandr) | `codata ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : TYPE ⦆? where { ⦅ ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : ⦅ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) --> TYPE ‖ TYPE ⦆ ‖ oper ‹identifier› : ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) --> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ‖ TYPE ⦆ ‖ rule ⦅ ‹identifier› ⦆? : EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦅ ⦅ ; ‖ , ⦆ ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : ⦅ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ ω ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) --> TYPE ‖ TYPE ⦆ ‖ oper ‹identifier› : ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) --> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ‖ TYPE ⦆ ‖ rule ⦅ ‹identifier› ⦆? : EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦆* ⦅ ; ‖ , ⦆? ⦆? }` or `codata ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : TYPE ⦆? where { ⦅ ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : ⦅ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) --> TYPE ‖ TYPE ⦆ ‖ oper ‹identifier› : ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) --> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ‖ TYPE ⦆ ‖ rule ⦅ ‹identifier› ⦆? : EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦅ ⦅ ; ‖ , ⦆ ⦅ ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : ⦅ ( ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦅ , ‹identifier› ⦅ [ ⦅ ‹number› ‖ inf ⦆ ] ⦆? : TYPE ⦆* ⦅ , ⦆? ) --> TYPE ‖ TYPE ⦆ ‖ oper ‹identifier› : ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) --> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ‖ TYPE ⦆ ‖ rule ⦅ ‹identifier› ⦆? : EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦆* ⦅ ; ‖ , ⦆? ⦆? }` | `item.singleton` | `codata_declaration` * | admitted | Keyword, Type, Other, TypeVariable, Member, Number, VariableParam, Operator, FunctionDef |
 | [`module_declaration`](../corpus/ledger/syntax/module-declaration.gandr) | `module ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦅ = ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ; ‖ ⦅ ( ‹type_identifier› : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ) ⦆? ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆? where { ⦅ MODULE_MEMBER ⦆* } ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, VariableDef, Other, Member, TypeVariable, Operator |
@@ -65,7 +65,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 87 rules
+## `expression` — 91 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -98,22 +98,22 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`instantiation_expression`](../corpus/ledger/syntax/instantiation-expression.gandr) | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | admitted | Other |
 | [`projection_expression`](../corpus/ledger/syntax/projection-expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | admitted | Other, Member, Constructor, Number |
 | [`record_selection_expression`](../corpus/ledger/syntax/record-selection-expression.gandr) | `EXPRESSION .#{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦆* ⦅ , ⦆? }` | `expression.postfix` | `record_selection_expression` * | admitted | Other, Member, Number |
-| [`view_expression`](../corpus/ledger/syntax/view-expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, VariableParam, Type, Member |
+| [`view_expression`](../corpus/ledger/syntax/view-expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, Type, Member |
 | [`index_expression`](../corpus/ledger/syntax/index-expression.gandr) | `EXPRESSION ⦅ .#[ ‖ [ ⦆ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
 | [`hole`](../corpus/ledger/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | admitted | Hole, Label |
 | [`wildcard.expression`](../corpus/ledger/syntax/wildcard.expression.gandr) | `_` | `expression.atom` | `wildcard` | admitted | Variable |
 | [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized-expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | admitted | Other |
 | [`type_quote_expression`](../corpus/ledger/syntax/type-quote-expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | admitted | Keyword, Other |
 | [`list_expression`](../corpus/ledger/syntax/list-expression.gandr) | `⦅ #[ ‖ [ ⦆ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | admitted | Other |
-| [`block`](../corpus/ledger/syntax/block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ recv ( EXPRESSION ) as ‹identifier› ; ‖ acquire ( EXPRESSION ) as ‹identifier› ; ‖ release ( EXPRESSION ) as ‹identifier› ; ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, Operator, VariableDef, Number, VariableParam, Type, Member |
+| [`block`](../corpus/ledger/syntax/block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, Operator, VariableDef, Number, Type, Member |
 | [`lambda_expression`](../corpus/ledger/syntax/lambda-expression.gandr) | `fn ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) BLOCK ‖ { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] BLOCK ⦆` | `expression.atom` | `lambda_expression` | admitted | Keyword, Other, VariableParam, TypeVariable, Type, Operator |
 | [`thunk_expression`](../corpus/ledger/syntax/thunk-expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? BLOCK` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? BLOCK` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number |
 | [`match_expression`](../corpus/ledger/syntax/match-expression.gandr) | `match EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `match_expression` | admitted | Keyword, Operator, Other |
-| [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Operator, Number, VariableParam, Member, FunctionDef |
-| [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, VariableParam, Type, Member |
-| [`for_expression`](../corpus/ledger/syntax/for-expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, VariableParam, Type, Member |
-| [`while_expression`](../corpus/ledger/syntax/while-expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | admitted | Keyword, Other, Operator, VariableDef, Number, VariableParam, Type, Member |
-| [`loop_expression`](../corpus/ledger/syntax/loop-expression.gandr) | `loop ⟨block⟩` | `expression.atom` | `loop_expression` * | admitted | Keyword, Other, Operator, VariableDef, Number, VariableParam, Type, Member |
+| [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Operator, Number, Member, VariableParam, FunctionDef |
+| [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, Type, Member |
+| [`for_expression`](../corpus/ledger/syntax/for-expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, Type, Member |
+| [`while_expression`](../corpus/ledger/syntax/while-expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | admitted | Keyword, Other, Operator, VariableDef, Number, Type, Member |
+| [`loop_expression`](../corpus/ledger/syntax/loop-expression.gandr) | `loop ⟨block⟩` | `expression.atom` | `loop_expression` * | admitted | Keyword, Other, Operator, VariableDef, Number, Type, Member |
 | [`break_expression`](../corpus/ledger/syntax/break-expression.gandr) | `break` | `expression.atom` | `break_expression` * | admitted | Keyword |
 | [`break_value_expression`](../corpus/ledger/syntax/break-value-expression.gandr) | `break ( EXPRESSION )` | `expression.atom` | `break_value_expression` * | admitted | Keyword, Other |
 | [`continue_expression`](../corpus/ledger/syntax/continue-expression.gandr) | `continue` | `expression.atom` | `continue_expression` * | admitted | Keyword |
@@ -129,6 +129,10 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`select_expression`](../corpus/ledger/syntax/select-expression.gandr) | `select ( EXPRESSION , ‹identifier› )` | `expression.atom` | `select_expression` | admitted | Keyword, Other, Label |
 | [`dup_expression`](../corpus/ledger/syntax/dup-expression.gandr) | `dup ( EXPRESSION )` | `expression.atom` | `dup_expression` | reserved | Keyword, Other |
 | [`drop_expression`](../corpus/ledger/syntax/drop-expression.gandr) | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | admitted | Keyword, Other |
+| [`recv_expression`](../corpus/ledger/syntax/recv-expression.gandr) | `recv ( EXPRESSION )` | `expression.atom` | `recv_expression` * | admitted | Keyword, Other |
+| [`acquire_expression`](../corpus/ledger/syntax/acquire-expression.gandr) | `acquire ( EXPRESSION )` | `expression.atom` | `acquire_expression` * | reserved | Keyword, Other |
+| [`release_expression`](../corpus/ledger/syntax/release-expression.gandr) | `release ( EXPRESSION )` | `expression.atom` | `release_expression` * | reserved | Keyword, Other |
+| [`fork_expression`](../corpus/ledger/syntax/fork-expression.gandr) | `fork ⦅ ! ⦆? ( ‹identifier› : TYPE ) EXPRESSION` | `expression.atom` | `fork_expression` * | admitted | Keyword, Other, VariableParam |
 | [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ ⦅ .#[ ‖ [ ⦆ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
 | [`resume_expression`](../corpus/ledger/syntax/resume-expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | admitted | Keyword, Other, Variable |
 | [`abort_expression`](../corpus/ledger/syntax/abort-expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | admitted | Keyword, Other, Variable |
@@ -217,7 +221,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
-| [`module_definition_member`](../corpus/ledger/syntax/module-definition-member.gandr) | `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ recv ( EXPRESSION ) as ‹identifier› ; ‖ acquire ( EXPRESSION ) as ‹identifier› ; ‖ release ( EXPRESSION ) as ‹identifier› ; ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⟨block⟩ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
+| [`module_definition_member`](../corpus/ledger/syntax/module-definition-member.gandr) | `def ⦅ rec ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ ‹identifier› ⦅ [ ⦅ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ‖ ‹identifier› < ‹identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ⦅ ⦅ = EXPRESSION ⦆? ; ‖ where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ -> TYPE ⦆? ⟨block⟩ ‖ : TYPE where { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ⦆ ⦆ ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
 | [`attributed_module_member`](../corpus/ledger/syntax/attributed-module-member.gandr) | `⟨attribute_block⟩ ⦅ ⟨attribute_block⟩ ⦆* ⦅ ⟨def_value⟩ ‖ ⟨module_type_member⟩ ‖ ⟨module_law_member⟩ ⦆` | `item.singleton` | `module_declaration` | admitted | Other, Keyword, FunctionDef, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef, Number |
 | [`module_type_member`](../corpus/ledger/syntax/module-type-member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? = TYPE ⦅ ; ‖ where { ⦅ face ‹identifier› = { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ; ⦆* } ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other, TypeVariable, Member |
 | [`nested_module_member`](../corpus/ledger/syntax/nested-module-member.gandr) | `module ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆? where { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `module_declaration` | admitted | Keyword, VariableDef, Type, Other, Member, TypeVariable, Operator |
@@ -229,7 +233,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
-| [`statement_block`](../corpus/ledger/syntax/statement-block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ recv ( EXPRESSION ) as ‹identifier› ; ‖ acquire ( EXPRESSION ) as ‹identifier› ; ‖ release ( EXPRESSION ) as ‹identifier› ; ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, Operator, VariableDef, Number, VariableParam, Type, Member |
+| [`statement_block`](../corpus/ledger/syntax/statement-block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ; ‖ unpack ‹identifier› : TYPE = EXPRESSION ; ‖ leta ‹identifier› = EXPRESSION ; ‖ ⦅ var ‖ hold ⦆ ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, Operator, VariableDef, Number, Type, Member |
 
 ## Internal — 1 rule
 
@@ -263,13 +267,13 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 101 of 172 rules decided at every token
+## Decisions — 112 of 176 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
 | Rule | Sort | Molds | Opens on | Shares its opener with | Forks |
 | ---- | ---- | ----- | -------- | ---------------------- | ----- |
-| `def_value` | item | 270 | `def` | — | 68 |
+| `def_value` | item | 204 | `def` | — | 40 |
 | `data_declaration` | item | 138 | `data` | — | 34 |
 | `codata_declaration` | item | 132 | `codata` | — | 52 |
 | `module_declaration` | item | 171 | `module` | — | 60 |
@@ -282,8 +286,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `attribute_block` | item | 12 | `@[` | — | 4 |
 | `inner_attribute_block` | item | 12 | `@![` | — | 4 |
 | `extern_block` | item | 43 | `extern` | — | 12 |
-| `module_definition_member` | module_member | 270 | `def` | — | 68 |
-| `attributed_module_member` | module_member | 322 | `@[` | — | 80 |
+| `module_definition_member` | module_member | 204 | `def` | — | 40 |
+| `attributed_module_member` | module_member | 256 | `@[` | — | 52 |
 | `module_type_member` | module_member | 24 | `type` | — | 4 |
 | `nested_module_member` | module_member | 106 | `module` | — | 40 |
 | `module_include_member` | module_member | 3 | `include` | — | 0 |
@@ -335,22 +339,22 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `instantiation_expression` | expression | 4 | `[` | `index_expression` | 2 |
 | `projection_expression` | expression | 4 | `.` | — | 0 |
 | `record_selection_expression` | expression | 10 | `.#{` | — | 4 |
-| `view_expression` | expression | 76 | `as` | — | 14 |
+| `view_expression` | expression | 43 | `as` | — | 0 |
 | `index_expression` | expression | 3 | `.#[` `[` | `instantiation_expression` | 0 |
 | `hole` | expression | 2 | `?` | — | 0 |
 | `wildcard.expression` | expression | 1 | `_` | — | 0 |
 | `parenthesized_expression` | expression | 10 | `(` | — | 4 |
 | `type_quote_expression` | expression | 2 | `type(` | — | 0 |
 | `list_expression` | expression | 5 | `#[` `[` | — | 3 |
-| `block` | expression | 74 | `{` | — | 14 |
+| `block` | expression | 41 | `{` | — | 0 |
 | `lambda_expression` | expression | 29 | `fn` | — | 14 |
 | `thunk_expression` | expression | 6 | `thunk` | — | 0 |
 | `match_expression` | expression | 24 | `match` | — | 9 |
-| `handle_expression` | expression | 118 | `handle` | — | 18 |
-| `if_expression` | expression | 154 | `if` | — | 28 |
-| `for_expression` | expression | 77 | `for` | — | 14 |
-| `while_expression` | expression | 75 | `while` | — | 14 |
-| `loop_expression` | expression | 75 | `loop` | — | 14 |
+| `handle_expression` | expression | 85 | `handle` | — | 4 |
+| `if_expression` | expression | 88 | `if` | — | 0 |
+| `for_expression` | expression | 44 | `for` | — | 0 |
+| `while_expression` | expression | 42 | `while` | — | 0 |
+| `loop_expression` | expression | 42 | `loop` | — | 0 |
 | `break_expression` | expression | 1 | `break` | `break_value_expression` | 0 |
 | `break_value_expression` | expression | 3 | `break` | `break_expression` | 0 |
 | `continue_expression` | expression | 1 | `continue` | — | 0 |
@@ -366,6 +370,10 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `select_expression` | expression | 5 | `select` | — | 0 |
 | `dup_expression` | expression | 3 | `dup` | — | 0 |
 | `drop_expression` | expression | 3 | `drop` | — | 0 |
+| `recv_expression` | expression | 3 | `recv` | — | 0 |
+| `acquire_expression` | expression | 3 | `acquire` | — | 0 |
+| `release_expression` | expression | 3 | `release` | — | 0 |
+| `fork_expression` | expression | 6 | `fork` | — | 0 |
 | `access_expression` | expression | 10 | `access` | — | 0 |
 | `resume_expression` | expression | 5 | `resume` | — | 0 |
 | `abort_expression` | expression | 4 | `abort` | — | 0 |
@@ -380,7 +388,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `typed_number.expression` | expression | 1 | `typed_number` | — | 0 |
 | `character` | expression | 1 | `character` | — | 0 |
 | `string.expression` | expression | 6 | `"` | `double_quoted_string` | 0 |
-| `statement_block` | block | 74 | `{` | — | 14 |
+| `statement_block` | block | 41 | `{` | — | 0 |
 | `package_type` | type | 7 | `package` | — | 2 |
 | `function_type` | type | 1 | `->` | — | 0 |
 | `value_function_type` | type | 1 | `=>` | — | 0 |
@@ -448,26 +456,24 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 474 | 54 | 3 |
-| `:` | 307 | 31 | 0 |
+| `identifier` | 385 | 55 | 3 |
+| `:` | 278 | 32 | 0 |
 | `,` | 275 | 53 | 0 |
-| `;` | 228 | 25 | 1 |
-| `)` | 198 | 46 | 0 |
-| `(` | 194 | 45 | 4 |
 | `type_identifier` | 171 | 35 | 2 |
+| `;` | 153 | 25 | 1 |
 | `=` | 144 | 31 | 0 |
+| `)` | 127 | 43 | 0 |
+| `(` | 123 | 42 | 4 |
 | `}` | 79 | 41 | 0 |
 | `type_variable` | 71 | 16 | 3 |
 | `.` | 70 | 33 | 3 |
 | `]` | 67 | 41 | 0 |
-| `as` | 64 | 14 | 1 |
 | `{` | 62 | 32 | 2 |
 | `[` | 61 | 38 | 7 |
 | `number` | 52 | 30 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 45 | 10 | 1 |
 | `-->` | 31 | 5 | 0 |
-| `fork` | 30 | 11 | 0 |
 | `<=>` | 27 | 5 | 0 |
 | `==>` | 27 | 5 | 0 |
 | `<->` | 24 | 4 | 0 |
@@ -478,7 +484,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `where` | 21 | 10 | 0 |
 | `<` | 18 | 9 | 3 |
 | `ω` | 17 | 5 | 0 |
-| `!` | 16 | 12 | 1 |
 | `hold` | 16 | 12 | 1 |
 | `import` | 16 | 12 | 1 |
 | `run` | 16 | 12 | 1 |
@@ -486,12 +491,9 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `+=` | 15 | 11 | 0 |
 | `-=` | 15 | 11 | 0 |
 | `<-` | 15 | 11 | 0 |
-| `acquire` | 15 | 11 | 0 |
 | `if` | 15 | 5 | 1 |
 | `let` | 15 | 11 | 0 |
 | `leta` | 15 | 11 | 0 |
-| `recv` | 15 | 11 | 0 |
-| `release` | 15 | 11 | 0 |
 | `rule` | 15 | 4 | 1 |
 | `unpack` | 15 | 11 | 0 |
 | `var` | 15 | 11 | 0 |
@@ -517,6 +519,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `>` | 4 | 4 | 3 |
 | `?` | 4 | 4 | 4 |
 | `@[` | 4 | 3 | 2 |
+| `as` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
 | `$` | 3 | 3 | 2 |
 | `${` | 3 | 3 | 1 |
@@ -531,6 +534,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `node` | 3 | 2 | 0 |
 | `pure` | 3 | 2 | 1 |
 | `~>` | 3 | 2 | 0 |
+| `!` | 2 | 2 | 1 |
 | `#[` | 2 | 2 | 2 |
 | `'` | 2 | 1 | 1 |
 | `*` | 2 | 2 | 2 |
@@ -584,6 +588,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `\` | 1 | 1 | 1 |
 | `abort` | 1 | 1 | 1 |
 | `access` | 1 | 1 | 1 |
+| `acquire` | 1 | 1 | 1 |
 | `become` | 1 | 1 | 1 |
 | `boundary` | 1 | 1 | 0 |
 | `character` | 1 | 1 | 1 |
@@ -609,6 +614,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `for` | 1 | 1 | 1 |
 | `force` | 1 | 1 | 1 |
 | `forget` | 1 | 1 | 1 |
+| `fork` | 1 | 1 | 1 |
 | `from` | 1 | 1 | 0 |
 | `glob` | 1 | 1 | 1 |
 | `handle` | 1 | 1 | 1 |
@@ -627,6 +633,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `op` | 1 | 1 | 0 |
 | `package` | 1 | 1 | 1 |
 | `pub` | 1 | 1 | 1 |
+| `recv` | 1 | 1 | 1 |
+| `release` | 1 | 1 | 1 |
 | `requires` | 1 | 1 | 0 |
 | `resume` | 1 | 1 | 1 |
 | `return` | 1 | 1 | 1 |

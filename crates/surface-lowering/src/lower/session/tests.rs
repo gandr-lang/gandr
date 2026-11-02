@@ -39,26 +39,26 @@ use crate::resolve::SurfaceName;
 /// operator's held by the rest of the block, with an intuitionistic parameter
 /// and every receipt's binder standing between an endpoint and its uses.
 const EXCHANGE: &str = "def exchange(n : Integer) -> -F Unit {\n\
-     fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {\n\
-       recv(c) as task;\n\
+     let peer = fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {\n\
+       let task = recv(c);\n\
        select(c, report);\n\
        send(c, \"progress\");\n\
        offer(c) {\n\
          next => { select(c, handoff); send(c, \"notes\"); close(c) },\n\
          retire => close(c)\n\
        }\n\
-     } as peer;\n\
+     };\n\
      send(peer, \"task\");\n\
      offer(peer) {\n\
        report => {\n\
-         recv(peer) as first;\n\
+         let first = recv(peer);\n\
          select(peer, next);\n\
          offer(peer) {\n\
-           report => { recv(peer) as second; select(peer, retire); close(peer) },\n\
-           handoff => { recv(peer) as notes; close(peer) }\n\
+           report => { let second = recv(peer); select(peer, retire); close(peer) },\n\
+           handoff => { let notes = recv(peer); close(peer) }\n\
          }\n\
        },\n\
-       handoff => { recv(peer) as notes; close(peer) }\n\
+       handoff => { let notes = recv(peer); close(peer) }\n\
      }\n\
    }\n";
 
@@ -696,12 +696,12 @@ fn an_offer_arm_is_one_label()
 {
     let source = SourceText::from(
         "def twice(n : Integer) -> -F Unit {\n\
-           fork (c : &{ go : end }) { offer(c) { go => close(c), go => close(c) } } as d ;\n\
+           let d = fork (c : &{ go : end }) { offer(c) { go => close(c), go => close(c) } };\n\
            select(d, go);\n\
            close(d)\n\
          }\n\
          def patterned(n : Integer) -> -F Unit {\n\
-           fork (c : &{ go : end }) { offer(c) { 7 => close(c) } } as d ;\n\
+           let d = fork (c : &{ go : end }) { offer(c) { 7 => close(c) } };\n\
            select(d, go);\n\
            close(d)\n\
          }\n",
@@ -734,44 +734,50 @@ fn sharing_is_reserved_by_name()
 {
     let source = SourceText::from(
         "def shared(n : Integer) -> -F Unit { fork !(c : end) { close(c) } ; return unit }\n\
-         def acquired(n : Integer) -> -F Unit { acquire(n) as c ; return unit }\n\
-         def released(n : Integer) -> -F Unit { release(n) as c ; return unit }\n\
-         def duplicated(n : Integer) -> -F Unit { fork (c : end) { close(c) } as d ; dup(d) ; close(d) }\n",
+         def bound(n : Integer) -> -F Unit { let d = fork !(c : end) { close(c) } ; return unit }\n\
+         def acquired(n : Integer) -> -F Unit { let c = acquire(n) ; return unit }\n\
+         def released(n : Integer) -> -F Unit { let c = release(n) ; return unit }\n\
+         def duplicated(n : Integer) -> -F Unit { let d = fork (c : end) { close(c) } ; dup(d) ; close(d) }\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
-    for (name, written, keyword, form, feature) in [
+    for (name, context, written, feature) in [
         (
             "shared",
-            "fork !(c",
-            "fork",
-            FormName::FORK_SHARED_STATEMENT,
+            "{ fork !(c : end) { close(c) } ;",
+            "fork !(c : end) { close(c) }",
+            crate::Unbuilt::SharedFork,
+        ),
+        (
+            "bound",
+            "= fork !(c : end) { close(c) } ;",
+            "fork !(c : end) { close(c) }",
             crate::Unbuilt::SharedFork,
         ),
         (
             "acquired",
             "acquire(n)",
-            "acquire",
-            FormName::ACQUIRE_STATEMENT,
+            "acquire(n)",
             crate::Unbuilt::Acquire,
         ),
         (
             "released",
             "release(n)",
-            "release",
-            FormName::RELEASE_STATEMENT,
+            "release(n)",
             crate::Unbuilt::Release,
         ),
     ] {
-        assert_eq!(
-            refusal_of(&module, SurfaceName::from(name)),
-            LoweringRefusal::OutOfFragment {
-                span: spelled_within(source, SourceText::from(written), SourceText::from(keyword)),
-                form,
-                sort: FragmentSort::Computation,
-                boundary: FragmentBoundary::Reserved(feature),
-            },
-            "`{name}`: a shared session's statement is reserved by its name"
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment {
+                    span,
+                    boundary: FragmentBoundary::Reserved(reserved),
+                    ..
+                } if reserved == feature
+                    && span == spelled_within(source, SourceText::from(context), SourceText::from(written))
+            ),
+            "`{name}`: a shared session's form is reserved by its name"
         );
     }
     assert!(
@@ -790,6 +796,44 @@ fn sharing_is_reserved_by_name()
     );
 }
 
+/// A receive and a fork each give one linear end, so one no `let` binds to a
+/// name is refused where it stands.
+#[test]
+fn a_receive_or_a_fork_no_let_binds_is_refused()
+{
+    let source = SourceText::from(
+        "def received() -> -F Unit {\n\
+           let d = fork (c : !Integer >> end) { send(c, 1); close(c) };\n\
+           recv(d);\n\
+           close(d)\n\
+         }\n\
+         def forked() -> -F Unit {\n\
+           fork (c : end) { close(c) };\n\
+           return unit\n\
+         }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, written, kind) in [
+        ("received", "recv(d)", "recv_expression"),
+        ("forked", "fork (c : end) { close(c) }", "fork_expression"),
+    ] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment {
+                    span,
+                    form,
+                    boundary: FragmentBoundary::Unbound,
+                    ..
+                } if form == FormName::from(NamedKind(kind))
+                    && span == spelled_within(source, SourceText::from(written), SourceText::from(written))
+            ),
+            "`{name}`: an end no `let` binds is refused"
+        );
+    }
+}
+
 /// #1500: a fork in an arm whose ends continue the block leaves the rest
 /// reading the slot it named before the fork, not the fork's parent end, which
 /// it would read as a value.
@@ -800,12 +844,12 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
         "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def joined(n : Nat) -> -F Integer {\n\
            var c = 100;\n\
-           run m <- match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
+           run m <- match n { Zero => return 7, Succ(p) => { let d = fork (e : end) { close(e) }; close(d) } } ;\n\
            pure c\n\
          }\n\
          def joined_by_hand(n : Nat) -> -F Integer {\n\
            var c = 100;\n\
-           match n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
+           match n { Zero => return 7, Succ(p) => { let d = fork (e : end) { close(e) }; run m <- close(d) ; pure c } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();
@@ -827,22 +871,22 @@ fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
     let source = SourceText::from(
         "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def forked(n : Nat) -> -F Unit {\n\
-           fork (c : end) { close(c) } as d ;\n\
+           let d = fork (c : end) { close(c) };\n\
            close(d) ;\n\
            run m <- match n { Zero => return unit, Succ(p) => pure unit } ;\n\
            return m\n\
          }\n\
          def forked_by_hand(n : Nat) -> -F Unit {\n\
-           fork (c : end) { close(c) } as d ;\n\
+           let d = fork (c : end) { close(c) };\n\
            close(d) ;\n\
            match n { Zero => return unit, Succ(p) => return unit }\n\
          }\n\
          def offered(n : Nat) -> -F Unit {\n\
-           fork (c : +{ go : end }) { select(c, go) ; close(c) } as d ;\n\
+           let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
            offer(d) { go => { close(d) ; run m <- match n { Zero => return unit, Succ(p) => pure unit } ; return m } }\n\
          }\n\
          def offered_by_hand(n : Nat) -> -F Unit {\n\
-           fork (c : +{ go : end }) { select(c, go) ; close(c) } as d ;\n\
+           let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
            offer(d) { go => { close(d) ; match n { Zero => return unit, Succ(p) => return unit } } }\n\
          }\n",
     );
@@ -862,11 +906,11 @@ fn a_drop_is_the_end_action_1054()
 {
     let source = SourceText::from(
         "def dropped() -> -F Unit {\n\
-           fork (seat : end) { drop(seat) } as desk ;\n\
+           let desk = fork (seat : end) { drop(seat) };\n\
            drop(desk)\n\
          }\n\
          def closed() -> -F Unit {\n\
-           fork (seat : end) { close(seat) } as desk ;\n\
+           let desk = fork (seat : end) { close(seat) };\n\
            close(desk)\n\
          }\n",
     );

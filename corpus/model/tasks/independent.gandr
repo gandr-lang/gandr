@@ -16,16 +16,16 @@ import "./task-base.gandr";
 /// A parent joining two tasks in the reverse of the order it forked them.
 @[ runs("unit"), traces(primes(scout, 0)), traces(primes(scribe, 0)) ]
 def independent() -> Unit {
-  fork (scout : Task.Join) {
+  let scouted = fork (scout : Task.Join) {
     send(scout, Task.notes);
     close(scout)
-  } as scouted;
-  fork (scribe : Task.Join) {
+  };
+  let scribed = fork (scribe : Task.Join) {
     send(scribe, Task.notes);
     close(scribe)
-  } as scribed;
-  recv(scribed) as written;
+  };
+  let written = recv(scribed);
   close(scribed);
-  recv(scouted) as found;
+  let found = recv(scouted);
   close(scouted)
 }

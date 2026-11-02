@@ -10,15 +10,15 @@ import "../../model/completion/ring-base.gandr";
 /// spent slot.
 @[ refuses("UsedAfterClose") ]
 def bufferTouched() -> Unit {
-  fork (owner : Ring.Buffer) { close(owner) } as buffer;
-  fork (kernel : Ring.Moving) {
-    recv(kernel) as held;
+  let buffer = fork (owner : Ring.Buffer) { close(owner) };
+  let ring = fork (kernel : Ring.Moving) {
+    let held = recv(kernel);
     close(held);
     send(kernel, Ring.done);
     close(kernel)
-  } as ring;
+  };
   send(ring, buffer);
   close(buffer);
-  recv(ring) as cqe;
+  let cqe = recv(ring);
   close(ring)
 }

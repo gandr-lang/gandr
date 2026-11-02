@@ -1,12 +1,12 @@
 error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it other than once
-  ╭▸ corpus/ledger/diagnostics/CapturedEndpoint.gandr:4:29
+  ╭▸ corpus/ledger/diagnostics/CapturedEndpoint.gandr:4:40
   │
 3 │ ┌ def seat_closed_in_a_thunk() -> -F Unit {
-4 │ │   fork (seat : end) { force thunk { close(seat) } } as desk;
-  │ │   ┬───                ┬─────┯━━━━━━━━━━━━━━━━━━━━
-  │ │   │                   │     │
-  │ │   │                   │     an endpoint that may be used other than once
-  │ │   │                   checked against `-F Unit`; while forcing this
+4 │ │   let desk = fork (seat : end) { force thunk { close(seat) } };
+  │ │   ┬──                            ┬─────┯━━━━━━━━━━━━━━━━━━━━
+  │ │   │                              │     │
+  │ │   │                              │     an endpoint that may be used other than once
+  │ │   │                              checked against `-F Unit`; while forcing this
   │ │   the endpoint was opened by this fork
   │ │   checked against `-F Unit`; while checking the child this forks
 5 │ │   close(desk)

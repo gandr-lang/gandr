@@ -273,7 +273,7 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         [(String::from("seat"), String::from("seat"))],
         "the parameter used inside the refused `drop` names its binder"
     );
-    let endpoint = "def forked() -> -F Unit {\n  fork (seat : end) { close(seat) } as desk;\n  \
+    let endpoint = "def forked() -> -F Unit {\n  let desk = fork (seat : end) { close(seat) };\n  \
                     dup(desk)\n}\n";
     assert_eq!(
         resolved(SourceText::from(endpoint), SourceText::from("dup(")),

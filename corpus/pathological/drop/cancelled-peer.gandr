@@ -19,14 +19,14 @@
 @[ runs("7") ]
 def cancelled() -> Integer {
   handle c : Proc {
-    fork (peer : !Integer. !Integer. end) {
+    let found = fork (peer : !Integer. !Integer. end) {
       send(peer, 1);
       send(peer, 2);
       close(peer)
-    } as found;
-    recv(found) as first;
+    };
+    let first = recv(found);
     c.exit(1);
-    recv(found) as second;
+    let second = recv(found);
     close(found);
     pure second
   } with {

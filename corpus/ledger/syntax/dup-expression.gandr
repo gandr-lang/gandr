@@ -2,7 +2,7 @@
 /// The checker does not reach this form yet; #1501 tracks it.
 @[ refuses("OutOfFragment.dup_expression") ]
 def duplicated() -> -F Unit {
-  fork (seat : end) { close(seat) } as desk;
+  let desk = fork (seat : end) { close(seat) };
   dup(desk);
   close(desk)
 }

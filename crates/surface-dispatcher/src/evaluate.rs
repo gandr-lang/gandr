@@ -3843,9 +3843,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_traced_run_names_each_channel_by_its_fork_3338()
     {
         let mut forking = program(
-            "def ping() -> Unit {\n  fork (a : ?Integer. !Integer. end) { recv(a) as n; \
-             send(a, n); close(a) } as p;\n  fork (b : !Integer. end) { send(b, 2); close(b) } \
-             as q;\n  send(p, 1);\n  recv(p) as m;\n  recv(q) as k;\n  close(p);\n  close(q)\n}\n",
+            "def ping() -> Unit {\n  let p = fork (a : ?Integer. !Integer. end) { let n = recv(a); \
+             send(a, n); close(a) };\n  let q = fork (b : !Integer. end) { send(b, 2); close(b) \
+             };\n  send(p, 1);\n  let m = recv(p);\n  let k = recv(q);\n  close(p);\n  close(q)\n}\n",
         );
         let ping = forking
             .declarations

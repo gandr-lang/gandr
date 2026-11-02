@@ -26,12 +26,12 @@ import "./task-base.gandr";
   )))
 ]
 def spokenFirst() -> Unit {
-  fork (task : Task.Volunteer) {
+  let heard = fork (task : Task.Volunteer) {
     send(task, Task.notes);
-    recv(task) as answer;
+    let answer = recv(task);
     close(task)
-  } as heard;
-  recv(heard) as told;
+  };
+  let told = recv(heard);
   send(heard, told);
   close(heard)
 }

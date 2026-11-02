@@ -3,7 +3,7 @@ error[ContinuationUnspent]: the operation's continuation holds something that mu
    │
 12 │ ┌  def dropped() -> -F Unit {
 13 │ │┌   handle c : Proc {
-14 │ ││     fork (task : Cancel.Join) {
+14 │ ││     let found = fork (task : Cancel.Join) {
 15 │ ││       send(task, Cancel.notes);
 16 │ ││       close(task)
    ┆ ┆┆

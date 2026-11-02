@@ -8,12 +8,12 @@ import "./cancel-base.gandr";
 @[ runs("unit") ]
 def resumed() -> Unit {
   handle c : Proc {
-    fork (task : Cancel.Join) {
+    let found = fork (task : Cancel.Join) {
       send(task, Cancel.notes);
       close(task)
-    } as found;
+    };
     c.exit(1);
-    recv(found) as text;
+    let text = recv(found);
     close(found)
   } with {
     pure(x) => pure x,

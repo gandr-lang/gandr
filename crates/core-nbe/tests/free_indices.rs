@@ -1122,7 +1122,7 @@ fn computations() -> [Former; 27]
             consumed: &[],
         },
         Former {
-            what: "fork (c : !El x2. end) { close c } as d; close 1",
+            what: "let d = fork (c : !El x2. end) { close c }; close 1",
             build: |a| {
                 let payload = decoded(a, Index(2));
                 let protocol = sending(a, payload);

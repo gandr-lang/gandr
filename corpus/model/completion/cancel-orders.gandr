@@ -10,40 +10,40 @@ import "./ring-base.gandr";
 
 /// The target's completion reaped before the cancellation's.
 def targetFirst() -> Unit {
-  fork (target : Ring.Submission) {
-    recv(target) as sqe;
+  let pending = fork (target : Ring.Submission) {
+    let sqe = recv(target);
     send(target, Ring.done);
     close(target)
-  } as pending;
-  fork (canceller : Ring.Submission) {
-    recv(canceller) as sqe;
+  };
+  let cancel = fork (canceller : Ring.Submission) {
+    let sqe = recv(canceller);
     send(canceller, Ring.done);
     close(canceller)
-  } as cancel;
+  };
   send(pending, Ring.read);
   send(cancel, Ring.read);
-  recv(pending) as first;
-  recv(cancel) as second;
+  let first = recv(pending);
+  let second = recv(cancel);
   close(pending);
   close(cancel)
 }
 
 /// The cancellation's completion reaped before the target's.
 def cancelFirst() -> Unit {
-  fork (target : Ring.Submission) {
-    recv(target) as sqe;
+  let pending = fork (target : Ring.Submission) {
+    let sqe = recv(target);
     send(target, Ring.done);
     close(target)
-  } as pending;
-  fork (canceller : Ring.Submission) {
-    recv(canceller) as sqe;
+  };
+  let cancel = fork (canceller : Ring.Submission) {
+    let sqe = recv(canceller);
     send(canceller, Ring.done);
     close(canceller)
-  } as cancel;
+  };
   send(pending, Ring.read);
   send(cancel, Ring.read);
-  recv(cancel) as first;
-  recv(pending) as second;
+  let first = recv(cancel);
+  let second = recv(pending);
   close(cancel);
   close(pending)
 }
@@ -51,21 +51,21 @@ def cancelFirst() -> Unit {
 /// The target's pending completion moved into the cancellation, which reaps it
 /// and then posts its own: the submitter keeps only the cancellation's.
 def cancelConsumes() -> Unit {
-  fork (target : Ring.Submission) {
-    recv(target) as sqe;
+  let pending = fork (target : Ring.Submission) {
+    let sqe = recv(target);
     send(target, Ring.done);
     close(target)
-  } as pending;
-  fork (canceller : Ring.Cancelling) {
-    recv(canceller) as owed;
-    recv(owed) as reaped;
+  };
+  let cancel = fork (canceller : Ring.Cancelling) {
+    let owed = recv(canceller);
+    let reaped = recv(owed);
     close(owed);
     send(canceller, Ring.done);
     close(canceller)
-  } as cancel;
+  };
   send(pending, Ring.read);
   send(cancel, pending);
-  recv(cancel) as own;
+  let own = recv(cancel);
   close(cancel)
 }
 
@@ -73,17 +73,17 @@ def cancelConsumes() -> Unit {
 /// a receive whose payload is itself a receive. It takes the target's pending
 /// completion, reaps it and posts nothing of its own.
 def cancelWrittenOut() -> Unit {
-  fork (target : Ring.Submission) {
-    recv(target) as sqe;
+  let pending = fork (target : Ring.Submission) {
+    let sqe = recv(target);
     send(target, Ring.done);
     close(target)
-  } as pending;
-  fork (canceller : ?(?(Ring.Cqe). end). end) {
-    recv(canceller) as owed;
-    recv(owed) as reaped;
+  };
+  let cancel = fork (canceller : ?(?(Ring.Cqe). end). end) {
+    let owed = recv(canceller);
+    let reaped = recv(owed);
     close(owed);
     close(canceller)
-  } as cancel;
+  };
   send(pending, Ring.read);
   send(cancel, pending);
   close(cancel)

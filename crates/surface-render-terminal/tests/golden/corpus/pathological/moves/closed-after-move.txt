@@ -2,14 +2,14 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/moves/closed-after-move.gandr:19:3
    │
 11 │ ┌ def closedAfterMove() -> Unit {
-12 │ │   fork (owner : File.Handle) { close(owner) } as file;
-   │ │   ┬───
+12 │ │   let file = fork (owner : File.Handle) { close(owner) };
+   │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the rest of this fork's parent
-13 │ │   fork (closer : File.Closer) {
-   │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
-14 │ │     recv(closer) as held;
+13 │ │   let task = fork (closer : File.Closer) {
+   │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
+14 │ │     let held = recv(closer);
    ┆ ┆
 18 │ │   send(task, file);
    │ │   ──────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit

@@ -1,0 +1,8 @@
+error[OutOfFragment.Unbound]: a receive gives its message and a fork its parent's end, each linear, and no name holds this one
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Unbound.gandr:4:3
+  │
+4 │   fork (seat : end) { close(seat) };
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an end no `let` binds to a name
+  │
+  ├ note: `forked_unbound` is refused with OutOfFragment.Unbound, as its expectation states
+  ╰ help: bind it to a name with `let`: `let x = recv(c);` or `let d = fork (c : S) t;`

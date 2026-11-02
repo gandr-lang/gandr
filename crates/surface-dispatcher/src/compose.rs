@@ -6194,12 +6194,12 @@ def nestedAtHere(A : Type, x : A) -> Path(
         let grammar = grammar();
         let source = SourceText::from(
             "def finished() -> -F Unit {
-  fork (seat : end) { close(seat) } as desk;
+  let desk = fork (seat : end) { close(seat) };
   close(desk)
 }
 def delivered() -> -F Unit {
-  fork (seat : !Integer. end) { send(seat, 1); close(seat) } as desk;
-  recv(desk) as n;
+  let desk = fork (seat : !Integer. end) { send(seat, 1); close(seat) };
+  let n = recv(desk);
   close(desk)
 }
 ",
@@ -7328,8 +7328,8 @@ def delivered() -> -F Unit {
         );
         assert_eq!(
             unused(
-                "def seat_left_open(n : Integer) -> -F Unit {\n  fork (seat : end) { pure unit } as \
-                 desk;\n  close(desk)\n}\n"
+                "def seat_left_open(n : Integer) -> -F Unit {\n  let desk = fork (seat : end) { pure \
+                 unit };\n  close(desk)\n}\n"
             ),
             ["1:n"],
             "a fork's unused end is the checker's refusal and no lambda's or bind's, but the \

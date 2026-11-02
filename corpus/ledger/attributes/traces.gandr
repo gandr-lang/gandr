@@ -9,10 +9,10 @@
   ))
 ]
 def asked() -> Unit {
-  fork (task : !String. end) {
+  let heard = fork (task : !String. end) {
     send(task, "yes");
     close(task)
-  } as heard;
-  recv(heard) as said;
+  };
+  let said = recv(heard);
   close(heard)
 }

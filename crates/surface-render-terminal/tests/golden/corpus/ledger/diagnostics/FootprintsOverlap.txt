@@ -5,8 +5,8 @@ error[FootprintsOverlap]: both halves of this fork may use the authority found h
    │   │          ─ checked against `Cap {read, write} -> -F [Fs] Unit`; while checking the body of this function; binds c : Cap {read, write}
    │ ┌─┘
    │ │
-13 │ │   fork (task : end) {
-   │ │   ━━━━ authority both halves of a fork hold, one to change: found `Cap {read, write}`
+13 │ │   let found = fork (task : end) {
+   │ │   ━━━ authority both halves of a fork hold, one to change: found `Cap {read, write}`
 14 │ │     c.write("notes", "task");
 15 │ │     close(task)
    ┆ ┆

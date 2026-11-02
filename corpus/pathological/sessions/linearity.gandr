@@ -1,25 +1,25 @@
 @[ refuses("LinearResidue") ]
 def seat_left_open() -> Unit {
-  fork (seat : end) { pure unit } as desk;
+  let desk = fork (seat : end) { pure unit };
   close(desk)
 }
 
 @[ refuses("UsedAfterClose") ]
 def seat_closed_twice() -> Unit {
-  fork (seat : end) { close(seat); close(seat) } as desk;
+  let desk = fork (seat : end) { close(seat); close(seat) };
   close(desk)
 }
 
 @[ refuses("EndpointUsedTwice") ]
 def seat_sent_over_itself() -> Unit {
-  fork (seat : !String. end) { send(seat, seat); close(seat) } as desk;
-  recv(desk) as task;
+  let desk = fork (seat : !String. end) { send(seat, seat); close(seat) };
+  let task = recv(desk);
   close(desk)
 }
 
 @[ refuses("CapturedEndpoint") ]
 def seat_closed_in_a_thunk() -> Unit {
-  fork (seat : end) { force thunk { close(seat) } } as desk;
+  let desk = fork (seat : end) { force thunk { close(seat) } };
   close(desk)
 }
 
@@ -27,13 +27,13 @@ def seat_closed_in_a_thunk() -> Unit {
 /// acts on a spent slot (Honda, Vasconcelos and Kubo, doi:10.1007/BFb0053567).
 @[ refuses("UsedAfterClose") ]
 def seat_closed_after_delegating() -> Unit {
-  fork (seat : !end. end) {
-    fork (inner : end) { close(inner) } as held;
+  let desk = fork (seat : !end. end) {
+    let held = fork (inner : end) { close(inner) };
     send(seat, held);
     close(held);
     close(seat)
-  } as desk;
-  recv(desk) as passed;
+  };
+  let passed = recv(desk);
   close(passed);
   close(desk)
 }
@@ -42,26 +42,26 @@ def seat_closed_after_delegating() -> Unit {
 /// still open.
 @[ refuses("LinearResidue") ]
 def received_seat_left_open() -> Unit {
-  fork (seat : !end. end) {
-    fork (inner : end) { close(inner) } as held;
+  let desk = fork (seat : !end. end) {
+    let held = fork (inner : end) { close(inner) };
     send(seat, held);
     close(seat)
-  } as desk;
-  recv(desk) as passed;
+  };
+  let passed = recv(desk);
   close(desk)
 }
 
 @[ refuses("EndpointAsValue") ]
 def seat_returned() -> Unit {
-  fork (seat : end) { pure seat } as desk;
+  let desk = fork (seat : end) { pure seat };
   close(desk)
 }
 
 @[ refuses("ArmsDisagree") ]
 def seat_arms_leave_it_apart() -> Unit {
-  fork (seat : &{next : end, retire : end}) {
+  let desk = fork (seat : &{next : end, retire : end}) {
     offer(seat) { next => close(seat), retire => pure unit }
-  } as desk;
+  };
   select(desk, next);
   close(desk)
 }

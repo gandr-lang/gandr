@@ -70,10 +70,10 @@ def receivedKept() -> Unit {
   } with {
     pure(x) => pure x,
     oper alloc(n, b, k) => {
-      fork (kernel : ?Buf. end) {
-        recv(kernel) as held;
+      let ring = fork (kernel : ?Buf. end) {
+        let held = recv(kernel);
         close(kernel)
-      } as ring;
+      };
       send(ring, b);
       close(ring)
     },
@@ -90,15 +90,15 @@ def receivedReturnedTwice() -> Unit {
   } with {
     pure(x) => pure x,
     oper alloc(n, b, k) => {
-      fork (kernel : ?Buf. !Buf. !Buf. end) {
-        recv(kernel) as held;
+      let ring = fork (kernel : ?Buf. !Buf. !Buf. end) {
+        let held = recv(kernel);
         send(kernel, held);
         send(kernel, held);
         close(kernel)
-      } as ring;
+      };
       send(ring, b);
-      recv(ring) as first;
-      recv(ring) as second;
+      let first = recv(ring);
+      let second = recv(ring);
       close(ring);
       k(first)
     },

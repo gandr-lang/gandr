@@ -431,6 +431,10 @@ fn lowered(
                 FragmentBoundary::View => f.write_str(
                     "`resume` and `abort` end a view: the name an `access` binds after `as`",
                 ),
+                FragmentBoundary::Unbound => f.write_str(
+                    "a receive gives its message and a fork its parent's end, each linear, and \
+                     no name holds this one",
+                ),
             }
         },
         LoweringRefusal::BareFeedback { .. } => f.write_str(

@@ -2,8 +2,8 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
   ╭▸ corpus/pathological/sessions/linearity.gandr:3:3
   │
 2 │ ┌ def seat_left_open() -> Unit {
-3 │ │   fork (seat : end) { pure unit } as desk;
-  │ │   ┯━━━
+3 │ │   let desk = fork (seat : end) { pure unit };
+  │ │   ┯━━
   │ │   │
   │ │   an endpoint left unconsumed: found `end`
   │ │   the endpoint was opened by this fork
@@ -15,13 +15,13 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
   ╰ help: close the endpoint before the fork half or receive body that bound it ends
 
 error[UsedAfterClose]: the endpoint is used after `close`
-   ╭▸ corpus/pathological/sessions/linearity.gandr:9:36
+   ╭▸ corpus/pathological/sessions/linearity.gandr:9:47
    │
  8 │ ┌ def seat_closed_twice() -> Unit {
- 9 │ │   fork (seat : end) { close(seat); close(seat) } as desk;
-   │ │   ┬───                ┬──────────  ━━━━━━━━━━━ an endpoint already closed
-   │ │   │                   │
-   │ │   │                   checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+ 9 │ │   let desk = fork (seat : end) { close(seat); close(seat) };
+   │ │   ┬──                            ┬──────────  ━━━━━━━━━━━ an endpoint already closed
+   │ │   │                              │
+   │ │   │                              checked against `-F Unit`; while checking the body of this split; binds _ : Unit
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
 10 │ │   close(desk)
@@ -31,17 +31,17 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╰ note: `seat_closed_twice` is refused with UsedAfterClose, as its expectation states
 
 error[EndpointUsedTwice]: one action names the endpoint twice
-   ╭▸ corpus/pathological/sessions/linearity.gandr:15:43
+   ╭▸ corpus/pathological/sessions/linearity.gandr:15:54
    │
 14 │ ┌ def seat_sent_over_itself() -> Unit {
-15 │ │   fork (seat : !String. end) { send(seat, seat); close(seat) } as desk;
-   │ │   ┬───                         ┬──────────┯━━━─
-   │ │   │                            │          │
-   │ │   │                            │          an endpoint used twice in one action
-   │ │   │                            checked against `-F Unit`; while synthesising the computation this binds
+15 │ │   let desk = fork (seat : !String. end) { send(seat, seat); close(seat) };
+   │ │   ┬──                                     ┬──────────┯━━━─
+   │ │   │                                       │          │
+   │ │   │                                       │          an endpoint used twice in one action
+   │ │   │                                       checked against `-F Unit`; while synthesising the computation this binds
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
-16 │ │   recv(desk) as task;
+16 │ │   let task = recv(desk);
 17 │ │   close(desk)
 18 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
@@ -49,14 +49,14 @@ error[EndpointUsedTwice]: one action names the endpoint twice
    ╰ note: `seat_sent_over_itself` is refused with EndpointUsedTwice, as its expectation states
 
 error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it other than once
-   ╭▸ corpus/pathological/sessions/linearity.gandr:22:29
+   ╭▸ corpus/pathological/sessions/linearity.gandr:22:40
    │
 21 │ ┌ def seat_closed_in_a_thunk() -> Unit {
-22 │ │   fork (seat : end) { force thunk { close(seat) } } as desk;
-   │ │   ┬───                ┬─────┯━━━━━━━━━━━━━━━━━━━━
-   │ │   │                   │     │
-   │ │   │                   │     an endpoint that may be used other than once
-   │ │   │                   checked against `-F Unit`; while forcing this
+22 │ │   let desk = fork (seat : end) { force thunk { close(seat) } };
+   │ │   ┬──                            ┬─────┯━━━━━━━━━━━━━━━━━━━━
+   │ │   │                              │     │
+   │ │   │                              │     an endpoint that may be used other than once
+   │ │   │                              checked against `-F Unit`; while forcing this
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
 23 │ │   close(desk)
@@ -69,10 +69,10 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/sessions/linearity.gandr:33:5
    │
 29 │ ┌ def seat_closed_after_delegating() -> Unit {
-30 │ │   fork (seat : !end. end) {
-   │ │   ──── checked against `-F Unit`; while checking the child this forks
-31 │ │     fork (inner : end) { close(inner) } as held;
-   │ │     ┬───
+30 │ │   let desk = fork (seat : !end. end) {
+   │ │   ─── checked against `-F Unit`; while checking the child this forks
+31 │ │     let held = fork (inner : end) { close(inner) };
+   │ │     ┬──
    │ │     │
    │ │     the endpoint was opened by this fork
    │ │     checked against `-F Unit`; while checking the rest of this fork's parent
@@ -91,13 +91,13 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    ╭▸ corpus/pathological/sessions/linearity.gandr:50:3
    │
 44 │ ┌ def received_seat_left_open() -> Unit {
-45 │ │   fork (seat : !end. end) {
-   │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
-46 │ │     fork (inner : end) { close(inner) } as held;
+45 │ │   let desk = fork (seat : !end. end) {
+   │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
+46 │ │     let held = fork (inner : end) { close(inner) };
 47 │ │     send(seat, held);
    ┆ ┆
-50 │ │   recv(desk) as passed;
-   │ │   ┯━━━
+50 │ │   let passed = recv(desk);
+   │ │   ┯━━
    │ │   │
    │ │   an endpoint left unconsumed: found `end`
    │ │   the endpoint was received here
@@ -109,14 +109,14 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    ╰ help: close the endpoint before the fork half or receive body that bound it ends
 
 error[EndpointAsValue]: an endpoint can be used only by a session action
-   ╭▸ corpus/pathological/sessions/linearity.gandr:56:28
+   ╭▸ corpus/pathological/sessions/linearity.gandr:56:39
    │
 55 │ ┌ def seat_returned() -> Unit {
-56 │ │   fork (seat : end) { pure seat } as desk;
-   │ │   ┬───                ┬────┯━━━
-   │ │   │                   │    │
-   │ │   │                   │    an endpoint read as a value
-   │ │   │                   checked against `-F Unit`; while judging the value this returns
+56 │ │   let desk = fork (seat : end) { pure seat };
+   │ │   ┬──                            ┬────┯━━━
+   │ │   │                              │    │
+   │ │   │                              │    an endpoint read as a value
+   │ │   │                              checked against `-F Unit`; while judging the value this returns
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
 57 │ │   close(desk)
@@ -129,8 +129,8 @@ error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different s
    ╭▸ corpus/pathological/sessions/linearity.gandr:63:50
    │
 61 │ ┌ def seat_arms_leave_it_apart() -> Unit {
-62 │ │   fork (seat : &{next : end, retire : end}) {
-   │ │   ┬───
+62 │ │   let desk = fork (seat : &{next : end, retire : end}) {
+   │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
@@ -140,7 +140,7 @@ error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different s
    │ │     │                     │                      an arm that leaves the endpoints otherwise
    │ │     │                     the arm it disagrees with
    │ │     checked against `-F Unit`; while checking an arm of this offer
-64 │ │   } as desk;
+64 │ │   };
 65 │ │   select(desk, next);
 66 │ │   close(desk)
 67 │ │ }

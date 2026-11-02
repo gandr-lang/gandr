@@ -1268,6 +1268,10 @@ mod tests
             row("select", "select (${1:value}, ${2:identifier})"),
             row("dup", "dup (${1:value})"),
             row("drop", "drop (${1:value})"),
+            row("recv", "recv (${1:value})"),
+            row("acquire", "acquire (${1:value})"),
+            row("release", "release (${1:value})"),
+            row("fork", "fork (${1:identifier} : ${2:type}) ${3:value}"),
             row(
                 "access",
                 "access ${1:identifier} as ${2:identifier} { ${3:computation} \\}",

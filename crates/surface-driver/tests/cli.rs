@@ -489,8 +489,8 @@ fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
                        parallel(series(event(left, 1), event(left, 2)), event(right, 2)))";
     let text = format!(
         "@[ runs(\"unit\"), traces(decomposes(task, {asked_first})) ]\ndef swapped() -> Unit \
-         {{\n  fork (task : !String. ?String. end) {{\n    send(task, \"notes\");\n    \
-         recv(task) as answer;\n    close(task)\n  }} as asked;\n  recv(asked) as told;\n  \
+         {{\n  let asked = fork (task : !String. ?String. end) {{\n    send(task, \"notes\");\n    \
+         let answer = recv(task);\n    close(task)\n  }};\n  let told = recv(asked);\n  \
          send(asked, told);\n  close(asked)\n}}\n"
     );
     let scratch = Scratch::new(Path::new("traced"));

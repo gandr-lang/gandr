@@ -1,17 +1,17 @@
 error[OutOfFragment.WrongSort]: a primitive type cannot stand where a session continuation is expected
-   ╭▸ corpus/pathological/sessions/fragment.gandr:14:26
+   ╭▸ corpus/pathological/sessions/fragment.gandr:14:37
    │
-14 │   fork (seat : !Integer. Integer) { close(seat) } as desk;
-   │                          ━━━━━━━ a form of another sort than this position takes
+14 │   let desk = fork (seat : !Integer. Integer) { close(seat) };
+   │                                     ━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `value_type_as_continuation` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a session continuation in this position
 
 error[MalformedForm]: a keyword or symbol of this select session type is out of place
-   ╭▸ corpus/pathological/sessions/fragment.gandr:20:28
+   ╭▸ corpus/pathological/sessions/fragment.gandr:20:39
    │
-20 │   fork (seat : !Integer. +{end, end}) { close(seat) } as desk;
-   │                            ━━━ out of place
+20 │   let desk = fork (seat : !Integer. +{end, end}) { close(seat) };
+   │                                       ━━━ out of place
    │
    ├ note: `branch_without_label` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the select session type
@@ -26,9 +26,9 @@ error[OutOfFragment.Endpoint]: a session action acts on an endpoint: a name a `f
   ╰ note: tracked by #1862 <https://github.com/gandr-lang/gandr/issues/1862>
 
 error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `rec`
-  ╭▸ corpus/pathological/sessions/fragment.gandr:8:16
+  ╭▸ corpus/pathological/sessions/fragment.gandr:8:27
   │
-8 │   fork (seat : mu turn. turn) { close(seat) } as desk;
-  │                ━━━━━━━━━━━━━ recurses before any action
+8 │   let desk = fork (seat : mu turn. turn) { close(seat) };
+  │                           ━━━━━━━━━━━━━ recurses before any action
   │
   ╰ note: `recursion_before_any_action` is refused with OutOfFragment.NonContractive, as its expectation states

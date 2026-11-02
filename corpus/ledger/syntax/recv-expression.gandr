@@ -1,0 +1,7 @@
+/// `recv_expression`: a receive over a session endpoint, the value a `let` binds.
+@[ checks ]
+def received() -> -F Unit {
+  let desk = fork (seat : !Integer. end) { send(seat, 1); close(seat) };
+  let n = recv(desk);
+  close(desk)
+}

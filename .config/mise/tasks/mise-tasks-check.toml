@@ -172,6 +172,7 @@ rule_sources = [
   "crates/surface-grammar/src/surface/circuit.rs",
 ]
 unproduced = [
+  { rule = "acquire_expression", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },
   { rule = "as_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
   { rule = "attribute_block", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "attributed_module_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
@@ -227,6 +228,7 @@ unproduced = [
   { rule = "rec_block", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "record_selection_expression", reason = "sugar the lowering elaborates away: a sub-record lowers to each field's projection bound in turn and the record of them returned, which the printer writes as `bind_statement`, `projection_expression` and `telescope_expression`" },
   { rule = "redirection_operator", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "release_expression", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },
   { rule = "representable_universe_type", reason = "a sort member's classifier: a `theory` block lowers to its presentation, never to a core type, and the lowering refuses `Type+` anywhere else (`OutOfFragment`)" },
   { rule = "rest_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
   { rule = "shell_block", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },

@@ -8,20 +8,20 @@ import "./ring-base.gandr";
 /// The target's completion reaped first, each half and the body ending in a
 /// closing statement.
 def closedAsStatements() -> Unit {
-  fork (target : Ring.Submission) {
-    recv(target) as sqe;
+  let pending = fork (target : Ring.Submission) {
+    let sqe = recv(target);
     send(target, Ring.done);
     close(target);
-  } as pending;
-  fork (canceller : Ring.Submission) {
-    recv(canceller) as sqe;
+  };
+  let cancel = fork (canceller : Ring.Submission) {
+    let sqe = recv(canceller);
     send(canceller, Ring.done);
     close(canceller);
-  } as cancel;
+  };
   send(pending, Ring.read);
   send(cancel, Ring.read);
-  recv(pending) as first;
-  recv(cancel) as second;
+  let first = recv(pending);
+  let second = recv(cancel);
   close(pending);
   close(cancel);
 }

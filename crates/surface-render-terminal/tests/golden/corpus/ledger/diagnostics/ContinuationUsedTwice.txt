@@ -3,8 +3,8 @@ error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second 
    │
 25 │ ┌  def resumedTwice() -> -F Unit {
 26 │ │┌   handle c : Proc {
-27 │ ││     fork (kernel : Ring.Submission) {
-28 │ ││       recv(kernel) as sqe;
+27 │ ││     let ring = fork (kernel : Ring.Submission) {
+28 │ ││       let sqe = recv(kernel);
 29 │ ││       send(kernel, Ring.done);
    ┆ ┆┆
 38 │ ││     oper exit(code, k) => { run first <- k(unit) ; k(unit) }

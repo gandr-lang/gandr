@@ -35,7 +35,7 @@ def forked(rounds : Nat) -> Integer {
   hold c = 100;
   run settled <- match rounds {
     Zero => return 7,
-    Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
+    Succ(fewer) => { let desk = fork (seat : end) { close(seat) }; close(desk) }
   };
   pure c
 }
@@ -44,7 +44,7 @@ def forked(rounds : Nat) -> Integer {
 def forkPastAnExit(rounds : Nat) -> Unit {
   run settled <- match rounds {
     Zero => return unit,
-    Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
+    Succ(fewer) => { let desk = fork (seat : end) { close(seat) }; close(desk) }
   };
   settled
 }

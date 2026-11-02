@@ -1,7 +1,7 @@
 /// `send_expression`: a send over a session endpoint.
 @[ checks ]
 def deliver() -> -F Unit {
-  fork (seat : ?Integer. end) { recv(seat) as n; close(seat) } as desk;
+  let desk = fork (seat : ?Integer. end) { let n = recv(seat); close(seat) };
   send(desk, 1);
   close(desk)
 }

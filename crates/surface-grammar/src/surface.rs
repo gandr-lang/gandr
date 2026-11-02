@@ -292,7 +292,6 @@ const PREC_EDGES: &[(&str, &str)] = &[
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
 pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
-    "acquire_statement",
     "and_expression",
     "annotation_expression",
     "argument",
@@ -333,8 +332,6 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "f_type",
     "file_descriptor",
     "force_expression",
-    "fork_shared_statement",
-    "fork_statement",
     "function_type",
     "grade",
     "hold_expression",
@@ -378,10 +375,8 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "record_type",
     "record_type_field",
     "record_update_expression",
-    "recv_statement",
     "redirection",
     "redirection_operator",
-    "release_statement",
     "rest_pattern",
     "pure_expression",
     "select_expression",
@@ -430,6 +425,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     // construct kinds (new rule provenances)
     "abort_expression",
     "access_expression",
+    "acquire_expression",
     "assignment_statement",
     "become_expression",
     "bind_expression",
@@ -445,6 +441,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "equivalence_type",
     "flow_declaration",
     "for_expression",
+    "fork_expression",
     "forget_model_expression",
     "glob_expression",
     "handle_expression",
@@ -464,6 +461,8 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "manifest_sort",
     "manifest_type",
     "moded_type",
+    "recv_expression",
+    "release_expression",
     "offers_declaration",
     "pack_expression",
     "pack_model_expression",

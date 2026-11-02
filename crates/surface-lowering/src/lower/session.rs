@@ -35,9 +35,9 @@
 //!
 //! # An endpoint is a name a fork binds
 //!
-//! `fork (c : S) { t } as d ;` binds `c` over the child block `t` and `d` over
-//! the rest of the enclosing block, each in the linear zone, whose binders a
-//! name counts apart from the intuitionistic ones (the `resolve` module): a
+//! `let d = fork (c : S) { t };` binds `c` over the child block `t` and `d`
+//! over the rest of the enclosing block, each in the linear zone, whose binders
+//! a name counts apart from the intuitionistic ones (the `resolve` module): a
 //! linear variable's index counts the linear binders between it and its
 //! binder, and an intuitionistic one's the intuitionistic binders. An
 //! action's endpoint operand is a name resolving to a linear binder; any other
@@ -63,10 +63,11 @@
 //! unit, so `send(c, v);` discards that unit as any statement does. `offer(c)
 //! { l => t, … }` runs the arm of the label the peer chose, each arm's pattern
 //! a label, and passes the paths through it and its answer to each arm as a
-//! match does, so an arm may end its function. `recv(c) as x ;` binds the
-//! payload over the rest of the block as `run x <- c ;` binds a returned
-//! value; the receive is planned at its `recv` keyword, which no other form
-//! reads.
+//! match does, so an arm may end its function. `let x = recv(c);` binds the
+//! payload over the rest of the block as `let x = f(c);` binds a returned
+//! value. A receive and a fork each give one linear end, so the `let` that
+//! binds it reads them, and either standing anywhere else is refused as
+//! unbound.
 //!
 //! An early exit commutes through an offer's arms and a fork's parent, which
 //! bind no intuitionistic variable (the `lower::exits` module). A fork in a
@@ -881,8 +882,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `operand` is the subject hole's operand of an action.
     /// - ensures: the linear index of the innermost binder of the name
-    ///   `operand` spells, when that binder is linear; the operand is left
-    ///   unread, since no value stands for it.
+    ///   `operand` spells, when that binder is linear, kept as the name's
+    ///   resolution; the operand is left unread, since no value stands for it.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
     ///   [`FragmentBoundary::Endpoint`] at the operand for any other form, an
     ///   intuitionistic binder or a declaration; the name's own refusals.
@@ -919,6 +920,7 @@ impl<'source> Lowerer<'_, 'source>
         let spelled = self.name_at(operand);
         match self.resolve_name(subject, frame, spelled)? {
             Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
+                self.resolved(operand.span, Resolved::Binder(bound));
                 Ok(bound.index)
             },
             Maybe::Present(_) => Err(subject.out(FragmentBoundary::Endpoint)),
@@ -930,7 +932,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a session action: `send(c, v)`, `select(c, l)`, `close(c)`,
-    /// `drop(c)` or `offer(c) { l => t, … }`.
+    /// `drop(c)` or `offer(c) { l => t, … }`; a receive or a fork stands here
+    /// only where no `let` binds it.
     ///
     /// # Specification
     /// - requires: `site` is a session action expression.
@@ -941,10 +944,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   read as a computation under the form's frame, keyed by the label its
     ///   pattern names, with the answer and the paths through the offer passed
     ///   to each.
-    /// - fails: the wrong-sort refusal where no computation is read; the
-    ///   endpoint's refusal; a pattern other than a label, refused as an
-    ///   unadmitted pattern; a label armed twice, as a duplicate definition;
-    ///   each hole's own fault.
+    /// - fails: a receive or a fork, unbound, and a shared fork, reserved; the
+    ///   wrong-sort refusal where no computation is read; the endpoint's
+    ///   refusal; a pattern other than a label, refused as an unadmitted
+    ///   pattern; a label armed twice, as a duplicate definition; each hole's
+    ///   own fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -958,6 +962,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
     /// - witness: `lower::session::tests::an_offer_arm_is_one_label`
     /// - witness: `lower::session::tests::a_drop_is_the_end_action_1054`
+    /// - witness: `lower::session::tests::a_receive_or_a_fork_no_let_binds_is_refused`
+    /// - witness: `lower::session::tests::sharing_is_reserved_by_name`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Action(..))))]
     pub(super) fn session_action(
         &mut self,
@@ -965,11 +971,17 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Computation)?;
         let Maybe::Present(Piece::Tile { label: keyword, .. }) = cursor.read()
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
+        if keyword == TileName::FORK && matches!(cursor.at(TileName::BANG), Maybe::Present(_)) {
+            return Err(site.out(FragmentBoundary::Reserved(Unbuilt::SharedFork)));
+        }
+        if keyword == TileName::RECV || keyword == TileName::FORK {
+            return Err(site.out(FragmentBoundary::Unbound));
+        }
+        let frame = self.require(site, Produced::Computation)?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let subject = site.one(cursor.operands())?;
         let mut arms = Vec::new();
@@ -1099,20 +1111,22 @@ impl<'source> Lowerer<'_, 'source>
         Ok((SessionAction::Offer { endpoint, arms }, labels))
     }
 
-    /// Read one `recv(c) as x ;` statement, its `recv` tile already read.
+    /// Read the receive `recv(c)` a `let` binds, as `let x = recv(c);`.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the statement's tile `recv`;
-    ///   `frame` is the frame the statement reads under.
+    /// - requires: `statement` is the `let` whose bound expression `bound` is a
+    ///   receive and whose pattern `binder` spells `name`; `frame` is the frame
+    ///   the statement reads under.
     /// - ensures: the statement is recorded as the receive on the endpoint `c`
-    ///   names over the rest of the block, and the frame binding `x` linearly
-    ///   over `frame`, which the rest of the block reads under, is returned.
-    /// - fails: the endpoint's refusal and a fault naming the receive statement
-    ///   for a tile out of shape.
+    ///   names over the rest of the block, and the frame binding `name`
+    ///   linearly over `frame`, which the rest of the block reads under, is
+    ///   returned.
+    /// - fails: the endpoint's refusal and a fault naming the receive for a
+    ///   tile out of shape.
     /// - panics: none.
     ///
     /// # Errors
-    /// The statement's refusal.
+    /// The receive's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the seat's receive binds the dispatch over the rest
@@ -1121,35 +1135,37 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
-            && self.statements.last().is_some_and(|last| last.origin == recv.node && matches!(last.binding, StatementBinding::Received { .. }))),
+            && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Received { .. }))),
     )]
     pub(super) fn receive(
         &mut self,
-        cursor: &mut Cursor<'_>,
-        recv: Placed,
+        statement: Site,
+        (binder, name): (Placed, SurfaceName<'source>),
+        bound: Placed,
         frame: Frame,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        let statement = Site {
-            at: recv,
-            name: FormName::RECV_STATEMENT,
+        let site = Site {
+            at: bound,
+            name: FormName::RECV_EXPRESSION,
             reading: Reading::Computation(frame),
         };
-        closed(statement, cursor, TileName::PAREN_OPEN)?;
-        let subject = statement.one(cursor.operands())?;
-        closed(statement, cursor, TileName::PAREN_CLOSE)?;
-        closed(statement, cursor, TileName::AS)?;
-        let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
-        else {
-            return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
-        };
-        closed(statement, cursor, TileName::SEMICOLON)?;
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, bound.node, &mut pieces)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(repaired.refusal(FormName::RECV_EXPRESSION));
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, bound.span);
+        closed(site, &mut cursor, TileName::RECV)?;
+        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
+        let subject = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        exhausted(site, &cursor)?;
         let endpoint = self.endpoint(frame, subject)?;
-        let name = self.name_at(binder);
         self.note_binder(binder, name)?;
         self.statements.push(Statement {
-            origin: recv.node,
-            bound: recv.node,
+            origin: statement.at.node,
+            bound: bound.node,
             binding: StatementBinding::Received {
                 endpoint,
                 subject: subject.span,
@@ -1165,72 +1181,79 @@ impl<'source> Lowerer<'_, 'source>
         )))
     }
 
-    /// Read one `fork (c : S) t as d ;` statement, its `fork` tile already
-    /// read.
+    /// Read the fork `fork (c : S) t` a `let` binds, as
+    /// `let d = fork (c : S) t;`.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the statement's tile `fork`, no
-    ///   `!` after it; `frame` is the frame the statement reads under.
+    /// - requires: `statement` is the `let` whose bound expression `bound` is a
+    ///   fork and whose pattern `binder` spells `name`; `frame` is the frame
+    ///   the statement reads under.
     /// - ensures: `S` is read as a value type under `frame` and `t` as a
     ///   computation under `c`'s linear binder over `frame`; the statement is
     ///   recorded as the fork of `t` over the rest of the block, and the frame
-    ///   binding `d` linearly over `frame`, which the rest of the block reads
-    ///   under, is returned.
-    /// - fails: a fault naming the fork statement for a tile out of shape, and
-    ///   each binder's own refusal.
+    ///   binding `name` linearly over `frame`, which the rest of the block
+    ///   reads under, is returned.
+    /// - fails: the shared fork `fork !(c : S) t`, reserved; a fault naming the
+    ///   fork for a tile out of shape, and each binder's own refusal.
     /// - panics: none.
     ///
     /// # Errors
-    /// The statement's refusal.
+    /// The fork's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the seat exchange forks the seat's end to the child
     ///   and holds the operator's in the rest of its block.
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
+    /// - witness: `lower::session::tests::sharing_is_reserved_by_name`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
-            && self.statements.last().is_some_and(|last| last.origin == fork.node && matches!(last.binding, StatementBinding::Forked { .. }))),
+            && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Forked { .. }))),
     )]
     pub(super) fn fork(
         &mut self,
-        cursor: &mut Cursor<'_>,
-        fork: Placed,
+        statement: Site,
+        (binder, name): (Placed, SurfaceName<'source>),
+        bound: Placed,
         frame: Frame,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        let statement = Site {
-            at: fork,
-            name: FormName::FORK_STATEMENT,
+        let site = Site {
+            at: bound,
+            name: FormName::FORK_EXPRESSION,
             reading: Reading::Computation(frame),
         };
-        closed(statement, cursor, TileName::PAREN_OPEN)?;
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, bound.node, &mut pieces)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(repaired.refusal(FormName::FORK_EXPRESSION));
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, bound.span);
+        closed(site, &mut cursor, TileName::FORK)?;
+        if let Maybe::Present(_) = cursor.at(TileName::BANG) {
+            return Err(site.out(FragmentBoundary::Reserved(Unbuilt::SharedFork)));
+        }
+        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let Maybe::Present(child_end) = cursor.tile(TileName::IDENTIFIER)
         else {
-            return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        closed(statement, cursor, TileName::COLON)?;
-        let protocol = statement.one(cursor.operands())?;
-        closed(statement, cursor, TileName::PAREN_CLOSE)?;
-        let child = statement.one(cursor.operands())?;
-        closed(statement, cursor, TileName::AS)?;
-        let Maybe::Present(parent_end) = cursor.tile(TileName::IDENTIFIER)
-        else {
-            return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
-        };
-        closed(statement, cursor, TileName::SEMICOLON)?;
+        closed(site, &mut cursor, TileName::COLON)?;
+        let protocol = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        let child = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
         let child_name = self.name_at(child_end);
         self.note_binder(child_end, child_name)?;
-        let parent_name = self.name_at(parent_end);
-        self.note_binder(parent_end, parent_name)?;
+        self.note_binder(binder, name)?;
         self.read(protocol.node, Reading::ValueType(frame));
         let held = self
             .scope
             .extend_linear(frame, child_name, Maybe::Present(child_end.span));
         self.read(child.node, Reading::Computation(Frame::Inner(held)));
         self.statements.push(Statement {
-            origin: fork.node,
-            bound: fork.node,
+            origin: statement.at.node,
+            bound: bound.node,
             binding: StatementBinding::Forked {
                 protocol: protocol.node,
                 child: child.node,
@@ -1241,8 +1264,8 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(Frame::Inner(self.scope.extend_linear(
             frame,
-            parent_name,
-            Maybe::Present(parent_end.span),
+            name,
+            Maybe::Present(binder.span),
         )))
     }
 

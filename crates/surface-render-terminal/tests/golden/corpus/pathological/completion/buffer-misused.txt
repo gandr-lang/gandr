@@ -88,10 +88,10 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 69 │ ││     r.free(b)
 70 │ ││   } with {
    ┆ ┆┆
-73 │ ││       fork (kernel : ?Buf. end) {
-   │ ││       ──── checked against `-F Unit`; while checking the child this forks
-74 │ ││         recv(kernel) as held;
-   │ ││         ━━━━ a buffer never handed back
+73 │ ││       let ring = fork (kernel : ?Buf. end) {
+   │ ││       ─── checked against `-F Unit`; while checking the child this forks
+74 │ ││         let held = recv(kernel);
+   │ ││         ━━━ a buffer never handed back
    ┆ ┆┆
 80 │ ││     oper free(b, k) => k(unit)
 81 │ ││   }
@@ -110,10 +110,10 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
  89 │ ││     r.free(b)
  90 │ ││   } with {
     ┆ ┆┆
- 93 │ ││       fork (kernel : ?Buf. !Buf. !Buf. end) {
-    │ ││       ──── checked against `-F Unit`; while checking the child this forks
- 94 │ ││         recv(kernel) as held;
-    │ ││         ──── checked against `-F Unit`; while checking the rest of this receive's block
+ 93 │ ││       let ring = fork (kernel : ?Buf. !Buf. !Buf. end) {
+    │ ││       ─── checked against `-F Unit`; while checking the child this forks
+ 94 │ ││         let held = recv(kernel);
+    │ ││         ─── checked against `-F Unit`; while checking the rest of this receive's block
  95 │ ││         send(kernel, held);
     │ ││         ────────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
  96 │ ││         send(kernel, held);

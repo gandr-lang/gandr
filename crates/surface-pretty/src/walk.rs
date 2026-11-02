@@ -10647,8 +10647,8 @@ impl Walk<'_, '_>
     ///   scope, in place of its clauses; a returner whose row's theory entries
     ///   fix sorts, `-F [a : T with sort C = A, I | t] B`, each fixed type a
     ///   piece, then the tail's and the result's; `c.op(v)`; `send(e, v)`,
-    ///   `recv(e)`, `select(e, l)`, `offer(e) { l => c }`, `close(e)` and `fork
-    ///   (a : S) { t } as a ; u`, each endpoint named by its binder; a
+    ///   `recv(e)`, `select(e, l)`, `offer(e) { l => c }`, `close(e)` and `let
+    ///   a = fork (a : S) { t } ; u`, each endpoint named by its binder; a
     ///   resumption of a continuation binder with a returned value as the
     ///   continuation's call, `k(v)`; a return ascribed its returner as the
     ///   annotated value `(v : T)`, under a `pure` unless a body ends there,
@@ -11403,18 +11403,18 @@ impl Walk<'_, '_>
             },
             Former::Fork { .. } => {
                 let _ = parts
-                    .text("fork (")
+                    .text("let ")
+                    .part(Part::Binder(0_usize))
+                    .text(" = fork (")
                     .part(Part::Binder(0_usize))
                     .text(" : ")
                     .piece(Binding::Arrow)
                     .text(") {")
                     .body()
-                    .text(" as ")
-                    .part(Part::Binder(0_usize))
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                writes(Production("block"), Binding::Sequence)
+                writes(Production("fork_expression"), Binding::Sequence)
             },
             Former::Hold { grade, .. } => {
                 let _ = parts
@@ -11432,14 +11432,14 @@ impl Walk<'_, '_>
             },
             Former::Receive { endpoint, .. } => {
                 let _ = parts
-                    .text("recv(")
-                    .part(Part::Endpoint(endpoint))
-                    .text(") as ")
+                    .text("let ")
                     .part(Part::Binder(0_usize))
-                    .text(" ;")
+                    .text(" = recv(")
+                    .part(Part::Endpoint(endpoint))
+                    .text(") ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                writes(Production("block"), Binding::Sequence)
+                writes(Production("recv_expression"), Binding::Sequence)
             },
             Former::Access {
                 held, place, mode, ..

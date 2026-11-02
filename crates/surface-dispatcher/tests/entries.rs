@@ -129,6 +129,12 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression for", Standing::Owed(0)),
     ("Expression force", Standing::Owed(0)),
     ("Expression forget", Standing::Owed(0)),
+    (
+        "Expression fork",
+        Standing::Design(
+            "a fork a `let` binds: the `let` answers, and its pattern at the end the fork gives",
+        ),
+    ),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
     ("Expression identifier", Standing::Owed(0)),
@@ -139,6 +145,12 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression offer", Standing::Owed(0)),
     ("Expression pack", Standing::Owed(0)),
     ("Expression pure", Standing::Design(EXIT)),
+    (
+        "Expression recv",
+        Standing::Design(
+            "a receive a `let` binds: the `let` answers, and its pattern at the payload",
+        ),
+    ),
     ("Expression resume", Standing::Owed(0)),
     ("Expression return", Standing::Owed(0)),
     ("Expression run", Standing::Owed(0)),

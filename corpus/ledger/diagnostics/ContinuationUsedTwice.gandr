@@ -24,14 +24,14 @@ module Ring :> #{
 @[ refuses("ContinuationUsedTwice") ]
 def resumedTwice() -> -F Unit {
   handle c : Proc {
-    fork (kernel : Ring.Submission) {
-      recv(kernel) as sqe;
+    let ring = fork (kernel : Ring.Submission) {
+      let sqe = recv(kernel);
       send(kernel, Ring.done);
       close(kernel)
-    } as ring;
+    };
     send(ring, Ring.read);
     c.exit(1);
-    recv(ring) as cqe;
+    let cqe = recv(ring);
     close(ring)
   } with {
     pure(x) => pure x,

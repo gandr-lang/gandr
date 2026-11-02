@@ -13,7 +13,7 @@
   )))
 ]
 def finished() -> Unit {
-  fork (seat : +{done : end}) { select(seat, done); drop(seat) } as desk;
+  let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
   offer(desk) { done => drop(desk) }
 }
 
@@ -21,6 +21,6 @@ def finished() -> Unit {
 /// beside the other.
 @[ runs("unit"), traces(decomposes(seat, parallel(event(left, 0), event(right, 0)))) ]
 def mixed() -> Unit {
-  fork (seat : end) { close(seat) } as desk;
+  let desk = fork (seat : end) { close(seat) };
   drop(desk)
 }

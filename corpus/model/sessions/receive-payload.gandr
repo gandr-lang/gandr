@@ -15,10 +15,10 @@
   )))
 ]
 def receivesAnOrder() -> Unit {
-  fork (seat : ?(+{go : Integer, stop : Unit}). end) {
-    recv(seat) as order;
+  let desk = fork (seat : ?(+{go : Integer, stop : Unit}). end) {
+    let order = recv(seat);
     close(seat)
-  } as desk;
+  };
   send(desk, (+{.go = 1} : +{go : Integer, stop : Unit}));
   close(desk)
 }

@@ -19,12 +19,12 @@
 @[ runs("7") ]
 def parked() -> Integer {
   handle c : Proc {
-    fork (peer : !Integer. ?Integer. end) {
+    let found = fork (peer : !Integer. ?Integer. end) {
       send(peer, 1);
-      recv(peer) as x;
+      let x = recv(peer);
       close(peer)
-    } as found;
-    recv(found) as first;
+    };
+    let first = recv(found);
     c.exit(1);
     send(found, 2);
     close(found);
@@ -40,10 +40,10 @@ def parked() -> Integer {
 @[ runs("7") ]
 def late() -> Integer {
   handle c : Proc {
-    fork (peer : ?Integer. end) {
-      recv(peer) as x;
+    let found = fork (peer : ?Integer. end) {
+      let x = recv(peer);
       close(peer)
-    } as found;
+    };
     c.exit(1);
     send(found, 2);
     close(found);
@@ -60,22 +60,22 @@ def late() -> Integer {
 @[ runs("7") ]
 def forwarded() -> Integer {
   handle c : Proc {
-    fork (relay : !(!Integer. end). end) {
-      fork (worker : ?Integer. end) {
-        recv(worker) as n;
+    let r = fork (relay : !(!Integer. end). end) {
+      let w = fork (worker : ?Integer. end) {
+        let n = recv(worker);
         close(worker)
-      } as w;
+      };
       send(relay, w);
       close(relay)
-    } as r;
-    fork (tick : !Integer. end) {
+    };
+    let t = fork (tick : !Integer. end) {
       send(tick, 1);
       close(tick)
-    } as t;
-    recv(t) as one;
+    };
+    let one = recv(t);
     close(t);
     c.exit(1);
-    recv(r) as held;
+    let held = recv(r);
     send(held, 3);
     close(held);
     close(r);

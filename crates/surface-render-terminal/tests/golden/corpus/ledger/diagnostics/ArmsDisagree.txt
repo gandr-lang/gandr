@@ -2,8 +2,8 @@ error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different s
   ╭▸ corpus/ledger/diagnostics/ArmsDisagree.gandr:5:50
   │
 3 │ ┌ def seat_arms_leave_it_apart() -> -F Unit {
-4 │ │   fork (seat : &{ next : end, retire : end }) {
-  │ │   ┬───
+4 │ │   let desk = fork (seat : &{ next : end, retire : end }) {
+  │ │   ┬──
   │ │   │
   │ │   the endpoint was opened by this fork
   │ │   checked against `-F Unit`; while checking the child this forks
@@ -13,7 +13,7 @@ error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different s
   │ │     │                     │                      an arm that leaves the endpoints otherwise
   │ │     │                     the arm it disagrees with
   │ │     checked against `-F Unit`; while checking an arm of this offer
-6 │ │   } as desk;
+6 │ │   };
 7 │ │   select(desk, next);
 8 │ │   close(desk)
 9 │ │ }

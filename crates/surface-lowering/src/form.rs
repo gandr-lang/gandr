@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 74_usize] = [
+    pub const ALL: [Self; 71_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -210,11 +210,8 @@ impl FormName
         Self::UNPACK_STATEMENT,
         Self::LETA_STATEMENT,
         Self::HOLD_STATEMENT,
-        Self::RECV_STATEMENT,
-        Self::ACQUIRE_STATEMENT,
-        Self::RELEASE_STATEMENT,
-        Self::FORK_STATEMENT,
-        Self::FORK_SHARED_STATEMENT,
+        Self::RECV_EXPRESSION,
+        Self::FORK_EXPRESSION,
         Self::EXPRESSION_STATEMENT,
         Self::MODULE,
         Self::FLOW,
@@ -267,8 +264,6 @@ impl FormName
     ];
     /// The visibility mark `pub` before a root declaration.
     pub const VISIBILITY: Self = Self("pub_declaration");
-    /// The statement `acquire …;`, inlined into its block.
-    pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
     /// An annotation: `(e : T)`, folded into the parenthesised expression, and
     /// `run x : B <- c ;`, inlined with its statement into the block.
     pub const ANNOTATION: Self = Self("annotation_expression");
@@ -282,10 +277,9 @@ impl FormName
     pub const DECLARATION: Self = Self("def_value");
     /// The statement `e ;`, inlined into its block.
     pub const EXPRESSION_STATEMENT: Self = Self("expression_statement");
-    /// The statement `fork !(…) { … } ;`, inlined into its block.
-    pub const FORK_SHARED_STATEMENT: Self = Self("fork_shared_statement");
-    /// The statement `fork (…) { … } as x ;`, inlined into its block.
-    pub const FORK_STATEMENT: Self = Self("fork_statement");
+    /// The fork `fork (c : S) t`, whose parent's end a `let` binds, and the
+    /// shared fork `fork !(c : S) t`.
+    pub const FORK_EXPRESSION: Self = Self("fork_expression");
     /// The function tail `(params) -> T? { … }`, folded into the declaration.
     pub const FUNCTION: Self = Self("def_function");
     /// A grade annotation `[r]`, folded into the thunk and its type.
@@ -319,10 +313,8 @@ impl FormName
     pub const PARAMETERS: Self = Self("parameters");
     /// The projection `e.1` or `e.field`.
     pub const PROJECTION: Self = Self("projection_expression");
-    /// The statement `recv …;`, inlined into its block.
-    pub const RECV_STATEMENT: Self = Self("recv_statement");
-    /// The statement `release …;`, inlined into its block.
-    pub const RELEASE_STATEMENT: Self = Self("release_statement");
+    /// The receive `recv(c)`, whose message a `let` binds.
+    pub const RECV_EXPRESSION: Self = Self("recv_expression");
     /// The source root, which holds a module's declarations.
     pub const ROOT: Self = Self("source_file");
     /// The shell block `#!{ … }`.
@@ -1192,7 +1184,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 136_usize] = [
+pub const FORMERS: [(&str, Former); 140_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1277,6 +1269,10 @@ pub const FORMERS: [(&str, Former); 136_usize] = [
     ("select_expression", Former::Action),
     ("close_expression", Former::Action),
     ("drop_expression", Former::Action),
+    // A receive and a fork stand where a `let` binds a name; the `let` reads
+    // them, and the action refuses one standing anywhere else.
+    ("recv_expression", Former::Action),
+    ("fork_expression", Former::Action),
     ("offer_expression", Former::Offer),
     ("access_expression", Former::Access),
     ("resume_expression", Former::Access),
@@ -1289,6 +1285,8 @@ pub const FORMERS: [(&str, Former); 136_usize] = [
     ("offers_declaration", Former::WorldDeclaration),
     ("pub_declaration", Former::Visibility),
     ("dup_expression", Former::Reserved(Unbuilt::Dup)),
+    ("acquire_expression", Former::Reserved(Unbuilt::Acquire)),
+    ("release_expression", Former::Reserved(Unbuilt::Release)),
     // Realised by the grammar, declined by the lowering.
     ("as_pattern", Former::Unadmitted(Unbuilt::AsPattern)),
     ("bind_expression", Former::Unadmitted(Unbuilt::Bind)),

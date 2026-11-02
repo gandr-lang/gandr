@@ -1,0 +1,7 @@
+/// `release_expression`: a release of an acquired endpoint, the shared end a `let` binds.
+/// The checker does not reach this form yet; #1501 tracks it.
+@[ refuses("OutOfFragment.release_expression") ]
+def released(rounds : Integer) -> -F Unit {
+  let seat = release(rounds);
+  return unit
+}

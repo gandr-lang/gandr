@@ -1022,12 +1022,12 @@ fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(returned)),
-        faithful(Written("fork (a : end) { pure unit } as a ; close(a)"))
+        faithful(Written("let a = fork (a : end) { pure unit } ; close(a)"))
     );
     assert_eq!(
         spelled(&source, body(offering)),
         faithful(Written(
-            "fork (a : end) { offer(a) { next => close(a), retire => pure unit } } as a ; close(a)"
+            "let a = fork (a : end) { offer(a) { next => close(a), retire => pure unit } } ; close(a)"
         ))
     );
     for fork in [returned, offering] {
@@ -6310,7 +6310,7 @@ fn a_loop_arm_is_written_under_its_loop_813()
 }
 
 /// What an endpoint receives is bound as the surface reads a receive,
-/// `recv(e) as x ; rest`, the rest under the payload's linear binder: under
+/// `let x = recv(e); rest`, the rest under the payload's linear binder: under
 /// `run x <- …` a receive reads as a statement that cannot stand there, and
 /// the source does not parse (#815).
 #[test]
@@ -6327,8 +6327,8 @@ fn a_received_payload_is_bound_as_the_surface_reads_it_815()
     agrees(&core, &[], CoreNode::Computation(received));
     let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(received)));
     assert!(
-        text.contains(") as a ;") && text.ends_with('a') && !text.contains("<-"),
-        "the receive binds its payload with `as`, and the rest reads it: {text}"
+        text.starts_with("let a = recv(") && text.ends_with(") ; a") && !text.contains("<-"),
+        "a `let` binds the receive's payload, and the rest reads it: {text}"
     );
 }
 

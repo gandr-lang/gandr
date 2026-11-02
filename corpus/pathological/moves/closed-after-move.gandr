@@ -9,12 +9,12 @@ import "../../model/moves/file-base.gandr";
 /// spent the mover's end, so the close acts on a spent slot.
 @[ refuses("UsedAfterClose") ]
 def closedAfterMove() -> Unit {
-  fork (owner : File.Handle) { close(owner) } as file;
-  fork (closer : File.Closer) {
-    recv(closer) as held;
+  let file = fork (owner : File.Handle) { close(owner) };
+  let task = fork (closer : File.Closer) {
+    let held = recv(closer);
     close(held);
     close(closer)
-  } as task;
+  };
   send(task, file);
   close(file);
   close(task)
