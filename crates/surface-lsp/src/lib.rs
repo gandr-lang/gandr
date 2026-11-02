@@ -387,6 +387,7 @@ mod files;
 mod fix;
 mod format;
 mod goto;
+mod handover;
 mod hover;
 #[cfg(unix)]
 mod hub;
@@ -428,10 +429,15 @@ pub use gandr_surface_pretty::Spelling;
 pub use crate::build::unidentified;
 #[cfg(unix)]
 pub use crate::bus::RENDER_BUS_PREFACE;
+pub use crate::handover::Carried;
+pub use crate::handover::Handover;
+pub use crate::handover::REPLAY;
 #[cfg(unix)]
 pub use crate::hub::Face;
 #[cfg(unix)]
 pub use crate::hub::LINGER;
+#[cfg(unix)]
+pub use crate::hub::Relayed;
 #[cfg(unix)]
 pub use crate::hub::Unnamed;
 #[cfg(unix)]

@@ -3073,6 +3073,9 @@ pub enum Answer
     /// What `initialize` answers: the advertised capabilities, boxed since
     /// they are sent once per session and outweigh every other answer.
     Initialize(Box<InitializeResult>),
+    /// What `gandr/replay` answers: the messages that open the connection
+    /// again on another build's hub, in the order they are sent.
+    Replay(Vec<Value>),
     /// What a semantic-tokens request answers for an open document.
     Tokens(SemanticTokens),
     /// What a semantic-tokens delta request answers for an open document

@@ -44,6 +44,15 @@
 //! running executable, which the `build` module reads once per process, so a
 //! relay pays one read of its executable when it starts.
 //!
+//! **A session across builds.** A relay asks before each client frame
+//! whether its session belongs to another build, while none of the client's
+//! requests waits for its answer. When it does, the relay holds that frame,
+//! asks its hub for the connection's replay and returns it with the held
+//! bytes, which the next build's relay opens its own hub with; the
+//! `handover` module states the exchange. To know when nothing waits, the
+//! relay reads the envelope of each frame from the hub, its payload skipped,
+//! and counts the answers.
+//!
 //! **Serialisation.** One mutex guards the workspace; a connection holds it
 //! while it handles a frame and runs the admission that frame left, and sends
 //! what it made to its outbox inside it, so every face reads a document's
@@ -73,11 +82,14 @@
 //! linger keeps a restart warm and returns the memory soon after. Per-document
 //! locks would let two clients' edits to different documents run at once; the
 //! one lock is simpler and no measurement shows contention. Making the relay
-//! read the hub's answers to learn whether `shutdown` succeeded would cost a
-//! parse per frame both ways for a case only a client that sends `shutdown`
-//! before `initialize` reaches. The read-evaluate loop as a client is not in
-//! this crate yet; a client speaking another protocol than the Language Server
-//! Protocol is a second face over the same `Workspace`.
+//! read the hub's answer to `shutdown`, beyond the envelope it reads, would
+//! cost a full parse of that answer for a case only a client that sends
+//! `shutdown` before `initialize` reaches. Watching the toolchain files for a
+//! switch would spare the relay a selection per client frame, six file opens
+//! and one `stat`, at the cost of a watcher per platform. The read-evaluate
+//! loop as a client is not in this crate yet; a client speaking another
+//! protocol than the Language Server Protocol is a second face over the same
+//! `Workspace`.
 //!
 //! **Reversal.** Measured contention on the workspace lock moves it per
 //! document; a platform without Unix domain sockets gains a transport there,
@@ -89,6 +101,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicU64;
+use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use std::fs::DirBuilder;
@@ -112,10 +125,14 @@ use std::time::Instant;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
+use serde_json::Value;
 
 use crate::build::Build;
 use crate::build::unidentified;
 use crate::disk::Disk;
+use crate::handover::Carried;
+use crate::handover::Handover;
+use crate::handover::REPLAY;
 use crate::quiet::Inbox;
 use crate::quiet::Met;
 use crate::quiet::paced;
@@ -714,33 +731,156 @@ fn sent(
     drop(outbox.send(message));
 }
 
-/// Carry frames between a client and the hub at the other end of `hub`:
-/// each frame `input` holds to the hub, each frame the hub sends to
-/// `output`, until the hub closes the connection.
+/// How a relayed session ended.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Relayed
+{
+    /// The session ended, as the client's frames decide.
+    Ended(Served),
+    /// The selection moved to another build: the session goes on in that
+    /// build's image, which takes the handover.
+    Switched(Handover),
+}
+
+/// What a relay's input thread tells the thread reading the hub.
+enum Ending
+{
+    /// The input ended, faulted or carried `exit`: the session's verdict.
+    Served(Result<Served, TransportFault>),
+    /// The input thread asked the hub for the replay: the client's bytes it
+    /// read and did not forward, the frame it held back first.
+    Switching(Vec<u8>),
+}
+
+/// How a frame from the hub reads to a relay.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Answered
+{
+    /// A response under the identifier [`REPLAY`].
+    Replay,
+    /// A response under another identifier.
+    Other,
+    /// A request or a notification, or no message.
+    Unanswered,
+}
+
+/// The envelope of a message from the hub, its payload skipped unread.
+#[derive(serde::Deserialize)]
+struct Envelope
+{
+    /// The identifier, when the message carries one.
+    #[serde(default)]
+    id: Option<Value>,
+    /// The method, when the message calls one.
+    #[serde(default)]
+    method: Option<serde::de::IgnoredAny>,
+}
+
+/// Whether the frame `body` from the hub answers a request, and which.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: frames pass unchanged and in order both ways. Once `input` ends,
-///   faults or carries `exit`, the hub's end is shut for writing. The session
-///   is [`Served::Clean`] when `input` carried a `shutdown` request before
-///   `exit`, the fault when `input` broke inside a frame, and
-///   [`Served::Abrupt`] otherwise.
-/// - provides: a client's whole session with a hub.
-/// - fails: when `input` breaks, or a frame from the hub cannot be read or
-///   written to `output`.
+/// - ensures: [`Answered::Replay`] for a message carrying the identifier
+///   [`REPLAY`] and no method, [`Answered::Other`] for any other identifier and
+///   no method, [`Answered::Unanswered`] otherwise.
+/// - panics: none.
+/// - executable: none — a predicate would read the body's envelope a second
+///   time, which is the whole of the function.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a response to a request held before a switch is counted,
+///   and the replay's answer is told apart.
+/// - witness: `hub::tests::a_relay_switches_once_nothing_is_pending`
+fn answered(body: &Body) -> Answered
+{
+    match serde_json::from_slice::<Envelope>(body.as_ref()) {
+        Ok(Envelope {
+            id: Some(id),
+            method: None,
+        }) if id.as_str() == Some(REPLAY) => Answered::Replay,
+        Ok(Envelope {
+            id: Some(_),
+            method: None,
+        }) => Answered::Other,
+        Ok(_) | Err(_) => Answered::Unanswered,
+    }
+}
+
+/// The replay the hub's answer `body` to [`REPLAY`] carries, one body per
+/// message.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the answer's `result` array, each message encoded again.
+/// - fails: when the answer carries no array of messages.
+/// - panics: none.
+/// - executable: none — a predicate would parse the answer a second time to
+///   compare its messages, which is the whole of the function.
+///
+/// # Errors
+/// [`TransportFault::Io`] of kind `InvalidData` when the answer carries no
+/// array.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`relay`]'s switch.
+/// - witness: `hub::tests::a_relay_switches_once_nothing_is_pending`
+fn replayed(body: &Body) -> Result<Vec<Body>, TransportFault>
+{
+    /// The answer to [`REPLAY`].
+    #[repr(transparent)]
+    #[derive(serde::Deserialize)]
+    struct Answer
+    {
+        /// The replay's messages.
+        result: Vec<Value>,
+    }
+    let answer: Answer = serde_json::from_slice(body.as_ref())
+        .map_err(|error| TransportFault::Io(io::Error::new(io::ErrorKind::InvalidData, error)))?;
+    answer
+        .result
+        .iter()
+        .map(|message| serde_json::to_vec(message).map(Body::from))
+        .collect::<Result<Vec<Body>, serde_json::Error>>()
+        .map_err(TransportFault::Encode)
+}
+
+/// Carry frames between a client and the hub at the other end of `hub`,
+/// until the hub closes the connection or the session moves to another build.
+///
+/// `opening` goes to the hub first. Then each frame `input` holds goes to the
+/// hub, and each frame the hub sends goes to `output`, until the hub closes or
+/// `moved` answers that the session belongs to another build.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: frames pass unchanged and in order both ways, but for the hub's
+///   answers to the requests in `opening`, which are dropped. Once `input`
+///   ends, faults or carries `exit`, the hub's end is shut for writing. The
+///   session is [`Served::Clean`] when `input` carried a `shutdown` request
+///   before `exit`, the fault when `input` broke inside a frame, and
+///   [`Served::Abrupt`] otherwise. `moved` is asked before each frame from
+///   `input` while none of the client's requests waits for its answer; once it
+///   answers `true`, that frame and every byte read past it are held, the hub
+///   is asked for [`REPLAY`], and the session ends [`Relayed::Switched`] with
+///   the hub's replay and the held bytes.
+/// - provides: a client's whole session with a hub, across builds.
+/// - fails: when `input` breaks, a frame from the hub cannot be read or written
+///   to `output`, or the hub's replay is no array of messages.
 /// - panics: none.
 /// - executable: none — the frames go to a socket and to `output`, which the
 ///   call consumes or writes but cannot read back.
 ///
 /// # Errors
-/// [`TransportFault`] reading `input` or the hub's frames, or writing to
-/// `output`.
+/// [`TransportFault`] reading `input` or the hub's frames, writing to
+/// `output`, or reading the replay.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a session of initialize, shutdown and exit is carried
 ///   whole and ends clean; one closed before shutdown ends abrupt; a truncated
-///   frame is a fault.
+///   frame is a fault; a switch waits for the client's pending request and
+///   hands over the frame it held with the hub's replay.
 /// - witness: `hub::tests::a_relay_carries_a_session_and_its_ending`
+/// - witness: `hub::tests::a_relay_switches_once_nothing_is_pending`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -749,16 +889,28 @@ fn sent(
     )
 )]
 #[inline]
-pub fn relay<Input, Output>(
+pub fn relay<Input, Output, Moved>(
     input: Input,
     output: &mut Output,
     hub: UnixStream,
-) -> Result<Served, TransportFault>
+    opening: &[Body],
+    mut moved: Moved,
+) -> Result<Relayed, TransportFault>
 where
     Input: Read + Send + 'static,
     Output: Write,
+    Moved: FnMut() -> bool + Send + 'static,
 {
     let mut forward = hub.try_clone().map_err(TransportFault::Io)?;
+    let mut replayed_requests = 0_usize;
+    for body in opening {
+        if let Ok(Incoming::Request { .. }) = classify(body) {
+            replayed_requests = replayed_requests.saturating_add(1);
+        }
+        write_frame(&mut forward, body)?;
+    }
+    let pending = Arc::new(AtomicUsize::new(replayed_requests));
+    let waiting = Arc::clone(&pending);
     let (verdict, verdicts) = channel();
     drop(thread::spawn(move || {
         let mut input = BufReader::new(input);
@@ -769,38 +921,84 @@ where
                 Ok(Maybe::Absent(_closed)) => break Ok(Served::Abrupt),
                 Err(fault) => break Err(fault),
             };
-            let exit = match classify(&body) {
+            let (exit, request) = match classify(&body) {
                 Ok(Incoming::Request { ref method, .. }) => {
                     shut |= method.as_ref() == "shutdown";
-                    false
+                    (false, true)
                 },
-                Ok(Incoming::Notification { ref method, .. }) => method.as_ref() == "exit",
-                Ok(Incoming::Response { .. }) | Err(_) => false,
+                Ok(Incoming::Notification { ref method, .. }) => (method.as_ref() == "exit", false),
+                Ok(Incoming::Response { .. }) | Err(_) => (false, false),
             };
             if exit {
                 // The verdict is sent before the hub can read `exit`, so it
                 // is waiting when the hub's end closes.
-                drop(verdict.send(Ok(if shut { Served::Clean } else { Served::Abrupt })));
+                drop(verdict.send(Ending::Served(Ok(if shut {
+                    Served::Clean
+                }
+                else {
+                    Served::Abrupt
+                }))));
                 drop(write_frame(&mut forward, &body));
                 break Ok(Served::Abrupt);
+            }
+            if waiting.load(Ordering::Acquire) == 0 && moved() {
+                let mut carried = Vec::new();
+                if let Err(fault) = write_frame(&mut carried, &body) {
+                    break Err(fault);
+                }
+                carried.extend_from_slice(input.buffer());
+                // The held bytes are waiting before the hub can answer the
+                // replay, so the reader finds them with the answer.
+                drop(verdict.send(Ending::Switching(carried)));
+                let asked = format!(r#"{{"jsonrpc":"2.0","id":"{REPLAY}","method":"{REPLAY}"}}"#);
+                drop(write_frame(&mut forward, &Body::from(asked.into_bytes())));
+                return;
+            }
+            if request {
+                let _counted = waiting.fetch_add(1, Ordering::AcqRel);
             }
             if let Err(fault) = write_frame(&mut forward, &body) {
                 break Err(fault);
             }
         };
-        drop(verdict.send(served));
+        drop(verdict.send(Ending::Served(served)));
         drop(forward.shutdown(std::net::Shutdown::Write));
     }));
     let mut reading = BufReader::new(hub);
     while let Maybe::Present(body) = read_frame(&mut reading)? {
+        let answer = answered(&body);
+        if answer != Answered::Unanswered {
+            let _answered = pending.try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                Some(count.saturating_sub(1))
+            });
+        }
+        if answer == Answered::Replay {
+            if replayed_requests > 0 {
+                replayed_requests = replayed_requests.saturating_sub(1);
+                continue;
+            }
+            let replay = replayed(&body)?;
+            return match verdicts.recv() {
+                Ok(Ending::Switching(carried)) => {
+                    Ok(Relayed::Switched(Handover::new(replay, Carried(carried))))
+                },
+                Ok(Ending::Served(served)) => served.map(Relayed::Ended),
+                Err(_gone) => Ok(Relayed::Ended(Served::Abrupt)),
+            };
+        }
         write_frame(output, &body)?;
     }
-    verdicts.try_recv().unwrap_or(Ok(Served::Abrupt))
+    match verdicts.try_recv() {
+        Ok(Ending::Served(served)) => served.map(Relayed::Ended),
+        Ok(Ending::Switching(_)) | Err(_) => Ok(Relayed::Ended(Served::Abrupt)),
+    }
 }
 
 #[cfg(test)]
 mod tests
 {
+    use alloc::sync::Arc;
+    use core::sync::atomic::Ordering;
     use core::time::Duration;
     use std::io;
     use std::io::BufRead as _;
@@ -821,6 +1019,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
     use serde_json::Value;
 
+    use super::Relayed;
     use super::bind;
     use super::relay;
     use super::run_hub;
@@ -828,6 +1027,7 @@ mod tests
     use super::socket_name;
     use crate::build::Build;
     use crate::bus::RENDER_BUS_PREFACE;
+    use crate::handover::REPLAY;
     use crate::server::Served;
     use crate::transport::Body;
     use crate::transport::read_frame;
@@ -1563,9 +1763,15 @@ mod tests
             io::Cursor::new(frames(&[initialize, shutdown, exit]).as_ref().to_vec()),
             &mut output,
             UnixStream::connect(&socket).expect("the hub accepts"),
+            &[],
+            || false,
         )
         .expect("the relay carries the session");
-        assert_eq!(served, Served::Clean, "exit after shutdown ends cleanly");
+        assert_eq!(
+            served,
+            Relayed::Ended(Served::Clean),
+            "exit after shutdown ends cleanly"
+        );
         let mut replies = output.as_slice();
         for id in [1_i32, 2_i32] {
             let Maybe::Present(body) = read_frame(&mut replies).expect("a reply is framed")
@@ -1583,22 +1789,26 @@ mod tests
             io::Cursor::new(frames(&[initialize]).as_ref().to_vec()),
             &mut Vec::new(),
             UnixStream::connect(&socket).expect("the hub accepts"),
+            &[],
+            || false,
         )
         .expect("the relay carries the session");
         assert_eq!(
             served,
-            Served::Abrupt,
+            Relayed::Ended(Served::Abrupt),
             "a session closed before shutdown is abrupt"
         );
         let served = relay(
             io::Cursor::new(frames(&[initialize, exit]).as_ref().to_vec()),
             &mut Vec::new(),
             UnixStream::connect(&socket).expect("the hub accepts"),
+            &[],
+            || false,
         )
         .expect("the relay carries the session");
         assert_eq!(
             served,
-            Served::Abrupt,
+            Relayed::Ended(Served::Abrupt),
             "an exit no shutdown request preceded is abrupt"
         );
         assert!(
@@ -1607,11 +1817,142 @@ mod tests
                     io::Cursor::new(b"Content-Length: 9\r\n\r\n{".to_vec()),
                     &mut Vec::new(),
                     UnixStream::connect(&socket).expect("the hub accepts"),
+                    &[],
+                    || false,
                 ),
                 Err(crate::transport::TransportFault::Truncated)
             ),
             "a client stream broken inside a frame is a fault"
         );
+        hub.join().expect("the hub exits");
+    }
+
+    /// Read frames off `replies` until one answers `id`, and return it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answer_to(
+        replies: &mut BufReader<io::PipeReader>,
+        id: &Value,
+    ) -> Value
+    {
+        loop {
+            let Maybe::Present(body) = read_frame(replies).expect("a reply is framed")
+            else {
+                panic!("the relay ended before answering {id}");
+            };
+            let reply: Value = serde_json::from_slice(body.as_ref()).expect("a reply is JSON");
+            if reply.get("id") == Some(id) && reply.get("method").is_none() {
+                return reply;
+            }
+        }
+    }
+
+    #[test]
+    fn a_relay_switches_once_nothing_is_pending()
+    {
+        let scratch = Scratch::new(Json("switch"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let (input, mut client) = io::pipe().expect("a pipe is made");
+        let (replies, output) = io::pipe().expect("a pipe is made");
+        let mut replies = BufReader::new(replies);
+        let wanted = Arc::new(core::sync::atomic::AtomicBool::new(false));
+        let moved = Arc::clone(&wanted);
+        let connected = UnixStream::connect(&socket).expect("the hub accepts");
+        let relaying = thread::spawn(move || {
+            let mut output = output;
+            relay(input, &mut output, connected, &[], move || {
+                moved.load(Ordering::Acquire)
+            })
+        });
+        let mut send = |message: Json<'_>| {
+            write_frame(&mut client, &Body::from(message.0.as_bytes().to_vec()))
+                .expect("the relay reads the client's frame");
+        };
+        send(Json(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":7}}"#,
+        ));
+        let _initialized = answer_to(&mut replies, &serde_json::json!(1_i32));
+        send(Json(
+            r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        ));
+        send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                "uri":"file:///tmp/switch.gandr","languageId":"gandr","version":1,"text":"def f = 42 ;\n"}}}"#,
+        ));
+        send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{
+                "uri":"file:///tmp/switch.gandr","version":2},"contentChanges":[{"text":"def g = 1 ;\n"}]}}"#,
+        ));
+        send(Json(
+            r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{
+                "uri":"file:///tmp/switch.gandr"}}}"#,
+        ));
+        let _symbols = answer_to(&mut replies, &serde_json::json!(2_i32));
+        wanted.store(true, Ordering::Release);
+        let shutdown = Json(r#"{"jsonrpc":"2.0","id":3,"method":"shutdown"}"#);
+        let exit = Json(r#"{"jsonrpc":"2.0","method":"exit"}"#);
+        send(shutdown);
+        let Relayed::Switched(handover) = relaying
+            .join()
+            .expect("the relay returns")
+            .expect("the relay carries the session")
+        else {
+            panic!("the relay switches at the first frame once its request is answered");
+        };
+        assert_eq!(
+            handover.carried().0,
+            frames(&[shutdown]).as_ref(),
+            "the frame held at the switch is carried, unforwarded"
+        );
+        let replay: Vec<Value> = handover
+            .replay()
+            .iter()
+            .map(|body| serde_json::from_slice(body.as_ref()).expect("a replayed message is JSON"))
+            .collect();
+        assert_eq!(
+            replay,
+            [
+                serde_json::json!({"jsonrpc": "2.0", "id": REPLAY, "method": "initialize",
+                    "params": {"processId": 7_i32}}),
+                serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+                serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                    "params": {"textDocument": {"uri": "file:///tmp/switch.gandr",
+                        "languageId": "gandr", "version": 2_i32, "text": "def g = 1 ;\n"}}}),
+            ],
+            "the replay opens the connection as the client did, the document at its last change"
+        );
+        let mut carried = handover.carried().0.clone();
+        carried.extend_from_slice(frames(&[exit]).as_ref());
+        let mut output = Vec::new();
+        let served = relay(
+            io::Cursor::new(carried),
+            &mut output,
+            UnixStream::connect(&socket).expect("the hub accepts"),
+            handover.replay(),
+            || false,
+        )
+        .expect("the next relay carries the session");
+        assert_eq!(
+            served,
+            Relayed::Ended(Served::Clean),
+            "the carried shutdown, then exit, end the session cleanly"
+        );
+        let mut answered = Vec::new();
+        let mut read = output.as_slice();
+        while let Maybe::Present(body) = read_frame(&mut read).expect("a reply is framed") {
+            let reply: Value = serde_json::from_slice(body.as_ref()).expect("a reply is JSON");
+            if reply.get("method").is_none() {
+                answered.push(reply.get("id").cloned());
+            }
+        }
+        assert_eq!(
+            answered,
+            [Some(serde_json::json!(3_i32))],
+            "the client sees the answer to its shutdown, and none to the replayed initialize"
+        );
+        drop(client);
         hub.join().expect("the hub exits");
     }
 }

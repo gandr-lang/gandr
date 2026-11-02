@@ -95,6 +95,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | The lifecycle, its error codes, document URIs | [`server`](src/server.rs) |
 | Formatting | [`format`](src/format.rs) |
 | One hub per workspace | [`hub`](src/hub.rs) |
+| A session across builds | [`handover`](src/handover.rs) |
 | Model proposals | [`proposal`](src/proposal.rs) |
 | The render bus | [`bus`](src/bus.rs) |
 | The transport | [`transport`](src/transport.rs) |
