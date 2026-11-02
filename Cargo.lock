@@ -101,7 +101,7 @@ dependencies = [
 [[package]]
 name = "anodized"
 version = "0.8.0"
-source = "git+https://github.com/gandr-lang/anodized?rev=dec6f8b7d0183ecc4d02de5878dcd94396c286bb#dec6f8b7d0183ecc4d02de5878dcd94396c286bb"
+source = "git+https://github.com/gandr-lang/anodized?rev=ba1703701318bd3b8a3044c84a0f79f67bb073b2#ba1703701318bd3b8a3044c84a0f79f67bb073b2"
 dependencies = [
  "anodized-macros",
 ]
@@ -109,7 +109,7 @@ dependencies = [
 [[package]]
 name = "anodized-core"
 version = "0.8.0"
-source = "git+https://github.com/gandr-lang/anodized?rev=dec6f8b7d0183ecc4d02de5878dcd94396c286bb#dec6f8b7d0183ecc4d02de5878dcd94396c286bb"
+source = "git+https://github.com/gandr-lang/anodized?rev=ba1703701318bd3b8a3044c84a0f79f67bb073b2#ba1703701318bd3b8a3044c84a0f79f67bb073b2"
 dependencies = [
  "bitflags",
  "proc-macro2",
@@ -120,7 +120,7 @@ dependencies = [
 [[package]]
 name = "anodized-macros"
 version = "0.8.0"
-source = "git+https://github.com/gandr-lang/anodized?rev=dec6f8b7d0183ecc4d02de5878dcd94396c286bb#dec6f8b7d0183ecc4d02de5878dcd94396c286bb"
+source = "git+https://github.com/gandr-lang/anodized?rev=ba1703701318bd3b8a3044c84a0f79f67bb073b2#ba1703701318bd3b8a3044c84a0f79f67bb073b2"
 dependencies = [
  "anodized-core",
  "proc-macro2",
@@ -3909,7 +3909,7 @@ dependencies = [
 [[package]]
 name = "quenchant-anodized"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=784e83247511e46131affc7538ba25aa7830557d#784e83247511e46131affc7538ba25aa7830557d"
+source = "git+https://github.com/gandr-lang/quenchant?rev=0bea1dafc56fa76671d4a854c2382a56c8dd8d34#0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 dependencies = [
  "anodized",
  "anodized-macros",
@@ -3919,7 +3919,7 @@ dependencies = [
 [[package]]
 name = "quenchant-arith"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=784e83247511e46131affc7538ba25aa7830557d#784e83247511e46131affc7538ba25aa7830557d"
+source = "git+https://github.com/gandr-lang/quenchant?rev=0bea1dafc56fa76671d4a854c2382a56c8dd8d34#0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 dependencies = [
  "quenchant-anodized",
 ]
@@ -3927,7 +3927,7 @@ dependencies = [
 [[package]]
 name = "quenchant-shape"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=784e83247511e46131affc7538ba25aa7830557d#784e83247511e46131affc7538ba25aa7830557d"
+source = "git+https://github.com/gandr-lang/quenchant?rev=0bea1dafc56fa76671d4a854c2382a56c8dd8d34#0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 dependencies = [
  "quenchant-anodized",
 ]
@@ -3935,7 +3935,7 @@ dependencies = [
 [[package]]
 name = "quenchant-spec-macros"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=784e83247511e46131affc7538ba25aa7830557d#784e83247511e46131affc7538ba25aa7830557d"
+source = "git+https://github.com/gandr-lang/quenchant?rev=0bea1dafc56fa76671d4a854c2382a56c8dd8d34#0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 
 [[package]]
 name = "quick-xml"

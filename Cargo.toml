@@ -186,7 +186,7 @@ default-features = false
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
 git = "https://github.com/gandr-lang/quenchant"
-rev = "784e83247511e46131affc7538ba25aa7830557d"
+rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 default-features = false
 features = ["anodized"]
 
@@ -1270,7 +1270,7 @@ features = ["std"]
 # - kernel-core
 [workspace.dependencies.quenchant-arith]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "784e83247511e46131affc7538ba25aa7830557d"
+rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 default-features = false
 
 # Named non-failure absence, sealed at each decision site.
@@ -1322,7 +1322,7 @@ default-features = false
 # - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "784e83247511e46131affc7538ba25aa7830557d"
+rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 default-features = false
 
 # The terminal face's renderer: layout, styled text and widgets, the headless
@@ -1757,7 +1757,7 @@ private_intra_doc_links = "allow"
 # from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "784e83247511e46131affc7538ba25aa7830557d"
+rev = "0bea1dafc56fa76671d4a854c2382a56c8dd8d34"
 pattern = "crates/quenchant-dylints"
 
 # The everyday unoptimized build keeps full debuginfo, which lldb reads. It
