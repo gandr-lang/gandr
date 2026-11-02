@@ -265,10 +265,10 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out => Type, r : Out => Type, s :
       }
     },
     NoneE => k(Ends(NoneV, s)),
-    SomeE(a) => wpMem[<](a, env, fn (o) { match o {
+    SomeE(a) => wpMem[<](a, env, fun (o) { match o {
       Ends(v, t) => k(Ends(SomeV(v), t))
     } }, r, s),
-    Assign(p, a) => wpMem[<](a, env, fn (o) { match o {
+    Assign(p, a) => wpMem[<](a, env, fun (o) { match o {
       Ends(w, t) => match locate(p, env, Here) {
         None => return Void,
         Some(loc) => match loc {
@@ -288,10 +288,10 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out => Type, r : Out => Type, s :
         }
       }
     } }, r, s),
-    Seq(a, b) => wpMem[<](a, env, fn (o) { match o {
+    Seq(a, b) => wpMem[<](a, env, fun (o) { match o {
       Ends(_v, t) => wpMem[<](b, env, k, r, t)
     } }, r, s),
-    MatchOpt(a, n, m) => wpMem[<](a, env, fn (o) { match o {
+    MatchOpt(a, n, m) => wpMem[<](a, env, fun (o) { match o {
       Ends(v, t) => match v {
         NoneV => wpMem[<](n, env, k, r, t),
         SomeV(x) => wpMem[<](m, VCons(x, env), k, r, t),
@@ -408,7 +408,7 @@ pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> T
 
 /// `pop`'s postcondition as a predicate on where it ends.
 pub def popPost(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Out => Type {
-  return fn (o) { popAt(blocks, heads, order, ixs, o) }
+  return fun (o) { popAt(blocks, heads, order, ixs, o) }
 }
 
 /// The locals `pop` runs at: `self`, a pointer to the root zero, then `order`.
@@ -454,11 +454,11 @@ pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path(
 )) => Path(Maybe(Val), (Some(x) : Maybe(Val)), nth(setN(vs, i, x), i)) {
   match vs {
     VNil => match i {
-      Zero => return fn (h) { match (noneHeld(y, h) : Void) {} },
-      Succ(_j) => return fn (h) { match (noneHeld(y, h) : Void) {} }
+      Zero => return fun (h) { match (noneHeld(y, h) : Void) {} },
+      Succ(_j) => return fun (h) { match (noneHeld(y, h) : Void) {} }
     },
     VCons(_v, rest) => match i {
-      Zero => return fn (_h) { here((Some(x) : Maybe(Val))) },
+      Zero => return fun (_h) { here((Some(x) : Maybe(Val))) },
       Succ(j) => nthSet[<](rest, j, x, y)
     }
   }
@@ -697,7 +697,7 @@ pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt
   Own(Zero, Whole, buddy(blocks, heads))
 ) {
   match ixs {
-    INil => return fn (fl) { popFromEmpty(blocks, heads, order, fl) },
-    ICons(b, rest) => return fn (fl) { popFrom(blocks, heads, order, b, rest, fl) }
+    INil => return fun (fl) { popFromEmpty(blocks, heads, order, fl) },
+    ICons(b, rest) => return fun (fl) { popFrom(blocks, heads, order, b, rest, fl) }
   }
 }

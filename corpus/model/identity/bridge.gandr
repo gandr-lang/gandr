@@ -22,7 +22,7 @@ import "./atom-identity.gandr";
 /// The total relation between the unit type and the string type, at the
 /// relation type `Unit => String => Type`.
 def unitString : Bridge(Type, Unit, String) = thunk {
-  fn (x : Unit) { fn (y : String) { return Unit } }
+  fun (x : Unit) { fun (y : String) { return Unit } }
 };
 
 /// The equal lists of integers related cell by cell, each cell by the unit

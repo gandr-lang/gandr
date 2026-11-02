@@ -323,7 +323,7 @@ impl FormName
     pub const SIGNATURE: Self = Self("def_signature");
     /// The tuple `(a, b)`, folded into the parenthesised expression.
     pub const TUPLE: Self = Self("tuple_expression");
-    /// The type abstraction `fn [T] { … }`, folded into the lambda.
+    /// The type abstraction `fun [T] { … }`, folded into the lambda.
     pub const TYPE_ABSTRACTION: Self = Self("type_abstraction");
     /// A number written with its type.
     pub const TYPED_NUMBER: Self = Self("typed_number");
@@ -551,8 +551,8 @@ impl TileName
     pub const DOT_DOT: Self = Self("..");
     /// The extern block's keyword `extern`.
     pub const EXTERN: Self = Self("extern");
-    /// The lambda keyword `fn`.
-    pub const FN: Self = Self("fn");
+    /// The lambda keyword `fun`.
+    pub const FUN: Self = Self("fun");
     /// The force keyword `force`.
     pub const FORCE: Self = Self("force");
     /// The fork keyword `fork`, opening a statement.
@@ -872,7 +872,7 @@ pub enum Former
     Unit,
     /// The thunk `thunk { c }`.
     Thunk,
-    /// The lambda `fn (x) { c }`.
+    /// The lambda `fun (x) { c }`.
     Lambda,
     /// A block standing as a computation, `{ run x <- c ; … c }`: its
     /// statements bound over its last computation.

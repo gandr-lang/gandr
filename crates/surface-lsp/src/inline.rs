@@ -119,7 +119,7 @@
 //! 4. a form before a closing, so a tier alternates the two.
 //!
 //! A form yields a computation when it opens with `return`, `pure`,
-//! `become`, `match`, `if`, `fn`, `force`, `while`, `for`, `loop`, `break`,
+//! `become`, `match`, `if`, `fun`, `force`, `while`, `for`, `loop`, `break`,
 //! `continue`, a block's `{`, `#!{` or `&`, and a value otherwise. A closing
 //! that differs from a better candidate only by separators, or holds a `,`
 //! right before a closer, is not offered.
@@ -343,7 +343,7 @@ impl Category
     ///
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] for the forms
-    ///   `return`, `pure`, `become`, `match`, `if`, `fn`, `force`, `while`,
+    ///   `return`, `pure`, `become`, `match`, `if`, `fun`, `force`, `while`,
     ///   `for`, `loop`, `break`, `continue`, a block `{`, a shell block `#!{`
     ///   and a lazy record `&` open, [`Category::Value`] for every other; every
     ///   other sort's own category.
@@ -363,7 +363,7 @@ impl Category
         match (sort, opener.0) {
             (
                 Sort::Expression,
-                "return" | "pure" | "become" | "match" | "if" | "fn" | "force" | "while" | "for"
+                "return" | "pure" | "become" | "match" | "if" | "fun" | "force" | "while" | "for"
                 | "loop" | "break" | "continue" | "{" | "#!{" | "&",
             ) => Self::Computation,
             (Sort::Expression, _) => Self::Value,

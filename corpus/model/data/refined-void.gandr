@@ -23,8 +23,8 @@ pub def isVoid(n : Nat) -> Type {
 /// A function from the family at `n` to the naturals, whose arm at zero cases on no value.
 pub def absurdArm(n : Nat) -> (isVoid(n)) => Nat {
   match n {
-    Zero => return fn (u) { match u {} },
-    Succ(_m) => return fn (_u) { return Zero }
+    Zero => return fun (u) { match u {} },
+    Succ(_m) => return fun (_u) { return Zero }
   }
 }
 

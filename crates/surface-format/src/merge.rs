@@ -2,7 +2,7 @@
 //!
 //! The function form: `def f : () => B ; def f = thunk { c } ;` and `def
 //! f() -> -F B { c }`, which lower to the same thunk at the same type, and
-//! `def f : A => B ; def f = thunk { fn (x) { c } } ;` or `def f = fn (x) {
+//! `def f : A => B ; def f = thunk { fun (x) { c } } ;` or `def f = fun (x) {
 //! c } ;` and `def f(x : A) -> -F B { c }`, the lambda's binders the
 //! function form's parameters.
 //!
@@ -162,7 +162,7 @@ pub fn candidate(written: &[Leaf<'_>]) -> Pairing
         texts.next(),
     ) {
         (Some("def"), Some(_), Some("="), Some("thunk"), Some("{"))
-        | (Some("def"), Some(_), Some("="), Some("fn"), _) => Pairing::Merged,
+        | (Some("def"), Some(_), Some("="), Some("fun"), _) => Pairing::Merged,
         _ => Pairing::Apart,
     }
 }
@@ -565,7 +565,7 @@ pub fn members<'source>(
 ///   with `D` one domain or a parenthesised list of them, or `+U (D1 -> … -> Dn
 ///   -> -F B)`, the definition is written `def f = thunk { … } ;` under the
 ///   same name, its thunk ungraded, or `def f = fn …` when `T` has a domain,
-///   holding one `fn (x) { … }` per domain each directly in the last, every
+///   holding one `fun (x) { … }` per domain each directly in the last, every
 ///   binder bare and the name a dependent domain `(x : A)` gives it, and
 ///   neither form holds a comment after its documentation; otherwise the
 ///   signature's leaves to the name, then each binder `x : A` in parentheses,
@@ -634,7 +634,7 @@ pub fn merged<'leaves, 'source>(
             Token(_, "def"),
             Token(_, own),
             Token(_, "="),
-            Token(_, "fn"),
+            Token(_, "fun"),
             ..,
             Token(_, ";"),
         ] if !domains.is_empty() => own,
@@ -845,9 +845,9 @@ fn domain<'leaves, 'source>(
 type Parameter<'leaves, 'source> = (&'leaves [Leaf<'source>], &'leaves [Leaf<'source>]);
 
 /// The function form's parameters and its body, when `body`, the leaves of
-/// a thunk's computation, is one `fn (x) { … }` per domain of `domains`,
+/// a thunk's computation, is one `fun (x) { … }` per domain of `domains`,
 /// each directly in the last and each binder bare: each binder beside its
-/// domain, and the innermost lambda's body. An annotated binder, `fn (x :
+/// domain, and the innermost lambda's body. An annotated binder, `fun (x :
 /// A)`, lowers with its annotation, which the function form does not write.
 ///
 /// # Specification
@@ -864,7 +864,7 @@ fn applied<'leaves, 'source>(
     let mut rest = all.as_slice();
     let mut parameters = Vec::with_capacity(domains.len());
     for &Domain { named, ty } in domains {
-        let [Token(_, "fn"), ref lambda @ ..] = *rest
+        let [Token(_, "fun"), ref lambda @ ..] = *rest
         else {
             return None;
         };

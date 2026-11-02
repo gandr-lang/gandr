@@ -3,14 +3,14 @@ error[IndexOccurrence]: the datatype occurs inside a term in its field 0 of cons
    │
 43 │ ┏   data Mu(d : Type, c : IR(d)) : Type where {
 44 │ ┃     /// The arguments, over the family the decoder decodes.
-45 │ ┃     | In : (v : args(d, c, Mu(d, c), thunk { fn (m) { decodeMu(d, c, m) } })) --> Mu(d, c)
+45 │ ┃     | In : (v : args(d, c, Mu(d, c), thunk { fun (m) { decodeMu(d, c, m) } })) --> Mu(d, c)
 46 │ ┃   }
    │ ┗━━━┛ the declared type inside an index
    │
    ╰ note: `Mu` is refused with IndexOccurrence, as its expectation states
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/universe/ir-codes.gandr:52:78
+   ╭▸ corpus/pathological/universe/ir-codes.gandr:52:79
    │
 50 │      def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d {
    │      │                ┬         ┬          ─ checked against `Mu(d, c) -> -F d`; while checking the body of this function; binds m : Mu(d, c)
@@ -19,16 +19,16 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ ┌────┘                checked against `(d : Type) -> (c : IR(d)) -> Mu(d, c) -> -F d`; while checking the body of this function; binds d : Type
    │ │
 51 │ │┌     match m {
-52 │ ││       In(v) => decodeArgs(d, c, Mu(d, c), thunk { fn (n) { decodeMu[<](d, c, n) } }, v)
-   │ ││                ┬──────────────────────────┬───────┬────────┬─────────────────┯─────────
-   │ ││                │                          │       │        │                 │
-   │ ││                │                          │       │        │                 not below the stage its recursion wants
-   │ ││                │                          │       │        checked against `-F d`; while checking the argument of this application
+52 │ ││       In(v) => decodeArgs(d, c, Mu(d, c), thunk { fun (n) { decodeMu[<](d, c, n) } }, v)
+   │ ││                ┬──────────────────────────┬───────┬─────────┬─────────────────┯─────────
+   │ ││                │                          │       │         │                 │
+   │ ││                │                          │       │         │                 not below the stage its recursion wants
+   │ ││                │                          │       │         checked against `-F d`; while checking the argument of this application
    │ ││                │                          │       checked against `Mu(d, c) -> -F d`; while checking the body of this function; binds _ : Mu(d, c)
    │ ││                │                          checked against `Mu(d, c) => d`; while checking the body of this thunk
    │ ││                checked against `-F d`; while checking the argument of this application
 53 │ ││     }
-   │ │└─────┘ checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fn (a) { decodeMu(d, c, a) })
+   │ │└─────┘ checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fun (a) { decodeMu(d, c, a) })
 54 │ │    }
    │ └────┘ checked against `(d : Type, c : IR(d), Mu(d, c)) => d`; while checking the body of this function; binds decodeMu : Mu(d, c) => d
    │

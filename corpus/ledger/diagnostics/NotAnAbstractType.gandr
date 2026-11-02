@@ -6,5 +6,5 @@ module Seat :> #{
   @[ refuses("MarkUnfounded") ]
   type Report = +U (Integer -> -F Integer);
   @[ refuses("NotAnAbstractType") ]
-  def progress = thunk { fn (x) { return x } };
+  def progress = thunk { fun (x) { return x } };
 }

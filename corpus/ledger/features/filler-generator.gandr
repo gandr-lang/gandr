@@ -14,7 +14,7 @@ import "../../../library/math/src/path.gandr";
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
 def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
-  thunk { fn (f) { here(f) } }
+  thunk { fun (f) { here(f) } }
 }
 
 /// The 1-chain's cell lifts along `fa`, and its sides compose the generator's reflexivities with `fa`.
@@ -48,7 +48,7 @@ def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : 
   y,
   z
 )) => Path(Path(A, x, z), f then g, f then g) {
-  thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }
+  thunk { fun (f) { thunk { fun (g) { here(composite(A, x, y, z, f, g)) } } } }
 }
 
 /// The right whisker of `fa` by `g`: the transport along `fa` the generator lifts the first cell by.
@@ -137,7 +137,7 @@ def associated(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(A, x, y)) => (
   y,
   z
 )) => (h : Path(A, z, w)) => Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
-  thunk { fn (f) { thunk { fn (g) { thunk { fn (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
+  thunk { fun (f) { thunk { fun (g) { thunk { fun (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
 }
 
 /// Example 1.3 at `{f, g, h}`: every cell lifts, and the square is the one Catt answers for `assoc ↑ {f, g, h}`.
@@ -220,7 +220,7 @@ def composed(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(
   x,
   z
 ) {
-  thunk { fn (f) { thunk { fn (g) { composite(A, x, y, z, f, g) } } } }
+  thunk { fun (f) { thunk { fun (g) { composite(A, x, y, z, f, g) } } } }
 }
 
 /// Example 1.1: the composite is natural in its first cell, `(f ∗ g) ↑ {f}`. Catt answers a path from `fm then g` to `fp then g`, which `then`'s unit laws meet.
@@ -244,10 +244,10 @@ def composedOver(A : Type) -> (x : A) => (y : A) => (f : Path(A, x, y)) => (z : 
   z
 )) => Path(A, x, z) {
   thunk {
-    fn (x) {
+    fun (x) {
       thunk {
-        fn (y) {
-          thunk { fn (f) { thunk { fn (z) { thunk { fn (g) { composite(A, x, y, z, f, g) } } } } } }
+        fun (y) {
+          thunk { fun (f) { thunk { fun (z) { thunk { fun (g) { composite(A, x, y, z, f, g) } } } } } }
         }
       }
     }
@@ -286,7 +286,7 @@ def horizontalOver(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (p :
   f then g,
   p then q
 ) {
-  thunk { fn (f) { thunk { fn (p) { thunk { fn (a) { thunk { fn (g) { thunk { fn (q) { thunk { fn (b) { horizontal(A, x, y, z, f, p, a, g, q, b) } } } } } } } } } } } }
+  thunk { fun (f) { thunk { fun (p) { thunk { fun (a) { thunk { fun (g) { thunk { fun (q) { thunk { fun (b) { horizontal(A, x, y, z, f, p, a, g, q, b) } } } } } } } } } } } }
 }
 
 /// Example 1.4: the horizontal composite is natural in `{f, a, p, g, b, q}`, two 3-cylinders side by side at constant verticals. Each 2-cell of `X` is a square over its 1-cells' paths, and each side of the square composes the columns' first 1-cells or their last.

@@ -1851,7 +1851,7 @@ enum Binding
     Qualified,
     /// A name, a literal, a universe, a bracketed or braced form, a call.
     Atom,
-    /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fn (x) { c }` or
+    /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fun (x) { c }` or
     /// `thunk { c }`.
     Prefix,
     /// `g ∷ p`, a word's letter before the rest, nested to the right.
@@ -2802,7 +2802,7 @@ enum Join
     /// A lambda over its body, its binder named as a dependent arrow's is.
     Lambda,
     /// A lambda whose parameter states its type, over the type and its body:
-    /// `fn (x : A) { c }`.
+    /// `fun (x : A) { c }`.
     TypedLambda,
     /// A thunk over its body.
     Thunk,
@@ -7426,7 +7426,7 @@ impl Walk<'_, '_>
     ///   when `rest` reads the bind's binder, or when the walk's remaining
     ///   visits run out first. Every link read is one visit spent, so a
     ///   recognised parameter spends exactly five.
-    /// - provides: the shape the lowering gives `fn (x : A) { rest }`, which
+    /// - provides: the shape the lowering gives `fun (x : A) { rest }`, which
     ///   the printer spells back as written (#3943).
     /// - fails: never.
     /// - panics: none.
@@ -9057,7 +9057,7 @@ impl Walk<'_, '_>
             },
             // A lambda whose parameter states its type is the bind the
             // lowering holds the argument to that type by, `(return #0 :
-            // -F A) to _. rest`: it is written `fn (x : A) { rest }`, the
+            // -F A) to _. rest`: it is written `fun (x : A) { rest }`, the
             // bind's binder unwritten, as a resumed shift's is (#3943).
             Former::Lambda(body)
                 if let Some((stated, rest)) = self.stated_parameter(source, body, admits) =>
@@ -11775,8 +11775,8 @@ impl Walk<'_, '_>
     ///   when it is a bind; every list with a break after each comma and before
     ///   the closer; `run x <- c ; rest` naming its binder so, the bound
     ///   computation a block when it is itself a bind, a soft line after the
-    ///   semicolon; `fn (x) { c }` naming its binder so and `thunk { c }`, each
-    ///   a block.
+    ///   semicolon; `fun (x) { c }` naming its binder so and `thunk { c }`,
+    ///   each a block.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -12205,7 +12205,7 @@ impl Walk<'_, '_>
             Join::Lambda => {
                 let body = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let open = self.leaf(Glyphs("fn ("))?;
+                let open = self.leaf(Glyphs("fun ("))?;
                 let close = self.leaf(Glyphs(") {"))?;
                 let head = self.builder.concat_all(&[open, binder, close])?;
                 (self.block(head, body.doc)?, Binding::Prefix)
@@ -12215,7 +12215,7 @@ impl Walk<'_, '_>
                 let stated = self.pop()?;
                 let stated = self.bare_up_to(stated, Binding::ARGUMENT)?;
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let open = self.leaf(Glyphs("fn ("))?;
+                let open = self.leaf(Glyphs("fun ("))?;
                 let colon = self.leaf(Glyphs(" : "))?;
                 let close = self.leaf(Glyphs(") {"))?;
                 let head = self

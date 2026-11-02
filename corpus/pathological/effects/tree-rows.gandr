@@ -11,5 +11,5 @@ import "../../model/effects/tree-rows.gandr";
 @[ refuses("TypeMismatch") ]
 def leaking : Prog(Either(StateOp, Void), Integer) = Op(
   Left(Raise(4)),
-  fn (_r) { (Done(0) : Prog(Either(StateOp, Void), Integer)) }
+  fun (_r) { (Done(0) : Prog(Either(StateOp, Void), Integer)) }
 );

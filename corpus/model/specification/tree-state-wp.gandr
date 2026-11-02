@@ -13,8 +13,8 @@ import "../effects/tree.gandr";
 
 /// The increment as a tree: read the counter, store one more, and answer the
 /// unit.
-pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
-  (Op(Left(Put(n + 1)), fn (_u) {
+pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fun (n) {
+  (Op(Left(Put(n + 1)), fun (_u) {
     (Done(unit) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
 });
@@ -51,7 +51,7 @@ pub def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
 def incrSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
-} = (incrTree, fn (s) { fn (h) { h } });
+} = (incrTree, fun (s) { fun (h) { h } });
 
 /// The increment paired with evidence at every postcondition, the order of
 /// the transformers itself: the specification computes the successor before
@@ -60,7 +60,7 @@ def incrSpecified : #{
 def incrSpecifiedEverywhere : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
-} = (incrTree, fn (post) { fn (s) { fn (h) { h } } });
+} = (incrTree, fun (post) { fun (s) { fun (h) { h } } });
 
 /// The same evidence unpaired: the specification's run and the fold's both
 /// read as `post`'s call over the successor held (#2773).
@@ -80,4 +80,4 @@ def retSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s)
 def doneSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (post : (Unit, Integer) => Type, s : Integer, retSpec(post, s)) => wp(m, post, s)
-} = ((Done(unit) : Prog(Either(StateOp, Void), Unit)), fn (post) { fn (s) { fn (h) { h } } });
+} = ((Done(unit) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } });

@@ -946,7 +946,7 @@ fn an_edit_to_a_large_document_rechecks_its_forms()
             writeln!(
                 text,
                 "def p{i} : +U (Integer -> Integer -> -F Integer) ;\n\
-                     def p{i} = thunk {{ fn (x) {{ fn (y) {{ return x }} }} }} ;"
+                     def p{i} = thunk {{ fun (x) {{ fun (y) {{ return x }} }} }} ;"
             )
         }
         .expect("a string takes text");

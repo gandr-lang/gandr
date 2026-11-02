@@ -9,7 +9,7 @@ def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z
 /// Two cells, the reflexivity of their composite: the generator over the 2-chain.
 @[ checks ]
 def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {
-  thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }
+  thunk { fun (f) { thunk { fun (g) { here(composite(A, x, y, z, f, g)) } } } }
 }
 
 /// The right whisker, the transport the generator lifts the first cell by.

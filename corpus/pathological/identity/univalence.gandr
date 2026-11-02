@@ -21,7 +21,7 @@ import "../../model/identity/circle.gandr";
 @[ refuses("EndpointMismatch") ]
 def collapsedPath : Path(Type, Two, One) = ua((
   collapse,
-  ((pick, thunk { fn (x) { here(x) } }), (pick, single))
+  ((pick, thunk { fun (x) { here(x) } }), (pick, single))
 ));
 
 /// A transport along `ua` of a bi-invertible map from `Type` to itself,

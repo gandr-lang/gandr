@@ -35,7 +35,7 @@ pub module AtStratum where {
   /// path itself.
   def repackaged : Path(
     Tel => Tel,
-    fn (x) { fwdAlong(Tel, Tel, ua(idtoequiv(Tel, Tel, opposite)), x) },
-    fn (x) { fwdAlong(Tel, Tel, opposite, x) }
-  ) = here(fn (x) { fwdAlong(Tel, Tel, opposite, x) });
+    fun (x) { fwdAlong(Tel, Tel, ua(idtoequiv(Tel, Tel, opposite)), x) },
+    fun (x) { fwdAlong(Tel, Tel, opposite, x) }
+  ) = here(fun (x) { fwdAlong(Tel, Tel, opposite, x) });
 }

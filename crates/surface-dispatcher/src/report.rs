@@ -1148,10 +1148,10 @@ def broken = missing ;"#,
             .expect("the fixture composes")
         };
         let ordinary = compose_source(
-            "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ; def hole : Integer ;",
+            "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ; def hole : Integer ;",
         );
         let pending = compose_source(
-            "module M : #{ x: Integer, z: Integer } where { def x = 1; }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ; def hole : Integer ;",
+            "module M : #{ x: Integer, z: Integer } where { def x = 1; }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ; def hole : Integer ;",
         );
         let mut report = RunReport::default();
         report.read(

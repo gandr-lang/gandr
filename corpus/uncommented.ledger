@@ -134,7 +134,7 @@ fragment/nested-runs.gandr:scrutinised_run:ebab9d9fc39a3494 uncommented
 fragment/non-synthesisable-definition.gandr:<file> uncommented
 fragment/non-synthesisable-definition.gandr:suspended:0279cde89160b097 uncommented
 fragment/non-synthesisable-head.gandr:<file> uncommented
-fragment/non-synthesisable-head.gandr:applied:7aadab04554f0514 uncommented
+fragment/non-synthesisable-head.gandr:applied:1f420950b11b6b8c uncommented
 fragment/shape-refusal.gandr:<file> uncommented
 fragment/shape-refusal.gandr:returned:69d417bfbc0b86b8 uncommented
 fragment/shape-refusal.gandr:returned:c4fd282c9212036b uncommented
@@ -3431,7 +3431,7 @@ pathological/identity/compound-endpoint-body-mismatch.gandr:<file> uncommented
 pathological/identity/compound-endpoint-body-mismatch.gandr:dbl:b2d956b3eac4f5b2 uncommented
 pathological/identity/compound-endpoint-body-mismatch.gandr:refuted:414b48974a13f42c uncommented
 pathological/identity/compound-endpoint-over-a-function.gandr:<file> uncommented
-pathological/identity/compound-endpoint-over-a-function.gandr:constantly:98da0a9b38f21e8d uncommented
+pathological/identity/compound-endpoint-over-a-function.gandr:constantly:3d66adf103c5ef98 uncommented
 pathological/identity/compound-endpoint-over-a-function.gandr:refuted:769da8db1f33dfc8 uncommented
 pathological/identity/derived-rule.gandr:<file> unshaped:HeadParagraphs
 pathological/identity/derived-rule.gandr:<file> unshaped:WhatLength
@@ -3678,7 +3678,7 @@ pathological/modules/generative-distinctness.gandr:MkCounter:df6f0df179d2104b un
 pathological/modules/generative-distinctness.gandr:Seed.T:150abf207ffa9972 uncommented
 pathological/modules/generative-distinctness.gandr:Seed.next:9004bc6c5660b0d2 uncommented
 pathological/modules/generative-distinctness.gandr:Seed.zero:76abc5beff52d395 uncommented
-pathological/modules/generative-distinctness.gandr:Seed:e90216f8bc2c3384 uncommented
+pathological/modules/generative-distinctness.gandr:Seed:83de761158ea299b uncommented
 pathological/modules/generative-distinctness.gandr:mixed:e35aeae31fbeadc0 uncommented
 pathological/modules/generative-distinctness.gandr:projected:0e1081333fa712ee uncommented
 pathological/modules/generative-distinctness.gandr:projected:99abdd808a2656af uncommented

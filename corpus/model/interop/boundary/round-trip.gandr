@@ -52,7 +52,7 @@ pub def less(x : Integer, y : Integer) -> Integer { x - y }
 
 /// The function that adds `n`: a call answers it as a value, unapplied.
 def adder(n : Integer) -> Integer => Integer {
-  thunk { fn (x) { x + n } }
+  thunk { fun (x) { x + n } }
 }
 
 /// `double` at 21, as the Rust test calls it.

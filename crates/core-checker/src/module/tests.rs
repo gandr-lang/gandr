@@ -1196,8 +1196,8 @@ fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
         (label("b"), word),
         (label("c"), zero),
     ]));
-    // `point = fn (n) { return #{a = n, b = n} }` and
-    // `moved = fn (n) { return #{point(n) | a = 0} }`.
+    // `point = fun (n) { return #{a = n, b = n} }` and
+    // `moved = fun (n) { return #{point(n) | a = 0} }`.
     let returns_pair = arena.comp_type_returner(pair_type);
     let to_pair = arena.comp_type_arrow(integer, returns_pair);
     let to_pair = arena.value_type_thunk(to_pair);

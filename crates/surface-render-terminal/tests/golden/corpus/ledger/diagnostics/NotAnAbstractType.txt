@@ -10,7 +10,7 @@ error[NotAnAbstractType]: this names an abstract type that was not admitted
   ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:8:3
   │
 8 │ ┏   @[ refuses("NotAnAbstractType") ]
-9 │ ┃   def progress = thunk { fn (x) { return x } };
-  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ not an abstract type
+9 │ ┃   def progress = thunk { fun (x) { return x } };
+  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ not an abstract type
   │
   ╰ note: `progress` is refused with NotAnAbstractType, as its expectation states

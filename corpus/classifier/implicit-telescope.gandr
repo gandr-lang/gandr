@@ -68,7 +68,7 @@ pub def konst[b : Type](f : (t : Type, t) => b) -> Integer { 1 }
 /// `konst` with its implicit omitted: the lambda returns an integer under its
 /// own binders, and `b` is solved as `Integer`, which names none of them.
 @[ runs("1") ]
-def konstInferred() -> Integer { konst(fn (t) { fn (y) { 0 } }) }
+def konstInferred() -> Integer { konst(fun (t) { fun (y) { 0 } }) }
 
 /// A function applied to the integer it is passed.
 def apply(f : Integer => Integer, x : Integer) -> Integer { f(x) }
@@ -85,7 +85,7 @@ def applyAt[g : t => t](t : Type, v : t) -> t { g(v) }
 /// `applyAt` passed as a value with `g` supplied: the supply opens a lambda
 /// for `t`, which `g`'s type names, and is a function of a type and a value
 /// of it (#1498).
-def identityAt : (t : Type, t) => t = applyAt[.g = fn (y) { y }];
+def identityAt : (t : Type, t) => t = applyAt[.g = fun (y) { y }];
 
 /// `identityAt` at the integers.
 @[ runs("5") ]
@@ -108,5 +108,5 @@ def twiceRun() -> Integer { twice[.m = Integer, .combine = Adding.plus](3) }
 
 /// The explicit twin of `same`: the function `same`'s implicit makes explicit
 /// runs as the same curried function.
-@[ runs("fn (a) { fn (b) { b } }") ]
+@[ runs("fun (a) { fun (b) { b } }") ]
 def sameExplicit(a : Type, y : a) -> a { y }

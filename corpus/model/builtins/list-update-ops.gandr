@@ -12,7 +12,7 @@ def replaced = list.set(tens, 1, 99);
 
 /// The element at position zero, incremented.
 @[ refuses("OutOfFragment.projection_expression") ]
-def bumped = list.update_at(tens, 0, thunk { fn (n) { return n + 1 } });
+def bumped = list.update_at(tens, 0, thunk { fun (n) { return n + 1 } });
 
 /// An element inserted at position one.
 @[ refuses("OutOfFragment.projection_expression") ]
@@ -38,7 +38,7 @@ def concatenated = list.concat([tens, [40, 50]]);
 /// yet (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
 def doubled_over_fifteen = list.update_where(
-  thunk { fn (n) { return n > 15 } },
-  thunk { fn (n) { return n * 2 } },
+  thunk { fun (n) { return n > 15 } },
+  thunk { fun (n) { return n * 2 } },
   tens
 );

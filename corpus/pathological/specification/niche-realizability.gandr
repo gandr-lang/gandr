@@ -29,9 +29,9 @@ def derefWp(w : Nat, q : (Nat, Nat, Heap) => Type, h : Heap) -> Type {
 def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefWp(w, keptOpt, h) {
   match w {
     Zero => match h {
-      Emp => return fn (e) { e },
-      Cell(_l, _v, _rest) => return fn (e) { e }
+      Emp => return fun (e) { e },
+      Cell(_l, _v, _rest) => return fun (e) { e }
     },
-    Succ(n) => return fn (r) { derefOrSome(n, Zero, h, r) }
+    Succ(n) => return fun (r) { derefOrSome(n, Zero, h, r) }
   }
 }

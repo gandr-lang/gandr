@@ -310,7 +310,7 @@ const SEEDS: [&str; 4] = [
 /// What a random script types, one token per step.
 const TOKENS: [&str; 34] = [
     "def", " ", "a", "x", "1", "\"", "(", ")", "{", "}", "[", "]", ":", ";", ",", "=", "->", "=>",
-    "<-", "-F", "+U", "Integer", "return", "become", "match", "thunk", "force", "run", "fn",
+    "<-", "-F", "+U", "Integer", "return", "become", "match", "thunk", "force", "run", "fun",
     "data", "Type", "//", "é", "😀",
 ];
 

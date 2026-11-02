@@ -13483,7 +13483,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                     "text":"def id : Integer => Integer ;\ndef id = thunk { fn (y) { return y } } ;\n"}}}"#,
+                     "text":"def id : Integer => Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}"#,
             ),
         );
         let ask = |server: &mut Connected, uri: &str, (from, to): (u32, u32)| {
@@ -13497,7 +13497,7 @@ mod tests
         assert_eq!(
             ask(&mut server, "file:///tmp/open.gandr", (0, 2)),
             wire(Json(
-                r#"[{"jsonrpc":"2.0","id":2,"result":[{"position":{"line":1,"character":22},"label":": Integer","kind":1}]}]"#
+                r#"[{"jsonrpc":"2.0","id":2,"result":[{"position":{"line":1,"character":23},"label":": Integer","kind":1}]}]"#
             )),
             "the lambda's binder, after its name, and not the signature"
         );

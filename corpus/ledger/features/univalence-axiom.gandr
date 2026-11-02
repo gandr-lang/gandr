@@ -40,8 +40,8 @@ def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   law : (z : b) => Path(a, g(z), transport(\X. X, back(p), z))
 } {
   (
-    fn (z) { transport(\X. X, back(p), z) },
-    fn (z) { here(transport(\X. X, back(p), z)) }
+    fun (z) { transport(\X. X, back(p), z) },
+    fun (z) { here(transport(\X. X, back(p), z)) }
   )
 }
 
@@ -82,7 +82,7 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
     p,
     here(a),
     here(p),
-    fn (w) { here(w) }
+    fun (w) { here(w) }
   )
 }
 
@@ -105,15 +105,15 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
 @[ checks ]
 def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
   (
-    fn (x) { fwdAlong(a, b, p, x) },
+    fun (x) { fwdAlong(a, b, p, x) },
     (
       (
-        fn (y) { transport(\X. X, back(p), y) },
-        fn (x) { sectAlong(a, b, p, x) }
+        fun (y) { transport(\X. X, back(p), y) },
+        fun (x) { sectAlong(a, b, p, x) }
       ),
       (
-        fn (y) { transport(\X. X, back(p), y) },
-        fn (y) { retrAlong(a, b, p, y) }
+        fun (y) { transport(\X. X, back(p), y) },
+        fun (y) { retrAlong(a, b, p, y) }
       )
     )
   )

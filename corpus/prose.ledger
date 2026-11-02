@@ -1252,7 +1252,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragm
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.Misplaced.txt Procedure a0cb84b173472244
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NonContractive.txt Procedure 4538ce87b3a6c1e1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NonUniform.txt Procedure fbf16f61e9de9729
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotAFunction.txt Procedure 28cb0d8126ba0f21
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotAFunction.txt Procedure 75571bbb79a6668e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotAtResult.txt Procedure 70192787dabfde13
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NotInTail.txt Procedure c30b829c3f586f8c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.Stage.txt Procedure c0b7bc73e94de351
@@ -1439,8 +1439,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/identity/atom-id
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt Procedure 921d4bf9ff1bfecc
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/cell-not-a-loop.txt Procedure 8177cf64e07d14fb
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 18aa93537ee9b3fa
-crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 28cb0d8126ba0f21
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 5acc3f19f3b29f8d
+crates/surface-render-terminal/tests/golden/corpus/pathological/identity/circle-elim.txt Procedure 75571bbb79a6668e
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/compound-endpoint-over-a-function.txt Procedure 404994b85ddfbce5
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-associator.txt Procedure 73c9fbfb11722aa3
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-rule.txt Procedure 9440b16f14f33f0e

@@ -18,14 +18,14 @@
 //! A declaration is a value. Running it returns that value, and when the value
 //! is a thunk — a computation suspended, a function's body among them — the
 //! thunk is forced, so `def main = thunk { return 42 }` runs to `42` and a
-//! function runs to its own terminal, `fn (a) { a }`. The run's terminal is
+//! function runs to its own terminal, `fun (a) { a }`. The run's terminal is
 //! read back into the core and spelled by `gandr-surface-pretty`, the printer
 //! a hover answers with; the spelling is the one `gandr run` prints, the
 //! session's value line carries and a `runs` expectation compares.
 //!
 //! **The value spelling is the shared printer's.** A run's value is the
 //! computation the printer presents: constructors by their declared names,
-//! constants by their paths, a function as its `fn`, a thunk as its body, a
+//! constants by their paths, a function as its `fun`, a thunk as its body, a
 //! tuple as `#{a, b}`, an injection as `+{.0 = v}` and a record as `#{.l =
 //! v}` — the grammar's own spellings, laid out on one line. The focused
 //! command IL carries a data constructor's family when the core names one,
@@ -76,7 +76,7 @@
 //! native code by default where the host has a patcher, the portable
 //! executor elsewhere, both under a budget of 2²⁴ jumps — forces the
 //! terminal when it is a thunk, so a suspended computation runs and a
-//! function answers its `fn`, and reads the terminal back into the core.
+//! function answers its `fun`, and reads the terminal back into the core.
 //! `Program::evaluate_on` runs one engine alone, so a differential holds
 //! native code to the executor.
 //! Nothing runs that no caller asked for: the settle comparison runs the
@@ -1435,7 +1435,7 @@ impl<'source> Program<'source>
     ///   spelled as the grammar writes it: an integer in decimal, a text quoted
     ///   with its escapes, `unit`, a tuple as `#{a, b}`, an injection as `+{.i
     ///   = v}`, a constructor by its name, a thunk as `thunk { … }` and a
-    ///   function as its `fn`; a read-back terminal that mentions a member its
+    ///   function as its `fun`; a read-back terminal that mentions a member its
     ///   module's signature hides is instead [`Evaluation::Sealed`] at that
     ///   module with the declared type of the declaration run, or
     ///   [`Unfinished::Unspelled`] when that type has no layout.
@@ -2752,7 +2752,7 @@ impl<'source> Program<'source>
     /// - requires: nothing; a malformed core graph is admissible.
     /// - ensures: the terminal presented as the computation it is, in the
     ///   sugared form and the program's spelling on one line without a break
-    ///   search: a returned value as the value, a function as its `fn`,
+    ///   search: a returned value as the value, a function as its `fun`,
     ///   constants by their paths from the top level and constructors by their
     ///   names, every former as the grammar writes it and `?` where the printer
     ///   cannot spell a node; the unspelled-layout absence where the printer
@@ -3764,8 +3764,8 @@ mod tests
 def greeting : String ; def greeting = "a \"quoted\"\nline" ;
 def nothing : Unit ; def nothing = unit ;
 def copy = answer ;
-def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;
-def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { return x } } } ;
+def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
+def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
 def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
 def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
 def delayed : +U (-F String) ; def delayed = thunk { return "later" } ;
@@ -3776,8 +3776,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
             ("greeting", r#""a \"quoted\"\nline""#),
             ("nothing", "unit"),
             ("copy", "42"),
-            ("identity", "fn (a) { a }"),
-            ("first", "fn (a) { fn (b) { a } }"),
+            ("identity", "fun (a) { a }"),
+            ("first", "fun (a) { fun (b) { a } }"),
             ("applied", "42"),
             ("chosen", "42"),
             ("delayed", r#""later""#),
@@ -3948,8 +3948,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
 def greeting : String ; def greeting = "words" ;
 def nothing : Unit ; def nothing = unit ;
 def copy = answer ;
-def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;
-def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { return x } } } ;
+def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
+def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
 def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
 def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
 def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;
@@ -4163,7 +4163,7 @@ def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return rea
         }
         assert_eq!(
             run(&mut laws, SurfaceName::from("kept")).to_string(),
-            "thunk { law((thunk { fn (a) { a } }, thunk { fn (a) { a } })) }",
+            "thunk { law((thunk { fun (a) { a } }, thunk { fun (a) { a } })) }",
             "a run that carries the unfocused body without reaching it returns"
         );
     }
@@ -4210,7 +4210,7 @@ module ZeroPointed : Model(Pointed) where {
   def z = 0;
 }
 def helper(x : Integer) -> -F Integer { x }
-def wrap : Integer => Integer ; def wrap = fn (n) { become helper(n) } ;",
+def wrap : Integer => Integer ; def wrap = fun (n) { become helper(n) } ;",
         );
         let evaluation = run(&mut beside, SurfaceName::from("wrap"));
         assert!(
@@ -4233,7 +4233,7 @@ def wrap : Integer => Integer ; def wrap = fn (n) { become helper(n) } ;",
 module Stepped : Model(Pointed) where {
   type T = Integer => Integer;
   def step(x : Integer) -> -F Integer { x }
-  def z : T ; def z = fn (n) { become step(n) } ;
+  def z : T ; def z = fun (n) { become step(n) } ;
 }",
         );
         assert_eq!(

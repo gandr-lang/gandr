@@ -20,8 +20,8 @@ import "../../model/universe/decoded-descent.gandr";
 @[ refuses("StageNotBelow") ]
 def rec totalDirect(c : UL) -> elL(c) => Nat {
   match c {
-    NatL => thunk { fn (v) { v } },
-    ListL(a) => thunk { fn (v) {
+    NatL => thunk { fun (v) { v } },
+    ListL(a) => thunk { fun (v) {
       match v -> -F Nat {
         Nil => Zero,
         Cons(h, t) => {
@@ -31,7 +31,7 @@ def rec totalDirect(c : UL) -> elL(c) => Nat {
         }
       }
     } },
-    PiL(a, b) => thunk { fn (f) { Zero } }
+    PiL(a, b) => thunk { fun (f) { Zero } }
   }
 }
 

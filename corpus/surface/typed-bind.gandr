@@ -19,7 +19,7 @@ def three() -> Nat { next(Succ(Zero)) }
 
 /// A suspended function is named at its written type and called.
 def apply(n : Nat) -> Nat {
-  run f : Nat => Nat <- pure fn (x) { Succ(x) };
+  run f : Nat => Nat <- pure fun (x) { Succ(x) };
   f(n)
 }
 

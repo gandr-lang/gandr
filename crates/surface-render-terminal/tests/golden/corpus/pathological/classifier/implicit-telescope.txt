@@ -19,8 +19,8 @@ error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determi
 error[ImplicitUnsolved]: the solver cannot determine the implicit `b` this call to `konst` omits: its solution would name a binder the call does not stand under
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:29:29
    │
-29 │ def escaping() -> Integer { konst(fn (t) { fn (y) { y } }) }
-   │                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
+29 │ def escaping() -> Integer { konst(fun (t) { fun (y) { y } }) }
+   │                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `escaping` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `b` by name, as `konst[b = …](…)`

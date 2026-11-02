@@ -6,8 +6,8 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │ ┌─────┘
    │ │
 22 │ │┌      match c {
-23 │ ││        NatL => thunk { fn (v) { v } },
-24 │ ││        ListL(a) => thunk { fn (v) {
+23 │ ││        NatL => thunk { fun (v) { v } },
+24 │ ││        ListL(a) => thunk { fun (v) {
    │ ││ ┌──────────────────│───────┘
    │ ││┌│──────────────────┘
    │ ││││
@@ -30,7 +30,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │ ││└│──────│─┘ checked against `-F (elL(ListL(a)) => Nat)`; while checking the body of this thunk
    │ ││ └──────┤
    │ ││        checked against `elL(ListL(a)) -> -F Nat`; while checking the body of this function; binds _ : elL(ListL(a))
-34 │ ││        PiL(a, b) => thunk { fn (f) { Zero } }
+34 │ ││        PiL(a, b) => thunk { fun (f) { Zero } }
 35 │ ││      }
    │ │└──────┘ checked against `-F (elL(c) => Nat)`; while checking the body of this function; binds a : UL
 36 │ │     }

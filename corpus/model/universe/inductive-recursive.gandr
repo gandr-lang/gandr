@@ -47,7 +47,7 @@ def toNat(x : Nat) -> -F UPi { return NatC }
 /// naturals, which runs to the dependent arrow between them.
 @[ checks ]
 def idDecoded : elPi(PiC(NatC, toNat));
-def idDecoded = thunk { fn (x) { return x } };
+def idDecoded = thunk { fun (x) { return x } };
 
 /// The identity applied at its decoded type.
 @[ runs("Succ(Zero)") ]

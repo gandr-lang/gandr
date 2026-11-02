@@ -11,10 +11,10 @@
 
 /// Each path's reflexivity, as a family.
 def reflFamily(A : Type, x : A, y : A) -> (q : Path(A, x, y)) => Path(Path(A, x, y), q, q) {
-  thunk { fn (q : Path(A, x, y)) { here(q) } }
+  thunk { fun (q : Path(A, x, y)) { here(q) } }
 }
 
 /// The same family, its parameter named apart from the type's binder.
 def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(A, x, y)) => Path(Path(A, x, y), q, q) {
-  thunk { fn (r : Path(A, x, y)) { here(r) } }
+  thunk { fun (r : Path(A, x, y)) { here(r) } }
 }

@@ -40,7 +40,7 @@
 12:16-12:16 ) ⇒ Path(Integer, 2, 2) @12:10-12:17
 12:17-12:17 ) ⇒ Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2)) @12:5-12:18
 12:18-12:18 ; ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @8:1-12:19
-16:1-16:61 @[ runs("(thunk { fn (a)… ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @16:1-17:1
+16:1-16:63 @[ runs("(thunk { fun (a… ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @16:1-17:1
 17:1-17:3 def ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @17:1-17:44
 17:5-17:18 moved_end_run( ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @17:5-17:18
 17:19-17:22 ) -> ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @17:1-17:44

@@ -6,7 +6,7 @@ def apply = \F. \X. F(X);
 def at_a_static_parameter : apply(\Y. #{Y, Y}, Integer);
 def at_a_static_parameter = #{1, 2};
 
-@[ runs("fn (a) { unit }") ]
+@[ runs("fun (a) { unit }") ]
 def use(f : Type -> Type) -> -F Unit { return unit }
 
 @[ refuses("StaticLambdaArgument") ]

@@ -31,7 +31,7 @@ def apThen(
   fa : Path(Path(A, x, y), fm, fp),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), fm then g, fp then g) {
-  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa)
+  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { q then g }, fm, fp, fa)
 }
 
 /// The same action, the lambda written again.
@@ -45,7 +45,7 @@ def apThenAgain(
   fa : Path(Path(A, x, y), fm, fp),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), fm then g, fp then g) {
-  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa)
+  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { q then g }, fm, fp, fa)
 }
 
 /// The action over the lambda written twice: a reflexivity relates the two.
@@ -79,7 +79,7 @@ def bindsOneMore(
   _w : A
 ) -> Path(
   Path(Path(A, x, z), fm then g, fp then g),
-  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa),
+  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { q then g }, fm, fp, fa),
   apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   here(apThen(A, x, y, z, fm, fp, fa, g))
@@ -98,7 +98,7 @@ def bindsOneBetween(
   g : Path(A, y, z)
 ) -> Path(
   Path(Path(A, x, z), fm then g, fp then g),
-  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa),
+  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { q then g }, fm, fp, fa),
   apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   here(apThen(A, x, y, z, fm, fp, fa, g))
@@ -116,7 +116,7 @@ def bindsGFirst(
   fa : Path(Path(A, x, y), fm, fp)
 ) -> Path(
   Path(Path(A, x, z), fm then g, fp then g),
-  act(Path(A, x, y), Path(A, x, z), fn (q : Path(A, x, y)) { q then g }, fm, fp, fa),
+  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { q then g }, fm, fp, fa),
   apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   here(apThen(A, x, y, z, fm, fp, fa, g))

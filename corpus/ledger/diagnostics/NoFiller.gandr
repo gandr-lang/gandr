@@ -5,7 +5,7 @@ import "../../model/identity/circle-base.gandr" ;
 /// One cell, its own reflexivity: the generator over the 1-chain.
 @[ checks ]
 def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
-  thunk { fn (f) { here(f) } }
+  thunk { fun (f) { here(f) } }
 }
 
 /// The square the generator makes at a path of paths from `loop` to itself.

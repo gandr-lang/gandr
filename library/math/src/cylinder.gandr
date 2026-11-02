@@ -113,10 +113,10 @@ def chainComposite(A : Type) -> (x : A) => (y : A) => Path(A, x, y) => (z : A) =
   z
 ) {
   thunk {
-    fn (x) {
+    fun (x) {
       thunk {
-        fn (y) {
-          thunk { fn (f) { thunk { fn (z) { thunk { fn (g) { join(A, x, y, z, f, g) } } } } } }
+        fun (y) {
+          thunk { fun (f) { thunk { fun (z) { thunk { fun (g) { join(A, x, y, z, f, g) } } } } } }
         }
       }
     }
@@ -176,16 +176,16 @@ pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path(A, x, y))
   f1 then g1
 ) {
   thunk {
-    fn (f0) {
+    fun (f0) {
       thunk {
-        fn (f1) {
+        fun (f1) {
           thunk {
-            fn (a) {
+            fun (a) {
               thunk {
-                fn (g0) {
+                fun (g0) {
                   thunk {
-                    fn (g1) {
-                      thunk { fn (b) { cylinderFillAt2(A, x, y, z, f0, f1, a, g0, g1, b) } }
+                    fun (g1) {
+                      thunk { fun (b) { cylinderFillAt2(A, x, y, z, f0, f1, a, g0, g1, b) } }
                     }
                   }
                 }

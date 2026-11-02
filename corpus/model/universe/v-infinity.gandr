@@ -30,7 +30,7 @@ data Ord : Type[+, 1] where {
 @[ checks ]
 def rec rank(v : Vinf) -> -F Ord {
   match v {
-    Sup(a, f) => Lim(a, thunk { fn (x) { rank[<](f(x)) } })
+    Sup(a, f) => Lim(a, thunk { fun (x) { rank[<](f(x)) } })
   }
 }
 
@@ -66,13 +66,13 @@ def zero = Sup(Empty, none);
 /// The set whose one member is `v`.
 @[ checks ]
 def single(v : Vinf) -> -F Vinf {
-  Sup(Lone, thunk { fn (x) { v } })
+  Sup(Lone, thunk { fun (x) { v } })
 }
 
 /// The set whose members are `v` and `w`.
 @[ checks ]
 def pair(v : Vinf, w : Vinf) -> -F Vinf {
-  Sup(Two, thunk { fn (x) { match x -> -F Vinf { L => v, R => w } } })
+  Sup(Two, thunk { fun (x) { match x -> -F Vinf { L => v, R => w } } })
 }
 
 /// The rank of the set whose one member is the empty set.

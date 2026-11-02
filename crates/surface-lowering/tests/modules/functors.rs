@@ -26,7 +26,7 @@ use super::verdicts;
 
 /// A sealed counter seed: an abstract type, a value of it and a step on it.
 const SEED: &str = "module Seed :> #{ type T, seed : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
-                    Integer ;\n  def seed = 0 ;\n  def next = thunk { fn (n) { return n } } ;\n}\n";
+                    Integer ;\n  def seed = 0 ;\n  def next = thunk { fun (n) { return n } } ;\n}\n";
 
 /// The counter functor: over any seed, a sealed seed of its own type, so an
 /// instance is itself an argument.
@@ -318,7 +318,7 @@ fn an_argument_is_matched_against_the_parameter()
     let mistyped = [
         COUNTER,
         "module Wrong :> #{ type T, seed : Integer, next : +U[ω] (T -> -F T) } where { type T = Integer \
-         ; def seed = 0 ; def next = thunk { fn (n) { return n } } ; }\nmodule A = \
+         ; def seed = 0 ; def next = thunk { fun (n) { return n } } ; }\nmodule A = \
          MkCounter(Wrong) ;\n",
     ]
     .concat();
@@ -624,7 +624,7 @@ fn a_dotted_argument_reads_the_nested_module_it_names()
     let source = [
         COUNTER,
         "module Outer where { module Other where { def seed = 1 ; } module Seed :> #{ type T, seed : T, next \
-         : +U[ω] (T -> -F T) } where { type T = Integer ; def seed = 0 ; def next = thunk { fn (n) { \
+         : +U[ω] (T -> -F T) } where { type T = Integer ; def seed = 0 ; def next = thunk { fun (n) { \
          return n } } ; } }\nmodule A = MkCounter(Outer.Seed) ;\nmodule B = \
          MkCounter(Outer.Nope) ;\n",
     ]
@@ -653,7 +653,7 @@ fn a_type_component_binds_the_argument_type_of_its_own_name()
     let source = [
         COUNTER,
         "module Two :> #{ type U, type T, seed : T, next : +U[ω] (T -> -F T) } where { type U = String \
-         ; type T = Integer ; def seed = 0 ; def next = thunk { fn (n) { return n } } ; }\nmodule \
+         ; type T = Integer ; def seed = 0 ; def next = thunk { fun (n) { return n } } ; }\nmodule \
          A = MkCounter(Two) ;\n",
     ]
     .concat();

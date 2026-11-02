@@ -58,7 +58,7 @@ def kept_three() -> -F Nat { run k <- kept(Succ(Succ(Zero))); force k }
 
 /// The constant function at `n`, returned by a call.
 @[ checks ]
-def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) { return fn (_m) { n } }
+def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) { return fun (_m) { n } }
 
 /// A function applied at zero.
 @[ checks ]

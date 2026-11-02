@@ -21,7 +21,7 @@ data Ord : Type[+, 1] where {
 @[ refuses("TypeMismatch") ]
 def rec unranked(v : Vinf) -> -F Ord {
   match v {
-    Sup(a, f) => Lim(a, thunk { fn (x) { f(x) } })
+    Sup(a, f) => Lim(a, thunk { fun (x) { f(x) } })
   }
 }
 
@@ -29,7 +29,7 @@ def rec unranked(v : Vinf) -> -F Ord {
 @[ refuses("StageNotBelow") ]
 def rec circular(v : Vinf) -> -F Ord {
   match v {
-    Sup(a, f) => Lim(a, thunk { fn (x) { circular[<](Sup(a, f)) } })
+    Sup(a, f) => Lim(a, thunk { fun (x) { circular[<](Sup(a, f)) } })
   }
 }
 

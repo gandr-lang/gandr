@@ -689,7 +689,7 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
             presentation.unspelled().iter().copied().collect::<Vec<_>>()
         ),
         (
-            String::from("rec a { fn (b) { match b { Zero => b, Succ(c) => a(c) } } }"),
+            String::from("rec a { fun (b) { match b { Zero => b, Succ(c) => a(c) } } }"),
             vec![Unspelled::Notation(Notation::Fixpoint)]
         ),
         "each arm is written under the constructor it matches: {:?}",
@@ -882,8 +882,8 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "def selfEquiv(b : Type) -> -F (#{ x : b, y : b, p : Path(b, x, y) } ≃ #{ x : b, y : b, \
-         p : Path(b, x, y) }) {\n  (\n    thunk { fn (w) { w } },\n    ((thunk { fn (w) { w } }, \
-         thunk { fn (w) { here(w) } }), (thunk { fn (w) { w } }, thunk { fn (w) { here(w) } }))\n  \
+         p : Path(b, x, y) }) {\n  (\n    thunk { fun (w) { w } },\n    ((thunk { fun (w) { w } }, \
+         thunk { fun (w) { here(w) } }), (thunk { fun (w) { w } }, thunk { fun (w) { here(w) } }))\n  \
          )\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -1051,7 +1051,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fn (a) { match a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
+                "fun (a) { match a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
                  loop, here(Base)) } }"
             ),
             Fidelity::Faithful,

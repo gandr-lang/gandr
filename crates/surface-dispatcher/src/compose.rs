@@ -5846,7 +5846,7 @@ def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(
 }
 /// The 2-path `a` whiskered on the right by `g`.
 def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  ap(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
+  ap(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
 }
 /// The 2-path `here(f1 then g)` moved along `a`.
 def liftRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
@@ -5941,11 +5941,11 @@ def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(
 }
 /// The left whisker, by the action of composing with `f`.
 def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), f then g1, f then g2) {
-  ap(Path(A, y, z), Path(A, x, z), (fn (q : Path(A, y, z)) { f then q } : Path(A, y, z) => Path(A, x, z)), g1, g2, b)
+  ap(Path(A, y, z), Path(A, x, z), (fun (q : Path(A, y, z)) { f then q } : Path(A, y, z) => Path(A, x, z)), g1, g2, b)
 }
 /// The right whisker, by the action of composing with `g`.
 def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  ap(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
+  ap(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
 }
 /// The associator, by conversion.
 def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
@@ -6129,7 +6129,7 @@ def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) ->
 }
 /// Two cells' composite, curried over the cells.
 def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {
-  thunk { fn (f) { thunk { fn (g) { join(A, x, y, z, f, g) } } } }
+  thunk { fun (f) { thunk { fun (g) { join(A, x, y, z, f, g) } } } }
 }
 /// The composite's reflexivity by `fill`, at its sides.
 def selfFill(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(Path(A, x, z), f then g, f then g) {
@@ -6137,7 +6137,7 @@ def selfFill(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)
 }
 /// That reflexivity, curried: a generator whose body is a fill.
 def selfFillOver(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {
-  thunk { fn (f) { thunk { fn (g) { selfFill(A, x, y, z, f, g) } } } }
+  thunk { fun (f) { thunk { fun (g) { selfFill(A, x, y, z, f, g) } } } }
 }
 /// The right whisker the outer fill lifts by.
 def liftRight(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
@@ -6762,19 +6762,19 @@ def delivered() -> -F Unit {
             "def kept(n : Integer) -> -F Integer { return n }\n\
              def kept_elided(n : Integer) -> -F Integer { n }\n\
              def kept_printed : +U (Integer -> -F Integer) ;\n\
-             def kept_printed = thunk { fn (a) { a } } ;\n\
+             def kept_printed = thunk { fun (a) { a } } ;\n\
              def called(n : Integer) -> -F Integer { become kept(n) }\n\
              def called_elided(n : Integer) -> -F Integer { kept(n) }\n\
              def called_printed : +U (Integer -> -F Integer) ;\n\
-             def called_printed = thunk { fn (a) { kept(a) } } ;\n\
+             def called_printed = thunk { fun (a) { kept(a) } } ;\n\
              def sequenced(n : Integer) -> -F Integer { run m <- kept(n) ; become kept(m) }\n\
              def sequenced_elided(n : Integer) -> -F Integer { run m <- kept(n) ; kept(m) }\n\
              def sequenced_printed : +U (Integer -> -F Integer) ;\n\
-             def sequenced_printed = thunk { fn (a) { run b <- kept(a) ; kept(b) } } ;\n\
+             def sequenced_printed = thunk { fun (a) { run b <- kept(a) ; kept(b) } } ;\n\
              def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept(n) } }\n\
              def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept(n) } }\n\
              def suspended_printed : +U (Integer -> -F (+U (-F Integer))) ;\n\
-             def suspended_printed = thunk { fn (a) { thunk { kept(a) } } } ;\n",
+             def suspended_printed = thunk { fun (a) { thunk { kept(a) } } } ;\n",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, arena } = lower_source(&grammar, source, &mut lowerings)
@@ -6823,10 +6823,10 @@ def delivered() -> -F Unit {
             (presentation.to_string(), presentation.fidelity())
         };
         for (written, expected) in [
-            ("kept", "fn (a) { a }"),
-            ("called", "fn (a) { kept(a) }"),
-            ("sequenced", "fn (a) { run b <- kept(a) ; kept(b) }"),
-            ("suspended", "fn (a) { thunk { kept(a) } }"),
+            ("kept", "fun (a) { a }"),
+            ("called", "fun (a) { kept(a) }"),
+            ("sequenced", "fun (a) { run b <- kept(a) ; kept(b) }"),
+            ("suspended", "fun (a) { thunk { kept(a) } }"),
         ] {
             let (elided, restated) = (format!("{written}_elided"), format!("{written}_printed"));
             for name in [written, elided.as_str(), restated.as_str()] {
@@ -6852,7 +6852,7 @@ def delivered() -> -F Unit {
         // wildcard at the same place rather than as a call short of an
         // argument.
         let grammar = grammar();
-        let written = "fn (a) { idAt(_, a) }";
+        let written = "fun (a) { idAt(_, a) }";
         let text = format!(
             "def idAt(a : Type, y : a) -> -F a {{ return y }}\ndef loose : +U (Integer -> -F \
              Integer) ;\ndef loose = thunk {{ {written} }} ;\n"
@@ -7080,10 +7080,10 @@ def delivered() -> -F Unit {
              def bound(n : Integer) -> -F Integer { run m <- kept(n) ; kept(m) }\n\
              def nested(n : Integer) -> -F Integer { kept(kept(n)) }\n\
              def nested_printed : +U (Integer -> -F Integer) ;\n\
-             def nested_printed = thunk { fn (a) { kept(kept(a)) } } ;\n\
+             def nested_printed = thunk { fun (a) { kept(kept(a)) } } ;\n\
              def written(n : Integer) -> -F Integer { kept(run kept(n)) }\n\
              def written_printed : +U (Integer -> -F Integer) ;\n\
-             def written_printed = thunk { fn (a) { kept(run kept(a)) } } ;\n",
+             def written_printed = thunk { fun (a) { kept(run kept(a)) } } ;\n",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
@@ -7136,11 +7136,11 @@ def delivered() -> -F Unit {
             (presentation.to_string(), presentation.fidelity())
         };
         for (name, expected) in [
-            ("bound", "fn (a) { run b <- kept(a) ; kept(b) }"),
-            ("nested", "fn (a) { kept(kept(a)) }"),
-            ("nested_printed", "fn (a) { kept(kept(a)) }"),
-            ("written", "fn (a) { kept(run kept(a)) }"),
-            ("written_printed", "fn (a) { kept(run kept(a)) }"),
+            ("bound", "fun (a) { run b <- kept(a) ; kept(b) }"),
+            ("nested", "fun (a) { kept(kept(a)) }"),
+            ("nested_printed", "fun (a) { kept(kept(a)) }"),
+            ("written", "fun (a) { kept(run kept(a)) }"),
+            ("written_printed", "fun (a) { kept(run kept(a)) }"),
         ] {
             assert_eq!(
                 printed(name),
@@ -7211,7 +7211,7 @@ def delivered() -> -F Unit {
             .map_or_else(Restoration::default, |elaboration| {
                 Restoration::of(elaboration.carried())
             });
-        // `rec dbl { fn (n) { case n { …, S(x) => arm, … } } }`: the arm at `S`.
+        // `rec dbl { fun (n) { case n { …, S(x) => arm, … } } }`: the arm at `S`.
         let arm = match arena.value(defined("dbl")) {
             Some(&Value::Thunk(fixpoint)) => match arena.computation(fixpoint) {
                 Some(&Computation::Fixpoint { body, .. }) => match arena.computation(body) {
@@ -7233,8 +7233,8 @@ def delivered() -> -F Unit {
             .naming(&constructors)
             .within(&context);
         for (source, expected) in [
-            (plain.restoring(&restoration), "fn (a) { S(S(dbl(a))) }"),
-            (plain, "fn (a) { run b <- dbl(a) ; S(S(b)) }"),
+            (plain.restoring(&restoration), "fun (a) { S(S(dbl(a))) }"),
+            (plain, "fun (a) { run b <- dbl(a) ; S(S(b)) }"),
         ] {
             let presentation = present_computation(
                 &source,
@@ -7311,7 +7311,7 @@ def delivered() -> -F Unit {
             unused(
                 "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef pick(n : Nat, \
                  m : Nat) -> -F Nat {\n  run k <- pure Succ(n) ;\n  match n {\n    Zero => n,\n    \
-                 Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fn (y) { Zero } } ;\n"
+                 Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fun (y) { Zero } } ;\n"
             ),
             ["5:m", "6:k", "9:p", "13:y"],
             "the unused parameter, `run` binder, pattern variable and lambda binder, the last in \

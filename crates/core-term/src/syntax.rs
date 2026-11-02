@@ -4167,7 +4167,7 @@ where
                 },
                 // A function written as a call's argument is kept nested,
                 // and the checker suspends it, as a function returns
-                // nothing; printed, it is the bare `fn` a thunk of the
+                // nothing; printed, it is the bare `fun` a thunk of the
                 // function prints as, and read back, that thunk.
                 (&Value::Thunk(left), &Value::Nested(right))
                 | (&Value::Nested(left), &Value::Thunk(right))
@@ -5122,7 +5122,7 @@ mod tests
         let signatures = BTreeMap::new();
         let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
         let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        // `fn (b) { force b }`: its body forces, so no call of it reduces.
+        // `fun (b) { force b }`: its body forces, so no call of it reduces.
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let forces = arena.computation_force(bound);
         let literal = arena.computation_lambda(forces);
@@ -5221,7 +5221,7 @@ mod tests
         let unit = arena.value_type_product(&[]);
         let unit_code = arena.value_quote(unit);
         let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        // `(thunk { fn (g) { return Unit } })(x)`, decoded.
+        // `(thunk { fun (g) { return Unit } })(x)`, decoded.
         let returns = arena.computation_return(unit_code);
         let constant = arena.computation_lambda(returns);
         let constant = arena.value_thunk(constant);
@@ -5424,14 +5424,14 @@ mod tests
 
     /// #3947: a function written as a call's argument is kept as a nested
     /// computation the checker suspends, and the surface prints it as the
-    /// bare `fn` a thunk of the function prints as.
+    /// bare `fun` a thunk of the function prints as.
     #[test]
     fn a_suspended_function_reads_as_its_thunk_3947()
     {
         let mut arena = crate::CoreArena::new();
         let signatures = BTreeMap::new();
         let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
-        // `fn (w) { f(w) }` with `f` the binder around the type.
+        // `fun (w) { f(w) }` with `f` the binder around the type.
         let function = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let forced = arena.computation_force(function);
@@ -5563,7 +5563,7 @@ mod tests
         let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
         let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-        // `(thunk { fn (b) { return b } })(x)`.
+        // `(thunk { fun (b) { return b } })(x)`.
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let returns = arena.computation_return(bound);
         let identity = arena.computation_lambda(returns);
@@ -5571,7 +5571,7 @@ mod tests
         let forced = arena.computation_force(identity);
         let called = arena.computation_application(forced, x);
         let called = arena.value_nested(called);
-        // `(thunk { fn (a) { fn (b) { return a } } })(y)((… )(x))`: the first
+        // `(thunk { fun (a) { fun (b) { return a } } })(y)((… )(x))`: the first
         // argument instantiates the outer abstraction, and the second is
         // itself a call that reduces.
         let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
@@ -5656,7 +5656,7 @@ mod tests
         let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
         let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-        // `(fn (a) { a })(x)`, the literal nested where its call reads it.
+        // `(fun (a) { a })(x)`, the literal nested where its call reads it.
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let returns = arena.computation_return(bound);
         let identity = arena.computation_lambda(returns);
@@ -5664,10 +5664,10 @@ mod tests
         let forced = arena.computation_force(identity);
         let called = arena.computation_application(forced, x);
         let called = arena.value_nested(called);
-        // `(fn (a) { a })((fn (a) { a })(x))`.
+        // `(fun (a) { a })((fun (a) { a })(x))`.
         let twice = arena.computation_application(forced, called);
         let twice = arena.value_nested(twice);
-        // `(fn (a) { y(a) })(x)` and `y(x)`; under the literal's binder `y`
+        // `(fun (a) { y(a) })(x)` and `y(x)`; under the literal's binder `y`
         // is the third variable out.
         let inner_y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
         let inner_y = arena.computation_force(inner_y);
@@ -5687,7 +5687,7 @@ mod tests
         let named = arena.computation_force(named);
         let named = arena.computation_application(named, x);
         let named = arena.value_nested(named);
-        // `thunk { fn (d) { (fn (w) { y(w) })(d) } }` and `thunk { fn (d) {
+        // `thunk { fun (d) { (fun (w) { y(w) })(d) } }` and `thunk { fun (d) {
         // y(d) } }`: under `d` and `w`, `y` is the fourth variable out, and
         // under `d` alone the third.
         let d = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -5705,7 +5705,7 @@ mod tests
         let flat_call = arena.computation_application(flat, d);
         let flat_body = arena.computation_lambda(flat_call);
         let flat_body = arena.value_thunk(flat_body);
-        // `thunk { fn (d) { (fn (w) { y(w) })(d)(d) } }` and `thunk { fn (d)
+        // `thunk { fun (d) { (fun (w) { y(w) })(d)(d) } }` and `thunk { fun (d)
         // { y(d)(d) } }`: the inner application reduces on its own.
         let over = arena.computation_application(inner, d);
         let over = arena.computation_application(over, d);
@@ -5777,7 +5777,7 @@ mod tests
         let returns_int = arena.comp_type_returner(int);
         let arrow = arena.comp_type_arrow(int, returns_int);
         let stated_type = arena.value_type_thunk(arrow);
-        // `(fn (q : Int) { y(q) } : Int => Int)`: under `q` and the bind's
+        // `(fun (q : Int) { y(q) } : Int => Int)`: under `q` and the bind's
         // binder, `y` is the fourth variable out.
         let q = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let y_inside = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
@@ -5793,7 +5793,7 @@ mod tests
         let called = arena.computation_application(literal, x);
         let direct = arena.computation_force(y);
         let direct = arena.computation_application(direct, x);
-        // `fn (q : Int) { r ← y(q); return r }`: its bind binds a call.
+        // `fun (q : Int) { r ← y(q); return r }`: its bind binds a call.
         let y_under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
         let bound = arena.computation_force(y_under_one);
         let bound = arena.computation_application(bound, q);
@@ -5818,7 +5818,7 @@ mod tests
         let (suspended, direct_suspended) = (arena.value_thunk(called), arena.value_thunk(direct));
         let (suspended, direct_suspended) =
             (at(&mut arena, suspended), at(&mut arena, direct_suspended));
-        // `(fn (q : Int) { q then s } : …)(p)` written twice: once its body
+        // `(fun (q : Int) { q then s } : …)(p)` written twice: once its body
         // returns the composite, once it is the fold the composite realises.
         // Under `q` and the bind's binder, `x` is the fifth variable out and
         // `s` the third.
@@ -5974,7 +5974,7 @@ mod tests
         let (f, y) = (at(&mut arena, 1_u32), at(&mut arena, 0_u32));
         let bound = call(&mut arena, f, y);
         let x = at(&mut arena, 0_u32);
-        // `x ← f(y); (thunk { fn (g) { return Unit } })(x)`, decoded.
+        // `x ← f(y); (thunk { fun (g) { return Unit } })(x)`, decoded.
         let returns = arena.computation_return(unit_code);
         let literal = arena.computation_lambda(returns);
         let literal = arena.value_thunk(literal);

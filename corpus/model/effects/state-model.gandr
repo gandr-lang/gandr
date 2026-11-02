@@ -20,12 +20,12 @@ module Passing : Model(State) with sort S = Integer where {
   type C = Integer => Integer;
   /// Reading hands the current state to what runs after, at that same state.
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
-    thunk { fn (s) { run after <- k(s); after(s) } }
+    thunk { fun (s) { run after <- k(s); after(s) } }
   }
   /// Storing runs what comes after at the stored value, whatever the state
   /// was.
   def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
-    thunk { fn (_old) { k(s) } }
+    thunk { fun (_old) { k(s) } }
   }
 }
 
@@ -33,7 +33,7 @@ module Passing : Model(State) with sort S = Integer where {
 /// the stored four both times, put-get at a point.
 @[ runs("44") ]
 def putThenGet() -> Integer {
-  run read <- Passing.get(fn (s) { pure fn (t) { pure s * 10 + t } });
+  run read <- Passing.get(fun (s) { pure fun (t) { pure s * 10 + t } });
   run program <- Passing.put(4, read);
   program(0)
 }
@@ -46,11 +46,11 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where {
   type C = Integer => Integer;
   /// As `Passing.get`.
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
-    thunk { fn (s) { run after <- k(s); after(s) } }
+    thunk { fun (s) { run after <- k(s); after(s) } }
   }
   /// As `Passing.put`.
   def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
-    thunk { fn (_old) { k(s) } }
+    thunk { fun (_old) { k(s) } }
   }
   /// Storing twice keeps the second value.
   def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(
@@ -76,8 +76,8 @@ def shown(c : Unit + (Unit + Unit)) -> Integer {
 /// State passing over the counts with both sorts manifest, so a model is the
 /// record of its two operations.
 def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
-  .get = fn (k) { pure fn (s) { run after <- k(s); after(s) } },
-  .put = fn (s) { fn (k) { pure fn (_old) { k(s) } } }
+  .get = fun (k) { pure fun (s) { run after <- k(s); after(s) } },
+  .put = fun (s) { fun (k) { pure fun (_old) { k(s) } } }
 };
 
 /// The same model carried along negation of the counts: `get`'s continuation
@@ -94,8 +94,8 @@ def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 def putGet(m : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
   match m {
     #{.get = g, .put = p} => {
-      run read <- g(fn (s) {
-        pure fn (t) { run a <- shown(s); run b <- shown(t); pure a * 10 + b }
+      run read <- g(fun (s) {
+        pure fun (t) { run a <- shown(s); run b <- shown(t); pure a * 10 + b }
       });
       run program <- p(+{.1 = +{.0 = unit}}, read);
       program(+{.0 = unit})

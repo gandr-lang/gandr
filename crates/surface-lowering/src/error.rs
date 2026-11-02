@@ -307,7 +307,7 @@ pub enum FragmentBoundary
     ForeignClaim,
     /// The form is `cong` at a constructor or at a static abstraction `\q. e`,
     /// neither of which is a function: `cong` maps a path by a function
-    /// definition or a lambda `fn (q) { e }`.
+    /// definition or a lambda `fun (q) { e }`.
     NotAFunction,
     /// The form is a function exit, `return` or `become`, a loop exit,
     /// `break` or `continue`, or a loop, standing where no path through a

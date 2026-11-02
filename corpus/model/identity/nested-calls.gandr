@@ -79,12 +79,12 @@ def applied_elsewhere(
 /// The call bound before a function that applies what it binds.
 def bound_outside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
   run v <- k(s);
-  return fn (_old) { v(s) }
+  return fun (_old) { v(s) }
 }
 
 /// The call bound inside the function.
 def bound_inside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
-  return fn (_old) { run f <- k(s); f(s) }
+  return fun (_old) { run f <- k(s); f(s) }
 }
 
 /// Binding the call outside the function or inside it gives one function

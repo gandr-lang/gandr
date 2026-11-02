@@ -1,4 +1,4 @@
-@[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { e(d(f)) } } } } } }") ]
+@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e(d(f)) } } } } } }") ]
 def comp(
   a : Type,
   b : Type,
@@ -10,7 +10,7 @@ def comp(
   become g(f(x))
 }
 
-@[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
+@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
 def collide(
   a : Type,
   b : Type,
@@ -22,7 +22,7 @@ def collide(
   thunk { become comp(a, c, d, u, h) }
 }
 
-@[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
+@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
 def clean(
   p : Type,
   q : Type,

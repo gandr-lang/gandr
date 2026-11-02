@@ -1,7 +1,7 @@
-@[ runs("fn (a) { a }") ]
+@[ runs("fun (a) { a }") ]
 def identity(x : Integer) -> Integer { x }
 
-@[ runs("fn (a) { fn (b) { a } }") ]
+@[ runs("fun (a) { fun (b) { a } }") ]
 def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]

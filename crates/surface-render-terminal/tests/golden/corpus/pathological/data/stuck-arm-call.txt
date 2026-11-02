@@ -1,15 +1,15 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/stuck-arm-call.gandr:13:19
+   ╭▸ corpus/pathological/data/stuck-arm-call.gandr:13:20
    │
 12 │   def unselected(w : Nat, h : Heap) -> (viaZero(w, h)) => emp(h) {
    │   │              ┬        ─ checked against `(h : Heap) -> -F (viaZero(w, h) => emp(h))`; while checking the body of this function; binds h : Heap
    │   │              │
    │ ┌─┘              checked against `(w : Nat) -> (h : Heap) -> -F (viaZero(w, h) => emp(h))`; while checking the body of this function; binds w : Nat
    │ │
-13 │ │   return fn (e) { e }
-   │ │   ┬──────┬────────┯──
-   │ │   │      │        │
-   │ │   │      │        its type does not convert: expected `emp(h)`, found `viaZero(w, h)`
+13 │ │   return fun (e) { e }
+   │ │   ┬──────┬─────────┯──
+   │ │   │      │         │
+   │ │   │      │         its type does not convert: expected `emp(h)`, found `viaZero(w, h)`
    │ │   │      checked against `viaZero(w, h) => emp(h)`; while checking the body of this function; binds e : viaZero(w, h)
    │ │   checked against `-F (viaZero(w, h) => emp(h))`; while judging the value this returns
 14 │ │ }

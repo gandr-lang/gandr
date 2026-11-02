@@ -1199,7 +1199,7 @@ fn an_implicit_no_argument_forces_is_unsolved_1216()
 #[test]
 fn an_implicit_solved_past_its_scope_escapes_1216()
 {
-    // `konst(fn (t) { fn (y) { return y } })`: under the lambda's binder the
+    // `konst(fun (t) { fun (y) { return y } })`: under the lambda's binder the
     // decode of `b`, declared outside it, meets the decode of `t`. The only
     // solution names `t`, so the equation waits on its escape, and the
     // refusal says so.

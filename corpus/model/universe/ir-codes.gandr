@@ -43,10 +43,10 @@ pub data IR(d : Type) : Type[+, 1] where {
 pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
   match c {
     Iota(e) => return Unit,
-    SigmaC(a, f) => return (Sig(a, thunk { fn (y) { args[<](d, f(y), x, t) } })),
+    SigmaC(a, f) => return (Sig(a, thunk { fun (y) { args[<](d, f(y), x, t) } })),
     DeltaC(a, f) => return (Sig(
       +U (a -> -F x),
-      thunk { fn (h) { args[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t) } }
+      thunk { fun (h) { args[<](d, f(thunk { fun (z) { t(h(z)) } }), x, t) } }
     ))
   }
 }
@@ -85,6 +85,6 @@ pub def restDelta(
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit {
   match v {
-    MkSig(h, r) => keep(d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
+    MkSig(h, r) => keep(d, f(thunk { fun (z) { t(h(z)) } }), x, t, r)
   }
 }

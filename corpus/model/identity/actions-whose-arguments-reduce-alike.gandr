@@ -39,7 +39,7 @@ def whiskerAlong(
   actAlong(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     f1,
     f2,
     a
@@ -78,13 +78,13 @@ def underAnAction(
   actAlong(
     Path(A, x, z),
     Path(A, x, w),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm then g,
     fp then g,
     actAlong(
       Path(A, x, y),
       Path(A, x, z),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa
@@ -93,7 +93,7 @@ def underAnAction(
   actAlong(
     Path(A, x, z),
     Path(A, x, w),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm then g,
     fp then g,
     whiskerAlong(A, x, y, z, fm, fp, fa, g)
@@ -102,7 +102,7 @@ def underAnAction(
   here(actAlong(
     Path(A, x, z),
     Path(A, x, w),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm then g,
     fp then g,
     whiskerAlong(A, x, y, z, fm, fp, fa, g)
@@ -134,7 +134,7 @@ def underAWhisker(
     actAlong(
       Path(A, x, y),
       Path(A, x, z),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa
@@ -163,13 +163,13 @@ def nestedAtLambdas(
   actAlong(
     Path(A, x, z),
     Path(A, x, w),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm then g,
     fp then g,
     actAlong(
       Path(A, x, y),
       Path(A, x, z),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa
@@ -179,8 +179,8 @@ def nestedAtLambdas(
     Path(A, x, y),
     Path(A, x, z),
     Path(A, x, w),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm,
     fp,
     fa
@@ -189,13 +189,13 @@ def nestedAtLambdas(
   here(actAlong(
     Path(A, x, z),
     Path(A, x, w),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm then g,
     fp then g,
     actAlong(
       Path(A, x, y),
       Path(A, x, z),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa

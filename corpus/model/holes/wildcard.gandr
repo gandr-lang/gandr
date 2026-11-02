@@ -33,7 +33,7 @@ def slotForced() -> Integer { same[.a = _](3) }
 /// A path's right end left in an ascription's type: checking `here(3)`
 /// against it forces the end to `3`, and the path runs as its two maps, both
 /// the identity (#1979).
-@[ runs("(thunk { fn (a) { a } }, thunk { fn (a) { a } })") ]
+@[ runs("(thunk { fun (a) { a } }, thunk { fun (a) { a } })") ]
 def endForced() -> Path(Integer, 3, 3) { (here(3) : Path(Integer, 3, _)) }
 
 /// A definition its annotation signs, the path's right end left open: no

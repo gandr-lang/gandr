@@ -252,11 +252,11 @@ impl<'source> Lowerer<'_, 'source>
         self.clause_tree(function, written, frame, &shape)
     }
 
-    /// Classify a matching lambda, `fn { | p1, …, pk => c … }`: one lambda
+    /// Classify a matching lambda, `fun { | p1, …, pk => c … }`: one lambda
     /// per column, its clauses matching their binders.
     ///
     /// # Specification
-    /// - requires: `site` is a lambda in term position whose `fn` is followed
+    /// - requires: `site` is a lambda in term position whose `fun` is followed
     ///   by `{`.
     /// - ensures: the columns are as many as the first clause's patterns; each
     ///   column takes the domain of the next arrow its position answers, and
@@ -285,7 +285,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, super::Produced::Computation)?;
-        let _keyword = cursor.tile(TileName::FN);
+        let _keyword = cursor.tile(TileName::FUN);
         let written = Self::written_clauses(site, &mut cursor)?;
         let width = written
             .clauses

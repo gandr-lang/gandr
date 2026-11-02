@@ -1,9 +1,9 @@
-// A lambda's parameter written with its type, `fn (x : A) { … }`, is read at
+// A lambda's parameter written with its type, `fun (x : A) { … }`, is read at
 // `A`: the argument the lambda binds is returned at `A` and bound as the
 // parameter, so the arrow the lambda answers must take an `A` (#1310).
 
 /// Doubles its argument, the parameter typed where the lambda binds it.
-def double : Integer => Integer = fn (x : Integer) { x + x };
+def double : Integer => Integer = fun (x : Integer) { x + x };
 
 /// A function of a lazy record, handed its argument.
 def lend(
@@ -15,5 +15,5 @@ def lend(
 
 /// Lends `lend` a lambda whose parameter states the record it observes.
 def lent(m : +U &{get : -F Integer, put : -F String}) -> Integer {
-  lend(fn (n : +U &{get : -F Integer, put : -F String}) { n.get }, m)
+  lend(fun (n : +U &{get : -F Integer, put : -F String}) { n.get }, m)
 }

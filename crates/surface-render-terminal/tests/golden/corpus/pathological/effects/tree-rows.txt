@@ -11,7 +11,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ │   │    its type does not convert: expected `StateOp`, found `ExnOp`
    │ │   │    the type it synthesises
    │ │   checked against `Either(StateOp, Void)`; while finishing the type of this
-14 │ │   fn (_r) { (Done(0) : Prog(Either(StateOp, Void), Integer)) }
+14 │ │   fun (_r) { (Done(0) : Prog(Either(StateOp, Void), Integer)) }
 15 │ │ );
    │ └─┘ checked against `Prog(Either(StateOp, Void), Integer)`; while checking the next premise of this
    │

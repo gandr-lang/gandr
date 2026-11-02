@@ -19,11 +19,11 @@ module SetoidCat : Model(CatShape) where {
   type Hom(a : Ob, b : Ob) = a => b;
 
   /// The identity function at a type.
-  @[ runs("fn (a) { fn (b) { b } }") ]
+  @[ runs("fun (a) { fun (b) { b } }") ]
   def ident(t : Type, x : t) -> t { x }
 
   /// Composition of two functions, applied.
-  @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { e(d(f)) } } } } } }") ]
+  @[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e(d(f)) } } } } } }") ]
   def compose(
     t : Type,
     u : Type,

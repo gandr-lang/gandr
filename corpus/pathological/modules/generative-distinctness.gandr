@@ -2,7 +2,7 @@ module Seed :> #{ type T, zero : T, next : T => T } where {
   type T = Integer;
   @[ runs("0") ]
   def zero = 0;
-  @[ runs("fn (a) { a + 1 }") ]
+  @[ runs("fun (a) { a + 1 }") ]
   def next(n : T) -> T { n + 1 }
 }
 

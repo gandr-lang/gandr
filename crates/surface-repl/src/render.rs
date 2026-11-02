@@ -162,10 +162,10 @@ mod tests
         );
         assert_eq!(
             last(
-                "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;"
+                "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;"
             ),
-            Some((OutKind::Value, String::from("fn (a) { a }"))),
-            "a function terminal renders as its `fn`"
+            Some((OutKind::Value, String::from("fun (a) { a }"))),
+            "a function terminal renders as its `fun`"
         );
         let _goal = last("def later : Integer ;");
         assert!(matches!(

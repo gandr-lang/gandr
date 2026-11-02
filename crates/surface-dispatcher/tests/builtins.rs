@@ -101,8 +101,8 @@ fn native_errors_and_goal_blame_remain_distinct()
 fn source_and_binder_names_shadow_the_outer_prelude()
 {
     for source in [
-        "def add : +U (Integer -> Integer -> -F Integer) ; def add = thunk { fn (x) { fn (y) { return x } } } ; def answer : +U (-F Integer) ; def answer = thunk { become add(19, 7) } ;",
-        "def f : +U (Integer -> -F Integer) ; def f = thunk { fn (add) { return add } } ; def answer : +U (-F Integer) ; def answer = thunk { become f(19) } ;",
+        "def add : +U (Integer -> Integer -> -F Integer) ; def add = thunk { fun (x) { fun (y) { return x } } } ; def answer : +U (-F Integer) ; def answer = thunk { become add(19, 7) } ;",
+        "def f : +U (Integer -> -F Integer) ; def f = thunk { fun (add) { return add } } ; def answer : +U (-F Integer) ; def answer = thunk { become f(19) } ;",
     ] {
         let Evaluation::Value(value) = run(SourceText::from(source))
         else {

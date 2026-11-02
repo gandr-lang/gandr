@@ -2279,7 +2279,7 @@ fn a_family_argument_written_as_a_call_converts_with_its_value_3579()
     );
     let yes = arena.value_injection(Summand::from(0_usize), unit);
     let no = arena.value_injection(Summand::from(1_usize), unit);
-    // `fn (_) { return yes }`, the definition the call unfolds.
+    // `fun (_) { return yes }`, the definition the call unfolds.
     let answered = arena.computation_return(yes);
     let answered = arena.computation_lambda(answered);
     let answered = arena.value_thunk(answered);
@@ -2336,7 +2336,7 @@ fn a_constructor_annotated_at_a_call_meets_its_stated_index_3627()
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let yes = arena.value_injection(Summand::from(0_usize), unit);
     let no = arena.value_injection(Summand::from(1_usize), unit);
-    // `fn (_) { return yes }` and `fn (_) { return no }`, the definitions the
+    // `fun (_) { return yes }` and `fun (_) { return no }`, the definitions the
     // calls unfold.
     let [answered, refuted] = [yes, no].map(|answer| {
         let returned = arena.computation_return(answer);
@@ -2413,7 +2413,7 @@ fn a_constructor_annotated_at_a_call_meets_its_stated_index_3627()
 /// makes, in both checkers (#3733). `pick`, constant 0, cases on a boolean
 /// and returns the code of `Unit` or of `Integer`. `keep`, constant 1, takes
 /// `b` and a value of `El(⟨pick(b)⟩)`. `pass`, constant 2, takes `b`, `y` and
-/// a value of `El(⟨(thunk { fn (z) { pick(b) } })(y)⟩)`, and gives that value
+/// a value of `El(⟨(thunk { fun (z) { pick(b) } })(y)⟩)`, and gives that value
 /// to `keep`. `swap`, constant 3, writes `pick(y)` in the literal, so its
 /// value has another type.
 #[test]
@@ -2429,7 +2429,7 @@ fn a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733()
         arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
     };
     let [pick, keep] = [0_usize, 1].map(|at| arena.value_constant(ConstantIndex::from(at)));
-    // `fn (b) { case b { inl _ => return 'Unit, inr _ => return 'Integer } }`.
+    // `fun (b) { case b { inl _ => return 'Unit, inr _ => return 'Integer } }`.
     let [on_left, on_right] = [unit_type, integer].map(|picked| {
         let code = arena.value_quote(picked);
         arena.computation_return(code)
@@ -2479,7 +2479,7 @@ fn a_code_a_family_literal_returns_meets_the_call_it_reduces_to_3733()
         arena.value_type_thunk(passed)
     };
     let [pass_type, swap_type] = [2, 1].map(|at| through(&mut arena, at));
-    // `fn (b, y, w) { keep(b, w) }`: under `b`, `y` and `w`, `b` is 2.
+    // `fun (b, y, w) { keep(b, w) }`: under `b`, `y` and `w`, `b` is 2.
     let b = variable(&mut arena, 2);
     let w = variable(&mut arena, 0);
     let forced = arena.computation_force(keep);
@@ -2536,7 +2536,7 @@ fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
         DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
         OriginToken::from(0_usize),
     );
-    // `ident = fn (x) { return x }`, a pure definition to call.
+    // `ident = fun (x) { return x }`, a pure definition to call.
     let returns_nat = arena.comp_type_returner(nat);
     let ident_type = arena.comp_type_arrow(nat, returns_nat);
     let ident_type = arena.value_type_thunk(ident_type);

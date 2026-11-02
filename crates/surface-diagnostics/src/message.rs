@@ -398,7 +398,7 @@ fn lowered(
                 ),
                 FragmentBoundary::NotAFunction => f.write_str(
                     "`cong` maps a path by a function, and neither a constructor nor a type \
-                     operator `\\q. e` is one; write `fn (q) { e }`, or a function definition \
+                     operator `\\q. e` is one; write `fun (q) { e }`, or a function definition \
                      that applies the constructor",
                 ),
                 FragmentBoundary::NotInTail => write!(

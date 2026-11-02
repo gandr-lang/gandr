@@ -51,8 +51,8 @@ use gandr_theory_graphs::WalkChainLength;
 /// beside the dotted forms until the corpus moves, then by the block's own
 /// sort, which every block after a tile reaches through one hole, then by a
 /// module member taking the top level's definition family (#4145), then by a
-/// record type's faces block (#4453).
-const BUILT_IN_FINGERPRINT: u64 = 0x9c85_664b_2ec2_e7c9;
+/// record type's faces block (#4453), then by the lambda keyword `fun` (#4484).
+const BUILT_IN_FINGERPRINT: u64 = 0x8c3f_74d7_7624_f4b5;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -177,12 +177,12 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("feed", 3),
     ("file_descriptor", 1),
     ("flow", 1),
-    ("fn", 1),
     ("for", 1),
     ("force", 1),
     ("forget", 1),
     ("fork", 1),
     ("from", 1),
+    ("fun", 1),
     ("glob", 1),
     ("handle", 1),
     ("hold", 16),

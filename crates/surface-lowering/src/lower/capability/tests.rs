@@ -1870,10 +1870,10 @@ const PASSING: &str = concat!(
     "module Passing : Model(StatePutPut) with sort S = Integer where {\n",
     "  type C = Integer => Integer;\n",
     "  def get(k : Integer => Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fn (s) { run after <- k(s); after(s) } }\n",
+    "    thunk { fun (s) { run after <- k(s); after(s) } }\n",
     "  }\n",
     "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fn (_old) { k(s) } }\n",
+    "    thunk { fun (_old) { k(s) } }\n",
     "  }\n",
     "  def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(\n",
     "    Integer => Integer,\n",
@@ -1902,8 +1902,8 @@ fn a_scope_names_a_model_of_its_theory_2272()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}",
-            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fn (_s) {{ pure a }} }} with Passing }}\n",
-            "def unnamed() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fn (s) {{ pure s }} }} with Stateless }}\n",
+            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fun (_s) {{ pure a }} }} with Passing }}\n",
+            "def unnamed() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} with Stateless }}\n",
             "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} with Passing }}\n",
         ),
         state = STATE,
@@ -2060,11 +2060,11 @@ const COUNTING: &str = concat!(
     "module Counting : Model(Cost) with sort N = Integer => Integer where {\n",
     "  type C = (Integer => Integer) => Integer;\n",
     "  def charge(c : Integer => Integer, k : (Integer => Integer) => Integer) -> (Integer => Integer) => Integer {\n",
-    "    thunk { fn (before) { k(thunk { fn (n) { run m <- c(n); before(m) } }) } }\n",
+    "    thunk { fun (before) { k(thunk { fun (n) { run m <- c(n); before(m) } }) } }\n",
     "  }\n",
-    "  def zero : Integer => Integer = thunk { fn (n) { pure n } };\n",
+    "  def zero : Integer => Integer = thunk { fun (n) { pure n } };\n",
     "  def plus(a : Integer => Integer, b : Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fn (n) { run m <- b(n); a(m) } }\n",
+    "    thunk { fun (n) { run m <- b(n); a(m) } }\n",
     "  }\n",
     "  def chargeZero(k : (Integer => Integer) => Integer) -> Path((Integer => Integer) => Integer, charge(zero, k), k) {\n",
     "    here(k)\n",
@@ -2086,7 +2086,7 @@ fn a_model_answers_a_theory_s_value_operations_2288()
     let source = alloc::format!(
         concat!(
             "{cost}{counting}",
-            "def answered() -> (Integer => Integer) => Integer {{ handle c : Cost with sort N = Integer => Integer {{ c.charge(thunk {{ fn (n) {{ pure n }} }}); pure thunk {{ fn (before) {{ before(0) }} }} }} with Counting }}\n",
+            "def answered() -> (Integer => Integer) => Integer {{ handle c : Cost with sort N = Integer => Integer {{ c.charge(thunk {{ fun (n) {{ pure n }} }}); pure thunk {{ fun (before) {{ before(0) }} }} }} with Counting }}\n",
             "def written() -> Integer {{ handle c : Cost with sort N = Integer => Integer {{ pure 0 }} with {{ pure(x) => pure x, oper charge(n, k) => k() }} }}\n",
         ),
         cost = COST,
@@ -2136,8 +2136,8 @@ fn a_scope_records_the_model_answering_it_3196()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}",
-            "def named() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fn (s) {{ pure s }} }} with Passing }}\n",
-            "def inScope() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fn (s) {{ pure s }} }} }}\n",
+            "def named() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} with Passing }}\n",
+            "def inScope() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} }}\n",
             "def written() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
         ),
         state = STATE,
@@ -2192,9 +2192,9 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}{zero_and_one}",
-            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fn (_s) {{ pure a }} }} }}\n",
-            "def ambiguous() -> Integer => Integer {{ handle st : State with sort S = Integer {{ pure fn (s) {{ pure s }} }} }}\n",
-            "def unanswered() -> Integer => Integer {{ handle st : State with sort S = Unit {{ pure fn (s) {{ pure 1 }} }} }}\n",
+            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fun (_s) {{ pure a }} }} }}\n",
+            "def ambiguous() -> Integer => Integer {{ handle st : State with sort S = Integer {{ pure fun (s) {{ pure s }} }} }}\n",
+            "def unanswered() -> Integer => Integer {{ handle st : State with sort S = Unit {{ pure fun (s) {{ pure 1 }} }} }}\n",
             "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} }}\n",
         ),
         state = STATE,

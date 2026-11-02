@@ -97,5 +97,5 @@ pub def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> Int {
 /// of `IsoFunSpaceS¹`), curried: from the record, the point's projection is
 /// bound before the loop's type reads it, as in `toLoop`.
 def fromLoop(x : Int, p : Path(Int, x, x)) -> Circle => Int {
-  thunk { fn (c) { fromLoopAt(x, p, c) } }
+  thunk { fun (c) { fromLoopAt(x, p, c) } }
 }

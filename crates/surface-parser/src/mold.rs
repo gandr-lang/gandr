@@ -33,7 +33,7 @@
 //!   tile (an `Inl` atom vs an `Inl(x)` constructor pattern, a `List` type
 //!   identifier vs a `List(T)` application). It is settled by a bounded greedy
 //!   lookahead over the next tokens; the grammar factors the wider families
-//!   (`def`, `let`, `fn`, the `(` group, and the `#{` record) so they need
+//!   (`def`, `let`, `fun`, the `(` group, and the `#{` record) so they need
 //!   none.
 //! * **Determinism is HARD.** Candidates are visited in ascending [`MoldId`]
 //!   order under a strict `<`, so an exact tie keeps the smaller `MoldId`
@@ -314,7 +314,7 @@ const LABEL_CAPACITY: usize = MAX_LABELS + RESERVED_FALLBACK_LABELS.len();
 /// ambiguity is a shared-prefix form family whose opener molds tie on the local
 /// key — a `constructor` atom vs a `constructor(…)` pattern, a
 /// `type_identifier` vs a `type_identifier(T)` application (the `def` / `let` /
-/// `fn` / `(` / `#{` families are factored, so they never reach here). Each is
+/// `fun` / `(` / `#{` families are factored, so they never reach here). Each is
 /// LL(k) decidable within a few tiles of the shared prefix, so the molder
 /// dry-runs each tied opener followed by a greedy molding of the next window
 /// tokens and keeps the reading whose window completes with the fewest
@@ -1008,7 +1008,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `where` is reserved: it ends a declaration's head, whose last slot is a
 /// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
-    "def", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
+    "def", "run", "leta", "as", "extern", "from", "type", "fun", "pure", "return", "become",
     "thunk", "force", "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
@@ -3480,7 +3480,7 @@ impl<'pbg> Molder<'pbg>
     /// tie: a bare atom versus a form-start over the same lexeme (`Inl` alone
     /// versus `Inl(x)` opening a constructor pattern, `List` versus `List(T)`
     /// opening a type application) — the wider form families (`def`, `let`,
-    /// `fn`, the `(` group, the `#{` record) are factored at the grammar, so
+    /// `fun`, the `(` group, the `#{` record) are factored at the grammar, so
     /// they tie on the local key (zero
     /// streaming delta, equal continuation and sort ranks). The completion
     /// penalty [`choose`](Self::choose) would use resolves such a tie the

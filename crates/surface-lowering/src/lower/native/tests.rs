@@ -3876,7 +3876,7 @@ fn a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Empty : Type where {}\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = thunk { fn (x) { match x {} } } ;\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = thunk { fn (x) { match x -> -F Integer {} } } ;\n",
+            "data Empty : Type where {}\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = thunk { fun (x) { match x {} } } ;\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = thunk { fun (x) { match x -> -F Integer {} } } ;\n",
         ),
         &mut arena,
     );
@@ -3902,7 +3902,7 @@ fn a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Empty : Type where {}\n@[ checks ]\ndef aliased : Empty => Integer ;\ndef aliased = fn (x) { match x {} } ;\n@[ checks ]\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = fn (x) { match x {} } ;\n@[ checks ]\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = fn (x) { match x -> -F Integer {} } ;\n",
+            "data Empty : Type where {}\n@[ checks ]\ndef aliased : Empty => Integer ;\ndef aliased = fun (x) { match x {} } ;\n@[ checks ]\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = fun (x) { match x {} } ;\n@[ checks ]\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = fun (x) { match x -> -F Integer {} } ;\n",
         ),
         &mut arena,
     );
@@ -3919,7 +3919,7 @@ fn an_argument_lambda_s_binder_is_typed_by_its_parameter_1948()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Empty : Type where {}\ndef aliased(f : Empty => Integer, v : Empty) -> -F Integer { f(v) }\ndef arrowed(f : +U (Empty -> -F Integer), v : Empty) -> -F Integer { f(v) }\n@[ checks ]\ndef thunked(v : Empty) -> -F Integer { aliased(thunk { fn (x) { match x {} } }, v) }\n@[ checks ]\ndef bare(v : Empty) -> -F Integer { aliased(fn (x) { match x {} }, v) }\n@[ checks ]\ndef stated(v : Empty) -> -F Integer { aliased(thunk { fn (x) { match x -> -F Integer {} } }, v) }\n@[ checks ]\ndef underArrow(v : Empty) -> -F Integer { arrowed(thunk { fn (x) { match x {} } }, v) }\n",
+            "data Empty : Type where {}\ndef aliased(f : Empty => Integer, v : Empty) -> -F Integer { f(v) }\ndef arrowed(f : +U (Empty -> -F Integer), v : Empty) -> -F Integer { f(v) }\n@[ checks ]\ndef thunked(v : Empty) -> -F Integer { aliased(thunk { fun (x) { match x {} } }, v) }\n@[ checks ]\ndef bare(v : Empty) -> -F Integer { aliased(fun (x) { match x {} }, v) }\n@[ checks ]\ndef stated(v : Empty) -> -F Integer { aliased(thunk { fun (x) { match x -> -F Integer {} } }, v) }\n@[ checks ]\ndef underArrow(v : Empty) -> -F Integer { arrowed(thunk { fun (x) { match x {} } }, v) }\n",
         ),
         &mut arena,
     );
@@ -3933,17 +3933,17 @@ fn a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808()
         (
             "Empty => Integer",
             "+U (Empty -> -F Integer)",
-            "thunk { fn (x) { match x {} } }",
+            "thunk { fun (x) { match x {} } }",
         ),
         (
             "Empty => Integer",
             "+U (Empty -> -F Integer)",
-            "thunk { fn (x) { match x -> -F Integer {} } }",
+            "thunk { fun (x) { match x -> -F Integer {} } }",
         ),
         (
             "(Empty, Integer) => Integer",
             "+U (Empty -> Integer -> -F Integer)",
-            "thunk { fn (x) { fn (n) { match x {} } } }",
+            "thunk { fun (x) { fun (n) { match x {} } } }",
         ),
     ] {
         let mut arena = CoreArena::new();
@@ -3971,17 +3971,17 @@ fn a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815()
         (
             "(a : Empty, b : Integer) => Integer",
             "+U ((a : Empty) -> (b : Integer) -> -F Integer)",
-            "thunk { fn (a) { fn (b) { match a {} } } }",
+            "thunk { fun (a) { fun (b) { match a {} } } }",
         ),
         (
             "(a : One) => Path(One, a, a)",
             "+U ((a : One) -> -F Path(One, a, a))",
-            "thunk { fn (a) { match a { Only => here(Only) } } }",
+            "thunk { fun (a) { match a { Only => here(Only) } } }",
         ),
         (
             "(a : One, Integer) => Path(One, a, a)",
             "+U ((a : One) -> Integer -> -F Path(One, a, a))",
-            "thunk { fn (x) { fn (n) { match x { Only => here(Only) } } } }",
+            "thunk { fun (x) { fun (n) { match x { Only => here(Only) } } } }",
         ),
     ] {
         let mut arena = CoreArena::new();
@@ -5175,9 +5175,9 @@ fn a_sum_pattern_reads_bool_as_its_sum_815()
             "def atom(b : Bool) -> -F Bool { match b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } }\n",
             "def past(b : Bool) -> -F Integer { match b { +{.2 = u} => return 0, _ => return 1 } }\n",
             "def bracedLambda : +U (+{Unit, Unit} -> -F Bool) ;\n",
-            "def bracedLambda = thunk { fn (b) { match b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } } } ;\n",
+            "def bracedLambda = thunk { fun (b) { match b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } } } ;\n",
             "def atomLambda : +U (Bool -> -F Bool) ;\n",
-            "def atomLambda = thunk { fn (b) { match b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } } } ;\n",
+            "def atomLambda = thunk { fun (b) { match b { +{.0 = u} => return +{.1 = u}, +{.1 = u} => return +{.0 = u} } } } ;\n",
         )),
         &mut arena,
     );
@@ -6043,7 +6043,7 @@ fn a_matching_lambda_binds_one_lambda_per_column()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def first : (Nat, Nat) => Nat = fn {{ | Zero, n => n | Succ(m), _ => m }};\n"
+        "{NAT}def first : (Nat, Nat) => Nat = fun {{ | Zero, n => n | Succ(m), _ => m }};\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let body = body_named(&module, SurfaceName::from("first"));

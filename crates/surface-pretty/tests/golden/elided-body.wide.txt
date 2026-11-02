@@ -1,1 +1,1 @@
-fn (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }
+fun (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }

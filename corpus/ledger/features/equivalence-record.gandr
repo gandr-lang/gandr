@@ -48,7 +48,7 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b {
   match e {
     #{t, #{g, s}, #{h, r}} => (
       t,
-      (g, (s, fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) }))
+      (g, (s, fun (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) }))
     )
   }
 }

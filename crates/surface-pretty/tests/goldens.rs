@@ -2701,14 +2701,14 @@ fn a_call_collects_its_arguments_up_to_the_depth_limit()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(twice)),
-        faithful(Written("fn (a) { kept(a, a) }"))
+        faithful(Written("fun (a) { kept(a, a) }"))
     );
     assert_eq!(
         spelled(&source, body(past)),
         (
             format!(
-                "fn (a) {{ kept(a)({}a,\n    a, a, a, a) }}",
-                "a, ".repeat(27)
+                "fun (a) {{ kept(a)({}a,\n    a, a, a, a, a) }}",
+                "a, ".repeat(26)
             ),
             Fidelity::Faithful
         ),
@@ -2745,11 +2745,11 @@ fn a_call_leaves_out_the_implicits_it_omits_1216()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(same)),
-        faithful(Written("fn (a) { same(3) }"))
+        faithful(Written("fun (a) { same(3) }"))
     );
     assert_eq!(
         spelled(&source, body(pick)),
-        faithful(Written("fn (a) { pick() }"))
+        faithful(Written("fun (a) { pick() }"))
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(decoded))),
@@ -2787,11 +2787,11 @@ fn a_call_writes_the_wildcards_it_holds_528()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(forced)),
-        faithful(Written("fn (a) { idAt(_, 3) }"))
+        faithful(Written("fun (a) { idAt(_, 3) }"))
     );
     assert_eq!(
         spelled(&source, body(mixed)),
-        faithful(Written("fn (a) { first(_, 3) }")),
+        faithful(Written("fun (a) { first(_, 3) }")),
         "the wildcard is written, the omitted implicit left out"
     );
 }
@@ -2830,15 +2830,15 @@ fn a_call_supplies_its_callee_s_implicits_by_name_2267()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(supplied)),
-        faithful(Written("fn (a) { chosen[.x = 7](3) }"))
+        faithful(Written("fun (a) { chosen[.x = 7](3) }"))
     );
     assert_eq!(
         spelled(&source, body(left_out)),
-        faithful(Written("fn (a) { chosen(3) }"))
+        faithful(Written("fun (a) { chosen(3) }"))
     );
     assert_eq!(
         spelled(&source, body(plain)),
-        faithful(Written("fn (a) { twin(3, 7) }"))
+        faithful(Written("fun (a) { twin(3, 7) }"))
     );
 }
 
@@ -2890,15 +2890,15 @@ fn a_call_supplies_a_model_implicit_by_its_path_2364()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(module)),
-        faithful(Written("fn (a) { stepped[.s = Up](7) }"))
+        faithful(Written("fun (a) { stepped[.s = Up](7) }"))
     );
     assert_eq!(
         spelled(&source, body(resolved)),
-        faithful(Written("fn (a) { stepped(7) }"))
+        faithful(Written("fun (a) { stepped(7) }"))
     );
     assert_eq!(
         spelled(&source, body(mixed)),
-        approximate(Written("fn (a) { stepped(3, Up.zero, Tens.incr, 7) }"))
+        approximate(Written("fun (a) { stepped(3, Up.zero, Tens.incr, 7) }"))
     );
 }
 
@@ -3463,10 +3463,10 @@ fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
     for (root, sugared, explicit) in [
         (
             in_thunk,
-            "Path(Unit * Integer => Unit * Integer, fn (a) { pick(type(Unit * Integer), a) }, fn \
+            "Path(Unit * Integer => Unit * Integer, fun (a) { pick(type(Unit * Integer), a) }, fun \
              (a) { pick(type(Unit * Integer), a) })",
-            "Path(+U (#{Unit, Integer} -> -F #{Unit, Integer}), fn (a) { pick(#{Unit, Integer}, \
-             a) }, fn (a) { pick(#{Unit, Integer}, a) })",
+            "Path(+U (#{Unit, Integer} -> -F #{Unit, Integer}), fun (a) { pick(#{Unit, Integer}, \
+             a) }, fun (a) { pick(#{Unit, Integer}, a) })",
         ),
         (
             at_endpoint,
@@ -4670,35 +4670,35 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     agrees(&core, &names, CoreNode::Value(recorded));
     let body = |id| Root::Computation(CoreNode::Computation(id));
     for (root, expected, fidelity) in [
-        (body(identity), "fn (a) { a }", Fidelity::Faithful),
-        (body(calling), "fn (a) { kept(a) }", Fidelity::Faithful),
+        (body(identity), "fun (a) { a }", Fidelity::Faithful),
+        (body(calling), "fun (a) { kept(a) }", Fidelity::Faithful),
         (body(forced), "force kept", Fidelity::Faithful),
         (body(pure_one), "1", Fidelity::Faithful),
         (body(suspends), "thunk { (pure 1)(2) }", Fidelity::Faithful),
         (
             body(analysed),
-            "fn (a) { match a { +{.0 = b} => b, +{.1 = b} => b } }",
+            "fun (a) { match a { +{.0 = b} => b, +{.1 = b} => b } }",
             Fidelity::Faithful,
         ),
         (
             body(opened),
-            "fn (a) { match a { #{b, c} => c } }",
+            "fun (a) { match a { #{b, c} => c } }",
             Fidelity::Faithful,
         ),
         (
             body(matched),
-            "fn (a) { match a { Zero => Zero, Succ(b) => b } }",
+            "fun (a) { match a { Zero => Zero, Succ(b) => b } }",
             Fidelity::Faithful,
         ),
-        (body(projected), "fn (a) { a.x }", Fidelity::Faithful),
+        (body(projected), "fun (a) { a.x }", Fidelity::Faithful),
         (
             body(primitive_call),
-            "fn (a) { prim.id(a) }",
+            "fun (a) { prim.id(a) }",
             Fidelity::Faithful,
         ),
         (
             body(riding),
-            "fn (a) { ride(\\b. Run(b), a, a) }",
+            "fun (a) { ride(\\b. Run(b), a, a) }",
             Fidelity::Faithful,
         ),
         (
@@ -4740,7 +4740,7 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     );
     pin(&source, body(sequenced), Pinned {
         name: "elided-body",
-        flat: "fn (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }",
+        flat: "fun (a) { run b <- { run b <- pure 1 ; pure b } ; kept(b) }",
         fidelity: Fidelity::Faithful,
     });
     // Written on one line, each body is its layout at a page no line
@@ -4828,7 +4828,7 @@ fn a_pruned_arm_is_left_unwritten_1314()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
         (
-            "fn (a) { match a { VCons(b, c, d) => c } }".to_owned(),
+            "fun (a) { match a { VCons(b, c, d) => c } }".to_owned(),
             Fidelity::Faithful
         ),
         "the pruned `VNil` arm and the equation are not written"
@@ -5671,7 +5671,7 @@ fn a_thunk_the_checker_inserts_is_left_out_1457()
     );
     assert_eq!(
         spelled(&source, definition(defined)),
-        faithful(Written("fn (a) { kept(a) }")),
+        faithful(Written("fun (a) { kept(a) }")),
         "a definition's thunk over a function is left out"
     );
     assert_eq!(
@@ -5709,7 +5709,7 @@ fn a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933()
     let source = CoreSource::new(&core, &names);
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(over_function))),
-        faithful(Written("kept(fn (a) { a })")),
+        faithful(Written("kept(fun (a) { a })")),
         "an argument's thunk over a function is left out where a type is read"
     );
     assert_eq!(
@@ -5802,7 +5802,9 @@ fn an_ascribed_lambda_is_written_without_its_thunk_3872()
     let computation = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, computation(over_lambda)),
-        faithful(Written("kept((fn (a) { a } : +U (Integer -> -F Integer)))")),
+        faithful(Written(
+            "kept((fun (a) { a } : +U (Integer -> -F Integer)))"
+        )),
         "an ascribed thunk over a lambda is written as the lambda"
     );
     assert_eq!(
@@ -5971,7 +5973,7 @@ fn an_observation_of_a_parameter_prints_by_position_941()
     );
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(lambda))),
-        approximate(Written("fn (a) { (force a).1 }")),
+        approximate(Written("fun (a) { (force a).1 }")),
         "a lambda's binder states no type, so its projection keeps the notation"
     );
 }
@@ -6004,13 +6006,13 @@ fn a_case_nothing_types_writes_its_motive_815()
     // `run b <- case a -> -F Nat { … } ; b`: a bind's run states no type.
     let run = core.computation_bind(case, returned);
     let running = core.computation_lambda(run);
-    // `Succ(thunk { fn (a) { case a -> -F Nat { … } } })`: nor does a
+    // `Succ(thunk { fun (a) { case a -> -F Nat { … } } })`: nor does a
     // thunk a constructor holds.
     let matched = core.computation_lambda(case);
     let held = core.value_thunk(matched);
     let succ = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![held]);
     let holding = core.computation_return(succ);
-    // `Succ(fn (a) { case a -> -F Nat { … } })`: nor does a lambda nested
+    // `Succ(fun (a) { case a -> -F Nat { … } })`: nor does a lambda nested
     // where a value is read, which the checker wraps in its thunk.
     let nested = core.value_nested(matched);
     let nesting = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![nested]);
@@ -6046,21 +6048,24 @@ fn a_case_nothing_types_writes_its_motive_815()
     for (root, expected) in [
         (
             running,
-            "fn (a) { run b <- match a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fun (a) { run b <- match a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
         ),
         (
             holding,
-            "Succ(thunk { fn (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
+            "Succ(thunk { fun (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
         ),
-        (matched, "fn (a) { match a { Zero => Zero, Succ(b) => b } }"),
+        (
+            matched,
+            "fun (a) { match a { Zero => Zero, Succ(b) => b } }",
+        ),
         (
             holding_nested,
-            "Succ(fn (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } })",
+            "Succ(fun (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } })",
         ),
         (returns_nested, "pure (pure Zero)"),
         (
             depending,
-            "fn (a) { run b <- match a { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fun (a) { run b <- match a { Zero => pure Zero, Succ(b) => pure b } ; b }",
         ),
     ] {
         assert_eq!(
@@ -6146,7 +6151,7 @@ fn a_family_spells_by_its_declaration_past_a_namesake_3125()
         (Root::Value(CoreNode::Value(on_heap)), "OnHeap"),
         (
             Root::Computation(CoreNode::Computation(matched)),
-            "fn (a) { match a { Inside => OnHeap, OnHeap => Inside } }",
+            "fun (a) { match a { Inside => OnHeap, OnHeap => Inside } }",
         ),
     ] {
         assert_eq!(
@@ -6305,7 +6310,9 @@ fn a_loop_arm_is_written_under_its_loop_813()
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
-        faithful(Written("fn (a) { match a { Base => unit, loop => unit } }"))
+        faithful(Written(
+            "fun (a) { match a { Base => unit, loop => unit } }"
+        ))
     );
 }
 
@@ -6345,7 +6352,7 @@ fn a_held_handle_is_written_parenthesized_815()
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(holds))),
-        faithful(Written("fn (a) { (hold a) }"))
+        faithful(Written("fun (a) { (hold a) }"))
     );
 }
 
@@ -6690,7 +6697,7 @@ fn a_body_answering_a_type_keeps_its_pure_815()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(answers_code)),
-        faithful(Written("fn (a) { pure Integer }"))
+        faithful(Written("fun (a) { pure Integer }"))
     );
     assert_eq!(
         spelled(&source, body(returns_returner)),
@@ -6698,7 +6705,7 @@ fn a_body_answering_a_type_keeps_its_pure_815()
     );
     assert_eq!(
         spelled(&source, body(answers_one)),
-        faithful(Written("fn (a) { 1 }"))
+        faithful(Written("fun (a) { 1 }"))
     );
 }
 
@@ -6721,7 +6728,7 @@ fn a_body_answering_a_run_keeps_its_pure_815()
             &source,
             Root::Computation(CoreNode::Computation(answers_run))
         ),
-        faithful(Written("fn (a) { pure (run (pure 1)) }"))
+        faithful(Written("fun (a) { pure (run (pure 1)) }"))
     );
 }
 
@@ -6750,11 +6757,11 @@ fn a_prelude_operator_is_written_as_its_operator()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(adds)),
-        faithful(Written("fn (a) { a + a }"))
+        faithful(Written("fun (a) { a + a }"))
     );
     assert_eq!(
         spelled(&source, body(negates)),
-        faithful(Written("fn (a) { -a }"))
+        faithful(Written("fun (a) { -a }"))
     );
 }
 
@@ -6786,20 +6793,20 @@ fn an_append_is_written_as_the_interpolated_string_that_lowers_to_it()
     let rows = [
         (
             written(&mut core, nested, bang),
-            "fn (a) { \"${ \"hello ${ a }\" }!\" }",
+            "fun (a) { \"${ \"hello ${ a }\" }!\" }",
         ),
-        (written(&mut core, empty, bound), "fn (a) { \"${ a }\" }"),
+        (written(&mut core, empty, bound), "fun (a) { \"${ a }\" }"),
         (
             written(&mut core, bound, empty),
-            "fn (a) { \"${ a }${ \"\" }\" }",
+            "fun (a) { \"${ a }${ \"\" }\" }",
         ),
         (
             written(&mut core, hello, bang),
-            "fn (a) { \"hello ${ \"!\" }\" }",
+            "fun (a) { \"hello ${ \"!\" }\" }",
         ),
         (
             written(&mut core, opener, bound),
-            "fn (a) { \"a\\${${ a }\" }",
+            "fun (a) { \"a\\${${ a }\" }",
         ),
     ];
     let source = CoreSource::new(&core, &[]);
@@ -6844,12 +6851,12 @@ fn a_typed_bind_spells_as_written()
     );
     assert_eq!(
         spelled(&source, body(lone)),
-        ("fn (a) { 1 }".to_owned(), Fidelity::Approximate),
+        ("fun (a) { 1 }".to_owned(), Fidelity::Approximate),
         "a lone ascription stands as its body"
     );
 }
 
-/// #3943: a lambda whose parameter states its type spells as written, `fn
+/// #3943: a lambda whose parameter states its type spells as written, `fun
 /// (a : Integer) { … }`, never as the bind the lowering holds the argument
 /// to that type by; a bind holding another value, or one whose binder the
 /// body reads, is a statement the body writes. A path type between such
@@ -6884,23 +6891,23 @@ fn a_stated_parameter_spells_as_written_3943()
     agrees(&core, &names, CoreNode::Computation(stated));
     assert_eq!(
         spelled(&source, computation(stated)),
-        faithful(Written("fn (a : Integer) { a }")),
+        faithful(Written("fun (a : Integer) { a }")),
         "a stated parameter is written with its type"
     );
     assert_eq!(
         spelled(&source, computation(holding)),
-        faithful(Written("fn (a) { run b : Integer <- pure held ; a }")),
+        faithful(Written("fun (a) { run b : Integer <- pure held ; a }")),
         "a bind holding another value is a statement"
     );
     assert_eq!(
         spelled(&source, computation(reading)),
-        faithful(Written("fn (a) { run b : Integer <- pure a ; b }")),
+        faithful(Written("fun (a) { run b : Integer <- pure a ; b }")),
         "a bind whose binder the body reads is a statement"
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(path))),
         faithful(Written(
-            "Path(+U (Integer -> -F Integer), fn (a : Integer) { a }, fn (a : Integer) { a })"
+            "Path(+U (Integer -> -F Integer), fun (a : Integer) { a }, fun (a : Integer) { a })"
         )),
         "a path between stated lambdas writes their parameters' types"
     );
@@ -7019,7 +7026,7 @@ fn an_annotated_return_spells_as_written_1107()
     }
     for (root, expected) in [
         (ascribed, "(1 : Integer)"),
-        (abstraction, "fn (a) { (1 : Integer) }"),
+        (abstraction, "fun (a) { (1 : Integer) }"),
     ] {
         assert_eq!(
             spelled(&source, body(root)),
@@ -7054,12 +7061,12 @@ fn an_approximate_printing_names_its_reason_820()
     for (root, expected, reason) in [
         (
             body(recursive),
-            "rec a { fn (b) { 1 } }",
+            "rec a { fun (b) { 1 } }",
             Unspelled::Notation(Notation::Fixpoint),
         ),
         (
             body(ascribed),
-            "fn (a) { 1 }",
+            "fun (a) { 1 }",
             Unspelled::Elided(Elided::Ascription),
         ),
         (
@@ -7605,7 +7612,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     let nothing = core.value_unit();
     let ends = core.computation_return(nothing);
     let ending = core.computation_fixpoint(ends, partial);
-    // `fn (a) { while force a { … } ; unit }`: the condition under the
+    // `fun (a) { while force a { … } ; unit }`: the condition under the
     // loop's binder, each branch under the loop's, the test's and its own;
     // the true branch tests again, its branches under two more.
     let tested = variable(&mut core, 1_u32);
@@ -7633,7 +7640,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     let named = variable(&mut core, 0_u32);
     let leaked = core.computation_return(named);
     let leaking = core.computation_fixpoint(leaked, partial);
-    // `fn (a) { loop { while force a { continue } ; continue } }`: the inner
+    // `fun (a) { loop { while force a { continue } ; continue } }`: the inner
     // `while` ends the outer loop's pass, and its rest goes on with the pass.
     let tested = variable(&mut core, 2_u32);
     let condition = core.computation_force(tested);
@@ -7666,19 +7673,19 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(whiled)),
         faithful(Written(
-            "fn (a) {\n  while force a { run e <- force a ; match e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
+            "fun (a) {\n  while force a { run e <- force a ; match e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
         )),
         "a while a rest follows writes its exits"
     );
     assert_eq!(
         spelled(&source, body(becoming)),
-        faithful(Written("fn (a) { loop { become a(unit) } }")),
+        faithful(Written("fun (a) { loop { become a(unit) } }")),
         "a call ending a pass is written `become`"
     );
     assert_eq!(
         spelled(&source, body(nested)),
         faithful(Written(
-            "fn (a) { loop { while force a { continue } ; continue } }"
+            "fun (a) { loop { while force a { continue } ; continue } }"
         )),
         "a loop ending another's pass goes on with that pass in its rest"
     );
@@ -7705,13 +7712,13 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     };
     let nothing = core.value_unit();
     let unbound = ComponentCount::from(0_usize);
-    // `fn (a) { loop { break } ; a }`: the rest under the loop's binder.
+    // `fun (a) { loop { break } ; a }`: the rest under the loop's binder.
     let after = variable(&mut core, 1_u32);
     let rest = core.computation_return(after);
     let broken = core.computation_split(nothing, unbound, rest);
     let fixpoint = core.computation_fixpoint(broken, partial);
     let alone = core.computation_lambda(fixpoint);
-    // `fn (a) { loop { case a { +{.0 = b} => break, +{.1 = b} => continue } }
+    // `fun (a) { loop { case a { +{.0 = b} => break, +{.1 = b} => continue } }
     // ; a }`: the rest under the loop's binder and the arm's.
     let test = variable(&mut core, 1_u32);
     let after = variable(&mut core, 2_u32);
@@ -7734,7 +7741,7 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     let branches = core.computation_case(test, &[broken, bound]);
     let fixpoint = core.computation_fixpoint(branches, partial);
     let apart = core.computation_lambda(fixpoint);
-    // `fn (a) { while force a { break } ; a }`: the true branch's break and
+    // `fun (a) { while force a { break } ; a }`: the true branch's break and
     // the exit share the rest's copy under the loop's, the test's and the
     // branch's binders.
     let tested = variable(&mut core, 1_u32);
@@ -7754,13 +7761,13 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(alone)),
-        faithful(Written("fn (a) { loop { break } ; a }")),
+        faithful(Written("fun (a) { loop { break } ; a }")),
         "a `loop`'s break goes on with the rest written after it"
     );
     assert_eq!(
         spelled(&source, body(armed)),
         faithful(Written(
-            "fn (a) { loop { match a { +{.0 = c} => break, +{.1 = c} => continue } } ; a }"
+            "fun (a) { loop { match a { +{.0 = c} => break, +{.1 = c} => continue } } ; a }"
         )),
         "a break in an arm goes on with the rest under the arm's binder"
     );
@@ -7780,7 +7787,7 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     );
     assert_eq!(
         spelled(&source, body(whiled)),
-        faithful(Written("fn (a) { while force a { break } ; a }")),
+        faithful(Written("fun (a) { while force a { break } ; a }")),
         "a `while`'s break sharing its exit's rest is bare"
     );
 }
@@ -7798,7 +7805,7 @@ fn a_for_loop_prints_as_the_loop_it_lowered_from_941()
     let variable = |core: &mut CoreArena, index: u32| {
         core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
     };
-    // `fn (a) { for d in a { … } [; r] }`: the body under the lambda's
+    // `fun (a) { for d in a { … } [; r] }`: the body under the lambda's
     // binder, the loop's own, the remaining list's, the element's and the
     // tail's; a rest under the lambda's, the loop's and the list's.
     let walking = |core: &mut CoreArena, nil, cons| {
@@ -7834,17 +7841,17 @@ fn a_for_loop_prints_as_the_loop_it_lowered_from_941()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(continuing)),
-        faithful(Written("fn (a) { for d in a { continue } }")),
+        faithful(Written("fun (a) { for d in a { continue } }")),
         "the loop's own binder applied to the tail ends a pass as `continue`"
     );
     assert_eq!(
         spelled(&source, body(exiting)),
-        faithful(Written("fn (a) { for d in a { return d } ; a }")),
+        faithful(Written("fun (a) { for d in a { return d } ; a }")),
         "a `for` a rest follows writes its returner as an exit"
     );
     assert_eq!(
         spelled(&source, body(leaking)),
-        approximate(Written("fn (a) { for d in a { break(e) } }")),
+        approximate(Written("fun (a) { for d in a { break(e) } }")),
         "a pass naming the unwritten tail keeps the notation"
     );
 }
@@ -7872,7 +7879,7 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
             grade: HoldGrade::Many,
         })
     };
-    // `fn (a) { hold b = a ; loop { … } }`: the passes under the lambda's
+    // `fun (a) { hold b = a ; loop { … } }`: the passes under the lambda's
     // binder, the hold's, the loop's own, the content and its hold again.
     let one = |core: &mut CoreArena, under| {
         let content = variable(core, Zone::Intuitionistic, 0_u32);
@@ -7885,7 +7892,7 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
         let held = hold(core, parameter, applied);
         core.computation_lambda(held)
     };
-    // `fn (a) { hold b = a ; hold c = a ; loop { … } }`: the passes under the
+    // `fun (a) { hold b = a ; hold c = a ; loop { … } }`: the passes under the
     // tuple, its two components and their holds again.
     let two = |core: &mut CoreArena, under| {
         let second = variable(core, Zone::Intuitionistic, 0_u32);
@@ -7932,25 +7939,25 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(continuing)),
-        faithful(Written("fn (a) { var b = a ; loop { continue } }")),
+        faithful(Written("fun (a) { var b = a ; loop { continue } }")),
         "the loop's own binder applied to the slot held again is `continue`"
     );
     assert_eq!(
         spelled(&source, body(breaking)),
-        faithful(Written("fn (a) { var b = a ; loop { break(b) } }")),
+        faithful(Written("fun (a) { var b = a ; loop { break(b) } }")),
         "a pass reads the slot held again by the slot's own name"
     );
     assert_eq!(
         spelled(&source, body(continuing_both)),
         faithful(Written(
-            "fn (a) { var b = a ; var c = a ; loop { continue } }"
+            "fun (a) { var b = a ; var c = a ; loop { continue } }"
         )),
         "two slots are handed on as their tuple, in order"
     );
     assert_eq!(
         spelled(&source, body(swapping)),
         approximate(Written(
-            "fn (a) { var b = a ; var c = a ; loop { become d(#{c, b}) } }"
+            "fun (a) { var b = a ; var c = a ; loop { become d(#{c, b}) } }"
         )),
         "a pass handing the slots on out of order names the unwritten loop"
     );
@@ -8053,9 +8060,9 @@ fn an_ascribed_case_writes_its_answer_2089()
     for (root, expected) in [
         (
             analysed,
-            "fn (a) { match a -> -F Integer { +{.0 = b} => 1, +{.1 = b} => 2 } }",
+            "fun (a) { match a -> -F Integer { +{.0 = b} => 1, +{.1 = b} => 2 } }",
         ),
-        (opened, "fn (a) { match a -> -F Integer { #{b, c} => 1 } }"),
+        (opened, "fun (a) { match a -> -F Integer { #{b, c} => 1 } }"),
     ] {
         agrees(&core, &[], CoreNode::Computation(root));
         assert_eq!(

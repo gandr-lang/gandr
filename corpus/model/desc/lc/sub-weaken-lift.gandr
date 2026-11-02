@@ -24,7 +24,7 @@ def lookShiftedOnce(
     look(n, s, Z),
     Shift(S(Z)),
     RShift(S(Z)),
-    fn (i) { shiftOneRenames(i) }
+    fun (i) { shiftOneRenames(i) }
   ))
 }
 
@@ -44,5 +44,5 @@ pub def subWeakenLift(
   b : Term,
   s : Env
 ) -> Path(Term, subst(subst(b, Shift(S(Z))), Lift(s)), subst(subst(b, s), Shift(S(Z)))) {
-  substSquare(b, Shift(S(Z)), Lift(s), s, Shift(S(Z)), fn (n) { weakenLiftAgree(s, n) })
+  substSquare(b, Shift(S(Z)), Lift(s), s, Shift(S(Z)), fun (n) { weakenLiftAgree(s, n) })
 }

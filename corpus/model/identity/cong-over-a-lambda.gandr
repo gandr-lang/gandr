@@ -1,4 +1,4 @@
-// A function written as `fn (q) { e }` acts on a path through `cong`.
+// A function written as `fun (q) { e }` acts on a path through `cong`.
 //
 // Whiskering composes each path of a path of paths with a fixed path. The
 // function that does it is short, and a stated type for it only repeats
@@ -22,7 +22,7 @@ def whiskerRight(
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong(fn (q) { q then g }, a)
+  cong(fun (q) { q then g }, a)
 }
 
 /// The whisker composed with a reflexivity: `cong` stands under `then`,
@@ -37,7 +37,7 @@ def whiskerThenHere(
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong(fn (q) { q then g }, a) then here(f2 then g)
+  cong(fun (q) { q then g }, a) then here(f2 then g)
 }
 
 /// The whisker as an endpoint of a stated path type: its reflexivity.
@@ -52,10 +52,10 @@ def whiskerHere(
   g : Path(A, y, z)
 ) -> Path(
   Path(Path(A, x, z), f1 then g, f2 then g),
-  cong(fn (q) { q then g }, a),
-  cong(fn (q) { q then g }, a)
+  cong(fun (q) { q then g }, a),
+  cong(fun (q) { q then g }, a)
 ) {
-  here(cong(fn (q) { q then g }, a))
+  here(cong(fun (q) { q then g }, a))
 }
 
 /// The whisker's reflexivity again, its binder stating the type of the path's
@@ -71,8 +71,8 @@ def whiskerStatedHere(
   g : Path(A, y, z)
 ) -> Path(
   Path(Path(A, x, z), f1 then g, f2 then g),
-  cong(fn (q : Path(A, x, y)) { q then g }, a),
-  cong(fn (q : Path(A, x, y)) { q then g }, a)
+  cong(fun (q : Path(A, x, y)) { q then g }, a),
+  cong(fun (q : Path(A, x, y)) { q then g }, a)
 ) {
-  here(cong(fn (q : Path(A, x, y)) { q then g }, a))
+  here(cong(fun (q : Path(A, x, y)) { q then g }, a))
 }

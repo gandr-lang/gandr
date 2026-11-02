@@ -41,15 +41,15 @@ pub def viaZeroAgain(w : Nat, h : Heap) -> Type {
 
 /// `viaZero(Zero, h)` is `emp(h)`, the call its arm reached.
 def atZero(h : Heap) -> (viaZero(Zero, h)) => emp(h) {
-  return fn (e) { e }
+  return fun (e) { e }
 }
 
 /// Two arms down, the call the last one reached.
 def twiceAtZero(h : Heap) -> (viaZeroAgain(Zero, h)) => emp(h) {
-  return fn (e) { e }
+  return fun (e) { e }
 }
 
 /// One arm down, the call that arm reached, itself an arm away from `emp(h)`.
 def onceAtZero(h : Heap) -> (viaZeroAgain(Zero, h)) => viaZero(Zero, h) {
-  return fn (e) { e }
+  return fun (e) { e }
 }

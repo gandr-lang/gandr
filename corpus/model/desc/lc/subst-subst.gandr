@@ -98,7 +98,7 @@ pub def rec substSquare(
         Lift(s2),
         Lift(u1),
         Lift(u2),
-        fn (n) { substSquareLift(s1, s2, u1, u2, h, n) }
+        fun (n) { substSquareLift(s1, s2, u1, u2, h, n) }
       )
     ),
     Ap(f, x) => transport(

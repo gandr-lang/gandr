@@ -39,7 +39,7 @@ def answeredByPassing() -> Integer => Integer {
     st.put(4);
     run a <- st.get();
     run b <- st.get();
-    pure fn (_s) { pure a * 10 + b }
+    pure fun (_s) { pure a * 10 + b }
   } with Passing
 }
 
@@ -57,7 +57,7 @@ def answeredInScope() -> Integer => Integer {
     st.put(4);
     run a <- st.get();
     run b <- st.get();
-    pure fn (_s) { pure a * 10 + b }
+    pure fun (_s) { pure a * 10 + b }
   }
 }
 

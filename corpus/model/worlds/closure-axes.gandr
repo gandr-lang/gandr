@@ -71,7 +71,7 @@ def forced() -> Integer {
 def applied() -> Integer {
   run bump : Integer => Integer <- migrate [seat] {
     run n <- pure 3;
-    pure thunk { fn (x) { pure x + n } }
+    pure thunk { fun (x) { pure x + n } }
   };
   bump(2)
 }

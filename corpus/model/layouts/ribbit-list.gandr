@@ -167,13 +167,13 @@ pub def rec length(l : Ints) -> Integer {
 /// The length on the tagged layout, by transport along its admission.
 @[ runs("3") ]
 def taggedLength() -> Integer {
-  run f <- transport(\X. X => Integer, taggedPath, fn (l) { length(l) });
+  run f <- transport(\X. X => Integer, taggedPath, fun (l) { length(l) });
   f(oneTwoThree)
 }
 
 /// The length on the packed layout, by transport along its admission.
 @[ runs("3") ]
 def packedLength() -> Integer {
-  run f <- transport(\X. X => Integer, packedPath, fn (l) { length(l) });
+  run f <- transport(\X. X => Integer, packedPath, fun (l) { length(l) });
   f(Many(1i32, 2i32, One(3i32)))
 }

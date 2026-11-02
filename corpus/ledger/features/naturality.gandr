@@ -43,9 +43,9 @@ def assoc_nat(
   natural(
     Path(A, x, y),
     Path(A, x, w),
-    (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
-    (fn (q : Path(A, x, y)) { q then (g then h) } : Path(A, x, y) => Path(A, x, w)),
-    (fn (q : Path(A, x, y)) { assoc(A, x, y, z, w, q, g, h) } : (q : Path(A, x, y)) => Path(Path(A, x, w), (q then g) then h, q then (g then h))),
+    (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { q then (g then h) } : Path(A, x, y) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { assoc(A, x, y, z, w, q, g, h) } : (q : Path(A, x, y)) => Path(Path(A, x, w), (q then g) then h, q then (g then h))),
     fm,
     fp,
     fa
@@ -54,14 +54,14 @@ def assoc_nat(
     (fm then g) then h,
     (fp then g) then h,
     fp then (g then h),
-    ap(Path(A, x, y), Path(A, x, w), (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)), fm, fp, fa),
+    ap(Path(A, x, y), Path(A, x, w), (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)), fm, fp, fa),
     whiskerRight(A, x, z, w, fm then g, fp then g, whiskerRight(A, x, y, z, fm, fp, fa, g), h),
     apComp(
       Path(A, x, y),
       Path(A, x, z),
       Path(A, x, w),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-      (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
       fm,
       fp,
       fa
@@ -72,7 +72,7 @@ def assoc_nat(
 
 /// The associator, curried over the 3-chain's cells: the generator `natassoc` fills.
 def assocGenerator(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => (h : Path(A, z, w)) => Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
-  thunk { fn (f) { thunk { fn (g) { thunk { fn (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
+  thunk { fun (f) { thunk { fun (g) { thunk { fun (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
 }
 
 /// The associator's naturality in its first argument as the filler generator writes it.

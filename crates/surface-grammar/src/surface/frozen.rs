@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0x5f1c_0c7a_c21a_63b3),
+    rules: RulesDigest(0x3240_ed50_a419_9a58),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -1656,7 +1656,7 @@ static MOLDS: [FrozenMold; 3032] = [
     FrozenMold("identifier", 1627, 73, Some(ClosingClass::Brace), 0, &[1625, 1628], 1626),
     FrozenMold(";", 1628, 73, Some(ClosingClass::Brace), 0, &[1590, 1594, 1598, 1603, 1607, 1608, 1616, 1617, 1618, 1619, 1620, 1622, 1629], 1628),
     FrozenMold("}", 1629, 73, Some(ClosingClass::Brace), 6, &[], 1629),
-    FrozenMold("fn", 1630, 74, Some(ClosingClass::Brace), 1, &[1631, 1647, 1653], 1630),
+    FrozenMold("fun", 1630, 74, Some(ClosingClass::Brace), 1, &[1631, 1647, 1653], 1630),
     FrozenMold("(", 1631, 74, Some(ClosingClass::Brace), 0, &[1632, 1633, 1634, 1646], 1631),
     FrozenMold("identifier", 1632, 74, Some(ClosingClass::Brace), 0, &[1635, 1638, 1645, 1646], 1632),
     FrozenMold("type_variable", 1633, 74, Some(ClosingClass::Brace), 0, &[1635, 1638, 1645, 1646], 1632),
@@ -6303,7 +6303,7 @@ static STEPS: [&[StepSym]; 336] = [
     &[StepSym::Sort(Sort::Expression), StepSym::Tile("]")],
     &[StepSym::Sort(Sort::Expression), StepSym::Tile("#["), StepSym::Tile(","), StepSym::Tile("[")],
     &[StepSym::Tile("("), StepSym::Tile("["), StepSym::Tile("{")],
-    &[StepSym::Tile("fn")],
+    &[StepSym::Tile("fun")],
     &[StepSym::Sort(Sort::Block)],
     &[StepSym::Tile(","), StepSym::Tile("type_variable")],
     &[StepSym::Sort(Sort::Block), StepSym::Tile("[")],

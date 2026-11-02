@@ -100,12 +100,12 @@ pub def star(p : Heap => Type, q : Heap => Type, h : Heap) -> Type {
 
 /// The singleton heap at `l` holding `v`, as a predicate on heaps.
 pub def pointsToAt(l : Nat, v : Nat) -> Heap => Type {
-  return fn (h) { pointsTo(l, v, h) }
+  return fun (h) { pointsTo(l, v, h) }
 }
 
 /// `T`'s realisers at the word `v`, as a predicate on heaps.
 pub def realisedAt(vt : (Nat, Heap) => Type, v : Nat) -> Heap => Type {
-  return fn (h) { vt(v, h) }
+  return fun (h) { vt(v, h) }
 }
 
 /// A reference to a `T`: a non-null word whose cell holds a realiser of `T`.
@@ -172,10 +172,10 @@ def fromOptMeets(vt : (Nat, Heap) => Type, w : Nat, h : Heap) -> (vOpt(vt, w, h)
 ) {
   match w {
     Zero => match h {
-      Emp => return fn (e) { e },
-      Cell(_l, _v, _rest) => return fn (e) { e }
+      Emp => return fun (e) { e },
+      Cell(_l, _v, _rest) => return fun (e) { e }
     },
-    Succ(_n) => return fn (r) { r }
+    Succ(_n) => return fun (r) { r }
   }
 }
 
@@ -187,10 +187,10 @@ def toOptNone(vt : (Nat, Heap) => Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zero
 ) {
   match p {
     Zero => match h {
-      Emp => return fn (e) { e },
-      Cell(_l, _v, _rest) => return fn (e) { e }
+      Emp => return fun (e) { e },
+      Cell(_l, _v, _rest) => return fun (e) { e }
     },
-    Succ(_n) => return fn (none) { match (none : Void) {} }
+    Succ(_n) => return fun (none) { match (none : Void) {} }
   }
 }
 
@@ -202,10 +202,10 @@ def toOptSome(vt : (Nat, Heap) => Type, s : Nat, p : Nat, h : Heap) -> (vTag(
 )) => vOpt(vt, toOpt(Tag(Succ(s), p)), h) {
   match s {
     Zero => match p {
-      Zero => return fn (none) { match (none : Void) {} },
-      Succ(_n) => return fn (q) { q }
+      Zero => return fun (none) { match (none : Void) {} },
+      Succ(_n) => return fun (q) { q }
     },
-    Succ(_n) => return fn (none) { match (none : Void) {} }
+    Succ(_n) => return fun (none) { match (none : Void) {} }
   }
 }
 
@@ -240,18 +240,18 @@ def marshalled(vt : (Nat, Heap) => Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) 
 } {
   match w {
     Zero => match h {
-      Emp => return fn (ok) {
+      Emp => return fun (ok) {
         run meets <- fromOptMeets(vt, Zero, Emp);
         run e <- meets(ok);
         return (Tag(Zero, Zero), e)
       },
-      Cell(l, v, rest) => return fn (ok) {
+      Cell(l, v, rest) => return fun (ok) {
         run meets <- fromOptMeets(vt, Zero, Cell(l, v, rest));
         run e <- meets(ok);
         return (Tag(Zero, Zero), e)
       }
     },
-    Succ(n) => return fn (ok) {
+    Succ(n) => return fun (ok) {
       run meets <- fromOptMeets(vt, Succ(n), h);
       run e <- meets(ok);
       return (Tag(Succ(Zero), Succ(n)), e)
@@ -267,18 +267,18 @@ def unmarshalledNone(vt : (Nat, Heap) => Type, h : Heap, p : Nat) -> (vTag(
 )) => #{w : Nat, ok : vOpt(vt, w, h)} {
   match p {
     Zero => match h {
-      Emp => return fn (ok) {
+      Emp => return fun (ok) {
         run meets <- toOptMeets(vt, Tag(Zero, Zero), Emp);
         run e <- meets(ok);
         return (Zero, e)
       },
-      Cell(l, v, rest) => return fn (ok) {
+      Cell(l, v, rest) => return fun (ok) {
         run meets <- toOptMeets(vt, Tag(Zero, Zero), Cell(l, v, rest));
         run e <- meets(ok);
         return (Zero, e)
       }
     },
-    Succ(_n) => return fn (none) { match (none : Void) {} }
+    Succ(_n) => return fun (none) { match (none : Void) {} }
   }
 }
 
@@ -290,14 +290,14 @@ def unmarshalledSome(vt : (Nat, Heap) => Type, h : Heap, s : Nat, p : Nat) -> (v
 )) => #{w : Nat, ok : vOpt(vt, w, h)} {
   match s {
     Zero => match p {
-      Zero => return fn (none) { match (none : Void) {} },
-      Succ(n) => return fn (ok) {
+      Zero => return fun (none) { match (none : Void) {} },
+      Succ(n) => return fun (ok) {
         run meets <- toOptMeets(vt, Tag(Succ(Zero), Succ(n)), h);
         run e <- meets(ok);
         return (Succ(n), e)
       }
     },
-    Succ(_n) => return fn (none) { match (none : Void) {} }
+    Succ(_n) => return fun (none) { match (none : Void) {} }
   }
 }
 
@@ -358,10 +358,10 @@ def sectAt(vt : (Nat, Heap) => Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h))
 ) {
   match w {
     Zero => match h {
-      Emp => return fn (ok) { here((Zero, ok)) },
-      Cell(l, v, rest) => return fn (ok) { here((Zero, ok)) }
+      Emp => return fun (ok) { here((Zero, ok)) },
+      Cell(l, v, rest) => return fun (ok) { here((Zero, ok)) }
     },
-    Succ(n) => return fn (ok) { here((Succ(n), ok)) }
+    Succ(n) => return fun (ok) { here((Succ(n), ok)) }
   }
 }
 
@@ -391,10 +391,10 @@ def retrNone(vt : (Nat, Heap) => Type, h : Heap, p : Nat) -> (ok : vTag(
 ) {
   match p {
     Zero => match h {
-      Emp => return fn (ok) { here((Tag(Zero, Zero), ok)) },
-      Cell(l, v, rest) => return fn (ok) { here((Tag(Zero, Zero), ok)) }
+      Emp => return fun (ok) { here((Tag(Zero, Zero), ok)) },
+      Cell(l, v, rest) => return fun (ok) { here((Tag(Zero, Zero), ok)) }
     },
-    Succ(_n) => return fn (none) { match (none : Void) {} }
+    Succ(_n) => return fun (none) { match (none : Void) {} }
   }
 }
 
@@ -410,10 +410,10 @@ def retrSome(vt : (Nat, Heap) => Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag
 ) {
   match s {
     Zero => match p {
-      Zero => return fn (none) { match (none : Void) {} },
-      Succ(n) => return fn (ok) { here((Tag(Succ(Zero), Succ(n)), ok)) }
+      Zero => return fun (none) { match (none : Void) {} },
+      Succ(n) => return fun (ok) { here((Tag(Succ(Zero), Succ(n)), ok)) }
     },
-    Succ(_n) => return fn (none) { match (none : Void) {} }
+    Succ(_n) => return fun (none) { match (none : Void) {} }
   }
 }
 
@@ -465,10 +465,10 @@ pub def nicheTagged(vt : (Nat, Heap) => Type, h : Heap) -> #{w : Nat, ok : vOpt(
   ok : vTag(vt, r, h)
 } {
   (
-    fn (x) { toTagged(vt, h, x) },
+    fun (x) { toTagged(vt, h, x) },
     (
-      fn (y) { fromTagged(vt, h, y) },
-      (fn (x) { nicheSect(vt, h, x) }, fn (y) { taggedRetr(vt, h, y) })
+      fun (y) { fromTagged(vt, h, y) },
+      (fun (x) { nicheSect(vt, h, x) }, fun (y) { taggedRetr(vt, h, y) })
     )
   )
 }
@@ -480,10 +480,10 @@ pub def nicheTaggedEquiv(vt : (Nat, Heap) => Type, h : Heap) -> #{w : Nat, ok : 
   ok : vTag(vt, r, h)
 } {
   (
-    fn (x) { toTagged(vt, h, x) },
+    fun (x) { toTagged(vt, h, x) },
     (
-      (fn (y) { fromTagged(vt, h, y) }, fn (x) { nicheSect(vt, h, x) }),
-      (fn (y) { fromTagged(vt, h, y) }, fn (y) { taggedRetr(vt, h, y) })
+      (fun (y) { fromTagged(vt, h, y) }, fun (x) { nicheSect(vt, h, x) }),
+      (fun (y) { fromTagged(vt, h, y) }, fun (y) { taggedRetr(vt, h, y) })
     )
   )
 }
@@ -537,9 +537,9 @@ pub def derefOrSome(
 pub def derefOrMeets(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefOrWp(w, d, keptOpt, h) {
   match w {
     Zero => match h {
-      Emp => return fn (e) { e },
-      Cell(_l, _v, _rest) => return fn (e) { e }
+      Emp => return fun (e) { e },
+      Cell(_l, _v, _rest) => return fun (e) { e }
     },
-    Succ(n) => return fn (r) { derefOrSome(n, d, h, r) }
+    Succ(n) => return fun (r) { derefOrSome(n, d, h, r) }
   }
 }

@@ -449,7 +449,7 @@ fn a_standing_supply_opens_a_lambda_per_explicit_before_it_1498()
     // Whether every declaration checks with `standing` stated at `v : result`.
     let all_check = |result: &str| {
         let source = format!(
-            "{swap}def standing : +U ((s : Type) -> (t : Type) -> (v : {result}) -> -F {result}) ;\ndef standing = swapAt[.g = fn (y) {{ y }}] ;\n"
+            "{swap}def standing : +U ((s : Type) -> (t : Type) -> (v : {result}) -> -F {result}) ;\ndef standing = swapAt[.g = fun (y) {{ y }}] ;\n"
         );
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
