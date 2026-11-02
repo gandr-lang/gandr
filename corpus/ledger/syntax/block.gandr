@@ -14,6 +14,20 @@ def three() -> -F Path(Integer, 3, 3) {
   return here(x)
 }
 
+/// The checker checks the value a `let` binds at the `let`, read or not.
+@[ refuses("TypeMismatch") ]
+def unread() -> -F Integer {
+  let y = (1 : Bool);
+  return 2
+}
+
+/// The block holds the value a `let` binds once, and each use reads it.
+@[ runs("42") ]
+def doubled() -> -F Integer {
+  let x = 20 + 1;
+  return x + x
+}
+
 /// A `var` holds a value over the rest of its block; an access writes it.
 @[ checks ]
 def counted() -> -F Integer {

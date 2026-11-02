@@ -25,6 +25,16 @@
 //! path, the arm keeps the staged binder as written ([`moving`]). A case on a
 //! variable keeps a staged binder as written too.
 //!
+//! A bind of a returned value is a `let`, and its binder stands for the value
+//! ([`defined_body`]). The equation `x = v` is given, so the step substitutes
+//! `v` for the binder in the body and needs no transport. The judgement checks
+//! `return v` once, then the substituted body under the same binder, which
+//! stands unread. A value that nests a computation or reads a linear binder
+//! would run or spend it again at each copy, so its bind is checked as written.
+//! A capture crosses a migration by its content, while a copy would be read at
+//! the world it lands in. A bind whose body holds a migration, or one judged
+//! inside a migration's body, is checked as written too.
+//!
 //! # References
 //!
 //! - `Cockx-2018-elaborating_dependent_copattern_matching` — exemplar: § 4.2,
@@ -77,6 +87,9 @@ pub mod unrefined
         /// No equation has a variable side the step solves, or no binder after
         /// the scrutinee is read at it.
         Unsolved,
+        /// A copy would be read at another world than the binder it stands
+        /// for: a migration reads the binder, or one is being judged.
+        Located,
     }
 }
 
@@ -759,6 +772,338 @@ pub fn refined_case(
         generalising,
         minted,
     }))
+}
+
+/// The body of the bind of `bound` into `body`, its binder read as the value
+/// `bound` returns: a `let`'s scope, checked where its name stands for its
+/// value.
+///
+/// # Specification
+/// - requires: `bound` is read under the binders open now, and `body` under one
+///   binder more.
+/// - ensures: when `bound` is `return v`, `v` copies ([`copies`]), `body` reads
+///   its binder and every copy stands at the binder's world, `body` with that
+///   binder replaced by `v` read one binder out, still under the binder, which
+///   stands unread. The refined body carries each node the replacement rewrote
+///   and mints none. [`unrefined::Absent::Unshaped`] for a bound of another
+///   form or a value that does not copy, [`unrefined::Absent::Unsolved`] for a
+///   body that does not read its binder, and [`unrefined::Absent::Located`]
+///   when `migrating` is [`Migrating::Judged`] or the body holds a migration
+///   ([`migrates`]).
+/// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned literal a type reads through the binder, a
+///   returned value nesting a computation, and a bind under a migration,
+///   separate the refinement from the bind checked as written, in both
+///   checkers.
+/// - witness: `tests::native_formers::a_returned_value_defines_the_binder_it_binds`
+/// - witness: `tests::native_formers::a_returned_call_binds_as_written`
+/// - witness: `worlds::tests::a_thunk_crosses_by_its_image`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
+    | Maybe::Present(ref refined) => refined.minted.is_empty() && refined.generalising.is_empty(),
+    | Maybe::Absent(_) => true,
+}))]
+pub fn defined_body(
+    context: &mut CheckingContext<'_>,
+    (bound, body): (ComputationId, ComputationId),
+    migrating: Migrating,
+) -> Result<Maybe<Refined, unrefined::Absent>, CheckRefusal>
+{
+    let value = match context.arena().computation(bound) {
+        Some(&Computation::Return(value)) => value,
+        Some(_) => return Ok(Maybe::Absent(unrefined::Absent::Unshaped)),
+        None => {
+            return Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Computation(bound)),
+            });
+        },
+    };
+    if copies(context.arena(), value)? == Copies::No {
+        return Ok(Maybe::Absent(unrefined::Absent::Unshaped));
+    }
+    let binder = DeBruijnIndex::from(0_u32);
+    if reads(
+        context.arena(),
+        CoreNode::Term(TermNode::Computation(body)),
+        binder,
+    )? == Reading::Ignores
+    {
+        return Ok(Maybe::Absent(unrefined::Absent::Unsolved));
+    }
+    if migrating == Migrating::Judged || migrates(context.arena(), body)? == Migrates::Yes {
+        return Ok(Maybe::Absent(unrefined::Absent::Located));
+    }
+    let arena = context.arena_mut();
+    let mut carried = Vec::new();
+    let instantiated =
+        gandr_core_term::instantiate_computation_traced(arena, body, value, &mut carried);
+    let refined =
+        gandr_core_term::shift_computation_under(arena, instantiated, Binders::NONE, Binders::ONE)
+            .settle_traced(arena, &mut carried);
+    Ok(Maybe::Present(Refined {
+        term: refined,
+        carried,
+        generalising: Vec::new(),
+        minted: Vec::new(),
+    }))
+}
+
+/// Whether a migration's body is being judged where a bind stands, so a copy
+/// of what it binds may cross to another world inside a thunk it returns.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Migrating
+{
+    /// A migration's body is being judged.
+    Judged,
+    /// No migration's body is being judged.
+    Not,
+}
+
+/// Whether a term holds a migration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Migrates
+{
+    /// A migration stands somewhere in the term.
+    Yes,
+    /// No migration stands in the term.
+    No,
+}
+
+/// The walk [`migrates`] makes over a term's children.
+#[derive(Default)]
+struct MigrationWalk
+{
+    /// The value children still to search.
+    values: Vec<ValueId>,
+    /// The computation children still to search.
+    computations: Vec<ComputationId>,
+}
+
+impl gandr_core_term::children::Visit for MigrationWalk
+{
+    /// Queue a value child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value(
+        &mut self,
+        child: ValueId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+        self.values.push(child);
+    }
+
+    /// Queue a computation child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn computation(
+        &mut self,
+        child: ComputationId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+        self.computations.push(child);
+    }
+
+    /// Pass a value-type child: a type holds no migration that runs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value_type(
+        &mut self,
+        _child: ValueTypeId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+    }
+
+    /// Pass a computation-type child: a type holds no migration that runs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn comp_type(
+        &mut self,
+        _child: CompTypeId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+    }
+}
+
+/// Whether `body` holds a migration, under any former.
+///
+/// # Specification
+/// - ensures: [`Migrates::Yes`] exactly when a computation under `body`, `body`
+///   itself included, is a migration.
+/// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold.
+/// - panics: none.
+/// - executable: none — the verdict is the walk itself, which a predicate would
+///   restate.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`defined_body`].
+/// - witness: `worlds::tests::a_thunk_crosses_by_its_image`
+fn migrates(
+    arena: &CoreArena,
+    body: ComputationId,
+) -> Result<Migrates, CheckRefusal>
+{
+    let mut walk = MigrationWalk {
+        computations: Vec::from([body]),
+        ..MigrationWalk::default()
+    };
+    loop {
+        if let Some(at) = walk.computations.pop() {
+            let node = arena.computation(at).ok_or(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Computation(at)),
+            })?;
+            if matches!(
+                *node,
+                Computation::World(gandr_core_term::world::WorldForm::Migrate { .. })
+            ) {
+                return Ok(Migrates::Yes);
+            }
+            gandr_core_term::children::of_computation(node, &mut walk);
+        }
+        else if let Some(at) = walk.values.pop() {
+            let node = arena.value(at).ok_or(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Value(at)),
+            })?;
+            gandr_core_term::children::of_value(node, &mut walk);
+        }
+        else {
+            return Ok(Migrates::No);
+        }
+    }
+}
+
+/// Whether a value may stand at each place a binder is read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Copies
+{
+    /// Each copy runs nothing and spends nothing.
+    Yes,
+    /// A copy would run a computation or spend a linear binder again.
+    No,
+}
+
+/// The walk [`copies`] makes over a value's children.
+struct CopyWalk
+{
+    /// The value children still to search.
+    values: Vec<ValueId>,
+    /// Whether a computation child was met.
+    copies: Copies,
+}
+
+impl gandr_core_term::children::Visit for CopyWalk
+{
+    /// Queue a value child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value(
+        &mut self,
+        child: ValueId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+        self.values.push(child);
+    }
+
+    /// Meet a computation child: the value does not copy.
+    ///
+    /// # Specification
+    /// trivial.
+    fn computation(
+        &mut self,
+        _child: ComputationId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+        self.copies = Copies::No;
+    }
+
+    /// Pass a value-type child: a type runs nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value_type(
+        &mut self,
+        _child: ValueTypeId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+    }
+
+    /// Pass a computation-type child: a type runs nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn comp_type(
+        &mut self,
+        _child: CompTypeId,
+        _crossing: gandr_core_term::support::Crossing,
+    )
+    {
+    }
+}
+
+/// Whether `value` copies: no computation stands under it outside a thunk,
+/// and it reads no linear binder.
+///
+/// # Specification
+/// - ensures: [`Copies::No`] exactly when `value`'s support reads a linear
+///   binder, or a node under `value`, `value` itself included and no thunk's
+///   body searched, holds a computation.
+/// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold.
+/// - panics: none.
+/// - executable: none — the verdict is the walk itself, which a predicate would
+///   restate.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`defined_body`].
+/// - witness: `tests::native_formers::a_returned_call_binds_as_written`
+fn copies(
+    arena: &CoreArena,
+    value: ValueId,
+) -> Result<Copies, CheckRefusal>
+{
+    let dangling = |at: ValueId| CheckRefusal::DanglingNode {
+        node: CoreNode::Term(TermNode::Value(at)),
+    };
+    let support = arena.value_support(value).ok_or_else(|| dangling(value))?;
+    if support.indices(Zone::Linear).next().is_some() {
+        return Ok(Copies::No);
+    }
+    let mut walk = CopyWalk {
+        values: Vec::from([value]),
+        copies: Copies::Yes,
+    };
+    while let Some(at) = walk.values.pop() {
+        let node = arena.value(at).ok_or_else(|| dangling(at))?;
+        if matches!(*node, Value::Thunk(_)) {
+            continue;
+        }
+        gandr_core_term::children::of_value(node, &mut walk);
+        if walk.copies == Copies::No {
+            return Ok(Copies::No);
+        }
+    }
+    Ok(Copies::Yes)
 }
 
 /// The types of the intuitionistic binders open now, outermost first, each

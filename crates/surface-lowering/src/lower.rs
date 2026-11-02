@@ -245,17 +245,12 @@
 //! lowered by the same chain, and a block where a value is read is refused as
 //! the wrong sort.
 //!
-//! `let x = v;` lowers by substitution: the rest of the block, minted under
-//! `x`'s binder, is instantiated at `v`, so a type reading `x` sees `v` and
-//! neither the checker nor the kernel meets a let. A value no computation
-//! nests in is pure, so its copies run nothing twice; a value over a nested
-//! computation, `let p = (f(3), 4);`, is returned once and bound instead, and
-//! a computation with no stated type, `let n = f(3);`, is bound as `run`
-//! binds it. A stated type `let x : A = v;` ascribes each copy and is
-//! checked once more where it is written, so an unread name still checks.
-//! The alternative was a core let, which the kernel would have to read;
-//! substitution keeps the kernel as it is. Reversal: when the core gains
-//! sharing, a large value lowers to it rather than to copies.
+//! `let x = v;` returns `v` once and binds it over the rest of the block, the
+//! bind call-by-push-value equates with its `let`. The checker reads that
+//! bind's binder as `v`, so a type reading `x` sees `v`, and the value is
+//! checked once where it is written, whether or not the name is read. A
+//! computation with no stated type, `let n = f(3);`, is bound as `run` binds
+//! it, and a stated type `let x : A = v;` ascribes the value it returns.
 //!
 //! # A function exits where its body ends
 //!
@@ -1825,12 +1820,12 @@ enum StatementBinding
     /// an exercise replies, placed live over the rest of the block; the
     /// reply's own binder is one no name reaches. The node is the name's own.
     Placed(NodeIndex),
-    /// `let x = v ;` with `v` a value: the rest of the block, minted under
-    /// `x`'s binder, is instantiated at `v`, so `x` stands for `v` itself.
-    /// The node is the name's own.
-    Inlined(NodeIndex),
-    /// `let x : A = v ;`: as [`Self::Inlined`], `v` ascribed `A`.
-    TypedInlined
+    /// `let x = v ;` with `v` a value: `v` returned once and bound to `x`'s
+    /// binder, which the checker reads as `v` itself. The node is the name's
+    /// own.
+    Let(NodeIndex),
+    /// `let x : A = v ;`: as [`Self::Let`], `v` ascribed `A`.
+    TypedLet
     {
         /// The name's own node.
         name: NodeIndex,
@@ -2880,28 +2875,6 @@ enum Owed
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct ValueForm(bool);
-
-/// Whether a value a `let` names may be copied to each place the name is
-/// read.
-///
-/// # Specification
-/// - requires: the value was read as a value.
-/// - ensures: the flag holds exactly when no computation nests in the value
-///   outside a thunk or a lambda, so a copy runs nothing.
-/// - provides: the inlining decision kept distinct from other Boolean
-///   decisions.
-/// - fails: none as a data value; interpretation belongs to its consumers.
-/// - panics: none as a data value.
-/// - executable: none — the walked syntax is not retained; `Lowerer::inlinable`
-///   specifies the walk.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a literal is copied, and a value over a call is bound
-///   once.
-/// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Copyable(bool);
 
 /// Whether a spelling is a numeric lexeme with a fraction or an exponent.
 ///
@@ -10996,7 +10969,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::statement`].
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
-    /// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
+    /// - witness: `lower::tests::a_let_binds_a_value_once_and_a_computation_as_run`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || self.statements.len() == before.saturating_add(1_usize),
@@ -11110,9 +11083,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `frame` is the frame the statement reads under.
     /// - ensures: a name binder reads `e` as a value under `frame`, a
     ///   computation there nested, and `A` as a value type when written; the
-    ///   statement is recorded as the inlining of `e`, and the frame binding
-    ///   the name over `frame` returned, a binder the mint instantiates away
-    ///   or, over a nested computation, binds once. Any other pattern binds
+    ///   statement is recorded as a `let` of `e`, and the frame binding the
+    ///   name over `frame` returned, a binder the mint binds once to what `e`
+    ///   returns, or to the computation nested in `e`. Any other pattern binds
     ///   what `e` returns, as [`Self::bound_statement`] binds a `run`'s
     ///   computation, a value `e` returned.
     /// - fails: a fault naming the let statement for a hole or a tile out of
@@ -11123,9 +11096,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The statement's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a value bound to a name reads through the name with
-    ///   its definition seen, and a call bound to a name is run once.
-    /// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
+    /// - hypothesis: L3 — a value bound to a name is returned once and read
+    ///   through the binder, and a call bound to a name is run once.
+    /// - witness: `lower::tests::a_let_binds_a_value_once_and_a_computation_as_run`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1_usize)
@@ -11163,9 +11136,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.binder_name(statement, binder)?;
         self.note_binder(binder, name)?;
         self.read(bound.node, Reading::Value(frame));
-        let binding = annotation.map_or(StatementBinding::Inlined(binder.node), |annotation| {
+        let binding = annotation.map_or(StatementBinding::Let(binder.node), |annotation| {
             self.read(annotation.node, Reading::ValueType(frame));
-            StatementBinding::TypedInlined {
+            StatementBinding::TypedLet {
                 name: binder.node,
                 annotation: annotation.node,
             }
@@ -17977,11 +17950,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   whose scope is the rest of the block, at its keyword's origin; a `leta
     ///   x = v ;` mints as the opening of `v` whose body is the rest of the
     ///   block, at its `leta` tile's origin, binding the name; a `let x = v ;`
-    ///   mints as the rest of the block instantiated at `v`, so it mints no
-    ///   node of its own when nothing nests in `v`, and a stated type, or a
-    ///   computation nested in `v`, is returned once at the `let`'s origin; a
-    ///   block of no statements is its last computation; nothing is minted when
-    ///   any computation, value or protocol of the block did not lower.
+    ///   mints as `bind(return v, …)` over the rest of the block at the `let`'s
+    ///   origin, or as the bind of the computation nested in `v` when no type
+    ///   is stated; a block of no statements is its last computation; nothing
+    ///   is minted when any computation, value or protocol of the block did not
+    ///   lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
@@ -17991,7 +17964,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   order, each bind records its run token, and an empty statement prefix
     ///   leaves the existing final computation unchanged.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
-    /// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
+    /// - witness: `lower::tests::a_let_binds_a_value_once_and_a_computation_as_run`
     /// - witness: `lower::tests::a_tuple_binder_names_each_component_it_writes_2181`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
@@ -18011,8 +17984,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | None => match statements.first() {
                         | None => ret == Maybe::Present(last),
                         | Some(first) => {
-                            matches!((first.binding, ret), (StatementBinding::Inlined(_), Maybe::Present(_)))
-                                || matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.origin)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
+                            matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.origin)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
                         },
                     },
                 }
@@ -18171,59 +18143,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 chain = id;
                 continue;
             }
-            if let StatementBinding::Inlined(name) | StatementBinding::TypedInlined { name, .. } =
+            if let StatementBinding::Let(name) | StatementBinding::TypedLet { name, .. } =
                 statement.binding
             {
-                let Maybe::Present(value) = self.inlined_value(statement, sink, origin)
+                let Maybe::Present(value) = self.let_value(statement, sink, origin)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
-                let returned = match (statement.binding, sink.arena.value(value)) {
-                    // A computation with no stated type has nothing to decide
-                    // its nesting by; it runs once, where it is bound, as a
-                    // `run` runs it.
-                    (StatementBinding::Inlined(_), Some(&Value::Nested(nested))) => nested,
-                    _ if self.inlinable(statement.bound).0 => {
-                        let mark = sink.arena.watermark();
-                        let mut carried = Vec::new();
-                        chain = gandr_core_term::instantiate_computation_traced(
-                            sink.arena,
-                            chain,
-                            value,
-                            &mut carried,
-                        );
-                        exits::record_copies(sink, mark, &carried, origin);
-                        exits::mark_copies(sink, &carried);
-                        if let StatementBinding::Inlined(_) = statement.binding {
-                            continue;
-                        }
-                        // A stated type is checked where it is written, even
-                        // when nothing reads the name: the value is returned
-                        // once, to a binder the rest does not read.
-                        let mark = sink.arena.watermark();
-                        carried.clear();
-                        chain = gandr_core_term::shift_computation_under(
-                            sink.arena,
-                            chain,
-                            Binders::NONE,
-                            Binders::ONE,
-                        )
-                        .settle_traced(sink.arena, &mut carried);
-                        exits::record_copies(sink, mark, &carried, origin);
-                        exits::mark_copies(sink, &carried);
-                        let returned = sink.arena.computation_return(value);
-                        sink.origins
-                            .record_computation(returned, origin.inserted(Insertion::Return));
-                        returned
-                    },
-                    // A value holding a computation the checker sequences
-                    // runs it once, where the statement stands.
-                    _ => {
-                        let returned = sink.arena.computation_return(value);
-                        sink.origins
-                            .record_computation(returned, origin.inserted(Insertion::Return));
-                        returned
-                    },
+                // A computation with no stated type has nothing to decide its
+                // nesting by; it runs once, where it is bound, as a `run` runs
+                // it. A value is returned once and bound: the checker reads
+                // the name as the value, and a value holding a computation
+                // runs it once, where the statement stands.
+                let returned = if let (StatementBinding::Let(_), Some(&Value::Nested(nested))) =
+                    (statement.binding, sink.arena.value(value))
+                {
+                    nested
+                }
+                else {
+                    let returned = sink.arena.computation_return(value);
+                    sink.origins
+                        .record_computation(returned, origin.inserted(Insertion::Return));
+                    returned
                 };
                 let id = sink.arena.computation_bind(returned, chain);
                 sink.origins.record_computation(id, origin);
@@ -18240,8 +18181,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let split = match statement.binding {
                 StatementBinding::Named(_)
                 | StatementBinding::Placed(_)
-                | StatementBinding::Inlined(_)
-                | StatementBinding::TypedInlined { .. }
+                | StatementBinding::Let(_)
+                | StatementBinding::TypedLet { .. }
                 | StatementBinding::Typed { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Received { .. }
@@ -18329,8 +18270,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
                 StatementBinding::Named(_)
                 | StatementBinding::Placed(_)
-                | StatementBinding::Inlined(_)
-                | StatementBinding::TypedInlined { .. }
+                | StatementBinding::Let(_)
+                | StatementBinding::TypedLet { .. }
                 | StatementBinding::Discarded
                 | StatementBinding::Split { .. }
                 | StatementBinding::Forked { .. }
@@ -18398,8 +18339,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         | StatementBinding::Received { .. } => ret == Maybe::Present(()),
         | StatementBinding::Held { value, stated: Maybe::Absent(_), .. } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
         | StatementBinding::Held { value, stated: Maybe::Present(stated), .. } => (ret == Maybe::Present(())) == (matches!(self.value_at(value), Maybe::Present(_)) && matches!(self.value_type_at(stated), Maybe::Present(_))),
-        | StatementBinding::Inlined(_) => (ret == Maybe::Present(())) == matches!(self.value_at(statement.bound), Maybe::Present(_)),
-        | StatementBinding::TypedInlined { annotation, .. } | StatementBinding::Located { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.value_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
+        | StatementBinding::Let(_) => (ret == Maybe::Present(())) == matches!(self.value_at(statement.bound), Maybe::Present(_)),
+        | StatementBinding::TypedLet { annotation, .. } | StatementBinding::Located { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.value_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | StatementBinding::Typed { annotation, .. } | StatementBinding::TypedSplit { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
@@ -18430,8 +18371,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 ..
             }
             | StatementBinding::Opened { value, .. } => self.value_at(value).map(|_value| ()),
-            StatementBinding::Inlined(_) => self.value_at(statement.bound).map(|_value| ()),
-            StatementBinding::TypedInlined { annotation, .. }
+            StatementBinding::Let(_) => self.value_at(statement.bound).map(|_value| ()),
+            StatementBinding::TypedLet { annotation, .. }
             | StatementBinding::Located { annotation, .. } => self
                 .value_at(statement.bound)
                 .and_then(|_value| self.value_type_at(annotation))
@@ -18450,12 +18391,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// The value an inlined `let` stands for: its minted value, ascribed its
-    /// stated type when one is written.
+    /// The value a `let` returns: its minted value, ascribed its stated type
+    /// when one is written.
     ///
     /// # Specification
-    /// - requires: `statement` is an inlined `let`, its value and its stated
-    ///   type minted or absent.
+    /// - requires: `statement` is a `let` over a value, its value and its
+    ///   stated type minted or absent.
     /// - ensures: the value; for a stated type, the value ascribed that type
     ///   carried into the body's context, every node minted at `origin`;
     ///   nothing when a part did not lower.
@@ -18464,9 +18405,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::let_statement`].
-    /// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
+    /// - witness: `lower::tests::a_let_binds_a_value_once_and_a_computation_as_run`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value(id).is_some()))]
-    fn inlined_value(
+    fn let_value(
         &self,
         statement: &Statement,
         sink: &mut Sink<'_>,
@@ -18477,7 +18418,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let StatementBinding::TypedInlined { annotation, .. } = statement.binding
+        let StatementBinding::TypedLet { annotation, .. } = statement.binding
         else {
             return Maybe::Present(value);
         };
@@ -18494,53 +18435,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink.origins.record_value(ascribed, origin);
 
         Maybe::Present(ascribed)
-    }
-
-    /// Whether the value written at `value` may be inlined at each use: no
-    /// computation under it, outside a thunk or a lambda, stands where a
-    /// value is read, so copying it runs nothing twice.
-    ///
-    /// # Specification
-    /// - requires: `value` was read as a value.
-    /// - ensures: false exactly when a node under `value`, `value` itself
-    ///   included and no thunk's or lambda's body searched, carries a nested or
-    ///   an endpoint bridge.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a literal is inlined, and a constructor over a call
-    ///   is bound once.
-    /// - witness: `lower::tests::a_let_inlines_a_value_and_binds_a_computation`
-    #[spec(ensures: |ret| !ret.0 || !matches!(self.bridges.get(usize::from(value)), Some(&Bridge::Inserted(Insertion::Nested | Insertion::Endpoint))))]
-    fn inlinable(
-        &self,
-        value: NodeIndex,
-    ) -> Copyable
-    {
-        let mut pending = Vec::from([value]);
-        while let Some(at) = pending.pop() {
-            if matches!(
-                self.bridges.get(usize::from(at)),
-                Some(&Bridge::Inserted(Insertion::Nested | Insertion::Endpoint))
-            ) {
-                return Copyable(false);
-            }
-            let suspended = self.tree.node(at).is_some_and(|node| {
-                matches!(
-                    shape_of(self.pbg, node),
-                    Ok(Shape::Form {
-                        former: Former::Thunk | Former::Lambda,
-                        ..
-                    })
-                )
-            });
-            if !suspended {
-                pending.extend(self.tree.children(at));
-            }
-        }
-
-        Copyable(true)
     }
 
     /// Mint an application of `head` to `arguments`, left to right.
@@ -25270,12 +25164,12 @@ mod tests
         );
     }
 
-    /// `let` names a value for the rest of its block by inlining it, so the
-    /// rest sees the definition; a computation it names runs once, where it
-    /// is bound; a stated type is checked where it is written; a pattern
-    /// splits the value it returns.
+    /// `let` returns a value once and binds it, so the name reads the bind's
+    /// binder; a computation it names is bound as `run` binds it; a stated
+    /// type ascribes the value it returns; a pattern splits the value it
+    /// returns.
     #[test]
-    fn a_let_inlines_a_value_and_binds_a_computation()
+    fn a_let_binds_a_value_once_and_a_computation_as_run()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
@@ -25296,45 +25190,47 @@ mod tests
             Some(&Computation::Return(value)) => arena.value(value).cloned(),
             _ => None,
         };
-        let one = Value::Literal(integer(SourceFragment::from("1")));
-        assert_eq!(
-            returned(suspended(1)),
-            Some(one.clone()),
-            "a value named twice over is the value itself where it is read"
-        );
-        let Some(&Computation::Bind(called, rest)) = arena.computation(suspended(2))
-        else {
-            panic!("a named computation is bound");
+        let bound = |id| match arena.computation(id) {
+            Some(&Computation::Bind(bound, rest)) => (bound, rest),
+            other => panic!("a let lowers to a bind, not {other:?}"),
         };
+        let one = Value::Literal(integer(SourceFragment::from("1")));
+        let binder = Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        };
+        let (first, rest) = bound(suspended(1));
+        let (second, last) = bound(rest);
+        assert_eq!(
+            [returned(first), returned(second), returned(last)],
+            [
+                Some(one.clone()),
+                Some(binder.clone()),
+                Some(binder.clone())
+            ],
+            "each value is returned once, and each name reads its bind's binder"
+        );
+        let (called, rest) = bound(suspended(2));
         assert!(
             !matches!(arena.computation(called), Some(&Computation::Return(_))),
             "the call itself is bound, not a value nesting it"
         );
         assert_eq!(
             returned(rest),
-            Some(Value::Variable {
-                zone: Zone::Intuitionistic,
-                index: DeBruijnIndex::from(0_u32),
-            }),
+            Some(binder.clone()),
             "and the name reads the bind's binder"
         );
-        let Some(&Computation::Bind(stated, rest)) = arena.computation(suspended(3))
-        else {
-            panic!("a stated type is checked where it is written");
-        };
+        let (stated, rest) = bound(suspended(3));
         let ascribed = |value: Option<Value>| match value {
             Some(Value::Ascribe { value, .. }) => arena.value(value).cloned(),
             _ => None,
         };
         assert_eq!(
-            [ascribed(returned(stated)), ascribed(returned(rest))],
-            [Some(one.clone()), Some(one)],
-            "the value ascribed its type is returned once and read where the name is"
+            [ascribed(returned(stated)), returned(rest)],
+            [Some(one), Some(binder)],
+            "the value ascribed its type is returned once, and the name reads the binder"
         );
-        let Some(&Computation::Bind(split, _)) = arena.computation(suspended(4))
-        else {
-            panic!("a pattern splits what its value returns");
-        };
+        let (split, _) = bound(suspended(4));
         assert!(
             matches!(returned(split), Some(Value::Tuple(_))),
             "the tuple is returned to the split"

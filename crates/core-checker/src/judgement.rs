@@ -6809,7 +6809,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: `synthesised` read as a returner; a checked bind's effects
     ///   accumulated and bridged into the expected type, which the body then
     ///   checks against under the binder; the body's judgement is the next
-    ///   goal, the binder of the returned type open.
+    ///   goal, the binder of the returned type open. A bound that returns a
+    ///   value that copies, outside any migration, refines the body to read the
+    ///   value at the binder ([`crate::solution::defined_body`]), and the
+    ///   refinement is the goal.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at `bound` for a type that is
     ///   no returner; the accumulation's and the bridge's refusals.
     /// - panics: none.
@@ -6823,7 +6826,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_discarded_case_checks_at_the_expected_row`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |step| matches!(*step, Step::Descend(Goal::Computation { term, .. }) if term == body)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |step| matches!(*step, Step::Descend(Goal::Computation { term, .. }) if term == body || self.context.arena().computation(term).is_some())))]
     fn bound(
         &mut self,
         at: ComputationId,
@@ -6865,6 +6868,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
                 )
             },
+        };
+        // A returned value binds a name that stands for the value itself: the
+        // body is checked with the binder replaced, and crosses so.
+        let migrating = self.migrating();
+        let body = match crate::solution::defined_body(self.context, (bound, body), migrating)? {
+            Maybe::Present(refined) => {
+                self.context.record_refinement(body, &refined);
+                refined.term
+            },
+            Maybe::Absent(_) => body,
         };
         self.context.binders().open(Zone::Intuitionistic, result);
         self.context.open_copy(at);
