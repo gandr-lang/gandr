@@ -64,6 +64,20 @@ def rec windHom(
   }
 }
 
+/// The spin of `plusComm`, written as the transport `cong(spin, …)`
+/// derives: a static motive whose endpoints call the group's operations, each
+/// call the value it returns, as the kernel replays it (#4618).
+def spunComm(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> Path(Path(Circle, Base, Base), spin(plus(wind(q), wind(p))), spin(plus(wind(p), wind(q)))) {
+  transport(
+    fun (a) { Path(Path(Circle, Base, Base), spin(plus(wind(q), wind(p))), spin(a)) },
+    plusComm(wind(q), wind(p)),
+    here(spin(plus(wind(q), wind(p))))
+  )
+}
+
 /// The loops commute (cubical's `comm-ΩS¹`): each composite is the spin of
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute
 /// by `plusComm`. Each lemma is read at its written result (#423), and the

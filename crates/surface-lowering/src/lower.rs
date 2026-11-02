@@ -11780,6 +11780,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Reading::Value(_) = site.reading
             && self.in_static_body(site.at.span) == Within::StaticBody
+            && !self.at_endpoint.contains(&site.at.node)
             && self.static_call(site, &mut cursor)? == arity::Planned(true)
         {
             return Ok(());
@@ -12010,11 +12011,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The block of `fun (X) { T }` molds its body in the expression grammar,
     /// so a type application written there, `F(X)`, is a call form. Read as
     /// that application, a head a binder or a declaration answers applies its
-    /// code to the arguments as [`Self::static_application`] plans it.
+    /// code to the arguments as [`Self::static_application`] plans it. A call
+    /// at a path type's endpoint there is a value the type relates, read as
+    /// the ordinary call it is, so the kernel replays it as the value its run
+    /// returns (#4618).
     ///
     /// # Specification
     /// - requires: `site` is a call read as a value inside a static lambda's
-    ///   body, and `cursor` holds its pieces.
+    ///   body, at no endpoint, and `cursor` holds its pieces.
     /// - ensures: for a head that is one name or one capitalised name resolving
     ///   to a binder or a declaration, the static application of it to the
     ///   arguments, the cursor past them; nothing planned and the cursor
