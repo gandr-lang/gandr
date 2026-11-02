@@ -108,7 +108,7 @@ function settings(): {
       spelling: gandr.get<string | null>("presentation.spelling", null),
     },
     inlineCompletion: {
-      trigger: gandr.get<string>("inlineCompletion.trigger", "invoked"),
+      trigger: gandr.get<string>("inlineCompletion.trigger", "automatic"),
     },
   };
 }

@@ -73,7 +73,7 @@
             "Ghost text shows only when asked for, with **Trigger Inline Suggestion** (`Alt+\\`).",
             "Ghost text shows as you type."
           ],
-          "default": "invoked",
+          "default": "automatic",
           "markdownDescription": "When the expected syntax shows as ghost text."
         },
         "gandr.inputMethod.enabled": {

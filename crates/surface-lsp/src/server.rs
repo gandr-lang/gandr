@@ -2469,7 +2469,7 @@ impl Server
             offsets: LabelOffsets(false),
             detailing: LabelsDetailed(false),
             snipping: TakesSnippets(false),
-            inline_trigger: TriggerSetting::Invoked,
+            inline_trigger: TriggerSetting::Automatic,
             collapsing: FoldsCollapsed(false),
             deferring: ResolvesHintLocations(false),
             watching: WatchesFiles(false),
@@ -13426,11 +13426,11 @@ mod tests
     }
 
     /// `gandr.inlineCompletion.trigger`, read from the initialization options:
-    /// by default a request the client makes as the author types is answered
-    /// with no item and one the author invokes with the ghost text; set to
-    /// `automatic`, both are answered. The author's own request is the
-    /// keystroke the box asks for, and the setting keeps a client with no way
-    /// to invoke one reachable.
+    /// by default, and set to `automatic`, a request the client makes as the
+    /// author types and one the author invokes are both answered with the ghost
+    /// text; set to `invoked`, the typed request is answered with no item. The
+    /// setting turns ghost text off for an author who wants it only on the
+    /// keystroke that asks for it.
     #[test]
     fn inline_completion_answers_the_requests_its_trigger_names()
     {
@@ -13464,13 +13464,18 @@ mod tests
         };
         assert_eq!(
             answers(""),
-            [None, Some(Value::from(")"))],
-            "by default, typing is answered with nothing and an invoked request with the closer"
+            [Some(Value::from(")")), Some(Value::from(")"))],
+            "by default, typing and an invoked request are both answered with the closer"
         );
         assert_eq!(
             answers(r#","initializationOptions":{"inlineCompletion":{"trigger":"automatic"}}"#),
             [Some(Value::from(")")), Some(Value::from(")"))],
             "set to automatic, both are answered"
+        );
+        assert_eq!(
+            answers(r#","initializationOptions":{"inlineCompletion":{"trigger":"invoked"}}"#),
+            [None, Some(Value::from(")"))],
+            "set to invoked, typing is answered with nothing and an invoked request with the closer"
         );
     }
 

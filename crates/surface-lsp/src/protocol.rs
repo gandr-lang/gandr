@@ -1878,7 +1878,8 @@ pub struct InlineCompletionSettings
 }
 
 /// A `gandr.inlineCompletion.trigger` value: which inline completion requests
-/// are answered.
+/// are answered. A client that sends no value gets ghost text as the author
+/// types.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerSetting
@@ -1886,9 +1887,9 @@ pub enum TriggerSetting
     /// Only a request the author invoked, as VS Code's
     /// `editor.action.inlineSuggest.trigger` does; one the client makes as
     /// the author types is answered with no item.
-    #[default]
     Invoked,
     /// Every request, invoked or made as the author types.
+    #[default]
     Automatic,
 }
 

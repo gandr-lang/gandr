@@ -527,8 +527,8 @@ impl Session
         }
         let document = json!({ "uri": self.uri });
         let at = json!({ "textDocument": document, "position": self.buffer.position().json() });
-        // Invoked: by default a request made as the author types is answered
-        // with no item, which would leave the oracle nothing to compare.
+        // Invoked: every trigger setting answers it, so the oracle compares
+        // the ghost text whatever the client configured.
         let inline = json!({
             "textDocument": document,
             "position": self.buffer.position().json(),
