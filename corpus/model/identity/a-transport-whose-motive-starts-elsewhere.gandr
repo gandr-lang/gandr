@@ -1,0 +1,29 @@
+/// A transport whose motive starts at another point than its moved path prints
+/// as the transport it is.
+///
+/// A transport along `r` of `here(f)`, under a motive `Path(C, l, c)`, is the
+/// composite `here(f) then r` exactly when `l` is `f`. Reading that composite
+/// back takes the motive's start from `here(f)`. A motive that starts at
+/// `f then here(z)` is another type, which the composite does not spell.
+///
+/// The printer writes a transport as a composite only where the moved path's
+/// start is the motive's. Otherwise it writes the transport in full.
+///
+/// - see: #4218 — the printer wrote both transports as one composite
+/// - see: #754 — a returned composite of paths is written infix
+
+/// Motives whose fixed starts differ by the right unit of a variable path.
+def unitVariable(
+  A : Type,
+  x : A,
+  z : A,
+  f : Path(A, x, z),
+  m : Path(A, x, z),
+  r : Path(Path(A, x, z), f, m)
+) -> Path(
+  Path(Path(A, x, z), f, m),
+  transport(\c. Path(Path(A, x, z), f then here(z), c), r, here(f)),
+  transport(\c. Path(Path(A, x, z), f, c), r, here(f))
+) {
+  here(transport(\c. Path(Path(A, x, z), f, c), r, here(f)))
+}
