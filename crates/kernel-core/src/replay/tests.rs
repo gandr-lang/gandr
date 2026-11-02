@@ -3879,6 +3879,88 @@ fn an_operand_s_run_runs_the_call_it_returns_4412()
 }
 
 #[test]
+fn a_returned_transport_runs_its_held_path_s_call_4413()
+{
+    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path(Unit, (),
+    // y)`, `w = thunk (return ⟨tr(Q, ⟨force k⟩, here(()))⟩)` in `Q = y.
+    // Path(Unit, y, ())`, `k = thunk (return here(()))` and `r` opaque:
+    // `back(assoc(…))` returned by a bind's run, in miniature. The append
+    // reads no transport in `Q`, so the evaluator's run stance runs `k`
+    // under it and moves `here(())` along `here(())`. The outer transport
+    // then moves the empty word and returns its path.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let reflexivity = arena.value_here(unit);
+    let returned = arena.computation_return(reflexivity);
+    let path_body = arena.value_thunk(returned);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let appended_family = arena.value_type_path(unit_type, unit, moving);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let backward_family = arena.value_type_path(unit_type, moving, unit);
+    let held = |arena: &mut TermArena, index: usize| {
+        let constant = arena.value_constant(ConstantIndex::from(index));
+        let call = arena.computation_force(constant);
+        arena.value_returned(call)
+    };
+    let along = held(&mut arena, 0);
+    let returning = |arena: &mut TermArena, family| {
+        let inverse = arena.computation_path_transport(family, along, reflexivity);
+        let inverse = arena.value_returned(inverse);
+        let inverse = arena.computation_return(inverse);
+        arena.value_thunk(inverse)
+    };
+    let backward_body = returning(&mut arena, backward_family);
+    let appended_body = returning(&mut arena, appended_family);
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Body(path_body),
+        Unfoldable::Body(backward_body),
+        Unfoldable::Opaque,
+        Unfoldable::Body(appended_body),
+    ]));
+    let outer = held(&mut arena, 2);
+    let path = arena.computation_return(outer);
+    let moved_by = |arena: &mut TermArena, index: usize| {
+        let constant = arena.value_constant(ConstantIndex::from(index));
+        let call = arena.computation_force(constant);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.computation_return(bound);
+        let operand = arena.computation_bind(call, bound);
+        let operand = arena.value_returned(operand);
+        arena.computation_path_transport(appended_family, outer, operand)
+    };
+    let moved = moved_by(&mut arena, 1);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, path),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "a returned transport the append does not read runs its held path's call"
+    );
+    // The same transport in `P`, the family the append reads: the evaluator
+    // holds its path, so the run leaves the operand as it was, and the outer
+    // transport stands on its path, apart from `return ⟨force r⟩`.
+    let moved = moved_by(&mut arena, 3);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, path),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::default(),
+        }),
+        "a returned transport the append reads keeps its held path"
+    );
+}
+
+#[test]
 fn two_stuck_path_transports_compare_by_motive_and_value()
 {
     // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as

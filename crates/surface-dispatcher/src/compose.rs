@@ -5924,6 +5924,61 @@ def threeTwoPaths(A : Type, x : A) -> Path(Path(Path(A, x, x), here(x), here(x))
         );
     }
 
+    /// A whisker, the inverse of an associator and a whisker, composed at
+    /// reflexivities against the reflexivity's reflexivity. The kernel
+    /// re-derives the composite the checker accepts.
+    #[test]
+    fn a_whisker_an_inverse_associator_and_a_whisker_replay_4413()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(
+                r"/// A function's action on a path.
+def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+  cong(F, p)
+}
+/// The left whisker, by the action of composing with `f`.
+def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), f then g1, f then g2) {
+  ap(Path(A, y, z), Path(A, x, z), (fn (q : Path(A, y, z)) { f then q } : Path(A, y, z) => Path(A, x, z)), g1, g2, b)
+}
+/// The right whisker, by the action of composing with `g`.
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  ap(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
+}
+/// The associator, by conversion.
+def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  here((f then g) then h)
+}
+/// A whisker, an associator read back and a whisker, at reflexivities.
+def whiskered(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  whiskerLeft(A, x, x, x, here(x), here(x) then here(x), here(x) then here(x), here(here(x) then here(x)))
+    then back(assoc(A, x, x, x, x, here(x), here(x), here(x)))
+    then whiskerRight(A, x, x, x, here(x) then here(x), here(x) then here(x), here(here(x) then here(x)), here(x)),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
+",
+            ),
+        );
+        let outcomes: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        let checks = Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            outcomes,
+            ["ap", "whiskerLeft", "whiskerRight", "assoc", "whiskered"]
+                .map(|name| (name.to_owned(), checks.clone()))
+                .to_vec(),
+            "every definition checks, and the kernel re-derives each"
+        );
+    }
+
     /// A fill whose generator's body is itself a fill, read at reflexivities:
     /// the outer fill reaches its base, the generator at the source face, and
     /// the inner fill there reaches its own. The kernel re-derives the
