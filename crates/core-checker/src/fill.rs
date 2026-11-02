@@ -27,9 +27,9 @@
 //! path in `X` and as `here` outside it. Of dimension two, a side's lift is
 //! built over its composite structure: a cell of `X` lifts as its path, any
 //! other cell stays, and a composite whose one half lifts is that half
-//! whiskered by the other, the action of composing with it, as `math.path`
-//! writes `whiskerLeft` and `whiskerRight`. A composite both of whose halves
-//! lift is the right whisker then the left.
+//! whiskered by the other, the level-two composite `math.path` writes as
+//! `whiskerLeft` and `whiskerRight`. A composite both of whose halves lift
+//! is the right whisker then the left.
 //!
 //! At a level-two shape `chain(m, (a₁, …, aₘ))`, `d` lists its cells, one
 //! 2-cell or none per column, or its pasting context with its points fixed:

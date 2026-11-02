@@ -69,9 +69,10 @@
 //!   a pasting whose cells meet other than column by column, a level past two.
 //! - **The whiskers are the generator's.** The horizontal fold uses the
 //!   transports the filler generator lifts by, so a level-two composite and a
-//!   filler over the same shape agree by syntax. Reversal: a whisker
-//!   `math.path` writes as `ap`, if the two whiskers are related by a stated
-//!   conversion.
+//!   filler over the same shape agree by syntax. `math.path` writes its
+//!   whiskers as level-two composites, so they agree with the fold too.
+//!   Reversal: a whisker read as `ap`, if the two whiskers are related by a
+//!   stated conversion.
 //! - **A budget on the chains.** The chain catalogue's cost grows with the
 //!   chains it holds faster than any stratum a check waits on: a bound holding
 //!   the 7-chain certifies in under half a second, one holding the 8-chain in
