@@ -1551,12 +1551,15 @@ mod sweeps
     };
 
     /// The nights the nightly erasure takes to erase every source: the
-    /// night's part of each, a seventh of its erasure (#3850). A rotation by
-    /// source left a night to the costliest source alone: the buddy
-    /// allocator's model erased for 141.7 s locally and timed out at 240 s on
-    /// the nightly runner (run 40858957539). A seventh of the corpus erased
-    /// for 80 to 90 s there the nights before.
-    const ERASED_NIGHTS: Nights = Nights(7);
+    /// night's part of each, a fourteenth of its erasure (#3850, #4406). A
+    /// rotation by source left a night to the costliest source alone: the
+    /// buddy allocator's model erased for 141.7 s locally and timed out at
+    /// 240 s on the nightly runner (run 40858957539). A seventh of the corpus
+    /// erased for 178.3 s, 205.9 s and past 240 s on the nightly runner (runs
+    /// 41042290086, 41191255434 and 41440364719), over the 170 s a sweep's
+    /// night is sized to. A part's erasure costs a fixed share of the
+    /// source's whole, so a fourteenth halves the night.
+    const ERASED_NIGHTS: Nights = Nights(14);
 
     /// The most keystrokes a sampled erasure spends on one source. Each
     /// keystroke checks the whole text left, so erasing a source line by line
