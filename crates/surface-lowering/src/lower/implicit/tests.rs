@@ -1022,6 +1022,34 @@ def counted() -> -F Integer { fromZero() }
 }
 
 #[test]
+fn a_call_deeper_than_its_callee_s_fixed_sort_files_its_slot_4403()
+{
+    // `fromZero()` stands under two matches, deeper than `Integer` stands in
+    // `fromZero`'s signature: the slot still files the integers' code.
+    let source = "\
+theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+module Up : Model(Counter) where {
+  type C = Integer;
+  def zero = 0;
+  def incr(c : Integer) -> -F Integer { c + 1 }
+  def read(c : Integer) -> -F Integer { c }
+}
+def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read(s.incr(s.zero)) }
+def deeper() -> -F Integer { let a = 1; let b = a; let c = b; match c { _ => match c { _ => fromZero() } } }
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let deeper = declaration_named(&module, SurfaceName::from("deeper"));
+    let quoted = |id| matches!(arena.value(id), Some(Value::Quote(_)));
+    assert!(
+        matches!(module.models(deeper), [slot] if matches!(slot.fixed.as_slice(), [code] if quoted(*code))),
+        "one slot, filed with the integers' code: {:?}",
+        module.models(deeper)
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
 fn a_model_implicit_named_alone_is_refused_739()
 {
     // `s` is its components: passed where a model value is asked, it is
