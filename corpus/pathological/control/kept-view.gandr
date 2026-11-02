@@ -10,7 +10,7 @@
 @[ refuses("ViewEscaped") ]
 def unkept() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : () => Integer = access shared s as w { pure thunk { pure w } };
     force k
   } with {
@@ -24,7 +24,7 @@ def unkept() -> Integer {
 @[ refuses("ViewEscaped") ]
 def keptExclusive() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     access s as v {
       let k : (() => Integer) at c = thunk { pure v };
       resume(v, v)
@@ -41,7 +41,7 @@ def keptExclusive() -> Integer {
 @[ refuses("HeldKept") ]
 def written() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
     access s as v { resume(v, v + 1) };
     force k
@@ -56,7 +56,7 @@ def written() -> Integer {
 @[ refuses("KeptEscaped") ]
 def rewrapped() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
     let j : () => Integer = thunk { force k };
     force j
@@ -71,7 +71,7 @@ def rewrapped() -> Integer {
 @[ refuses("TypeMismatch") ]
 def answered() -> () => Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
     pure k
   } with {

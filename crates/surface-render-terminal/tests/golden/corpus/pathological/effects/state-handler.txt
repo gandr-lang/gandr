@@ -10,8 +10,8 @@ error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computa
 error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computation is expected
     ╭▸ corpus/pathological/effects/state-handler.gandr:122:14
     │
-122 │   handle c : Console {
-    │              ━━━━━━━ a form of another sort than this position takes
+122 │   handle c : std.io.Console.Eff {
+    │              ━━━━━━━━━━━━━━━━━━ a form of another sort than this position takes
     │
     ├ note: `unansweredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
     ╰ help: write a computation in this position

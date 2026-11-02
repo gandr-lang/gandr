@@ -32,7 +32,7 @@ pub world near;
 
 /// The world the work runs at: the console, and a store of strings under
 /// `store`.
-pub world far requires [Console, store : Store with sort V = String];
+pub world far requires [std.io.Console.Eff, store : Store with sort V = String];
 
 /// `far` computes forty-two and hands it back.
 @[ entry((near, far)), runs("42") ]

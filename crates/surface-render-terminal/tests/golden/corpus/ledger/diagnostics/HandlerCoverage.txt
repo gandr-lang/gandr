@@ -2,7 +2,7 @@ error[HandlerCoverage]: the handler must handle every operation of its interface
   ╭▸ corpus/ledger/diagnostics/HandlerCoverage.gandr:4:3
   │
 3 │ ┌  def asked() -> -F Integer {
-4 │ │┏   handle c : Proc {
+4 │ │┏   handle c : std.process.Exit.Eff {
 5 │ │┃     pure 1
 6 │ │┃   } with {
 7 │ │┃     pure(x) => pure x

@@ -1,9 +1,9 @@
 /// `CapabilityAmplified`: a capability standing where one granting more is expected.
-def save(c : Cap {read, write}) -> -F [Fs] Unit {
+def save(c : Cap {read, write}) -> -F [std.fs.Eff] Unit {
   c.write("notes", "draft")
 }
 
 @[ refuses("CapabilityAmplified") ]
-def widen(c : Cap {read}) -> -F [Fs] Unit {
+def widen(c : Cap {read}) -> -F [std.fs.Eff] Unit {
   save(c)
 }

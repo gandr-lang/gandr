@@ -2,7 +2,7 @@ error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second 
    ╭▸ corpus/pathological/completion/stack-resumed-twice.gandr:27:50
    │
 14 │ ┌  def resumedTwice() -> Unit {
-15 │ │┌   handle c : Proc {
+15 │ │┌   handle c : std.process.Exit.Eff {
 16 │ ││     let ring = fork (kernel : Ring.Submission) {
 17 │ ││       let sqe = recv(kernel);
 18 │ ││       send(kernel, Ring.done);

@@ -42,6 +42,26 @@
 //! refuses one it does not hold. A frame is a string because the boundary has
 //! no byte-sequence layout yet, so a frame that is not UTF-8 is refused.
 //!
+//! Each interface lives in its API's module, as Rust's `std` places
+//! `io::Result`, and its name is its path: the module, then `Eff`. The
+//! standard streams and the ring sit under `std.io`, the process's execution
+//! and its early exit under `std.process`, and the filesystem, the
+//! environment and the network each in a module of its own. `Div` keeps its
+//! bare name until a ruling names its module.
+//!
+//! | Interface | Path |
+//! | --- | --- |
+//! | the console | `std.io.Console.Eff` |
+//! | standard error | `std.io.Stderr.Eff` |
+//! | standard input | `std.io.Stdin.Eff` |
+//! | the ring | `std.io.Ring.Eff` |
+//! | the filesystem | `std.fs.Eff` |
+//! | the environment | `std.env.Eff` |
+//! | the network | `std.net.Eff` |
+//! | execution | `std.process.Exec.Eff` |
+//! | early exit | `std.process.Exit.Eff` |
+//! | divergence | `Div` |
+//!
 //! No two interfaces share an operation name, so an operation names its
 //! interface: [`HostSignatures::offering`] finds it, and
 //! [`HostSignatures::authority`] builds the capability authority granting a
@@ -69,26 +89,26 @@ use super::capability::RestrictionError;
 use crate::CoreArena;
 
 /// The process execution interface.
-pub const EXEC: &str = "Exec";
+pub const EXEC: &str = "std.process.Exec.Eff";
 /// The filesystem interface.
-pub const FS: &str = "Fs";
+pub const FS: &str = "std.fs.Eff";
 /// The early process-exit interface.
-pub const PROC: &str = "Proc";
+pub const PROC: &str = "std.process.Exit.Eff";
 /// The read-only process environment interface.
-pub const ENV: &str = "Env";
+pub const ENV: &str = "std.env.Eff";
 /// The completion ring's buffer interface.
-pub const RING: &str = "Ring";
+pub const RING: &str = "std.io.Ring.Eff";
 /// The divergence interface, with no operation.
 pub const DIV: &str = "Div";
 /// The console interface: a line written to the process's output.
-pub const CONSOLE: &str = "Console";
+pub const CONSOLE: &str = "std.io.Console.Eff";
 /// The error stream interface: a line written to the process's standard
 /// error.
-pub const STDERR: &str = "Stderr";
+pub const STDERR: &str = "std.io.Stderr.Eff";
 /// The input interface: a line read from the process's standard input.
-pub const STDIN: &str = "Stdin";
+pub const STDIN: &str = "std.io.Stdin.Eff";
 /// The network interface: a stream to a peer named by its key.
-pub const NET: &str = "Net";
+pub const NET: &str = "std.net.Eff";
 /// The names of the ten interfaces, in the order [`HostSignatures::interfaces`]
 /// returns them.
 pub const INTERFACES: [&str; 10] = [EXEC, FS, PROC, ENV, RING, DIV, CONSOLE, STDERR, STDIN, NET];
@@ -202,9 +222,9 @@ pub enum HostAccess
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `Fs`'s `read` reads and its `write` changes, on one
-///   interface; `Exec`'s `exec` changes; an operation named `read` of an
-///   interface the host does not declare changes.
+/// - hypothesis: L3 — `std.fs.Eff`'s `read` reads and its `write` changes, on
+///   one interface; `std.process.Exec.Eff`'s `exec` changes; an operation named
+///   `read` of an interface the host does not declare changes.
 /// - witness: `effect::host::tests::an_operation_reads_the_host_only_when_it_changes_nothing`
 #[spec(ensures: |ret| ret == HostAccess::Changes || interface.as_ref() == FS || interface.as_ref() == ENV)]
 #[inline]

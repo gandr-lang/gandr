@@ -29,8 +29,10 @@ use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::host::HostSignatures;
+use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -47,6 +49,8 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
+use crate::form::WrittenPath;
+use crate::form::entry_path;
 use crate::form::read_pieces;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
@@ -60,11 +64,11 @@ pub struct RequiredEntry
     /// The operand before the `:`, the label code at the world performs
     /// through; none for an interface named whole.
     pub label: Maybe<Placed, labelled::Absent>,
-    /// The interface's name.
-    pub interface: Placed,
+    /// The interface's path.
+    pub interface: WrittenPath,
     /// Each sort the entry fixes, beside the operand it fixes it to.
     pub manifest: Vec<(Placed, NodeIndex)>,
-    /// The bytes from the interface's name to the entry's end.
+    /// The bytes from the interface's path to the entry's end.
     pub written: ByteSpan,
 }
 
@@ -74,8 +78,8 @@ pub struct SiteOffer
 {
     /// The declaration.
     pub declaration: Placed,
-    /// Each host interface the site grants, by its name.
-    pub granted: Vec<Placed>,
+    /// Each host interface the site grants, by its path.
+    pub granted: Vec<WrittenPath>,
     /// Each label the site answers, beside the name of the module answering
     /// it.
     pub answered: Vec<(Placed, Placed)>,
@@ -192,7 +196,7 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, declaration.node, &mut attributes);
             }
         }
-        let (entries, read) = match read_requirement(&mut cursor) {
+        let (entries, read) = match read_requirement(self.pbg, self.tree, &mut cursor) {
             Ok(entries) => (entries, Ok(())),
             Err(refusal) => (Vec::new(), Err(refusal)),
         };
@@ -270,21 +274,35 @@ impl<'source> Collector<'_, 'source>
         let mut answered = Vec::new();
         let mut written: BTreeMap<SurfaceName<'_>, ByteSpan> = BTreeMap::new();
         loop {
-            let named = if let Maybe::Present(interface) = cursor.tile(TileName::TYPE_IDENTIFIER) {
-                let name = self.name_of(interface);
+            let named = if let Maybe::Present((interface, fixed)) =
+                entry_path(self.pbg, self.tree, &mut cursor)?
+            {
+                // An offer grants a host interface whole, fixing no sort.
+                if let Some(&(sort, _)) = fixed.first() {
+                    return Err(misplaced_in(FormName::OFFERS_DECLARATION, sort.span));
+                }
+                let name = interface.name(self.tree);
                 if let Maybe::Absent(_) = table.named(&EffectName::from(name.as_ref())) {
                     return Err(LoweringRefusal::UnresolvedTypeHead {
-                        span: interface.span,
+                        span: interface.span(),
                         name,
                         arity: HeadArity::Nullary,
                     });
                 }
+                let named = (interface.span(), name);
                 granted.push(interface);
-                interface
+                named
             }
             else {
-                let (Maybe::Present(label), Maybe::Present(_), Maybe::Present(module)) = (
-                    cursor.tile(TileName::IDENTIFIER),
+                let mut named = Pieces::new();
+                let label = match cursor.read() {
+                    Maybe::Present(Piece::Operand(label)) => {
+                        self.lone_name(label.node, &mut named)?
+                    },
+                    Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => None,
+                };
+                let (Some(label), Maybe::Present(_), Maybe::Present(module)) = (
+                    label,
                     cursor.tile(TileName::EQUALS),
                     cursor.tile(TileName::TYPE_IDENTIFIER),
                 )
@@ -292,17 +310,13 @@ impl<'source> Collector<'_, 'source>
                     return Err(misplaced_in(FormName::OFFERS_DECLARATION, cursor.here()));
                 };
                 answered.push((label, module));
-                label
+                (label.span, self.name_of(label))
             };
-            let name = self.name_of(named);
+            let (span, name) = named;
             if let Some(&first) = written.get(&name) {
-                return Err(LoweringRefusal::DuplicateDefinition {
-                    span: named.span,
-                    name,
-                    first,
-                });
+                return Err(LoweringRefusal::DuplicateDefinition { span, name, first });
             }
-            let _first = written.insert(name, named.span);
+            let _first = written.insert(name, span);
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;
             }
@@ -408,7 +422,8 @@ impl<'source> Collector<'_, 'source>
 /// - ensures: empty, the cursor unmoved, when the next tile is no `requires`;
 ///   otherwise one entry per comma-separated entry between the brackets, in
 ///   written order, the cursor past the `]`.
-/// - fails: a tile out of its place in the row.
+/// - fails: a tile out of its place in the row; a form fault reading an entry's
+///   links.
 /// - panics: none.
 ///
 /// # Errors
@@ -419,8 +434,11 @@ impl<'source> Collector<'_, 'source>
 ///   files both entries; one written with none files nothing.
 /// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.is_sorted_by_key(|entry| entry.written.start())))]
-fn read_requirement(cursor: &mut Cursor<'_>)
--> Result<Vec<RequiredEntry>, LoweringRefusal<'static>>
+fn read_requirement<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    cursor: &mut Cursor<'_>,
+) -> Result<Vec<RequiredEntry>, LoweringRefusal<'source>>
 {
     let mut entries = Vec::new();
     if let Maybe::Absent(_) = cursor.tile(TileName::REQUIRES) {
@@ -431,24 +449,28 @@ fn read_requirement(cursor: &mut Cursor<'_>)
         return Err(misplaced(cursor));
     }
     loop {
-        let label = match cursor.peek() {
-            Maybe::Present(Piece::Operand(written)) => {
-                let _label = cursor.read();
-                if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
-                    return Err(misplaced(cursor));
-                }
-                Maybe::Present(written)
-            },
-            Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => {
-                Maybe::Absent(labelled::Absent::Whole)
-            },
-        };
-        let Maybe::Present(interface) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        // An operand the `:` follows is the entry's label; one alone spells a
+        // package's path, `std.fs.Eff`.
+        let mut label = Maybe::Absent(labelled::Absent::Whole);
+        if let Maybe::Present(Piece::Operand(written)) = cursor.peek() {
+            let mut ahead = cursor.clone();
+            let _label = ahead.read();
+            if let Maybe::Present(_) = ahead.tile(TileName::COLON) {
+                *cursor = ahead;
+                label = Maybe::Present(written);
+            }
+        }
+        let Maybe::Present((interface, fixed)) = entry_path(pbg, tree, cursor)?
         else {
             return Err(misplaced(cursor));
         };
-        let mut manifest = Vec::new();
-        let mut end = interface.span.end();
+        let mut end = fixed
+            .last()
+            .map_or_else(|| interface.last.span.end(), |&(_, ty)| ty.span.end());
+        let mut manifest: Vec<(Placed, NodeIndex)> = fixed
+            .into_iter()
+            .map(|(sort, ty)| (sort, ty.node))
+            .collect();
         while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
             let Maybe::Present(_) = cursor.tile(TileName::SORT)
             else {
@@ -469,7 +491,7 @@ fn read_requirement(cursor: &mut Cursor<'_>)
             manifest.push((sort, ty.node));
             end = ty.span.end();
         }
-        let Ok(written) = ByteSpan::new(interface.span.start(), end)
+        let Ok(written) = ByteSpan::new(interface.span().start(), end)
         else {
             return Err(misplaced(cursor));
         };

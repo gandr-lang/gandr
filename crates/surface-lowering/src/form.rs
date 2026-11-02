@@ -70,12 +70,14 @@ use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
+use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::resolve::OperandCount;
+use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 
 quenchant_shape::reason_enum! {
@@ -3559,6 +3561,333 @@ pub struct Cursor<'pieces>
     edge: ByteSpan,
 }
 
+/// A dotted path as a form writes it, `State` or `std.io.Console.Eff`: the
+/// segments before its last name, and the last, which names what the path
+/// reaches in the module the segments name.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenPath
+{
+    /// The segments before the last name, in written order.
+    pub prefix: Vec<Placed>,
+    /// The last name.
+    pub last: Placed,
+}
+
+impl WrittenPath
+{
+    /// The bytes from the path's first segment to its last name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a span from the first segment's start, the last name's for a
+    ///   path of one name, to the last name's end; the last name's span for
+    ///   segments written out of order, which no reading yields.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a one-name path and a dotted one, each asserted at
+    ///   its whole span.
+    /// - witness: `form::tests::a_cursor_reads_a_dotted_path_to_its_last_name`
+    #[spec(ensures: |ret| ret.end() == self.last.span.end())]
+    #[must_use]
+    pub fn span(&self) -> ByteSpan
+    {
+        self.prefix.first().map_or(self.last.span, |first| {
+            ByteSpan::new(first.span.start(), self.last.span.end()).unwrap_or(self.last.span)
+        })
+    }
+
+    /// The name the path spells in `tree`, `std.io.Console.Eff`: its bytes from
+    /// the first segment to the last name, or the empty name for a path the
+    /// tree's text does not hold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn name<'source>(
+        &self,
+        tree: &SyntaxTree<'source>,
+    ) -> SurfaceName<'source>
+    {
+        SurfaceName::from(
+            tree.spanned(self.span())
+                .unwrap_or_else(|| SourceFragment::from("")),
+        )
+    }
+}
+
+/// The dotted path a type operand spells when it opens with a package's
+/// lowercase name, `std.io.Console.Eff`: each link of the postfix type path
+/// from its head out, a row entry, a capability scope's head and a world's
+/// entry reading it as the tiles of a theory's path read.
+///
+/// # Specification
+/// - requires: `written` is an operand of `tree`.
+/// - ensures: the path when `written` is a type path whose innermost operand is
+///   a lowercase name, its segments in written order and its last name the
+///   outermost link's; `None` for any other operand, a lowercase name alone
+///   among them.
+/// - fails: the refusal of [`read_pieces`] or [`shape_of`] on a link.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host interface's lowercase home in a row, labelled and
+///   unlabelled, beside a row variable, each lowered to its interface or its
+///   tail.
+/// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
+/// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+/// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.as_ref().is_none_or(|path| !path.prefix.is_empty() && written.span.start() <= path.span().start() && path.span().end() <= written.span.end())))]
+fn operand_path<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    written: Placed,
+) -> Result<Option<WrittenPath>, LoweringRefusal<'source>>
+{
+    // The links from the outermost in, each name pushed last first.
+    let mut names = Vec::new();
+    let mut target = written;
+    let mut pieces = Pieces::new();
+    loop {
+        let Some(node) = tree.node(target.node)
+        else {
+            return Ok(None);
+        };
+        let Shape::Form { former, .. } = shape_of(pbg, node)?
+        else {
+            return Ok(None);
+        };
+        read_pieces(pbg, tree, target.node, &mut pieces)?;
+        match (former, pieces.pieces.as_slice()) {
+            (
+                Former::TypePath,
+                &[
+                    Piece::Operand(inner),
+                    Piece::Tile {
+                        label: TileName::DOT,
+                        ..
+                    },
+                    Piece::Tile {
+                        label: TileName::TYPE_IDENTIFIER,
+                        at: selected,
+                    },
+                ],
+            ) => {
+                names.push(selected);
+                target = inner;
+            },
+            (
+                Former::TypePath,
+                &[
+                    Piece::Operand(inner),
+                    Piece::Tile {
+                        label: TileName::DOT,
+                        ..
+                    },
+                    Piece::Tile {
+                        label: TileName::TYPE_VARIABLE,
+                        at: module,
+                    },
+                    Piece::Tile {
+                        label: TileName::DOT,
+                        ..
+                    },
+                    Piece::Tile {
+                        label: TileName::TYPE_IDENTIFIER,
+                        at: selected,
+                    },
+                ],
+            ) => {
+                names.push(selected);
+                names.push(module);
+                target = inner;
+            },
+            (Former::TypeHead, &[Piece::Tile { at: head, .. }]) if !names.is_empty() => {
+                names.push(head);
+                break;
+            },
+            _ => return Ok(None),
+        }
+    }
+    names.reverse();
+    let Some(last) = names.pop()
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(WrittenPath {
+        prefix: names,
+        last,
+    }))
+}
+
+/// An effect entry's path and the sorts it fixes, each sort's name tile
+/// beside the type it writes.
+///
+/// # Specification
+/// trivial.
+pub type EntryPath = (WrittenPath, Vec<(Placed, Placed)>);
+
+/// The path and fixed sorts a type operand spells as an effect's entry: a
+/// package's path, `std.io.Console.Eff`, or one the manifest type fixes sorts
+/// of, `std.io.Console.Eff with sort S = A`, which the type sort reads whole
+/// where a theory's tiles read the `with` apart.
+///
+/// # Specification
+/// - requires: `written` is an operand of `tree`.
+/// - ensures: [`operand_path`]'s path, with no sort, for an operand that spells
+///   one; for a manifest type whose left operand spells one, that path and each
+///   `sort x = A` of its chain, the sort's name tile beside its type, in
+///   written order; `None` for any other operand.
+/// - fails: the refusal of [`read_pieces`] or [`shape_of`] on a link.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// Every pass descends to the right operand of a `with`, a node strictly
+/// inside the one before it in the finite tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host interface's home fixing a sort it does not have,
+///   refused by that sort's name as a theory's tiles are.
+/// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |entry| entry.as_ref().is_none_or(|&(ref path, ref fixed)| path.span().end() <= written.span.end() && fixed.iter().all(|&(sort, ty)| path.span().end() < sort.span.start() && sort.span.end() < ty.span.start()))))]
+pub fn operand_entry<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    written: Placed,
+) -> Result<Option<EntryPath>, LoweringRefusal<'source>>
+{
+    let manifest = |at: Placed| -> Result<bool, LoweringRefusal<'source>> {
+        Ok(match tree.node(at.node) {
+            Some(node) => matches!(shape_of(pbg, node)?, Shape::Form {
+                former: Former::ManifestType,
+                ..
+            }),
+            None => false,
+        })
+    };
+    if !manifest(written)? {
+        return Ok(operand_path(pbg, tree, written)?.map(|path| (path, Vec::new())));
+    }
+    let mut pieces = Pieces::new();
+    // `L with R`: the two operands of a manifest type's `with`.
+    let mut halves = |at: Placed| -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>> {
+        read_pieces(pbg, tree, at.node, &mut pieces)?;
+        Ok(match *pieces.pieces.as_slice() {
+            [
+                Piece::Operand(left),
+                Piece::Tile {
+                    label: TileName::WITH,
+                    ..
+                },
+                Piece::Operand(right),
+            ] => Some((left, right)),
+            _ => None,
+        })
+    };
+    let Some((subject, mut bound)) = halves(written)?
+    else {
+        return Ok(None);
+    };
+    let Some(path) = operand_path(pbg, tree, subject)?
+    else {
+        return Ok(None);
+    };
+    let mut fixed = Vec::new();
+    let mut binding = Pieces::new();
+    loop {
+        let link = manifest(bound)?;
+        let first = if link {
+            let Some((first, rest)) = halves(bound)?
+            else {
+                return Ok(None);
+            };
+            bound = rest;
+            first
+        }
+        else {
+            bound
+        };
+        read_pieces(pbg, tree, first.node, &mut binding)?;
+        let &[
+            Piece::Tile {
+                label: TileName::SORT,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::TYPE_IDENTIFIER,
+                at: sort,
+            },
+            Piece::Tile {
+                label: TileName::EQUALS,
+                ..
+            },
+            Piece::Operand(ty),
+        ] = binding.pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        fixed.push((sort, ty));
+        if !link {
+            return Ok(Some((path, fixed)));
+        }
+    }
+}
+
+/// Read an effect's entry where a row, a capability scope's head, a world's
+/// requirement or a site's offer writes one: a theory's tiles, `State.Eff`,
+/// or a type operand spelling a package's path, `std.io.Console.Eff`, with
+/// the sorts the operand fixes.
+///
+/// # Specification
+/// - requires: `cursor` reads pieces of `tree`.
+/// - ensures: the path and the sorts its operand fixes, none for a theory's
+///   tiles, whose `with` the caller reads, the cursor past it; the absence
+///   [`Cursor::path`] names, the cursor where that leaves it, for a next piece
+///   that is neither a theory's path nor an operand spelling one.
+/// - fails: the refusal of [`operand_entry`].
+/// - panics: none.
+/// - executable: none — the path is the pieces the cursor reads, which
+///   restating reads again.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`operand_path`].
+/// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
+/// - witness: `lower::world::tests::a_world_s_requirement_is_a_row_3523`
+/// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+pub fn entry_path<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    cursor: &mut Cursor<'_>,
+) -> Result<Maybe<EntryPath, cursor::Absent>, LoweringRefusal<'source>>
+{
+    let absent = match cursor.path() {
+        Maybe::Present(written) => return Ok(Maybe::Present((written, Vec::new()))),
+        Maybe::Absent(absent) => absent,
+    };
+    if let Maybe::Present(Piece::Operand(written)) = cursor.peek()
+        && let Some(entry) = operand_entry(pbg, tree, written)?
+    {
+        let _written = cursor.read();
+        return Ok(Maybe::Present(entry));
+    }
+
+    Ok(Maybe::Absent(absent))
+}
+
 impl Clone for Cursor<'_>
 {
     /// A cursor at the same pieces and edge: a lookahead a parse can take
@@ -3913,6 +4242,46 @@ impl<'pieces> Cursor<'pieces>
             Maybe::Present(piece) => piece.placed().span,
             Maybe::Absent(_) => self.gap(),
         }
+    }
+
+    /// Read a dotted path, `State` or `Kit.Older`: a type name, then each dot
+    /// and the name of either case after it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the path, with the cursor past its last name; the absence
+    ///   [`Cursor::at`] names for a next piece that is no type name, with the
+    ///   cursor unmoved, and for a dot no name follows, with the cursor past
+    ///   the dot.
+    /// - provides: the one reading of an interface's or a theory's path.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the segments are the tiles the cursor walks, which
+    ///   restating reads again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a one-name path, a dotted one and a dot no name
+    ///   follows, each asserted with the cursor's position after it.
+    /// - witness: `form::tests::a_cursor_reads_a_dotted_path_to_its_last_name`
+    pub(crate) fn path(&mut self) -> Maybe<WrittenPath, cursor::Absent>
+    {
+        let mut last = match self.tile(TileName::TYPE_IDENTIFIER) {
+            Maybe::Present(first) => first,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mut prefix = Vec::new();
+        while let Maybe::Present(_) = self.tile(TileName::DOT) {
+            let next = match self.tile(TileName::TYPE_IDENTIFIER) {
+                Maybe::Present(next) => next,
+                Maybe::Absent(_) => match self.tile(TileName::IDENTIFIER) {
+                    Maybe::Present(next) => next,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                },
+            };
+            prefix.push(core::mem::replace(&mut last, next));
+        }
+
+        Maybe::Present(WrittenPath { prefix, last })
     }
 
     /// The zero-width span at the end of the last piece read.
@@ -4315,6 +4684,91 @@ mod tests
             reading.here(),
             at(5_usize, 5_usize),
             "an exhausted cursor stands at the gap past the last piece"
+        );
+    }
+
+    #[test]
+    fn a_cursor_reads_a_dotted_path_to_its_last_name()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let tile = |label: TileName, node: usize, start: usize, end: usize| Piece::Tile {
+            label,
+            at: Placed {
+                node: crate::fixture::node(node),
+                span: at(start, end),
+            },
+        };
+        let placed = |piece: Piece| piece.placed();
+        // `std.io.Console.Eff`
+        let io = tile(TileName::TYPE_IDENTIFIER, 1_usize, 0_usize, 2_usize);
+        let console = tile(TileName::TYPE_IDENTIFIER, 3_usize, 3_usize, 10_usize);
+        let eff = tile(TileName::TYPE_IDENTIFIER, 5_usize, 11_usize, 14_usize);
+        let pieces = [
+            io,
+            tile(TileName::DOT, 2_usize, 2_usize, 3_usize),
+            console,
+            tile(TileName::DOT, 4_usize, 10_usize, 11_usize),
+            eff,
+        ];
+        let mut reading = Cursor::new(&pieces, at(0_usize, 14_usize));
+        let Maybe::Present(path) = reading.path()
+        else {
+            panic!("a dotted path is read");
+        };
+        assert_eq!(
+            (path.prefix.as_slice(), path.last, path.span()),
+            (
+                [placed(io), placed(console)].as_slice(),
+                placed(eff),
+                at(0_usize, 14_usize)
+            ),
+            "the segments before the last name are its prefix"
+        );
+        assert_eq!(
+            reading.here(),
+            at(14_usize, 14_usize),
+            "the cursor stands past the last name"
+        );
+
+        // `Fs`
+        let fs = tile(TileName::TYPE_IDENTIFIER, 1_usize, 0_usize, 2_usize);
+        let mut alone = Cursor::new(core::slice::from_ref(&fs), at(0_usize, 2_usize));
+        assert_eq!(
+            alone
+                .path()
+                .map(|path| (path.prefix.len(), path.last, path.span())),
+            Maybe::Present((0_usize, placed(fs), at(0_usize, 2_usize))),
+            "a path of one name has no prefix"
+        );
+
+        // `Fs.` and then a comma.
+        let cut = [
+            fs,
+            tile(TileName::DOT, 2_usize, 2_usize, 3_usize),
+            tile(TileName::COMMA, 3_usize, 3_usize, 4_usize),
+        ];
+        let mut dangling = Cursor::new(&cut, at(0_usize, 4_usize));
+        assert_eq!(
+            dangling.path(),
+            Maybe::Absent(cursor::Absent::Elsewhere),
+            "a dot no name follows reads no path"
+        );
+        assert_eq!(
+            dangling.here(),
+            at(3_usize, 4_usize),
+            "the cursor stands past the dot"
+        );
+
+        let mut elsewhere = Cursor::new(&cut[2_usize ..], at(3_usize, 4_usize));
+        assert_eq!(
+            elsewhere.path(),
+            Maybe::Absent(cursor::Absent::Elsewhere),
+            "a path opens with a type name"
+        );
+        assert_eq!(
+            elsewhere.here(),
+            at(3_usize, 4_usize),
+            "a miss leaves the cursor where it stood"
         );
     }
 

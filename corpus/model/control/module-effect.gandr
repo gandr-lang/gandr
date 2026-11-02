@@ -1,0 +1,28 @@
+// An effect a source declares is named by its path, as each host interface
+// is named at its home, `std.io.Console.Eff` (#4495). The theory
+// `Counter.Eff` lives under `Counter`, a row names it by that path, and a
+// scope handles it under the same path. What refuses is in
+// `../../pathological/control/bare-effect.gandr`.
+
+/// A count bumped, the effect `Counter` holds.
+theory Counter.Eff where {
+  sort C : Type;
+  oper bump : (k : C) --> C;
+}
+
+/// A bump, through the instance `n` its row's label binds.
+def tallied() -> [n : Counter.Eff] Integer {
+  n.bump();
+  pure 0
+}
+
+/// The bump handled at seven: the scope's clause answers.
+@[ runs("7") ]
+def tallyHandled() -> Integer {
+  handle c : Counter.Eff {
+    tallied()
+  } with {
+    pure(x) => pure x,
+    oper bump(k) => pure 7
+  }
+}

@@ -821,7 +821,7 @@ impl HostHandler for ExitPolicy
 {
     type Abort = ExitCode;
 
-    /// Stop at `Proc.exit`, or resume with the named reply.
+    /// Stop at `std.process.Exit.exit`, or resume with the named reply.
     ///
     /// # Specification
     /// trivial.
@@ -841,7 +841,7 @@ impl HostHandler for ExitPolicy
                 request.signature.name().as_ref(),
                 request.operation.as_ref()
             ),
-            ("Proc", "exit")
+            ("std.process.Exit.Eff", "exit")
         );
         self.reply.map_or(HostReply::Abort(ExitCode(7)), |value| {
             assert!(values.value(value).is_none(), "the reply is foreign");

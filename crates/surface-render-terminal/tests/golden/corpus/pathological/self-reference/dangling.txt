@@ -4,14 +4,14 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
  7 │ ┌   def dangling() -> Integer {
  8 │ │     var x = 5;
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
- 9 │ │     let r : Integer = handle c : Proc {
+ 9 │ │     let r : Integer = handle c : std.process.Exit.Eff {
    │ │┌────┬─────────────────┘
    │ ││    │
    │ ││    checked against `-F Integer`; while finishing the type of this
 10 │ ││      let k = access x as v {
    │ ││┌─────┬───────┘
    │ │││     │
-   │ │││     checked against `-F [Proc, c : Proc] Integer`; while synthesising the computation this binds
+   │ │││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while synthesising the computation this binds
 11 │ │││       c.exit(1);
    │ │││       ───────── synthesised; while checking the body of this split; binds _ : Unit
 12 │ │││       resume(v, v + 7);

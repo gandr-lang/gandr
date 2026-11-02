@@ -149,8 +149,8 @@ def rec sum(t : Tree) -> Integer {
     Node(l, r) => { let a = sum[<](l); let b = sum[<](r); a + b }
   }
 }
-def say(s : String) -> [Console] Unit { Console.print(s) }
-def shout(s : String) -> [Console] Integer { let u = say(s); 1 }
+def say(s : String) -> [std.io.Console.Eff] Unit { std.io.Console.print(s) }
+def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say(s); 1 }
 "#,
     ));
     assert_eq!(
@@ -199,7 +199,7 @@ fn a_writer_answering_a_kept_value_stays_fused_2954()
         r#"
 def keptView() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure pure w };
     force k
   } with {

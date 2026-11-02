@@ -6395,13 +6395,13 @@ fn a_returner_lists_each_interface_of_its_row_between_commas()
         }])
         .expect("one operation is a signature")
     };
-    let row = EffectRow::from_signatures([interface("Proc"), interface("Store")])
+    let row = EffectRow::from_signatures([interface("std.process.Exit.Eff"), interface("Store")])
         .expect("two interfaces of distinct names");
     let returner = core.comp_type_returner_with_effects(unit, row);
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::CompType(returner))),
-        faithful(Written("-F [Proc, Store] Unit"))
+        faithful(Written("-F [Store, std.process.Exit.Eff] Unit"))
     );
 }
 
@@ -6417,7 +6417,7 @@ fn an_open_row_writes_its_tail_after_its_interfaces_2270()
 
     let mut core = CoreArena::new();
     let unit = core.value_type_product(&[]);
-    let proc = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+    let proc = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
         name: "go".into(),
         payload: unit,
         reply: unit,
@@ -6433,7 +6433,7 @@ fn an_open_row_writes_its_tail_after_its_interfaces_2270()
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::CompType(after))),
-        faithful(Written("(a : Row) -> -F [Proc | a] Unit"))
+        faithful(Written("(a : Row) -> -F [std.process.Exit.Eff | a] Unit"))
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::CompType(alone))),
@@ -6458,7 +6458,7 @@ fn a_row_writes_each_instance_by_its_label_2271()
 
     let mut core = CoreArena::new();
     let unit = core.value_type_product(&[]);
-    let console = EffectSig::new(EffectName::from("Console"), [EffectOp {
+    let console = EffectSig::new(EffectName::from("std.io.Console.Eff"), [EffectOp {
         name: "print".into(),
         payload: unit,
         reply: unit,
@@ -6489,7 +6489,7 @@ fn a_row_writes_each_instance_by_its_label_2271()
         Maybe::Present((
             String::from(
                 "def down[r : Region, r1 : Region](a : Cap {print} at r, b : Cap {print} at \
-                 r1) -> [r : Console, r1 : Console] Unit {\n  unit\n}"
+                 r1) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit {\n  unit\n}"
             ),
             Fidelity::Faithful
         )),
@@ -6497,7 +6497,9 @@ fn a_row_writes_each_instance_by_its_label_2271()
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::CompType(returner))),
-        approximate(Written("-F [? : Console, ? : Console] Unit")),
+        approximate(Written(
+            "-F [? : std.io.Console.Eff, ? : std.io.Console.Eff] Unit"
+        )),
         "a row spelled alone names no binder"
     );
 }
@@ -6523,7 +6525,7 @@ fn a_row_over_a_theory_spells_its_manifest_3230()
         reply: integer,
     }])
     .expect("one operation is a signature");
-    let console = EffectSig::new(EffectName::from("Console"), [EffectOp {
+    let console = EffectSig::new(EffectName::from("std.io.Console.Eff"), [EffectOp {
         name: "print".into(),
         payload: unit,
         reply: unit,
@@ -6540,7 +6542,9 @@ fn a_row_over_a_theory_spells_its_manifest_3230()
     let manifested = CoreSource::new(&core, &[]).manifesting(&rows);
     assert_eq!(
         spelled(&manifested, Root::Type(CoreNode::CompType(returner))),
-        faithful(Written("-F [Console, State with sort S = Integer] Unit")),
+        faithful(Written(
+            "-F [State with sort S = Integer, std.io.Console.Eff] Unit"
+        )),
         "the theory's entry writes its sort, the interface's nothing"
     );
     assert_eq!(
@@ -6548,7 +6552,7 @@ fn a_row_over_a_theory_spells_its_manifest_3230()
             &CoreSource::new(&core, &[]),
             Root::Type(CoreNode::CompType(returner))
         ),
-        faithful(Written("-F [Console, State] Unit")),
+        faithful(Written("-F [State, std.io.Console.Eff] Unit")),
         "a row with no manifest recorded writes the names alone"
     );
 }
@@ -7175,7 +7179,7 @@ fn a_scoped_capability_names_its_scope_400()
     let integer = core.value_type_base(BaseType::Integer);
     let unit = core.value_type_product(&[]);
     let exit = EffectRow::singleton(
-        EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
             name: "exit".into(),
             payload: integer,
             reply: unit,
@@ -7234,7 +7238,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     let mut core = CoreArena::new();
     let integer = core.value_type_base(BaseType::Integer);
     let unit = core.value_type_product(&[]);
-    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+    let signature = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
         name: "exit".into(),
         payload: integer,
         reply: unit,
@@ -7256,7 +7260,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : Proc { let b : Integer at a = pure a ; b } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { let b : Integer at a = pure a ; b } with { pure(a) => a }"
         ))
     );
     let bound = core.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
@@ -7272,7 +7276,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
             Root::Computation(CoreNode::Computation(bound_scoped))
         ),
         approximate(Written(
-            "handle a : Proc { let b : Integer at ? = pure a ; b } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { let b : Integer at ? = pure a ; b } with { pure(a) => a }"
         ))
     );
 }
@@ -7439,8 +7443,8 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
 }
 
 /// An operation performed through its interface writes the call through the
-/// interface's name, `Proc.exit(3)`, the one spelling the lowering reads as
-/// a perform: the bare `exit(3)` names nothing in scope (#2304).
+/// interface's name, `std.process.Exit.exit(3)`, the one spelling the lowering
+/// reads as a perform: the bare `exit(3)` names nothing in scope (#2304).
 #[test]
 fn a_performed_operation_is_called_through_its_interface_s_name_2304()
 {
@@ -7451,7 +7455,7 @@ fn a_performed_operation_is_called_through_its_interface_s_name_2304()
     let mut core = CoreArena::new();
     let code = core.value_type_base(BaseType::Integer);
     let unit = core.value_type_product(&[]);
-    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+    let signature = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
         name: "exit".into(),
         payload: code,
         reply: unit,
@@ -7463,7 +7467,7 @@ fn a_performed_operation_is_called_through_its_interface_s_name_2304()
     agrees(&core, &[], CoreNode::Computation(performed));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(performed))),
-        faithful(Written("Proc.exit(3)"))
+        faithful(Written("std.process.Exit.exit(3)"))
     );
 }
 
@@ -7481,7 +7485,7 @@ fn a_continuation_is_resumed_by_its_call_941()
 
     let mut core = CoreArena::new();
     let unit = core.value_type_product(&[]);
-    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+    let signature = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
         name: "exit".into(),
         payload: unit,
         reply: unit,
@@ -7518,14 +7522,14 @@ fn a_continuation_is_resumed_by_its_call_941()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(called))),
         faithful(Written(
-            "handle a : Proc { unit } with { pure(a) => a, oper exit(a, b) => b(unit) }"
+            "handle a : std.process.Exit.Eff { unit } with { pure(a) => a, oper exit(a, b) => b(unit) }"
         )),
         "a resumption with a returned value is the continuation's call"
     );
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(noted))),
         approximate(Written(
-            "handle a : Proc { unit } with { pure(a) => a, oper exit(a, b) => resume(b, force a) }"
+            "handle a : std.process.Exit.Eff { unit } with { pure(a) => a, oper exit(a, b) => resume(b, force a\n  ) }"
         )),
         "a resumption with any other computation keeps the notation"
     );
@@ -7545,13 +7549,13 @@ fn a_return_leaving_a_handler_prints_as_written_941()
 
     let mut core = CoreArena::new();
     let unit = core.value_type_product(&[]);
-    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+    let signature = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
         name: "exit".into(),
         payload: unit,
         reply: unit,
     }])
     .expect("one operation is a signature");
-    // `handle a : Proc { … } with { pure(a) => a }` over `subject`.
+    // `handle a : std.process.Exit.Eff { … } with { pure(a) => a }` over `subject`.
     let scoped = |core: &mut CoreArena, subject| {
         let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let on_return = core.computation_return(answer);
@@ -7583,28 +7587,28 @@ fn a_return_leaving_a_handler_prints_as_written_941()
     assert_eq!(
         spelled(&source, body(left)),
         faithful(Written(
-            "handle a : Proc { return unit } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { return unit } with { pure(a) => a }"
         )),
         "a shift over a returner in a subject the reset delimits is `return`"
     );
     assert_eq!(
         spelled(&source, body(looped_out)),
         faithful(Written(
-            "handle a : Proc { loop { return unit } } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { loop { return unit } } with { pure(a) => a }"
         )),
         "a `return` ending a loop's pass in a subject leaves the handler"
     );
     assert_eq!(
         spelled(&source, body(naming)),
         approximate(Written(
-            "handle a : Proc { return b } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { return b } with { pure(a) => a }"
         )),
         "a shift naming the stack it captures names the unwritten binder"
     );
     assert_eq!(
         spelled(&source, body(undelimited)),
         approximate(Written(
-            "handle a : Proc { shift b { unit } } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { shift b { unit } } with { pure(a) => a }"
         )),
         "a shift no reset delimits keeps the notation"
     );
@@ -8049,7 +8053,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : Ring { let b = a.alloc(4096) ; a.free(b\n  ) } with { pure(a) => a, oper \
+            "handle a : std.io.Ring.Eff { let b = a.alloc(4096) ; a.free(b\n  ) } with { pure(a) => a, oper \
              alloc(c, d, b) => b(d), oper free(a, b) => b(unit) }"
         ))
     );

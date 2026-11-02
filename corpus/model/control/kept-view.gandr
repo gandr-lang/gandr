@@ -13,7 +13,7 @@
 @[ runs("3") ]
 def keptView() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
@@ -27,7 +27,7 @@ def keptView() -> Integer {
 @[ runs("3") ]
 def keptAgain() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure pure w };
     let j : (() => Integer) at c = k;
     force j
@@ -42,7 +42,7 @@ def keptAgain() -> Integer {
 @[ runs("4") ]
 def released() -> Integer {
   var s = 3;
-  let n : Integer = handle c : Proc {
+  let n : Integer = handle c : std.process.Exit.Eff {
     let k : (() => Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
@@ -58,7 +58,7 @@ def released() -> Integer {
 @[ runs("3") ]
 def keptRead() -> Integer {
   var s = 3;
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let n : Integer at c = access shared s as w { pure w };
     access s as v { resume(v, v + 1) };
     pure 3

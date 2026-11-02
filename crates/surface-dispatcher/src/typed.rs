@@ -7446,7 +7446,7 @@ mod tests
     fn a_scoped_capability_answers_at_its_scope()
     {
         let source = SourceText::from(
-            "def f() -> -F Unit {\n  handle c : Proc {\n    let d : Cap {exit} at c = c ;\n    \
+            "def f() -> -F Unit {\n  handle c : std.process.Exit.Eff {\n    let d : Cap {exit} at c = c ;\n    \
              c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
              unit\n  }\n}\n",
         );
@@ -7474,7 +7474,7 @@ mod tests
     fn a_kept_type_answers_at_the_hold_it_is_kept_in()
     {
         let source = SourceText::from(
-            "def f() -> -F Unit {\n  var s = 3;\n  handle c : Proc {\n    let d : Cap {exit} at \
+            "def f() -> -F Unit {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let d : Cap {exit} at \
              c = c ;\n    let k : Integer at s = 1 ;\n    let m = k ;\n    \
              c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
              unit\n  }\n}\n",
@@ -7709,7 +7709,7 @@ mod tests
     fn an_unread_clause_argument_answers_at_what_its_scope_binds_1439()
     {
         let source = SourceText::from(
-            "def handled() -> -F Unit {\n  handle c : Proc {\n    let code = c.exit(1) ;\n    \
+            "def handled() -> -F Unit {\n  handle c : std.process.Exit.Eff {\n    let code = c.exit(1) ;\n    \
              pure code\n  } with {\n    pure(x) => pure unit,\n    oper exit(status, k) => pure \
              unit\n  }\n}\n",
         );

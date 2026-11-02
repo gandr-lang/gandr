@@ -2,7 +2,7 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
    ╭▸ corpus/pathological/cancellation/shielded.gandr:23:43
    │
 10 │ ┌  def shielded() -> Unit {
-11 │ │┌   handle c : Proc {
+11 │ │┌   handle c : std.process.Exit.Eff {
 12 │ ││     let found = fork (task : Cancel.Join) {
 13 │ ││       send(task, Cancel.notes);
 14 │ ││       close(task)

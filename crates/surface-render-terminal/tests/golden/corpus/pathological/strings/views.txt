@@ -53,15 +53,15 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
 39 │ ┌  def keptPastRegion() -> Integer {
 40 │ │    var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-41 │ │┌   handle c : Proc {
+41 │ │┌   handle c : std.process.Exit.Eff {
 42 │ ││     let k : (() => Integer) at c = access shared s as w {
-   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
 43 │ ││       pure thunk { let bs = bytes(w); count(bs) }
 44 │ ││     };
 45 │ ││     let j : () => Integer = thunk { force k };
    │ ││     ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
    │ ││     │
-   │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
    ┆ ┆┆
 49 │ ││     oper exit(code, k) => pure 0
 50 │ ││   }
@@ -78,9 +78,9 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 56 │ ┌  def writtenWhileKept() -> Integer {
 57 │ │    var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-58 │ │┌   handle c : Proc {
+58 │ │┌   handle c : std.process.Exit.Eff {
 59 │ ││     let k : (() => Integer) at c = access shared s as w {
-   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
 60 │ ││       pure thunk { let bs = bytes(w); count(bs) }
 61 │ ││     };
 62 │ ││     access s as v { resume(v, v) };

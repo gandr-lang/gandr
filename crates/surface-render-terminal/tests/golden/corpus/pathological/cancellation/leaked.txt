@@ -2,7 +2,7 @@ error[ContinuationCaptured]: the continuation is used inside a thunk, which may 
    ╭▸ corpus/pathological/cancellation/leaked.gandr:22:33
    │
 11 │ ┌  def leaked() -> Unit {
-12 │ │┌   handle c : Proc {
+12 │ │┌   handle c : std.process.Exit.Eff {
 13 │ ││     let found = fork (task : Cancel.Join) {
 14 │ ││       send(task, Cancel.notes);
 15 │ ││       close(task)

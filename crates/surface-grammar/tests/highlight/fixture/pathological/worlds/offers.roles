@@ -162,7 +162,7 @@
 1831..1834 Keyword "pub"
 1835..1841 Keyword "offers"
 1842..1843 Other "["
-1843..1848 Label "store"
+1843..1848 TypeVariable "store"
 1849..1850 Other "="
 1851..1858 Type "Counted"
 1858..1859 Other "]"

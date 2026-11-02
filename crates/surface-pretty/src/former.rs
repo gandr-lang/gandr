@@ -970,11 +970,12 @@ pub enum Former<'source, Node>
         /// The cell branch.
         cons: Node,
     },
-    /// An operation performed on its payload through its interface's name,
-    /// `I.op(v)`: the one spelling the lowering reads as a perform (#2304).
+    /// An operation performed on its payload through its interface's module,
+    /// `M.op(v)` for the interface `M.Eff`: the one spelling the lowering reads
+    /// as a perform (#2304).
     Perform
     {
-        /// The interface's name.
+        /// The module the interface lives in, as `EffectName::module` reads it.
         interface: Name<'source>,
         /// The operation's name.
         operation: Name<'source>,

@@ -1,10 +1,10 @@
 // `exit.gandr`'s handlers written by hand as the kernel replays them: the
-// handled body as a tree over `Proc`'s one operation, the free model, and the
+// handled body as a tree over `std.process.Exit.Eff`'s one operation, the free model, and the
 // handler as a fold of the tree. A deep handler reinstalls itself in the
 // continuation, so the fold's clause resumes by folding what the continuation
 // answers.
 
-/// `Proc`'s free model at an answer `a`: the body's result, or `exit` with its
+/// `std.process.Exit.Eff`'s free model at an answer `a`: the body's result, or `exit` with its
 /// code and the continuation awaiting its reply.
 data ProcTree(a : Type) : Type where {
   | Return : (x : a) --> ProcTree(a)

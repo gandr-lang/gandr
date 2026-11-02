@@ -1,7 +1,7 @@
 /// `handle_expression`: a handler: a computation and its operation clauses.
 @[ checks ]
 def quiet(n : Integer) -> -F Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     c.exit(1);
     return n
   } with {

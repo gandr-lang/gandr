@@ -80,7 +80,7 @@ fn an_entry_runs_to_its_exit_status_1881()
             3_u8,
         ),
         (
-            "def proc : Cap {exit} ;\ndef main() -> -F [Proc] Integer { proc.exit(7) ; return 0 }\n",
+            "def proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit(7) ; return 0 }\n",
             7_u8,
         ),
     ] {
@@ -206,7 +206,7 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
 #[test]
 fn an_entry_prints_through_its_console_2279()
 {
-    let source = "def main() -> -F [Console] Unit {\n  Console.print(\"hello\") ;\n  Console.print(\"world\")\n}\n";
+    let source = "def main() -> -F [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"hello\") ;\n  std.io.Console.print(\"world\")\n}\n";
     let mut ran = program(source);
     let Maybe::Present(entry) = ran.entry()
     else {
@@ -238,8 +238,8 @@ fn an_entry_prints_through_its_authority_2970()
 {
     let source = "type Authority = Cap { print } ;\n\
                   def console(authority : Authority) -> Cap { print } { authority }\n\
-                  def say(c : Cap { print }, line : String) -> [Console] Unit { c.print(line) }\n\
-                  def main(authority : Authority) -> [Console] Unit {\n  \
+                  def say(c : Cap { print }, line : String) -> [std.io.Console.Eff] Unit { c.print(line) }\n\
+                  def main(authority : Authority) -> [std.io.Console.Eff] Unit {\n  \
                   say(authority, \"hello\") ;\n  say(console(authority), \"world\")\n}\n";
     let mut ran = program(source);
     let Maybe::Present(entry) = ran.entry()
@@ -261,11 +261,11 @@ fn an_entry_prints_through_its_authority_2970()
 #[test]
 fn an_entry_reads_and_writes_the_three_streams_2970()
 {
-    let source = "def main() -> -F [Console, Stderr, Stdin] Unit {\n  \
-                  let first = Stdin.read_line(unit);\n  \
-                  let second = Stdin.read_line(unit);\n  \
-                  Console.print(first);\n  \
-                  Stderr.eprint(second)\n}\n";
+    let source = "def main() -> -F [std.io.Console.Eff, std.io.Stderr.Eff, std.io.Stdin.Eff] Unit {\n  \
+                  let first = std.io.Stdin.read_line(unit);\n  \
+                  let second = std.io.Stdin.read_line(unit);\n  \
+                  std.io.Console.print(first);\n  \
+                  std.io.Stderr.eprint(second)\n}\n";
     let mut ran = program(source);
     let Maybe::Present(entry) = ran.entry()
     else {

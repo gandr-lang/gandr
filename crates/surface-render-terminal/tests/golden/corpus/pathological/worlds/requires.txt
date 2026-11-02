@@ -7,10 +7,10 @@ error[UnresolvedTypeHead]: no type named `Missing` is written bare
    ╰ note: `lost` is refused with UnresolvedTypeHead, as its expectation states
 
 error[UnlabelledRequirement]: the world requires `Store` under no label, so its code cannot perform it
-   ╭▸ corpus/pathological/worlds/requires.gandr:41:35
+   ╭▸ corpus/pathological/worlds/requires.gandr:41:46
    │
-41 │ pub world bare requires [Console, Store with sort V = String];
-   │                                   ━━━━━ a theory under no label
+41 │ pub world bare requires [std.io.Console.Eff, Store with sort V = String];
+   │                                              ━━━━━ a theory under no label
    │
    ├ note: `bare` is refused with UnlabelledRequirement, as its expectation states
    ╰ help: write a label before it, `l : Store with …`, and perform through `l`

@@ -56,14 +56,17 @@ use gandr_theory_graphs::WalkChainLength;
 /// then by the block's statements losing the `run` and `hold` heads (#4466),
 /// then by the infix `then` leaving the grammar: a composite is a call under
 /// its former, `Path.step(p, q)` or `Flow.then(f, g)`, then by the `leta`
-/// statement leaving for `let x at w = v ;` (#4483).
-const BUILT_IN_FINGERPRINT: u64 = 0x1338_2841_9456_71f9;
+/// statement leaving for `let x at w = v ;` (#4483), then by an effect's
+/// lowercase home: a row entry, a `handle` head and an `offers` entry each
+/// read a theory path or a type, `std.io.Console.Eff`, and an offer's label
+/// is an operand.
+const BUILT_IN_FINGERPRINT: u64 = 0xd806_681e_3a52_f996;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2892);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2929);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 95;
@@ -96,7 +99,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 15),
     ("->", 12),
     ("-F", 3),
-    (".", 69),
+    (".", 82),
     (".#[", 2),
     (".#{", 1),
     ("..", 3),
@@ -192,7 +195,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 370),
+    ("identifier", 381),
     ("if", 15),
     ("import", 16),
     ("in", 2),
@@ -244,7 +247,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 2),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 170),
+    ("type_identifier", 183),
     ("type_variable", 70),
     ("typed_number", 2),
     ("u32", 1),

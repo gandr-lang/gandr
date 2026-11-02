@@ -1,7 +1,7 @@
 /// `BufferUnreturned`: a receive or an allocation ending with the buffer it placed live never handed back.
 @[ refuses("BufferUnreturned") ]
 def neverFreed() -> -F Unit {
-  handle r : Ring {
+  handle r : std.io.Ring.Eff {
     let b = r.alloc(4096);
     pure unit
   } with {

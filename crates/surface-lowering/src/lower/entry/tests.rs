@@ -123,10 +123,12 @@ fn an_entry_returns_the_unit_2279()
     let strings = arena.value_type_list(string);
     let console = HostSignatures::new(&mut arena)
         .ok()
-        .and_then(|table| match table.named(&EffectName::from("Console")) {
-            Maybe::Present(signature) => Some(signature.clone()),
-            Maybe::Absent(_) => None,
-        })
+        .and_then(
+            |table| match table.named(&EffectName::from("std.io.Console.Eff")) {
+                Maybe::Present(signature) => Some(signature.clone()),
+                Maybe::Absent(_) => None,
+            },
+        )
         .expect("the host declares the console");
     let pure = arena.comp_type_returner(unit);
     let printing = arena.comp_type_returner_with_effects(unit, EffectRow::singleton(console));
@@ -144,7 +146,8 @@ fn an_entry_returns_the_unit_2279()
             arena.comp_type(body)
         );
     }
-    let source = "def main() -> -F [Console] Unit { Console.print(\"hello, world!\") }\n";
+    let source =
+        "def main() -> -F [std.io.Console.Eff] Unit { std.io.Console.print(\"hello, world!\") }\n";
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
         module.declarations().iter().all(|declaration| matches!(
@@ -162,7 +165,7 @@ fn an_entry_returns_the_unit_2279()
 #[test]
 fn an_entry_takes_the_ambient_authority_2970()
 {
-    let source = "def main(authority : Cap { print }) -> [Console] Unit {\n  \
+    let source = "def main(authority : Cap { print }) -> [std.io.Console.Eff] Unit {\n  \
                   authority.print(\"hello, world!\")\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);

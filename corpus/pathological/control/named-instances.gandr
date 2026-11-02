@@ -7,12 +7,12 @@
 // `say` prints through its instance `out`.
 import "../../model/control/named-instances.gandr";
 
-/// Two instances of `Console` handled around a call naming neither: the
+/// Two instances of `std.io.Console.Eff` handled around a call naming neither: the
 /// call is refused naming both, never routed to the innermost.
 @[ refuses("InstanceAmbiguous") ]
 def ambiguous() -> Integer {
-  handle a : Console {
-    handle b : Console {
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
       say();
       pure 0
     } with {
@@ -25,25 +25,25 @@ def ambiguous() -> Integer {
   }
 }
 
-/// No instance of `Console` stands where `say` is called: the row's
+/// No instance of `std.io.Console.Eff` stands where `say` is called: the row's
 /// default is not an instance the call may pass.
 @[ refuses("InstanceUnanswered") ]
-def unanswered() -> [Console] Unit { say() }
+def unanswered() -> [std.io.Console.Eff] Unit { say() }
 
 /// One label written twice in a row.
 @[ refuses("DuplicateDefinition") ]
-def twice() -> [o : Console, o : Console] Unit { o.print("twice") }
+def twice() -> [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { o.print("twice") }
 
-/// The default `Console` performed under a row whose only `Console` is the
+/// The default `std.io.Console.Eff` performed under a row whose only `std.io.Console.Eff` is the
 /// instance `o`: the two are apart.
 @[ refuses("TypeMismatch") ]
-def defaulted() -> [o : Console] Unit { Console.print("defaulted") }
+def defaulted() -> [o : std.io.Console.Eff] Unit { std.io.Console.print("defaulted") }
 
-/// An instance of `Proc` supplied where `say` takes an instance of
-/// `Console`: its capability grants none of `Console`'s operations.
+/// An instance of `std.process.Exit.Eff` supplied where `say` takes an instance of
+/// `std.io.Console.Eff`: its capability grants none of `std.io.Console.Eff`'s operations.
 @[ refuses("CapabilityAmplified") ]
 def misplaced() -> Integer {
-  handle p : Proc {
+  handle p : std.process.Exit.Eff {
     say[.out = p]();
     pure 0
   } with {
@@ -55,4 +55,4 @@ def misplaced() -> Integer {
 /// A label in a parameter's row naming no instance: the function's own row
 /// binds none.
 @[ refuses("UnresolvedName") ]
-def lost(body : +U (-F [z : Console] Unit)) -> Unit { pure unit }
+def lost(body : +U (-F [z : std.io.Console.Eff] Unit)) -> Unit { pure unit }

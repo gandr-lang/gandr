@@ -7,7 +7,7 @@
 
 /// The scope's own capability is bound at the type that names its region.
 def named() -> Unit {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let d : Cap { exit } at c = c;
     return unit
   } with {
@@ -20,7 +20,7 @@ def named() -> Unit {
 /// scope's capability would outlive its scope there.
 @[ refuses("CapabilityEscaped") ]
 def held() -> Unit {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let d : Cap { exit } = c;
     return unit
   } with {
@@ -31,8 +31,8 @@ def held() -> Unit {
 
 /// Inside a second scope the outer capability still names the outer region.
 def outer() -> Unit {
-  handle c : Proc {
-    handle e : Proc {
+  handle c : std.process.Exit.Eff {
+    handle e : std.process.Exit.Eff {
       let d : Cap { exit } at c = c;
       return unit
     } with {
@@ -49,8 +49,8 @@ def outer() -> Unit {
 /// lives longer; the inner one may not stand in the outer region.
 @[ refuses("CapabilityEscaped") ]
 def swapped() -> Unit {
-  handle c : Proc {
-    handle e : Proc {
+  handle c : std.process.Exit.Eff {
+    handle e : std.process.Exit.Eff {
       let d : Cap { exit } at e = c;
       let f : Cap { exit } at c = e;
       return unit
@@ -67,7 +67,7 @@ def swapped() -> Unit {
 /// A region is named by a scope's capability, never by another binder.
 @[ refuses("UnresolvedName") ]
 def unbound(c : Integer) -> -F Unit {
-  handle e : Proc {
+  handle e : std.process.Exit.Eff {
     let d : Cap { exit } at c = e;
     return unit
   } with {
@@ -79,7 +79,7 @@ def unbound(c : Integer) -> -F Unit {
 /// Any value enters a region the same way: the integer is kept until the scope
 /// binding `c` ends (`kept-view.gandr` keeps a view there).
 def plain() -> Unit {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let d : Integer at c = 1;
     return unit
   } with {

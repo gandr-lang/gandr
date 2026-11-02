@@ -1,5 +1,5 @@
 /// `CapabilityOutsideAuthority`: an operation exercised through a capability that does not grant it.
 @[ refuses("CapabilityOutsideAuthority") ]
-def save(c : Cap {read}) -> -F [Fs] Unit {
+def save(c : Cap {read}) -> -F [std.fs.Eff] Unit {
   c.write("notes", "draft")
 }

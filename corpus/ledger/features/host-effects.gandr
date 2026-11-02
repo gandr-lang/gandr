@@ -1,5 +1,5 @@
-/// `host-effects`: `Console.print` performed by its name under a row naming `Console`; a `runs` expectation keeps the line it prints, as `gandr run` writes it.
+/// `host-effects`: `Console.print` performed by its name under a row naming `std.io.Console.Eff`; a `runs` expectation keeps the line it prints, as `gandr run` writes it.
 @[ runs("hello, world!\nunit") ]
-def greet() -> [Console] Unit {
-  Console.print("hello, world!")
+def greet() -> [std.io.Console.Eff] Unit {
+  std.io.Console.print("hello, world!")
 }

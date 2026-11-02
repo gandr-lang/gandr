@@ -305,7 +305,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
                 Undeployed::Unoffered { entry: console, why: unlisted, .. },
                 Undeployed::Unoffered { entry: store, why: typed, .. },
                 Undeployed::Unworlded { world: nowhere, .. },
-            ] if console == "Console"
+            ] if console == "std.io.Console.Eff"
                 && unlisted.contains("does not list it")
                 && store == "store"
                 && typed.contains("expected `String`, found `Integer`")
@@ -321,8 +321,8 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
         Text(
             "pub theory Store where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
              pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) --> C;\n}\npub \
-             world far requires [Console, store : Store with sort V = String];\npub world netted \
-             requires [Net];\npub world lost requires [Missing];\n",
+             world far requires [std.io.Console.Eff, store : Store with sort V = String];\npub world netted \
+             requires [std.net.Eff];\npub world lost requires [Missing];\n",
         ),
     );
     let key = |byte: &str| {
@@ -345,12 +345,12 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     let _answered = site(
         "answered.gandr",
         SITE_KEY,
-        "pub offers [Console, Net, store = Echo];\n",
+        "pub offers [std.io.Console.Eff, std.net.Eff, store = Echo];\n",
     );
     let _typed = site(
         "typed.gandr",
         OTHER_KEY,
-        "pub offers [Console, store = Counted];\n",
+        "pub offers [std.io.Console.Eff, store = Counted];\n",
     );
     let _bare = site("bare.gandr", &key("22").to_string(), "");
     let local = key("11");
@@ -379,11 +379,11 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
                 Undeployed::Misworlded { world: lost, .. },
             ] if typed == "store"
                 && sorts.contains("expected `String`, found `Integer`")
-                && console == "Console"
+                && console == "std.io.Console.Eff"
                 && unlisted.contains("does not list it")
                 && store == "store"
                 && unbound.contains("binds no module to it")
-                && net == "Net"
+                && net == "std.net.Eff"
                 && unheld.contains("CapabilityAmplified")
                 && lost.as_ref() == "lost"
         ),

@@ -853,18 +853,18 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///   `resume` or an `abort` ends. A member: in a projection, after `.`, inside
 ///   a record bracket `#{`, and inside a block `{` of fields or observations. A
 ///   label: a world, where a handle's type names it and where a declaration
-///   declares it, the label a `select` names, and the label a site's offer
-///   answers. A named instantiation argument and a staged type's stage are
-///   parameters, an as-pattern's name is a variable definition, and an
-///   attribute name is [`HlRole::Other`]. The operation a circuit node applies,
-///   between `:` and `(`, is a call. A name after a defining keyword is a
-///   function definition and after a binding keyword a variable definition,
-///   either one a parameter inside a parenthesised list. Inside `@[…]` a binder
-///   before `:` is a parameter and any other name an attribute; inside `[…]` a
-///   grade word is a number, a migration's world a label, and a decoration
-///   [`HlRole::Other`]; a name an import's list names is a variable, and every
-///   other identifier inside a parenthesised list is a parameter. An identifier
-///   none of these reach is a variable.
+///   declares it, and the label a `select` names. A site's offer writes its
+///   label as an operand, as a row does. A named instantiation argument and a
+///   staged type's stage are parameters, an as-pattern's name is a variable
+///   definition, and an attribute name is [`HlRole::Other`]. The operation a
+///   circuit node applies, between `:` and `(`, is a call. A name after a
+///   defining keyword is a function definition and after a binding keyword a
+///   variable definition, either one a parameter inside a parenthesised list.
+///   Inside `@[…]` a binder before `:` is a parameter and any other name an
+///   attribute; inside `[…]` a grade word is a number, a migration's world a
+///   label, and a decoration [`HlRole::Other`]; a name an import's list names
+///   is a variable, and every other identifier inside a parenthesised list is a
+///   parameter. An identifier none of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -878,7 +878,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
     "identifier" | "cons_pattern" | "resume_expression" | "abort_expression" => HlRole::Variable,
     "projection_expression" => HlRole::Member,
-    "at_type" | "world_declaration" | "offers_declaration" => HlRole::Label,
+    "at_type" | "world_declaration" => HlRole::Label,
     "attribute_block" => HlRole::Other,
     "instantiation_expression" | "staged_type" => HlRole::VariableParam,
     "as_pattern" => HlRole::VariableDef,
@@ -909,7 +909,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
             return HlRole::Variable;
         },
         "projection_expression" => return HlRole::Member,
-        "at_type" | "world_declaration" | "offers_declaration" => return HlRole::Label,
+        "at_type" | "world_declaration" => return HlRole::Label,
         "attribute_block" => return HlRole::Other,
         "instantiation_expression" | "staged_type" => return HlRole::VariableParam,
         "as_pattern" => return HlRole::VariableDef,
@@ -1220,7 +1220,6 @@ mod tests
             ("select_expression", ",", None, HlRole::Label),
             ("at_type", "at", None, HlRole::Label),
             ("world_declaration", "world", None, HlRole::Label),
-            ("offers_declaration", "[", None, HlRole::Label),
             ("migrate_expression", "[", None, HlRole::Label),
             ("thunk_expression", "[", None, HlRole::Number),
         ];

@@ -6,16 +6,16 @@ error[UnresolvedTypeHead]: no type named `Missing` is written bare
    │
    ╰ note: `offers` is refused with UnresolvedTypeHead, as its expectation states
 
-error[DuplicateDefinition]: `Console` is defined twice
-   ╭▸ corpus/pathological/worlds/offered.gandr:42:22
+error[DuplicateDefinition]: `std.io.Console.Eff` is defined twice
+   ╭▸ corpus/pathological/worlds/offered.gandr:42:33
    │
-42 │ pub offers [Console, Console];
-   │             ┬──────  ━━━━━━━ written again here
+42 │ pub offers [std.io.Console.Eff, std.io.Console.Eff];
+   │             ┬─────────────────  ━━━━━━━━━━━━━━━━━━ written again here
    │             │
    │             first written here
    │
    ├ note: `offers` is refused with DuplicateDefinition, as its expectation states
-   ╰ help: give each definition of `Console` its own name, or delete one of them
+   ╰ help: give each definition of `std.io.Console.Eff` its own name, or delete one of them
 
 error[DuplicateDefinition]: `offers` is defined twice
    ╭▸ corpus/pathological/worlds/offered.gandr:50:5

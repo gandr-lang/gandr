@@ -51,6 +51,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -62,6 +63,7 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
+use crate::form::operand_entry;
 use crate::form::read_pieces;
 use crate::resolve::SurfaceName;
 
@@ -100,6 +102,19 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The parameter is written as its name alone.
             Unwritten,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a parameter names no interface.
+    pub mod uninterfaced {
+        /// The reason no interface is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The parameter is an implicit or an explicit one, which no row
+            /// label binds.
+            Parameter,
         }
     }
 }
@@ -150,9 +165,12 @@ pub struct TelescopeEntry<'source>
     pub name: SurfaceName<'source>,
     /// The tile the name is written at.
     pub binder: Placed,
-    /// The type it is written with, when it is; the interface's name for an
-    /// instance a row label names.
+    /// The type it is written with, when it is; the first name of the
+    /// interface's path for an instance a row label names.
     pub declared: Maybe<Placed, unstated::Absent>,
+    /// The bytes of the interface's whole path, `std.io.Console.Eff`, for an
+    /// instance a row label names.
+    pub interface: Maybe<ByteSpan, uninterfaced::Absent>,
     /// Where it is written.
     pub plicity: Plicity,
 }
@@ -407,6 +425,7 @@ impl<'source> Collector<'_, 'source>
                             name: self.name_of(written),
                             binder: written,
                             declared: Maybe::Present(sort),
+                            interface: Maybe::Absent(uninterfaced::Absent::Parameter),
                             plicity: Plicity::Implicit,
                         });
                     }
@@ -448,6 +467,7 @@ impl<'source> Collector<'_, 'source>
                 name: self.name_of(written),
                 binder: written,
                 declared,
+                interface: Maybe::Absent(uninterfaced::Absent::Parameter),
                 plicity: Plicity::Explicit,
             });
             let _comma = cursor.tile(TileName::COMMA);
@@ -583,10 +603,11 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `result` is a function's result type.
     /// - ensures: one [`Plicity::Instance`] entry per label naming no entry
     ///   before it and no name of `staged`, in written order, its binder the
-    ///   label's tile and its declared tile the interface's name; nothing for a
-    ///   result writing no row or a row writing no label. The sorts an entry
-    ///   fixes, `with sort x = A`, are passed over. A label naming a region
-    ///   binder `[r : Region]` is that binder's instance, bound already.
+    ///   label's tile, its declared tile the first name of the interface's path
+    ///   and its interface the path's bytes; nothing for a result writing no
+    ///   row or a row writing no label. The sorts an entry fixes, `with sort x
+    ///   = A`, are passed over. A label naming a region binder `[r : Region]`
+    ///   is that binder's instance, bound already.
     /// - fails: a form fault reading the result's pieces.
     /// - panics: none.
     ///
@@ -628,16 +649,48 @@ impl<'source> Collector<'_, 'source>
             }
         }
         at = at.saturating_add(1);
+        // The first name of a theory's path at `first`, `Kit` of `Kit.Older`:
+        // the place past its last name and the bytes from the first to the
+        // last.
+        let path = |first: usize, head: Placed| {
+            let mut past = first.saturating_add(1);
+            let mut last = head;
+            while let Some((dot, _)) = tile(past)
+                && dot == TileName::DOT
+                && let Some((name, next)) = tile(past.saturating_add(1))
+                && (name == TileName::TYPE_IDENTIFIER || name == TileName::IDENTIFIER)
+            {
+                last = next;
+                past = past.saturating_add(2);
+            }
+            let bytes = ByteSpan::new(head.span.start(), last.span.end()).unwrap_or(head.span);
+            (past, head, bytes)
+        };
+        // The entry's path at `first`: a theory's tiles, or an operand
+        // spelling a package's path, `std.io.Console.Eff`, as one piece with
+        // the sorts it fixes.
+        let entry = |first: usize| -> Result<_, LoweringRefusal<'source>> {
+            Ok(match pieces.get(first) {
+                Some(&Piece::Tile { label, at: head }) if label == TileName::TYPE_IDENTIFIER => {
+                    Some(path(first, head))
+                },
+                Some(&Piece::Operand(written)) => {
+                    operand_entry(self.pbg, self.tree, written)?.map(|(written, _fixed)| {
+                        let head = written.prefix.first().copied().unwrap_or(written.last);
+                        (first.saturating_add(1), head, written.span())
+                    })
+                },
+                Some(&Piece::Tile { .. }) | None => None,
+            })
+        };
         let mut named = Pieces::new();
         loop {
-            match (
-                pieces.get(at),
-                tile(at.saturating_add(1)),
-                tile(at.saturating_add(2)),
-            ) {
-                (Some(&Piece::Operand(label)), Some((colon, _)), Some((typed, interface)))
-                    if colon == TileName::COLON && typed == TileName::TYPE_IDENTIFIER =>
-                {
+            match (pieces.get(at), tile(at.saturating_add(1))) {
+                (Some(&Piece::Operand(label)), Some((colon, _))) if colon == TileName::COLON => {
+                    let Some((past, interface, bytes)) = entry(at.saturating_add(2))?
+                    else {
+                        break;
+                    };
                     if let Some(written) = self.lone_name(label.node, &mut named)? {
                         let name = self.name_of(written);
                         if taken.insert(name) {
@@ -645,16 +698,17 @@ impl<'source> Collector<'_, 'source>
                                 name,
                                 binder: written,
                                 declared: Maybe::Present(interface),
+                                interface: Maybe::Present(bytes),
                                 plicity: Plicity::Instance,
                             });
                         }
                     }
-                    at = at.saturating_add(3);
+                    at = past;
                 },
-                (Some(&Piece::Tile { label, .. }), ..) if label == TileName::TYPE_IDENTIFIER => {
-                    at = at.saturating_add(1);
+                _ => match entry(at)? {
+                    Some((past, ..)) => at = past,
+                    None => break,
                 },
-                _ => break,
             }
             // An entry's manifest tail, `with sort x = A`, five pieces a
             // time, stands between it and the next entry's `,`.

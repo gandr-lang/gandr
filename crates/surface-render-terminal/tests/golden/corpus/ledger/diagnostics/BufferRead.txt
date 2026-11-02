@@ -2,13 +2,13 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
    ╭▸ corpus/ledger/diagnostics/BufferRead.gandr:6:24
    │
  3 │ ┌  def readWhileHeld() -> -F Unit {
- 4 │ │┌   handle r : Ring {
+ 4 │ │┌   handle r : std.io.Ring.Eff {
  5 │ ││     let b = r.alloc(4096);
-   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
+   │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
  6 │ ││     let copied : Buf = b;
    │ ││     ┬──                ━ a buffer read other than by its return
    │ ││     │
-   │ ││     checked against `-F [Ring, r : Ring] Unit`; while finishing the type of this
+   │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while finishing the type of this
  7 │ ││     r.free(b)
    ┆ ┆┆
 11 │ ││     oper free(b, k) => k(unit)

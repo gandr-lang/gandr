@@ -1,11 +1,11 @@
 /// `buffer-tokens`: Buffer tokens.
-/// Implemented: a linear buffer token, placed live by a receive or by `Ring.alloc` and returned exactly once, by every arm of a case or by none.
+/// Implemented: a linear buffer token, placed live by a receive or by `std.io.Ring.alloc` and returned exactly once, by every arm of a case or by none.
 /// Not implemented: reading the area at a buffer, the registered area's next rung; #1184 owes it.
 // A buffer the ring allocates is live from its allocation until it is freed:
 // the kernel owns it while an operation is in flight and hands it back with
 // the completion (boats, _Notes on io-uring_, 2020), so the program holds it
 // exactly once at every step. `Buf` is the host's buffer, allocated and freed
-// through the `Ring` interface; a scope handling `Ring` serves the buffers
+// through the `std.io.Ring.Eff` interface; a scope handling `std.io.Ring.Eff` serves the buffers
 // itself, minting each one its `alloc` clause resumes with and reclaiming
 // each one its `free` clause receives.
 
@@ -15,7 +15,7 @@
 /// completion, before the clause resumes with it.
 @[ checks ]
 def bufferReturned() -> Unit {
-  handle r : Ring {
+  handle r : std.io.Ring.Eff {
     let b = r.alloc(4096);
     r.free(b)
   } with {
@@ -39,7 +39,7 @@ def bufferReturned() -> Unit {
 /// the case found it live, and every arm hands it back.
 @[ checks ]
 def freedInEachArm(flag : Bool) -> Unit {
-  handle r : Ring {
+  handle r : std.io.Ring.Eff {
     let b = r.alloc(4096);
     match flag {
       true => r.free(b),

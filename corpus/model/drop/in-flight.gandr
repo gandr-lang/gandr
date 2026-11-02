@@ -11,7 +11,7 @@ import "../completion/ring-base.gandr";
 /// abandons the rest that would reap it (#1334).
 @[ runs("unit") ]
 def inFlight() -> Unit {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
       let sqe = recv(kernel);
       send(kernel, Ring.done);

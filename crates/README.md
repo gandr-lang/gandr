@@ -111,7 +111,7 @@ _Projection_ is the compiler: it takes a _choreography_, one program over named 
 
 - `surface-dispatcher`: the run stage, a checked source's `main` as a local artifact.
 - `runtime-emitter`: an endpoint's code, native under a content cache or on the portable executor.
-- `runtime-net`: the network an endpoint holds for `Net` and for migrations.
+- `runtime-net`: the network an endpoint holds for `std.net.Eff` and for migrations.
 - Projection and the recipe have no crate yet.
 
 ## Storage and distribution
@@ -137,7 +137,7 @@ flowchart LR
   memory -->|hold: a cell| emitter
   emitter -->|moves out| sequent
   world -->|mobile, Open| sequent
-  emitter -->|a Net operation| net
+  emitter -->|a std.net.Eff operation| net
   net -->|a commit's chunks| values
   sequent -->|crossing::commit| values
   values -->|crossing::deref| sequent

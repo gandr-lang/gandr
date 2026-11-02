@@ -7,7 +7,7 @@ error[CapturedEndpoint]: the endpoint is used inside a continuation a handler or
    │ │    │
    │ │    the endpoint was opened by this fork
    │ │    checked against `-F Unit`; while checking the rest of this fork's parent
-11 │ │┏   handle c : Proc {
+11 │ │┏   handle c : std.process.Exit.Eff {
 12 │ │┃     c.exit(1);
 13 │ │┃     close(desk)
 14 │ │┃   } with {

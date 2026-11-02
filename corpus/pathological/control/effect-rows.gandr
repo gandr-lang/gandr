@@ -2,17 +2,17 @@
 // each interface once, and a row without an interface its computation
 // performs is not that computation's row (#2269).
 
-// `peek` reads through `Fs`; `once` states `Div`.
+// `peek` reads through `std.fs.Eff`; `once` states `Div`.
 import "../../model/control/capability-attenuate.gandr";
 import "../../model/control/divergence.gandr";
 
-/// `Fs` named twice: a row holds each interface once, so the second `Fs` is
+/// `std.fs.Eff` named twice: a row holds each interface once, so the second `std.fs.Eff` is
 /// refused as a label defined twice, as a record's second field of one label
 /// is.
 @[ refuses("DuplicateDefinition") ]
-def namedTwice() -> -F [Fs, Fs] Integer { pure 1 }
+def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
 
-/// Sequencing joins the rows: the computation reads through `Fs`, which the
+/// Sequencing joins the rows: the computation reads through `std.fs.Eff`, which the
 /// row `[Div]` does not hold.
 @[ refuses("TypeMismatch") ]
 def narrowedRow(c : Cap { read }) -> [Div] Integer {

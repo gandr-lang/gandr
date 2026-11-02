@@ -1,7 +1,7 @@
 /// `HandlerCoverage`: handler clauses do not cover their interface exactly.
 @[ refuses("HandlerCoverage") ]
 def asked() -> -F Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     pure 1
   } with {
     pure(x) => pure x

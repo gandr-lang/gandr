@@ -2,22 +2,22 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/soundness/rust-164250.gandr:30:71
    │
 25 │ ┌   def bypassed() -> Integer {
-26 │ │┌    handle outer : Proc {
+26 │ │┌    handle outer : std.process.Exit.Eff {
 27 │ ││      let q : (() => Integer) at outer = thunk { pure 0 };
-   │ ││      ─── checked against `-F [Proc, outer : Proc] Integer`; while checking the body under this binding; binds q : (() => Integer) at outer
-28 │ ││      let x : Integer = handle inner : Proc {
+   │ ││      ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds q : (() => Integer) at outer
+28 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
-   │ │││     checked against `-F [Proc, outer : Proc] Integer`; while finishing the type of this
+   │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this
 29 │ │││       var l = 42;
-   │ │││       ─── checked against `-F [Proc, inner : Proc] Integer`; while checking the scope of this hold
+   │ │││       ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
 30 │ │││       let q2 : (() => Integer) at outer = access shared l as w { pure thunk { pure w } };
    │ │││       ┬──                                 ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ │││       │                                   │                      │    │
    │ │││       │                                   │                      │    a view outliving its access
    │ │││       │                                   │                      checked against `-F ((() => Integer) at outer)`; while judging the value this returns
    │ │││       │                                   checked against `-F ((() => Integer) at outer)`; while checking the body of this access
-   │ │││       checked against `-F [Proc, inner : Proc] Integer`; while finishing the type of this
+   │ │││       checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
 31 │ │││       force q2
    ┆ ┆┆┆
 34 │ │││       oper exit(code, k) => pure 0

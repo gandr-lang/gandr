@@ -2,7 +2,7 @@ error[ContinuationAsValue]: this continuation holds something that must end, so 
    ╭▸ corpus/pathological/cancellation/handed.gandr:28:40
    │
 17 │ ┌  def handed() -> Unit {
-18 │ │┌   handle c : Proc {
+18 │ │┌   handle c : std.process.Exit.Eff {
 19 │ ││     let found = fork (task : Cancel.Join) {
 20 │ ││       send(task, Cancel.notes);
 21 │ ││       close(task)

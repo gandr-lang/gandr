@@ -5,7 +5,7 @@ import std.io (print, eprint, read_line);
 
 /// A line read from standard input, written back to standard output, and a
 /// note on standard error.
-pub def echo(authority : Authority) -> [Console, Stderr, Stdin] Unit {
+pub def echo(authority : Authority) -> [std.io.Console.Eff, std.io.Stderr.Eff, std.io.Stdin.Eff] Unit {
   let line = read_line(console(authority));
   print(console(authority), line);
   eprint(console(authority), "echoed")
