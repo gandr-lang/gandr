@@ -2573,8 +2573,8 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
 {
     let scratch = Scratch::new(Path::new("consumable"));
     let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
-    let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork (kernel : \
-                P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } as ring;\n  \
+    let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  let ring = fork (kernel : \
+                P.Moving) {\n    let held = recv(kernel);\n    close(kernel)\n  };\n  \
                 close(ring)\n}\n";
     scratch.file(Path::new("strict/base.gandr"), SourceText::from(base));
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));

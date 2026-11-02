@@ -1310,7 +1310,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The payload.
         payload: V,
     },
-    /// `recv(c) as x ; body`: receive a payload into one linear binder and
+    /// `let x = recv(c); body`: receive a payload into one linear binder and
     /// run `body` under it.
     Receive
     {
@@ -1341,7 +1341,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The endpoint, a linear index.
         endpoint: DeBruijnIndex,
     },
-    /// `fork (c : S) { t } as d ; u`: `child` runs with `c : S` and `parent`
+    /// `let d = fork (c : S) { t }; u`: `child` runs with `c : S` and `parent`
     /// continues with `d : dual(S)`, each under one linear binder.
     Fork
     {

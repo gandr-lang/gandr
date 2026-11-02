@@ -8,11 +8,11 @@ import "../../model/completion/ring-base.gandr";
 /// A read submitted and its pending completion left unreaped.
 @[ refuses("LinearResidue") ]
 def pendingDropped() -> Unit {
-  fork (kernel : Ring.Submission) {
-    recv(kernel) as sqe;
+  let ring = fork (kernel : Ring.Submission) {
+    let sqe = recv(kernel);
     send(kernel, Ring.done);
     close(kernel)
-  } as ring;
+  };
   send(ring, Ring.read);
   pure unit
 }

@@ -179,8 +179,8 @@ struct Reads
     lambda: (Read, Read),
 }
 
-/// `return (held, count) to returned. recv(c) as payload ;
-/// fork (e : Integer) { close(e) } as d ;
+/// `return (held, count) to returned. let payload = recv(c);
+/// let d = fork (e : Integer) { close(e) };
 /// return (held, payload, count, returned, thunk (\argument. return (held,
 /// count, argument)))`, with `held` and `count` read as `reads` says and `c`
 /// the linear index one past the payload.
@@ -263,7 +263,7 @@ fn a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319()
 }
 
 /// `return (out, n) to _. abort(v) ; hold s = out ; { consume(s) to _.
-/// fork (e : Integer) { close(e) } as d ; close(c) ; return (s, c, n) }`,
+/// let d = fork (e : Integer) { close(e) }; close(c) ; return (s, c, n) }`,
 /// with `n` the innermost intuitionistic variable and `out`, `v` and `c` the
 /// free linear slots `0`, `1` and `0` counted from where each is read, each
 /// raised by `raised`.

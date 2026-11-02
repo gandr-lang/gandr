@@ -21,12 +21,12 @@ import "./file-base.gandr";
   )))
 ]
 def movedToCloser() -> Unit {
-  fork (owner : File.Handle) { close(owner) } as file;
-  fork (closer : File.Closer) {
-    recv(closer) as held;
+  let file = fork (owner : File.Handle) { close(owner) };
+  let task = fork (closer : File.Closer) {
+    let held = recv(closer);
     close(held);
     close(closer)
-  } as task;
+  };
   send(task, file);
   close(task)
 }

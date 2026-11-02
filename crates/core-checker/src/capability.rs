@@ -24,7 +24,7 @@
 //!
 //!                M reaches φ    N reaches ψ    φ ⋈ ψ
 //!   Separate    ─────────────────────────────────────────
-//!                Γ ⊢ fork (x : S) { M } as y; N ⇐ F^ε A
+//!                Γ ⊢ let y = fork (x : S) { M }; N ⇐ F^ε A
 //!
 //!   φ ⋈ ψ  iff  every operation φ(I) ∪ ψ(I) holds only reads the host,
 //!               for each interface I that both φ and ψ reach

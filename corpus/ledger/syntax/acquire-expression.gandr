@@ -1,0 +1,7 @@
+/// `acquire_expression`: an acquisition of a shared endpoint, the linear end a `let` binds.
+/// The checker does not reach this form yet; #1501 tracks it.
+@[ refuses("OutOfFragment.acquire_expression") ]
+def acquired(rounds : Integer) -> -F Unit {
+  let seat = acquire(rounds);
+  return unit
+}

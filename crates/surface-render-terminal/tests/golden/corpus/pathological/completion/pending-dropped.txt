@@ -2,12 +2,12 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    ╭▸ corpus/pathological/completion/pending-dropped.gandr:11:3
    │
 10 │ ┌ def pendingDropped() -> Unit {
-11 │ │   fork (kernel : Ring.Submission) {
-   │ │   ┯━━━
+11 │ │   let ring = fork (kernel : Ring.Submission) {
+   │ │   ┯━━
    │ │   │
    │ │   an endpoint left unconsumed: found `?(Ring.Cqe) >> end`
    │ │   the endpoint was opened by this fork
-12 │ │     recv(kernel) as sqe;
+12 │ │     let sqe = recv(kernel);
 13 │ │     send(kernel, Ring.done);
    ┆ ┆
 17 │ │   pure unit

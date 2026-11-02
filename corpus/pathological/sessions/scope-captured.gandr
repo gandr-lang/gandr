@@ -7,7 +7,7 @@
 /// its continuation: the close never runs and the end is left open (#1336).
 @[ refuses("CapturedEndpoint") ]
 def closedInScope() -> Unit {
-  fork (seat : end) { close(seat) } as desk;
+  let desk = fork (seat : end) { close(seat) };
   handle c : Proc {
     c.exit(1);
     close(desk)

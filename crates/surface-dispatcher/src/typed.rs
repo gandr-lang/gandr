@@ -2252,6 +2252,7 @@ impl TypeTable
         // its type. A binder some use already answers is not answered twice.
         // A type the lowering reads at its kind waits for the universes.
         let mut kinded: Vec<(ByteSpan, ValueTypeId)> = Vec::new();
+        let mut endpoint_uses: BTreeMap<ByteSpan, (TypeNode, Standing)> = BTreeMap::new();
         for label in origins.labels() {
             if let Labelled::Kind(kind) = label.labelled {
                 kinded.push((label.span, kind));
@@ -2343,6 +2344,9 @@ impl TypeTable
                 },
                 Labelled::Kind(_) => continue,
             };
+            if matches!(label.labelled, Labelled::Endpoint(_)) {
+                let _first_use = endpoint_uses.insert(label.span, (ty, standing));
+            }
             let _first = binders.insert(label.span);
             entries.push(Entry {
                 span: label.span,
@@ -2351,6 +2355,74 @@ impl TypeTable
                 ty,
                 last: ty,
                 standing,
+            });
+        }
+        // A binder read only as an endpoint, as the parent end a fork's `let`
+        // names, answers at the session type its first action finds it at,
+        // which is the type it is bound at.
+        for &(span, resolution) in module.resolutions() {
+            let gandr_surface_lowering::Resolution::Binder(binder) = resolution
+            else {
+                continue;
+            };
+            let Some(&(ty, standing)) = endpoint_uses.get(&span)
+            else {
+                continue;
+            };
+            if !binders.insert(binder) {
+                continue;
+            }
+            entries.push(Entry {
+                span: binder,
+                subject: Subject::Binder,
+                provenance: Provenance::Written,
+                ty,
+                last: ty,
+                standing,
+            });
+        }
+        // A payload a receive binds and no use answers, at the payload type
+        // the endpoint's state receives where the receive stands.
+        for &(opener, name) in origins.binders() {
+            let span = name.span();
+            if name.provenance() != Provenance::Written
+                || binders.contains(&span)
+                || !matches!(
+                    arena.computation(opener),
+                    Some(&Computation::Session(
+                        gandr_core_term::session::SessionAction::Receive { .. }
+                    ))
+                )
+            {
+                continue;
+            }
+            let Some(&(_, TypeNode::Value(state), constant)) = endpoints
+                .binary_search_by_key(&TermNode::Computation(opener), |&(term, ..)| term)
+                .ok()
+                .and_then(|at| endpoints.get(at))
+            else {
+                continue;
+            };
+            let Some(&ValueType::Session(ref session)) = arena.value_type(state)
+            else {
+                continue;
+            };
+            let Ok(Step::Receive { payload, .. }) = session.step()
+            else {
+                continue;
+            };
+            let _fresh = binders.insert(span);
+            entries.push(Entry {
+                span,
+                subject: Subject::Binder,
+                provenance: Provenance::Written,
+                ty: TypeNode::Value(payload),
+                last: TypeNode::Value(payload),
+                standing: Standing::Judged(Within {
+                    constant,
+                    node: CoreNode::Computation(opener),
+                    depth: None,
+                }),
             });
         }
         // A written type no judgement formed — a functor parameter's
@@ -8062,9 +8134,9 @@ mod tests
     fn an_offer_arm_answers_at_its_branch_298()
     {
         let source = SourceText::from(
-            "def exchange(n : Integer) -> -F Unit {\n  fork (c : &{ next : !String. end, retire : \
+            "def exchange(n : Integer) -> -F Unit {\n  let peer = fork (c : &{ next : !String. end, retire : \
              end }) {\n    offer(c) {\n      next => { send(c, \"notes\"); close(c) },\n      \
-             retire => close(c)\n    }\n  } as peer;\n  select(peer, retire);\n  \
+             retire => close(c)\n    }\n  };\n  select(peer, retire);\n  \
              close(peer)\n}\n",
         );
         let table = table(source);

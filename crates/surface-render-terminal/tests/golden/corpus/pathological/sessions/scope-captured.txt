@@ -2,8 +2,8 @@ error[CapturedEndpoint]: the endpoint is used inside a continuation a handler or
    ╭▸ corpus/pathological/sessions/scope-captured.gandr:11:3
    │
  9 │ ┌  def closedInScope() -> Unit {
-10 │ │    fork (seat : end) { close(seat) } as desk;
-   │ │    ┬───
+10 │ │    let desk = fork (seat : end) { close(seat) };
+   │ │    ┬──
    │ │    │
    │ │    the endpoint was opened by this fork
    │ │    checked against `-F Unit`; while checking the rest of this fork's parent

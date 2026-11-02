@@ -337,6 +337,10 @@ pub enum FragmentBoundary
     /// declaration or an ordinary binder, where only the view an `access`
     /// binds can be ended.
     View,
+    /// The form is a receive or a fork standing anywhere but where a `let`
+    /// binds its one linear end to a name: `let x = recv(c);` and
+    /// `let d = fork (c : S) t;`.
+    Unbound,
 }
 
 /// Why a source does not export a declaration an importer names.
@@ -434,6 +438,9 @@ impl fmt::Display for FragmentBoundary
             },
             Self::View => f.write_str(
                 "is no view: `resume` and `abort` end the name an `access` binds after `as`",
+            ),
+            Self::Unbound => f.write_str(
+                "gives one linear end, admitted only where a `let` binds it to a name",
             ),
         }
     }
@@ -3305,6 +3312,7 @@ mod tests
             &FragmentBoundary::NonContractive,
             &FragmentBoundary::Held,
             &FragmentBoundary::View,
+            &FragmentBoundary::Unbound,
         ]));
         let ill_formed = |kind: crate::WfKind, second: Maybe<SurfaceName<'static>, _>| {
             LoweringRefusal::IllFormedDescription {

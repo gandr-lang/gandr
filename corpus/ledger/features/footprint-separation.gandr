@@ -15,24 +15,24 @@ import "../../model/tasks/task-base.gandr";
 
 /// Both halves hold the capability attenuated to reading, so they share the file system only to read it.
 def reading(c : Cap { read }) -> [Fs] Unit {
-  fork (task : Task.Join) {
+  let found = fork (task : Task.Join) {
     run text <- c.read(Task.notes);
     send(task, text);
     close(task)
-  } as found;
+  };
   run mine <- c.read(Task.notes);
-  recv(found) as text;
+  let text = recv(found);
   close(found)
 }
 
 /// A writer beside an exiter reaches two interfaces, so its halves share nothing.
 def apart(files : Cap { write }, process : Cap { exit }) -> [Fs, Proc] Unit {
-  fork (task : Task.Join) {
+  let found = fork (task : Task.Join) {
     files.write(Task.notes, "task");
     send(task, Task.notes);
     close(task)
-  } as found;
+  };
   process.exit(0);
-  recv(found) as text;
+  let text = recv(found);
   close(found)
 }

@@ -4,7 +4,7 @@
 //!
 //! # An endpoint is a linear slot that changes type
 //!
-//! `fork (c : S) { t } as d ; u` opens one slot of the linear zone `Σ` at `S`
+//! `let d = fork (c : S) { t }; u` opens one slot of the linear zone `Σ` at `S`
 //! for the child `t` and, once the child is checked, one at `dual(S)` for the
 //! parent `u`. Each action names its endpoint by its linear index and moves
 //! the slot along the protocol: `send`, `recv` and `select` rebind the slot

@@ -2,8 +2,8 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
   ╭▸ corpus/ledger/diagnostics/LinearResidue.gandr:4:3
   │
 3 │ ┌ def seat_left_open() -> -F Unit {
-4 │ │   fork (seat : end) { pure unit } as desk;
-  │ │   ┯━━━
+4 │ │   let desk = fork (seat : end) { pure unit };
+  │ │   ┯━━
   │ │   │
   │ │   an endpoint left unconsumed: found `end`
   │ │   the endpoint was opened by this fork

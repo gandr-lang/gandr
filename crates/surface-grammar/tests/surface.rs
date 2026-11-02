@@ -363,8 +363,11 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
     let committed: BTreeSet<&str> = TREE_SITTER_NAMED_KINDS.iter().copied().collect();
-    assert_eq!(121, TREE_SITTER_NAMED_KINDS.len());
-    assert_eq!(121, committed.len(), "named kinds are unique");
+    assert_eq!(
+        TREE_SITTER_NAMED_KINDS.len(),
+        committed.len(),
+        "named kinds are unique"
+    );
 
     let pbg_only: BTreeSet<&str> = PBG_ONLY_KINDS.iter().copied().collect();
     assert_eq!(

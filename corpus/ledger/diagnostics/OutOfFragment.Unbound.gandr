@@ -1,0 +1,6 @@
+/// `OutOfFragment.Unbound`: a form out of the fragment: a receive or a fork stands where no `let` binds its one linear end to a name.
+@[ refuses("OutOfFragment.Unbound") ]
+def forked_unbound() -> -F Unit {
+  fork (seat : end) { close(seat) };
+  return unit
+}

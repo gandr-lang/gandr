@@ -126,6 +126,12 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             boundary: FragmentBoundary::WrongSort,
             ..
         } => format!("write {sort} in this position"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unbound,
+            ..
+        } => String::from(
+            "bind it to a name with `let`: `let x = recv(c);` or `let d = fork (c : S) t;`",
+        ),
         LoweringRefusal::MalformedForm { form, fault, .. } => malformed(Spoken(form), fault),
         LoweringRefusal::IllFormedDescription { kind, .. } => ill_formed(kind),
         LoweringRefusal::RulesUncompleted { .. } => String::from(

@@ -1,9 +1,9 @@
 error[OfferArms]: `offer` must handle every label of its protocol exactly once
-  ╭▸ corpus/ledger/diagnostics/OfferArms.gandr:4:49
+  ╭▸ corpus/ledger/diagnostics/OfferArms.gandr:4:60
   │
 3 │ ┌ def seat_arms_one_label_of_two() -> -F Unit {
-4 │ │   fork (seat : &{ next : end, retire : end }) { offer(seat) { next => close(seat) } } as desk;
-  │ │   ┬───                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
+4 │ │   let desk = fork (seat : &{ next : end, retire : end }) { offer(seat) { next => close(seat) } };
+  │ │   ┬──                                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
   │ │   │
   │ │   the endpoint was opened by this fork
   │ │   checked against `-F Unit`; while checking the child this forks

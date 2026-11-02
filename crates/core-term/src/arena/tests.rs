@@ -1070,7 +1070,7 @@ fn every_binder_former_carries_its_bodys_support_past_its_binders()
             .value_type_support(integer)
             .map(ThinningRef::to_thinning),
     ));
-    // fork (c : 1) { close(c) } as d ; send(d, #2): each half crosses one
+    // let d = fork (c : 1) { close(c) }; send(d, #2): each half crosses one
     // linear binder and the intuitionistic #2 crosses none.
     let protocol = arena.value_type_unit();
     let child = arena.computation_session(SessionAction::Close {

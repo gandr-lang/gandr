@@ -9,11 +9,11 @@ import "./task-base.gandr";
 @[ runs("unit") ]
 def joined() -> Unit {
   handle c : Proc {
-    fork (task : Task.Join) {
+    let found = fork (task : Task.Join) {
       send(task, Task.notes);
       close(task)
-    } as found;
-    recv(found) as text;
+    };
+    let text = recv(found);
     close(found);
     c.exit(1)
   } with {

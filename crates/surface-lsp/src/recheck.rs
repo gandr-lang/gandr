@@ -2495,9 +2495,9 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
-        let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork \
-                    (kernel : P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } \
-                    as ring;\n  close(ring)\n}\n";
+        let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  let ring = \
+                    fork (kernel : P.Moving) {\n    let held = recv(kernel);\n    close(kernel)\n  \
+                    };\n  close(ring)\n}\n";
         for (file, text) in [("base.gandr", base), ("user.gandr", user)] {
             std::fs::write(directory.join(file), text).expect("the source is written");
         }
@@ -2511,9 +2511,9 @@ mod tests
         };
         assert_eq!(
             diagnostic.range,
-            range(Span(3, 2, 3, 6)),
-            "the refused payload is the import's, so the refusal stands at the fork whose \
-             session type the importer forms, never at the origin"
+            range(Span(3, 2, 3, 5)),
+            "the refused payload is the import's, so the refusal stands at the `let` that binds \
+             the fork whose session type the importer forms, never at the origin"
         );
         let imported: Vec<(&DocumentUri, Range)> = diagnostic
             .related_information

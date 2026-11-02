@@ -209,8 +209,8 @@
 //! () in rest`, at the origin of `c`: the split types the value as the unit, so
 //! the checker refuses a discarded result of any other type at the statement,
 //! and the lowering needs no annotation of its own. A block with no last
-//! computation is refused at the block as `Arity` with zero. `recv(c) as x;`
-//! binds `x` as `run x <- c;` does, `fork (c : S) t as d;` runs `t` beside
+//! computation is refused at the block as `Arity` with zero. `let x = recv(c);`
+//! binds `x` as `run x <- c;` does, `let d = fork (c : S) t;` runs `t` beside
 //! the rest of the block (the `lower::session` module), `hold x = e;`
 //! holds `e` for the rest of the block (the `lower::access` module), and
 //! `leta x = v;` opens the handle `v` over it (the `lower::world` module).
@@ -1868,7 +1868,7 @@ enum StatementBinding
         /// The value type `A` written, read in the statement's own frame.
         annotation: NodeIndex,
     },
-    /// `fork (c : S) t as d ;` runs `t`, under `c`'s linear binder, beside
+    /// `let d = fork (c : S) t;` runs `t`, under `c`'s linear binder, beside
     /// the rest of the block, under `d`'s: the fork's protocol `S`, its
     /// child `t`, and `c`, the channel's name.
     Forked
@@ -1880,7 +1880,7 @@ enum StatementBinding
         /// The name `c` the child's end binds.
         end: NodeIndex,
     },
-    /// `recv(c) as x ;` receives on `c` into `x`'s linear binder, over the
+    /// `let x = recv(c);` receives on `c` into `x`'s linear binder, over the
     /// rest of the block.
     Received
     {
@@ -7484,18 +7484,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: the declaration at `declaration` is refused.
     /// - ensures: each unread name written as an expression under
     ///   `declaration`, whose spelling no unread name written in another
-    ///   position under it binds, and that resolves under the frame of its
-    ///   innermost read enclosing form, keeps its resolution at its span; the
-    ///   readings and the owners are unchanged.
+    ///   position inside an unread form under it binds, and that resolves under
+    ///   the frame of its innermost read enclosing form, keeps its resolution
+    ///   at its span; the readings and the owners are unchanged.
     /// - provides: the uses of a refused declaration for an editor's hover, its
     ///   definitions, references and renames.
     /// - fails: never; a name that does not resolve is passed over.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a parameter and a forked endpoint used inside a
-    ///   refused `drop`, and a parameter used inside a block refused for its
-    ///   joins, each keep their binder.
+    /// - hypothesis: L3 — a parameter and a forked endpoint a `let` names, used
+    ///   inside a refused `drop` or `dup`, and a parameter used inside a block
+    ///   refused for its joins, each keep their binder.
     /// - witness: `tests::scopes::a_use_inside_a_refused_form_keeps_its_referent_1265`
     #[spec(
         captures: before = (usize::from(self.readings.count()), usize::from(self.collected.owner.count())),
@@ -7508,10 +7508,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         // economy: the walk runs only over a refused declaration, so an
         // admitted tree never pays for it.
-        let mut forms = alloc::vec![(declaration, Frame::Outermost)];
+        let mut forms = alloc::vec![(declaration, Frame::Outermost, false)];
         let mut used: Vec<(Placed, Frame)> = Vec::new();
         let mut bound: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
-        while let Some((at, around)) = forms.pop() {
+        while let Some((at, around, enclosed_read)) = forms.pop() {
             let reading = self.reading(at);
             let frame = if reading == Reading::Unread {
                 around
@@ -7523,7 +7523,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if let Some(NodeLabel::Meld(_) | NodeLabel::Tile(_)) =
                     self.tree.node(child).map(gandr_surface_syntax::Node::label)
                 {
-                    forms.push((child, frame));
+                    forms.push((child, frame, reading != Reading::Unread));
                 }
             }
             let Some(node) = self.tree.node(at)
@@ -7555,7 +7555,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if expression {
                 used.push((placed, frame));
             }
-            else {
+            // A binder a read form wrote is in that form's frame already, so
+            // only one inside an unread form can shadow a use.
+            else if !enclosed_read {
                 bound.insert(self.name_at(placed));
             }
         }
@@ -10592,16 +10594,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   piece closes.
     /// - ensures: each `run x <- c ;` statement reads its computation under the
     ///   frame the statements before it extended and binds `x` in a frame
-    ///   extending that one; `recv(c) as x ;` binds `x` the same way, and `fork
-    ///   (c : S) t as d ;` binds `d` and `hold x = e ;` binds `x` linearly over
-    ///   the rest of the block; the last computation, written bare or as a
-    ///   statement `c ;` before the closing `}` and then recorded as stated,
-    ///   reads under the frame every statement extended; a block-like form (a
-    ///   block, a loop, an `if`, a `match`, or a form closing on a block)
-    ///   followed by another statement is a statement with no `;`, its result
-    ///   discarded, as Rust reads one; the statements and the last computation
-    ///   are returned, with the cursor past the closing `}` and nothing after
-    ///   it.
+    ///   extending that one; `let x = recv(c);` binds `x` the same way, and
+    ///   `fork (c : S) t as d ;` binds `d` and `hold x = e ;` binds `x`
+    ///   linearly over the rest of the block; the last computation, written
+    ///   bare or as a statement `c ;` before the closing `}` and then recorded
+    ///   as stated, reads under the frame every statement extended; a
+    ///   block-like form (a block, a loop, an `if`, a `match`, or a form
+    ///   closing on a block) followed by another statement is a statement with
+    ///   no `;`, its result discarded, as Rust reads one; the statements and
+    ///   the last computation are returned, with the cursor past the closing
+    ///   `}` and nothing after it.
     /// - provides: the body reading of thunks, lambdas and function tails.
     /// - fails: yields the unadmitted or the reserved refusal for a statement
     ///   the fragment does not read, by the statement's own name; the arity
@@ -10724,7 +10726,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Err(as_block.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
                 },
                 Maybe::Present(Piece::Tile { label, at }) => {
-                    match statement_form(label, cursor) {
+                    match statement_form(label) {
                         Maybe::Present((form, boundary)) => {
                             return Err(LoweringRefusal::OutOfFragment {
                                 span: at.span,
@@ -10753,21 +10755,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             None => after,
                         }
                     }
-                    else if label == TileName::RECV {
-                        self.receive(cursor, at, frame)?
-                    }
                     else if label == TileName::LETA {
                         self.leta(cursor, at, frame)?
                     }
                     else if label == TileName::HOLD || label == TileName::VAR {
                         self.hold(cursor, at, frame)?
                     }
-                    else if label == TileName::IMPORT {
+                    else {
                         self.open(site, cursor, at)?;
                         frame
-                    }
-                    else {
-                        self.fork(cursor, at, frame)?
                     };
                 },
                 Maybe::Absent(_) => {
@@ -11093,15 +11089,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `cursor` stands just past the statement's `let` tile `lead`;
     ///   `frame` is the frame the statement reads under.
-    /// - ensures: a name binder reads `e` as a value under `frame`, a
-    ///   computation there nested, and `A` as a value type when written; the
-    ///   statement is recorded as a `let` of `e`, and the frame binding the
-    ///   name over `frame` returned, a binder the mint binds once to what `e`
-    ///   returns, or to the computation nested in `e`. Any other pattern binds
-    ///   what `e` returns, as [`Self::bound_statement`] binds a `run`'s
-    ///   computation, a value `e` returned.
+    /// - ensures: a receive or a fork `e` is read as [`Self::receive`] and
+    ///   [`Self::fork`] read it, binding the name the pattern spells. Otherwise
+    ///   a name binder reads `e` as a value under `frame`, a computation there
+    ///   nested, and `A` as a value type when written; the statement is
+    ///   recorded as a `let` of `e`, and the frame binding the name over
+    ///   `frame` returned, a binder the mint binds once to what `e` returns, or
+    ///   to the computation nested in `e`. Any other pattern binds what `e`
+    ///   returns, as [`Self::bound_statement`] binds a `run`'s computation, a
+    ///   value `e` returned.
     /// - fails: a fault naming the let statement for a hole or a tile out of
-    ///   shape; the binder's and the bound computation's own refusals.
+    ///   shape, or for a type stated over a receive or a fork; the binder's and
+    ///   the bound computation's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -11138,6 +11137,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(statement, cursor, TileName::EQUALS)?;
         let bound = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
+        // A receive and a fork each give one linear end, which the pattern
+        // names.
+        if let Some((form, _former)) = self.form_at(bound)?
+            && (form == FormName::RECV_EXPRESSION || form == FormName::FORK_EXPRESSION)
+        {
+            if let Some(annotation) = annotation {
+                return Err(statement.fault(annotation.span, FormFault::MisplacedTile));
+            }
+            let name = self.binder_name(statement, binder)?;
+            return if form == FormName::RECV_EXPRESSION {
+                self.receive(statement, (binder, name), bound, frame)
+            }
+            else {
+                self.fork(statement, (binder, name), bound, frame)
+            };
+        }
         // A name stands for the value `e` is read as: a computation there
         // nests, which the checker binds once, where the statement stands.
         // Any other pattern splits what `e` returns, a value returned.
@@ -17971,9 +17986,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   typed `run x : A <- c ;` binds `c` ascribed the pure `-F A`; a tuple
     ///   `run (x, …) <- c ;` splits what `c` returns, each component the
     ///   pattern writes recorded as the name of the split's binder at its place
-    ///   ([`OriginTable::component`]); a fork `fork (c : S) t as d ;` mints as
-    ///   the fork of `t` at `S` whose parent is the rest of the block, at its
-    ///   `fork` tile's origin; a hold `var x = e ;` mints as the hold of `e`
+    ///   ([`OriginTable::component`]); a fork `let d = fork (c : S) t;` mints
+    ///   as the fork of `t` at `S` whose parent is the rest of the block, at
+    ///   its `let` tile's origin; a hold `var x = e ;` mints as the hold of `e`
     ///   whose scope is the rest of the block, at its keyword's origin; a `leta
     ///   x = v ;` mints as the opening of `v` whose body is the rest of the
     ///   block, at its `leta` tile's origin, binding the name; a `let x = v ;`
@@ -22004,53 +22019,35 @@ fn parameter<'source>(
 
 /// The statements a block opens with a keyword the fragment does not read, by
 /// that keyword, with the form a refusal names each by and the way each
-/// leaves the fragment: `unpack` is not admitted, and `acquire` and `release`
-/// are reserved for shared sessions; `fork` is read apart, because its two
-/// statements share the keyword.
+/// leaves the fragment: `unpack` is not admitted.
 ///
 /// # Specification
 /// - requires: lookup is by a block’s leading keyword.
 /// - ensures: each listed keyword retains its distinct refused statement form
-///   and boundary; `fork` is handled separately because its shared form
-///   requires lookahead.
+///   and boundary.
 /// - provides: the keyword-to-refusal naming table.
 /// - fails: no default entry for an unlisted keyword.
 /// - panics: none.
 /// - executable: none — the specification attribute does not accept constant
-///   items; `statement_form` checks the lookup and fork exception.
+///   items; `statement_form` checks the lookup.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the refused statement cases retain their own form names
-///   and boundaries, including the shared fork outside this table.
+///   and boundaries.
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-/// - witness: `lower::session::tests::sharing_is_reserved_by_name`
-const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
-    (
-        TileName::UNPACK,
-        FormName::UNPACK_STATEMENT,
-        FragmentBoundary::Unadmitted(Unbuilt::Unpack),
-    ),
-    (
-        TileName::ACQUIRE,
-        FormName::ACQUIRE_STATEMENT,
-        FragmentBoundary::Reserved(Unbuilt::Acquire),
-    ),
-    (
-        TileName::RELEASE,
-        FormName::RELEASE_STATEMENT,
-        FragmentBoundary::Reserved(Unbuilt::Release),
-    ),
-];
+const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 1_usize] = [(
+    TileName::UNPACK,
+    FormName::UNPACK_STATEMENT,
+    FragmentBoundary::Unadmitted(Unbuilt::Unpack),
+)];
 
-/// The refused statement the tile `label`, at `cursor`, opens, with the way
-/// it leaves the fragment.
+/// The refused statement the tile `label` opens, with the way it leaves the
+/// fragment.
 ///
 /// # Specification
-/// - requires: `cursor` stands at the tile `label`, in a block, at a place a
-///   statement may start.
-/// - ensures: `fork` followed by `!` is the shared fork, reserved; a keyword of
-///   the table its form and boundary; `run`, `let`, `recv`, `var`, `hold`,
-///   `leta`, `import` and `fork` without `!` open statements the block reads,
+/// - requires: `label` is a tile in a block, at a place a statement may start.
+/// - ensures: a keyword of the table its form and boundary; `run`, `let`,
+///   `var`, `hold`, `leta` and `import` open statements the block reads,
 ///   [`statement::Absent::Read`].
 /// - provides: the names a block's refused statements are written as;
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
@@ -22059,23 +22056,11 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the refused statement spellings receive their own form
-///   names and boundaries, and the shared fork is told from the read one.
+///   names and boundaries.
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-/// - witness: `lower::session::tests::sharing_is_reserved_by_name`
 #[spec(
-    captures: shared = label == TileName::FORK && {
-        let mut ahead = cursor.clone();
-        let _lead = ahead.read();
-        matches!(ahead.at(TileName::BANG), Maybe::Present(_))
-    },
     ensures: |ret| {
-        ret == if shared {
-            Maybe::Present((
-                FormName::FORK_SHARED_STATEMENT,
-                FragmentBoundary::Reserved(Unbuilt::SharedFork),
-            ))
-        }
-        else if label == TileName::FORK || label == TileName::RUN || label == TileName::LET || label == TileName::RECV || label == TileName::HOLD || label == TileName::VAR || label == TileName::LETA || label == TileName::IMPORT {
+        ret == if label == TileName::RUN || label == TileName::LET || label == TileName::HOLD || label == TileName::VAR || label == TileName::LETA || label == TileName::IMPORT {
             Maybe::Absent(statement::Absent::Read)
         }
         else {
@@ -22089,25 +22074,10 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 3_usize] = [
         }
     },
 )]
-fn statement_form(
-    label: TileName,
-    cursor: &Cursor<'_>,
-) -> Maybe<(FormName, FragmentBoundary), statement::Absent>
+fn statement_form(label: TileName) -> Maybe<(FormName, FragmentBoundary), statement::Absent>
 {
-    if label == TileName::FORK {
-        let mut ahead = cursor.clone();
-        let _fork = ahead.read();
-        return match ahead.at(TileName::BANG) {
-            Maybe::Present(_) => Maybe::Present((
-                FormName::FORK_SHARED_STATEMENT,
-                FragmentBoundary::Reserved(Unbuilt::SharedFork),
-            )),
-            Maybe::Absent(_) => Maybe::Absent(statement::Absent::Read),
-        };
-    }
     if label == TileName::RUN
         || label == TileName::LET
-        || label == TileName::RECV
         || label == TileName::HOLD
         || label == TileName::VAR
         || label == TileName::LETA

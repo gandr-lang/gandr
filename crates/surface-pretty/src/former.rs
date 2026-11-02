@@ -1065,7 +1065,7 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A receive on a linear endpoint, `recv(e) as x ; t`: the rest under the
+    /// A receive on a linear endpoint, `let x = recv(e); t`: the rest under the
     /// payload's linear binder.
     Receive
     {
@@ -1104,7 +1104,7 @@ pub enum Former<'source, Node>
     },
     /// A close of a linear endpoint, `close(e)`.
     Close(DeBruijnIndex),
-    /// A fork, `fork (c : S) { t } as d ; u`: the child under its end's
+    /// A fork, `let d = fork (c : S) { t }; u`: the child under its end's
     /// linear binder, the parent under the dual end's.
     Fork
     {

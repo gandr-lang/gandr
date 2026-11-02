@@ -9,17 +9,17 @@ import "../../model/moves/file-base.gandr";
 /// spent the mover's end, so the second sends a spent slot.
 @[ refuses("UsedAfterClose") ]
 def movedTwice() -> Unit {
-  fork (owner : File.Handle) { close(owner) } as file;
-  fork (first : File.Closer) {
-    recv(first) as held;
+  let file = fork (owner : File.Handle) { close(owner) };
+  let one = fork (first : File.Closer) {
+    let held = recv(first);
     close(held);
     close(first)
-  } as one;
-  fork (second : File.Closer) {
-    recv(second) as held;
+  };
+  let two = fork (second : File.Closer) {
+    let held = recv(second);
     close(held);
     close(second)
-  } as two;
+  };
   send(one, file);
   send(two, file);
   close(one);

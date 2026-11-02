@@ -270,7 +270,7 @@ impl<'arena> Program<'arena>
         )
     }
 
-    /// `recv(c) as x ; rest`, `rest` built under the receive's binder.
+    /// `let x = recv(c); rest`, `rest` built under the receive's binder.
     ///
     /// # Specification
     /// trivial.
@@ -353,7 +353,7 @@ fn operator(arena: &mut CoreArena) -> ComputationId
     program.send(Spelled("task"), first)
 }
 
-/// `fork (c : protocol) { child } as d ; parent`.
+/// `let d = fork (c : protocol) { child }; parent`.
 ///
 /// # Specification
 /// trivial.
@@ -794,7 +794,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
-    // handle c : Proc { fork (s : end) { close(s) } as d; c.exit(1); close(d) }
+    // handle c : Proc { let d = fork (s : end) { close(s) }; c.exit(1); close(d) }
     let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
     let closed = Program::new(&mut arena).close();
     let parent = arena.computation_bind(exited, closed);
@@ -809,7 +809,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
         }),
         "the scope's clause drops the close"
     );
-    // handle c : Proc { fork (s : end) { close(s) } as d; close(d); c.exit(1) }
+    // handle c : Proc { let d = fork (s : end) { close(s) }; close(d); c.exit(1) }
     let closed = Program::new(&mut arena).close();
     let exited_after = exit(&mut arena, &host, DeBruijnIndex::from(1_u32));
     let parent = arena.computation_bind(closed, exited_after);
@@ -821,7 +821,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
         Ok(()),
         "the same exit after the close leaves the clause nothing owed"
     );
-    // c : Cap {exit}; fork (s : end) { close(s) } as d; c.exit(1); close(d)
+    // c : Cap {exit}; let d = fork (s : end) { close(s) }; c.exit(1); close(d)
     let child_closed = Program::new(&mut arena).close();
     let parent = parent_open(&mut arena, exited);
     let exchange = fork(&mut arena, protocol, child_closed, parent);
@@ -842,7 +842,7 @@ fn a_clause_ends_a_continuation_holding_an_obligation_once_1334()
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
-    // fork (s : end) { close(s) } as d; c.exit(1); close(d)
+    // let d = fork (s : end) { close(s) }; c.exit(1); close(d)
     let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
     let parent = parent_open(&mut arena, exited);
     let child_closed = Program::new(&mut arena).close();
@@ -905,7 +905,7 @@ fn a_clause_ends_a_continuation_holding_an_obligation_once_1334()
         }),
         "a thunk may be forced twice, or never"
     );
-    // exit(code, k) => fork (s : end) { abandon(k); close(s) } as d; close(d)
+    // exit(code, k) => let d = fork (s : end) { abandon(k); close(s) }; close(d)
     let closed = Program::new(&mut arena).close();
     let child = arena.computation_bind(abandoned, closed);
     let parent_closed = Program::new(&mut arena).close();
@@ -947,7 +947,7 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
     let mut arena = CoreArena::new();
     let host = HostSignatures::new(&mut arena).unwrap();
     let protocol = end(&mut arena);
-    // c : Cap {exit}; fork (s : end) { c.exit(1); close(s) } as d; close(d)
+    // c : Cap {exit}; let d = fork (s : end) { c.exit(1); close(s) }; close(d)
     let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
     let child = parent_open(&mut arena, exited);
     let closed = Program::new(&mut arena).close();
@@ -957,7 +957,7 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
         Ok(()),
         "the child exits through the run's capability"
     );
-    // handle c : Proc { fork (s : end) { c.exit(1); close(s) } as d; close(d) }
+    // handle c : Proc { let d = fork (s : end) { c.exit(1); close(s) }; close(d) }
     let (scoped, _) = dropping(&mut arena, &host, exchange);
     assert!(
         matches!(
@@ -1097,7 +1097,7 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
     let protocol = end(&mut arena);
     let (reader, writer) = (DeBruijnIndex::from(1_u32), DeBruijnIndex::from(0_u32));
     // r : Cap {read}, w : Cap {write};
-    // fork (s : end) { r.read("notes"); close(s) } as d; w.write(("notes",
+    // let d = fork (s : end) { r.read("notes"); close(s) }; w.write(("notes",
     // "notes")); close(d)
     let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);
     let child = parent_open(&mut arena, read);
@@ -1128,7 +1128,8 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
         ],
         "each half's footprint is what it may do, and the shared one both"
     );
-    // fork (s : end) { r.read("notes"); close(s) } as d; r.read("notes"); close(d)
+    // let d = fork (s : end) { r.read("notes"); close(s) }; r.read("notes");
+    // close(d)
     let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);
     let child = parent_open(&mut arena, read);
     let read = on_notes(&mut arena, &host, Some(reader), Notes::Read);
@@ -1139,7 +1140,7 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
         Ok(()),
         "two readers share the file system"
     );
-    // fork (s : end) { w.write(("notes", "notes")); close(s) } as d; close(d)
+    // let d = fork (s : end) { w.write(("notes", "notes")); close(s) }; close(d)
     let write = on_notes(&mut arena, &host, Some(writer), Notes::Write);
     let child = parent_open(&mut arena, write);
     let closed = Program::new(&mut arena).close();
@@ -1149,7 +1150,7 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
         Ok(()),
         "a writer beside a half that touches no file is separate from it"
     );
-    // fork (s : end) { close(s); write(("notes", "notes")) } as d; close(d);
+    // let d = fork (s : end) { close(s); write(("notes", "notes")) }; close(d);
     // write(("notes", "notes"))
     let closed = Program::new(&mut arena).close();
     let write = on_notes(&mut arena, &host, None, Notes::Write);
@@ -1163,9 +1164,9 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
         matches!(refused, Err(CheckRefusal::FootprintsOverlap { at, .. }) if at == by_name),
         "two halves writing by name share the file system to change it: {refused:?}"
     );
-    // fork (s : end) {
-    //   fork (t : end) { w.write(("notes", "notes")); close(t) } as e; close(e);
-    // close(s) } as d; w.write(("notes", "notes")); close(d)
+    // let d = fork (s : end) {
+    //   let e = fork (t : end) { w.write(("notes", "notes")); close(t) }; close(e);
+    // close(s) }; w.write(("notes", "notes")); close(d)
     let write = on_notes(&mut arena, &host, Some(writer), Notes::Write);
     let inner_child = parent_open(&mut arena, write);
     let inner_end = Program::new(&mut arena).close();
@@ -1407,8 +1408,8 @@ enum AfterSend
     Closes,
 }
 
-/// The sending half of an exchange over [`delegating`]: `fork (e : end) {
-/// close(e) } as d ; send(c, d) ; close(c)`, with `close(d)` after the send
+/// The sending half of an exchange over [`delegating`]: `let d = fork (e : end)
+/// { close(e) }; send(c, d) ; close(c)`, with `close(d)` after the send
 /// when `after` closes it. Answers the inner fork and the `close(d)`.
 ///
 /// # Specification
@@ -1451,7 +1452,7 @@ fn a_delegated_endpoint_leaves_its_sender()
     let mut arena = CoreArena::new();
     let protocol = delegating(&mut arena);
     let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
-    // `recv(c) as x ; close(x) ; close(c)`
+    // `let x = recv(c); close(x) ; close(c)`
     let parent = Program::new(&mut arena).receive(|program| {
         let outer = program.close();
         program.then(
@@ -1494,7 +1495,7 @@ fn a_closed_endpoint_is_not_delegated()
     let protocol = delegating(&mut arena);
     let ended = end(&mut arena);
     let inner_child = Program::new(&mut arena).close();
-    // `fork (e : end) { close(e) } as d ; close(d) ; send(c, d) ; close(c)`
+    // `let d = fork (e : end) { close(e) }; close(d) ; send(c, d) ; close(c)`
     let sent = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
     let mut program = Program::new(&mut arena);
     let close_outer = program.act(SessionAction::Close {
@@ -1543,7 +1544,7 @@ fn a_received_endpoint_is_acted_on_and_must_be_closed()
     let mut arena = CoreArena::new();
     let protocol = delegating(&mut arena);
     let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
-    // `recv(c) as x ; close(c)`, `x` left open
+    // `let x = recv(c); close(c)`, `x` left open
     let parent = Program::new(&mut arena).receive(Program::close);
     let exchange = fork(&mut arena, protocol, inner, parent);
     let refused = check_unit(&mut arena, exchange);
@@ -1777,7 +1778,7 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
     let returns_string = arena.comp_type_returner(string);
     let reads_a_string = arena.comp_type_arrow(string, returns_string);
     let declared = arena.value_type_thunk(reads_a_string);
-    // \n. fork (c : end) { close(c) } as d ; close(d) ; return n
+    // \n. let d = fork (c : end) { close(c) }; close(d) ; return n
     let child = Program::new(&mut arena).close();
     let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let returned = arena.computation_return(outer);
@@ -1839,8 +1840,8 @@ fn a_received_value_crosses_as_an_assumption_1319()
     let unit = arena.value_type_unit();
     let returns_unit = arena.comp_type_returner(unit);
     let running = arena.value_type_thunk(returns_unit);
-    // fork (c : !String. end) { send(c, "task") ; close(c) } as d ;
-    //     recv(d) as task ; close(d) ; return task
+    // let d = fork (c : !String. end) { send(c, "task") ; close(c) };
+    //     let task = recv(d); close(d) ; return task
     let sending = session(
         &mut arena,
         alloc::vec![
@@ -1888,7 +1889,7 @@ fn a_received_value_crosses_as_an_assumption_1319()
     });
     let delegation = fork(&mut arena, delegating, inner, parent);
     let delegated = arena.value_thunk(delegation);
-    // fork (c : ?(Integer + Unit). end) { recv(c) as order ; close(c) } as d ;
+    // let d = fork (c : ?(Integer + Unit). end) { let order = recv(c); close(c) };
     //     send(d, inj₀ 1) ; close(d)
     let integer = arena.value_type_base(BaseType::Integer);
     let order = arena.value_type_sum(&[integer, unit]);

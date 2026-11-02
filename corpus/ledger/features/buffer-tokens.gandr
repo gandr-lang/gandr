@@ -21,13 +21,13 @@ def bufferReturned() -> Unit {
   } with {
     pure(x) => pure x,
     oper alloc(n, b, k) => {
-      fork (kernel : ?Buf. !Buf. end) {
-        recv(kernel) as held;
+      let ring = fork (kernel : ?Buf. !Buf. end) {
+        let held = recv(kernel);
         send(kernel, held);
         close(kernel)
-      } as ring;
+      };
       send(ring, b);
-      recv(ring) as filled;
+      let filled = recv(ring);
       close(ring);
       k(filled)
     },

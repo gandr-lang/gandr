@@ -16,12 +16,12 @@ import "../../model/completion/ring-base.gandr";
 def regionEnded() -> Unit {
   hold buf = Ring.read;
   run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } };
-  fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {
-    recv(kernel) as sqe;
+  let ring = fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {
+    let sqe = recv(kernel);
     send(kernel, Ring.done);
     close(kernel)
-  } as ring;
+  };
   send(ring, buffer);
-  recv(ring) as cqe;
+  let cqe = recv(ring);
   close(ring)
 }
