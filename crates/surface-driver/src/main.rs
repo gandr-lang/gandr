@@ -422,6 +422,7 @@ use quenchant_shape::shape::Maybe;
 
 mod allocator;
 mod config;
+mod toolchain;
 mod verdicts;
 
 /// The process's global allocator: the private malloc zone of
@@ -832,6 +833,45 @@ enum Command
         #[command(subcommand)]
         ledger: LedgerName,
     },
+    /// Link, choose and list the installed toolchains the driver runs.
+    ///
+    /// Before any verb, the driver selects a toolchain: `GANDR_TOOLCHAIN`,
+    /// then the first line of the nearest `gandr-toolchain` file in the
+    /// working directory or an ancestor, then the default. It runs the
+    /// selected toolchain's `gandr` in its own place when that is another
+    /// executable. Exits 0 when the toolchains were changed or listed, and 2
+    /// when a name is not a toolchain's, names none installed, or a file
+    /// cannot be read or written.
+    Toolchain
+    {
+        /// What to do with the toolchains.
+        #[command(subcommand)]
+        action: ToolchainAction,
+    },
+}
+
+/// What `gandr toolchain` does.
+#[derive(Debug, clap::Subcommand)]
+enum ToolchainAction
+{
+    /// Link the build in a directory as a toolchain, replacing any of that
+    /// name.
+    Link
+    {
+        /// The toolchain's name: letters, digits, `.`, `-` and `_`.
+        name: String,
+        /// The directory holding the build's `gandr`.
+        path: PathBuf,
+    },
+    /// Make an installed toolchain the default.
+    Default
+    {
+        /// The toolchain's name.
+        name: String,
+    },
+    /// Print each installed toolchain and its directory, marking the default
+    /// and the selected one.
+    List,
 }
 
 /// The ledgers `gandr ledger` writes, verifies or reads.
@@ -1632,6 +1672,12 @@ enum Screen
 /// - witness: `tests::net::two_processes_exchange_a_ping_3186`
 fn main() -> ExitCode
 {
+    match toolchain::proxy() {
+        Ok(toolchain::Proxied::Itself) => {},
+        #[cfg(not(unix))]
+        Ok(toolchain::Proxied::Exited(code)) => return code,
+        Err(fault) => return toolchain_fault(&fault),
+    }
     let cli = match <Cli as clap::Parser>::try_parse() {
         Ok(cli) => cli,
         Err(error) => return usage(&error),
@@ -1924,6 +1970,7 @@ fn main() -> ExitCode
             }),
             Verbosity::User,
         ),
+        Some(Command::Toolchain { action }) => return toolchains(action),
         Some(Command::Lsp {
             capabilities: true, ..
         }) => return capabilities(),
@@ -2157,6 +2204,98 @@ fn hub_fault(error: &std::io::Error) -> ExitCode
         // channel left.
         Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
+}
+
+/// Note `fault`, what stopped the toolchain's selection or its management,
+/// on standard error when writable, and exit `2`.
+///
+/// # Specification
+/// trivial.
+fn toolchain_fault(fault: &toolchain::ToolchainFault) -> ExitCode
+{
+    match writeln!(std::io::stderr(), "gandr: {fault}") {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Run `gandr toolchain`'s `action`: link a build, make one the default, or
+/// list them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success, a link names the build, the default names an
+///   installed toolchain, or each installed toolchain is printed as `<name>
+///   <directory>`, followed by `(default)` and `(selected)` where they hold.
+/// - provides: the exit code: 0 on success, 2 on a fault, which standard error
+///   names.
+/// - fails: never; every fault is the exit code.
+/// - panics: none.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a linked toolchain is listed, runs through the proxy, and
+///   answers as the default.
+/// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
+/// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
+fn toolchains(action: ToolchainAction) -> ExitCode
+{
+    let done = match action {
+        ToolchainAction::Link { name, path } => name
+            .parse::<toolchain::Name>()
+            .and_then(|name| toolchain::link(&name, &path).map(|_link| ())),
+        ToolchainAction::Default { name } => name
+            .parse::<toolchain::Name>()
+            .and_then(|name| toolchain::make_default(&name)),
+        ToolchainAction::List => listed(),
+    };
+    match done {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(fault) => toolchain_fault(&fault),
+    }
+}
+
+/// Print each installed toolchain, its directory, and whether it is the
+/// default and the selected one.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one line per installed toolchain, in name order.
+/// - fails: [`toolchain::ToolchainFault`] when the toolchains cannot be read,
+///   and its `Io` variant when standard output refuses a line.
+/// - panics: none.
+/// - executable: none — the output is a stream's.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`toolchains`].
+/// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
+fn listed() -> Result<(), toolchain::ToolchainFault>
+{
+    let installed = toolchain::installed()?;
+    let default = toolchain::selected_default()?;
+    let selected = toolchain::selected()?;
+    let mut stdout = std::io::stdout().lock();
+    for (name, directory) in installed {
+        let chosen = matches!(default, Maybe::Present(ref chosen) if *chosen == name);
+        let running = matches!(selected, Maybe::Present(ref chosen) if chosen.name == name);
+        let marked = match (chosen, running) {
+            (true, true) => " (default, selected)",
+            (true, false) => " (default)",
+            (false, true) => " (selected)",
+            (false, false) => "",
+        };
+        writeln!(stdout, "{name} {}{marked}", directory.display()).map_err(|error| {
+            toolchain::ToolchainFault::Io {
+                path: PathBuf::from("-"),
+                error,
+            }
+        })?;
+    }
+    Ok(())
 }
 
 /// Carry the language-server session on the standard streams to the hub at

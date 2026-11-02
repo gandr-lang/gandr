@@ -164,7 +164,8 @@ impl Drop for Scratch
 ///   user's configuration and cache directories are ones no test writes by
 ///   hand, so a configuration file or a kernel verdict on the host never
 ///   reaches a case that does not set its own, and the user's data directory is
-///   one only the tests' stores use, so no case writes the host's store.
+///   one only the tests' stores use, so no case writes the host's store. No
+///   `GANDR_TOOLCHAIN` reaches the driver, so it runs itself.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -197,6 +198,7 @@ where
         "XDG_DATA_HOME",
         std::env::temp_dir().join("gandr-driver-data"),
     );
+    command.env_remove("GANDR_TOOLCHAIN");
     command
 }
 
@@ -4138,5 +4140,212 @@ fn a_manifold_s_deployment_is_judged_at_its_check_3523()
             ))
         ),
         "each refusal names what the site lacks or the world the program lacks"
+    );
+}
+
+/// A toolchain directory under `scratch` named `name`, whose `gandr` prints
+/// `ran <the selection the proxy passed> <its arguments>` and exits 0.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn fake_toolchain(
+    scratch: &Scratch,
+    name: &Path,
+) -> PathBuf
+{
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let executable = scratch.file(
+        &Path::new("builds").join(name).join("gandr"),
+        Text::from("#!/bin/sh\necho \"ran $GANDR_TOOLCHAIN $*\"\n"),
+    );
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
+        .expect("the fake build is executable");
+    executable
+        .parent()
+        .expect("the build has a directory")
+        .to_path_buf()
+}
+
+/// `gandr` with `arguments` in `working`, its data directory `data`, and
+/// `GANDR_TOOLCHAIN` set to `selecting` when it names one.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn proxied<Argument>(
+    arguments: &[Argument],
+    working: &Path,
+    data: &Path,
+    selecting: Maybe<&std::ffi::OsStr, ()>,
+) -> Output
+where
+    Argument: AsRef<std::ffi::OsStr>,
+{
+    let mut command = gandr(arguments);
+    let _placed = command.current_dir(working).env("XDG_DATA_HOME", data);
+    if let Maybe::Present(name) = selecting {
+        let _selected = command.env("GANDR_TOOLCHAIN", name);
+    }
+    ran(command)
+}
+
+/// A linked build runs in the driver's place with the driver's arguments and
+/// the selection named, and `toolchain list` shows it.
+#[cfg(unix)]
+#[test]
+fn a_linked_toolchain_is_the_one_the_proxy_runs()
+{
+    let scratch = Scratch::new(Path::new("toolchain-link"));
+    let data = scratch.0.join("data");
+    let build = fake_toolchain(&scratch, Path::new("fake"));
+    let link = proxied(
+        &["toolchain", "link", "fake", &build.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    let run = proxied(
+        &["check", "--goals", "here.gandr"],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&run), Code(0_i32), "{}", stderr(&run));
+    assert_eq!(
+        stdout(&run),
+        "ran fake check --goals here.gandr\n",
+        "the first build linked is the default, and it runs with the driver's arguments and the selection named"
+    );
+    let list = proxied(
+        &["toolchain", "list"],
+        &scratch.0,
+        &data,
+        Maybe::Present(std::ffi::OsStr::new("fake")),
+    );
+    assert_eq!(code(&list), Code(0_i32), "{}", stderr(&list));
+    assert_eq!(
+        stdout(&list),
+        format!(
+            "fake {} (default, selected)\n",
+            build.canonicalize().expect("the build resolves").display()
+        ),
+        "`toolchain list` runs whatever is selected and names the link"
+    );
+    let empty = scratch.0.join("empty");
+    std::fs::create_dir_all(&empty).expect("an empty directory is made");
+    let unbuilt = proxied(
+        &["toolchain", "link", "empty", &empty.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&unbuilt), Code(2_i32));
+    assert!(
+        stderr(&unbuilt).starts_with("gandr: the toolchain `empty` holds no "),
+        "a directory with no `gandr` is refused: {}",
+        stderr(&unbuilt)
+    );
+}
+
+/// `GANDR_TOOLCHAIN` outranks a pin, a pin outranks the default, and the
+/// default answers where nothing else names a toolchain.
+#[cfg(unix)]
+#[test]
+fn the_environment_outranks_the_pin_and_the_pin_the_default()
+{
+    let scratch = Scratch::new(Path::new("toolchain-rank"));
+    let data = scratch.0.join("data");
+    for name in ["first", "second", "third"] {
+        let build = fake_toolchain(&scratch, Path::new(name));
+        let link = proxied(
+            &["toolchain", "link", name, &build.to_string_lossy()],
+            &scratch.0,
+            &data,
+            Maybe::Absent(()),
+        );
+        assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    }
+    let default = proxied(
+        &["toolchain", "default", "third"],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&default), Code(0_i32), "{}", stderr(&default));
+    let pinned = scratch.0.join("pinned");
+    let _pin = scratch.file(Path::new("pinned/gandr-toolchain"), Text::from("second\n"));
+    let nested = pinned.join("deeper");
+    std::fs::create_dir_all(&nested).expect("a directory below the pin is made");
+    let ran_as = |working: &Path, selecting: Maybe<&std::ffi::OsStr, ()>| {
+        let output = proxied(&["check"], working, &data, selecting);
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        stdout(&output)
+    };
+    assert_eq!(
+        ran_as(&nested, Maybe::Present(std::ffi::OsStr::new("first"))),
+        "ran first check\n"
+    );
+    assert_eq!(
+        ran_as(&nested, Maybe::Absent(())),
+        "ran second check\n",
+        "the nearest pin above the working directory answers"
+    );
+    assert_eq!(
+        ran_as(&scratch.0, Maybe::Absent(())),
+        "ran third check\n",
+        "the default answers where no pin does"
+    );
+    let list = proxied(&["toolchain", "list"], &nested, &data, Maybe::Absent(()));
+    let listed = stdout(&list);
+    let marks: Vec<(&str, &str)> = listed
+        .lines()
+        .map(|line| {
+            let (name, rest) = line.split_once(' ').expect("a line names a toolchain");
+            (name, rest.split_once(" (").map_or("", |(_, marks)| marks))
+        })
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            ("first", ""),
+            ("second", "selected)"),
+            ("third", "default)")
+        ],
+        "the list marks the default and the pinned selection"
+    );
+}
+
+/// A name no installed toolchain answers is refused before any verb runs,
+/// naming where the name came from, and so is a name that is not one.
+#[cfg(unix)]
+#[test]
+fn a_name_no_toolchain_answers_is_refused_by_its_source()
+{
+    let scratch = Scratch::new(Path::new("toolchain-unknown"));
+    let data = scratch.0.join("data");
+    let pin = scratch.file(Path::new("gandr-toolchain"), Text::from("ghost\n"));
+    let refused = proxied(&["check"], &scratch.0, &data, Maybe::Absent(()));
+    assert_eq!(code(&refused), Code(2_i32));
+    assert_eq!(
+        stderr(&refused),
+        format!(
+            "gandr: the pin {} names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n",
+            pin.display()
+        )
+    );
+    let misnamed = proxied(
+        &["check"],
+        &scratch.0,
+        &data,
+        Maybe::Present(std::ffi::OsStr::new("../escape")),
+    );
+    assert_eq!(code(&misnamed), Code(2_i32));
+    assert!(
+        stderr(&misnamed).starts_with("gandr: `../escape` is not a toolchain's name"),
+        "{}",
+        stderr(&misnamed)
     );
 }
