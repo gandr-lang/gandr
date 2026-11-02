@@ -943,6 +943,10 @@ enum Context
     /// cₘ))`, or after a fill's generator, `fill[n, k](Γ, t, (d₁, …, dₘ))`: a
     /// parenthesised list there is the cells, never a tuple.
     Cells,
+    /// Inside the shape of an unbiased composite or of a fill, `chain(m,
+    /// (a₁, …, aₘ))`: a parenthesised list there is the column heights,
+    /// never a tuple (#4475).
+    Heights,
     /// An operation's judgment in a theory, after its `:`: a parenthesised
     /// list there opens the judgment's own port group, so only the
     /// value-function alias over one bare domain reads as a type (#1329).
@@ -955,6 +959,71 @@ enum Context
     /// expression, and `A => B` and `(x : A, B) => C` as the value-function
     /// alias.
     Value,
+}
+
+/// A call as written: its operands, its head first, and the head's first
+/// two tokens, `compose` and `[` for `compose[n, k]`, `chain` alone for a
+/// bare name.
+#[derive(Debug)]
+struct WrittenCall<'leaf>
+{
+    /// The operands, the head first.
+    operands: Vec<NodeIndex>,
+    /// The head's first token.
+    name: &'leaf str,
+    /// The head's second token, if the head has one.
+    open: Option<&'leaf str>,
+}
+
+impl WrittenCall<'_>
+{
+    /// The head written `compose[` or `fill[`, the indexed heads of a
+    /// composite and of a fill.
+    ///
+    /// # Specification
+    /// trivial.
+    fn indexed(&self) -> Option<Spelling>
+    {
+        if self.open != Some(OPEN_BRACKET.0) {
+            return None;
+        }
+        [COMPOSE, FILL].into_iter().find(|head| head.0 == self.name)
+    }
+
+    /// The cells of a composite, its third operand, or of a fill, its
+    /// fourth.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cells(&self) -> Option<NodeIndex>
+    {
+        match self.indexed()? {
+            head if head == COMPOSE => self.operands.get(2_usize).copied(),
+            _ => self.operands.get(3_usize).copied(),
+        }
+    }
+
+    /// The shape of a composite or of a fill, its second operand.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shape(&self) -> Option<NodeIndex>
+    {
+        self.indexed()?;
+        self.operands.get(1_usize).copied()
+    }
+
+    /// The heights of `chain(m, (a₁, …, aₘ))`, its third operand.
+    ///
+    /// # Specification
+    /// trivial.
+    fn heights(&self) -> Option<NodeIndex>
+    {
+        if self.open.is_some() || self.name != CHAIN.0 {
+            return None;
+        }
+        self.operands.get(2_usize).copied()
+    }
 }
 
 /// Whether a type stands as a definition's result, after its `->`: the place
@@ -1224,8 +1293,10 @@ impl<'source> Respelling<'_, 'source>
     /// [`Context::Cells`] for the cells of an unbiased composite, its third
     /// operand after the head `compose[n, k]` and the shape, and for those of
     /// a fill, its fourth after the head `fill[n, k]`, the shape and the
-    /// generator; [`Context::Value`] otherwise. It reads the source as
-    /// written, since a parent is respelled only after its children.
+    /// generator; [`Context::Heights`] for the heights of `chain(m, (a₁, …,
+    /// aₘ))` standing as either's shape; [`Context::Value`] otherwise. It
+    /// reads the source as written, since a parent is respelled only after
+    /// its children.
     ///
     /// # Specification
     /// trivial.
@@ -1235,10 +1306,41 @@ impl<'source> Respelling<'_, 'source>
         at: NodeIndex,
     ) -> Context
     {
-        let rule = self.rule(parent);
+        let Some(call) = self.written_call(parent)
+        else {
+            return Context::Value;
+        };
+        if call.operands.last() != Some(&at) {
+            return Context::Value;
+        }
+        if call.cells() == Some(at) {
+            return Context::Cells;
+        }
+        let shape = self
+            .parents
+            .get(&parent)
+            .and_then(|&outer| self.written_call(outer))
+            .and_then(|outer| outer.shape());
+        if call.heights() == Some(at) && shape == Some(parent) {
+            return Context::Heights;
+        }
+        Context::Value
+    }
+
+    /// The call at `call` as written: its operands, its head first, and the
+    /// head's first two tokens.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written_call(
+        &self,
+        call: NodeIndex,
+    ) -> Option<WrittenCall<'_>>
+    {
+        let rule = self.rule(call);
         let operands: Vec<NodeIndex> = self
             .tree
-            .children(parent)
+            .children(call)
             .filter(|&child| {
                 self.tree
                     .node(child)
@@ -1252,15 +1354,7 @@ impl<'source> Respelling<'_, 'source>
                     })
             })
             .collect();
-        let Some(&head) = operands.first()
-        else {
-            return Context::Value;
-        };
-        let Some(node) = self.tree.node(head)
-        else {
-            return Context::Value;
-        };
-        let span = node.span();
+        let span = self.tree.node(*operands.first()?)?.span();
         let start = self
             .leaves
             .partition_point(|leaf| leaf.span.start() < span.start());
@@ -1272,28 +1366,13 @@ impl<'source> Respelling<'_, 'source>
             .take_while(|leaf| leaf.span.end() <= span.end())
             .filter(|leaf| leaf.material == Material::Token)
             .map(|leaf| <&str>::from(leaf.text));
-        let (Some(name), Some(open)) = (written.next(), written.next())
-        else {
-            return Context::Value;
-        };
-        let cells = if open != OPEN_BRACKET.0 {
-            None
-        }
-        else if name == COMPOSE.0 {
-            operands.get(2_usize)
-        }
-        else if name == FILL.0 {
-            operands.get(3_usize)
-        }
-        else {
-            None
-        };
-        if cells == Some(&at) && cells == operands.last() {
-            Context::Cells
-        }
-        else {
-            Context::Value
-        }
+        let name = written.next()?;
+        let open = written.next();
+        Some(WrittenCall {
+            operands,
+            name,
+            open,
+        })
     }
 
     /// Whether the form `at` stands as a definition's result: the operand
@@ -2191,7 +2270,10 @@ impl<'source> Respelling<'_, 'source>
                 Band::Atom
             },
             (RewriteName::Tuple, Direction::Desugar) => {
-                if matches!(self.context(at), Context::Outputs | Context::Cells) {
+                if matches!(
+                    self.context(at),
+                    Context::Outputs | Context::Cells | Context::Heights
+                ) {
                     return None;
                 }
                 let listed = listed(parts, &[OPEN_PAREN], CLOSE_PAREN)?;
@@ -3382,6 +3464,9 @@ const COMPOSE: Spelling = Spelling("compose");
 
 /// `fill`, the head of a filler generator.
 const FILL: Spelling = Spelling("fill");
+
+/// `chain`, the head of a composite's or a fill's shape.
+const CHAIN: Spelling = Spelling("chain");
 
 /// `+`.
 const PLUS: Spelling = Spelling("+");
