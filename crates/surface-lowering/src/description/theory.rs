@@ -277,6 +277,7 @@ use crate::form::TileName;
 use crate::model::Binder;
 use crate::model::Hypothesis;
 use crate::model::Included;
+use crate::model::ModelFault;
 use crate::model::Placement;
 use crate::model::Presentation;
 use crate::model::PresentedCircuit;
@@ -716,6 +717,10 @@ impl Reader<'_, '_>
             Ok(None) => {},
             Err(refused) => diagnostics.extend(refused),
         }
+        // The block's own stated laws follow the included ones, each at its
+        // member's span.
+        let own_laws = laws.len();
+        let mut law_spans = Vec::new();
         for (marked, member) in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -785,6 +790,7 @@ impl Reader<'_, '_>
                     }
                     let _first = stated.insert(spelled, laws.len());
                     laws.push(law);
+                    law_spans.push(span);
                     written.laws.push(sides);
                     Ok(())
                 })
@@ -835,6 +841,11 @@ impl Reader<'_, '_>
             laws,
             inert,
         };
+        diagnostics.extend(unstated(
+            &presentation,
+            presentation.laws.get(own_laws ..).unwrap_or_default(),
+            &law_spans,
+        ));
         let faces: Vec<SurfaceSpan> = presentation
             .placement
             .faces
@@ -2971,6 +2982,67 @@ fn member_span(
         },
         _ => fallback,
     }
+}
+
+/// The refusal of each of `stated`, the block's own stated laws written at
+/// `spans`, that no model of `presentation` can state for a fault of its own
+/// source.
+///
+/// # Specification
+/// - requires: `spans` holds each of `stated`'s member spans, in order.
+/// - ensures: one diagnostic per stated law whose derivation fails with an
+///   unbound variable, an unknown head, a wrong arity, an ill-sorted or
+///   unsorted side, or a constructor term, at its member's span; a fault a
+///   model does not read yet, or one inherited from another component, stays
+///   with the model, which refuses it at its signature.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a law naming a variable it does not bind is refused at
+///   the law, and the model of its theory no longer refuses first.
+/// - witness: `description::theory::tests::a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115`
+#[spec(ensures: |ret| ret.len() <= stated.len())]
+fn unstated(
+    presentation: &Presentation,
+    stated: &[StatedLaw],
+    spans: &[ByteSpan],
+) -> Vec<DescriptionDiagnostic>
+{
+    let Ok(members) = presentation.members()
+    else {
+        return Vec::new();
+    };
+    stated
+        .iter()
+        .zip(spans)
+        .zip(crate::model::derive_stated(&members, stated))
+        .filter_map(|((law, &span), derived)| match derived {
+            Err(
+                fault @ (ModelFault::Unbound
+                | ModelFault::UnknownHead
+                | ModelFault::Arity
+                | ModelFault::IllSorted
+                | ModelFault::Unsorted
+                | ModelFault::Constructor),
+            ) => Some(DescriptionDiagnostic {
+                span,
+                fault: DescriptionFault::Unstated {
+                    name: law.name.clone(),
+                    fault,
+                },
+            }),
+            Err(
+                ModelFault::ManyOut
+                | ModelFault::Circuit
+                | ModelFault::Inherited
+                | ModelFault::Binding
+                | ModelFault::Abstraction
+                | ModelFault::Computation,
+            )
+            | Ok(_) => None,
+        })
+        .collect()
 }
 
 /// The description's provenance for a written member span.

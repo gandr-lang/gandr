@@ -1126,6 +1126,34 @@ pub(crate) fn derive_laws(
         .collect()
 }
 
+/// Derive the law each of `stated` states over the sorts and operations of
+/// `members`, as [`derive_members`] derives a law the theory states.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one form per stated law, in order, each the form
+///   [`derive_members`] gives it.
+/// - fails: never; a fault is kept on its law.
+/// - panics: none.
+/// - executable: none — as [`derive_members`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stated law naming a variable it does not bind keeps its
+///   fault, which the theory refuses at the law.
+/// - witness: `description::theory::tests::a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115`
+#[must_use]
+pub(crate) fn derive_stated(
+    members: &Members,
+    stated: &[StatedLaw],
+) -> Vec<Result<ModelForm, ModelFault>>
+{
+    let (heads, _components) = derive_heads(members);
+    stated
+        .iter()
+        .map(|law| infer::derive_stated(&heads, law))
+        .collect()
+}
+
 /// The heads of `members`' sorts and operations, each beside its derived
 /// component, as [`derive_members`] states them before the laws.
 ///

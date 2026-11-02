@@ -180,6 +180,16 @@ pub enum DescriptionFault
     IllFormed(WfDiagnostic),
     /// A ruled signature reached an explicit surface or cell boundary.
     Signature(crate::circuit::SignatureFault),
+    /// A stated law no model can state, for a fault of its own source: a
+    /// variable it does not bind, a head the theory does not declare, a wrong
+    /// arity, a side at another sort, or a constructor term.
+    Unstated
+    {
+        /// The law's name.
+        name: gandr_theory_levitation::Name,
+        /// Why the model derivation refuses it.
+        fault: crate::model::ModelFault,
+    },
 }
 
 /// Why a member of a description declaration is not read: the description
@@ -477,6 +487,14 @@ impl DescriptionDiagnostic
                     spelled(reason.subjects.first(), written),
                     spelled(reason.subjects.get(1_usize), written),
                 ],
+            },
+            DescriptionFault::Unstated { ref name, fault } => match spelled(Some(name), written) {
+                Maybe::Present(name) => LoweringRefusal::UnstatedComponent {
+                    span: self.span,
+                    name,
+                    fault,
+                },
+                Maybe::Absent(_) => malformed(),
             },
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead

@@ -947,7 +947,8 @@ fn uncarried(
                 | DescriptionFault::RetiredOperation
                 | DescriptionFault::NativeDecode(_)
                 | DescriptionFault::IllFormed(_)
-                | DescriptionFault::Signature(_) => Uncovered::Uncoded(position, site),
+                | DescriptionFault::Signature(_)
+                | DescriptionFault::Unstated { .. } => Uncovered::Uncoded(position, site),
             })
         })
 }
