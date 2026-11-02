@@ -1,0 +1,123 @@
+test: kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120
+package: gandr-surface-corpus
+command: mise run debug:test gandr-surface-corpus kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120 --break Environment>::replay$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-corpus/a4055bb0f00556cc/out/gandr_surface_corpus-a4055bb0f00556cc"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-corpus/a4055bb0f00556cc/out/gandr_surface_corpus-a4055bb0f00556cc' (arm64).
+(lldb) settings set -- target.run-args  "kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Environment>::replay$
+Breakpoint 1: where = gandr_surface_corpus-a4055bb0f00556cc`<gandr_kernel_core::env::Environment>::replay + 68 at env.rs:2319:5, address = 0x0000000100124154
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_corpus-a4055bb0f00556cc`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001020e1b68
+(lldb) run
+
+running 1 test
+test kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 24885 launched: 'target/debug-trace/debug/build/gandr-surface-corpus/a4055bb0f00556cc/out/gandr_surface_corpus-a4055bb0f00556cc' (arm64)
+Process 24885 stopped
+* thread #2, name = 'kernel_export::kernel_naturality_readmission::the_fill_and_asso', stop reason = breakpoint 1.1
+       frame #0: 0x0000000100124154 gandr_surface_corpus-a4055bb0f00556cc`<gandr_kernel_core::env::Environment>::replay(arena={values:{frozen:None, own:size=389}, value_supports:{frozen:None, own:size=389}, computations:{frozen:None, own:size=905}, computation_supports:{frozen:None, own:size=905}, value_types:{frozen:None, own:size=212}, value_type_supports:{frozen:None, own:size=212}, comp_types:{frozen:None, own:size=228}, comp_type_supports:{frozen:None, own:size=228}, unrelated:strong=34, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, declarations=size=72) at env.rs:2319:5
+   2316	    /// - witness: `tests::sealed_export::the_export_of_a_sealed_module_replays`
+   2317	    /// - witness: `tests::sealed_export::an_atom_downgraded_to_an_axiom_fails_to_replay`
+   2318	    /// - witness: `tests::sealed_export::sealing_provenance_round_trips_and_cannot_be_rewritten`
+-> 2319	    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+    	    ^
+   2320	        |refusal| usize::from(refusal.position()) < declarations.len(),
+   2321	        |environment| environment.entries.len() == declarations.len(),
+   2322	    ))]
+(lldb) bt 24
+* thread #2, name = 'kernel_export::kernel_naturality_readmission::the_fill_and_asso', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000100124154 gandr_surface_corpus-a4055bb0f00556cc`<gandr_kernel_core::env::Environment>::replay(arena={values:{frozen:None, own:size=389}, value_supports:{frozen:None, own:size=389}, computations:{frozen:None, own:size=905}, computation_supports:{frozen:None, own:size=905}, value_types:{frozen:None, own:size=212}, value_type_supports:{frozen:None, own:size=212}, comp_types:{frozen:None, own:size=228}, comp_type_supports:{frozen:None, own:size=228}, unrelated:strong=34, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, declarations=size=72) at env.rs:2319:5
+     frame #1: 0x0000000100100a44 gandr_surface_corpus-a4055bb0f00556cc`gandr_surface_corpus::kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120 at kernel_export.rs:2921:9
+     frame #2: 0x00000001000f45a8 gandr_surface_corpus-a4055bb0f00556cc`gandr_surface_corpus::kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120::{closure#0}((null)={}) at kernel_export.rs:2899:65
+     frame #3: 0x000000010012fd20 gandr_surface_corpus-a4055bb0f00556cc`<gandr_surface_corpus::kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000000100145b98 gandr_surface_corpus-a4055bb0f00556cc`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x0000000100145b90 gandr_surface_corpus-a4055bb0f00556cc`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x00000001001510b4 gandr_surface_corpus-a4055bb0f00556cc`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x00000001001510a8 gandr_surface_corpus-a4055bb0f00556cc`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x00000001001510a8 gandr_surface_corpus-a4055bb0f00556cc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x00000001001510a4 gandr_surface_corpus-a4055bb0f00556cc`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x00000001001510a4 gandr_surface_corpus-a4055bb0f00556cc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x00000001001510a4 gandr_surface_corpus-a4055bb0f00556cc`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x0000000100151098 gandr_surface_corpus-a4055bb0f00556cc`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x000000010014baa8 gandr_surface_corpus-a4055bb0f00556cc`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x000000010014ba44 gandr_surface_corpus-a4055bb0f00556cc`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x0000000100153578 gandr_surface_corpus-a4055bb0f00556cc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x0000000100153568 gandr_surface_corpus-a4055bb0f00556cc`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x0000000100153568 gandr_surface_corpus-a4055bb0f00556cc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x0000000100153564 gandr_surface_corpus-a4055bb0f00556cc`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x0000000100153564 gandr_surface_corpus-a4055bb0f00556cc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x0000000100153564 gandr_surface_corpus-a4055bb0f00556cc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x0000000100153554 gandr_surface_corpus-a4055bb0f00556cc`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x00000001020b84f8 gandr_surface_corpus-a4055bb0f00556cc`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x00000001020b84ec gandr_surface_corpus-a4055bb0f00556cc`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(gandr_kernel_term::arena::TermArena) arena = {values:{frozen:None, own:size=389}, value_supports:{frozen:None, own:size=389}, computations:{frozen:None, own:size=905}, computation_supports:{frozen:None, own:size=905}, value_types:{frozen:None, own:size=212}, value_type_supports:{frozen:None, own:size=212}, comp_types:{frozen:None, own:size=228}, comp_type_supports:{frozen:None, own:size=228}, unrelated:strong=34, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}
+(&[gandr_kernel_term::decl::MarkedDeclaration]) declarations = size=72 {
+  [0] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Data{parameters:size=0, indices:size=0, constructors:size=32, results:size=0, kind:{0:0}}, provenance:size=0, name:{0:size=1}, related:size=0, presentation:{rules:strong=2, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [1] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:1}, body:{0:12}}, provenance:size=0, name:{0:size=1}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [2] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:1}, body:{0:12}}, provenance:size=0, name:{0:size=1}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [3] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:18}, body:{0:27}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [4] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:20}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [5] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:20}, body:{0:29}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [6] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:22}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [7] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:24}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [8] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:20}, body:{0:30}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [9] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:25}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [10] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:25}, body:{0:35}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [11] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:27}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [12] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:29}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [13] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:25}, body:{0:36}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [14] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:31}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [15] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:31}, body:{0:41}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  ...
+}
+(bool) __anodized_pre = false
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(lldb) up
+frame #1: 0x0000000100100a44 gandr_surface_corpus-a4055bb0f00556cc`gandr_surface_corpus::kernel_export::kernel_naturality_readmission::the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120 at kernel_export.rs:2921:9
+   2918	                .any(|marked| *marked.declaration().name() == agrees),
+   2919	            "`natassocAgrees` crosses"
+   2920	        );
+-> 2921	        Environment::replay(decoded.arena().clone(), &declarations)
+    	        ^
+   2922	            .unwrap_or_else(|refusal| panic!("naturality readmits: {refusal:?}"));
+   2923	    }
+   2924	}
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg) pbg = {dag:{names:size=24, assocs:size=24, edges:size=21, reachability:size=24, linear_extension:size=24}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:28, alloc:{value:{0:{}}}, _marker:{}}, rules:size=172, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:172, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=74, molds:{molds:size=3512, rctxs:size=3512, bounds:size=3512, owners:size=3512, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3512, adjacencies:size=9557, successor_starts:size=3513, has_pred:size=3512, has_succ:size=3512, form_first:size=208, is_first:size=3512, form_last:size=261, complete_last:size=220, is_complete_last:size=3512, required_tail:size=41, is_required_tail:size=3512, closing:size=3512, twins:size=3512, fingerprint:{0:11714307944797033429}}, automaton:{kinds:size=3512, observations:size=3512, width:55, sets:size=990}}
+(std::path::PathBuf) path = "crates/surface-corpus/../../corpus/ledger/features/naturality.gandr" {
+  inner = "crates/surface-corpus/../../corpus/ledger/features/naturality.gandr" {
+    inner = {inner:size=151}
+  }
+}
+(gandr_surface_corpus::kernel_export::Exported) exported = {path:"crates/surface-corpus/../../corpus/ledger/features/naturality.gandr", root:Fixture, classes:size=63, withheld:size=0, natives:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:10, alloc:{value:{0:{…}}}, _marker:{}}}, crossed_names:size=63, artifact:{0:size=8936}}
+(gandr_kernel_term::decode::DecodedArtifact) decoded = {arena:{values:{frozen:None, own:size=389}, value_supports:{frozen:None, own:size=389}, computations:{frozen:None, own:size=905}, computation_supports:{frozen:None, own:size=905}, value_types:{frozen:None, own:size=212}, value_type_supports:{frozen:None, own:size=212}, comp_types:{frozen:None, own:size=228}, comp_type_supports:{frozen:None, own:size=228}, unrelated:strong=34, weak=0, truncations:{stamp:{0:0}, values:{0:size=0}, computations:{0:size=0}, value_types:{0:size=0}, comp_types:{0:size=0}}}, declarations:size=72, metrics:{table_entries:{0:1734}, max_declaration_expanded_work:{0:678}, artifact_expanded_work:{0:10750}}, segments:{header_end:{0:8}, declaration_ends:size=72}}
+(alloc::vec::Vec<gandr_kernel_term::decl::MarkedDeclaration, alloc::alloc::Global>) declarations = size=72 {
+  [0] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Data{parameters:size=0, indices:size=0, constructors:size=32, results:size=0, kind:{0:0}}, provenance:size=0, name:{0:size=1}, related:size=0, presentation:{rules:strong=2, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [1] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:1}, body:{0:12}}, provenance:size=0, name:{0:size=1}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [2] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:1}, body:{0:12}}, provenance:size=0, name:{0:size=1}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [3] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:18}, body:{0:27}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [4] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:20}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [5] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:20}, body:{0:29}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [6] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:22}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [7] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:24}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [8] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:20}, body:{0:30}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [9] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:25}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [10] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:25}, body:{0:35}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [11] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:27}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [12] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:29}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [13] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:25}, body:{0:36}}, provenance:size=0, name:{0:size=0}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [14] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Axiom{declared:{0:31}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=173, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  [15] = {mark:Checked, declaration:{levels:{params:{0:0}, constraints:size=0}, content:Def{declared:{0:31}, body:{0:41}}, provenance:size=0, name:{0:size=2}, related:size=0, presentation:{rules:strong=173, weak=0, cells:None}, laws:size=0, operation_rules:{0:strong=2, weak=0}, stages:{bounds:size=0, marks:size=0}}}
+  ...
+}
+(gandr_kernel_term::decl::NameSegment) segment = {0:"natassocAgrees"}
+(gandr_kernel_term::decl::StructuredName) agrees = {0:size=1}

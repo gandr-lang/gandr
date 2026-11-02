@@ -2877,6 +2877,51 @@ mod kernel_presentation_readmission
     }
 }
 
+/// The filler generator's square and `assoc_nat` agree at every `fa` by a
+/// path, and the kernel replays that path: `natassocAgrees` crosses and
+/// readmits with the exemplar it stands in.
+mod kernel_naturality_readmission
+{
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn the_fill_and_assoc_nat_agree_by_a_path_at_every_fa_4120()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/ledger/features/naturality.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("naturality lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("naturality's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("natassocAgrees".into()).expect("a name segment");
+        let agrees = StructuredName::from(vec![segment]);
+        assert!(
+            declarations
+                .iter()
+                .any(|marked| *marked.declaration().name() == agrees),
+            "`natassocAgrees` crosses"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .unwrap_or_else(|refusal| panic!("naturality readmits: {refusal:?}"));
+    }
+}
+
 /// Effects as data readmit whole, and a program's row is a claim the kernel
 /// re-derives: a twin performing an operation outside its row is refused by
 /// name.
