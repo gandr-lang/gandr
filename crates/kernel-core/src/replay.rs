@@ -9228,25 +9228,31 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
 
     /// The point `p` of the reflexivity `here(p)` that `transport` moves
     /// along, when `p` is no returned endpoint: a transport the evaluator's
-    /// run moves.
+    /// run moves. A held path `⟨t⟩` moves along the reflexivity `t` moves
+    /// along.
     ///
     /// The evaluator evaluates a returned endpoint by running it, so a
     /// transport along a reflexivity at a point it holds no run of moves on.
-    /// A reflexivity at `⟨c⟩` holds `c`'s run, which the evaluator holds too.
+    /// A held path whose run is such a transport runs to that reflexivity, so
+    /// a transport along it moves on too. A reflexivity at `⟨c⟩` holds `c`'s
+    /// run, which the evaluator holds too.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Some(p)` exactly when `transport` is a path transport along
-    ///   `here(p)` and `p` is no `Value::Returned`; `None` otherwise.
+    ///   `here(p)` with `p` no `Value::Returned`, or along `⟨t⟩` with
+    ///   `along_reflexivity(t) = Some(p)`; `None` otherwise.
     /// - provides: the transports [`Self::run_step`] reads on into.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the second whisker of `cylinderCompositeAtHere` moves
-    ///   to `here(here(x))`, as the checker's run moves it; along a reflexivity
-    ///   at `⟨return v⟩`, `coneSuspended3` stays held.
+    ///   to `here(here(x))`, as the checker's run moves it, and so does a
+    ///   whisker along `cylinderStackAtHere`'s reversed square; along a
+    ///   reflexivity at `⟨return v⟩`, `coneSuspended3` stays held.
     /// - witness: `replay::tests::a_returned_transport_along_a_reflexivity_reads_on_4419`
+    /// - witness: `replay::tests::a_returned_transport_along_a_held_reflexivity_reads_on_4435`
     #[spec(ensures: |ret| ret.is_none_or(|point| self.arena.value(point).is_some()
         && matches!(self.arena.computation(transport), Some(&Computation::PathTransport { .. }))))]
     fn along_reflexivity(
@@ -9254,17 +9260,22 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         transport: ComputationId,
     ) -> Option<ValueId>
     {
-        let Some(&Computation::PathTransport { path, .. }) = self.arena.computation(transport)
-        else {
-            return None;
-        };
-        let Some(&Value::Here { point, .. }) = self.arena.value(path)
-        else {
-            return None;
-        };
-        match self.arena.value(point) {
-            Some(&Value::Returned(_)) | None => None,
-            Some(_) => Some(point),
+        let mut transport = transport;
+        loop {
+            let Some(&Computation::PathTransport { path, .. }) = self.arena.computation(transport)
+            else {
+                return None;
+            };
+            match self.arena.value(path) {
+                Some(&Value::Here { point, .. }) => {
+                    return match self.arena.value(point) {
+                        Some(&Value::Returned(_)) | None => None,
+                        Some(_) => Some(point),
+                    };
+                },
+                Some(&Value::Returned(along)) => transport = along,
+                _ => return None,
+            }
         }
     }
 
