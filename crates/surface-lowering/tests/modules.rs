@@ -1979,6 +1979,21 @@ fn a_component_check_carries_its_members_expectation()
 }
 
 #[test]
+fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
+{
+    let source = "@[ refuses(\"UnresolvedTypeHead\") ]\ntype T = Nope;\ndef after = 1;\n";
+    let found = rows(&lower(source));
+    assert!(
+        matches!(found.as_slice(), [
+            (held, Role::Held, Amounts::Refused(LoweringRefusal::UnresolvedTypeHead { span, .. })),
+            (after, Role::Declared, Amounts::Bodied),
+        ] if held == "T" && after == "after" && *span == span_of(source, "Nope", 0_usize)),
+        "the member is read past its attribute block and refused at its type, and the source's \
+         next declaration still reads, got {found:?}"
+    );
+}
+
+#[test]
 fn a_type_member_s_refusal_is_reported_once_1087()
 {
     let source = "module M : #{ count : Integer, type Q } where {\n  def count = 3;\n  @[ checks ] type Q \

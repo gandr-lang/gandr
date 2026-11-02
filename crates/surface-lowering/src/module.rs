@@ -5247,7 +5247,8 @@ impl<'source> Collector<'_, 'source>
     ///   those its inner blocks wrote, the blocks owned by the first of them so
     ///   a fault in a payload refuses that member; a module whose collection
     ///   admits no slot decorates nothing, and refuses the run as a stray
-    ///   attribute block does.
+    ///   attribute block does. A type member the blocks decorate is read by
+    ///   [`Self::decorated_type_member`] and files no decorated module.
     /// - provides: the decorated half of [`collect_source`]'s module reading.
     /// - fails: a block out of shape, and every fault [`Self::module`] raises.
     /// - panics: none.
@@ -5261,9 +5262,12 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a decorated module of two members and an undecorated
     ///   declaration after it, the attribute reaching the members only.
     /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    /// - witness: `tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.decorated.len()),
         ensures: |ret| ret.is_err()
+            || (self.collected.decorated.len() == before.1
+                && self.collected.slots.len() == before.0.saturating_add(1))
             || self.collected.decorated.last().is_some_and(|decorated| {
                 self.collected.decorated.len() > before.1
                     && decorated.first.0 == before.0
@@ -5282,6 +5286,11 @@ impl<'source> Collector<'_, 'source>
         let mut attributes = Vec::new();
         for &written in decorations {
             self.decoration(written, module.node, &mut attributes)?;
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
+        if Self::opens_type_member(&pieces).0 {
+            return self.decorated_type_member(module, decorations, attributes, &pieces);
         }
         for &written in decorations {
             self.document_module(written.node, written.span.end(), module.node);
@@ -5308,6 +5317,58 @@ impl<'source> Collector<'_, 'source>
                 first,
                 end,
             }),
+        }
+
+        Ok(())
+    }
+
+    /// Collect the top-level type member `member` the attribute blocks
+    /// `decorations` decorate, `attributes` their reading: the member as an
+    /// undecorated one is read, the attributes kept on its held slot ahead of
+    /// any its own form writes.
+    ///
+    /// # Specification
+    /// - requires: `member` is a type member standing at the root, `pieces` its
+    ///   reading, and `attributes` read off `decorations`, the blocks written
+    ///   before it.
+    /// - ensures: the slot [`Self::type_member`] admits carries `attributes`
+    ///   first, and owns the blocks, so a fault in a payload refuses the
+    ///   member.
+    /// - provides: the type-member half of [`Self::decorated_module`], as
+    ///   [`Self::module_child`] reads an undecorated one.
+    /// - fails: as [`Self::type_member`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::type_member`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an attributed member at the top level is read past
+    ///   its block and refused at its type, as a module body's is.
+    /// - witness: `tests::modules::an_attributed_top_level_type_member_is_read_as_the_plain_one_4464`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: |ret| ret.is_err()
+            || self.collected.slots.get(before).is_some_and(|slot| {
+                slot.attributes.iter().all(|attribute| attribute.decorates == member.node)
+            }),
+    )]
+    fn decorated_type_member(
+        &mut self,
+        member: Placed,
+        decorations: &[Placed],
+        mut attributes: Vec<WrittenAttribute<'source>>,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let held = SlotIndex(self.collected.slots.len());
+        self.type_member(self.collected.top(member.span.start()), member, pieces)?;
+        if let Some(slot) = self.collected.slots.get_mut(held.0) {
+            attributes.append(&mut slot.attributes);
+            slot.attributes = attributes;
+        }
+        for &written in decorations {
+            self.collected.own(written.node, held);
         }
 
         Ok(())
