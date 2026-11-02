@@ -1538,6 +1538,7 @@ dependencies = [
  "gandr-theory-cell-complexes",
  "gandr-theory-circuit-algebras",
  "gandr-theory-coherent-resolutions",
+ "gandr-theory-graphs",
  "gandr-theory-levitation",
  "gandr-theory-sites",
  "gandr-workflow-sweep",
