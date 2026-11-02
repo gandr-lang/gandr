@@ -3831,6 +3831,54 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
 }
 
 #[test]
+fn an_operand_s_run_runs_the_call_it_returns_4412()
+{
+    // `tr(P, ⟨force r⟩, ⟨tr(P, ⟨force q⟩, ⟨force p⟩)⟩)` in `P = y.
+    // Path(Unit, (), y)`, `p` and `q` each `thunk (return here(()))` and `r`
+    // opaque: `(p then q) then r` in miniature. The outer run reads the
+    // inner transport, whose own run takes `p` to `here(())` and returns
+    // the path `⟨force q⟩`. The evaluator's append runs that call too, so
+    // the outer transport moves `here(())` along `⟨force r⟩` and returns
+    // the path.
+    let mut arena = TermArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let reflexivity = arena.value_here(unit);
+    let returned = arena.computation_return(reflexivity);
+    let body = arena.value_thunk(returned);
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Body(body),
+        Unfoldable::Body(body),
+        Unfoldable::Opaque,
+    ]));
+    let held = |arena: &mut TermArena, index: usize| {
+        let constant = arena.value_constant(ConstantIndex::from(index));
+        let call = arena.computation_force(constant);
+        arena.value_returned(call)
+    };
+    let first = held(&mut arena, 0);
+    let second = held(&mut arena, 1);
+    let outer = held(&mut arena, 2);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let motive = arena.value_type_path(unit_type, unit, moving);
+    let inner = arena.computation_path_transport(motive, second, first);
+    let inner = arena.value_returned(inner);
+    let moved = arena.computation_path_transport(motive, outer, inner);
+    let path = arena.computation_return(outer);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(moved, path),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "an operand's run runs the call it returns"
+    );
+}
+
+#[test]
 fn two_stuck_path_transports_compare_by_motive_and_value()
 {
     // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as

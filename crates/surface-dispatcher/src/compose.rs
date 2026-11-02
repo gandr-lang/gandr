@@ -5878,6 +5878,52 @@ def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path
         );
     }
 
+    /// Three calls of a defined path composed to the left, against the
+    /// reflexivity, and the same at a defined 2-path. The inner transport's
+    /// run returns the middle call, which the outer transport's run takes as
+    /// its operand, and the kernel runs it as the checker's append does.
+    #[test]
+    fn three_defined_paths_composed_replay_4412()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(
+                r"/// A path from a point to itself.
+def p(A : Type, x : A) -> Path(A, x, x) {
+  here(x)
+}
+/// Three of them composed reduce to the reflexivity.
+def three(A : Type, x : A) -> Path(Path(A, x, x), p(A, x) then p(A, x) then p(A, x), here(x)) {
+  here(here(x))
+}
+/// A 2-path between reflexivities.
+def r(A : Type, x : A) -> Path(Path(A, x, x), here(x), here(x)) {
+  here(here(x))
+}
+/// Three of them composed reduce to the reflexivity's reflexivity.
+def threeTwoPaths(A : Type, x : A) -> Path(Path(Path(A, x, x), here(x), here(x)), r(A, x) then r(A, x) then r(A, x), here(here(x))) {
+  here(here(here(x)))
+}
+",
+            ),
+        );
+        let outcomes: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        let checks = Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            outcomes,
+            ["p", "three", "r", "threeTwoPaths"]
+                .map(|name| (name.to_owned(), checks.clone()))
+                .to_vec(),
+            "every definition checks, and the kernel re-derives each"
+        );
+    }
+
     /// A fill whose generator's body is itself a fill, read at reflexivities:
     /// the outer fill reaches its base, the generator at the source face, and
     /// the inner fill there reaches its own. The kernel re-derives the
