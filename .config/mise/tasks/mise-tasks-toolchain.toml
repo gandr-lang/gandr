@@ -117,3 +117,13 @@ echo 'external consumers: mise run check'
 ["tools:bump"]
 description = "Bump every project tool pin but the compiler and the Dylint driver, each moved with what it is built against"
 run = "mise upgrade --bump --no-global --exclude rust --exclude cargo:cargo-dylint --exclude cargo:dylint-link"
+
+# The driver's release build, linked as the gandr toolchain `dev` (#4379), so
+# a `gandr` on `PATH` that selects `dev` runs this checkout's build. The first
+# toolchain linked becomes the default.
+["install"]
+description = "Build the release driver and link target/release as the gandr toolchain dev"
+run = '''
+cargo build --release --locked -p gandr-lang --bin gandr
+target/release/gandr toolchain link dev target/release
+'''

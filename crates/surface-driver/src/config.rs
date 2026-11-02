@@ -338,6 +338,36 @@ pub fn store() -> Option<PathBuf>
     )
 }
 
+/// The directory the installed toolchains are named in and the file the
+/// default toolchain is named in, under the XDG data home or `$HOME` by
+/// [`directory`]'s rule.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<data>/gandr/toolchains` and `<data>/gandr/toolchain`, where
+///   `<data>` is `$XDG_DATA_HOME` when absolute, else `$HOME/.local/share`;
+///   absent when neither names a directory.
+/// - provides: where `gandr toolchain` links and the proxy selects.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment, which the
+///   clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a link made under a scratch data home is selected from
+///   it.
+/// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
+pub fn toolchains() -> Option<(PathBuf, PathBuf)>
+{
+    let data = directory(
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+        Path::new(".local/share"),
+    )?
+    .join("gandr");
+    Some((data.join("toolchains"), data.join("toolchain")))
+}
+
 /// The directory the kernel's receipts and strata are kept under,
 /// `gandr/verdicts` under the cache directory [`checkpoints`] sits in.
 ///
