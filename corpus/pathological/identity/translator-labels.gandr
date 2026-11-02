@@ -1,0 +1,26 @@
+// A pattern that reads a translator by a label its record lacks is refused.
+//
+// A relation's record names every pair of translators `into` and `from`, so
+// the labels a source wrote before name no field of it.
+//
+// Each declaration reads one translator by an old label, and the lowering
+// refuses it by the label it writes.
+//
+// - see: `equivalence-parts.gandr` — the same translators read by their labels
+
+/// A quasi-inverse's map back read as `back`, a label `A ≅ B` does not have.
+@[ refuses("UnresolvedName") ]
+def backByOtherLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
+  match i {
+    #{.back = k} => k
+  }
+}
+
+/// An equivalence's left inverse read as `g`, a label its `linv` does not
+/// have.
+@[ refuses("UnresolvedName") ]
+def leftByOtherLabel(a : Type, b : Type, e : a ≃ b) -> b => a {
+  match e {
+    #{.linv = #{.g = k}} => k
+  }
+}

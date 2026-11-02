@@ -999,7 +999,10 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// field's `identifier`. A flow declaration reserves its lead `flow` for the
 /// same reason as `world`; `via`, which names the flow an import reads its
 /// source through, stays contextual, since no identifier stands after an
-/// import's signature.
+/// import's signature. The extern block's `from`, before the library it
+/// names, stays contextual too, since no identifier stands after the block's
+/// convention: a relation's record names its map back `from`, and a pattern
+/// or a projection reads that field by its label.
 ///
 /// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
 /// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
@@ -1008,12 +1011,12 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `where` is reserved: it ends a declaration's head, whose last slot is a
 /// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
-    "def", "run", "leta", "as", "extern", "from", "type", "fun", "pure", "return", "become",
-    "thunk", "force", "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
-    "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
-    "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
-    "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
-    "world", "mobile", "inf", "pub", "flow", "where",
+    "def", "run", "leta", "as", "extern", "type", "fun", "pure", "return", "become", "thunk",
+    "force", "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close", "select",
+    "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit", "mu", "end",
+    "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue", "with",
+    "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world",
+    "mobile", "inf", "pub", "flow", "where",
 ];
 
 /// The keywords that open a block's statements: one that no open form

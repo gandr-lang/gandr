@@ -8612,21 +8612,21 @@ mod tests
     }
 
     /// A label pattern leaves the forward map unwritten; the round trips
-    /// after it name it by its label, `to`, and where the pattern writes `to`
-    /// for another field, by the label primed apart (#670).
+    /// after it name it by its label, `into`, and where the pattern writes
+    /// `into` for another field, by the label primed apart (#670).
     #[test]
     fn an_unwritten_field_answers_by_its_label_670()
     {
         for (pattern, remainder, reason) in [
             (
-                "#{.back = k} => k",
-                "((c : a) => Path(a, k(to(c)), c)) * ((c : b) => Path(b, to(k(c)), c))",
+                "#{.from = k} => k",
+                "((c : a) => Path(a, k(into(c)), c)) * ((c : b) => Path(b, into(k(c)), c))",
                 "the omitted forward map answers by its label",
             ),
             (
-                "#{.back = to} => to",
-                "((c : a) => Path(a, to(to′(c)), c)) * ((c : b) => Path(b, to′(to(c)), c))",
-                "the label primed apart from the written `to`",
+                "#{.from = into} => into",
+                "((c : a) => Path(a, into(into′(c)), c)) * ((c : b) => Path(b, into′(into(c)), c))",
+                "the label primed apart from the written `into`",
             ),
         ] {
             let source = format!(

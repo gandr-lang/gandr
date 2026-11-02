@@ -1,6 +1,6 @@
 // A quasi-inverse whose section is stated at the wrong endpoint. `A ≅ B`'s
-// section reads `Path(A, back(to(a)), a)`, the round trip through `B`; the
-// round trip through `A`, `Path(B, to(back(b)), b)`, written in its place is
+// section reads `Path(A, from(into(a)), a)`, the round trip through `B`; the
+// round trip through `A`, `Path(B, into(from(b)), b)`, written in its place is
 // refused at that field.
 
 // The circle, the presented integers, the winding number, spinning and their

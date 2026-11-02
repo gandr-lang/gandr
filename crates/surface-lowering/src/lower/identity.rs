@@ -230,13 +230,14 @@
 //! Beside `Path(A, a, b)` and `Flow(Type, A, B)`, three infix formers relate
 //! two types, in one band just above the arrow:
 //!
-//! - `A ≅ B`, also written `Iso(A, B)`, the quasi-inverse: the record `#{to :
-//!   +U (A -> -F B), back : +U (B -> -F A), sect : (a : A) => Path(A,
-//!   back(to(a)), a), retr : (b : B) => Path(B, to(back(b)), b)}`.
+//! - `A ≅ B`, also written `Iso(A, B)`, the quasi-inverse: the record `#{into :
+//!   +U (A -> -F B), from : +U (B -> -F A), sect : (a : A) => Path(A,
+//!   from(into(a)), a), retr : (b : B) => Path(B, into(from(b)), b)}`.
 //! - `A ≃ B`, also written `A <~> B`, the equivalence as the bi-invertible map:
-//!   `#{to : +U (A -> -F B), linv : #{g : +U (B -> -F A), sect : (a : A) =>
-//!   Path(A, g(to(a)), a)}, rinv : #{h : +U (B -> -F A), retr : (b : B) =>
-//!   Path(B, to(h(b)), b)}}`.
+//!   `#{into : +U (A -> -F B), linv : #{from : +U (B -> -F A), sect : (a : A)
+//!   => Path(A, from(into(a)), a)}, rinv : #{from : +U (B -> -F A), retr : (b :
+//!   B) => Path(B, into(from(b)), b)}}`. Every pair of translators is named
+//!   `into` and `from`, each inverse's `from` inside its own record.
 //! - `A ⇝ B`, also written `A ~~> B`, the flow `Flow(Type, A, B)` between two
 //!   codes at the universe a bare `Type` names; `forward(f)` introduces it.
 //!
@@ -256,7 +257,7 @@
 //! Segal type (`isIso`; Gratzer, Weinberger and Buchholtz, _Directed
 //! univalence in simplicial homotopy type theory_, arXiv:2407.09146,
 //! Definition 2.7 and Remark 2.9), so a directed reading takes the same
-//! record. The alternative was contractible fibres, `#{to, fibres : (b : B)
+//! record. The alternative was contractible fibres, `#{into, fibres : (b : B)
 //! => <the fibre over b is contractible>}`. From a quasi-inverse, its
 //! contraction needs the half-adjoint coherence and path algebra under a
 //! transport's motive, and the identity fragment reads neither: the motive's
@@ -406,13 +407,13 @@ const CHAIN: &str = "chain";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Layout
 {
-    /// `A ≅ B`: `#{to, back, sect, retr}`.
+    /// `A ≅ B`: `#{into, from, sect, retr}`.
     Isomorphism,
-    /// `A ≃ B`: `#{to, linv, rinv}`, `linv` and `rinv` records of their own.
+    /// `A ≃ B`: `#{into, linv, rinv}`, `linv` and `rinv` records of their own.
     Equivalence,
-    /// The equivalence's left inverse `linv`: `#{g, sect}`.
+    /// The equivalence's left inverse `linv`: `#{from, sect}`.
     LeftInverse,
-    /// The equivalence's right inverse `rinv`: `#{h, retr}`.
+    /// The equivalence's right inverse `rinv`: `#{from, retr}`.
     RightInverse,
 }
 
@@ -425,10 +426,10 @@ impl Layout
     pub(super) fn fields(self) -> impl ExactSizeIterator<Item = SurfaceName<'static>>
     {
         let labels: &'static [&'static str] = match self {
-            Self::Isomorphism => &["to", "back", "sect", "retr"],
-            Self::Equivalence => &["to", "linv", "rinv"],
-            Self::LeftInverse => &["g", "sect"],
-            Self::RightInverse => &["h", "retr"],
+            Self::Isomorphism => &["into", "from", "sect", "retr"],
+            Self::Equivalence => &["into", "linv", "rinv"],
+            Self::LeftInverse => &["from", "sect"],
+            Self::RightInverse => &["from", "retr"],
         };
         labels.iter().map(|&label| SurfaceName::from(label))
     }
