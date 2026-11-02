@@ -50,6 +50,7 @@ use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::TacticFault;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
+use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
@@ -415,8 +416,8 @@ fn lowered(
                      its type as `Unit`",
                 ),
                 FragmentBoundary::Endpoint => f.write_str(
-                    "a session action acts on an endpoint: a name a `fork` binds as one of its \
-                     ends",
+                    "a session action acts on an endpoint: an end a `fork` binds, an endpoint a \
+                     `recv` binds, or a parameter written at a session type",
                 ),
                 FragmentBoundary::NonContractive => f.write_str(
                     "this recursive session type recurses before any action; put a send, a \
@@ -1288,8 +1289,14 @@ fn checked(
             },
         },
         CheckRefusal::Linearity { defect, .. } => match defect {
-            LinearityDefect::Residue { .. } => {
-                f.write_str("the endpoint is not closed before the fork half or receive body that bound it ends")
+            LinearityDefect::Residue { endpoint, .. } => match endpoint.side {
+                ForkSide::Placed => f.write_str(
+                    "the endpoint is not closed before the body of the function that takes it ends",
+                ),
+                ForkSide::Child | ForkSide::Parent | ForkSide::Received => f.write_str(
+                    "the endpoint is not closed before the fork half or receive body that bound it \
+                     ends",
+                ),
             },
             LinearityDefect::Closed { .. } => f.write_str("the endpoint is used after `close`"),
             LinearityDefect::UsedTwice { .. } => f.write_str("one action names the endpoint twice"),

@@ -692,6 +692,33 @@ fn an_action_on_no_endpoint_is_refused()
 }
 
 #[test]
+fn a_parameter_at_a_session_type_is_placed_1862()
+{
+    let source = SourceText::from(
+        "def finish(seat : end) -> -F Unit { close(seat) }\n\
+         def answer(n : Integer, seat : ?Integer >> end) -> -F Integer {\n\
+           let m = recv(seat) ;\n\
+           close(seat) ;\n\
+           pure m\n\
+         }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, expected) in [
+        ("finish", &["place", "close @0"][..]),
+        ("answer", &["place", "recv @0", "close @1"][..]),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            actions(&arena, tail),
+            expected,
+            "`{name}`: the body stands under the placement of its parameter at a session type"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
 fn an_offer_arm_is_one_label()
 {
     let source = SourceText::from(

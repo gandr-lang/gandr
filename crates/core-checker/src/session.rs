@@ -133,7 +133,8 @@ use crate::refusal::CheckRefusal;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
 
-/// Which binder of an endpoint bound it: a half of a fork, or a receive.
+/// Which binder of an endpoint bound it: a half of a fork, a receive, or the
+/// placement of a parameter.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ForkSide
 {
@@ -143,13 +144,18 @@ pub enum ForkSide
     Parent,
     /// An end sent over another endpoint, bound by the receive that took it.
     Received,
+    /// A function's parameter at a session type, placed in a linear binder
+    /// at its body's entry.
+    Placed,
 }
 
-/// An endpoint, named by the fork or the receive that bound it and its side.
+/// An endpoint, named by the fork, the receive or the placement that bound
+/// it and its side.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Endpoint
 {
-    /// The fork, or for [`ForkSide::Received`] the receive.
+    /// The fork, for [`ForkSide::Received`] the receive, and for
+    /// [`ForkSide::Placed`] the placement.
     pub fork: ComputationId,
     /// The side.
     pub side: ForkSide,

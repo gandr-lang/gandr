@@ -37,6 +37,7 @@ use alloc::string::String;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
@@ -427,11 +428,16 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             ..
         } => String::from("return a value that the scope's own region does not keep"),
         CheckRefusal::Linearity {
-            defect: LinearityDefect::Residue { .. },
+            defect: LinearityDefect::Residue { endpoint, .. },
             ..
-        } => String::from(
-            "close the endpoint before the fork half or receive body that bound it ends",
-        ),
+        } => String::from(match endpoint.side {
+            ForkSide::Placed => {
+                "end the endpoint's protocol before the body of the function that takes it ends"
+            },
+            ForkSide::Child | ForkSide::Parent | ForkSide::Received => {
+                "close the endpoint before the fork half or receive body that bound it ends"
+            },
+        }),
         CheckRefusal::RuleNotRespected { .. } => String::from(
             "give the arms equal results on the terms that each of the datatype's rules \
              identifies",

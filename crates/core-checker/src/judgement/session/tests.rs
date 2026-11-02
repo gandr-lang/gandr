@@ -1823,6 +1823,104 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
     );
 }
 
+/// A function's parameter at `end`, placed at its body's entry: closed, it
+/// checks and the kernel defines it; left open, the placement is refused
+/// with the endpoint as its residue; closed twice, the second close is
+/// refused as a use after close.
+#[test]
+fn a_placed_endpoint_is_spent_by_its_body_1862()
+{
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let takes_an_end = arena.comp_type_arrow(ended, returns_unit);
+    let declared = arena.value_type_thunk(takes_an_end);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    // \seat. place seat { close(seat) }
+    let closed = Program::new(&mut arena).close();
+    let placed = arena.computation_session(SessionAction::Place {
+        payload: parameter,
+        body: closed,
+    });
+    // \seat. place seat { return () }
+    let nothing = arena.value_unit();
+    let kept = arena.computation_return(nothing);
+    let leaked = arena.computation_session(SessionAction::Place {
+        payload: parameter,
+        body: kept,
+    });
+    // \seat. place seat { close(seat); close(seat) }
+    let again = Program::new(&mut arena).close();
+    let twice = Program::new(&mut arena).then(
+        SessionAction::Close {
+            endpoint: DeBruijnIndex::from(0_u32),
+        },
+        again,
+    );
+    let closed_twice = arena.computation_session(SessionAction::Place {
+        payload: parameter,
+        body: twice,
+    });
+    let declarations: Vec<_> = [placed, leaked, closed_twice]
+        .into_iter()
+        .enumerate()
+        .map(|(position, body)| {
+            let lambda = arena.computation_lambda(body);
+            let defined = arena.value_thunk(lambda);
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Present(declared),
+                Maybe::Present(defined),
+                OriginToken::from(position),
+            )
+        })
+        .collect();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.first(), Some(Verdict::Checked { .. })),
+        "a placed endpoint the body closes checks: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(1),
+            Some(Verdict::Refused(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                defect: LinearityDefect::Residue {
+                    endpoint: Endpoint {
+                        fork,
+                        side: ForkSide::Placed,
+                    },
+                    ..
+                },
+            })) if *at == leaked && *fork == leaked
+        ),
+        "a placed endpoint the body leaves open is the placement's residue: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(2),
+            Some(Verdict::Refused(CheckRefusal::Linearity {
+                defect: LinearityDefect::Closed { .. },
+                ..
+            }))
+        ),
+        "a placed endpoint closed twice is refused at the second close: {verdicts:?}"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(bridge::Readmitted::outcome)
+        .collect();
+    assert!(
+        matches!(outcomes.first(), Some(bridge::Outcome::Defined { .. })),
+        "the kernel defines the closed placement as its body: {outcomes:?}"
+    );
+}
+
 /// A received value crosses read from an assumption of its type, and an
 /// offer as a case on an assumed choice among its arms: the kernel defines an
 /// exchange returning the string it received and the whole seat exchange,

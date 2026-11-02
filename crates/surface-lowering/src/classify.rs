@@ -442,9 +442,7 @@ fn out_of_fragment(
             FragmentFeature::Stray | FragmentFeature::Crossed(_) => FailureClass::MalformedSource,
         },
         FragmentBoundary::Indexed => FailureClass::Unimplemented(TrackingIssue::INDEXED),
-        FragmentBoundary::Endpoint => {
-            FailureClass::Unimplemented(TrackingIssue::ENDPOINT_PARAMETER)
-        },
+        FragmentBoundary::Endpoint => FailureClass::Unimplemented(TrackingIssue::DELEGATION),
         FragmentBoundary::Misplaced
         | FragmentBoundary::NotAtResult
         | FragmentBoundary::Arity(_)
@@ -1325,7 +1323,7 @@ mod tests
                 "identifier",
                 FragmentSort::Value,
                 FragmentBoundary::Endpoint,
-                FailureClass::Unimplemented(TrackingIssue::ENDPOINT_PARAMETER),
+                FailureClass::Unimplemented(TrackingIssue::DELEGATION),
             ),
             (
                 "data_generator",

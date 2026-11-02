@@ -4708,10 +4708,12 @@ enum Task<Node>
     /// Open a binder in a zone, of the former whose child follows: the former
     /// itself when it opens that one binder, whose name the source may write.
     Bind(Zone, Option<Node>),
-    /// Open a binder in a zone named as the innermost open binder is: a
-    /// placement's linear binder, which takes the name of the binder holding
-    /// the buffer it places.
-    Rebind(Zone),
+    /// Open a binder in a zone named as the intuitionistic binder `index`
+    /// counts out to is, an open binder or one of the context: a placement's
+    /// linear binder, which takes the name of the binder holding what it
+    /// places, a buffer or a parameter's endpoint. A payload no variable
+    /// names leaves the binder unnamed.
+    Rebind(Zone, Option<DeBruijnIndex>),
     /// Open the binder that names a region — a capability scope's capability
     /// or a hold's held name — as [`Task::Bind`] does, its region the
     /// innermost the walk is inside.
@@ -9337,8 +9339,18 @@ impl Walk<'_, '_>
                 else if let Some(unwritten) = unwritten {
                     Task::BindLoop(slot.binds.zone, unwritten)
                 }
-                else if matches!(former, Former::Place { .. }) {
-                    Task::Rebind(slot.binds.zone)
+                else if let Former::Place { payload, .. } = former {
+                    let named = if let Former::Variable {
+                        zone: Zone::Intuitionistic,
+                        index,
+                    } = source.read(payload)
+                    {
+                        Some(index)
+                    }
+                    else {
+                        None
+                    };
+                    Task::Rebind(slot.binds.zone, named)
                 }
                 else {
                     Task::Bind(slot.binds.zone, opener)
@@ -10392,22 +10404,25 @@ impl Walk<'_, '_>
         }
     }
 
-    /// Open a binder in `zone` named as the innermost open binder is.
+    /// Open a binder in `zone` named as the intuitionistic binder `payload`
+    /// counts out to is: an open binder, or past them one of the context.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one binder more is open, in `zone`, holding the name of the
-    ///   binder open just inside it, or none when no binder is open or that one
-    ///   took none.
-    /// - provides: a placement's linear binder, named as the bind or the split
-    ///   holding the buffer it places is, which no occurrence reads.
+    ///   binder `payload` counts out to, or none when `payload` is absent,
+    ///   counts past the context or names a binder that took none.
+    /// - provides: a placement's linear binder, named as the bind, the split or
+    ///   the parameter holding what it places is, which no occurrence reads.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a placed buffer is written by its bind's name, and a
-    ///   minting clause's mint by its own, so each reads back to itself.
+    /// - hypothesis: L3 — a placed buffer is written by its bind's name, a
+    ///   minting clause's mint by its own and a placed parameter by the
+    ///   parameter's, so each reads back to itself.
     /// - witness: `tests::goldens::a_placed_buffer_is_written_by_its_bind_s_name`
+    /// - witness: `tests::goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862`
     #[spec(
         captures: [opened = self.opened.len()],
         ensures: self.opened.len() == opened.saturating_add(1_usize)
@@ -10416,15 +10431,18 @@ impl Walk<'_, '_>
     fn rebind(
         &mut self,
         zone: Zone,
+        payload: Option<DeBruijnIndex>,
     )
     {
         let position = self.opened.len();
         self.names.truncate(position);
-        let name = position
-            .checked_sub(1_usize)
-            .and_then(|inner| self.names.get(inner))
-            .cloned()
-            .flatten();
+        let name = payload.and_then(|index| match self.opened_at(Zone::Intuitionistic, index) {
+            Some(OpenBinders(open)) => self.names.get(open).cloned().flatten(),
+            None => self
+                .context_position(Zone::Intuitionistic, index)
+                .and_then(|ContextPosition(at)| self.context.get(at).copied().flatten())
+                .map(|name| BinderName(String::from(name.as_ref()))),
+        });
         self.names.resize(position, None);
         self.names.push(name);
         let _named = self.occurring.remove(&OpenBinders(position));
@@ -12669,7 +12687,7 @@ where
                     walk.unwinds.saturating_sub(1_usize)
                 };
             },
-            Task::Rebind(zone) => walk.rebind(zone),
+            Task::Rebind(zone, payload) => walk.rebind(zone, payload),
             Task::BindScope(zone, opener) => {
                 walk.bind(source, zone, opener);
                 walk.scopes.push(walk.opened.len().saturating_sub(1_usize));

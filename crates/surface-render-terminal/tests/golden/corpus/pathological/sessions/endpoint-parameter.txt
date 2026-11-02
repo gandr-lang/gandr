@@ -1,0 +1,15 @@
+error[LinearResidue]: the endpoint is not closed before the body of the function that takes it ends
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:14:11
+   │
+14 │   def leaky(seat : end) -> Unit {
+   │   │         ┯━━━
+   │   │         │
+   │   │         an endpoint left unconsumed: found `end`
+   │ ┌─┘         the endpoint was taken as this parameter
+   │ │
+15 │ │   unit
+16 │ │ }
+   │ └─┘ checked against `end => Unit`; while checking the body of this thunk
+   │
+   ├ note: `leaky` is refused with LinearResidue, as its expectation states
+   ╰ help: end the endpoint's protocol before the body of the function that takes it ends

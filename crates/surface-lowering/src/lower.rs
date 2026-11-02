@@ -2356,6 +2356,9 @@ struct Function
     recursion: Maybe<ScopeId, recursion::Absent>,
     /// The receiver a written-through method holds over its body.
     receiver: Maybe<method::HeldReceiver, method::unheld::Absent>,
+    /// The parameters at a session type its body places, in the lowerer's
+    /// endpoint store.
+    endpoints: Stretch,
 }
 
 /// A function tail's body: a block, or the decision tree its clauses compile
@@ -3405,6 +3408,9 @@ struct Lowerer<'run, 'source>
     /// slot a threading loop holds again for its passes and for what follows
     /// it.
     held: BTreeSet<ScopeId>,
+    /// The parameters at a session type each function body places, stretch
+    /// by stretch.
+    endpoints: Vec<session::PlacedEndpoint>,
     /// The loops that thread held slots, by the loop's node: each slot's
     /// linear index where the loop stands, and its name, outermost first.
     threading: BTreeMap<NodeIndex, Vec<(DeBruijnIndex, SurfaceName<'source>)>>,
@@ -5362,6 +5368,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reentered: BTreeMap::new(),
             tested: BTreeSet::new(),
             held: BTreeSet::new(),
+            endpoints: Vec::new(),
             threading: BTreeMap::new(),
             reheld: BTreeMap::new(),
             carries: BTreeMap::new(),
@@ -10323,6 +10330,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let mut frame =
             self.merged_parameters(site, function, &mut cursor, Frame::Outermost, &mut own)?;
+        // The written parameters at a session type.
+        let mut endpoints = Vec::new();
         loop {
             let binder = match cursor.peek() {
                 _ if matches!(listing, Maybe::Absent(_)) => break,
@@ -10338,6 +10347,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             };
+            let mut endpoint = false;
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     // A receiver's mode word, which the collection read.
@@ -10351,6 +10361,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         deduced = Some(self.mode_variable(site, mode)?);
                         declared = typed;
                     }
+                    // A parameter at a session type is an endpoint its body
+                    // places.
+                    endpoint = matches!(self.form_at(declared)?, Some((_, Former::SessionType)));
                     self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
                 },
@@ -10364,12 +10377,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(declared) => self.scope.extend_typed(frame, name, declared, written),
                 Maybe::Absent(_) => self.scope.extend(frame, name, written),
             };
-            self.parameters.push(Parameter {
+            let parameter = Parameter {
                 binder: binder.node,
                 frame: bound,
                 declared,
                 component: None,
-            });
+            };
+            if endpoint {
+                endpoints.push(parameter);
+            }
+            self.parameters.push(parameter);
             frame = Frame::Inner(bound);
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
@@ -10421,6 +10438,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     body: Body::Clauses(case),
                     recursion,
                     receiver: Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
+                    endpoints: Stretch {
+                        start: self.endpoints.len(),
+                        end: self.endpoints.len(),
+                    },
                 }),
             );
             return Ok(());
@@ -10442,13 +10463,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Maybe::Absent(_) => (Maybe::Absent(stated::Absent::Unstated), None),
         };
+        let (placed, endpoints) = self.place_endpoints(frame, &endpoints);
         let (body, receiver) = match receiver {
             Some(ReceiverMode::Exclusive) => {
-                let (held, receiver) = self.hold_receiver(function, frame, parameters)?;
+                let (held, receiver) = self.hold_receiver(function, placed, parameters)?;
                 (held, Maybe::Present(receiver))
             },
             Some(ReceiverMode::Shared | ReceiverMode::Consumed | ReceiverMode::Deduced) | None => (
-                frame,
+                placed,
                 Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
             ),
         };
@@ -10479,6 +10501,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 body: Body::Block(block),
                 recursion,
                 receiver,
+                endpoints,
             }),
         );
 
@@ -18682,13 +18705,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of no parameter its body, `thunk (fix. b)`, claiming structural
     ///   descent when a call claims it and partial otherwise; a written-through
     ///   method's `b` runs under the hold of its receiver [`Self::hold_body`]
-    ///   mints; its declared type is `+U (A1 -> … -> An -> C)`, one arrow per
-    ///   parameter with the binder tile's origin and `+U` the declaration
-    ///   form's, an arrow dependent where a later type names its parameter, and
-    ///   a written-through method's `C` the `F (T × R)`
-    ///   [`Self::written_result`] mints; a tail missing a parameter or result
-    ///   type mints the body alone; nothing is minted when the block did not
-    ///   lower.
+    ///   mints, and a body whose parameters stand at a session type under their
+    ///   placements [`Self::place_body`] mints, outside the hold; its declared
+    ///   type is `+U (A1 -> … -> An -> C)`, one arrow per parameter with the
+    ///   binder tile's origin and `+U` the declaration form's, an arrow
+    ///   dependent where a later type names its parameter, and a
+    ///   written-through method's `C` the `F (T × R)` [`Self::written_result`]
+    ///   mints; a tail missing a parameter or result type mints the body alone;
+    ///   nothing is minted when the block did not lower.
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
@@ -18745,6 +18769,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(receiver) = function.receiver {
             body = Self::hold_body(receiver, body, sink, origin);
         }
+        body = match self.place_body(function.endpoints, body, sink) {
+            Maybe::Present(placed) => placed,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
         let mut fixpoint = match self.evidence(function) {
             Maybe::Present(evidence) => Some(evidence),
             Maybe::Absent(_) => None,

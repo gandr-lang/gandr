@@ -1,0 +1,16 @@
+// A parameter at a session type is spent by its body, as an end a fork binds
+// is.
+//
+// An endpoint left open at the body's end breaks the protocol its type
+// states.
+//
+// The checker refuses it at the placement as `LinearResidue`.
+//
+// - see: corpus/model/sessions/endpoint-parameter.gandr
+
+/// A parameter at a session type that nothing acts on: the body ends with the
+/// endpoint unspent.
+@[ refuses("LinearResidue") ]
+def leaky(seat : end) -> Unit {
+  unit
+}
