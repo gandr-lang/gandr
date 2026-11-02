@@ -34,6 +34,7 @@ use alloc::sync::Arc;
 
 use anodized::spec;
 use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::Certificate;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
 use gandr_theory_sites::Level as _;
@@ -75,11 +76,15 @@ pub enum StratumLevel
     One,
     /// The wreath of the catalogue over itself: a [`WreathStratum`].
     Two,
+    /// The wreath of the catalogue over level two: a [`LevelThree`].
+    Three,
+    /// The wreath of the catalogue over level three: a [`LevelFour`].
+    Four,
 }
 
 impl core::fmt::Display for StratumLevel
 {
-    /// `1` or `2`.
+    /// `1`, `2`, `3` or `4`.
     ///
     /// # Specification
     /// trivial.
@@ -92,8 +97,36 @@ impl core::fmt::Display for StratumLevel
         f.write_str(match *self {
             Self::One => "1",
             Self::Two => "2",
+            Self::Three => "3",
+            Self::Four => "4",
         })
     }
+}
+
+/// Level three over the chains, certified from level two.
+pub type LevelThree = WreathStratum<WreathStratum>;
+
+/// Level four over the chains, certified from level three.
+pub type LevelFour = WreathStratum<LevelThree>;
+
+/// The wreath of the chains over level two, level three's objects.
+type ThreeWreath = Wreath<Wreath<Catalogue>>;
+
+/// The largest bound levels three and four are certified at.
+///
+/// economy: in a release build, level three certifies at total size 13 in
+/// 0.55 s and level four in 2.9 s. At total size 15 they take 27 s and 126 s,
+/// and two 3-cells side by side, at total size 17, take 52 s at their least
+/// degree. Each level reads the one below at its top degree. Reversal: a
+/// certificate restricted to what a pasting reaches (#4474).
+///
+/// # Specification
+/// trivial.
+#[must_use]
+#[inline]
+pub fn above_two_allowance() -> ShapeSize
+{
+    ShapeSize::from(13_usize)
 }
 
 quenchant_shape::reason_enum! {
@@ -262,6 +295,14 @@ pub struct Strata
     wreaths: BTreeMap<ShapeSize, Arc<Wreath<Catalogue>>>,
     /// Each level-two stratum over the chains certified or recalled so far.
     held_two: BTreeMap<StratumAt, Arc<WreathStratum>>,
+    /// The wreath of the chains over level two at each bound built so far.
+    wreaths_three: BTreeMap<ShapeSize, Arc<ThreeWreath>>,
+    /// Each level-three stratum over the chains certified or recalled so far.
+    held_three: BTreeMap<StratumAt, Arc<LevelThree>>,
+    /// The wreath of the chains over level three at each bound built so far.
+    wreaths_four: BTreeMap<ShapeSize, Arc<Wreath<ThreeWreath>>>,
+    /// Each level-four stratum over the chains certified or recalled so far.
+    held_four: BTreeMap<StratumAt, Arc<LevelFour>>,
 }
 
 impl Default for Strata
@@ -278,6 +319,10 @@ impl Default for Strata
             held: BTreeMap::new(),
             wreaths: BTreeMap::new(),
             held_two: BTreeMap::new(),
+            wreaths_three: BTreeMap::new(),
+            held_three: BTreeMap::new(),
+            wreaths_four: BTreeMap::new(),
+            held_four: BTreeMap::new(),
         }
     }
 }
@@ -443,52 +488,138 @@ impl Strata
         if let Some(held) = self.held_two.get(&at) {
             return Ok(Arc::clone(held));
         }
-        let chains = Family::Chains;
-        let catalogue = self.catalogue(&chains, at.bound, ShapeBudget::EVERY)?;
+        let (catalogue, wreath) = self.wreath_two(at.bound)?;
         let below = self.certified(
-            &chains,
+            &Family::Chains,
             StratumAt {
                 bound: at.bound,
                 degree: catalogue.reach(),
             },
             ShapeBudget::EVERY,
         )?;
-        let below = SegalStratum::clone(&below);
-        let wreath = if let Some(wreath) = self.wreaths.get(&at.bound) {
+        let stratum = ascend(
+            &*self.store,
+            wreath,
+            SegalStratum::clone(&below),
+            (at, StratumLevel::Two),
+        )?;
+        let held = Arc::new(stratum);
+        let _first = self.held_two.insert(at, Arc::clone(&held));
+        Ok(held)
+    }
+
+    /// Level three at `at` over the wreath of the chains at `at`'s bound over
+    /// level two, built from level two at that wreath's top degree: recalled
+    /// from the store and replayed when it holds one, certified and kept
+    /// otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stratum [`WreathStratum::certify`] gives at `at`'s
+    ///   degree, or one the store's image replays to at that degree; every call
+    ///   at one stratum answers the stratum the first answered.
+    /// - fails: [`StratumDefect::Allowance`] for a bound past
+    ///   [`above_two_allowance`]; [`StratumDefect::Degree`] for a degree zero
+    ///   or past every object of the wreath; [`StratumDefect::Condition`] at
+    ///   the degree of the first object out of order or not the colimit of its
+    ///   cells; level two's refusals as [`Strata::level_two`] gives them.
+    /// - panics: none.
+    /// - intension: as [`Strata::level_two`], one level up. Level two is read
+    ///   at its wreath's top degree, so every column is certified below.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a 3-cell whiskered by a 1-cell is admitted at level
+    ///   three, and a bound past the allowance is refused by it.
+    /// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+    #[spec(ensures: |ref ret| match *ret {
+        | Ok(ref stratum) => at.bound <= above_two_allowance() && stratum.degree() == at.degree,
+        | Err(StratumDefect::Allowance { .. } | StratumDefect::Degree { .. } | StratumDefect::Condition { .. }) => true,
+        | Err(StratumDefect::Budget { .. }) => false,
+    })]
+    pub fn level_three(
+        &mut self,
+        at: StratumAt,
+    ) -> Result<Arc<LevelThree>, StratumDefect>
+    {
+        if at.bound > above_two_allowance() {
+            return Err(StratumDefect::Allowance { bound: at.bound });
+        }
+        if let Some(held) = self.held_three.get(&at) {
+            return Ok(Arc::clone(held));
+        }
+        let (below, wreath) = self.wreath_three(at.bound)?;
+        let stratum = ascend(
+            &*self.store,
+            wreath,
+            WreathStratum::clone(&below),
+            (at, StratumLevel::Three),
+        )?;
+        let held = Arc::new(stratum);
+        let _first = self.held_three.insert(at, Arc::clone(&held));
+        Ok(held)
+    }
+
+    /// Level four at `at` over the wreath of the chains at `at`'s bound over
+    /// level three, built from level three at that wreath's top degree:
+    /// recalled from the store and replayed when it holds one, certified and
+    /// kept otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Strata::level_three`], one level up.
+    /// - fails: as [`Strata::level_three`], one level up; level three's
+    ///   refusals as [`Strata::level_three`] gives them.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one 4-cell is admitted at level four, and a bound
+    ///   past the allowance is refused by it.
+    /// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+    #[spec(ensures: |ref ret| match *ret {
+        | Ok(ref stratum) => at.bound <= above_two_allowance() && stratum.degree() == at.degree,
+        | Err(StratumDefect::Allowance { .. } | StratumDefect::Degree { .. } | StratumDefect::Condition { .. }) => true,
+        | Err(StratumDefect::Budget { .. }) => false,
+    })]
+    pub fn level_four(
+        &mut self,
+        at: StratumAt,
+    ) -> Result<Arc<LevelFour>, StratumDefect>
+    {
+        if at.bound > above_two_allowance() {
+            return Err(StratumDefect::Allowance { bound: at.bound });
+        }
+        if let Some(held) = self.held_four.get(&at) {
+            return Ok(Arc::clone(held));
+        }
+        let (catalogue, _two) = self.wreath_two(at.bound)?;
+        let (_level_two, three) = self.wreath_three(at.bound)?;
+        let below = self.level_three(StratumAt {
+            bound: at.bound,
+            degree: top(&three)?,
+        })?;
+        let wreath = if let Some(wreath) = self.wreaths_four.get(&at.bound) {
             Arc::clone(wreath)
         }
         else {
-            let level: &Catalogue = &catalogue;
-            let built = Arc::new(Wreath::build(level, level, at.bound));
-            let _first = self.wreaths.insert(at.bound, Arc::clone(&built));
+            let built = Arc::new(Wreath::build(&catalogue, below.wreath(), at.bound));
+            let _first = self.wreaths_four.insert(at.bound, Arc::clone(&built));
             built
         };
-        if let Maybe::Present(image) = self.store.recall(&chains, at, StratumLevel::Two) {
-            match WreathStratum::replay(Arc::clone(&wreath), below.clone(), &image) {
-                Ok(stratum) if stratum.degree() == at.degree => {
-                    return Ok(self.hold_two(at, stratum));
-                },
-                Ok(_) => self
-                    .store
-                    .refuse(&chains, at, StratumLevel::Two, Unreplayed::Degree),
-                Err(why) => self.store.refuse(&chains, at, StratumLevel::Two, why),
-            }
-        }
-        let stratum =
-            WreathStratum::certify(wreath, at.degree, below).map_err(|refused| match refused {
-                LevelUncertified::Degree { degree: refused } => {
-                    StratumDefect::Degree { degree: refused }
-                },
-                LevelUncertified::Direct { case } => StratumDefect::Condition {
-                    degree: Wreath::<Catalogue>::degree(case.source()),
-                },
-                LevelUncertified::Condition { failure } => StratumDefect::Condition {
-                    degree: Wreath::<Catalogue>::degree(&failure.object),
-                },
-            })?;
-        self.store
-            .keep(&chains, at, StratumLevel::Two, &stratum.image());
-        Ok(self.hold_two(at, stratum))
+        let stratum = ascend(
+            &*self.store,
+            wreath,
+            LevelThree::clone(&below),
+            (at, StratumLevel::Four),
+        )?;
+        let held = Arc::new(stratum);
+        let _first = self.held_four.insert(at, Arc::clone(&held));
+        Ok(held)
     }
 
     /// The catalogue of `family` at `bound`, built under `budget` on the first
@@ -554,19 +685,54 @@ impl Strata
         Ok(built)
     }
 
-    /// Hold level two `stratum` at `at` for the context's life, and answer it.
+    /// The chain catalogue at `bound` and the wreath of it over itself, each
+    /// built on the first call and held for the context's life.
     ///
     /// # Specification
     /// trivial.
-    fn hold_two(
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as [`Strata::catalogue`] refuses the chains.
+    fn wreath_two(
         &mut self,
-        at: StratumAt,
-        stratum: WreathStratum,
-    ) -> Arc<WreathStratum>
+        bound: ShapeSize,
+    ) -> Result<(Arc<Catalogue>, Arc<Wreath<Catalogue>>), StratumDefect>
     {
-        let held = Arc::new(stratum);
-        let _first = self.held_two.insert(at, Arc::clone(&held));
-        held
+        let catalogue = self.catalogue(&Family::Chains, bound, ShapeBudget::EVERY)?;
+        if let Some(wreath) = self.wreaths.get(&bound) {
+            return Ok((catalogue, Arc::clone(wreath)));
+        }
+        let level: &Catalogue = &catalogue;
+        let built = Arc::new(Wreath::build(level, level, bound));
+        let _first = self.wreaths.insert(bound, Arc::clone(&built));
+        Ok((catalogue, built))
+    }
+
+    /// Level two at the top degree of the chains' wreath at `bound`, and the
+    /// wreath of the chains over level two, the wreath built on the first call
+    /// and held for the context's life.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as [`Strata::level_two`] refuses level two.
+    fn wreath_three(
+        &mut self,
+        bound: ShapeSize,
+    ) -> Result<(Arc<WreathStratum>, Arc<ThreeWreath>), StratumDefect>
+    {
+        let (catalogue, two) = self.wreath_two(bound)?;
+        let below = self.level_two(StratumAt {
+            bound,
+            degree: top(&two)?,
+        })?;
+        if let Some(wreath) = self.wreaths_three.get(&bound) {
+            return Ok((below, Arc::clone(wreath)));
+        }
+        let built = Arc::new(Wreath::build(&catalogue, below.wreath(), bound));
+        let _first = self.wreaths_three.insert(bound, Arc::clone(&built));
+        Ok((below, built))
     }
 
     /// Hold `stratum` at `at` over `family`'s catalogue for the context's life,
@@ -592,4 +758,83 @@ impl Strata
         }
         held
     }
+}
+
+/// The top degree of `wreath`'s objects, the degree its level is read at as
+/// the level below the next.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`StratumDefect::Degree`] at degree zero for a wreath of no object.
+fn top<Inner>(wreath: &Wreath<Inner>) -> Result<Degree, StratumDefect>
+where
+    Inner: gandr_theory_sites::Level,
+{
+    wreath
+        .objects()
+        .iter()
+        .map(<Wreath<Inner> as gandr_theory_sites::Level>::degree)
+        .max()
+        .ok_or_else(|| StratumDefect::Degree {
+            degree: Degree::from(0_usize),
+        })
+}
+
+/// The level above `below` at `at` and `level` over `wreath`: the store's
+/// image replayed when it holds one that replays at `at`'s degree, and
+/// certified and handed the store to keep otherwise.
+///
+/// # Specification
+/// - requires: `wreath` is the wreath of the chains at `at`'s bound over
+///   `below`'s level, and `level` names the level above `below`'s.
+/// - ensures: a stratum at `at`'s degree. The store hears an image that does
+///   not replay, and keeps what is certified.
+/// - fails: [`StratumDefect::Degree`] for a degree zero or past every object;
+///   [`StratumDefect::Condition`] at the degree of the first object out of
+///   order or not the colimit of its cells.
+/// - panics: none.
+/// - executable: none — the store is untrusted and answers through a trait.
+///
+/// # Errors
+/// [`StratumDefect`] as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Strata::level_two`] and [`Strata::level_three`].
+/// - witness: `ua::tests::level_two_is_kept_recalled_and_refused_by_the_store_4123`
+/// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+fn ascend<Below>(
+    store: &dyn StratumStore,
+    wreath: Arc<Wreath<Below::Level>>,
+    below: Below,
+    (at, level): (StratumAt, StratumLevel),
+) -> Result<WreathStratum<Below>, StratumDefect>
+where
+    Below: Certificate,
+{
+    let chains = Family::Chains;
+    if let Maybe::Present(image) = store.recall(&chains, at, level) {
+        match WreathStratum::replay(Arc::clone(&wreath), below.clone(), &image) {
+            Ok(stratum) if stratum.degree() == at.degree => return Ok(stratum),
+            Ok(_) => store.refuse(&chains, at, level, Unreplayed::Degree),
+            Err(why) => store.refuse(&chains, at, level, why),
+        }
+    }
+    let stratum =
+        WreathStratum::certify(wreath, at.degree, below).map_err(|refused| match refused {
+            LevelUncertified::Degree { degree: refused } => {
+                StratumDefect::Degree { degree: refused }
+            },
+            LevelUncertified::Direct { case } => StratumDefect::Condition {
+                degree: <Wreath<Below::Level> as gandr_theory_sites::Level>::degree(case.source()),
+            },
+            LevelUncertified::Condition { failure } => StratumDefect::Condition {
+                degree: <Wreath<Below::Level> as gandr_theory_sites::Level>::degree(
+                    &failure.object,
+                ),
+            },
+        })?;
+    store.keep(&chains, at, level, &stratum.image());
+    Ok(stratum)
 }

@@ -465,28 +465,87 @@ fn a_level_two_shape_is_read_at_level_two()
 }
 
 #[test]
-fn a_pasting_past_level_two_is_no_shape()
+fn a_pasting_at_level_three_or_four_is_read_at_its_level_4431()
+{
+    let mut arena = CoreArena::new();
+    let at = integer(&mut arena, Point(0));
+    let empty = Tree::graft([]).expect("the point packs");
+    // One cell `height` levels deep: single children down to a leaf.
+    let stalk = |height: usize| {
+        (0 .. height).fold(empty, |below, _level| {
+            Tree::graft([below]).expect("a stalk packs")
+        })
+    };
+    let at_level = |level: usize, tree: Tree, Head(degree, bound): Head| Composite {
+        stratum: Stratum {
+            degree: Degree::from(degree),
+            bound: ShapeSize::from(bound),
+        },
+        pasting: Pasting::new(Level::try_from(level).expect("a byte holds it"), tree)
+            .expect("the tree stands at its level"),
+    };
+    let whisker = Tree::graft([stalk(2), empty]).expect("the whisker packs");
+    let mut strata = Strata::default();
+    let admitted = |strata: &mut Strata, composite| {
+        admit(strata, at, composite).map(|shape| usize::from(shape.vertex_count()))
+    };
+    assert_eq!(
+        admitted(&mut strata, at_level(3, whisker, Head(5, 11))),
+        Ok(2),
+        "a 3-cell whiskered by a 1-cell is an object of level three's wreath"
+    );
+    assert_eq!(
+        admitted(
+            &mut strata,
+            at_level(4, Tree::graft([stalk(3)]).expect("packs"), Head(4, 12))
+        ),
+        Ok(1),
+        "one 4-cell is an object of level four's wreath"
+    );
+    let past_degree = at_level(3, whisker, Head(4, 11));
+    assert!(
+        matches!(
+            admit(&mut strata, at, past_degree),
+            Err(CheckRefusal::ComposeNotAShape { pasting, .. }) if pasting == past_degree.pasting
+        ),
+        "the whisker is refused below its degree five"
+    );
+    let side_by_side = Tree::graft([stalk(2), stalk(2)]).expect("two stalks pack");
+    assert_eq!(
+        admit(&mut strata, at, at_level(3, side_by_side, Head(7, 17))),
+        Err(CheckRefusal::ComposeUncertified {
+            at,
+            stratum: StratumDefect::Allowance {
+                bound: ShapeSize::from(17_usize)
+            },
+        }),
+        "two 3-cells side by side need total size 17, past the allowance"
+    );
+}
+
+#[test]
+fn a_pasting_past_level_four_is_no_shape()
 {
     let mut arena = CoreArena::new();
     let at = integer(&mut arena, Point(0));
     let point = Tree::graft([]).expect("the point packs");
-    let edge = Tree::graft([point]).expect("one leaf packs");
-    let stalk = Tree::graft([edge]).expect("a stalk packs");
-    let tree = Tree::graft([stalk, stalk]).expect("two stalks pack");
-    let three = Level::try_from(3_usize).expect("a byte holds three");
+    let cell = (0_usize .. 5_usize).fold(point, |below, _level| {
+        Tree::graft([below]).expect("a stalk packs")
+    });
     let composite = Composite {
         stratum: Stratum {
-            degree: Degree::from(7_usize),
-            bound: ShapeSize::from(17_usize),
+            degree: Degree::from(5_usize),
+            bound: ShapeSize::from(13_usize),
         },
-        pasting: Pasting::new(three, tree).expect("two 3-cells stand at level three"),
+        pasting: Pasting::new(Level::try_from(5_usize).expect("a byte holds five"), cell)
+            .expect("one 5-cell stands at level five"),
     };
     assert!(
         matches!(
             admit(&mut Strata::default(), at, composite),
             Err(CheckRefusal::ComposeNotAShape { at: site, pasting }) if site == at && pasting == composite.pasting
         ),
-        "two 3-cells side by side are refused by name, before any stratum is read"
+        "one 5-cell is refused by name, before any stratum is read"
     );
 }
 

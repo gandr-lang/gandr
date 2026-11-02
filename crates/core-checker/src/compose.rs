@@ -40,8 +40,17 @@
 //! the whiskers the filler generator lifts by, so the whisker `[2](1, 0)` is
 //! the right whisker.
 //!
-//! A pasting past level two is no shape: no stratum past level two is
-//! certified, so [`admit`] refuses the tree by name.
+//! # Levels three and four
+//!
+//! A pasting tree at level three or four, such as `[2]([1]([1]), [1]([1]))`
+//! for two 3-cells side by side, is read as an object of the wreath of the
+//! chains over the level below. [`admit`] reads it through
+//! [`Strata::level_three`] and [`Strata::level_four`], within degree `n`. Each
+//! level is certified over the one below at its top degree, and only to the
+//! bound [`crate::ua::above_two_allowance`]. A pasting past level four is no
+//! shape, and [`admit`] refuses it by name. No surface form writes a pasting
+//! past level two yet. The `cells` node (#4235) reaches these levels, and no
+//! fold realises their composite yet.
 //!
 //! A refusal names its defect: [`CheckRefusal::ComposeUncertified`] for the
 //! stratum, [`CheckRefusal::ComposeNotAShape`] for the pasting and
@@ -98,6 +107,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::compose::Column;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::compose::Form;
+use gandr_core_term::compose::Pasting;
 use gandr_core_term::compose::Seam;
 use gandr_core_term::compose::Tree;
 use gandr_theory_sites::Boundary;
@@ -133,23 +143,23 @@ pub enum Endpoint
     Unknown,
 }
 
-/// The shape `composite` names, read at its certified stratum: a chain, or a
-/// level-two shape's outer chain of columns, one vertex per child of the
+/// The shape `composite` names, read at its certified stratum: a chain, or the
+/// outer chain of a tree at level two to four, one vertex per child of the
 /// tree's root.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the chain of the pasting's cell count, or of a level-two shape's
-///   column count. Past one cell, the chain lies in
+/// - ensures: the chain of the pasting's cell count, or of the root's children
+///   past level one. Past one cell, the chain lies in
 ///   [`gandr_theory_sites::Catalogue::chains`] at the bound, and the stratum at
-///   the degree certifies and reaches the chain's degree. A level-two shape of
-///   degree two or more is an object of the wreath of the chains at the bound,
-///   level two certifies at the degree, and the object's degree reaches no
-///   further.
+///   the degree certifies and reaches the chain's degree. A tree of degree two
+///   or more at level two to four is an object of the wreath of the chains at
+///   the bound over the level below, its level certifies at the degree, and the
+///   object's degree reaches no further.
 /// - fails: [`CheckRefusal::ComposeNotAShape`] for the chain of no cell or of
-///   more than a shape holds, a chain past the bound or the degree, a level-two
-///   shape no object of the wreath or past the degree, or a pasting past level
-///   two; [`CheckRefusal::ComposeUncertified`] for a stratum the source
+///   more than a shape holds, a chain past the bound or the degree, a tree no
+///   object of its level's wreath or past the degree, or a pasting past level
+///   four; [`CheckRefusal::ComposeUncertified`] for a stratum the source
 ///   refuses.
 /// - panics: none.
 ///
@@ -162,11 +172,14 @@ pub enum Endpoint
 ///   chain of no cell and a bound past the chain budget are each refused by
 ///   name. One cell at an uncertified stratum is admitted. The whisker at
 ///   degree 4 over bound 9 is admitted, and refused past its degree and past
-///   its bound. Two 3-cells side by side at level three are refused by name.
+///   its bound. A 3-cell whiskered by a 1-cell is admitted at level three, and
+///   one 4-cell at level four. Two 3-cells side by side are refused past the
+///   allowance, and a pasting at level five is refused by name.
 /// - witness: `compose::tests::a_composite_refuses_each_defect_by_name`
 /// - witness: `compose::tests::one_cell_reads_no_stratum`
 /// - witness: `compose::tests::a_level_two_shape_is_read_at_level_two`
-/// - witness: `compose::tests::a_pasting_past_level_two_is_no_shape`
+/// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+/// - witness: `compose::tests::a_pasting_past_level_four_is_no_shape`
 #[spec(ensures: |ref ret| match *ret {
     | Ok(ref shape) => usize::from(shape.vertex_count()) == composite.pasting.tree().children().count(),
     | Err(CheckRefusal::ComposeNotAShape { at: site, pasting }) => site == at && pasting == composite.pasting,
@@ -207,20 +220,10 @@ pub fn admit(
             return Ok(shape);
         },
         Form::Columns(tree) => tree,
-        Form::Tree { .. } => return Err(not_a_shape),
+        Form::Tree { .. } => return admit_above(strata, at, composite.pasting, written),
     };
-    let mut columns = Vec::new();
-    for height in tree.columns() {
-        let column = if usize::from(height) == 0 {
-            Shape::default()
-        }
-        else {
-            Shape::chain(usize::from(height).into()).map_err(|_refused| not_a_shape)?
-        };
-        columns.push(column);
-    }
-    let outer = Shape::chain(columns.len().into()).map_err(|_refused| not_a_shape)?;
-    let object = WreathShape::new(outer.clone(), columns).map_err(|_refused| not_a_shape)?;
+    let outer = Shape::chain(tree.children().count().into()).map_err(|_refused| not_a_shape)?;
+    let object = level_two_object(tree).map_err(|()| not_a_shape)?;
     let degree = <Wreath<Catalogue> as Level>::degree(&object);
     if degree < Degree::from(2_usize) {
         return Ok(outer);
@@ -232,6 +235,136 @@ pub fn admit(
         return Err(not_a_shape);
     }
     Ok(outer)
+}
+
+/// The shape a pasting at level three or four names, read at its certified
+/// stratum: the outer chain of the tree's root.
+///
+/// # Specification
+/// - requires: `level` is past two.
+/// - ensures: the chain of the root's children. A shape of degree two or more
+///   is an object of the wreath of the chains at the bound over the level
+///   below, the level certifies at the degree, and the object's degree reaches
+///   no further.
+/// - fails: [`CheckRefusal::ComposeNotAShape`] for a level past four, a root of
+///   no child, a shape no object of the wreath or past the degree;
+///   [`CheckRefusal::ComposeUncertified`] for a stratum the source refuses.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`admit`].
+/// - witness: `compose::tests::a_pasting_at_level_three_or_four_is_read_at_its_level_4431`
+#[spec(ensures: |ref ret| match *ret {
+    | Ok(ref shape) => usize::from(shape.vertex_count()) == pasting.tree().children().count(),
+    | Err(CheckRefusal::ComposeNotAShape { at: site, pasting: refused }) => site == at && refused == pasting,
+    | Err(CheckRefusal::ComposeUncertified { at: site, .. }) => site == at,
+    | Err(_) => false,
+})]
+fn admit_above(
+    strata: &mut Strata,
+    at: ValueId,
+    pasting: Pasting,
+    written: StratumAt,
+) -> Result<Shape, CheckRefusal>
+{
+    let not_a_shape = CheckRefusal::ComposeNotAShape { at, pasting };
+    let uncertified = |stratum| CheckRefusal::ComposeUncertified { at, stratum };
+    let tree = pasting.tree();
+    let outer = Shape::chain(tree.children().count().into()).map_err(|_refused| not_a_shape)?;
+    let found = match usize::from(pasting.level()) {
+        3 => {
+            let object = level_three_object(tree).map_err(|()| not_a_shape)?;
+            let degree = <Wreath<Wreath<Catalogue>> as Level>::degree(&object);
+            if degree < Degree::from(2_usize) {
+                return Ok(outer);
+            }
+            let stratum = strata.level_three(written).map_err(uncertified)?;
+            matches!(stratum.wreath().find(&object), Maybe::Present(_))
+                && degree <= stratum.degree()
+        },
+        4 => {
+            let object = level_four_object(tree).map_err(|()| not_a_shape)?;
+            let degree = <Wreath<Wreath<Wreath<Catalogue>>> as Level>::degree(&object);
+            if degree < Degree::from(2_usize) {
+                return Ok(outer);
+            }
+            let stratum = strata.level_four(written).map_err(uncertified)?;
+            matches!(stratum.wreath().find(&object), Maybe::Present(_))
+                && degree <= stratum.degree()
+        },
+        _ => false,
+    };
+    if found { Ok(outer) } else { Err(not_a_shape) }
+}
+
+/// The chain of `cells` vertices, or the empty shape at none: a column at
+/// level one.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A chain past what a shape holds.
+fn level_one_object(tree: Tree) -> Result<Shape, ()>
+{
+    match tree.children().count() {
+        0 => Ok(Shape::default()),
+        cells => Shape::chain(cells.into()).map_err(|_refused| ()),
+    }
+}
+
+/// The level-two object `tree` names: the chain of its root's children, each
+/// carrying its own children's chain as its column.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A chain past what a shape holds.
+fn level_two_object(tree: Tree) -> Result<WreathShape<Shape>, ()>
+{
+    let columns = tree
+        .children()
+        .map(level_one_object)
+        .collect::<Result<Vec<_>, ()>>()?;
+    WreathShape::new(level_one_object(tree)?, columns).map_err(|_refused| ())
+}
+
+/// The level-three object `tree` names: the chain of its root's children,
+/// each carrying its own level-two object as its column.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A chain past what a shape holds.
+fn level_three_object(tree: Tree) -> Result<WreathShape<WreathShape<Shape>>, ()>
+{
+    let columns = tree
+        .children()
+        .map(level_two_object)
+        .collect::<Result<Vec<_>, ()>>()?;
+    WreathShape::new(level_one_object(tree)?, columns).map_err(|_refused| ())
+}
+
+/// The level-four object `tree` names: the chain of its root's children,
+/// each carrying its own level-three object as its column.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A chain past what a shape holds.
+fn level_four_object(tree: Tree) -> Result<WreathShape<WreathShape<WreathShape<Shape>>>, ()>
+{
+    let columns = tree
+        .children()
+        .map(level_three_object)
+        .collect::<Result<Vec<_>, ()>>()?;
+    WreathShape::new(level_one_object(tree)?, columns).map_err(|_refused| ())
 }
 
 /// The chain shapes a composite's catalogue may hold before its stratum is

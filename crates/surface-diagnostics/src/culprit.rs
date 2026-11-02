@@ -400,7 +400,8 @@ fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::ComposeNotAShape { pasting, .. } => match pasting.form() {
             Form::Chain(_) => "a chain past its stratum",
             Form::Columns(_) => "a level-two shape past its stratum",
-            Form::Tree { .. } => "a pasting past level two",
+            Form::Tree { level, .. } if usize::from(level) <= 4 => "a pasting past its stratum",
+            Form::Tree { .. } => "a pasting past level four",
         },
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,

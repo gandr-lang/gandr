@@ -255,10 +255,13 @@ INSERT INTO purpose VALUES('core-checker','ua::Universal','struct','An equivalen
 INSERT INTO purpose VALUES('core-checker','ua::Way','enum','Which way a translator record reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::code','function','The code of a species at a corolla''s profile: one unit summand per element, in the stratum''s enumeration order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::derive','function','The certificate-universe path the equivalence the translators give is, at a certified stratum.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::LevelFour','type_alias','Level four over the chains, certified from level three, which a pasting at level four is read at.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::LevelThree','type_alias','Level three over the chains, certified from level two, which a pasting at level three is read at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::strata::NoStratumStore','struct','The stratum store that keeps nothing, for a context that certifies its strata in process alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::strata::StratumAt','struct','Names a stratum by the bound of its catalogue and its degree.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','ua::strata::StratumLevel','enum','Which level of the site a stratum certifies, the shapes or their wreath over themselves, which a store''s key adds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::StratumLevel','enum','Which level of the site a stratum certifies, the shapes or a wreath over the level below, which a store''s key adds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::strata::StratumStore','trait','Answers a context''s strata from a store a driver implements and keeps each one the context certifies; a recalled stratum is replayed before it is read.','oracle','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','ua::strata::above_two_allowance','function','The largest bound levels three and four are certified at, past which a pasting there is refused by name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ua::tabulate','function','The canonical translator of a table: a thunk of a lambda casing on its argument and returning, at the i-th summand, the injection of the unit at the i-th image.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','view::FragmentRefusal','enum','Why a type node has no view.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::Bound','enum','Whether a stated entry lies within the host''s.',NULL,'fits','sound',NULL);
