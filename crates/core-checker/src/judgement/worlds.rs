@@ -41,6 +41,7 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::session::Capture;
+use crate::solution::Migrating;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
 use crate::worlds::Crossed;
@@ -884,6 +885,24 @@ impl Machine<'_, '_>
         Ok(Unfolded::Whole)
     }
 
+    /// Whether a migration's body is being judged: a frame waits for one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn migrating(&self) -> Migrating
+    {
+        if self
+            .frames
+            .iter()
+            .any(|waiting| matches!(waiting.frame, Frame::MigrateBody { .. }))
+        {
+            Migrating::Judged
+        }
+        else {
+            Migrating::Not
+        }
+    }
+
     /// Begin the image of the thunk literal `thunk`, its body's frame just
     /// pushed, when a migration's body is being judged.
     ///
@@ -905,11 +924,7 @@ impl Machine<'_, '_>
         thunk: ValueId,
     )
     {
-        let migrating = self
-            .frames
-            .iter()
-            .any(|waiting| matches!(waiting.frame, Frame::MigrateBody { .. }));
-        if !migrating {
+        if self.migrating() == Migrating::Not {
             return;
         }
         self.images.forming.push(Forming {

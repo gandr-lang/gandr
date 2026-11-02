@@ -3077,6 +3077,90 @@ fn a_refined_arm_types_its_written_terms_in_their_own_context_3483()
     );
 }
 
+/// The integer literal `3`.
+///
+/// # Specification
+/// trivial.
+fn three(arena: &mut CoreArena) -> ValueId
+{
+    let magnitude = gandr_kernel_term::Magnitude::from_decimal_text("3".into())
+        .expect("the digits are decimal");
+    arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(gandr_kernel_term::Sign::NonNegative, magnitude),
+    ))
+}
+
+/// `def name : U (F Path(Integer, 3, 3)) = thunk { bind(return bound, return
+/// here(x)) }`, the reflexivity reading the bind's binder.
+///
+/// # Specification
+/// trivial.
+fn reflexivity_under_a_bind(
+    arena: &mut CoreArena,
+    name: ConstantIndex,
+    bound: ValueId,
+) -> Declaration
+{
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let (left, right) = (three(arena), three(arena));
+    let path = arena.value_type_path(integer, left, right);
+    let answer = arena.comp_type_returner(path);
+    let declared = arena.value_type_thunk(answer);
+    let returned = arena.computation_return(bound);
+    let binder = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let reflexivity = arena.value_here(binder);
+    let body = arena.computation_return(reflexivity);
+    let bind = arena.computation_bind(returned, body);
+    let body = arena.value_thunk(bind);
+    definition(name, declared, body)
+}
+
+#[test]
+fn a_returned_value_defines_the_binder_it_binds()
+{
+    let mut arena = CoreArena::new();
+    // `let x = 3; return here(x)` at `Path(Integer, 3, 3)`: the type reads the
+    // binder, which stands for the value it binds.
+    let value = three(&mut arena);
+    let declaration = reflexivity_under_a_bind(&mut arena, ConstantIndex::from(0_usize), value);
+    let (report, crossed) = run(&mut arena, &[declaration]);
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { .. }),
+        "the binder reads as its value: {:?}",
+        report.judged()[0].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[0].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the refined body: {:?}",
+        crossed.readmitted()[0].outcome()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+}
+
+#[test]
+fn a_returned_call_binds_as_written()
+{
+    let mut arena = CoreArena::new();
+    // `run x <- return ((return 3 as a nested value) : Integer); return
+    // here(x)`: a value holding a computation runs it once, so its binder
+    // stays opaque.
+    let value = three(&mut arena);
+    let nested = arena.computation_return(value);
+    let nested = arena.value_nested(nested);
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let nested = arena.value_ascribe(nested, integer);
+    let declaration = reflexivity_under_a_bind(&mut arena, ConstantIndex::from(0_usize), nested);
+    let (report, _) = run(&mut arena, &[declaration]);
+    assert!(
+        matches!(
+            report.judged()[0].verdict(),
+            Verdict::Refused(CheckRefusal::EndpointMismatch { .. })
+        ),
+        "an opaque binder meets no endpoint: {:?}",
+        report.judged()[0].verdict()
+    );
+}
+
 #[test]
 fn a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631()
 {
