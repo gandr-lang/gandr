@@ -1308,7 +1308,8 @@ fn uncertified(
         ),
         StratumDefect::Allowance { bound } => write!(
             f,
-            "{former} reads chains of size up to 64, the most vertices a shape holds, not {}",
+            "{former} reads chains of size up to 64, the most vertices a shape holds, and a pasting past level two of total size up to {}, not {}",
+            usize::from(gandr_core_checker::ua::above_two_allowance()),
             usize::from(bound)
         ),
         StratumDefect::Budget { bound, counted } => write!(
@@ -1486,9 +1487,14 @@ impl fmt::Display for Checked
                     }
                     f.write_str(") must be an object of the wreath of the chains within the stratum's bound, and its degree within the stratum's")
                 },
+                | Form::Tree { level, .. } if usize::from(level) <= 4 => write!(
+                    f,
+                    "the pasting at level {} must be an object of the level's wreath of the chains within the stratum's bound, and its degree within the stratum's",
+                    usize::from(level)
+                ),
                 | Form::Tree { level, .. } => write!(
                     f,
-                    "a pasting at level {} reads no stratum: only levels one and two are certified",
+                    "a pasting at level {} reads no stratum: only levels one to four are certified",
                     usize::from(level)
                 ),
             },

@@ -1040,9 +1040,11 @@ fn checked(
                 "`compose` needs a level-two shape the wreath holds within the degree and the \
                  bound of its stratum"
             },
-            Form::Tree { .. } => {
-                "`compose` reads a pasting at level one or two, and no stratum past them"
+            Form::Tree { level, .. } if usize::from(level) <= 4 => {
+                "`compose` needs a pasting its level's wreath holds within the degree and the \
+                 bound of its stratum"
             },
+            Form::Tree { .. } => "`compose` needs a pasting at level four or below",
         }),
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,

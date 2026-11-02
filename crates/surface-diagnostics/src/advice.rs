@@ -503,10 +503,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
                 "write a stratum whose bound holds the level-two shape and whose degree reaches \
                  its degree"
             },
-            Form::Tree { .. } => {
-                "write the pasting as a chain or a level-two shape: no stratum past level two is \
-                 certified"
+            Form::Tree { level, .. } if usize::from(level) <= 4 => {
+                "write a stratum whose bound holds the pasting and whose degree reaches its degree"
             },
+            Form::Tree { .. } => "write the pasting at level four or below",
         }),
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,

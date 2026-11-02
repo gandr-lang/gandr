@@ -10598,10 +10598,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   start to the last end, and the composite elaborates as the chain
     ///   written with `then` does.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at a cell whose type is no
-    ///   path; the refusals of [`crate::compose::admit`], a pasting past level
-    ///   two among them, and of [`crate::compose::fill`] at level one or
+    ///   path; the refusals of [`crate::compose::admit`], and of
+    ///   [`crate::compose::fill`] at level one or
     ///   [`crate::compose::fill_columns`] at level two; a machine invariant for
-    ///   a node that is no composite or types of another count than its cells.
+    ///   a node that is no composite, types of another count than its cells, or
+    ///   a composite past level two, which the lowering never mints.
     /// - panics: none.
     ///
     /// # Errors
@@ -10652,8 +10653,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 PathReading::Unknown(_) => crate::compose::CellReading::Unknown,
             });
         }
-        // `admit` refuses a pasting past level two, so one not at level one
-        // stands at level two.
+        // The lowering mints no composite past level two, so one not at level
+        // one stands at level two.
+        if composite.pasting.level() > gandr_core_term::compose::Level::TWO {
+            return Err(CheckRefusal::MachineInvariant);
+        }
         if composite.pasting.level() == gandr_core_term::compose::Level::ONE {
             let diagram: Vec<_> = readings
                 .iter()

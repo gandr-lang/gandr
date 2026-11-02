@@ -225,7 +225,9 @@
 //!   ([`crate::compose`]). The store keeps no level-one chain stratum, since a
 //!   chain catalogue holds one shape per length and certifies at once. It keeps
 //!   level two over the chains ([`StratumLevel`]), which certifies in 30 ms at
-//!   total size 13 and degree 11 and replays in 0.43 ms.
+//!   total size 13 and degree 11 and replays in 0.43 ms. It keeps levels three
+//!   and four too, each certified over the level below at that level's top
+//!   degree, and refused past the allowance [`above_two_allowance`].
 //!
 //! # References
 //!
@@ -281,11 +283,14 @@ mod strata;
 #[cfg(test)]
 mod tests;
 
+pub use strata::LevelFour;
+pub use strata::LevelThree;
 pub use strata::NoStratumStore;
 pub(crate) use strata::Strata;
 pub use strata::StratumAt;
 pub use strata::StratumLevel;
 pub use strata::StratumStore;
+pub use strata::above_two_allowance;
 pub use strata::recalled;
 
 /// The two translators an equivalence gives at one corolla.
