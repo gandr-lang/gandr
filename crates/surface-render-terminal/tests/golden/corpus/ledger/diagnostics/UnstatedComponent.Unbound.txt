@@ -1,7 +1,15 @@
 error[UnstatedComponent.Unbound]: the model signature cannot state `loose`, which names a variable its statement does not bind once
-   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unbound.gandr:12:19
+  ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unbound.gandr:9:3
+  │
+9 │   law loose : (a : Carrier) => Path(Bool, alike(a, b), true);
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the signature this model derives
+  │
+  ╰ note: `Loose` is refused with UnstatedComponent.Unbound, as its expectation states
+
+error[UnstatedComponent.Unbound]: the model signature cannot state `loose`, which names a variable its statement does not bind once
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unbound.gandr:13:19
    │
-12 │ def model : Model(Loose) ;
+13 │ def model : Model(Loose) ;
    │                   ━━━━━ the signature this model derives
    │
    ╰ note: `model` is refused with UnstatedComponent.Unbound, as its expectation states

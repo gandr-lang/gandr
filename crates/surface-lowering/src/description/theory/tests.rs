@@ -2636,6 +2636,44 @@ fn a_law_member_reads_its_statement_2356()
     ]);
 }
 
+/// #4115: a stated law naming a variable it does not bind, or a head the
+/// theory does not declare, is refused at the law by its theory; a law over
+/// an included theory's laws is read once, at the theory that writes it.
+#[test]
+fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
+{
+    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path(Bool, eq(a, a), yes);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path(Bool, eq(a, b), eq(b, a));\n  law odd : (a : C) => Path(Bool, qe(a, a), true);\n}\n";
+    let report = described(source);
+    let faults = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(faults, [
+        (
+            DescriptionFault::Unstated {
+                name: Name::from("refl"),
+                fault: crate::model::ModelFault::Unbound,
+            },
+            "law refl : (a : C) => Path(Bool, eq(a, a), yes)"
+        ),
+        (
+            DescriptionFault::Unstated {
+                name: Name::from("odd"),
+                fault: crate::model::ModelFault::UnknownHead,
+            },
+            "law odd : (a : C) => Path(Bool, qe(a, a), true)"
+        ),
+    ]);
+}
+
 /// #1225: a second theory including a pair another already joins leaves the
 /// pair two incomparable joins, refused at the second naming the pair and
 /// both; a block above both joins, and a diamond over one base, are not.

@@ -57,6 +57,11 @@ sites = [
   { file = "crates/surface-lowering/src/lower/identity.rs", pattern = 'FragmentBoundary::Unadmitted\(Unbuilt::ComposePasting\)' },
 ]
 
+[refusal.Unstated]
+sites = [
+  { file = "crates/surface-lowering/src/description/theory.rs", pattern = '^\s*fault: DescriptionFault::Unstated \{$' },
+]
+
 [refusal.StrayReceiverMode]
 sites = [
   { file = "crates/surface-lowering/src/lower/method.rs", pattern = '(return )?Err\(LoweringRefusal::StrayReceiverMode \{' },
