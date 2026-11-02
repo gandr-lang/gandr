@@ -2307,6 +2307,81 @@
     "output": "held: #74 workflow: a claim no branch works"
   },
   {
+    "name": "#4470: the references-editor lane holds the claim its marker names, though the claim is in the surface area",
+    "input": {
+      "areas": ["area:editor", "area:lsp", "area:surface"],
+      "order": {},
+      "lane": "references-editor",
+      "lanes": ["surface", "toolchain", "references-editor"],
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 90,
+          "title": "surface: the references-editor seat's claim",
+          "labels": ["kind:refactor", "area:surface", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n\n<!-- claim: lane=references-editor -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "held: #90 surface: the references-editor seat's claim"
+  },
+  {
+    "name": "#4470: the surface lane claims beside a claim in its area the references-editor lane's marker names",
+    "input": {
+      "areas": ["area:surface", "area:ux"],
+      "order": {},
+      "lane": "surface",
+      "lanes": ["surface", "toolchain", "references-editor"],
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 90,
+          "title": "surface: the references-editor seat's claim",
+          "labels": ["kind:refactor", "area:surface", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n\n<!-- claim: lane=references-editor -->\n",
+          "blocked": null
+        },
+        {
+          "number": 91,
+          "title": "surface: an unowned defect",
+          "labels": ["kind:defect", "area:surface"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #91 — mise run debug:test <package> <test>\nsections due: #91 — `## Sources` is missing\nsections due: #91 — `## Readings` is missing\nsections due: #91 — `## Concerns` is missing\nsections due: #91 — `## Ledger` is missing\nsections due: #91 — `## Not in this slice` is missing\nsections due: #91 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n91\tdefect\tsurface: an unowned defect"
+  },
+  {
+    "name": "#4470: a toolchain branch places an unmarked claim in the toolchain lane, before the surface area it is in",
+    "input": {
+      "areas": ["area:distribution", "area:surface"],
+      "order": {},
+      "lane": "toolchain",
+      "lanes": ["surface", "toolchain", "references-editor"],
+      "now": 1760000000,
+      "prs": [],
+      "branches": [{ "head": "toolchain-92-composite-start", "at": 1759990000 }],
+      "issues": [
+        {
+          "number": 92,
+          "title": "surface: the toolchain seat's claim",
+          "labels": ["kind:defect", "area:surface", "status:claimed"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "held: #92 surface: the toolchain seat's claim"
+  },
+  {
     "name": "#4063: a focus passes over the units of a deferred sub-epic, and offers the focus epic's own",
     "input": {
       "areas": ["area:workflow", "area:ci"],
