@@ -146,8 +146,6 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 "cylinderFill2".to_owned(),
                 "cylinderFillAt2".to_owned(),
                 "cylinderFillOver2".to_owned(),
-                "liftRight".to_owned(),
-                "liftLeft".to_owned(),
                 "liftHorizontal".to_owned(),
                 "cylinderFill3".to_owned(),
                 "cylinderCompositeCells2".to_owned(),
