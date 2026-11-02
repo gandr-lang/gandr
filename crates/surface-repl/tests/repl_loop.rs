@@ -807,7 +807,7 @@ fn a_dependent_function_names_its_type_with_its_binder()
         lines(&mut repl, "def id(a : Type, x : a) -> -F a { return x }"),
         [
             (OutKind::Type, "id : (a : Type, a) => a".to_owned()),
-            (OutKind::Value, "fn (a) { fn (b) { b } }".to_owned())
+            (OutKind::Value, "fun (a) { fun (b) { b } }".to_owned())
         ]
     );
 }

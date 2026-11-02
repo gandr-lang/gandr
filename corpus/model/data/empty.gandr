@@ -42,11 +42,11 @@ def applied(f : Empty => Integer, v : Empty) -> Integer { f(v) }
 
 /// A lambda passed as an argument: the callee's parameter types its binder
 /// as a signature types a definition's (#1948).
-def viaArgument(v : Empty) -> Integer { applied(fn (x) { match x {} }, v) }
+def viaArgument(v : Empty) -> Integer { applied(fun (x) { match x {} }, v) }
 
 /// The answer written on a passed lambda binder's match (#1948).
 def viaArgumentStated(v : Empty) -> Integer {
-  applied(fn (x) { match x -> -F Integer {} }, v)
+  applied(fun (x) { match x -> -F Integer {} }, v)
 }
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.

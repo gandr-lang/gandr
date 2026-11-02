@@ -686,7 +686,7 @@ pub enum Former<'source, Node>
     /// spells a spine of them as one call, `f(a, b)`, a forced value at its
     /// head as the value itself.
     Application(Node, Node),
-    /// A lambda over its body, which stands under one binder: `fn (x) { c }`.
+    /// A lambda over its body, which stands under one binder: `fun (x) { c }`.
     Lambda(Node),
     /// A computation written where a value is read, which the checker runs
     /// or suspends as the type there decides: the computation itself, `f(a)`,

@@ -61,7 +61,7 @@ def fieldAt(
 /// family drops its argument, so the field prints as `Unit => Unit` (#736).
 @[ checks ]
 def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
-def familyRecord = #{Unit, #{thunk { fn (g) { return Unit } }, thunk { fn (g) { return unit } }}};
+def familyRecord = #{Unit, #{thunk { fun (g) { return Unit } }, thunk { fun (g) { return unit } }}};
 
 /// A family applied through a definition: `appliedVia(post, x)` unfolds to
 /// `post(x)`.

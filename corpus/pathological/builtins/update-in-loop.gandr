@@ -7,4 +7,4 @@ def steps = ([1, 2, 3, 4] : List(Integer));
 /// Each element pushed in a fold, through the `list` namespace's projection
 /// (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
-def pushed = list.reduce(thunk { fn (acc, n) { return list.push(acc, n) } }, [], steps);
+def pushed = list.reduce(thunk { fun (acc, n) { return list.push(acc, n) } }, [], steps);

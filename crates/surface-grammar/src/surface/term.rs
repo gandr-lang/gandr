@@ -14,7 +14,7 @@
 //! applies as `raw_rel_monad(T, A, B)`. Admitting the variable head added one
 //! mold and moved the fingerprint from `0x8feb_efc4_2bd0_36d1`.
 //!
-//! - Alternatives: a keyword lead such as `fn` at the type sort, which ties
+//! - Alternatives: a keyword lead such as `fun` at the type sort, which ties
 //!   with the term lambda wherever a definition's body stands, where a
 //!   type-only lead molds unopposed; a binder list `\A B. T`, which saves a few
 //!   backslashes and adds a repetition the lowering would curry anyway.
@@ -4436,12 +4436,12 @@ fn primary_expressions(
         ));
     }
     out.push(block_rule);
-    // The value lambda `fn (params) { … }` and the type abstraction
-    // `fn [ tyvars ] { … }` share the `fn` prefix and diverge only at the tile
-    // after it — `(` versus `[`. Declaring them as two rules gives `fn` two molds
-    // that tie on the molder's local key and fire a lookahead window per `fn`;
+    // The value lambda `fun (params) { … }` and the type abstraction
+    // `fun [ tyvars ] { … }` share the `fun` prefix and diverge only at the tile
+    // after it — `(` versus `[`. Declaring them as two rules gives `fun` two molds
+    // that tie on the molder's local key and fire a lookahead window per `fun`;
     // they are factored into one form whose tail alternates on that discriminating
-    // tile (the `def` / `let` idiom), so `fn` owns one mold and the choice is
+    // tile (the `def` / `let` idiom), so `fun` owns one mold and the choice is
     // locally decidable. The folded kind is an adaptation for the parity inventory.
     let mut lambda = r(
         RuleName("lambda_expression"),
@@ -4449,10 +4449,10 @@ fn primary_expressions(
         s,
         p,
         seq([
-            t(TileLabel("fn")),
+            t(TileLabel("fun")),
             alt([
                 seq([params(), block()]),
-                // the matching lambda `fn { | p => e … }`, the clauses the
+                // the matching lambda `fun { | p => e … }`, the clauses the
                 // definition form writes after `where`.
                 clause_block(),
                 seq([
@@ -4467,7 +4467,7 @@ fn primary_expressions(
     lambda.adaptations.push(Adaptation::new(
         RuleName("lambda_expression"),
         SurfaceForm("type_abstraction"),
-        AdaptationReason("factored into the fn family: the type-abstraction tail `[ tyvars ] { … }` shares the `fn` prefix and discriminates on the leading `[` tile"),
+        AdaptationReason("factored into the fun family: the type-abstraction tail `[ tyvars ] { … }` shares the `fn` prefix and discriminates on the leading `[` tile"),
     ));
     out.push(lambda);
     out.push(r(

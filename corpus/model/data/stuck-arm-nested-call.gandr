@@ -32,10 +32,10 @@ def tailEmpty(h : Heap) -> Type {
 
 /// This proof reads `viaTail(Zero, h)` as the calls its arm reached.
 def nested(h : Heap) -> (viaTail(Zero, h)) => emp(tailOf(h)) {
-  return fn (e) { e }
+  return fun (e) { e }
 }
 
 /// This proof reads `tailEmpty(h)` as the calls its body makes.
 def bodyNested(h : Heap) -> (tailEmpty(h)) => emp(tailOf(h)) {
-  return fn (e) { e }
+  return fun (e) { e }
 }

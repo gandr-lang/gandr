@@ -14,7 +14,7 @@
 def ten() -> Integer { 1 + 2 + 3 + 4 }
 
 /// The abstraction, whose spine is the path to `y` and whose rib is `ten()`.
-def tagged : Integer => Integer * Integer = fn (y : Integer) { (y, ten()) };
+def tagged : Integer => Integer * Integer = fun (y : Integer) { (y, ten()) };
 
 /// The abstraction applied twice, with the rib's result in both pairs.
 @[ runs("((1, 10), (2, 10))") ]

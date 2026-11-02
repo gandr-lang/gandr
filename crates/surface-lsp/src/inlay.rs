@@ -425,7 +425,7 @@ mod tests
         );
         assert_eq!(
             hinted("surface/typed-bind.gandr", &whole),
-            ["def apply+1:35 : Nat"],
+            ["def apply+1:36 : Nat"],
             "the lambda's binder, and no annotated `run`"
         );
         assert_eq!(

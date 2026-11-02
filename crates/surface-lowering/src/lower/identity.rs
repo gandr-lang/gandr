@@ -88,7 +88,7 @@
 //! whose motive's path — `back`'s and `cong`'s path, `then`'s first — is read
 //! no such way, or whose function did not lower, is refused as unannotated,
 //! and `cong` at a constructor or a static abstraction `\q. e` as
-//! [`FragmentBoundary::NotAFunction`]. A lambda `fn (q) { e }` as `cong`'s
+//! [`FragmentBoundary::NotAFunction`]. A lambda `fun (q) { e }` as `cong`'s
 //! function takes the carrier its path's written type states, and the
 //! motive reads its body `e` where `⟨f y⟩` would stand. The
 //! operation then stands as the value its pure transport returns, so it is an
@@ -785,7 +785,7 @@ enum Synthesis
         /// The frame the map's use stands under in a type; none in a body.
         in_type: Option<Frame>,
     },
-    /// A lambda `fn (q) { e }` over the path's points, its binder typed by
+    /// A lambda `fun (q) { e }` over the path's points, its binder typed by
     /// the path's carrier: `cong` reads its codomain off the path type its
     /// body `e` synthesises under that binder.
     Lambda
@@ -2983,7 +2983,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `function` and `path` are the operands of the `cong` at
     ///   `site`, which stands under `frame`; neither is classified yet.
-    /// - ensures: a lambda `fn (q) { e }` is pointed at its path
+    /// - ensures: a lambda `fun (q) { e }` is pointed at its path
     ///   ([`Self::point`]), so its binder takes the carrier and it is minted as
     ///   its thunk; any other map is left as it is.
     /// - fails: [`FragmentBoundary::NotAFunction`] for a static abstraction, a
@@ -4323,8 +4323,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   writes. `back(p)` is `tr(y. Path(A, y, b), p, here(b))`, `p then q` is
     ///   `tr(y. Path(A, a, y), q, p)` and `cong(f, p)` is `tr(y. Path(A, a,
     ///   ⟨force f y⟩), p, here(a))`, or `tr(y. Path(A, a, ⟨e⟩), p, here(a))`
-    ///   for a lambda `fn (q) { e }` [`Self::cong_map`] recorded, its body read
-    ///   under the motive's binder; `back(f)` under a flow answer is the
+    ///   for a lambda `fun (q) { e }` [`Self::cong_map`] recorded, its body
+    ///   read under the motive's binder; `back(f)` under a flow answer is the
     ///   symmetry ride `ride(y. Flow(A, y, b), f, stay(b))`. The path type an
     ///   operation stands at is recorded against its transport when both its
     ///   endpoints are read. The operation carries the written origin, the lift

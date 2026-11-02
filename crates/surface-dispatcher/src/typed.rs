@@ -7188,7 +7188,7 @@ mod tests
     fn a_called_name_runs_and_a_binder_binds()
     {
         let written = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef id : \
-                       Nat => Nat ;\ndef id = thunk { fn (y) { pure y } } ;\ndef twice = thunk { fn \
+                       Nat => Nat ;\ndef id = thunk { fun (y) { pure y } } ;\ndef twice = thunk { fun \
                        (x) { run a <- id(x) ; id(a) } } ;\ndef same(n : Nat) -> -F Nat { n }\n";
         let table = table(SourceText::from(written));
         let names: Vec<String> = table
@@ -7269,7 +7269,7 @@ mod tests
     fn the_binders_in_a_window_answer_alone()
     {
         let source = SourceText::from(
-            "def id : Integer => Integer ;\ndef id = thunk { fn (y) { return y } } ;\ndef f(x: \
+            "def id : Integer => Integer ;\ndef id = thunk { fun (y) { return y } } ;\ndef f(x: \
              Integer) -> -F Integer { return x }\n",
         );
         let table = table(source);
@@ -8560,8 +8560,8 @@ mod tests
         let source = SourceText::from(
             "def raw : (Type -> Type[-]) -> Type -> Type -> Type ;\ndef raw = \\T. \\A. \\B. +U \
              (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;\n\ndef pairs : raw(\\X. -F (X \
-             * X), Integer, Integer) ;\ndef pairs = (\n  thunk { fn (a) { return (a, a) } },\n  \
-             thunk { fn (m) { fn (k) { run p <- force m ; become (force k)(1) } } }\n) ;\n",
+             * X), Integer, Integer) ;\ndef pairs = (\n  thunk { fun (a) { return (a, a) } },\n  \
+             thunk { fun (m) { fun (k) { run p <- force m ; become (force k)(1) } } }\n) ;\n",
         );
         let table = table(source);
         assert_eq!(
@@ -8658,10 +8658,10 @@ mod tests
         let source = format!(
             "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  match w {{\n    \
              #{{.x = u, .y = v, .p = q}} => here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
-             Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fn (w) {{ w }} }},\n    \
-             ((thunk {{ fn (w) {{ w }} }}, thunk {{ fn (w) {{ here(w) }} }}), (thunk {{ fn (w) \
-             {{ w }} }}, thunk {{ fn (w) {{ here(w) }} }}))\n  )\n}}\n\ndef selfMap(b : Type) -> \
-             -F ({record} => {record}) {{\n  thunk {{ fn (w) {{ w }} }}\n}}\n"
+             Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fun (w) {{ w }} }},\n    \
+             ((thunk {{ fun (w) {{ w }} }}, thunk {{ fun (w) {{ here(w) }} }}), (thunk {{ fun (w) \
+             {{ w }} }}, thunk {{ fun (w) {{ here(w) }} }}))\n  )\n}}\n\ndef selfMap(b : Type) -> \
+             -F ({record} => {record}) {{\n  thunk {{ fun (w) {{ w }} }}\n}}\n"
         );
         let source = SourceText::from(source.as_str());
         let spelled = spelled(source);
@@ -8716,9 +8716,9 @@ mod tests
     fn a_type_instantiated_at_a_function_literal_reads_back_675()
     {
         let source = SourceText::from(
-            "def typeSelf : Type ≃ Type ;\ndef typeSelf = #{thunk { fn (x) { return x } }, \
-             #{#{thunk { fn (x) { return x } }, thunk { fn (x) { here(x) } }}, #{thunk { fn (y) \
-             { return y } }, thunk { fn (y) { here(y) } }}}} ;\n",
+            "def typeSelf : Type ≃ Type ;\ndef typeSelf = #{thunk { fun (x) { return x } }, \
+             #{#{thunk { fun (x) { return x } }, thunk { fun (x) { here(x) } }}, #{thunk { fun (y) \
+             { return y } }, thunk { fun (y) { here(y) } }}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
@@ -8780,7 +8780,7 @@ mod tests
             "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
              ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
              w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
-             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
+             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fun (g) { \
              return T } }, #{ext, #{k, k}}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -8810,7 +8810,7 @@ mod tests
             "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
              ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
              w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
-             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
+             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fun (g) { \
              return T } }, #{ext, #{k, k}}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -8831,8 +8831,8 @@ mod tests
     }
 
     /// #3947: a function written as a call's argument stands in the type the
-    /// call's parameter instantiates, printed as a bare `fn`, and reads back
-    /// as the thunk the bare `fn` lowers to.
+    /// call's parameter instantiates, printed as a bare `fun`, and reads back
+    /// as the thunk the bare `fun` lowers to.
     #[test]
     fn a_function_argument_in_a_path_type_reads_back_3947()
     {
@@ -8840,9 +8840,9 @@ mod tests
             "def first(b : Type, w : #{x : b, y : b}) -> b {\n  match w {\n    #{.x = u, .y = v} \
              => u\n  }\n}\n\ndef pass(\n  b : Type,\n  s : #{x : b, y : b} => b,\n  e : Path(#{x \
              : b, y : b} => b, s, s)\n) -> Path(#{x : b, y : b} => b, s, s) {\n  e\n}\n\ndef \
-             user(b : Type, e : Path(#{x : b, y : b} => b, thunk { fn (w) { first(b, w) } }, \
-             thunk { fn (w) { first(b, w) } })) -> Path(#{x : b, y : b} => b, thunk { fn (w) { \
-             first(b, w) } }, thunk { fn (w) { first(b, w) } }) {\n  pass(b, fn (w) { first(b, \
+             user(b : Type, e : Path(#{x : b, y : b} => b, thunk { fun (w) { first(b, w) } }, \
+             thunk { fun (w) { first(b, w) } })) -> Path(#{x : b, y : b} => b, thunk { fun (w) { \
+             first(b, w) } }, thunk { fun (w) { first(b, w) } }) {\n  pass(b, fun (w) { first(b, \
              w) }, e)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -8855,7 +8855,7 @@ mod tests
             trips
                 .iter()
                 .any(|&(ref spelled, ref trip)| spelled.starts_with("Path(")
-                    && spelled.contains("fn (")
+                    && spelled.contains("fun (")
                     && *trip == RoundTrip::Equal),
             "the argument's path type prints its function bare and reads back: {trips:?}"
         );
@@ -9103,7 +9103,7 @@ mod tests
     {
         let source = SourceText::from(
             "def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), \
-             f, f) {\n  thunk { fn (f) { here(f) } }\n}\n\ndef filled(\n  A : Type,\n  x : A,\n  y \
+             f, f) {\n  thunk { fun (f) { here(f) } }\n}\n\ndef filled(\n  A : Type,\n  x : A,\n  y \
              : A,\n  fm : Path(A, x, y),\n  fp : Path(A, x, y),\n  fa : Path(Path(A, x, y), fm, \
              fp)\n) -> Path(Path(Path(Path(A, x, y), fm, fp), here(fm) then fa, fa then \
              here(fp)), fill[1, 3](chain(1), selfLoop(A, x, y), fa), fill[1, 3](chain(1), \
@@ -9131,7 +9131,7 @@ mod tests
     }
 
     /// #3801: a `cong` over an annotated thunk prints a type whose lambda
-    /// states its parameter's written type, `fn (b : Path(A, x, y)) { … }`
+    /// states its parameter's written type, `fun (b : Path(A, x, y)) { … }`
     /// (#3943). Read back under a parameter the type does not name, each
     /// `Path` in that binder and in the thunk's annotation reprinted one
     /// binder off, `Path(?, A, x)` for `Path(A, x, y)`; it reprints as printed.
@@ -9141,7 +9141,7 @@ mod tests
         let source = SourceText::from(
             "def whiskerRight(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, y),\n  \
              f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) -> \
-             Path(Path(A, x, z), f1 then g, f2 then g) {\n  cong((thunk { fn (q : Path(A, x, y)) \
+             Path(Path(A, x, z), f1 then g, f2 then g) {\n  cong((thunk { fun (q : Path(A, x, y)) \
              { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9174,7 +9174,7 @@ mod tests
 
     /// #3933: a delta code's rest has the type the checker computes by
     /// unfolding `args`, whose body writes a thunk where `f` reads its
-    /// argument. The printer spelled that thunk a bare `fn`, which reprinted
+    /// argument. The printer spelled that thunk a bare `fun`, which reprinted
     /// as `thunk { fn … }`; it reprints as printed.
     #[test]
     fn a_thunk_a_computed_type_writes_reprints_as_printed_3933()
@@ -9218,8 +9218,8 @@ mod tests
         let source = SourceText::from(
             "def whiskerStatedHere(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, \
              y),\n  f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) \
-             -> Path(\n  Path(Path(A, x, z), f1 then g, f2 then g),\n  cong(fn (q : Path(A, x, y)) \
-             { q then g }, a),\n  cong(fn (q : Path(A, x, y)) { q then g }, a)\n) {\n  here(cong(fn \
+             -> Path(\n  Path(Path(A, x, z), f1 then g, f2 then g),\n  cong(fun (q : Path(A, x, y)) \
+             { q then g }, a),\n  cong(fun (q : Path(A, x, y)) { q then g }, a)\n) {\n  here(cong(fun \
              (q : Path(A, x, y)) { q then g }, a))\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");

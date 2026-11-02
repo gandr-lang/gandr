@@ -86,11 +86,11 @@ def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 def small : List(Nat) = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat));
 
 /// The successor, returned.
-@[ runs("fn (a) { Succ(a) }") ]
+@[ runs("fun (a) { Succ(a) }") ]
 def bump(n : Nat) -> Nat { Succ(n) }
 
 /// The successor, the `return` elided.
-@[ runs("fn (a) { Succ(a) }") ]
+@[ runs("fun (a) { Succ(a) }") ]
 def bump_elided(n : Nat) -> Nat { Succ(n) }
 
 /// The length of `small`.

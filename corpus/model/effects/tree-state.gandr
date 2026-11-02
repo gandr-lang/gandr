@@ -9,9 +9,9 @@ import "./tree.gandr";
 
 /// `constant`'s subject as a tree: read, store what was read, read again,
 /// and answer the two reads and one.
-def constantTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Get), fn (a) {
-  (Op(Left(Put(a)), fn (_u) {
-    (Op(Left(Get), fn (b) {
+def constantTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Get), fun (a) {
+  (Op(Left(Put(a)), fun (_u) {
+    (Op(Left(Get), fun (b) {
       (Done(a + b + 1) : Prog(Either(StateOp, Void), Integer))
     }) : Prog(Either(StateOp, Void), Integer))
   }) : Prog(Either(StateOp, Void), Integer))
@@ -36,9 +36,9 @@ def constantByFold() -> Integer { answeringFour(constantTree) }
 
 /// `answeredByPassing`'s subject as a tree: store four, read twice, and
 /// answer ten times the first read and the second.
-def passingTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Put(4)), fn (_u) {
-  (Op(Left(Get), fn (a) {
-    (Op(Left(Get), fn (b) {
+def passingTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Put(4)), fun (_u) {
+  (Op(Left(Get), fun (a) {
+    (Op(Left(Get), fun (b) {
       (Done(a * 10 + b) : Prog(Either(StateOp, Void), Integer))
     }) : Prog(Either(StateOp, Void), Integer))
   }) : Prog(Either(StateOp, Void), Integer))
@@ -72,9 +72,9 @@ data StateModel(a : Type) : Type where {
 }
 
 /// `constant`'s subject as a program of the model.
-def constantProgram : StateModel(Integer) = Read(unit, fn (a) {
-  (Write(a, fn (_u) {
-    (Read(unit, fn (b) { (Answer(a + b + 1) : StateModel(Integer)) }) : StateModel(Integer))
+def constantProgram : StateModel(Integer) = Read(unit, fun (a) {
+  (Write(a, fun (_u) {
+    (Read(unit, fun (b) { (Answer(a + b + 1) : StateModel(Integer)) }) : StateModel(Integer))
   }) : StateModel(Integer))
 });
 

@@ -34,7 +34,7 @@ pub theory Cost where {
 
 /// The cost `n`, as the function that adds it to what it is handed.
 pub def costs(n : Nat) -> Nat => Nat {
-  thunk { fn (m) { Count.plus(n, m) } }
+  thunk { fun (m) { Count.plus(n, m) } }
 }
 
 /// The counting model: a run's count awaits the cost charged before it.
@@ -43,13 +43,13 @@ pub module Counting : Model(Cost) with sort N = Nat => Nat where {
   type C = (Nat => Nat) => Nat;
   /// Charge `c` after what was charged before, then continue.
   def charge(c : Nat => Nat, k : (Nat => Nat) => Nat) -> (Nat => Nat) => Nat {
-    thunk { fn (before) { k(thunk { fn (n) { before(c(n)) } }) } }
+    thunk { fun (before) { k(thunk { fun (n) { before(c(n)) } }) } }
   }
   /// No cost: the identity.
-  def zero : Nat => Nat = thunk { fn (n) { pure n } };
+  def zero : Nat => Nat = thunk { fun (n) { pure n } };
   /// Two costs: their composition, `b` first.
   def plus(a : Nat => Nat, b : Nat => Nat) -> Nat => Nat {
-    thunk { fn (n) { a(b(n)) } }
+    thunk { fun (n) { a(b(n)) } }
   }
   /// Charging nothing is the identity, by η.
   def chargeZero(k : (Nat => Nat) => Nat) -> Path((Nat => Nat) => Nat, charge(zero, k), k) {
@@ -67,9 +67,9 @@ pub module Counting : Model(Cost) with sort N = Nat => Nat where {
 
 /// What a scope under `Counting` answers once its subject is done: the cost
 /// charged so far, counted from none.
-pub def counted : (Nat => Nat) => Nat = fn (before) { before(Zero) };
+pub def counted : (Nat => Nat) => Nat = fun (before) { before(Zero) };
 
 /// The count a run under `Counting` answers, nothing charged before it.
 pub def countOf(r : (Nat => Nat) => Nat) -> Nat {
-  r(fn (n) { pure n })
+  r(fun (n) { pure n })
 }

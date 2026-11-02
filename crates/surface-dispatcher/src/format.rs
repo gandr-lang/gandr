@@ -904,7 +904,7 @@ mod tests
                       def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
                       \n\
                       def bump : Nat => Nat;\n\
-                      def bump = thunk { fn (n) { Succ(n) } };\n\
+                      def bump = thunk { fun (n) { Succ(n) } };\n\
                       \n\
                       def counted : () => Nat;\n\
                       def counted = thunk { twice(Zero) };\n\
@@ -921,7 +921,7 @@ mod tests
                        def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
                        \n\
                        def bump : Nat => Nat;\n\
-                       def bump = fn (n) { Succ(n) };\n\
+                       def bump = fun (n) { Succ(n) };\n\
                        \n\
                        def counted : () => Nat;\n\
                        def counted = twice(Zero);\n\

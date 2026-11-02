@@ -63,7 +63,7 @@ rec {
   def rec elSig(u : USig) -> -F Type {
     match u {
       NatS => return Nat,
-      SigS(a, b) => return (Sig(elSig[<](a), thunk { fn (x) { elSig[<](b(x)) } }))
+      SigS(a, b) => return (Sig(elSig[<](a), thunk { fun (x) { elSig[<](b(x)) } }))
     }
   }
 }

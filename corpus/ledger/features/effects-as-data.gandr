@@ -30,7 +30,7 @@ def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Intege
     Op(o, k) => match o {
       Left(Get) => runState[<](e, a, k(s), s),
       Left(Put(t)) => runState[<](e, a, k(0), t),
-      Right(other) => (Op(other, fn (r) {
+      Right(other) => (Op(other, fun (r) {
         runState[<](e, a, k(r), s)
       }) : Prog(e, a))
     }
@@ -44,7 +44,7 @@ def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Out
     Done(x) => (Done(Returned(x)) : Prog(e, Outcome(a))),
     Op(o, k) => match o {
       Left(Raise(c)) => (Done(Raised(c)) : Prog(e, Outcome(a))),
-      Right(other) => (Op(other, fn (r) {
+      Right(other) => (Op(other, fun (r) {
         runExn[<](e, a, k(r))
       }) : Prog(e, Outcome(a)))
     }
@@ -61,17 +61,17 @@ def pureOf(a : Type, p : Prog(Void, a)) -> a {
 
 /// Over exceptions, then state: read, store one more, read again, and answer
 /// ten times the second read.
-def guarded : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
-  (Op(Right(Left(Put(a + 1))), fn (_u) {
-    (Op(Right(Left(Get)), fn (b) {
+def guarded : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fun (a) {
+  (Op(Right(Left(Put(a + 1))), fun (_u) {
+    (Op(Right(Left(Get)), fun (b) {
       (Done(b * 10) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
     }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
   }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
 }) ;
 
 /// Over the same row: read, then raise what was read.
-def raising : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
-  (Op(Left(Raise(a)), fn (_r) {
+def raising : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fun (a) {
+  (Op(Left(Raise(a)), fun (_r) {
     (Done(0) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
   }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
 }) ;
@@ -79,13 +79,13 @@ def raising : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Lef
 /// Over state alone: read, and answer what was read.
 def quiet : Prog(Either(StateOp, Void), Integer) = Op(
   Left(Get),
-  fn (a) { (Done(a) : Prog(Either(StateOp, Void), Integer)) }
+  fun (a) { (Done(a) : Prog(Either(StateOp, Void), Integer)) }
 ) ;
 
 /// Over exceptions alone: raise four.
 def failing : Prog(Either(ExnOp, Void), Integer) = Op(
   Left(Raise(4)),
-  fn (_r) { (Done(0) : Prog(Either(ExnOp, Void), Integer)) }
+  fun (_r) { (Done(0) : Prog(Either(ExnOp, Void), Integer)) }
 ) ;
 
 /// `runExn` at the front of the two-effect row. An applied type cannot yet
@@ -99,7 +99,7 @@ def rec runExnAt(p : Prog(Either(ExnOp, Either(StateOp, Void)), Integer)) -> Pro
     Done(x) => (Done(Returned(x)) : Prog(Either(StateOp, Void), Outcome(Integer))),
     Op(o, k) => match o {
       Left(Raise(c)) => (Done(Raised(c)) : Prog(Either(StateOp, Void), Outcome(Integer))),
-      Right(other) => (Op(other, fn (r) {
+      Right(other) => (Op(other, fun (r) {
         runExnAt[<](k(r))
       }) : Prog(Either(StateOp, Void), Outcome(Integer)))
     }

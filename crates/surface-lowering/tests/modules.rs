@@ -2599,7 +2599,7 @@ fn a_type_member_names_a_computation_type_3080()
     let source = "module M where { type C = -F Integer; def one() -> C { return 1 } }\ntype D = -F \
                   Integer;\ndef two() -> D { return 2 }\nmodule Fam where { type T(a : Type) = -F a; \
                   def some1() -> T(Integer) { return 1 } }\ntype G = Integer -> -F Integer;\ndef \
-                  inc() -> G { fn (n) { return n } }";
+                  inc() -> G { fun (n) { return n } }";
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),

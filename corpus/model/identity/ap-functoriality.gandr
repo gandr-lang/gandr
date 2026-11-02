@@ -31,13 +31,13 @@ def apComp(
 ) -> Path(
   Path(C, G(F(x)), G(F(y))),
   actOn(B, C, G, F(x), F(y), actOn(A, B, F, x, y, p)),
-  actOn(A, C, (fn (a : A) { G(F(a)) } : A => C), x, y, p)
+  actOn(A, C, (fun (a : A) { G(F(a)) } : A => C), x, y, p)
 ) {
   transport(
     (v : A, k : Path(A, x, v)) => Path(
       Path(C, G(F(x)), G(F(v))),
       actOn(B, C, G, F(x), F(v), actOn(A, B, F, x, v, k)),
-      actOn(A, C, (fn (a : A) { G(F(a)) } : A => C), x, v, k)
+      actOn(A, C, (fun (a : A) { G(F(a)) } : A => C), x, v, k)
     ),
     p,
     here(x),
@@ -63,13 +63,13 @@ def apThenThen(
   actOn(
     Path(A, x, z),
     Path(A, x, w),
-    (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
     fm then g,
     fp then g,
     actOn(
       Path(A, x, y),
       Path(A, x, z),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa
@@ -78,7 +78,7 @@ def apThenThen(
   actOn(
     Path(A, x, y),
     Path(A, x, w),
-    (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
     fm,
     fp,
     fa
@@ -90,13 +90,13 @@ def apThenThen(
       actOn(
         Path(A, x, z),
         Path(A, x, w),
-        (fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+        (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
         fm then g,
         kp then g,
         actOn(
           Path(A, x, y),
           Path(A, x, z),
-          (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+          (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
           fm,
           kp,
           e
@@ -105,7 +105,7 @@ def apThenThen(
       actOn(
         Path(A, x, y),
         Path(A, x, w),
-        (fn (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+        (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
         fm,
         kp,
         e

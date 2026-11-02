@@ -754,8 +754,8 @@ fn a_binder_shadowing_a_builtin_is_rejected_under_policy()
 {
     for (written, at) in [
         (
-            "def x = thunk { fn (list) { return list } } ;",
-            site(20_usize, 24_usize),
+            "def x = thunk { fun (list) { return list } } ;",
+            site(21_usize, 25_usize),
         ),
         (
             "def f(list: Integer) -> -F Integer { return list }",

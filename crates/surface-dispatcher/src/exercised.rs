@@ -1184,11 +1184,11 @@ mod tests
             (
                 r#"def answer : Integer ; def answer = 42 ;
 def identity : +U (Integer -> -F Integer) ;
-def identity = thunk { fn (x) { return x } } ;
+def identity = thunk { fun (x) { return x } } ;
 def applied : +U (-F Integer) ;
 def applied = thunk { become (force identity)(answer) } ;
 def konst : +U (Integer -> Integer -> -F Integer) ;
-def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
+def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
                 &[
                     (Row::LambdaChecks, 2_usize),
                     (Row::ReturnChecks, 2_usize),
@@ -1212,7 +1212,7 @@ def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
                 &[(Row::ShapeRefusal, 1_usize)],
             ),
             (
-                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become (fn (x) { return x })(3) } ;"#,
+                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become (fun (x) { return x })(3) } ;"#,
                 &[(Row::NonSynthesisableHead, 1_usize)],
             ),
             (

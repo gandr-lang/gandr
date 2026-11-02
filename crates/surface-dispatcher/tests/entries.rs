@@ -125,7 +125,6 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression continue", Standing::Owed(0)),
     ("Expression drop", Standing::Owed(0)),
     ("Expression false", Standing::Owed(0)),
-    ("Expression fn", Standing::Owed(0)),
     ("Expression for", Standing::Owed(0)),
     ("Expression force", Standing::Owed(0)),
     ("Expression forget", Standing::Owed(0)),
@@ -135,6 +134,7 @@ const KINDS: &[(&str, Standing)] = &[
             "a fork a `let` binds: the `let` answers, and its pattern at the end the fork gives",
         ),
     ),
+    ("Expression fun", Standing::Owed(0)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
     ("Expression identifier", Standing::Owed(0)),
@@ -419,7 +419,7 @@ enum Placed
     /// lowering's result is the term the program means, and the case around
     /// the value answers.
     Discarded,
-    /// A lambda `cong` maps a path by, `fn (q) { q then g }` in `cong(fn (q)
+    /// A lambda `cong` maps a path by, `fun (q) { q then g }` in `cong(fun (q)
     /// { q then g }, a)` (#3773): the lowering reads the lambda's body into
     /// the transport's motive, its binder the motive's, so no judged core
     /// node holds the lambda itself; its body's nodes and the `cong` answer.
@@ -1066,7 +1066,7 @@ fn gated(
                         start <= usize::from(span.start()) && usize::from(span.end()) <= end
                     })));
         let mapped = melded
-            && def.label == "fn"
+            && def.label == "fun"
             && def.sort == Sort::Expression
             && source
                 .get(.. usize::from(span.start()))

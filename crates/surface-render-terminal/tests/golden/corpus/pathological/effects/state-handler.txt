@@ -71,7 +71,7 @@ error[ModelUnanswered]: no module in scope is a model of `State` answering this 
    ╭▸ corpus/pathological/effects/state-handler.gandr:78:3
    │
 78 │ ┏   handle st : State with sort S = Unit + Unit {
-79 │ ┃     pure fn (s) { pure 1 }
+79 │ ┃     pure fun (s) { pure 1 }
 80 │ ┃   }
    │ ┗━━━┛ a model implicit no module answers
    │
@@ -98,7 +98,7 @@ error[ModelAmbiguous]: more than one module in scope is a model of `State` answe
     ╭▸ corpus/pathological/effects/state-handler.gandr:113:3
     │
 113 │ ┏   handle st : State with sort S = Integer {
-114 │ ┃     pure fn (s) { pure s }
+114 │ ┃     pure fun (s) { pure s }
 115 │ ┃   }
     │ ┗━━━┛ a model implicit more than one module answers
     │

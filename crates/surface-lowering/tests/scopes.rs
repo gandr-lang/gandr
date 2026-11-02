@@ -103,7 +103,7 @@ fn resolved(
 const WRITTEN: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
                        plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
                        Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef k : +U (Nat -> -F Nat) ;\ndef k \
-                       = thunk { fn (x) { return Succ(x) } } ;\n";
+                       = thunk { fun (x) { return Succ(x) } } ;\n";
 
 /// [`WRITTEN`] with the recursive call not yet written in full: `pl` resolves
 /// to nothing, and the lowering refuses `plus`.

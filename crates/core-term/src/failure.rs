@@ -180,7 +180,7 @@ impl TrackingIssue
     pub const INTERPOLATION: Self = Self(2649);
     /// A grade on a list, run or prefix type.
     pub const TYPE_GRADE: Self = Self(2650);
-    /// The type abstraction `fn [T] { … }`.
+    /// The type abstraction `fun [T] { … }`.
     pub const TYPE_ABSTRACTION: Self = Self(2651);
     /// A stated type or a method call whose declaration the collection does
     /// not carry.

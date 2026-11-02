@@ -635,8 +635,8 @@ fn a_lambda_argument_in_an_endpoint_is_its_thunk_3697()
     let module = lowered(
         SourceText::from(
             "def atTrue(p : Bool => Bool) -> Bool { p(true) }\n\
-             def inTypeAnnotated : Path(Bool, atTrue(fn (a : Bool) { a }), true) = here(true);\n\
-             def inTypeBare : Path(Bool, atTrue(fn (a) { a }), true) = here(true);\n",
+             def inTypeAnnotated : Path(Bool, atTrue(fun (a : Bool) { a }), true) = here(true);\n\
+             def inTypeBare : Path(Bool, atTrue(fun (a) { a }), true) = here(true);\n",
         ),
         &mut arena,
     );
@@ -684,8 +684,8 @@ fn a_lambda_endpoint_is_its_thunk_3767()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def direct : Path(Bool => Bool, fn (a) { a }, fn (a) { a }) = here(fn (a) { a });\n\
-             def result(d : Bool => Bool) -> Path(Bool => Bool, fn (a) { d(a) }, fn (a) { d(a) }) {\n  here(fn (a) { d(a) })\n}\n",
+            "def direct : Path(Bool => Bool, fun (a) { a }, fun (a) { a }) = here(fun (a) { a });\n\
+             def result(d : Bool => Bool) -> Path(Bool => Bool, fun (a) { d(a) }, fun (a) { d(a) }) {\n  here(fun (a) { d(a) })\n}\n",
         ),
         &mut arena,
     );
@@ -767,13 +767,13 @@ fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
 {
     let source = "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
                   a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {\n  \
-                  cong((thunk { fn (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n";
+                  cong((thunk { fun (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n";
     let spanned = |text: &str| {
         let start = source.find(text).expect("the source writes the text");
         (start, start.saturating_add(text.len()))
     };
-    let thunk = spanned("thunk { fn (q : Path(A, x, y)) { q then g } }");
-    let function = spanned("fn (q : Path(A, x, y)) { q then g }");
+    let thunk = spanned("thunk { fun (q : Path(A, x, y)) { q then g } }");
+    let function = spanned("fun (q : Path(A, x, y)) { q then g }");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let at =
@@ -815,7 +815,7 @@ fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
 fn an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801()
 {
     let source = "def t(A : Type, x : A, y : A, f : Path(A, x, y), u : A, it : Path(Path(A, x, y), \
-                  f, (thunk { fn (q : Path(A, x, y)) { run c : Path(A, x, y) <- pure q ; c } } : \
+                  f, (thunk { fun (q : Path(A, x, y)) { run c : Path(A, x, y) <- pure q ; c } } : \
                   Path(A, x, y) => Path(A, x, y))(f))) -> -F Unit { return unit }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -1008,7 +1008,7 @@ fn a_bridge_type_lowers_to_the_core_bridge_3427()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def lifted : Bridge(List(Integer), [1, 2], [1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fn (x : Unit) { fn (y : String) { return Unit } } };\n",
+            "def lifted : Bridge(List(Integer), [1, 2], [1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fun (x : Unit) { fun (y : String) { return Unit } } };\n",
         ),
         &mut arena,
     );
@@ -1213,7 +1213,7 @@ fn a_reflexivity_composes_at_a_point_of_any_type_3834()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// #3773: a lambda `fn (q) { e }` as `cong`'s function was refused, its
+/// #3773: a lambda `fun (q) { e }` as `cong`'s function was refused, its
 /// binder with no type. The binder takes the type of the path's points, so
 /// the fixture's declaration lowers and checks. The transport the printer
 /// spells it as, `b then g` over its motive's binder, lowers and checks too.
@@ -1286,7 +1286,7 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
 {
     let telescope = "(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
                      Path(Path(A, x, y), f1, f2), g : Path(A, y, z))";
-    let whisker = "cong(fn (q) { q then g }, a)";
+    let whisker = "cong(fun (q) { q then g }, a)";
     let source = format!(
         "def underThen{telescope} -> Path(Path(A, x, z), f1 then g, f2 then g) {{\n  {whisker} \
          then here(f2 then g)\n}}\n\
@@ -1324,7 +1324,7 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
         SourceText::from(
             "def unwritten(A : Type, x : A, y : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
              Path(Path(A, x, y), f1, f2), g : Path(A, y, y)) -> Path(Path(A, x, y), f1 then g, f2 \
-             then g) {\n  cong(fn (q) { q then g }, back(back(a))) then here(f2 then g)\n}\n",
+             then g) {\n  cong(fun (q) { q then g }, back(back(a))) then here(f2 then g)\n}\n",
         ),
         &mut arena,
     );
@@ -1350,7 +1350,7 @@ fn a_lambda_stating_its_binders_type_maps_as_the_unstated_one_3919()
 {
     let telescope = "(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
                      Path(Path(A, x, y), f1, f2), g : Path(A, y, z))";
-    let whisker = "cong(fn (q : Path(A, x, y)) { q then g }, a)";
+    let whisker = "cong(fun (q : Path(A, x, y)) { q then g }, a)";
     let source = format!(
         "def underThen{telescope} -> Path(Path(A, x, z), f1 then g, f2 then g) {{\n  {whisker} \
          then here(f2 then g)\n}}\n\
@@ -2001,9 +2001,9 @@ fn cong_reads_a_map_its_signature_states_778()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "def sugared : Circle => Circle ;\n",
-            "def sugared = thunk { fn (a) { a } } ;\n",
+            "def sugared = thunk { fun (a) { a } } ;\n",
             "def explicit : +U (Circle -> -F Circle) ;\n",
-            "def explicit = thunk { fn (a) { return a } } ;\n",
+            "def explicit = thunk { fun (a) { return a } } ;\n",
             "def overSugared : Path(Path(Circle, Base, Base), cong(sugared, loop), loop) ;\n",
             "def overSugared = here(loop) ;\n",
             "def overExplicit : Path(Path(Circle, Base, Base), cong(explicit, loop), loop) ;\n",
@@ -2875,12 +2875,12 @@ fn a_call_s_lambda_argument_reads_its_parameter_s_domain_3921()
             "def applyPath(A : Type, x : A, y : A, z : A, F : Path(A, x, y) => Path(A, x, z), p : \
              Path(A, x, y)) -> Path(A, x, z) {\n  F(p)\n}\n\ndef dependentThen(A : Type, x : A, \
              y : A, z : A, g : Path(A, y, z), p : Path(A, x, y)) -> Path(A, x, z) {\n  \
-             applyPath(A, x, y, z, fn (q) { q then g }, p)\n}\n\ndef statedThen(A : Type, x : \
+             applyPath(A, x, y, z, fun (q) { q then g }, p)\n}\n\ndef statedThen(A : Type, x : \
              A, y : A, z : A, g : Path(A, y, z), p : Path(A, x, y)) -> Path(A, x, z) {\n  \
-             applyPath(A, x, y, z, fn (q : Path(A, x, y)) { q then g }, p)\n}\n\ndef \
+             applyPath(A, x, y, z, fun (q : Path(A, x, y)) { q then g }, p)\n}\n\ndef \
              applyBack(b : Type, u : b, v : b, f : Path(b, u, v) => Path(b, v, u), p : Path(b, \
              u, v)) -> Path(b, v, u) {\n  f(p)\n}\n\ndef reversed(A : Type, x : A, y : A, p : \
-             Path(A, x, y)) -> Path(A, y, x) {\n  applyBack(A, x, y, fn (q) { back(q) }, p)\n}\n",
+             Path(A, x, y)) -> Path(A, y, x) {\n  applyBack(A, x, y, fun (q) { back(q) }, p)\n}\n",
         ),
         &mut arena,
     );
@@ -2908,8 +2908,8 @@ fn two_ap_calls_whose_arguments_reduce_alike_convert_4005()
 {
     let telescope = "(A : Type, x : A, y : A, z : A, w : A, fm : Path(A, x, y), fp : Path(A, x, y), \
                      fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z), h : Path(A, z, w))";
-    let pre = "(fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z))";
-    let post = "(fn (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))";
+    let pre = "(fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z))";
+    let post = "(fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))";
     let square = "Path(Path(A, x, w), (fm then g) then h, (fp then g) then h)";
     let inner_ap = format!("ap(Path(A, x, y), Path(A, x, z), {pre}, fm, fp, fa)");
     let inner_whisker = "whiskerRight(A, x, y, z, fm, fp, fa, g)";
@@ -3048,27 +3048,27 @@ fn a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073()
              F(y)) {\n  cong(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
              Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), p then q, p then q) {\n  \
              here(p then q)\n}\n\ndef composedAtLambda(A : Type, F : A => A, x : A, y : A, z : \
-             A, r : Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fn \
-             (q : A) { F(q) } : A => A), x, y, r) then s, act(A, (fn (q : A) { F(q) } : A => \
-             A), x, y, r) then s) {\n  here(act(A, (fn (q : A) { F(q) } : A => A), x, y, r) \
+             A, r : Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fun \
+             (q : A) { F(q) } : A => A), x, y, r) then s, act(A, (fun (q : A) { F(q) } : A => \
+             A), x, y, r) then s) {\n  here(act(A, (fun (q : A) { F(q) } : A => A), x, y, r) \
              then s)\n}\n\ndef passedAtLambda(A : Type, F : A => A, x : A, y : A, z : A, r : \
-             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fn (q : A) \
-             { F(q) } : A => A), x, y, r) then s, act(A, (fn (q : A) { F(q) } : A => A), x, y, \
-             r) then s) {\n  thenHere(A, F(x), F(y), z, act(A, (fn (q : A) { F(q) } : A => A), \
+             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fun (q : A) \
+             { F(q) } : A => A), x, y, r) then s, act(A, (fun (q : A) { F(q) } : A => A), x, y, \
+             r) then s) {\n  thenHere(A, F(x), F(y), z, act(A, (fun (q : A) { F(q) } : A => A), \
              x, y, r), s)\n}\n\ndef passedRedex(A : Type, F : A => A, x : A, y : A, z : A, r : \
-             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fn (q : A) \
-             { F(q) } : A => A), x, y, r) then s, act(A, (fn (q : A) { F(q) } : A => A), x, y, \
-             r) then s) {\n  thenHere(A, (fn (q : A) { F(q) } : A => A)(x), F(y), z, act(A, (fn \
+             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fun (q : A) \
+             { F(q) } : A => A), x, y, r) then s, act(A, (fun (q : A) { F(q) } : A => A), x, y, \
+             r) then s) {\n  thenHere(A, (fun (q : A) { F(q) } : A => A)(x), F(y), z, act(A, (fun \
              (q : A) { F(q) } : A => A), x, y, r), s)\n}\n\ndef across(A : Type, B : Type, F : \
              A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {\n  cong(F, \
              p)\n}\n\ndef passedComposite(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp \
              : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z), k : Path(A, \
              x, z), s : Path(Path(A, x, z), fp then g, k)) -> Path(Path(Path(A, x, z), fm then \
-             g, k), across(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : \
+             g, k), across(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { q then g } : \
              Path(A, x, y) => Path(A, x, z)), fm, fp, fa) then s, across(Path(A, x, y), Path(A, \
-             x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), fm, \
+             x, z), (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), fm, \
              fp, fa) then s) {\n  thenHere(Path(A, x, z), fm then g, fp then g, k, \
-             across(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, \
+             across(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { q then g } : Path(A, \
              x, y) => Path(A, x, z)), fm, fp, fa), s)\n}\n",
         ),
         &mut arena,
@@ -3342,7 +3342,7 @@ fn a_fill_lowers_to_its_generator_and_cells()
     let module = lowered(
         SourceText::from(concat!(
             "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
-            "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {\n  thunk { fn (f) { thunk { fn (g) { here(composite(A, x, y, z, f, g)) } } } }\n}\n",
+            "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {\n  thunk { fun (f) { thunk { fun (g) { here(composite(A, x, y, z, f, g)) } } } }\n}\n",
             "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  transport(\\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))\n}\n",
             "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(Path(A, x, z), fm then g, fp then g), here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g), rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)) {\n  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))\n}\n",
         )),
@@ -3409,7 +3409,7 @@ fn two_sites_of_one_fill_convert_at_the_same_entries_4180()
     let module = lowered(
         SourceText::from(concat!(
             "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
-            "def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {\n  thunk { fn (f) { thunk { fn (g) { composite(A, x, y, z, f, g) } } } }\n}\n",
+            "def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {\n  thunk { fun (f) { thunk { fun (g) { composite(A, x, y, z, f, g) } } } }\n}\n",
             "def cellsTwo(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), f then g, p then q) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
             "def cellsAgain(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), f then g, p then q) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
             "def sitesConvert(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(Path(A, x, z), f then g, p then q), cellsTwo(A, x, y, z, f, p, a, g, q, b), cellsAgain(A, x, y, z, f, p, a, g, q, b)) {\n  here(cellsTwo(A, x, y, z, f, p, a, g, q, b))\n}\n",

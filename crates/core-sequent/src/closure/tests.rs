@@ -223,7 +223,7 @@ fn a_nested_function_converts_inside_out()
     );
 }
 
-/// The constant function `fn (_m) { n }`, converted over `n` and applied to
+/// The constant function `fun (_m) { n }`, converted over `n` and applied to
 /// 5, binds its continuation, then `n`, then 5, over its arm's body as
 /// written. A value against a match, and a closure against a frame its code
 /// does not answer, are no redex.

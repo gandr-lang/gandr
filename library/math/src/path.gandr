@@ -92,13 +92,13 @@ pub def apComp(
   p : Path(A, x, y)
 ) -> Path(
   Path(C, G(F(x)), G(F(y))),
-  ap(A, C, (fn (a : A) { G(F(a)) } : A => C), x, y, p),
+  ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, y, p),
   ap(B, C, G, F(x), F(y), ap(A, B, F, x, y, p))
 ) {
   transport(
     (v : A, k : Path(A, x, v)) => Path(
       Path(C, G(F(x)), G(F(v))),
-      ap(A, C, (fn (a : A) { G(F(a)) } : A => C), x, v, k),
+      ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, v, k),
       ap(B, C, G, F(x), F(v), ap(A, B, F, x, v, k))
     ),
     p,

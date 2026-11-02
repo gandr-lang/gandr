@@ -69,7 +69,7 @@ impl Workspace
         std::fs::create_dir_all(scratch.join("crates/a/target")).unwrap();
         let root = std::fs::canonicalize(&scratch).unwrap();
         std::fs::write(root.join("crates/a/src/lib.rs"), SOURCE).unwrap();
-        std::fs::write(root.join("crates/a/target/broken.rs"), "fn (").unwrap();
+        std::fs::write(root.join("crates/a/target/broken.rs"), "fun (").unwrap();
         Self { root }
     }
 

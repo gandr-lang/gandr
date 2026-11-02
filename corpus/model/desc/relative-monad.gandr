@@ -67,7 +67,7 @@ def two() -> Integer {
     Integer,
     Integer,
     ret(Integer, 1),
-    fn (x) { ret(Integer, x + 1) }
+    fun (x) { ret(Integer, x + 1) }
   );
   match r {
     None => 0,

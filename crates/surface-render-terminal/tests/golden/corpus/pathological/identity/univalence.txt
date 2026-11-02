@@ -1,13 +1,13 @@
 error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/univalence.gandr:24:28
+   ╭▸ corpus/pathological/identity/univalence.gandr:24:29
    │
 22 │   def collapsedPath : Path(Type, Two, One) = ua((
    │ ┌────────────────────────────────────────────┘
 23 │ │   collapse,
-24 │ │   ((pick, thunk { fn (x) { here(x) } }), (pick, single))
-   │ │   ┬───────┬───────┬────────┯━━━━━━──────────────────────
-   │ │   │       │       │        │
-   │ │   │       │       │        not both endpoints of the path
+24 │ │   ((pick, thunk { fun (x) { here(x) } }), (pick, single))
+   │ │   ┬───────┬───────┬─────────┯━━━━━━──────────────────────
+   │ │   │       │       │         │
+   │ │   │       │       │         not both endpoints of the path
    │ │   │       │       checked against `(a : Two) -> -F Path(Two, pick(collapse(a)), a)`; while checking the body of this function; binds x : Two
    │ │   │       checked against `(a : Two) => Path(Two, pick(collapse(a)), a)`; while checking the body of this thunk
    │ │   checked; while checking the next premise of this

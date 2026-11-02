@@ -1790,7 +1790,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let sources = [
         "def x = 1;".to_owned(),
-        "fn(a) { pure a }".to_owned(),
+        "fun(a) { pure a }".to_owned(),
         "if c { pure 1 } else { pure 2 }".to_owned(),
         "pure 1 +".to_owned(),
         "pure ( 1 +".to_owned(),

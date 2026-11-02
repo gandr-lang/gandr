@@ -3263,7 +3263,7 @@ struct Lowerer<'run, 'source>
     /// annotated constructor or injection is not among them: `T` is already
     /// its classifier.
     ascribed: BTreeMap<NodeIndex, NodeIndex>,
-    /// Each lambda's binder written with a type, `x` in `fn (x : A) { … }`,
+    /// Each lambda's binder written with a type, `x` in `fun (x : A) { … }`,
     /// with `A`, the frame it was read under, which the lambda stands in, and
     /// the lambda's own frame, which binds `x`.
     typed_parameters: BTreeMap<NodeIndex, (NodeIndex, Frame, Frame)>,
@@ -9814,7 +9814,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a lambda, `fn (x) { … }` or `fn (x : A) { … }`.
+    /// Classify a lambda, `fun (x) { … }` or `fun (x : A) { … }`.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
@@ -9832,7 +9832,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   path's written type states (#3773). A bare lambda passed for a
     ///   parameter, its binder written untyped, records its binder in
     ///   [`Self::argued_binders`] with the parameter and the arrow's domain
-    ///   (#3921). A matching lambda, `fn { | … }`, is
+    ///   (#3921). A matching lambda, `fun { | … }`, is
     ///   [`Self::matching_lambda`]'s.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
@@ -9867,14 +9867,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        // `fn { | … }` matches its binders by clauses.
+        // `fun { | … }` matches its binders by clauses.
         let mut ahead = cursor.clone();
-        let _keyword = ahead.tile(TileName::FN);
+        let _keyword = ahead.tile(TileName::FUN);
         if let Maybe::Present(_) = ahead.at(TileName::BRACE_OPEN) {
             return self.matching_lambda(site, cursor);
         }
         let frame = self.require(site, Produced::Computation)?;
-        let _keyword = cursor.tile(TileName::FN);
+        let _keyword = cursor.tile(TileName::FUN);
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
             return Err(site.folded(
                 FormName::TYPE_ABSTRACTION,
@@ -9954,7 +9954,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// answers: a written arrow `A -> C`, parentheses stripped, or the next
     /// arrow a value function space `(A1, …, An) => B` stands for. A binder
     /// the arrow or the space names, `(x : A)`, answers its type `A`. A lambda
-    /// a signed definition writes bare, `def f = fn (x) { … }`, answers what
+    /// a signed definition writes bare, `def f = fun (x) { … }`, answers what
     /// the thunk the checker inserts around it would hand its body. The
     /// binder's type takes the declaration its answer belongs to before the
     /// walk reaches it ([`Self::own_written`]), so a name in it resolves where
@@ -21916,7 +21916,7 @@ pub fn atom_type(
 /// with the type written after its `:`, if one is.
 ///
 /// # Specification
-/// - requires: `cursor` stands just past the lambda's `fn`.
+/// - requires: `cursor` stands just past the lambda's `fun`.
 /// - ensures: the one parameter's tile and the one operand its `:` writes, with
 ///   the cursor past the closing parenthesis.
 /// - provides: the binder reading of the lambda.
@@ -24377,7 +24377,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def x = thunk { fn (y) { return y } } ;"),
+            SourceText::from("def x = thunk { fun (y) { return y } } ;"),
             &mut arena,
         );
         let body = body_of(outcomes(&module)[0]);
@@ -24411,7 +24411,7 @@ mod tests
     #[test]
     fn a_typed_parameter_binds_its_argument_ascribed_1310()
     {
-        let source = "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fn (y : Integer) { return y } } ;";
+        let source = "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fun (y : Integer) { return y } } ;";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
         let body = body_of(outcomes(&module)[0]);
@@ -24466,7 +24466,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fn (y : Unit) { return 1 } } ;",
+                "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fun (y : Unit) { return 1 } } ;",
             ),
             &mut arena,
         );
@@ -24484,7 +24484,7 @@ mod tests
     fn a_variable_keeps_its_binder()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let source = "def k = thunk { fn (y) { fn (y) { fn (z) { return y } } } } ;";
+        let source = "def k = thunk { fun (y) { fun (y) { fun (z) { return y } } } } ;";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
         let inner = source
@@ -25617,7 +25617,7 @@ def ended() -> -F [Div] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def g = thunk { fn (x) { fn (y) { return x } } } ; def h = thunk { become g(1, 2) } ; \
+                "def g = thunk { fun (x) { fun (y) { return x } } } ; def h = thunk { become g(1, 2) } ; \
                  def k = thunk { become g() } ;",
             ),
             &mut arena,
@@ -25722,7 +25722,7 @@ def ended() -> -F [Div] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def g = thunk { fn (x) { return x } } ; def h = thunk { become g(1) } ;",
+                "def g = thunk { fun (x) { return x } } ; def h = thunk { become g(1) } ;",
             ),
             &mut arena,
         );
@@ -25752,7 +25752,7 @@ def ended() -> -F [Div] Unit {
         );
         assert_eq!(
             origin.map(|inserted| inserted.span()),
-            Maybe::Present(at(63_usize, 64_usize)),
+            Maybe::Present(at(64_usize, 65_usize)),
             "the inserted force names the head whose position demanded it"
         );
     }
@@ -25910,7 +25910,7 @@ def ended() -> -F [Div] Unit {
             "def a = [1, zz] ;",
             "def a = thunk { return zz } ;",
             "def a = thunk { run x <- pure zz ; return x } ;",
-            "def a = thunk { fn (x) { return zz } } ;",
+            "def a = thunk { fun (x) { return zz } } ;",
             "def a = thunk { match 1 { 1 => return zz, _ => return 0 } } ;",
         ];
         for source in rows {
@@ -26959,7 +26959,7 @@ def ended() -> -F [Div] Unit {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def a = fn (y) { return y } ;"),
+            SourceText::from("def a = fun (y) { return y } ;"),
             &mut arena,
         );
         let body = body_of(outcomes(&module)[0]);
@@ -26980,7 +26980,7 @@ def ended() -> -F [Div] Unit {
         );
         assert_eq!(
             origin.map(|inserted| inserted.span()),
-            Maybe::Present(at(8_usize, 27_usize)),
+            Maybe::Present(at(8_usize, 28_usize)),
             "the nesting names the lambda whose position demanded it"
         );
         assert_eq!(
@@ -27171,10 +27171,10 @@ def ended() -> -F [Div] Unit {
         };
         let rows = [
             (
-                "def a = thunk { fn (x, y) { return x } } ;",
+                "def a = thunk { fun (x, y) { return x } } ;",
                 arity(
                     16_usize,
-                    38_usize,
+                    39_usize,
                     FormName::from(NamedKind("lambda_expression")),
                     2_usize,
                 ),
@@ -28418,7 +28418,7 @@ def ended() -> -F [Div] Unit {
                 "def p : Integer ; def q : Integer ; \
                  @[ respects((q, p)) ] def r(n : Integer) -> -F Integer { return n } \
                  @[ respects(p) ] def s : +U (Integer -> -F Integer) ; \
-                 def s = thunk { fn (n) { return n } } ; \
+                 def s = thunk { fun (n) { return n } } ; \
                  def t(n : Integer) -> -F Integer { return n }",
             ),
             &mut arena,
@@ -29670,7 +29670,7 @@ def ended() -> -F [Div] Unit {
             span: span(ByteOffset::from(start), ByteOffset::from(end)),
         };
         let lead = super::Piece::Tile {
-            label: super::TileName::FN,
+            label: super::TileName::FUN,
             at: placed(1_usize, 0_usize, 2_usize),
         };
         let open = super::Piece::Tile {
@@ -29749,7 +29749,7 @@ def ended() -> -F [Div] Unit {
             ),
         ] {
             let mut cursor = super::Cursor::new(pieces, site.at.span);
-            let _lead = cursor.tile(super::TileName::FN);
+            let _lead = cursor.tile(super::TileName::FUN);
             assert_eq!(super::parameter(site, &mut cursor), expected);
             assert_eq!(cursor.peek(), Maybe::Present(next));
         }
@@ -29971,8 +29971,8 @@ def ended() -> -F [Div] Unit {
             SourceText::from(
                 "def idf(d : Type, c : Type, x : d) -> -F d { return x } def fam(d : Type, c : \
                  Type, f : +U (d -> -F d)) -> -F Type { return d } def k10(d : Type, c : Type, w \
-                 : d, v : fam(d, c, thunk { fn (a) { idf(d, c, w) } })) -> -F Unit { return unit \
-                 } def k11(d : Type, c : Type, w : d, v : fam(d, c, thunk { fn (a) { return w } \
+                 : d, v : fam(d, c, thunk { fun (a) { idf(d, c, w) } })) -> -F Unit { return unit \
+                 } def k11(d : Type, c : Type, w : d, v : fam(d, c, thunk { fun (a) { return w } \
                  })) -> -F Unit { return unit }",
             ),
             &mut arena,
@@ -30063,8 +30063,8 @@ def ended() -> -F [Div] Unit {
             SourceText::from(
                 "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig : (x : a, y : b(x)) --> Sig(a, b) } data IR(d : Type) : Type[+, 1] where { | Iota : (e : d) --> IR(d) | SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d) } def rec argsU(c : IR(Unit)) -> \
                  -F Type { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk \
-                 { fn (y) { argsU[<](f(y)) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
-                 { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fn (y) \
+                 { fun (y) { argsU[<](f(y)) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
+                 { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fun (y) \
                  { argsD[<](d, f(y)) } })) } }",
             ),
             &mut arena,

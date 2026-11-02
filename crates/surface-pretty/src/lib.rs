@@ -158,7 +158,7 @@
 //! bind is `run x <- c ; rest`, its statements one per line when the body
 //! does not fit; a force is `force v`, and a force at a call's head is the
 //! value it forces, `f(a, b)`, as the surface writes a call; a lambda is
-//! `fn (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
+//! `fun (x) { c }` and, inside a body, a thunk is `thunk { c }`. A value
 //! presented alone keeps its thunks opaque. Case analyses, splits,
 //! projections, fixpoints, native operations, transports and the effect and
 //! control operators are spelled as the surface writes them. What the core
@@ -940,7 +940,7 @@ where
 ///   there bare, never `return` or `become`; a returner anywhere else `pure v`;
 ///   a bind `run x <- c ; rest`, the computation it runs a block `{ … }` when
 ///   it is itself a bind; a force `force v`, a call `f(a, b)` with a forced
-///   value at its head written as the value; a lambda `fn (x) { c }` and a
+///   value at its head written as the value; a lambda `fun (x) { c }` and a
 ///   thunk `thunk { c }`; binders named as a dependent arrow's are; values and
 ///   types inside as [`present_value`] and [`present_type`] write them, but for
 ///   thunks. Every computation without a surface spelling here is `?`,
@@ -1063,42 +1063,42 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: when `ty` is `+U (A₁ -> … -> Aₙ -> C)`, any arrow dependent, and
-///   `body` is `thunk { fn (x₁) { … fn (xₙ) { b } … } }` — or `fn (x₁) { … }`
-///   read as a value at an arrow, the thunk the checker inserts — `n` the
+///   `body` is `thunk { fun (x₁) { … fun (xₙ) { b } … } }` — or `fun (x₁) { …
+///   }` read as a value at an arrow, the thunk the checker inserts — `n` the
 ///   abstractions the arrows run through and `n ≥ 1` unless `C` is a returner
 ///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C {` — `C` written
 ///   `B` in the sugared form when it is `-F B` with no effect row — each type
 ///   under the binders of the dependent arrows before it, then `b` as
 ///   [`present_computation`] writes it at a page two columns narrower under the
 ///   context binding `x₁` to `xₙ`, each of its lines two columns in, then `}`.
-///   When `body` is instead `thunk { fn (x₁) { … fn (xₖ) { rec f { fn (xₖ₊₁) {
-///   … fn (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint and
-///   at least one inside, the header opens `def rec` and `b` stands under the
-///   context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each occurrence
-///   of the fixpoint's own binder is written with its claim: `name[<]` where
-///   the fixpoint claims structural recursion on a parameter, `name[>]` where
-///   it claims nothing; each call of it passes the uniform parameters `x₁` to
-///   `xₖ` as themselves before its own arguments. `xᵢ` is its dependent arrow's
-///   binder where the source names it and neither the definition nor an earlier
-///   parameter takes it, otherwise the next generated name that neither `name`,
-///   the definition nor an earlier parameter takes. Where a header type or the
-///   body keeps a value at a region binder, the header writes `[r : Region, …]`
-///   before the parameters, one binder per ordinal up to the greatest kept at,
-///   each `r`, `r1`, … where the definition takes no such name and named as a
-///   parameter is otherwise, and every `at` names its binder. Where `source`
-///   records a telescope for `constant` ([`CoreSource::naming_implicits`]) of
-///   one entry per parameter, each implicit `xᵢ` is written after the region
-///   binders as `xᵢ : Aᵢ`, `[xᵢ : Aᵢ, …]`, under the name the telescope records
-///   where nothing earlier takes it, and only the explicit parameters stand in
-///   the parentheses. Where the returner's row labels an instance of a theory
-///   whose entry `source` records ([`CoreSource::manifesting`]) at a region
-///   binder past every other the header writes, and a parameter is a capability
-///   at that binder, the row's label is the parameter's name, `[st : T with
-///   sort C = A]`, and neither the binder nor the parameter is written: `Cap
-///   {…}` names a host interface's operations alone. The presentation is
-///   approximate, its unspelled reasons collected, when a header type or the
-///   body is. Absent for any other shape, and when no names for the parameters
-///   are found.
+///   When `body` is instead `thunk { fun (x₁) { … fun (xₖ) { rec f { fun (xₖ₊₁)
+///   { … fun (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint
+///   and at least one inside, the header opens `def rec` and `b` stands under
+///   the context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each
+///   occurrence of the fixpoint's own binder is written with its claim:
+///   `name[<]` where the fixpoint claims structural recursion on a parameter,
+///   `name[>]` where it claims nothing; each call of it passes the uniform
+///   parameters `x₁` to `xₖ` as themselves before its own arguments. `xᵢ` is
+///   its dependent arrow's binder where the source names it and neither the
+///   definition nor an earlier parameter takes it, otherwise the next generated
+///   name that neither `name`, the definition nor an earlier parameter takes.
+///   Where a header type or the body keeps a value at a region binder, the
+///   header writes `[r : Region, …]` before the parameters, one binder per
+///   ordinal up to the greatest kept at, each `r`, `r1`, … where the definition
+///   takes no such name and named as a parameter is otherwise, and every `at`
+///   names its binder. Where `source` records a telescope for `constant`
+///   ([`CoreSource::naming_implicits`]) of one entry per parameter, each
+///   implicit `xᵢ` is written after the region binders as `xᵢ : Aᵢ`, `[xᵢ : Aᵢ,
+///   …]`, under the name the telescope records where nothing earlier takes it,
+///   and only the explicit parameters stand in the parentheses. Where the
+///   returner's row labels an instance of a theory whose entry `source` records
+///   ([`CoreSource::manifesting`]) at a region binder past every other the
+///   header writes, and a parameter is a capability at that binder, the row's
+///   label is the parameter's name, `[st : T with sort C = A]`, and neither the
+///   binder nor the parameter is written: `Cap {…}` names a host interface's
+///   operations alone. The presentation is approximate, its unspelled reasons
+///   collected, when a header type or the body is. Absent for any other shape,
+///   and when no names for the parameters are found.
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, a suspended computation as the

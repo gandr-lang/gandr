@@ -727,7 +727,7 @@ mod tests
     const BASE: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
                         plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
                         Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef double : +U (Nat -> -F \
-                        Nat) ;\ndef double = thunk { fn (x) { return x } } ;\n";
+                        Nat) ;\ndef double = thunk { fun (x) { return x } } ;\n";
 
     /// What a completion offers: each name with its kind, and each keyword,
     /// in order.
@@ -1236,7 +1236,7 @@ mod tests
             row("run", "run ${1:computation}"),
             row("hold", "hold ${1:value}"),
             row("type(", "type(${1:type})"),
-            row("fn", "fn { \\}"),
+            row("fun", "fun { \\}"),
             row("thunk", "thunk { ${1:computation} \\}"),
             row("match", "match ${1:value} { \\}"),
             row(

@@ -23,7 +23,7 @@ import "../../model/interop/thir/buddy-pop.gandr";
 def exampleSpecified : #{
   m : Expr,
   meets : (b : Value, post : Value => Type, exampleSpec(b, post)) => wpFn(identitySpec, m, b, post)
-} = (exampleBody, fn (b) { fn (post) { fn (h) {
+} = (exampleBody, fun (b) { fun (post) { fun (h) {
   run meets <- exampleMeets(b, post);
   meets(h)
 } } });

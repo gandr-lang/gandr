@@ -74,13 +74,13 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
    │ ┌─┘             checked; while checking the body of this function; binds a : Type
    │ │
 56 │ │   +U (a -> -F [Div] b),
-57 │ │   thunk { fn (x) { run v <- g(x); f(x) } },
-   │ │   ──────────────────────────────────────── an endpoint the point does not convert to
-58 │ │   thunk { fn (x) { f(x) } }
-   │ │   ───────────────────────── an endpoint the point does not convert to
+57 │ │   thunk { fun (x) { run v <- g(x); f(x) } },
+   │ │   ───────────────────────────────────────── an endpoint the point does not convert to
+58 │ │   thunk { fun (x) { f(x) } }
+   │ │   ────────────────────────── an endpoint the point does not convert to
 59 │ │ ) {
-60 │ │   here(thunk { fn (x) { f(x) } })
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+60 │ │   here(thunk { fun (x) { f(x) } })
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
 61 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │

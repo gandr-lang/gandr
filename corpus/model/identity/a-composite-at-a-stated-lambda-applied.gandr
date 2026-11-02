@@ -5,7 +5,7 @@
 /// applied at its endpoints. A composite over that path starts at the
 /// application. Passed to `composeHere`, whose type writes `p then q`, its
 /// start meets the reduct `F(x)` or the application written again. A lambda
-/// whose body composes, `fn (q) { q then g }`, meets a composite written apart.
+/// whose body composes, `fun (q) { q then g }`, meets a composite written apart.
 ///
 /// The conversion's code walk reads a call of a stated lambda as the lambda's
 /// body, its binder bound to the call's argument. Two composites written apart
@@ -43,10 +43,10 @@ def composedAtLambda(
   s : Path(A, F(y), z)
 ) -> Path(
   Path(A, F(x), z),
-  along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s,
-  along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s
+  along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s,
+  along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s
 ) {
-  here(along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s)
+  here(along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s)
 }
 
 /// The same composite through `composeHere`, its start the reduct.
@@ -60,10 +60,10 @@ def passedAtLambda(
   s : Path(A, F(y), z)
 ) -> Path(
   Path(A, F(x), z),
-  along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s,
-  along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s
+  along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s,
+  along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s
 ) {
-  composeHere(A, F(x), F(y), z, along(A, (fn (q : A) { F(q) } : A => A), x, y, r), s)
+  composeHere(A, F(x), F(y), z, along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s)
 }
 
 /// The same, its start the application written again.
@@ -77,15 +77,15 @@ def passedRedex(
   s : Path(A, F(y), z)
 ) -> Path(
   Path(A, F(x), z),
-  along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s,
-  along(A, (fn (q : A) { F(q) } : A => A), x, y, r) then s
+  along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s,
+  along(A, (fun (q : A) { F(q) } : A => A), x, y, r) then s
 ) {
   composeHere(
     A,
-    (fn (q : A) { F(q) } : A => A)(x),
+    (fun (q : A) { F(q) } : A => A)(x),
     F(y),
     z,
-    along(A, (fn (q : A) { F(q) } : A => A), x, y, r),
+    along(A, (fun (q : A) { F(q) } : A => A), x, y, r),
     s
   )
 }
@@ -116,7 +116,7 @@ def composedAcross(
   acrossCarriers(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     fm,
     fp,
     fa
@@ -124,7 +124,7 @@ def composedAcross(
   acrossCarriers(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     fm,
     fp,
     fa
@@ -133,7 +133,7 @@ def composedAcross(
   here(acrossCarriers(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     fm,
     fp,
     fa
@@ -157,7 +157,7 @@ def passedComposite(
   acrossCarriers(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     fm,
     fp,
     fa
@@ -165,7 +165,7 @@ def passedComposite(
   acrossCarriers(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     fm,
     fp,
     fa
@@ -179,7 +179,7 @@ def passedComposite(
     acrossCarriers(
       Path(A, x, y),
       Path(A, x, z),
-      (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa

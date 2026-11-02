@@ -54,8 +54,8 @@ def tamed(x : Bool) -> Bool {
 @[ refuses("EndpointMismatch") ]
 def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> Path(
   +U (a -> -F [Div] b),
-  thunk { fn (x) { run v <- g(x); f(x) } },
-  thunk { fn (x) { f(x) } }
+  thunk { fun (x) { run v <- g(x); f(x) } },
+  thunk { fun (x) { f(x) } }
 ) {
-  here(thunk { fn (x) { f(x) } })
+  here(thunk { fun (x) { f(x) } })
 }

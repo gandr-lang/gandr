@@ -44,7 +44,7 @@ pub def rec renameRename(
         RLift(a1),
         RLift(a2),
         RLift(a3),
-        fn (n) { renameRenameLift(a1, a2, a3, h, n) }
+        fun (n) { renameRenameLift(a1, a2, a3, h, n) }
       )
     ),
     Ap(f, x) => transport(
@@ -102,7 +102,7 @@ pub def rec renameSquare(
         RLift(a2),
         RLift(a3),
         RLift(a4),
-        fn (n) { renameSquareLift(a1, a2, a3, a4, h, n) }
+        fun (n) { renameSquareLift(a1, a2, a3, a4, h, n) }
       )
     ),
     Ap(f, x) => transport(

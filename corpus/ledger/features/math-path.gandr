@@ -50,7 +50,7 @@ def apAtHere(A : Type, B : Type, F : A => B, x : A) -> Path(
 def apCompAtHere(A : Type, B : Type, C : Type, F : A => B, G : B => C, x : A) -> Path(
   Path(
     Path(C, G(F(x)), G(F(x))),
-    ap(A, C, (fn (a : A) { G(F(a)) } : A => C), x, x, here(x)),
+    ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, x, here(x)),
     ap(B, C, G, F(x), F(x), ap(A, B, F, x, x, here(x)))
   ),
   apComp(A, B, C, F, G, x, x, here(x)),

@@ -5,7 +5,7 @@
 /// The total relation between the unit type and the string type.
 @[ checks ]
 def unitString : Bridge(Type, Unit, String) = thunk {
-  fn (x : Unit) { fn (y : String) { return Unit } }
+  fun (x : Unit) { fun (y : String) { return Unit } }
 };
 
 /// Two equal lists of integers, related cell by cell.

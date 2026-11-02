@@ -20,5 +20,5 @@ def whiskeredBySuspension(
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong((thunk { fn (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)
+  cong((thunk { fun (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)
 }

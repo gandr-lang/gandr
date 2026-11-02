@@ -12,10 +12,10 @@ def incrForgetful() -> ((Unit, Integer) => Type, Integer) => Type {
   handle st : StateLaws with sort S = Integer {
     run n <- st.get();
     st.put(n + 1);
-    pure fn (q) { fn (s) { q(unit, s) } }
+    pure fun (q) { fun (s) { q(unit, s) } }
   } with {
     pure(w) => pure w,
-    oper get(k) => pure fn (q) { fn (s) { run w <- k(s); w(q, s) } },
-    oper put(_s, k) => pure fn (q) { fn (old) { run w <- k(unit); w(q, old) } }
+    oper get(k) => pure fun (q) { fun (s) { run w <- k(s); w(q, s) } },
+    oper put(_s, k) => pure fun (q) { fun (old) { run w <- k(unit); w(q, old) } }
   }
 }

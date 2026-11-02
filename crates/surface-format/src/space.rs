@@ -83,8 +83,8 @@ const MARKS: [&str; 3] = [
 ];
 
 /// The keywords whose parenthesis lists binders, one space after the keyword:
-/// `fn (x)`, `fork (seat : end)`, `bind (a : Name)`, `pi+ (x : A)`.
-const BINDERS: [&str; 4] = ["fn", "fork", "bind", "pi+"];
+/// `fun (x)`, `fork (seat : end)`, `bind (a : Name)`, `pi+ (x : A)`.
+const BINDERS: [&str; 4] = ["fun", "fork", "bind", "pi+"];
 
 /// The part a token plays where its text alone does not decide its spacing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -313,7 +313,7 @@ fn applied(left: Token<'_>) -> Wordlike
 ///   or `.#{` touches the word or bracket before it, and a `.` the word after
 ///   it unless it ends a binder; a prefix operator touches what follows it; a
 ///   `(` or `[` touches the word or hugging bracket before it, unless it opens
-///   an operand or the binders of `fn`, `fork`, `bind` or `pi+`; any other two
+///   an operand or the binders of `fun`, `fork`, `bind` or `pi+`; any other two
 ///   are one space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.

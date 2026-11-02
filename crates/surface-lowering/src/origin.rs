@@ -257,7 +257,7 @@ pub enum Insertion
     Assignment,
     /// A node of the bind a lambda's parameter written with its type is read
     /// through, every one located at the lambda: the source writes
-    /// `fn (x : A)`, never the argument the lambda binds apart, its return,
+    /// `fun (x : A)`, never the argument the lambda binds apart, its return,
     /// the ascription at `-F A` or the bind that names it `x`.
     Parameter,
     /// A node of the law and the proof a derived rule's statement or one of

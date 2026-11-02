@@ -43,10 +43,10 @@ module Erased : Model(Cost) with sort N = Nat => Nat where {
   /// A charge leaves what runs after it as it is.
   def charge(c : Nat => Nat, k : Integer) -> Integer { k }
   /// No cost.
-  def zero : Nat => Nat = thunk { fn (n) { pure n } };
+  def zero : Nat => Nat = thunk { fun (n) { pure n } };
   /// Two costs, composed.
   def plus(a : Nat => Nat, b : Nat => Nat) -> Nat => Nat {
-    thunk { fn (n) { run m <- b(n); a(m) } }
+    thunk { fun (n) { run m <- b(n); a(m) } }
   }
   /// Charging nothing is the identity.
   def chargeZero(k : Integer) -> Path(Integer, charge(zero, k), k) { here(k) }

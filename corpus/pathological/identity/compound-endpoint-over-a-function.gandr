@@ -1,5 +1,5 @@
 def constantly(x : Integer) -> Integer -> -F Integer {
-  fn (y) { x }
+  fun (y) { x }
 }
 
 @[ refuses("CompoundEndpoint") ]

@@ -341,7 +341,7 @@ pub fn module(
                     "def p{i} : +U (Integer -> Integer -> -F Integer) ;"
                 ));
                 shape.push(format!(
-                    "def p{i} = thunk {{ fn (x) {{ fn (y) {{ return x }} }} }} ;"
+                    "def p{i} = thunk {{ fun (x) {{ fun (y) {{ return x }} }} }} ;"
                 ));
             },
             5 => {
@@ -358,7 +358,7 @@ pub fn module(
                         "def u{i} : +U (Integer -> Integer -> -F Integer) ;"
                     ));
                     shape.push(format!(
-                        "def u{i} = thunk {{ fn (x) {{ fn (y) {{ run p <- (force p{})(x)(y) ; return p }} }} }} ;",
+                        "def u{i} = thunk {{ fun (x) {{ fun (y) {{ run p <- (force p{})(x)(y) ; return p }} }} }} ;",
                         i.saturating_sub(2)
                     ));
                 },
@@ -380,7 +380,7 @@ pub fn module(
                 SourceRoot::Strict => {
                     shape.push(format!("def w{i} : +U (Integer -> -F Integer) ;"));
                     shape.push(format!(
-                        "def w{i} = thunk {{ fn (n) {{ run a <- (force p{})(n)(n) ; run b <- (force p{})(a)(n) ; return b }} }} ;",
+                        "def w{i} = thunk {{ fun (n) {{ run a <- (force p{})(n)(n) ; run b <- (force p{})(a)(n) ; return b }} }} ;",
                         i.saturating_sub(4),
                         i.saturating_sub(4)
                     ));

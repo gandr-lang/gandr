@@ -60,7 +60,7 @@ def whiskeredRight(
   actedOn(
     Path(A, x, y),
     Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
     f1,
     f2,
     a

@@ -1,5 +1,5 @@
 /// `StaticLambdaArgument`: a type operator passed where a dynamic parameter needs a value.
-@[ runs("fn (a) { unit }") ]
+@[ runs("fun (a) { unit }") ]
 def use(f : Type -> Type) -> -F Unit { return unit }
 
 @[ refuses("StaticLambdaArgument") ]

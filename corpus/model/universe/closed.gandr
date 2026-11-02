@@ -74,7 +74,7 @@ def kept() -> -F Nat { idAt(NatC, one) }
 /// which runs to `Nat => Nat`.
 @[ checks ]
 def succ : el(Arrow(NatC, NatC));
-def succ = thunk { fn (n) { Succ(n) } };
+def succ = thunk { fun (n) { Succ(n) } };
 
 /// Application at every pair of codes: the decode of `Arrow(a, b)` reads
 /// through the decoder's arm to `el(a) => el(b)`, so `f` applies to `v` and
@@ -94,7 +94,7 @@ def applied() -> -F Nat { applyAt(NatC, NatC, succ, one) }
 /// it applies its argument to one.
 @[ checks ]
 def atOne : el(Arrow(Arrow(NatC, NatC), NatC));
-def atOne = thunk { fn (g) { g(one) } };
+def atOne = thunk { fun (g) { g(one) } };
 
 /// Application one code up: `atOne` at the successor.
 @[ runs("Succ(Succ(Zero))") ]

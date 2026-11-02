@@ -1,2 +1,2 @@
-fn(x) {
+fun(x) {
   return x

@@ -26,7 +26,7 @@ def unchosen() -> Integer { chosen(Integer) }
 /// argument: the only solution for `b` is the lambda's binder `t`, which the
 /// call does not stand under.
 @[ refuses("ImplicitUnsolved") ]
-def escaping() -> Integer { konst(fn (t) { fn (y) { y } }) }
+def escaping() -> Integer { konst(fun (t) { fun (y) { y } }) }
 
 /// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
 /// and the returned type then disagrees with `Unit`.

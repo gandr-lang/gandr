@@ -12,7 +12,7 @@ def exampleAtTrueZero(post : Value => Type) -> (post(Int(0))) => wpFn(
   True,
   post
 ) {
-  return fn (h) { h }
+  return fun (h) { h }
 }
 
 /// At true the call of `identity` is reached, so the table decides it, and a claim past every table is refused (#2791).
@@ -21,5 +21,5 @@ def exampleAtTrueAnyTable(
   spec : (Item, Value, Value => Type) => Type,
   post : Value => Type
 ) -> (post(Int(1))) => wpFn(spec, exampleBody, True, post) {
-  return fn (h) { h }
+  return fun (h) { h }
 }

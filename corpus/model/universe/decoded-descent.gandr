@@ -56,9 +56,9 @@ def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat {
 /// sum, which descends on the code.
 def rec total(c : UL) -> +U (elL(c) -> -F Nat) {
   match c {
-    NatL => thunk { fn (v) { v } },
-    ListL(a) => thunk { fn (v) { sumAt(a, total[<](a), v) } },
-    PiL(a, b) => thunk { fn (f) { Zero } }
+    NatL => thunk { fun (v) { v } },
+    ListL(a) => thunk { fun (v) { sumAt(a, total[<](a), v) } },
+    PiL(a, b) => thunk { fun (f) { Zero } }
   }
 }
 

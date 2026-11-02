@@ -34,10 +34,10 @@ def identified(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), atRoot(x), inside(x
 /// type by `ua` over the identity record.
 def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S(x), S(x))) {
   ua((
-    fn (c) { c },
+    fun (c) { c },
     (
-      (fn (c) { c }, fn (c) { here(c) }),
-      (fn (c) { c }, fn (c) { here(c) })
+      (fun (c) { c }, fun (c) { here(c) }),
+      (fun (c) { c }, fun (c) { here(c) })
     )
   ))
 }
@@ -47,15 +47,15 @@ def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S
 def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> Path(
   Path(Int, S(x), S(x)) => Int,
   transport(\X. X => Int, certificates(x), f),
-  fn (d) { f(d) }
+  fun (d) { f(d) }
 ) {
-  here(fn (d) { f(d) })
+  here(fun (d) { f(d) })
 }
 
 /// The carried consumer, run on a certificate of the join's boundary: it
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S(Z)") ]
 def carriedRun() -> Int {
-  run g <- transport(\X. X => Int, certificates(Z), fn (c) { transport(\y. Int, c, S(Z)) });
+  run g <- transport(\X. X => Int, certificates(Z), fun (c) { transport(\y. Int, c, S(Z)) });
   g(here(S(Z)))
 }

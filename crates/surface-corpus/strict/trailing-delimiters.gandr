@@ -28,7 +28,7 @@ def cool(c : Color) -> Integer {
   match c { Red | Green => 0, | Blue => 1, }
 }
 
-@[ runs("fn (a) { fn (b) { a } }") ]
+@[ runs("fun (a) { fun (b) { a } }") ]
 def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]

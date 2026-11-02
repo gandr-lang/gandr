@@ -49,7 +49,7 @@ def undeclared() -> Integer {
 @[ refuses("UnresolvedName") ]
 def answeredByNothing() -> Integer => Integer {
   handle st : State with sort S = Integer {
-    pure fn (s) { pure s }
+    pure fun (s) { pure s }
   } with Stateless
 }
 
@@ -76,7 +76,7 @@ def answeredForConsole() -> Integer {
 @[ refuses("ModelUnanswered") ]
 def unansweredAtTwo() -> Integer => Integer {
   handle st : State with sort S = Unit + Unit {
-    pure fn (s) { pure 1 }
+    pure fun (s) { pure 1 }
   }
 }
 
@@ -111,7 +111,7 @@ module Forgetting : Model(State) with sort S = Integer where {
 @[ refuses("ModelAmbiguous") ]
 def ambiguousInScope() -> Integer => Integer {
   handle st : State with sort S = Integer {
-    pure fn (s) { pure s }
+    pure fun (s) { pure s }
   }
 }
 

@@ -1,4 +1,4 @@
-fn (a) {
+fun (a) {
   run b <- {
     run b <- pure 1 ;
     pure b

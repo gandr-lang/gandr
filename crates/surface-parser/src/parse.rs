@@ -1829,7 +1829,7 @@ pure greeting
         // A pool of gandr fragments to mutate and truncate.
         let fragments = vec![
             "def x = 1;",
-            "fn(a) { pure a }",
+            "fun(a) { pure a }",
             "match v { Inl(x) => x, Inr(y) => y }",
             "if c { pure 1 } else { pure 2 }",
             "#{ a = 1, b = \"s\" }",

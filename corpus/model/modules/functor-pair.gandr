@@ -12,10 +12,10 @@ pub module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } whe
   @[ runs("0") ]
   def zero = 0;
   /// One step on.
-  @[ runs("fn (a) { a + 1 }") ]
+  @[ runs("fun (a) { a + 1 }") ]
   def next(n : T) -> T { n + 1 }
   /// The count read as an integer.
-  @[ runs("fn (a) { a }") ]
+  @[ runs("fun (a) { a }") ]
   def read(n : T) -> Integer { n }
 }
 

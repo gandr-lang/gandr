@@ -14,7 +14,7 @@ def misreturned() -> Integer {
 
 /// A lambda whose parameter states a type the arrow it answers does not take.
 @[ refuses("TypeMismatch") ]
-def mistyped : Integer => Integer = thunk { fn (x : String) { 1 } };
+def mistyped : Integer => Integer = thunk { fun (x : String) { 1 } };
 
 /// An annotation inside a pair that misstates its component (#1543).
 @[ refuses("TypeMismatch") ]

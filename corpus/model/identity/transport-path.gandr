@@ -13,7 +13,7 @@ def moved_end : Path(
 
 /// A reflexive transport at a path-type motive returns its path, by a run: the
 /// path runs as its two maps, both the identity.
-@[ runs("(thunk { fn (a) { a } }, thunk { fn (a) { a } })") ]
+@[ runs("(thunk { fun (a) { a } }, thunk { fun (a) { a } })") ]
 def moved_end_run() -> Path(Integer, 2, 2) {
   transport(\x. Path(Integer, x, x), here(2), here(2))
 }

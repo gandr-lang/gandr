@@ -13,7 +13,7 @@ import "../../model/specification/tree-state-wp.gandr";
 def incrMissesOne : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, isOne(unit, s)) => wp(m, isOne, s)
-} = (incrTree, fn (s) { fn (h) { h } });
+} = (incrTree, fun (s) { fun (h) { h } });
 
 /// A specification asking two more than the increment stores.
 def incrByTwoSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 2) }

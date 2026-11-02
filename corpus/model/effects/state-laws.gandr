@@ -17,11 +17,11 @@ def counter() -> (Integer => Integer) {
     run a <- st.get();
     st.put(a + 1);
     run b <- st.get();
-    pure fn (s : Integer) { pure b }
+    pure fun (s : Integer) { pure b }
   } with {
     pure(x) => pure x,
-    oper get(k) => pure fn (s : Integer) { run g <- k(s); g(s) },
-    oper put(s, k) => pure fn (t : Integer) { run g <- k(unit); g(s) }
+    oper get(k) => pure fun (s : Integer) { run g <- k(s); g(s) },
+    oper put(s, k) => pure fun (t : Integer) { run g <- k(unit); g(s) }
   }
 }
 

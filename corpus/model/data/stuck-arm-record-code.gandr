@@ -43,7 +43,7 @@ def write(h : Heap, k : Nat => Type) -> Type {
 def matchRead(h : Heap, rest : Type, w : Nat) -> Type {
   match w {
     Zero => rest,
-    Succ(_s) => write(h, fn (_v) { return Unit })
+    Succ(_s) => write(h, fun (_v) { return Unit })
   }
 }
 
@@ -67,5 +67,5 @@ def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) {
 
 /// The fold of two reads converts with the reads written out.
 def foldedReads(_u : Unit) -> (read(Emp, read(Emp, Unit))) => fold(Succ(Succ(Zero)), Emp) {
-  return fn (h) { h }
+  return fun (h) { h }
 }

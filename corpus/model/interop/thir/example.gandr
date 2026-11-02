@@ -141,11 +141,11 @@ pub def rec wp(
       spec,
       c,
       x,
-      fn (v) { branch(v, wp[<](spec, t, x, k, r), wp[<](spec, f, x, k, r)) },
+      fun (v) { branch(v, wp[<](spec, t, x, k, r), wp[<](spec, f, x, k, r)) },
       r
     ),
     Return(a) => wp[<](spec, a, x, r, r),
-    Call(g, a) => wp[<](spec, a, x, fn (v) { spec(g, v, k) }, r)
+    Call(g, a) => wp[<](spec, a, x, fun (v) { spec(g, v, k) }, r)
   }
 }
 
@@ -196,9 +196,9 @@ pub def exampleMeets(b : Value, post : Value => Type) -> (exampleSpec(
   post
 )) => wpFn(identitySpec, exampleBody, b, post) {
   match b {
-    True => return fn (h) { h },
-    False => return fn (h) { h },
-    Int(_n) => return fn (h) { h }
+    True => return fun (h) { h },
+    False => return fun (h) { h },
+    Int(_n) => return fun (h) { h }
   }
 }
 
@@ -207,5 +207,5 @@ pub def exampleReturnsPast(
   spec : (Item, Value, Value => Type) => Type,
   post : Value => Type
 ) -> (post(Int(0))) => wpFn(spec, exampleBody, False, post) {
-  return fn (h) { h }
+  return fun (h) { h }
 }

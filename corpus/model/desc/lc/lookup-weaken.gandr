@@ -18,7 +18,7 @@ def shiftByWeakens(a : Term, k : N) -> Path(Term, shiftBy(a, S(k)), wk(shiftBy(a
       RShift(S(i)),
       RShift(S(Z)),
       RShift(S(S(i))),
-      fn (n) { shiftsCompose(i, n) }
+      fun (n) { shiftsCompose(i, n) }
     ))
   }
 }

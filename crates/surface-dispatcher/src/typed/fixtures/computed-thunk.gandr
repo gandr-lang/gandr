@@ -10,7 +10,7 @@ def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
     Iota(e) => return Unit,
     DeltaC(a, f) => return (Sig(
       +U (a -> -F x),
-      thunk { fn (h) { args[<](d, f(thunk { fn (z) { t(h(z)) } }), x, t) } }
+      thunk { fun (h) { args[<](d, f(thunk { fun (z) { t(h(z)) } }), x, t) } }
     ))
   }
 }
@@ -26,6 +26,6 @@ def delta(
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit {
   match v {
-    MkSig(h, r) => keep(d, f(thunk { fn (z) { t(h(z)) } }), x, t, r)
+    MkSig(h, r) => keep(d, f(thunk { fun (z) { t(h(z)) } }), x, t, r)
   }
 }

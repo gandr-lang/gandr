@@ -1,2 +1,2 @@
 @[ refuses("NotSynthesisable"), form(explicit) ]
-def applied() -> -F Integer { become (fn (x) { return x })(3) }
+def applied() -> -F Integer { become (fun (x) { return x })(3) }

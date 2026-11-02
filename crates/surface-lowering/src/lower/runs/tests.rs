@@ -166,9 +166,9 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
 fn a_call_returning_a_function_runs_where_it_is_applied_3935()
 {
     let text = SourceText::from(
-        "def plus(n : Integer) -> Integer => Integer { thunk { fn (m : Integer) { m + n } } }\n\
+        "def plus(n : Integer) -> Integer => Integer { thunk { fun (m : Integer) { m + n } } }\n\
          def applied(n : Integer) -> Integer { run h <- plus(n)(1) ; h }\n\
-         def dependent(A : Type) -> A => A { thunk { fn (x : A) { x } } }\n\
+         def dependent(A : Type) -> A => A { thunk { fun (x : A) { x } } }\n\
          def picked(A : Type, x : A) -> A { dependent(A)(x) }\n\
          def curried(n : Integer, m : Integer) -> Integer { n + m }\n\
          def partial(n : Integer) -> Integer { curried(n)(1) }\n",
@@ -199,9 +199,9 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
          reads it as at a tail's start; a curried call runs nothing"
     );
     let written = SourceText::from(
-        "def plus(n : Integer) -> Integer => Integer { thunk { fn (m : Integer) { m + n } } }\n\
+        "def plus(n : Integer) -> Integer => Integer { thunk { fun (m : Integer) { m + n } } }\n\
          def applied(n : Integer) -> Integer { run h <- (run plus(n))(1) ; h }\n\
-         def dependent(A : Type) -> A => A { thunk { fn (x : A) { x } } }\n\
+         def dependent(A : Type) -> A => A { thunk { fun (x : A) { x } } }\n\
          def picked(A : Type, x : A) -> A { (run dependent(A))(x) }\n",
     );
     let mut rewritten = CoreArena::new();

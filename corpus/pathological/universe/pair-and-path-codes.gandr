@@ -38,7 +38,7 @@ rec {
       NatR => return Nat,
       SigR(a, b) => {
         run t <- elSigRun[<](a);
-        return (Sig(t, thunk { fn (x) { elSigRun[<](b(x)) } }))
+        return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
       }
     }
   }

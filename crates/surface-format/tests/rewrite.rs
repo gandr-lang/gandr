@@ -247,7 +247,7 @@ def stated(n : Nat) -> -F Nat {
 }
 
 def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
-  return thunk { fn (x) { return Succ(x) } }
+  return thunk { fun (x) { return Succ(x) } }
 }
 
 def blocked(n : Nat) -> -F Nat {
@@ -295,7 +295,7 @@ def stated(n : Nat) -> Nat {
 }
 
 def nested(n : Nat) -> Nat => Nat {
-  thunk { fn (x) { Succ(x) } }
+  thunk { fun (x) { Succ(x) } }
 }
 
 def blocked(n : Nat) -> Nat {
@@ -548,7 +548,7 @@ fn the_path_composite_moves_both_ways()
 }
 
 /// A derived motive formats once as explicit (#3891). Its lambda's stated
-/// parameter is the binder's type, `fn (c : Path(A, x, y))`, not the
+/// parameter is the binder's type, `fun (c : Path(A, x, y))`, not the
 /// statement the printer once wrote for it (#3943).
 #[test]
 fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
@@ -564,12 +564,12 @@ fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong((thunk { fn (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)
+  cong((thunk { fun (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)
 }
 ";
     let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        once.contains("fn (c : Path(A, x, y)) {"),
+        once.contains("fun (c : Path(A, x, y)) {"),
         "the motive's lambda states its parameter's type: {once}"
     );
     assert_eq!(
@@ -2113,25 +2113,25 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
 {
     let grammar = grammar();
     let source = "def identity : +U (Integer -> -F Integer) ;\n\
-                  def identity = thunk { fn (n) { return n } } ;\n\
+                  def identity = thunk { fun (n) { return n } } ;\n\
                   \n\
                   def add : (Integer, Integer) => Integer ;\n\
-                  def add = thunk { fn (a) { fn (b) { return (a + b) } } } ;\n\
+                  def add = thunk { fun (a) { fun (b) { return (a + b) } } } ;\n\
                   \n\
                   def named : +U ((x : Integer) -> -F Integer) ;\n\
-                  def named = thunk { fn (x) { return x } } ;\n\
+                  def named = thunk { fun (x) { return x } } ;\n\
                   \n\
                   def stated : Integer => Integer ;\n\
-                  def stated = thunk { fn (x : Integer) { return x } } ;\n\
+                  def stated = thunk { fun (x : Integer) { return x } } ;\n\
                   \n\
                   def short : +U (Integer -> Integer -> -F Integer) ;\n\
-                  def short = thunk { fn (a) { become add(a) } } ;\n\
+                  def short = thunk { fun (a) { become add(a) } } ;\n\
                   \n\
                   def renamed : +U ((x : Integer) -> -F Integer) ;\n\
-                  def renamed = thunk { fn (y) { return y } } ;\n\
+                  def renamed = thunk { fun (y) { return y } } ;\n\
                   \n\
                   def mistyped : Integer => Integer ;\n\
-                  def mistyped = thunk { fn (x : String) { return 1 } } ;\n";
+                  def mistyped = thunk { fun (x : String) { return 1 } } ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
@@ -2153,13 +2153,13 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
 
         def named(x : Integer) -> Integer { x }
 
-        def stated : Integer => Integer = thunk { fn (x : Integer) { x } };
+        def stated : Integer => Integer = thunk { fun (x : Integer) { x } };
 
-        def short : (Integer, Integer) => Integer = thunk { fn (a) { become add(a) } };
+        def short : (Integer, Integer) => Integer = thunk { fun (a) { become add(a) } };
 
         def renamed(y : Integer) -> Integer { y }
 
-        def mistyped : Integer => Integer = thunk { fn (x : String) { 1 } };
+        def mistyped : Integer => Integer = thunk { fun (x : String) { 1 } };
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
@@ -2170,16 +2170,16 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
         def named(x : Integer) -> -F Integer { return x }
 
         def stated : +U (Integer -> -F Integer);
-        def stated = thunk { fn (x : Integer) { return x } };
+        def stated = thunk { fun (x : Integer) { return x } };
 
         def short : +U (Integer -> Integer -> -F Integer);
-        def short = thunk { fn (a) { become add(a) } };
+        def short = thunk { fun (a) { become add(a) } };
 
         def renamed : +U ((x : Integer) -> -F Integer);
-        def renamed = thunk { fn (y) { return y } };
+        def renamed = thunk { fun (y) { return y } };
 
         def mistyped : +U (Integer -> -F Integer);
-        def mistyped = thunk { fn (x : String) { return 1 } };
+        def mistyped = thunk { fun (x : String) { return 1 } };
     "#]]
     .assert_eq(&laid(Form::Explicit));
 }
@@ -2460,10 +2460,10 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 {
     let grammar = grammar();
     let source = "def identity : Integer => Integer ;\n\
-                  def identity = fn (x) { x } ;\n\
+                  def identity = fun (x) { x } ;\n\
                   \n\
                   def add : (Integer, Integer) => Integer ;\n\
-                  def add = fn (a) { fn (b) { a + b } } ;\n";
+                  def add = fun (a) { fun (b) { a + b } } ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form, answer: Option<Answer>| {
         let options = FormatOptions {
@@ -2500,9 +2500,9 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
     "#]]
     .assert_eq(&laid(Form::Explicit, Some(Answer::Alike)));
     expect![[r#"
-        def identity : Integer => Integer = fn (x) { x };
+        def identity : Integer => Integer = fun (x) { x };
 
-        def add : (Integer, Integer) => Integer = fn (a) { fn (b) { a + b } };
+        def add : (Integer, Integer) => Integer = fun (a) { fun (b) { a + b } };
     "#]]
     .assert_eq(&laid(Form::Sugared, None));
 }
