@@ -2792,13 +2792,15 @@ INSERT INTO purpose VALUES('surface-lowering','unit::UnitFault','enum','Names a 
 INSERT INTO purpose VALUES('surface-lowering','unit::UnitKey','struct','Holds a unit''s key, so the key''s source is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','unit::UnitSource','struct','Holds a unit''s source, so the source''s start is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','Capabilities','struct','The capabilities the server advertises: what `initialize` answers, displayed as one line of JSON.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','build::Build','struct','Names one build by its executable''s digest, so a hub''s socket and a save''s checkpoints are keyed by the build that made them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','bus::RENDER_BUS_PREFACE','constant','The line a render-bus client opens its connection with: the attach, naming the bus and its wire schema version.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::Face','type_alias','A face that serves a connection speaking newline-delimited JSON.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::LINGER','constant','How long a hub with no connection waits for one before it exits, unless its caller names another.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','hub::Unnamed','enum','Names why no socket could be named for a workspace, so the driver reports which.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::bind','function','Listen on `socket`, unless another hub already does.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::relay','function','Carry frames between a client and the hub at the other end of `hub`: each frame `input` holds to the hub, each frame the hub sends to `output`, until the hub closes the connection.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::run_hub','function','Serve every connection `listener`, bound to `socket`, accepts over one workspace, until none has been open for `linger`.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lsp','hub::socket_for','function','The socket the hub serving the workspace rooted at `root` listens on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','hub::socket_for','function','The socket the running build''s hub serving the workspace rooted at `root` listens on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','inline::Snippet','struct','A snippet in the protocol''s snippet syntax: literal text with tab stops.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','position::Character','struct','A zero-based character within a line, counted in UTF-16 code units, as the wire counts it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','position::Line','struct','A zero-based line, as the wire counts it.',NULL,'fits','sound',NULL);

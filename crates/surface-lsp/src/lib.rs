@@ -66,9 +66,10 @@
 //! On Unix, `run_hub` serves every connection a socket accepts over one
 //! workspace: each connection holds its own copy of every document it opens
 //! and is answered for it, and the other faces read the copy that synchronised
-//! last. `socket_for` names a workspace's socket, `bind` claims it unless
-//! another hub serves it, and `relay` carries a client's streams to the hub
-//! and back.
+//! last. `socket_for` names the socket of a workspace and the running build,
+//! so a client reaches only a hub its own build started; `bind` claims it
+//! unless another hub serves it, and `relay` carries a client's streams to the
+//! hub and back.
 //!
 //! # Example
 //!
@@ -375,6 +376,7 @@ use core::fmt;
 
 #[cfg(test)]
 mod anchor;
+mod build;
 #[cfg(unix)]
 mod bus;
 mod calls;
@@ -423,12 +425,15 @@ pub use gandr_surface_dispatcher::Pool;
 pub use gandr_surface_dispatcher::Width;
 pub use gandr_surface_pretty::Spelling;
 
+pub use crate::build::unidentified;
 #[cfg(unix)]
 pub use crate::bus::RENDER_BUS_PREFACE;
 #[cfg(unix)]
 pub use crate::hub::Face;
 #[cfg(unix)]
 pub use crate::hub::LINGER;
+#[cfg(unix)]
+pub use crate::hub::Unnamed;
 #[cfg(unix)]
 pub use crate::hub::bind;
 #[cfg(unix)]
