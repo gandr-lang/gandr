@@ -2100,6 +2100,7 @@ impl Workspace
             viewing: BTreeSet::new(),
             notebooks: BTreeMap::new(),
             sweep: Sweep::new(),
+            opening: Value::Null,
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -2401,6 +2402,10 @@ pub struct Server
     /// What each source no editor holds last reported, and the pulls of the
     /// workspace's diagnostics waiting.
     sweep: Sweep,
+    /// The parameters its client's `initialize` carried, as the client sent
+    /// them: the opening a replay rebuilds the connection from on another
+    /// build's hub.
+    opening: Value,
 }
 
 /// Where a choice put to the user stands.
@@ -2488,6 +2493,7 @@ impl Server
             viewing: BTreeSet::new(),
             notebooks: BTreeMap::new(),
             sweep: Sweep::new(),
+            opening: Value::Null,
         }
     }
 
@@ -4387,6 +4393,43 @@ impl Server
         }
     }
 
+    /// The messages that open this connection again on another build's hub:
+    /// its client's `initialize`, `initialized`, and a `didOpen` of each
+    /// document it holds at its text and version.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the `initialize` first, under the id `gandr/replay` and with
+    ///   the parameters the client sent, then `initialized`, then one `didOpen`
+    ///   per document this connection holds, in URI order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a connection holding a changed document replays it at
+    ///   the version and text its last change left.
+    /// - witness: `hub::tests::a_relay_switches_once_nothing_is_pending`
+    #[spec(ensures: |ret| ret.len() >= 2)]
+    fn replay(
+        &self,
+        workspace: &Workspace,
+    ) -> Vec<Value>
+    {
+        let mut messages = vec![
+            serde_json::json!({"jsonrpc": "2.0", "id": "gandr/replay", "method": "initialize",
+                "params": self.opening}),
+            serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        ];
+        for (uri, held) in &workspace.documents {
+            if let Maybe::Present(document) = held.own(self.peer) {
+                messages.push(serde_json::json!({"jsonrpc": "2.0",
+                    "method": "textDocument/didOpen", "params": {"textDocument": {"uri": uri,
+                        "languageId": "gandr", "version": document.version,
+                        "text": document.text.text}}}));
+            }
+        }
+        messages
+    }
+
     /// The response to the request `id` calling `method` with `params`.
     ///
     /// # Specification
@@ -4634,6 +4677,9 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "gandr/replay") => self.phase == phase
+                && matches!(ret, Outgoing::Success { result: Answer::Replay(ref messages), .. }
+                    if messages.len() >= 2),
             (Phase::Running, "workspace/textDocumentContent") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Content(_), .. } => true,
@@ -4690,6 +4736,7 @@ impl Server
                 self.listing = initial_listing(&params);
                 self.viewer = initial_viewer(&params);
                 workspace.rooted(self.peer, &roots);
+                self.opening = params;
                 success(
                     id,
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
@@ -5080,6 +5127,7 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
+            (Phase::Running, "gandr/replay") => success(id, Answer::Replay(self.replay(workspace))),
             (Phase::Running, "textDocument/selectionRange") => {
                 match serde_json::from_value::<SelectionRangeParams>(params) {
                     Ok(params) => success(
@@ -6165,7 +6213,7 @@ impl Workspace
             && tokens.data.as_ref().len().is_multiple_of(5)
             && tokens.result_id.is_some() == matches!(window, Window::Whole)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
-        Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Replay(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_) | Answer::Ran(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
@@ -6232,7 +6280,7 @@ impl Workspace
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Hints(ref hints) => self.documents.contains_key(uri)
             && (range.start < range.end || hints.is_empty()),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Replay(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_) | Answer::Ran(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
@@ -6379,7 +6427,7 @@ impl Workspace
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
-        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+        Answer::Initialize(_) | Answer::Replay(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_) | Answer::Ran(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)

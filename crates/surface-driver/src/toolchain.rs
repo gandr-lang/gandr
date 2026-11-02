@@ -17,8 +17,9 @@
 //! `gandr-toolchain` file in the working directory or an ancestor, then the
 //! default. When the selected toolchain's `gandr` is another executable than
 //! the running one, the driver replaces itself with it, with the same
-//! arguments and `GANDR_TOOLCHAIN` naming the selection, so the new image
-//! selects the same toolchain and runs. The driver runs itself when nothing
+//! arguments. The new image selects again, finds itself and runs. It sets no
+//! variable of its own, so a running face selects as the user did and
+//! follows a later switch. The driver runs itself when nothing
 //! names a toolchain, when the selection names the running executable, and
 //! for `gandr toolchain`, which manages the toolchains whatever is selected.
 //! A name that names no installed toolchain is refused before any verb runs.
@@ -420,8 +421,8 @@ pub enum Proxied
 /// - ensures: [`Proxied::Itself`] when nothing names a toolchain, when the
 ///   arguments open with `toolchain`, or when the selected toolchain's `gandr`
 ///   is the running executable. Otherwise, on Unix, the process is replaced by
-///   that executable with the same arguments and `GANDR_TOOLCHAIN` naming the
-///   selection; elsewhere it runs as a child and its status is returned.
+///   that executable with the same arguments and environment; elsewhere it runs
+///   as a child and its status is returned.
 /// - fails: [`ToolchainFault`] when the selection cannot be read, names no
 ///   installed toolchain, or the exec fails.
 /// - panics: none.
@@ -461,7 +462,6 @@ pub fn proxy() -> Result<Proxied, ToolchainFault>
         Maybe::Present(selected) => selected,
         Maybe::Absent(unselected::Absent::Unnamed) => return Ok(Proxied::Itself),
     };
-    let name = selected.name.clone();
     let path = executable(&toolchains, selected)?;
     let running = std::env::current_exe().and_then(std::fs::canonicalize);
     let target = std::fs::canonicalize(&path);
@@ -471,7 +471,7 @@ pub fn proxy() -> Result<Proxied, ToolchainFault>
         return Ok(Proxied::Itself);
     }
     let mut command = std::process::Command::new(&path);
-    let _prepared = command.args(arguments).env(SELECTING, &name.0);
+    let _prepared = command.args(arguments);
     exec(command, path)
 }
 
@@ -532,6 +532,169 @@ fn exec(
         .and_then(|code| u8::try_from(code & 0xff).ok())
         .unwrap_or(2_u8);
     Ok(Proxied::Exited(std::process::ExitCode::from(code)))
+}
+
+/// The file an executable is, by its device and inode. A rebuild writes a new
+/// file, so a rebuilt toolchain is another image at the same path.
+///
+/// # Specification
+/// - invariant: two images are equal when they are one file.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a face follows a switch to another toolchain.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Image
+{
+    /// The device holding the file.
+    device: u64,
+    /// The file's inode on that device.
+    inode: u64,
+}
+
+#[cfg(unix)]
+impl Image
+{
+    /// The image of the file `metadata` describes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(metadata: &std::fs::Metadata) -> Self
+    {
+        use std::os::unix::fs::MetadataExt as _;
+
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        }
+    }
+
+    /// The running process's image. On Linux it is read through
+    /// `/proc/self/exe`, which names the running file even once a rebuild
+    /// replaced its path.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the file the process runs, or the file its path names now
+    ///   where no `/proc` names the running one.
+    /// - fails: when neither can be read.
+    /// - panics: none.
+    /// - executable: none — the answer is the file system's.
+    ///
+    /// # Errors
+    /// The error reading the running executable.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type's.
+    /// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+    pub fn running() -> io::Result<Self>
+    {
+        #[cfg(target_os = "linux")]
+        let running = std::fs::metadata("/proc/self/exe");
+        #[cfg(not(target_os = "linux"))]
+        let running = std::env::current_exe().and_then(std::fs::metadata);
+        running.map(|metadata| Self::of(&metadata))
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the selection names no other image than the running one.
+    pub mod unmoved {
+        /// The reason a face keeps its image.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The selection names the running image.
+            Same,
+            /// Nothing names a toolchain.
+            Unselected,
+            /// The selection, or the image it names, cannot be read.
+            Unreadable,
+        }
+    }
+}
+
+/// The selected toolchain's `gandr`, when it is another image than
+/// `running`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the path when the selection, made as [`proxy`] makes it, names a
+///   `gandr` that is another file than `running`. A selection that cannot be
+///   read keeps the running image, so a face never stops serving because a
+///   toolchain broke.
+/// - panics: none.
+/// - executable: none — the answer is the file system's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a face notices a switch of the default.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+pub fn moved(running: Image) -> Maybe<PathBuf, unmoved::Absent>
+{
+    let Ok((toolchains, default)) = homes()
+    else {
+        return Maybe::Absent(unmoved::Absent::Unreadable);
+    };
+    let Ok(working) = std::env::current_dir()
+    else {
+        return Maybe::Absent(unmoved::Absent::Unreadable);
+    };
+    let environment =
+        std::env::var_os(SELECTING).map_or(Maybe::Absent(named::Absent::Missing), Maybe::Present);
+    let selected = match select(environment, &working, &default) {
+        Ok(Maybe::Present(selected)) => selected,
+        Ok(Maybe::Absent(unselected::Absent::Unnamed)) => {
+            return Maybe::Absent(unmoved::Absent::Unselected);
+        },
+        Err(_unreadable) => return Maybe::Absent(unmoved::Absent::Unreadable),
+    };
+    let Ok(path) = executable(&toolchains, selected)
+    else {
+        return Maybe::Absent(unmoved::Absent::Unreadable);
+    };
+    match std::fs::metadata(&path) {
+        Ok(metadata) if Image::of(&metadata) == running => Maybe::Absent(unmoved::Absent::Same),
+        Ok(_) => Maybe::Present(path),
+        Err(_unreadable) => Maybe::Absent(unmoved::Absent::Unreadable),
+    }
+}
+
+/// The variable naming the handover file a language-server relay of another
+/// build left for the image it execs.
+#[cfg(unix)]
+pub const HANDOVER: &str = "GANDR_LSP_HANDOVER";
+
+/// Replace this process with `path`, run with this process's arguments and
+/// [`HANDOVER`] naming the file `handover`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: never returns on success.
+/// - fails: [`ToolchainFault::Io`] naming `path` when the exec fails.
+/// - panics: none.
+/// - executable: none — success replaces the process.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a face execs the selected toolchain with its handover.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+pub fn switch(
+    path: PathBuf,
+    handover: &Path,
+) -> ToolchainFault
+{
+    use std::os::unix::process::CommandExt as _;
+
+    let mut command = std::process::Command::new(&path);
+    let _prepared = command
+        .args(std::env::args_os().skip(1))
+        .env(HANDOVER, handover);
+    let error = command.exec();
+    ToolchainFault::Io { path, error }
 }
 
 /// Link the build in `path` as the toolchain `name`, replacing any link of

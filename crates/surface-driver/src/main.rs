@@ -414,6 +414,10 @@ use gandr_surface_format::PageWidth;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Capabilities;
+#[cfg(unix)]
+use gandr_surface_lsp::Handover;
+#[cfg(unix)]
+use gandr_surface_lsp::Relayed;
 use gandr_surface_lsp::Served;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::TerminalCapability;
@@ -1982,7 +1986,7 @@ fn main() -> ExitCode
             ..
         }) => {
             return relayed(
-                socket,
+                socket.as_deref(),
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
             );
@@ -2298,6 +2302,43 @@ fn listed() -> Result<(), toolchain::ToolchainFault>
     Ok(())
 }
 
+/// The handover the variable [`toolchain::HANDOVER`] names, read and removed,
+/// or an empty one when it names none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the handover the file holds, and the file removed; an empty
+///   handover when the variable is unset.
+/// - fails: when the file cannot be opened, read or removed.
+/// - panics: none.
+/// - executable: none — the file is gone once read.
+///
+/// # Errors
+/// The error opening, reading or removing the file, naming it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the next image resumes the session the last one left.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+fn handed_over() -> std::io::Result<Handover>
+{
+    let Some(path) = std::env::var_os(toolchain::HANDOVER).map(PathBuf::from)
+    else {
+        return Ok(Handover::default());
+    };
+    let named = |error: std::io::Error| {
+        std::io::Error::new(
+            error.kind(),
+            format!("the handover {}: {error}", path.display()),
+        )
+    };
+    let file = std::fs::File::open(&path).map_err(named)?;
+    let handover = Handover::read(&mut std::io::BufReader::new(file))
+        .map_err(|fault| named(std::io::Error::other(fault.to_string())))?;
+    std::fs::remove_file(&path).map_err(named)?;
+    Ok(handover)
+}
+
 /// Carry the language-server session on the standard streams to the hub at
 /// `socket`, starting one lingering `linger` and configured with `spelling`
 /// when none answers, and choose the exit code.
@@ -2305,32 +2346,120 @@ fn listed() -> Result<(), toolchain::ToolchainFault>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the session runs against the hub [`reach_hub`] reaches as
-///   `gandr_surface_lsp::relay` carries it, and ends as [`ended`] states; a hub
-///   never reached is noted on standard error and exits `2`.
+///   `gandr_surface_lsp::relay` carries it, opened by the handover
+///   [`handed_over`] reads, and ends as [`ended`] states. With no `socket`
+///   named, a frame from the client finding the selection on another image
+///   switches: the handover goes to a file beside the hub's socket, and the
+///   selected toolchain runs in this process's place with the same arguments
+///   and [`toolchain::HANDOVER`] naming the file. A selection back on the
+///   running image by then resumes the session on this build's hub. A hub never
+///   reached, a handover unread or an exec failed is noted on standard error
+///   and exits `2`.
 /// - provides: the editor's entry point on Unix.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a client finding no hub starts one that outlives it by
-///   its linger; two clients of one hub both end cleanly.
+///   its linger; two clients of one hub both end cleanly; a session across a
+///   switch of the default publishes the next build's diagnostics.
 /// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn relayed(
-    socket: Option<PathBuf>,
+    socket: Option<&Path>,
     linger: Duration,
     spelling: Spelling,
 ) -> ExitCode
 {
-    match reach_hub(socket, linger, spelling) {
-        Ok(stream) => ended(gandr_surface_lsp::relay(
-            std::io::stdin(),
+    use std::io::Read as _;
+    use std::os::fd::AsFd as _;
+
+    // An image that cannot be read never moves: the session stays where it
+    // started.
+    let running = match toolchain::Image::running() {
+        Ok(image) if socket.is_none() => Maybe::Present(image),
+        Ok(_) | Err(_) => Maybe::Absent(()),
+    };
+    let mut handover = match handed_over() {
+        Ok(handover) => handover,
+        Err(error) => return hub_fault(&error),
+    };
+    loop {
+        let reached =
+            reach_hub(socket.map(Path::to_path_buf), linger, spelling).and_then(|stream| {
+                let standard = std::fs::File::from(std::io::stdin().as_fd().try_clone_to_owned()?);
+                Ok((stream, standard))
+            });
+        let (stream, standard) = match reached {
+            Ok(reached) => reached,
+            Err(error) => return hub_fault(&error),
+        };
+        let input = std::io::Cursor::new(handover.carried().0.clone()).chain(standard);
+        let moved = move || {
+            if let Maybe::Present(image) = running {
+                matches!(toolchain::moved(image), Maybe::Present(_))
+            }
+            else {
+                false
+            }
+        };
+        let relayed = gandr_surface_lsp::relay(
+            input,
             &mut std::io::stdout().lock(),
             stream,
-        )),
-        Err(error) => hub_fault(&error),
+            handover.replay(),
+            moved,
+        );
+        let next = match relayed {
+            Ok(Relayed::Ended(served)) => return ended(Ok(served)),
+            Ok(Relayed::Switched(next)) => next,
+            Err(fault) => return ended(Err(fault)),
+        };
+        if let Maybe::Present(image) = running
+            && let Maybe::Present(path) = toolchain::moved(image)
+        {
+            return switched(&next, path);
+        }
+        handover = next;
     }
+}
+
+/// Hand `handover` to the toolchain at `path` and run it in this process's
+/// place, or note why not and exit `2`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: never returns once the handover is written and the exec succeeds;
+///   otherwise the cause is noted on standard error and the exit code is `2`.
+/// - fails: never by panic.
+/// - panics: none.
+/// - executable: none — success replaces the process.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`relayed`]'s switch.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+#[cfg(unix)]
+fn switched(
+    handover: &Handover,
+    path: PathBuf,
+) -> ExitCode
+{
+    let written = hub_socket(None).and_then(|socket| {
+        let file = socket.with_file_name(format!("handover-{}", std::process::id()));
+        let mut writing = std::fs::File::create(&file)?;
+        handover
+            .write(&mut writing)
+            .map_err(|fault| std::io::Error::other(fault.to_string()))?;
+        std::io::stdout().flush()?;
+        Ok(file)
+    });
+    let file = match written {
+        Ok(file) => file,
+        Err(error) => return hub_fault(&error),
+    };
+    toolchain_fault(&toolchain::switch(path, &file))
 }
 
 /// Carry the Model Context Protocol session on the standard streams to the
@@ -2475,6 +2604,7 @@ fn reach_hub(
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        .env_remove(toolchain::HANDOVER)
         .process_group(0_i32)
         .spawn()?;
     // The hub outlives this client by its linger; it is never waited on.

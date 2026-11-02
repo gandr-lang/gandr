@@ -2997,6 +2997,198 @@ fn a_relay_reaches_only_a_hub_of_its_own_build()
     );
 }
 
+/// One language-server session follows a switch of the default toolchain:
+/// the change after the switch reaches the next build's hub, which publishes
+/// its diagnostics, and the session ends cleanly in the next build.
+///
+/// Linux alone, as [`a_relay_reaches_only_a_hub_of_its_own_build`]; the
+/// running image is read from `/proc`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_language_server_follows_a_toolchain_switch()
+{
+    use std::io::BufReader;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("switch"));
+    let runtime = scratch.0.join("run");
+    let data = scratch.0.join("data");
+    let workspace = scratch.0.join("workspace");
+    std::fs::create_dir_all(&workspace).expect("the workspace is made");
+    let built = PathBuf::from(env!("CARGO_BIN_EXE_gandr"));
+    let builds = [scratch.0.join("first"), scratch.0.join("second")];
+    for (directory, byte) in builds.iter().zip([0_u8, 1_u8]) {
+        std::fs::create_dir_all(directory).expect("the build's directory is made");
+        let driver = directory.join("gandr");
+        let _copied = std::fs::copy(&built, &driver).expect("the driver is copied");
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&driver)
+            .and_then(|mut file| file.write_all(&[byte]))
+            .expect("each copy is made a build of its own");
+    }
+    let [ref first, ref second] = builds;
+    let driver = first.join("gandr");
+    let command = |arguments: &[&std::ffi::OsStr]| {
+        let mut command = Command::new(&driver);
+        for (key, value) in gandr::<&str>(&[]).get_envs() {
+            if let Some(value) = value {
+                let _set = command.env(key, value);
+            }
+        }
+        let _configured = command
+            .args(arguments)
+            .current_dir(&workspace)
+            .env("XDG_DATA_HOME", &data)
+            .env("XDG_RUNTIME_DIR", &runtime);
+        command
+    };
+    // A test thread forking while a copy was open for writing holds it until
+    // that child execs, and the kernel refuses to run it meanwhile.
+    let started = |command: &mut Command| loop {
+        match command.spawn() {
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(core::time::Duration::from_millis(20));
+            },
+            started => break started.expect("the driver starts"),
+        }
+    };
+    let toolchain = |arguments: &[&std::ffi::OsStr]| {
+        let output = started(
+            command(arguments)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+        .wait_with_output()
+        .expect("the driver runs");
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    };
+    let os = std::ffi::OsStr::new;
+    toolchain(&[os("toolchain"), os("link"), os("first"), first.as_os_str()]);
+    toolchain(&[
+        os("toolchain"),
+        os("link"),
+        os("second"),
+        second.as_os_str(),
+    ]);
+    let mut editor = started(
+        command(&[os("lsp"), os("--linger-ms"), os("3000")])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped()),
+    );
+    let mut to_editor = editor.stdin.take().expect("standard input is piped");
+    let mut from_editor = BufReader::new(editor.stdout.take().expect("standard output is piped"));
+    let mut answers: Vec<serde_json::Value> = Vec::new();
+    let mut published_at = |version: i32, answers: &mut Vec<serde_json::Value>| loop {
+        let Maybe::Present(body) = read_frame(&mut from_editor).expect("a frame")
+        else {
+            panic!("the editor's server ended before publishing version {version}");
+        };
+        let message: serde_json::Value =
+            serde_json::from_slice(body.as_ref()).expect("a frame is JSON");
+        if message.get("method").is_none() {
+            answers.push(message);
+        }
+        else if message.pointer("/params/version") == Some(&serde_json::json!(version)) {
+            break message;
+        }
+    };
+    to_editor
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+                Text::from(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+                Text::from(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/switch.gandr","languageId":"gandr","version":1,"text":"def g = missing ;\n"}}}"#,
+                ),
+            ])
+            .as_ref(),
+        )
+        .expect("the editor's session is written");
+    let before = published_at(1_i32, &mut answers);
+    assert!(
+        before.to_string().contains("UnresolvedName"),
+        "the first build judges the opened text: {before}"
+    );
+    let running = || {
+        std::fs::read_link(format!("/proc/{}/exe", editor.id()))
+            .expect("the editor's image is read")
+    };
+    assert_eq!(
+        running(),
+        first.join("gandr"),
+        "the session starts in the first build"
+    );
+    toolchain(&[os("toolchain"), os("default"), os("second")]);
+    to_editor
+        .write_all(
+            frames(&[Text::from(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/switch.gandr","version":2},"contentChanges":[{"text":"def h = absent ;\n"}]}}"#,
+            )])
+            .as_ref(),
+        )
+        .expect("the change is written");
+    let after = published_at(2_i32, &mut answers);
+    assert!(
+        after.to_string().contains("absent"),
+        "the next build judges the changed text: {after}"
+    );
+    assert_eq!(
+        running(),
+        second.join("gandr"),
+        "the change found the switch, and the session runs in the second build"
+    );
+    let hubs = std::fs::read_dir(runtime.join("gandr"))
+        .expect("the runtime directory holds the hubs")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<String>>();
+    assert_eq!(
+        hubs.iter()
+            .filter(|name| Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension == "sock"))
+            .count(),
+        2_usize,
+        "each build serves the session from a hub of its own: {hubs:?}"
+    );
+    assert!(
+        hubs.iter().all(|name| !name.starts_with("handover-")),
+        "the next build removes the handover it read: {hubs:?}"
+    );
+    to_editor
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+                Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+            ])
+            .as_ref(),
+        )
+        .expect("the editor's session is ended");
+    drop(to_editor);
+    while let Maybe::Present(body) = read_frame(&mut from_editor).expect("a frame") {
+        let message: serde_json::Value =
+            serde_json::from_slice(body.as_ref()).expect("a frame is JSON");
+        if message.get("method").is_none() {
+            answers.push(message);
+        }
+    }
+    let ids: Vec<Option<&serde_json::Value>> =
+        answers.iter().map(|answer| answer.get("id")).collect();
+    assert_eq!(
+        ids,
+        [
+            Some(&serde_json::json!(1_i32)),
+            Some(&serde_json::json!(2_i32))
+        ],
+        "the client sees one answer to each of its requests, and none to the replay"
+    );
+    let ended = editor.wait_with_output().expect("the editor's server runs");
+    assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
+}
+
 #[test]
 fn mcp_reads_what_an_editor_holds_open()
 {
@@ -4144,7 +4336,7 @@ fn a_manifold_s_deployment_is_judged_at_its_check_3523()
 }
 
 /// A toolchain directory under `scratch` named `name`, whose `gandr` prints
-/// `ran <the selection the proxy passed> <its arguments>` and exits 0.
+/// `ran <name> <its arguments>` and exits 0.
 ///
 /// # Specification
 /// trivial.
@@ -4156,9 +4348,10 @@ fn fake_toolchain(
 {
     use std::os::unix::fs::PermissionsExt as _;
 
+    let script = format!("#!/bin/sh\necho \"ran {} $*\"\n", name.display());
     let executable = scratch.file(
         &Path::new("builds").join(name).join("gandr"),
-        Text::from("#!/bin/sh\necho \"ran $GANDR_TOOLCHAIN $*\"\n"),
+        Text::from(&*script),
     );
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
         .expect("the fake build is executable");
