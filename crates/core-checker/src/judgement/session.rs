@@ -1723,19 +1723,22 @@ impl Machine<'_, '_>
         }))
     }
 
-    /// Place the buffer `payload` names live in the placement's linear binder
-    /// and judge its body.
+    /// Place the buffer or the endpoint `payload` names live in the
+    /// placement's linear binder and judge its body.
     ///
     /// # Specification
-    /// - requires: `at` is a placement of `payload` over `body`, the payload
-    ///   the intuitionistic binder of the bind the placement stands under.
-    /// - ensures: one linear slot more, a buffer opened available at the
-    ///   placement; one `ReceiveBody` frame waits on the body's judgement in
-    ///   the placement's direction, so the body's end refuses the buffer
-    ///   unreturned as a receive's does.
+    /// - requires: `at` is a placement of `payload` over `body`, the payload an
+    ///   intuitionistic binder: the bind's a buffer's placement stands under,
+    ///   or a function's parameter at a session type.
+    /// - ensures: one linear slot more, opened available at the payload's weak
+    ///   head: a buffer, or an endpoint the placement binds at the session
+    ///   state the head names, its head recorded for `at`; one `ReceiveBody`
+    ///   frame waits on the body's judgement in the placement's direction, so
+    ///   the body's end refuses the buffer unreturned, or the endpoint unspent,
+    ///   as a receive's does.
     /// - fails: [`CheckRefusal::MachineInvariant`] for a payload other than an
-    ///   intuitionistic variable whose type is the buffer at its weak head,
-    ///   which the lowering never builds.
+    ///   intuitionistic variable whose type is the buffer or a session type at
+    ///   its weak head, which the lowering never builds.
     /// - panics: none.
     ///
     /// # Errors
@@ -1743,8 +1746,11 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an allocated buffer freed checks, and one the body
-    ///   never returns is refused at the placement.
+    ///   never returns is refused at the placement; a parameter's endpoint
+    ///   closed checks, and one the body leaves unspent is refused at the
+    ///   placement.
     /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
+    /// - witness: `judgement::session::tests::a_placed_endpoint_is_spent_by_its_body_1862`
     #[spec(
         captures: before = self.context.depth(Zone::Linear),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
@@ -1773,18 +1779,25 @@ impl Machine<'_, '_>
         let arena = self.context.arena_mut();
         let read = shift_value_type(arena, declared, Binders::past(index)).settle(arena);
         let head = self.context.whnf_value_type(read)?;
-        if !matches!(
-            value_type_view(self.context.arena(), head)?,
-            ValueTypeView::Buffer
-        ) {
-            return Err(CheckRefusal::MachineInvariant);
+        let view = value_type_view(self.context.arena(), head)?;
+        let resident = if matches!(view, ValueTypeView::Session(_)) {
+            // The readmission erases a placed endpoint as it erases a
+            // received one, reading the opened head off the payloads.
+            self.context.record_payload(at, head);
+            Resident::Endpoint(Endpoint {
+                fork: at,
+                side: ForkSide::Placed,
+            })
         }
+        else if matches!(view, ValueTypeView::Buffer) {
+            Resident::Buffer { at }
+        }
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, head);
-        self.sessions.opened.push(Opened {
-            resident: Resident::Buffer { at },
-            depth,
-        });
+        self.sessions.opened.push(Opened { resident, depth });
         self.wait(Frame::ReceiveBody { at, direction });
         Ok(Step::Descend(Goal::Computation {
             term: body,

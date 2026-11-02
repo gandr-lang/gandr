@@ -1,8 +1,8 @@
-error[OutOfFragment.Endpoint]: a session action acts on an endpoint: a name a `fork` binds as one of its ends
+error[OutOfFragment.Endpoint]: a session action acts on an endpoint: an end a `fork` binds, an endpoint a `recv` binds, or a parameter written at a session type
   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Endpoint.gandr:4:9
   │
 4 │   close(rounds)
-  │         ━━━━━━ not an endpoint a fork or a receive binds
+  │         ━━━━━━ not an endpoint a fork, a receive or a parameter binds
   │
   ├ note: `parameter_as_endpoint` is refused with OutOfFragment.Endpoint, as its expectation states
-  ╰ note: tracked by #1862 <https://github.com/gandr-lang/gandr/issues/1862>
+  ╰ note: tracked by #4501 <https://github.com/gandr-lang/gandr/issues/4501>

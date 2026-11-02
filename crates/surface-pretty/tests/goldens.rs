@@ -8036,6 +8036,57 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
     );
 }
 
+/// A parameter placed as an endpoint is written by the parameter's name, the
+/// placement unwritten: whole, `def down(a : end) -> Unit { close(a) }`, its
+/// name taken from the header, and as a body, `fun (a) { close(a) }` (#1862).
+#[test]
+fn a_placed_endpoint_is_written_by_its_parameter_s_name_1862()
+{
+    use gandr_core_term::session::PayloadCount;
+    use gandr_core_term::session::Protocol;
+    use gandr_core_term::session::ProtocolState;
+    use gandr_core_term::session::ProtocolSyntax;
+    use gandr_core_term::session::SessionAction;
+    use gandr_core_term::session::SessionType;
+
+    let mut core = CoreArena::new();
+    let parameter = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let close = core.computation_session(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let placed = core.computation_session(SessionAction::Place {
+        payload: parameter,
+        body: close,
+    });
+    let function = core.computation_lambda(placed);
+    let protocol = Protocol::new(
+        Vec::from([ProtocolSyntax::End]),
+        ProtocolState::from(0_usize),
+        PayloadCount::from(0_usize),
+    )
+    .expect("`end` is a protocol");
+    let session =
+        SessionType::new(Arc::new(protocol), Arc::from([])).expect("`end` is a session type");
+    let ended = core.value_type_session(session);
+    let unit = core.value_type_unit();
+    let returns_unit = core.comp_type_returner(unit);
+    let takes_an_end = core.comp_type_arrow(ended, returns_unit);
+    let declared = core.value_type_thunk(takes_an_end);
+    let defined = core.value_thunk(function);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        declared_whole(&source, (declared, defined), PageWidth::from(100_u32)),
+        Maybe::Present((
+            String::from("def down(a : end) -> Unit {\n  close(a)\n}"),
+            Fidelity::Faithful
+        ))
+    );
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(function))),
+        faithful(Written("fun (a) { close(a) }"))
+    );
+}
+
 /// A sum case and a split ascribed their answer write it after the scrutinee,
 /// `match a -> -F Integer { … }`, the match that writes its answer lowering to
 /// that ascription, from the arena as from its content (#2089).

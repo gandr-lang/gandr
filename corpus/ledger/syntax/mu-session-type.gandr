@@ -1,5 +1,6 @@
 /// `mu_session_type`: a recursive session type.
 @[ checks ]
-def serve(c : rec t => !Integer >> t) -> -F Unit {
-  pure unit
+def serve(c : rec t => +{ more : !Integer >> t, done : end }) -> -F Unit {
+  select(c, done);
+  close(c)
 }

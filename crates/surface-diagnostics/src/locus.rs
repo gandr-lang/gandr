@@ -144,6 +144,9 @@ pub enum Label
     Forked,
     /// The receive that bound the endpoint a session refusal names.
     Received,
+    /// The parameter whose endpoint a session refusal names, placed at its
+    /// function's body.
+    Placed,
     /// The first arm of an offer, which a later arm disagrees with.
     FirstArm,
     /// The earlier rule of a pair that rewrites one term apart, or whose
@@ -213,6 +216,7 @@ impl fmt::Display for Label
             Self::Reported => f.write_str("reported here"),
             Self::Forked => f.write_str("the endpoint was opened by this fork"),
             Self::Received => f.write_str("the endpoint was received here"),
+            Self::Placed => f.write_str("the endpoint was taken as this parameter"),
             Self::FirstArm => f.write_str("the arm it disagrees with"),
             Self::Overlaps => f.write_str("the rule it overlaps"),
             Self::Copied => f.write_str("the variable matched again"),
@@ -758,8 +762,8 @@ impl Annotations
     }
 }
 
-/// The label of the binder that opened `endpoint`: its fork, or the receive
-/// that took it.
+/// The label of the binder that opened `endpoint`: its fork, the receive
+/// that took it, or the parameter it was placed from.
 ///
 /// # Specification
 /// trivial.
@@ -769,6 +773,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
         gandr_core_checker::session::ForkSide::Child
         | gandr_core_checker::session::ForkSide::Parent => Label::Forked,
         gandr_core_checker::session::ForkSide::Received => Label::Received,
+        gandr_core_checker::session::ForkSide::Placed => Label::Placed,
     }
 }
 
@@ -809,7 +814,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
         Maybe::Absent(report_context::Absent::Unnamed | report_context::Absent::OutsideText) => false,
     };
     let opened = |slot: &Maybe<Annotation, report_context::Absent>| {
-        role(slot, Label::Forked) || role(slot, Label::Received)
+        role(slot, Label::Forked) || role(slot, Label::Received) || role(slot, Label::Placed)
     };
     let second_unnamed = ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed);
     labelled && if matches!(refusal, CheckRefusal::DataFieldLevel {..} | CheckRefusal::RepresentationAboveKind {..} | CheckRefusal::MissingRecordField {..}
@@ -4764,6 +4769,7 @@ mod tests
             Label::Endpoint(EndpointMiss::Budget).to_string(),
             Label::Unfilled.to_string(),
             Label::Unlifted.to_string(),
+            Label::Placed.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

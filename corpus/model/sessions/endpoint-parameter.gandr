@@ -1,0 +1,32 @@
+// A function's parameter at a session type is an endpoint its body drives to
+// its end.
+//
+// A session action acts only on a linear binder, and a parameter binds in the
+// intuitionistic zone. The placement moves the parameter into one linear
+// binder of its name, which shadows it.
+//
+// The lowering wraps the body in the placement. The checker opens the
+// parameter as an endpoint at its session type, and the readmission erases
+// the placement to its body.
+//
+// - see: #1862
+// - see: #4501 — not implemented: a call that moves an endpoint into such a function
+
+/// A parameter at `end` that its body closes.
+def finish(seat : end) -> Unit {
+  close(seat)
+}
+
+/// A parameter that receives a number, then closes, and answers the number.
+def answer(seat : ?Integer. end) -> Integer {
+  let count = recv(seat);
+  close(seat);
+  count
+}
+
+/// An intuitionistic parameter beside a parameter at a session type: the
+/// placement counts apart from the parameters before it.
+def report(note : String, seat : !String. end) -> Unit {
+  send(seat, note);
+  close(seat)
+}

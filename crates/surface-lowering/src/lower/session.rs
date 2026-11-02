@@ -33,7 +33,7 @@
 //! - Reversal: a continuation naming a session type declared elsewhere — today
 //!   refused by sort — would graft that protocol at the name.
 //!
-//! # An endpoint is a name a fork binds
+//! # An endpoint is a name a fork, a receive or a placement binds
 //!
 //! `let d = fork (c : S) { t };` binds `c` over the child block `t` and `d`
 //! over the rest of the enclosing block, each in the linear zone, whose binders
@@ -49,6 +49,19 @@
 //!   linear variable an index the core's linear zone does not hold; a second
 //!   scope for endpoints, which duplicates shadowing and lookup.
 //! - Reversal: a core context whose zones share one index space.
+//!
+//! A function's parameter whose declared type is written as a session type,
+//! `def finish(seat : end)`, is placed at its body's entry: the core's
+//! placement moves the intuitionistic parameter into one linear binder of the
+//! same name, which shadows it, so the body acts on the endpoint and the
+//! checker refuses the body's end with the endpoint unspent. A parameter at a
+//! type that only names a session type, and a clause tail's parameter, stay
+//! unplaced.
+//!
+//! - Alternatives: a linear λ, a core former the kernel would readmit for what
+//!   the placement already states.
+//! - Reversal: the linear λ, if a protocol needs an endpoint parameter the
+//!   placement cannot state.
 //!
 //! The child is a process of its own, not a body an exit leaves: `return` and
 //! `become` do not stand in it, and it ends with its last computation, such as
@@ -87,6 +100,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ComputationId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::session::ChildOrder;
@@ -108,6 +122,7 @@ use quenchant_shape::shape::Maybe;
 use super::Frame;
 use super::Lowered;
 use super::Lowerer;
+use super::Parameter;
 use super::Plan;
 use super::Produced;
 use super::Reading;
@@ -259,6 +274,27 @@ pub(super) struct Written
     sites: Vec<StateSite>,
     /// The frame the protocol is read under.
     frame: Frame,
+}
+
+/// A function's parameter at a session type, placed in a linear binder of
+/// its name at its body's entry.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `index` is the parameter's intuitionistic index past every
+///   parameter and the function's own name.
+/// - executable: none — the plan holds no scope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parameter at `end` closed in its body.
+/// - witness: `lower::session::tests::a_parameter_at_a_session_type_is_placed_1862`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct PlacedEndpoint
+{
+    /// The parameter's binder tile, the placement's origin.
+    binder: NodeIndex,
+    /// The parameter's intuitionistic index past every parameter.
+    index: DeBruijnIndex,
 }
 
 impl Draft
@@ -929,6 +965,108 @@ impl<'source> Lowerer<'_, 'source>
                 name: spelled,
             }),
         }
+    }
+
+    /// Place each parameter of `endpoints` in a linear binder of its name over
+    /// `frame`, so the body's actions resolve the name to the endpoint.
+    ///
+    /// # Specification
+    /// - requires: `frame` is the frame past the function's parameters and its
+    ///   own name; each of `endpoints` is a parameter bound on the chain
+    ///   `frame` roots.
+    /// - ensures: the frame binding each parameter's name linearly over
+    ///   `frame`, in written order, written where the parameter is; the stretch
+    ///   of the endpoint store holding each parameter's binder and its
+    ///   intuitionistic index past every parameter, in the same order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter at `end` the body closes resolves to the
+    ///   placed linear binder, and a parameter at `Integer` stays unplaced.
+    /// - witness: `lower::session::tests::a_parameter_at_a_session_type_is_placed_1862`
+    #[spec(ensures: |ret| ret.1.end == self.endpoints.len()
+        && ret.1.end.saturating_sub(ret.1.start) <= endpoints.len())]
+    pub(super) fn place_endpoints(
+        &mut self,
+        frame: Frame,
+        endpoints: &[Parameter],
+    ) -> (Frame, Stretch)
+    {
+        let start = self.endpoints.len();
+        let mut placed = frame;
+        for &Parameter {
+            binder,
+            frame: bound,
+            ..
+        } in endpoints
+        {
+            let Some((name, found)) = self
+                .scope
+                .bindings(frame)
+                .find(|&(_, found)| found.binder == bound)
+            else {
+                continue;
+            };
+            let site = self.scope.site(bound);
+            placed = Frame::Inner(self.scope.extend_linear(placed, name, site));
+            self.endpoints.push(PlacedEndpoint {
+                binder,
+                index: found.index,
+            });
+        }
+
+        (placed, Stretch {
+            start,
+            end: self.endpoints.len(),
+        })
+    }
+
+    /// Wrap `body`, minted under the linear binders `endpoints` placed, in
+    /// their placements.
+    ///
+    /// # Specification
+    /// - requires: `body` was minted under the placed binders, past every
+    ///   parameter.
+    /// - ensures: `place x₁ { … place xₙ { body } }`, each `xᵢ` the parameter's
+    ///   intuitionistic variable, the first placed outermost, each placement
+    ///   and its payload at the parameter's binder; `body` itself when nothing
+    ///   is placed; nothing when a binder has no origin.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::place_endpoints`].
+    /// - witness: `lower::session::tests::a_parameter_at_a_session_type_is_placed_1862`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => sink.arena.computation(id).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn place_body(
+        &self,
+        endpoints: Stretch,
+        mut body: ComputationId,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        for endpoint in stretch(&self.endpoints, endpoints).iter().rev() {
+            let Maybe::Present(origin) = self.origin_at(endpoint.binder)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let payload = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, endpoint.index);
+            sink.origins.record_value(payload, origin);
+            let placed = sink
+                .arena
+                .computation_session(SessionAction::Place { payload, body });
+            sink.origins.record_computation(placed, origin);
+            sink.origins.record_binder(placed, origin);
+            body = placed;
+        }
+
+        Maybe::Present(body)
     }
 
     /// Classify a session action: `send(c, v)`, `select(c, l)`, `close(c)`,

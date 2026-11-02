@@ -6340,7 +6340,12 @@ const ACTIONS: [ActionKind; 5] = [
 ];
 
 /// The binders of an endpoint, in stable wire order.
-const SIDES: [ForkSide; 3] = [ForkSide::Child, ForkSide::Parent, ForkSide::Received];
+const SIDES: [ForkSide; 4] = [
+    ForkSide::Child,
+    ForkSide::Parent,
+    ForkSide::Received,
+    ForkSide::Placed,
+];
 
 /// What may run an endpoint's use other than once, in stable wire order.
 const CAPTURES: [Capture; 6] = [

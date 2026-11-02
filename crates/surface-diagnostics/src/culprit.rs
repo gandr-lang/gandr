@@ -200,7 +200,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FragmentBoundary::NotInTail => "not on a path through a body",
             FragmentBoundary::JoinsBlock => "an answer the arms do not give",
             FragmentBoundary::EmptyList => "an empty list, not the unit",
-            FragmentBoundary::Endpoint => "not an endpoint a fork or a receive binds",
+            FragmentBoundary::Endpoint => "not an endpoint a fork, a receive or a parameter binds",
             FragmentBoundary::NonContractive => "recurses before any action",
             FragmentBoundary::Held => "not a value a hold holds",
             FragmentBoundary::View => "not a view an access binds",
@@ -720,7 +720,9 @@ mod tests
                 FragmentBoundary::NotInTail => "not on a path through a body",
                 FragmentBoundary::JoinsBlock => "an answer the arms do not give",
                 FragmentBoundary::EmptyList => "an empty list, not the unit",
-                FragmentBoundary::Endpoint => "not an endpoint a fork or a receive binds",
+                FragmentBoundary::Endpoint => {
+                    "not an endpoint a fork, a receive or a parameter binds"
+                },
                 FragmentBoundary::NonContractive => "recurses before any action",
                 FragmentBoundary::Held => "not a value a hold holds",
                 FragmentBoundary::View => "not a view an access binds",

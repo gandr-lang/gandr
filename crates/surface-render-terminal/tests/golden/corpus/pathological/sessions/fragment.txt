@@ -16,14 +16,14 @@ error[MalformedForm]: a keyword or symbol of this select session type is out of 
    ├ note: `branch_without_label` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the select session type
 
-error[OutOfFragment.Endpoint]: a session action acts on an endpoint: a name a `fork` binds as one of its ends
+error[OutOfFragment.Endpoint]: a session action acts on an endpoint: an end a `fork` binds, an endpoint a `recv` binds, or a parameter written at a session type
   ╭▸ corpus/pathological/sessions/fragment.gandr:3:9
   │
 3 │   close(rounds)
-  │         ━━━━━━ not an endpoint a fork or a receive binds
+  │         ━━━━━━ not an endpoint a fork, a receive or a parameter binds
   │
   ├ note: `parameter_as_endpoint` is refused with OutOfFragment.Endpoint, as its expectation states
-  ╰ note: tracked by #1862 <https://github.com/gandr-lang/gandr/issues/1862>
+  ╰ note: tracked by #4501 <https://github.com/gandr-lang/gandr/issues/4501>
 
 error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `rec`
   ╭▸ corpus/pathological/sessions/fragment.gandr:8:27

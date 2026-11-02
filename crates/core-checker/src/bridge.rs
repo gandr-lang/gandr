@@ -8624,17 +8624,19 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   crosses and the kernel checks it there — unascribed where no type is
     ///   recorded — and `return ()` for an endpoint sent; a select and a close
     ///   are `return ()`; a fork is its child, then its parent under the bind's
-    ///   one new binder; a receive of an endpoint is `return () to _.` its body
-    ///   — each awaited as rewritten. A receive of a value is its body reading
-    ///   the payload as the bind's variable, and an offer a case on that
-    ///   variable over its arms in label order, each arm past the bind's and
-    ///   the case's binders — each awaited bound to the assumption admitted for
-    ///   it. An endpoint names no value, and the linear binders bind none.
+    ///   one new binder; a receive of an endpoint, and the placement of a
+    ///   parameter's endpoint, is `return () to _.` its body — each awaited as
+    ///   rewritten. A receive of a value is its body reading the payload as the
+    ///   bind's variable, and an offer a case on that variable over its arms in
+    ///   label order, each arm past the bind's and the case's binders — each
+    ///   awaited bound to the assumption admitted for it. An endpoint names no
+    ///   value, and the linear binders bind none.
     /// - fails: [`Refusal::DanglingNode`] for an absent source or one that is
     ///   not a session action; [`Refusal::Session`] for a receive the judgement
     ///   recorded no type for, or a received value or an offer whose assumption
     ///   is not admitted; [`Refusal::OutOfFragment`] naming
-    ///   [`UnadmittedFormer::Memory`] for a placed or a received buffer.
+    ///   [`UnadmittedFormer::Memory`] for a placed or a received buffer, or a
+    ///   placement the judgement recorded no endpoint for.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -8647,6 +8649,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::a_session_action_crosses_as_what_it_computes_1319`
     /// - witness: `judgement::session::tests::a_fork_crosses_as_its_child_then_its_parent_1319`
     /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    /// - witness: `judgement::session::tests::a_placed_endpoint_is_spent_by_its_body_1862`
     #[spec(ensures: |ret| match ret {
         | Ok((ref frame, reduct)) => self.arena.computation(reduct).is_some()
             && matches!(*frame, Frame::Rewritten { at: site } | Frame::Assumed { at: site, .. } if site == at),
@@ -8754,10 +8757,25 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     self.arena.computation_case(choice, &branches),
                 ))
             },
-            SessionAction::Place { .. } => Err(Refusal::OutOfFragment {
-                at: node,
-                former: UnadmittedFormer::Memory,
-            }),
+            SessionAction::Place { body, .. } => {
+                // The checker records the head a placed endpoint opens at;
+                // a placed buffer records none and stays outside the
+                // fragment.
+                let placed = match self.source.payloads.get(&at) {
+                    Some(&opened) => value_type_view(self.arena, opened)?,
+                    None => ValueTypeView::Buffer,
+                };
+                if !matches!(placed, ValueTypeView::Session(_)) {
+                    return Err(Refusal::OutOfFragment {
+                        at: node,
+                        former: UnadmittedFormer::Memory,
+                    });
+                }
+                let rest = gandr_core_term::delinearise(self.arena, body);
+                let unit = self.arena.value_unit();
+                let none = self.arena.computation_return(unit);
+                Ok((rewritten, self.arena.computation_bind(none, rest)))
+            },
         }
     }
 

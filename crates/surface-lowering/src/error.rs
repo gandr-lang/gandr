@@ -426,8 +426,8 @@ impl fmt::Display for FragmentBoundary
                  its type `Unit`",
             ),
             Self::Endpoint => f.write_str(
-                "is no endpoint: a session action acts on a name a fork binds as one of its \
-                 ends",
+                "is no endpoint: a session action acts on an end a fork binds, an endpoint a \
+                 receive binds, or a parameter written at a session type",
             ),
             Self::NonContractive => f.write_str(
                 "recurses before any action: a `rec` body that is a `rec` or a variable unfolds \
