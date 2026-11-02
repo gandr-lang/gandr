@@ -525,3 +525,46 @@ fn a_roots_file_naming_no_node_is_refused_on_opening()
         "a roots file that spells no node is refused"
     );
 }
+
+/// A roots file whose tree reaches a node the store does not hold is refused
+/// by that file and the node, and removing the file, as the refusal says,
+/// opens the store again.
+#[test]
+fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
+{
+    let root = scratch(Path::new("unheld"));
+    let name = RootName::new(String::from("lock/hello"));
+    {
+        let mut store = Store::open(&root).expect("the store opens");
+        let pointer = store.commit(&labels(Count(1))).expect("a value commits");
+        store.set_root(name, pointer).expect("the root is set");
+    }
+    let roots = root.join("roots");
+    let named = std::fs::read_to_string(&roots).expect("the roots file names a tree");
+    let node = named.trim();
+    std::fs::remove_file(root.join("nodes").join(node)).expect("the tree's node is removed");
+    let refused = Store::open(&root).expect_err("a tree the store does not hold is refused");
+    assert!(
+        matches!(
+            refused,
+            StoreError::Roots {
+                ref path,
+                fault: gandr_storage_store::RootsFault::Unheld { node: unheld },
+            } if *path == roots && unheld.to_string() == node
+        ),
+        "{refused:?}"
+    );
+    assert!(
+        refused
+            .to_string()
+            .ends_with("remove it to start the roots anew"),
+        "the refusal names its repair: {refused}"
+    );
+    std::fs::remove_file(&roots).expect("the roots file is removed");
+    let reopened = Store::open(&root).expect("the store opens without its roots file");
+    assert_eq!(
+        reopened.roots().names().count(),
+        0_usize,
+        "the roots start anew"
+    );
+}

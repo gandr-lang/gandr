@@ -156,16 +156,47 @@ impl Drop for Scratch
     }
 }
 
+/// The directory holding this test's own user directories for the driver:
+/// one per test under the target's scratch directory, emptied on the test's
+/// first run of the driver, so no earlier run and no other test decides its
+/// verdict.
+///
+/// A test runs on a thread its name names; a thread a test spawns takes the
+/// process's directory, which is the test's own under nextest.
+///
+/// # Specification
+/// trivial.
+fn homes() -> PathBuf
+{
+    thread_local! {
+        static HOMES: core::cell::OnceCell<PathBuf> = const { core::cell::OnceCell::new() };
+    }
+    HOMES.with(|homes| {
+        homes
+            .get_or_init(|| {
+                let test = std::thread::current().name().map_or_else(
+                    || format!("process-{}", std::process::id()),
+                    |name| name.replace("::", "-"),
+                );
+                let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
+                    .join("cli-homes")
+                    .join(test);
+                drop(std::fs::remove_dir_all(&directory));
+                directory
+            })
+            .clone()
+    })
+}
+
 /// The driver, ready to run with `arguments`.
 ///
 /// # Specification
 /// - requires: arguments have stable operating-system string views.
 /// - ensures: selects the built driver and preserves arguments in order; the
-///   user's configuration and cache directories are ones no test writes by
-///   hand, so a configuration file or a kernel verdict on the host never
-///   reaches a case that does not set its own, and the user's data directory is
-///   one only the tests' stores use, so no case writes the host's store. No
-///   `GANDR_TOOLCHAIN` reaches the driver, so it runs itself.
+///   user's configuration, cache and data directories are this test's own,
+///   under [`homes`], so neither a file on the host nor an earlier run or
+///   another test reaches a case through them, and no case writes the host's
+///   store. No `GANDR_TOOLCHAIN` reaches the driver, so it runs itself.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -184,20 +215,12 @@ fn gandr<Argument>(arguments: &[Argument]) -> Command
 where
     Argument: AsRef<std::ffi::OsStr>,
 {
+    let homes = homes();
     let mut command = Command::new(env!("CARGO_BIN_EXE_gandr"));
     command.args(arguments);
-    command.env(
-        "XDG_CONFIG_HOME",
-        std::env::temp_dir().join("gandr-driver-unconfigured"),
-    );
-    command.env(
-        "XDG_CACHE_HOME",
-        std::env::temp_dir().join("gandr-driver-uncached"),
-    );
-    command.env(
-        "XDG_DATA_HOME",
-        std::env::temp_dir().join("gandr-driver-data"),
-    );
+    command.env("XDG_CONFIG_HOME", homes.join("config"));
+    command.env("XDG_CACHE_HOME", homes.join("cache"));
+    command.env("XDG_DATA_HOME", homes.join("data"));
     command.env_remove("GANDR_TOOLCHAIN");
     command
 }

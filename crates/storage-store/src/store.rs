@@ -22,6 +22,7 @@ use gandr_core_publish::Unpublished;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
+use gandr_storage_records::NodeHash;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::RecordTreeError;
 use gandr_storage_values::CanonicalValue;
@@ -135,6 +136,12 @@ pub enum RootsFault
         /// The root.
         name: RootName,
     },
+    /// The named tree reaches a node the record plane does not hold.
+    Unheld
+    {
+        /// The node.
+        node: NodeHash,
+    },
 }
 
 impl core::fmt::Display for RootsFault
@@ -160,6 +167,10 @@ impl core::fmt::Display for RootsFault
             Self::Unpointed { ref name } => write!(
                 f,
                 "the root `{name}` holds no pointer: remove it to start the roots anew"
+            ),
+            Self::Unheld { node } => write!(
+                f,
+                "its tree reaches the node {node}, which the store does not hold: remove it to start the roots anew"
             ),
         }
     }
