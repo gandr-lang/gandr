@@ -487,12 +487,10 @@ fn owners(
 {
     let parsed = parse(grammar, text).expect("a corpus source parses");
     let tree = parsed.tree();
-    let mut parents: Vec<Option<NodeIndex>> = vec![None; usize::from(tree.node_count())];
+    let mut parents: BTreeMap<NodeIndex, NodeIndex> = BTreeMap::new();
     for position in tree.positions() {
         for child in tree.children(position) {
-            if let Some(held) = parents.get_mut(usize::from(child)) {
-                *held = Some(position);
-            }
+            parents.insert(child, position);
         }
     }
     let kind = |mold: MoldId| {
@@ -554,11 +552,7 @@ fn owners(
                 continue;
             },
             NodeLabel::Tile(mold) => {
-                let parent = parents
-                    .get(usize::from(position))
-                    .copied()
-                    .flatten()
-                    .and_then(|parent| tree.node(parent));
+                let parent = parents.get(&position).and_then(|&parent| tree.node(parent));
                 let label = grammar.mold(mold).expect("a tree's mold is known").label;
                 let dotted = after_dot.take();
                 match parent.map(|parent| (parent, parent.label())) {

@@ -187,11 +187,15 @@ mod tests
             .unwrap();
         let tree = builder.finish(root).unwrap();
         assert_eq!(super::tile_texts(&tree, tree.root()), ["b", "a"]);
-        assert_eq!(super::tile_texts(&tree, NodeIndex::from(1_usize)), ["b"]);
-        assert!(super::tile_texts(&tree, NodeIndex::from(2_usize)).is_empty());
-        assert!(
-            super::tile_texts(&tree, NodeIndex::from(usize::from(tree.node_count()))).is_empty()
+        let mut positions = tree.positions().skip(1);
+        let (form, grout) = (positions.next().unwrap(), positions.next().unwrap());
+        assert_eq!(super::tile_texts(&tree, form), ["b"]);
+        assert!(super::tile_texts(&tree, grout).is_empty());
+        let past = NodeIndex::at(
+            gandr_surface_syntax::LayoutBlock::from(tree.blocks().len()),
+            gandr_surface_syntax::BlockOffset::default(),
         );
+        assert!(super::tile_texts(&tree, past).is_empty());
         assert_eq!(super::reconstruct(&tree), "a#b");
     }
 }

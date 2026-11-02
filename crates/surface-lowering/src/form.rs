@@ -3999,7 +3999,6 @@ mod tests
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::GroutShape;
-    use gandr_surface_syntax::NodeIndex;
     use gandr_surface_syntax::SourceText;
     use gandr_surface_syntax::SyntaxTree;
     use quenchant_shape::shape::Maybe;
@@ -4268,11 +4267,11 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let keyword = Placed {
-            node: NodeIndex::from(1_usize),
+            node: crate::fixture::node(1_usize),
             span: at(0_usize, 3_usize),
         };
         let operand = Placed {
-            node: NodeIndex::from(2_usize),
+            node: crate::fixture::node(2_usize),
             span: at(4_usize, 5_usize),
         };
         let pieces = [
@@ -4331,7 +4330,7 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let placed = |node: usize, start: usize, end: usize| Placed {
-            node: NodeIndex::from(node),
+            node: crate::fixture::node(node),
             span: at(start, end),
         };
         let empty = [
@@ -4464,12 +4463,12 @@ mod tests
         let keyword = Piece::Tile {
             label: TileName::DEF,
             at: Placed {
-                node: NodeIndex::from(1_usize),
+                node: crate::fixture::node(1_usize),
                 span: at(2_usize, 5_usize),
             },
         };
         let operand = Piece::Operand(Placed {
-            node: NodeIndex::from(2_usize),
+            node: crate::fixture::node(2_usize),
             span: at(6_usize, 9_usize),
         });
         let pieces = [keyword, operand];
@@ -4491,7 +4490,7 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let placed = |node: usize, start: usize, end: usize| Placed {
-            node: NodeIndex::from(node),
+            node: crate::fixture::node(node),
             span: at(start, end),
         };
         let first = placed(1_usize, 0_usize, 1_usize);
@@ -4525,15 +4524,15 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let written = Piece::Operand(Placed {
-            node: NodeIndex::from(1_usize),
+            node: crate::fixture::node(1_usize),
             span: at(0_usize, 1_usize),
         });
         let first = Placed {
-            node: NodeIndex::from(2_usize),
+            node: crate::fixture::node(2_usize),
             span: at(1_usize, 1_usize),
         };
         let later = Placed {
-            node: NodeIndex::from(3_usize),
+            node: crate::fixture::node(3_usize),
             span: at(3_usize, 3_usize),
         };
         let mut read = Pieces::new();

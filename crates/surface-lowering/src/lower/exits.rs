@@ -87,6 +87,7 @@ use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
 use crate::origin::Provenance;
+use crate::table::NodeTable;
 
 #[cfg(test)]
 pub(in crate::lower) mod tests;
@@ -555,8 +556,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         let mut remaining = self.own.len();
-        let mut breaks = Vec::new();
-        breaks.resize(usize::from(self.tree.node_count()), Breaks::Never);
+        let mut breaks = NodeTable::filled(self.tree.blocks(), Breaks::Never);
         let mut outcome = Ok(());
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
@@ -569,10 +569,10 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let (leaves, broken) = self.leaves_of(position, &mut pieces, &breaks);
-            if let Some(held) = self.leaves.get_mut(usize::from(position)) {
+            if let Some(held) = self.leaves.get_mut(position) {
                 *held = leaves;
             }
-            if let Some(held) = breaks.get_mut(usize::from(position)) {
+            if let Some(held) = breaks.get_mut(position) {
                 *held = broken;
             }
         }
@@ -606,7 +606,7 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         position: NodeIndex,
         pieces: &mut Pieces,
-        breaks: &[Breaks],
+        breaks: &NodeTable<Breaks>,
     ) -> (Leaves, Breaks)
     {
         let (held, broken) = self.tree.children(position).fold(
@@ -614,7 +614,7 @@ impl<'source> Lowerer<'_, 'source>
             |(leaves, broken), child| {
                 (
                     leaves.max(self.leaves_at(child)),
-                    broken.max(breaks.get(usize::from(child)).copied().unwrap_or_default()),
+                    broken.max(breaks.get(child).copied().unwrap_or_default()),
                 )
             },
         );
@@ -808,16 +808,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::survey`].
     /// - witness: `lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
-    #[spec(ensures: |ret| ret == self.leaves.get(usize::from(position)).copied().unwrap_or_default())]
+    #[spec(ensures: |ret| ret == self.leaves.get(position).copied().unwrap_or_default())]
     pub(super) fn leaves_at(
         &self,
         position: NodeIndex,
     ) -> Leaves
     {
-        self.leaves
-            .get(usize::from(position))
-            .copied()
-            .unwrap_or_default()
+        self.leaves.get(position).copied().unwrap_or_default()
     }
 
     /// Mark `inner`, standing in tail position of `outer`, with the paths
@@ -1383,7 +1380,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut held = operand;
         loop {
-            match self.bridges.get(usize::from(held)) {
+            match self.bridges.get(held) {
                 Some(&super::Bridge::Bare) => {},
                 Some(&super::Bridge::Inserted(super::Insertion::Nested)) => {
                     return Some((operand, Returned::Run));

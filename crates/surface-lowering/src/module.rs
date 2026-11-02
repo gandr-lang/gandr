@@ -273,7 +273,6 @@ use gandr_surface_grammar::Sort;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::Node;
-use gandr_surface_syntax::NodeCount;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
@@ -1922,7 +1921,7 @@ impl<'source> Collected<'source>
         ensures: |ret| {
             ret == self
                 .owner
-                .get(usize::from(position))
+                .get(position)
                 .copied()
                 .unwrap_or(Maybe::Absent(slot_owner::Absent::Unowned))
         },
@@ -1934,7 +1933,7 @@ impl<'source> Collected<'source>
     ) -> Maybe<SlotIndex, slot_owner::Absent>
     {
         self.owner
-            .get(usize::from(position))
+            .get(position)
             .copied()
             .unwrap_or(Maybe::Absent(slot_owner::Absent::Unowned))
     }
@@ -3018,7 +3017,7 @@ impl<'source> Collected<'source>
         ensures: usize::from(self.owner.count()) == before
             && self
                 .owner
-                .get(usize::from(position))
+                .get(position)
                 .is_none_or(|held| *held == Maybe::Present(slot)),
     )]
     #[inline]
@@ -3028,7 +3027,7 @@ impl<'source> Collected<'source>
         slot: SlotIndex,
     )
     {
-        if let Some(held) = self.owner.get_mut(usize::from(position)) {
+        if let Some(held) = self.owner.get_mut(position) {
             *held = Maybe::Present(slot);
         }
     }
@@ -3428,7 +3427,7 @@ struct Collector<'run, 'source>
 #[cfg(test)]
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
     usize::from(collected.owner.count()) == usize::from(tree.node_count())
-        && collected.owner.iter().all(|owner| match *owner {
+        && collected.owner.iter().all(|(_, owner)| match *owner {
             | Maybe::Present(slot) => slot.0 < collected.slots.len(),
             | Maybe::Absent(_) => true,
         })
@@ -3508,10 +3507,8 @@ pub fn begin_collection<'source>(
 {
     let described = crate::description::elaborate_descriptions(pbg, tree, unit)?;
     let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations, decisions);
-    let owner = crate::table::NodeTable::filled(
-        tree.node_count(),
-        Maybe::Absent(slot_owner::Absent::Unowned),
-    );
+    let owner =
+        crate::table::NodeTable::filled(tree.blocks(), Maybe::Absent(slot_owner::Absent::Unowned));
 
     Ok(Collected {
         descriptions: Layered::whole(
@@ -3580,13 +3577,13 @@ pub fn begin_collection<'source>(
 
 impl Collected<'_>
 {
-    /// Widen the collection to a tree of `count` nodes laid out by `unit`,
-    /// whose added roots `described` reads: their descriptions, diagnostics,
-    /// native families and cell stores appended, each rule block decided
-    /// through `decisions`, every added node unowned.
+    /// Widen the collection to `tree` laid out by `unit`, whose added roots
+    /// `described` reads: their descriptions, diagnostics, native families and
+    /// cell stores appended, each rule block decided through `decisions`,
+    /// every node of an added block unowned.
     ///
     /// # Specification
-    /// - requires: `count` is no fewer nodes than the collection owns, and
+    /// - requires: `tree` starts with the blocks the collection owns, and
     ///   `described` is [`crate::description::elaborate_roots`] over the roots
     ///   the tree adds, numbered after the descriptions held.
     /// - ensures: as [`begin_collection`] over the whole tree, the slots,
@@ -3598,10 +3595,10 @@ impl Collected<'_>
     /// - hypothesis: L3 — a document resumed after its closure collects as the
     ///   whole unit does.
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-    #[spec(ensures: usize::from(self.owner.count()) >= usize::from(count))]
+    #[spec(ensures: self.owner.count() == tree.node_count())]
     pub(crate) fn widen(
         &mut self,
-        count: NodeCount,
+        tree: &SyntaxTree<'_>,
         unit: &Unit,
         described: crate::description::DescriptionReport,
         decisions: &mut Decisions,
@@ -3615,10 +3612,8 @@ impl Collected<'_>
         self.natives.extend(described.natives);
         self.cells.declarations.extend(cells.declarations);
         self.cells.diagnostics.extend(cells.diagnostics);
-        if usize::from(self.owner.count()) < usize::from(count) {
-            self.owner
-                .widen(count, Maybe::Absent(slot_owner::Absent::Unowned));
-        }
+        self.owner
+            .widen(tree.blocks(), Maybe::Absent(slot_owner::Absent::Unowned));
         self.unit = unit.clone();
     }
 }
@@ -10171,7 +10166,7 @@ impl<'source> Collector<'_, 'source>
                 && written.is_none_or(|node| {
                     self.collected
                         .owner
-                        .get(usize::from(node))
+                        .get(node)
                         .is_none_or(|held| *held == Maybe::Present(owner))
                 })
                 && match (scope, written) {
@@ -13900,11 +13895,11 @@ mod tests
     {
         let gap = span(ByteOffset::from(2_usize), ByteOffset::from(2_usize));
         let first = Placed {
-            node: NodeIndex::from(1_usize),
+            node: crate::fixture::node(1_usize),
             span: span(ByteOffset::from(3_usize), ByteOffset::from(5_usize)),
         };
         let extra = Placed {
-            node: NodeIndex::from(2_usize),
+            node: crate::fixture::node(2_usize),
             span: span(ByteOffset::from(7_usize), ByteOffset::from(8_usize)),
         };
         assert_eq!(
@@ -14064,7 +14059,7 @@ mod tests
         let (first, second) = (first.introduced_by, second.introduced_by);
         let first_slot = SlotIndex::from(0_usize);
         let second_slot = SlotIndex::from(1_usize);
-        let missing = NodeIndex::from(usize::MAX);
+        let missing = crate::fixture::node(usize::MAX);
         let first_fault = LoweringRefusal::UnresolvedName {
             span: first.span,
             name: SurfaceName::from("first"),
@@ -15018,7 +15013,7 @@ mod tests
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let introduced = Placed {
-            node: NodeIndex::from(1_usize),
+            node: crate::fixture::node(1_usize),
             span: at(0_usize, 1_usize),
         };
         let mut slot = DeclarationSlot {
@@ -15047,25 +15042,25 @@ mod tests
             name: SurfaceName::from("later"),
         };
 
-        slot.refuse(NodeIndex::from(7_usize), deep);
+        slot.refuse(crate::fixture::node(7_usize), deep);
         assert_eq!(
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(deep),
             "the first offer fills an empty slot"
         );
-        slot.refuse(NodeIndex::from(3_usize), shallow);
+        slot.refuse(crate::fixture::node(3_usize), shallow);
         assert_eq!(
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(shallow),
             "a strictly lower position replaces the incumbent"
         );
-        slot.refuse(NodeIndex::from(5_usize), later);
+        slot.refuse(crate::fixture::node(5_usize), later);
         assert_eq!(
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(shallow),
             "a higher position leaves the incumbent alone"
         );
-        slot.refuse(NodeIndex::from(3_usize), later);
+        slot.refuse(crate::fixture::node(3_usize), later);
         assert_eq!(
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(shallow),
@@ -15092,20 +15087,20 @@ mod tests
             name: SurfaceName::from("beneath"),
         };
         slot.refusal = Maybe::Absent(slot_refusal::Absent::Unrefused);
-        slot.refuse(NodeIndex::from(2_usize), twice);
-        slot.refuse(NodeIndex::from(9_usize), after);
+        slot.refuse(crate::fixture::node(2_usize), twice);
+        slot.refuse(crate::fixture::node(9_usize), after);
         assert_eq!(
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(twice),
             "a deeper fault written after the repetition leaves it alone"
         );
-        slot.refuse(NodeIndex::from(8_usize), before);
+        slot.refuse(crate::fixture::node(8_usize), before);
         assert_eq!(
             slot.refusal,
-            Maybe::Present((NodeIndex::from(8_usize), before)),
+            Maybe::Present((crate::fixture::node(8_usize), before)),
             "a deeper fault written before the repetition replaces it"
         );
-        slot.refuse(NodeIndex::from(12_usize), beneath);
+        slot.refuse(crate::fixture::node(12_usize), beneath);
         assert_eq!(
             slot.refusal.map(|(_at, held)| held),
             Maybe::Present(before),

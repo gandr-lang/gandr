@@ -3771,9 +3771,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        if declared.refused().0
-            || self.source_of.get(usize::from(form.node)) != Some(&self.current.source)
-        {
+        if declared.refused().0 || self.source_of.get(form.node) != Some(&self.current.source) {
             return Ok(None);
         }
         let mut scratch = core::mem::take(&mut self.scratch);
@@ -15494,7 +15492,7 @@ impl<'source> Lowerer<'_, 'source>
             let thunk = sink.arena.value_thunk(lambda);
             sink.origins
                 .record_value(thunk, member.origin.inserted(Insertion::Thunk));
-            if let Some(lowered) = self.lowered.get_mut(usize::from(member.declaration)) {
+            if let Some(lowered) = self.lowered.get_mut(member.declaration) {
                 *lowered = Maybe::Present(Lowered::Function {
                     signature: Maybe::Present(member.signature),
                     body: thunk,

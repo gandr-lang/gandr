@@ -162,7 +162,7 @@ impl<'source> Lowerer<'_, 'source>
             .collected
             .descriptions
             .values()
-            .filter(|entry| source_of.get(usize::from(entry.at.node)) == Some(&current))
+            .filter(|entry| source_of.get(entry.at.node) == Some(&current))
         {
             if self.natively_read(entry)?.0 {
                 continue;

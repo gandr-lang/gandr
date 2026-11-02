@@ -568,6 +568,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::FormRank;
+use gandr_surface_syntax::LayoutBlock;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
@@ -3859,8 +3860,8 @@ struct Resumed<'finished, 'source>
     finished: &'finished Finished<'source>,
     /// The closure's declarations: the slots collected before the document's.
     slots: usize,
-    /// The closure's nodes: the readings before the document's.
-    nodes: usize,
+    /// The closure's blocks: the blocks read before the document's.
+    blocks: LayoutBlock,
     /// The origin values recorded before the document's.
     values: usize,
     /// The resolutions recorded before the document's.
@@ -3951,28 +3952,26 @@ fn sources_of(
     unit: &Unit,
 ) -> NodeTable<SourceIndex>
 {
-    let mut of = NodeTable::filled(
-        gandr_surface_syntax::NodeCount::from(0_usize),
-        SourceIndex::default(),
-    );
+    let mut of = NodeTable::filled(core::iter::empty(), SourceIndex::default());
     extend_sources(&mut of, tree, unit);
     of
 }
 
-/// Extend `of`, the sources of `tree`'s first nodes, with those of the nodes
+/// Extend `of`, the sources of `tree`'s first blocks, with those of the blocks
 /// after them, as [`sources_of`] reads them.
 ///
 /// # Specification
-/// - requires: `of` is [`sources_of`] of a tree whose nodes `tree`'s first
-///   nodes are, at the same positions over the same text, under a unit whose
+/// - requires: `of` is [`sources_of`] of a tree whose blocks `tree`'s first
+///   blocks are, at the same positions over the same text, under a unit whose
 ///   sources `unit`'s first sources are; empty for a whole tree.
 /// - ensures: `of` is [`sources_of`] of `tree` under `unit`.
 /// - fails: never.
 /// - panics: none.
-/// - intension: only the nodes after `of`'s first are visited. Under the
-///   level-order layout each of those is a root added after the first nodes or
-///   a child of a node added after them, and every child of a first node is a
-///   first node, so a document resumed after its closure reads its own nodes.
+/// - intension: only the blocks after `of`'s are visited. Under the layout by
+///   form each of their nodes is a root added after the first blocks or a node
+///   of a form added after them, and every node of a first block's form lies in
+///   a first block, so a document resumed after its closure reads its own
+///   nodes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`sources_of`].
@@ -3984,31 +3983,31 @@ fn extend_sources(
     unit: &Unit,
 )
 {
-    let read = usize::from(of.count());
-    let count = usize::from(tree.node_count());
-    of.widen(tree.node_count(), SourceIndex::default());
+    let read = of.blocks();
+    of.widen(tree.blocks(), SourceIndex::default());
     let roots = tree.roots();
     let added = roots
-        .get(roots.partition_point(|&root| usize::from(root) < read) ..)
+        .get(roots.partition_point(|&root| root.block() < read) ..)
         .unwrap_or_default();
     for &root in added {
-        if let (Some(held), Some(node)) = (of.get_mut(usize::from(root)), tree.node(root)) {
-            *held = unit.source_at(node.span().start());
+        let Some(node) = tree.node(root)
+        else {
+            continue;
+        };
+        let rooted = unit.source_at(node.span().start());
+        if let Some(held) = of.get_mut(root) {
+            *held = rooted;
         }
-    }
-    for position in (read .. count).map(NodeIndex::from) {
-        let own = of.get(usize::from(position)).copied().unwrap_or_default();
-        let rooted = added.binary_search(&position).is_ok();
-        for child in tree.children(position) {
-            let source = if rooted {
-                tree.node(child)
-                    .map_or(own, |node| unit.source_at(node.span().start()))
-            }
-            else {
-                own
-            };
-            if let Some(held) = of.get_mut(usize::from(child)) {
+        for child in tree.children(root) {
+            let source = tree
+                .node(child)
+                .map_or(rooted, |node| unit.source_at(node.span().start()));
+            if let Some(held) = of.get_mut(child) {
                 *held = source;
+            }
+            // The child's descendants are one block, read whole.
+            if let Some(first) = tree.children(child).next() {
+                of.fill(first.block(), source);
             }
         }
     }
@@ -4036,7 +4035,7 @@ const fn half_at(half: Half) -> HalfAt
 /// # Adequacy
 /// - hypothesis: L3 — as [`sources_of`].
 /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
-#[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|&position| source_of.get(usize::from(position)) == Some(&source)))]
+#[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|&position| source_of.get(position) == Some(&source)))]
 fn own_positions(
     source_of: &NodeTable<SourceIndex>,
     source: SourceIndex,
@@ -4044,9 +4043,8 @@ fn own_positions(
 {
     source_of
         .iter()
-        .enumerate()
         .filter(|&(_, &held)| held == source)
-        .map(|(position, _)| NodeIndex::from(position))
+        .map(|(position, _)| position)
         .collect()
 }
 
@@ -5199,20 +5197,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         decisions: &mut Decisions,
     )
     {
-        let read = NodeIndex::from(usize::from(self.readings.count()));
+        let read = self.readings.blocks();
         self.tree = tree;
-        self.readings.widen(tree.node_count(), Reading::Unread);
-        self.plans.widen(tree.node_count(), Plan::Unplanned);
-        self.taken.widen(tree.node_count(), false);
-        self.bridges.widen(tree.node_count(), Bridge::Bare);
+        self.readings.widen(tree.blocks(), Reading::Unread);
+        self.plans.widen(tree.blocks(), Plan::Unplanned);
+        self.taken.widen(tree.blocks(), false);
+        self.bridges.widen(tree.blocks(), Bridge::Bare);
         self.lowered
-            .widen(tree.node_count(), Maybe::Absent(lowered::Absent::Unminted));
-        self.payload.widen(tree.node_count(), InPayload(false));
+            .widen(tree.blocks(), Maybe::Absent(lowered::Absent::Unminted));
+        self.payload.widen(tree.blocks(), InPayload(false));
         self.scopes
-            .widen(tree.node_count(), Maybe::Absent(scoped::Absent::Unscoped));
-        self.leaves.widen(tree.node_count(), exits::Leaves::Never);
-        self.collected
-            .widen(tree.node_count(), unit, described, decisions);
+            .widen(tree.blocks(), Maybe::Absent(scoped::Absent::Unscoped));
+        self.leaves.widen(tree.blocks(), exits::Leaves::Never);
+        self.collected.widen(tree, unit, described, decisions);
         extend_sources(&mut self.source_of, tree, unit);
         if !self.holes.is_empty() {
             self.read_holes(read);
@@ -5281,26 +5278,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && ret
                     .readings
                     .iter()
-                    .all(|reading| matches!(*reading, Reading::Unread))
+                    .all(|(_, reading)| matches!(*reading, Reading::Unread))
                 && usize::from(ret.plans.count()) == count
                 && ret
                     .plans
                     .iter()
-                    .all(|plan| matches!(*plan, Plan::Unplanned))
+                    .all(|(_, plan)| matches!(*plan, Plan::Unplanned))
                 && usize::from(ret.bridges.count()) == count
-                && ret.bridges.iter().all(|bridge| *bridge == Bridge::Bare)
+                && ret.bridges.iter().all(|(_, bridge)| *bridge == Bridge::Bare)
                 && usize::from(ret.lowered.count()) == count
                 && ret
                     .lowered
                     .iter()
-                    .all(|node| matches!(*node, Maybe::Absent(lowered::Absent::Unminted)))
+                    .all(|(_, node)| matches!(*node, Maybe::Absent(lowered::Absent::Unminted)))
                 && usize::from(ret.payload.count()) == count
-                && ret.payload.iter().all(|flag| !flag.0)
+                && ret.payload.iter().all(|(_, flag)| !flag.0)
                 && usize::from(ret.scopes.count()) == count
                 && ret
                     .scopes
                     .iter()
-                    .all(|scope| matches!(*scope, Maybe::Absent(_)))
+                    .all(|(_, scope)| matches!(*scope, Maybe::Absent(_)))
                 && ret.manifests.is_empty()
                 && ret.exported.is_empty()
                 && ret.witnessed.is_empty()
@@ -5328,15 +5325,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         recognition: Recognition,
     ) -> Self
     {
-        let count = tree.node_count();
-        let readings = NodeTable::filled(count, Reading::Unread);
-        let plans = NodeTable::filled(count, Plan::Unplanned);
-        let taken = NodeTable::filled(count, false);
-        let bridges = NodeTable::filled(count, Bridge::Bare);
-        let lowered = NodeTable::filled(count, Maybe::Absent(lowered::Absent::Unminted));
-        let payload = NodeTable::filled(count, InPayload(false));
-        let scopes = NodeTable::filled(count, Maybe::Absent(scoped::Absent::Unscoped));
-        let leaves = NodeTable::filled(count, exits::Leaves::Never);
+        let readings = NodeTable::filled(tree.blocks(), Reading::Unread);
+        let plans = NodeTable::filled(tree.blocks(), Plan::Unplanned);
+        let taken = NodeTable::filled(tree.blocks(), false);
+        let bridges = NodeTable::filled(tree.blocks(), Bridge::Bare);
+        let lowered = NodeTable::filled(tree.blocks(), Maybe::Absent(lowered::Absent::Unminted));
+        let payload = NodeTable::filled(tree.blocks(), InPayload(false));
+        let scopes = NodeTable::filled(tree.blocks(), Maybe::Absent(scoped::Absent::Unscoped));
+        let leaves = NodeTable::filled(tree.blocks(), exits::Leaves::Never);
         let source_of = sources_of(tree, &collected.unit);
         let own = own_positions(&source_of, SourceIndex::default());
 
@@ -6293,7 +6289,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | Payload::Unwritten => true,
                             | Payload::Written(payload) => self
                                 .payload
-                                .get(usize::from(payload.node))
+                                .get(payload.node)
                                 .is_none_or(|flag| flag.0),
                         }))
         },
@@ -6348,7 +6344,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         for &(root, seen) in self.collected.scopes.iter().skip(from.scopes) {
-            if let Some(held) = self.scopes.get_mut(usize::from(root)) {
+            if let Some(held) = self.scopes.get_mut(root) {
                 *held = Maybe::Present(seen);
             }
         }
@@ -6443,7 +6439,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.repaired_calls(position);
         }
         for position in payloads {
-            if let Some(held) = self.payload.get_mut(usize::from(position)) {
+            if let Some(held) = self.payload.get_mut(position) {
                 *held = InPayload(true);
             }
         }
@@ -6776,15 +6772,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         captures: before = (
             usize::from(self.scopes.count()),
-            self.scopes.get(usize::from(position)).copied(),
+            self.scopes.get(position).copied(),
         ),
         ensures: |_| {
             usize::from(self.scopes.count()) == before.0
-                && self.scopes.get(usize::from(position)).copied() == before.1
+                && self.scopes.get(position).copied() == before.1
                 && (!matches!(before.1, Some(Maybe::Present(_)))
                     || self.tree.children(position).all(|child| {
                         self.scopes
-                            .get(usize::from(child))
+                            .get(child)
                             .is_none_or(|scope| matches!(*scope, Maybe::Present(_)))
                     }))
         },
@@ -6794,12 +6790,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         position: NodeIndex,
     )
     {
-        let Some(&Maybe::Present(seen)) = self.scopes.get(usize::from(position))
+        let Some(&Maybe::Present(seen)) = self.scopes.get(position)
         else {
             return;
         };
         for child in self.tree.children(position) {
-            if let Some(held) = self.scopes.get_mut(usize::from(child))
+            if let Some(held) = self.scopes.get_mut(child)
                 && let Maybe::Absent(_) = *held
             {
                 *held = Maybe::Present(seen);
@@ -6878,7 +6874,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && (!before.1.0
                     || self.tree.children(position).all(|child| {
                         self.payload
-                            .get(usize::from(child))
+                            .get(child)
                             .is_none_or(|flag| flag.0)
                     }))
         },
@@ -6892,7 +6888,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return;
         }
         for child in self.tree.children(position) {
-            if let Some(held) = self.payload.get_mut(usize::from(child)) {
+            if let Some(held) = self.payload.get_mut(child) {
                 *held = InPayload(true);
             }
         }
@@ -6916,7 +6912,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.0
                 == self
                     .payload
-                    .get(usize::from(position))
+                    .get(position)
                     .is_some_and(|flag| flag.0)
         },
     )]
@@ -6926,7 +6922,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> InPayload
     {
         self.payload
-            .get(usize::from(position))
+            .get(position)
             .copied()
             .unwrap_or(InPayload(false))
     }
@@ -6945,14 +6941,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a refused member's stated type is minted while its
     ///   body is not.
     /// - witness: `lower::tests::a_signature_s_types_answer_whatever_its_members_1115`
-    #[spec(ensures: |ret| ret.0 == matches!(self.scopes.get(usize::from(position)), Some(&Maybe::Present(_))))]
+    #[spec(ensures: |ret| ret.0 == matches!(self.scopes.get(position), Some(&Maybe::Present(_))))]
     fn stated_apart(
         &self,
         position: NodeIndex,
     ) -> StatedApart
     {
         StatedApart(matches!(
-            self.scopes.get(usize::from(position)),
+            self.scopes.get(position),
             Some(&Maybe::Present(_))
         ))
     }
@@ -7735,7 +7731,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     ret == Ok(frame)
                         && self
                             .bridges
-                            .get(usize::from(site.at.node))
+                            .get(site.at.node)
                             .is_none_or(|held| *held == bridge)
                         && (bridge != Bridge::Inserted(Insertion::Return)
                             || self.tested.contains(&site.at.node)
@@ -7835,7 +7831,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             _ => return Err(self.standing(site).out(FragmentBoundary::WrongSort)),
         };
-        if let Some(held) = self.bridges.get_mut(usize::from(site.at.node)) {
+        if let Some(held) = self.bridges.get_mut(site.at.node) {
             *held = bridge;
         }
         // A type a term quotes, where no type reads it, is a body's: its reads
@@ -13014,7 +13010,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<Maybe<TypeComponent<'source>, named::Absent>, LoweringRefusal<'source>>
     {
         let unresolved = Maybe::Absent(named::Absent::Unresolved);
-        if let Some(&Maybe::Present(seen)) = self.scopes.get(usize::from(site.at.node)) {
+        if let Some(&Maybe::Present(seen)) = self.scopes.get(site.at.node) {
             return Ok(self
                 .collected
                 .structures
@@ -15605,7 +15601,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret == self
                 .readings
-                .get(usize::from(position))
+                .get(position)
                 .copied()
                 .unwrap_or(Reading::Unread)
         },
@@ -15616,7 +15612,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Reading
     {
         self.readings
-            .get(usize::from(position))
+            .get(position)
             .copied()
             .unwrap_or(Reading::Unread)
     }
@@ -15641,7 +15637,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             usize::from(self.readings.count()) == count
                 && self
                     .readings
-                    .get(usize::from(position))
+                    .get(position)
                     .is_none_or(|held| *held == reading)
         },
     )]
@@ -15651,7 +15647,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         reading: Reading,
     )
     {
-        if let Some(held) = self.readings.get_mut(usize::from(position)) {
+        if let Some(held) = self.readings.get_mut(position) {
             *held = reading;
         }
         // A value a type reads — a type-position call's argument — stands in
@@ -15769,7 +15765,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
         if self.holes.is_empty() {
-            self.read_holes(NodeIndex::from(0_usize));
+            self.read_holes(LayoutBlock::from(0_usize));
         }
         let exceeded = LoweringRefusal::BudgetExceeded {
             budget: self.fuel.budget,
@@ -15785,13 +15781,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .ok_or(exceeded)
     }
 
-    /// Read the holes among the tree's nodes from `from` on into the holes
-    /// read before, in the order the text writes them.
+    /// Read the holes among the tree's nodes from block `from` on into the
+    /// holes read before, in the order the text writes them.
     ///
     /// # Specification
-    /// - requires: no node from `from` on was read before.
-    /// - ensures: every hole from `from` on is held, sorted by where its text
-    ///   starts beside the holes held before.
+    /// - requires: no node from block `from` on was read before.
+    /// - ensures: every hole from block `from` on is held, sorted by where its
+    ///   text starts beside the holes held before.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -15804,16 +15800,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body reads every node from `from` on and sorts the holes once; the check reads each hole once more"
+            reason = "parity: the body reads every node from block `from` on and sorts the holes once; the check reads each hole once more"
         )
     )]
     #[spec(ensures: self.holes.is_sorted())]
     fn read_holes(
         &mut self,
-        from: NodeIndex,
+        from: LayoutBlock,
     )
     {
-        for position in self.tree.positions().skip(usize::from(from)) {
+        for position in self.tree.positions_from(from) {
             let Some(node) = self.tree.node(position)
             else {
                 continue;
@@ -15883,13 +15879,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || self.plans.iter().enumerate().all(|(position, plan)| {
-                    let position = NodeIndex::from(position);
+                || self.plans.iter().all(|(position, plan)| {
                     (self.collected.refused(position).0
                         && !self.in_payload(position).0
                         && !self.stated_apart(position).0)
                         || *plan == Plan::Unplanned
-                        || self.taken.get(usize::from(position)) == Some(&true)
+                        || self.taken.get(position) == Some(&true)
                 })
         },
     )]
@@ -15899,8 +15894,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let from = self.current;
-        let owns =
-            |position: &NodeIndex| self.source_of.get(usize::from(*position)) == Some(&from.source);
+        let owns = |position: &NodeIndex| self.source_of.get(*position) == Some(&from.source);
         let mut stated: Vec<Placed> = self
             .collected
             .structures
@@ -16284,7 +16278,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             matches!(
                 self.plans.get(position),
                 None | Some(&Plan::Unplanned)
-            ) || self.taken.get(usize::from(position)) == Some(&true),
+            ) || self.taken.get(position) == Some(&true),
             self.lowered_at(position),
             self.plans.count(),
             usize::from(self.lowered.count()),
@@ -16295,7 +16289,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.lowered_at(position) == before.2
             }
             else {
-                self.taken.get(usize::from(position)) == Some(&true)
+                self.taken.get(position) == Some(&true)
             }),
     )]
     fn mint_at(
@@ -16423,7 +16417,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             matches!(
                 self.plans.get(position),
                 None | Some(&Plan::Unplanned)
-            ) || self.taken.get(usize::from(position)) == Some(&true),
+            ) || self.taken.get(position) == Some(&true),
             self.lowered_at(position),
             self.plans.count(),
             usize::from(self.lowered.count()),
@@ -16434,7 +16428,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.lowered_at(position) == before.1
             }
             else {
-                self.taken.get(usize::from(position)) == Some(&true)
+                self.taken.get(position) == Some(&true)
             }),
     )]
     fn mint_planned(
@@ -16443,7 +16437,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        let Some(taken) = self.taken.get_mut(usize::from(position))
+        let Some(taken) = self.taken.get_mut(position)
         else {
             return;
         };
@@ -16461,11 +16455,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return;
         };
-        let bridge = self
-            .bridges
-            .get(usize::from(position))
-            .copied()
-            .unwrap_or(Bridge::Bare);
+        let bridge = self.bridges.get(position).copied().unwrap_or(Bridge::Bare);
         let stands_in = matches!(*plan, Plan::Transparent(_) | Plan::Instantiated(..))
             && self.stand_ins.contains(&position);
         let minted = self.mint_plan(plan, sink, origin);
@@ -16614,7 +16604,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             bridged @ (Maybe::Present(_) | Maybe::Absent(_)) => bridged,
         };
-        if let Some(held) = self.lowered.get_mut(usize::from(position)) {
+        if let Some(held) = self.lowered.get_mut(position) {
             *held = bridged;
         }
     }
@@ -19544,7 +19534,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret == self
                 .lowered
-                .get(usize::from(position))
+                .get(position)
                 .copied()
                 .unwrap_or(Maybe::Absent(lowered::Absent::Unminted))
         },
@@ -19555,7 +19545,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         self.lowered
-            .get(usize::from(position))
+            .get(position)
             .copied()
             .unwrap_or(Maybe::Absent(lowered::Absent::Unminted))
     }
@@ -21971,7 +21961,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The binders in scope at each node the lowering read under a binder:
     /// the scope's frames, beside each such node's span and its reading's
     /// frame; after the closure's table when `resumed` gives it, from the
-    /// node it marks on.
+    /// block it marks on.
     ///
     /// # Specification
     /// - requires: every source is lowered; `resumed`, when given, marks where
@@ -21979,7 +21969,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: [`Scope::in_scope`] over this lowering's scope and one span
     ///   per node whose reading names an inner frame, a node of a refused
     ///   declaration included; after a closure, [`Scope::in_scope_after`] over
-    ///   the closure's table and the nodes past its mark.
+    ///   the closure's table and the nodes of the blocks past its mark.
     /// - provides: the table [`LoweredModule::in_scope`] keeps.
     /// - fails: never.
     /// - panics: none.
@@ -21996,13 +21986,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         resumed: Option<Resumed<'_, '_>>,
     ) -> crate::InScope
     {
-        let from = resumed.map_or(0, |resumed| resumed.nodes);
-        let read = (from .. usize::from(self.readings.count()))
+        let from = resumed.map_or_else(|| LayoutBlock::from(0_usize), |resumed| resumed.blocks);
+        let read = self
+            .tree
+            .positions_from(from)
             .filter_map(|position| match self.readings.get(position)?.frame() {
-                Frame::Inner(frame) => self
-                    .tree
-                    .node(NodeIndex::from(position))
-                    .map(|node| (node.span(), frame)),
+                Frame::Inner(frame) => self.tree.node(position).map(|node| (node.span(), frame)),
                 Frame::Outermost => None,
             })
             .collect();
@@ -22026,7 +22015,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Resumed {
             finished,
             slots: self.collected.slots.len(),
-            nodes: usize::from(self.readings.count()),
+            blocks: self.readings.blocks(),
             values: origins.values().len(),
             resolved: self.resolutions.len(),
             declared: self.collected.declared_uses.len(),
@@ -29178,9 +29167,8 @@ def ended() -> -F [Div] Unit {
         else {
             panic!("`p` and `x` are declared");
         };
-        let filed = (0_usize ..)
-            .map(gandr_surface_syntax::NodeIndex::from)
-            .map_while(|at| tree.node(at).map(|_| at))
+        let filed = tree
+            .positions()
             .filter_map(|at| tree.key(at))
             .map(|key| crate::unit::UnitKey::new(crate::unit::SourceIndex::default(), key))
             .filter(|&key| module.attributes().laws(key) == [p.constant()])
@@ -29209,9 +29197,9 @@ def ended() -> -F [Div] Unit {
             Recognition::default(),
         )
         .unwrap();
-        let mut filed: Vec<(ByteOffset, String, &str)> = (0_usize ..)
-            .map(gandr_surface_syntax::NodeIndex::from)
-            .map_while(|at| tree.node(at).map(|node| (at, node)))
+        let mut filed: Vec<(ByteOffset, String, &str)> = tree
+            .positions()
+            .filter_map(|at| tree.node(at).map(|node| (at, node)))
             .filter_map(|(at, node)| {
                 let key =
                     crate::unit::UnitKey::new(crate::unit::SourceIndex::default(), tree.key(at)?);
@@ -30186,7 +30174,7 @@ def ended() -> -F [Div] Unit {
     fn closing_and_exhaustion_distinguish_tiles_operands_and_gaps()
     {
         let placed = |index: usize, start: usize, end: usize| super::Placed {
-            node: super::NodeIndex::from(index),
+            node: crate::fixture::node(index),
             span: span(ByteOffset::from(start), ByteOffset::from(end)),
         };
         let close = placed(1_usize, 2_usize, 3_usize);
@@ -30248,7 +30236,7 @@ def ended() -> -F [Div] Unit {
     fn parameter_headers_preserve_the_body_and_locate_refusals()
     {
         let placed = |index: usize, start: usize, end: usize| super::Placed {
-            node: super::NodeIndex::from(index),
+            node: crate::fixture::node(index),
             span: span(ByteOffset::from(start), ByteOffset::from(end)),
         };
         let lead = super::Piece::Tile {
@@ -30342,7 +30330,7 @@ def ended() -> -F [Div] Unit {
     fn argument_lists_preserve_prefixes_and_locate_the_first_fault()
     {
         let placed = |index: usize, start: usize, end: usize| super::Placed {
-            node: super::NodeIndex::from(index),
+            node: crate::fixture::node(index),
             span: span(ByteOffset::from(start), ByteOffset::from(end)),
         };
         let open = super::Piece::Tile {
@@ -30365,7 +30353,7 @@ def ended() -> -F [Div] Unit {
             name: FormName::FUNCTION,
             reading: super::Reading::Function,
         };
-        let previous = super::NodeIndex::from(99_usize);
+        let previous = crate::fixture::node(99_usize);
         let trailing = super::Piece::Tile {
             label: super::TileName::COMMA,
             at: stray,

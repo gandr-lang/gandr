@@ -11,7 +11,6 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::memory::MemoryForm;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceText;
 
 use super::ElidableExit;
@@ -104,8 +103,7 @@ pub(in crate::lower) fn assert_surveyed(
         let at = spelled(source, needle);
         surveyed.clear();
         surveyed.extend(
-            (0 .. usize::from(tree.node_count()))
-                .map(NodeIndex::from)
+            tree.positions()
                 .filter(|&position| {
                     tree.node(position).is_some_and(|node| {
                         node.span() == at && matches!(shape_of(&pbg, node), Ok(Shape::Form { .. }))

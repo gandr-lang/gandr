@@ -2066,7 +2066,6 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
-    use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
     use super::Bound;
@@ -2239,7 +2238,7 @@ mod tests
         let typed = scope.extend_typed(
             Frame::Inner(outer),
             SurfaceName::from("typed"),
-            NodeIndex::from(7_usize),
+            crate::fixture::node(7_usize),
             UNWRITTEN,
         );
         let inner = scope.extend(Frame::Inner(typed), SurfaceName::from("inner"), UNWRITTEN);
@@ -2423,7 +2422,7 @@ mod tests
         let typed = scope.extend_typed(
             Frame::Outermost,
             SurfaceName::from("a"),
-            NodeIndex::from(7_usize),
+            crate::fixture::node(7_usize),
             UNWRITTEN,
         );
         let untyped = scope.extend(Frame::Inner(typed), SurfaceName::from("x"), UNWRITTEN);
@@ -2433,7 +2432,7 @@ mod tests
             Ok(Maybe::Present(Bound {
                 index: DeBruijnIndex::from(1_u32),
                 binder: typed,
-                declared: Maybe::Present(NodeIndex::from(7_usize)),
+                declared: Maybe::Present(crate::fixture::node(7_usize)),
                 zone: Zone::Intuitionistic,
             })),
             "a typed binder answers the node its type was written at"
@@ -2455,7 +2454,7 @@ mod tests
                 scope.declared(ScopeId(9)),
             ),
             (
-                Maybe::Present(NodeIndex::from(7_usize)),
+                Maybe::Present(crate::fixture::node(7_usize)),
                 Maybe::Absent(binder_type::Absent::Untyped),
                 Maybe::Absent(binder_type::Absent::Untyped),
             ),
@@ -2471,7 +2470,7 @@ mod tests
             scope.extend_typed(
                 parent,
                 SurfaceName::from(name),
-                NodeIndex::from(1_usize),
+                crate::fixture::node(1_usize),
                 UNWRITTEN,
             )
         };
@@ -2513,7 +2512,7 @@ mod tests
             scope.extend_typed(
                 parent,
                 SurfaceName::from(name),
-                NodeIndex::from(1_usize),
+                crate::fixture::node(1_usize),
                 UNWRITTEN,
             )
         };
@@ -2577,13 +2576,13 @@ mod tests
         let a = scope.extend_typed(
             Frame::Outermost,
             SurfaceName::from("a"),
-            NodeIndex::from(1_usize),
+            crate::fixture::node(1_usize),
             UNWRITTEN,
         );
         let x = scope.extend_typed(
             Frame::Inner(a),
             SurfaceName::from("x"),
-            NodeIndex::from(2_usize),
+            crate::fixture::node(2_usize),
             UNWRITTEN,
         );
         let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"), UNWRITTEN);

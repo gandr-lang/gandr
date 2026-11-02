@@ -2923,35 +2923,35 @@ mod tests
         let computation = arena.computation_return(first_value);
         let value_type = arena.value_type_unit();
         let comp_type = arena.comp_type_returner(value_type);
-        table.record_value(first_value, at(NodeIndex::from(1_usize)));
-        table.record_value(second_value, at(NodeIndex::from(2_usize)));
-        table.record_computation(computation, at(NodeIndex::from(3_usize)));
-        table.record_value_type(value_type, at(NodeIndex::from(4_usize)));
-        table.record_comp_type(comp_type, at(NodeIndex::from(5_usize)));
+        table.record_value(first_value, at(crate::fixture::node(1_usize)));
+        table.record_value(second_value, at(crate::fixture::node(2_usize)));
+        table.record_computation(computation, at(crate::fixture::node(3_usize)));
+        table.record_value_type(value_type, at(crate::fixture::node(4_usize)));
+        table.record_comp_type(comp_type, at(crate::fixture::node(5_usize)));
 
         assert_eq!(
             table.value(first_value),
-            Maybe::Present(at(NodeIndex::from(1_usize))),
+            Maybe::Present(at(crate::fixture::node(1_usize))),
             "the first value keeps its own origin"
         );
         assert_eq!(
             table.value(second_value),
-            Maybe::Present(at(NodeIndex::from(2_usize))),
+            Maybe::Present(at(crate::fixture::node(2_usize))),
             "a second entry in one family does not shadow the first"
         );
         assert_eq!(
             table.computation(computation),
-            Maybe::Present(at(NodeIndex::from(3_usize))),
+            Maybe::Present(at(crate::fixture::node(3_usize))),
             "the computation family answers its own entry"
         );
         assert_eq!(
             table.value_type(value_type),
-            Maybe::Present(at(NodeIndex::from(4_usize))),
+            Maybe::Present(at(crate::fixture::node(4_usize))),
             "the value-type family is covered from the first landing"
         );
         assert_eq!(
             table.comp_type(comp_type),
-            Maybe::Present(at(NodeIndex::from(5_usize))),
+            Maybe::Present(at(crate::fixture::node(5_usize))),
             "the computation-type family is covered too"
         );
         assert_eq!(
@@ -2968,7 +2968,7 @@ mod tests
         let mut table = OriginTable::new();
         let recorded = arena.value_unit();
         let unrecorded = arena.value_unit();
-        table.record_value(recorded, at(NodeIndex::from(1_usize)));
+        table.record_value(recorded, at(crate::fixture::node(1_usize)));
 
         assert_eq!(
             table.value(unrecorded),
@@ -2989,12 +2989,12 @@ mod tests
         let mut table = OriginTable::new();
         let [variable, run, bare] = [(); 3].map(|()| arena.value_unit());
         let [lambda, region] = [(); 2].map(|()| arena.computation_return(variable));
-        table.record_value(variable, at(NodeIndex::from(1_usize)));
-        table.record_value(run, at(NodeIndex::from(2_usize)));
-        table.record_computation(lambda, at(NodeIndex::from(3_usize)));
-        table.record_computation(region, at(NodeIndex::from(4_usize)));
-        table.record_binding(variable, at(NodeIndex::from(5_usize)).span());
-        table.record_binder(lambda, at(NodeIndex::from(6_usize)));
+        table.record_value(variable, at(crate::fixture::node(1_usize)));
+        table.record_value(run, at(crate::fixture::node(2_usize)));
+        table.record_computation(lambda, at(crate::fixture::node(3_usize)));
+        table.record_computation(region, at(crate::fixture::node(4_usize)));
+        table.record_binding(variable, at(crate::fixture::node(5_usize)).span());
+        table.record_binder(lambda, at(crate::fixture::node(6_usize)));
         let [shifted, copied] = [(); 2].map(|()| arena.value_unit());
         let [rebuilt, closed, spliced, bind] = [(); 4].map(|()| arena.computation_return(variable));
         // A rewrite reports in memo order, not mint order; the region is
@@ -3013,28 +3013,28 @@ mod tests
         assert_eq!(
             (table.value(shifted), table.binding(shifted)),
             (
-                Maybe::Present(at(NodeIndex::from(1_usize))),
-                Maybe::Present(at(NodeIndex::from(5_usize)).span())
+                Maybe::Present(at(crate::fixture::node(1_usize))),
+                Maybe::Present(at(crate::fixture::node(5_usize)).span())
             ),
             "a rebuilt variable answers at its source and keeps its binder"
         );
         assert_eq!(
             (table.computation(rebuilt), table.binder(rebuilt)),
             (
-                Maybe::Present(at(NodeIndex::from(3_usize))),
-                Maybe::Present(at(NodeIndex::from(6_usize)))
+                Maybe::Present(at(crate::fixture::node(3_usize))),
+                Maybe::Present(at(crate::fixture::node(6_usize)))
             ),
             "a rebuilt opener answers at its source and names its binder"
         );
         assert_eq!(
             table.computation(spliced),
-            Maybe::Present(at(NodeIndex::from(4_usize))),
+            Maybe::Present(at(crate::fixture::node(4_usize))),
             "a node rebuilt from a rebuilt node answers at the written one"
         );
         assert_eq!(
             (table.computation(bind), table.binder(bind)),
             (
-                Maybe::Present(at(NodeIndex::from(2_usize))),
+                Maybe::Present(at(crate::fixture::node(2_usize))),
                 Maybe::Absent(origin::Absent::Unrecorded)
             ),
             "a bind answers at the run it binds, before the region it wraps, and names no binder"
@@ -3064,15 +3064,18 @@ mod tests
             pair != copied_pair && arrow != copied_arrow && case != rebuilt_case,
             "each copy is a node of its own"
         );
-        table.record_value_type(pair, at(NodeIndex::from(1_usize)));
-        table.record_pair(pair, at(NodeIndex::from(2_usize)));
-        table.record_second(pair, at(NodeIndex::from(3_usize)));
-        table.record_comp_type(arrow, at(NodeIndex::from(4_usize)));
-        table.record_arrow(arrow, at(NodeIndex::from(5_usize)));
+        table.record_value_type(pair, at(crate::fixture::node(1_usize)));
+        table.record_pair(pair, at(crate::fixture::node(2_usize)));
+        table.record_second(pair, at(crate::fixture::node(3_usize)));
+        table.record_comp_type(arrow, at(crate::fixture::node(4_usize)));
+        table.record_arrow(arrow, at(crate::fixture::node(5_usize)));
         table.record_elimination(case, ConstantIndex::from(7_usize));
         let [sum, copied_sum] = [(); 2].map(|()| arena.value_type_sum(&[pair, pair]));
         let [with, copied_with] = [(); 2].map(|()| arena.comp_type_with(&[arrow, arrow]));
-        let written = [at(NodeIndex::from(9_usize)), at(NodeIndex::from(10_usize))];
+        let written = [
+            at(crate::fixture::node(9_usize)),
+            at(crate::fixture::node(10_usize)),
+        ];
         table.record_sum_labels(sum, written.to_vec());
         table.record_with_labels(with, written.to_vec());
         table.carry(
@@ -3100,25 +3103,25 @@ mod tests
         );
         assert_eq!(
             table.value_type(copied_pair),
-            Maybe::Present(at(NodeIndex::from(1_usize)))
+            Maybe::Present(at(crate::fixture::node(1_usize)))
         );
         assert!(
             table
                 .pairs()
-                .contains(&(copied_pair, at(NodeIndex::from(2_usize))))
+                .contains(&(copied_pair, at(crate::fixture::node(2_usize))))
                 && table
                     .seconds()
-                    .contains(&(copied_pair, at(NodeIndex::from(3_usize)))),
+                    .contains(&(copied_pair, at(crate::fixture::node(3_usize)))),
             "a copied pair type keeps both its labels"
         );
         assert_eq!(
             table.comp_type(copied_arrow),
-            Maybe::Present(at(NodeIndex::from(4_usize)))
+            Maybe::Present(at(crate::fixture::node(4_usize)))
         );
         assert!(
             table
                 .arrows()
-                .contains(&(copied_arrow, at(NodeIndex::from(5_usize)))),
+                .contains(&(copied_arrow, at(crate::fixture::node(5_usize)))),
             "a copied arrow keeps its binder"
         );
         assert_eq!(
@@ -3127,7 +3130,7 @@ mod tests
             "a rebuilt case still names the family it eliminates"
         );
 
-        let named = ComponentName::Written(at(NodeIndex::from(8_usize)));
+        let named = ComponentName::Written(at(crate::fixture::node(8_usize)));
         table.place_component(case, SplitComponent::from(1_usize), named.clone());
         assert_eq!(
             table.component(case, SplitComponent::from(1_usize)),
@@ -3156,7 +3159,7 @@ mod tests
         let unit = arena.value_unit();
         let [action, other, rebuilt] = [(); 3].map(|()| arena.computation_return(unit));
         let written = |labelled| Label {
-            span: at(NodeIndex::from(1_usize)).span(),
+            span: at(crate::fixture::node(1_usize)).span(),
             labelled,
         };
         let arm = FieldLabel::from(alloc::string::String::from("left"));
@@ -3206,18 +3209,18 @@ mod tests
     fn a_declaration_token_resolves_to_its_own_origin()
     {
         let mut table = OriginTable::new();
-        let first = table.record_declaration(at(NodeIndex::from(1_usize)));
-        let second = table.record_declaration(at(NodeIndex::from(2_usize)));
+        let first = table.record_declaration(at(crate::fixture::node(1_usize)));
+        let second = table.record_declaration(at(crate::fixture::node(2_usize)));
 
         assert_ne!(first, second, "each declaration takes its own token");
         assert_eq!(
             table.declaration(first),
-            Maybe::Present(at(NodeIndex::from(1_usize))),
+            Maybe::Present(at(crate::fixture::node(1_usize))),
             "the first token resolves to the first origin"
         );
         assert_eq!(
             table.declaration(second),
-            Maybe::Present(at(NodeIndex::from(2_usize))),
+            Maybe::Present(at(crate::fixture::node(2_usize))),
             "the second token resolves to the second origin"
         );
         assert_eq!(
@@ -3231,11 +3234,11 @@ mod tests
     fn a_token_past_the_declaration_list_resolves_to_nothing()
     {
         let mut table = OriginTable::new();
-        let only = table.record_declaration(at(NodeIndex::from(1_usize)));
+        let only = table.record_declaration(at(crate::fixture::node(1_usize)));
 
         assert_eq!(
             table.declaration(only),
-            Maybe::Present(at(NodeIndex::from(1_usize))),
+            Maybe::Present(at(crate::fixture::node(1_usize))),
             "the last minted token still resolves"
         );
         assert_eq!(
@@ -3254,12 +3257,12 @@ mod tests
         let gap = arena.value_unit();
         let last = arena.value_unit();
         let after = arena.value_unit();
-        let inserted = at(NodeIndex::from(1_usize)).inserted(super::Insertion::Force);
-        let written = at(NodeIndex::from(4_usize));
+        let inserted = at(crate::fixture::node(1_usize)).inserted(super::Insertion::Force);
+        let written = at(crate::fixture::node(4_usize));
         let mut table = OriginTable::new();
         table.record_value(first, inserted);
         table.record_value(last, written);
-        let declaration = table.record_declaration(at(NodeIndex::from(9_usize)));
+        let declaration = table.record_declaration(at(crate::fixture::node(9_usize)));
 
         assert_eq!(table.value(first), Maybe::Present(inserted));
         assert_eq!(table.value(last), Maybe::Present(written));
@@ -3271,7 +3274,7 @@ mod tests
         }
         assert_eq!(
             table.declaration(declaration),
-            Maybe::Present(at(NodeIndex::from(9_usize)))
+            Maybe::Present(at(crate::fixture::node(9_usize)))
         );
         assert_eq!(table.recorded_count(), OriginCount::from(2_usize));
         assert_eq!(table.declaration_count(), OriginCount::from(1_usize));
@@ -3286,8 +3289,8 @@ mod tests
         let foreign = foreign_arena.value_unit();
         assert_eq!(recorded, foreign);
 
-        let first_origin = at(NodeIndex::from(1_usize));
-        let second_origin = at(NodeIndex::from(8_usize));
+        let first_origin = at(crate::fixture::node(1_usize));
+        let second_origin = at(crate::fixture::node(8_usize));
         let mut first_table = OriginTable::new();
         first_table.record_value(recorded, first_origin);
         assert_eq!(first_table.value(foreign), Maybe::Present(first_origin));
@@ -3315,8 +3318,8 @@ mod tests
         let first = arena.value_unit();
         let second = arena.value_unit();
         let mut table = OriginTable::new();
-        table.record_value(first, at(NodeIndex::from(1_usize)));
-        table.record_value(second, at(NodeIndex::from(2_usize)));
+        table.record_value(first, at(crate::fixture::node(1_usize)));
+        table.record_value(second, at(crate::fixture::node(2_usize)));
         assert_eq!(table.recorded_count(), OriginCount::from(2_usize));
         table.values.swap(0_usize, 1_usize);
         let _count = table.recorded_count();

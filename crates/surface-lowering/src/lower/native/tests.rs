@@ -4131,7 +4131,7 @@ fn a_match_keeps_its_patterns_beside_its_tree()
             .any(|at| arena.computation(at) == Some(&Computation::Hole(identity))),
         "the tree is stuck on the same hole"
     );
-    assert!(usize::from(kept.scrutinee) > usize::from(kept.written));
+    assert!(kept.scrutinee > kept.written);
     assert!(
         matches!(kept.scrutinised, Maybe::Present(value) if matches!(arena.value(value), Some(&Value::Variable { .. }))),
         "the record names the value the tree eliminates"

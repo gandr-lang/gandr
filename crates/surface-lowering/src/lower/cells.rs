@@ -51,7 +51,6 @@ mod tests
     use gandr_surface_syntax::Cells;
     use gandr_surface_syntax::CellsKind;
     use gandr_surface_syntax::NamedCell;
-    use gandr_surface_syntax::NodeIndex;
 
     use super::refuse_cells;
     use crate::classify::FailureClass;
@@ -62,10 +61,15 @@ mod tests
     fn a_cells_node_is_refused_for_the_pasting_reading()
     {
         let at = span(ByteOffset::from(4_usize), ByteOffset::from(19_usize));
-        let node = Cells::new(at, CellsKind::Fill, Some(NodeIndex::from(2_usize)), vec![
-            NamedCell::bound(NodeIndex::from(3_usize)),
-            NamedCell::given(NodeIndex::from(4_usize), NodeIndex::from(5_usize)),
-        ]);
+        let node = Cells::new(
+            at,
+            CellsKind::Fill,
+            Some(crate::fixture::node(2_usize)),
+            vec![
+                NamedCell::bound(crate::fixture::node(3_usize)),
+                NamedCell::given(crate::fixture::node(4_usize), crate::fixture::node(5_usize)),
+            ],
+        );
         let refusal = refuse_cells(&node);
 
         assert_eq!(

@@ -61,8 +61,11 @@ use crate::label::NodeLabel;
 use crate::mold::GrammarFingerprint;
 use crate::span::ByteSpan;
 use crate::span::SourceText;
+use crate::tree::BlockOffset;
 use crate::tree::ChildCount;
+use crate::tree::LayoutBlock;
 use crate::tree::Node;
+use crate::tree::NodeCount;
 use crate::tree::NodeIndex;
 use crate::tree::SyntaxTree;
 
@@ -281,10 +284,10 @@ struct StagedNode
 ///         Some(SourceFragment::from("f x"))
 ///     );
 ///
-///     // Level order: every child sits strictly above its parent.
+///     // Layout by form: every child sits strictly after its parent.
 ///     for parent in tree.positions() {
 ///         for child in tree.children(parent) {
-///             assert!(usize::from(child) > usize::from(parent));
+///             assert!(child > parent);
 ///         }
 ///     }
 ///     Ok(())
@@ -612,12 +615,17 @@ impl<'source> TreeBuilder<'source>
     ) -> Result<SyntaxTree<'source>, SyntaxError>
     {
         // The root first, then its children side by side, then each child's
-        // descendants in level order, one child after another: a top-level
-        // form's descendants are one contiguous range.
+        // descendants in level order, one child after another. The root with
+        // its children is the first block, and each child's descendants are
+        // the next block, so a top-level form's descendants are one block.
         let mut order: Vec<StagedId> = Vec::with_capacity(self.staged.len());
         let mut nodes: Vec<Node> = Vec::with_capacity(self.staged.len());
+        let mut starts: Vec<NodeCount> = Vec::from([NodeCount::from(0_usize)]);
         order.push(root);
-        let lay = |at: usize, order: &mut Vec<StagedId>, nodes: &mut Vec<Node>| {
+        let lay = |at: usize,
+                   block: (LayoutBlock, usize),
+                   order: &mut Vec<StagedId>,
+                   nodes: &mut Vec<Node>| {
             let staged_id = order
                 .get(at)
                 .copied()
@@ -627,7 +635,9 @@ impl<'source> TreeBuilder<'source>
             else {
                 return Err(SyntaxError::UnknownStagedNode { node: staged_id });
             };
-            let first_child = NodeIndex::from(order.len());
+            let (opened, start) = block;
+            let first_child =
+                NodeIndex::at(opened, BlockOffset::from(order.len().saturating_sub(start)));
             let edge_end = staged.first_edge.saturating_add(staged.child_count);
             let edges = self.edges.get(staged.first_edge .. edge_end).unwrap_or(&[]);
             order.extend_from_slice(edges);
@@ -636,7 +646,7 @@ impl<'source> TreeBuilder<'source>
                 Node::new(
                     NodeLabel::Wald,
                     staged.span,
-                    NodeIndex::from(0_usize),
+                    NodeIndex::default(),
                     ChildCount::from(0_usize),
                 ),
             );
@@ -650,18 +660,33 @@ impl<'source> TreeBuilder<'source>
             }
             Ok(())
         };
-        lay(0_usize, &mut order, &mut nodes)?;
+        lay(
+            0_usize,
+            (LayoutBlock::from(0_usize), 0_usize),
+            &mut order,
+            &mut nodes,
+        )?;
         let tops = order.len();
         for top in 1_usize .. tops {
-            let mut cursor = order.len();
-            lay(top, &mut order, &mut nodes)?;
+            let start = order.len();
+            let block = (LayoutBlock::from(starts.len()), start);
+            lay(top, block, &mut order, &mut nodes)?;
+            let mut cursor = start;
             while cursor < order.len() {
-                lay(cursor, &mut order, &mut nodes)?;
+                lay(cursor, block, &mut order, &mut nodes)?;
                 cursor = cursor.saturating_add(1_usize);
+            }
+            if order.len() > start {
+                starts.push(NodeCount::from(start));
             }
         }
 
-        Ok(SyntaxTree::from_layout(self.source, self.grammar, nodes))
+        Ok(SyntaxTree::from_layout(
+            self.source,
+            self.grammar,
+            nodes,
+            starts,
+        ))
     }
 }
 
@@ -682,11 +707,20 @@ mod tests
     use crate::span::ByteSpan;
     use crate::span::SourceFragment;
     use crate::span::SourceText;
+    use crate::tree::BlockOffset;
     use crate::tree::ChildCount;
+    use crate::tree::LayoutBlock;
     use crate::tree::Node;
     use crate::tree::NodeCount;
     use crate::tree::NodeIndex;
     use crate::tree::SyntaxTree;
+
+    /// The position at `$offset` in layout block `$block`.
+    macro_rules! position {
+        ($block:expr, $offset:expr) => {
+            NodeIndex::at(LayoutBlock::from($block), BlockOffset::from($offset))
+        };
+    }
 
     /// The fixture source: one definition whose body is a lambda over a
     /// returner, which is the shallowest shape reaching depth four.
@@ -1050,7 +1084,7 @@ mod tests
             "layout takes no key"
         );
         assert_eq!(tree.key(tree.root()), None, "the root is no form's node");
-        assert_eq!(tree.key(NodeIndex::from(99_usize)), None);
+        assert_eq!(tree.key(position!(9, 9)), None);
         assert_ne!(first, second, "two forms of different content");
         assert!(
             tree.digest()
@@ -1151,11 +1185,7 @@ mod tests
             None,
             "a nested node is no form"
         );
-        assert_eq!(
-            tree.descendants(NodeIndex::from(99_usize))
-                .map(Iterator::count),
-            None
-        );
+        assert_eq!(tree.descendants(position!(9, 9)).map(Iterator::count), None);
 
         let joined_text = format!("{text}{text}");
         let joined =
@@ -1169,6 +1199,25 @@ mod tests
                 range,
                 reachable(&joined, form),
                 "a join moves each form's range with its nodes"
+            );
+        }
+    }
+
+    #[test]
+    fn a_walk_from_a_block_is_the_suffix_from_it()
+    {
+        let tree = two_forms(SourceText::from("def a = x ; def b = y ;"));
+        let all: Vec<NodeIndex> = tree.positions().collect();
+        let blocks = tree.blocks().len();
+        assert!(blocks > 1, "each form opens a block of its own");
+        for block in 0 ..= blocks {
+            let suffix = all
+                .iter()
+                .copied()
+                .filter(|position| usize::from(position.block()) >= block);
+            assert!(
+                tree.positions_from(LayoutBlock::from(block)).eq(suffix),
+                "the walk from block {block} is the whole walk's suffix from there"
             );
         }
     }
@@ -1208,21 +1257,21 @@ mod tests
         let before = two_forms(SourceText::from(first));
         let after = two_forms(SourceText::from(second));
         let joined = SyntaxTree::joined(&before, &after, SourceText::from(whole.as_str())).unwrap();
-        let moved = usize::from(before.node_count());
+        let blocks = before.blocks().len();
         assert_eq!(
             usize::from(joined.node_count()),
-            moved.saturating_add(usize::from(after.node_count()))
+            usize::from(before.node_count()).saturating_add(usize::from(after.node_count()))
         );
-        assert_eq!(joined.roots(), [
-            NodeIndex::from(0_usize),
-            NodeIndex::from(moved)
-        ]);
+        assert_eq!(
+            joined.blocks().len(),
+            blocks.saturating_add(after.blocks().len())
+        );
+        assert_eq!(joined.roots(), [position!(0, 0), position!(blocks, 0)]);
         for position in before.positions() {
             assert_eq!(joined.node(position), before.node(position), "{position}");
             assert_eq!(joined.key(position), before.key(position), "{position}");
         }
-        let lifted =
-            |position: NodeIndex| NodeIndex::from(usize::from(position).saturating_add(moved));
+        let lifted = |position: NodeIndex| position.moved(LayoutBlock::from(blocks));
         for position in after.positions() {
             let at = lifted(position);
             assert_eq!(joined.fragment(at), after.fragment(position), "{position}");
@@ -1334,19 +1383,19 @@ mod tests
 
         assert_eq!(
             tree.root(),
-            NodeIndex::from(0_usize),
-            "the level-order layout puts the root first"
+            position!(0, 0),
+            "the layout by form puts the root first"
         );
         assert_eq!(
             tree.node(tree.root()).map(Node::label),
             Some(NodeLabel::Wald),
-            "position zero holds the node finish was called with"
+            "the first position holds the node finish was called with"
         );
         assert_eq!(
             tree.positions().collect::<Vec<_>>(),
-            (0_usize .. 7_usize)
-                .map(NodeIndex::from)
-                .collect::<Vec<_>>(),
+            [(0, 0), (0, 1), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)]
+                .map(|(block, offset)| position!(block, offset)),
+            "the root's block holds the root and its form, and the form's block its five descendants"
         );
         assert_eq!(
             tree.node_count(),
@@ -1363,7 +1412,7 @@ mod tests
         for parent in tree.positions() {
             for child in tree.children(parent) {
                 assert!(
-                    usize::from(child) > usize::from(parent),
+                    child > parent,
                     "a child position is strictly above its parent's"
                 );
                 edges = edges.saturating_add(1_usize);
@@ -1382,23 +1431,23 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert_eq!(
-            children(&tree, NodeIndex::from(0_usize)),
-            [NodeIndex::from(1_usize)],
+            children(&tree, position!(0, 0)),
+            [position!(0, 1)],
             "the root holds one declaration"
         );
         assert_eq!(
-            children(&tree, NodeIndex::from(1_usize)),
-            [NodeIndex::from(2_usize), NodeIndex::from(3_usize)],
+            children(&tree, position!(0, 1)),
+            [position!(1, 0), position!(1, 1)],
             "the definition's name precedes its body, at adjacent positions"
         );
         assert_eq!(
-            children(&tree, NodeIndex::from(3_usize)),
-            [NodeIndex::from(4_usize), NodeIndex::from(5_usize)],
+            children(&tree, position!(1, 1)),
+            [position!(1, 2), position!(1, 3)],
             "the lambda's binder precedes its body, at adjacent positions"
         );
         assert_eq!(
-            children(&tree, NodeIndex::from(5_usize)),
-            [NodeIndex::from(6_usize)],
+            children(&tree, position!(1, 3)),
+            [position!(1, 4)],
             "the returner holds one value"
         );
     }
@@ -1409,11 +1458,11 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert!(
-            children(&tree, NodeIndex::from(2_usize)).is_empty(),
+            children(&tree, position!(1, 0)).is_empty(),
             "a text leaf yields no child positions"
         );
         assert_eq!(
-            tree.node(NodeIndex::from(2_usize)).map(Node::child_count),
+            tree.node(position!(1, 0)).map(Node::child_count),
             Some(ChildCount::from(0_usize)),
             "and reports a child count of zero"
         );
@@ -1425,7 +1474,7 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert!(
-            children(&tree, NodeIndex::from(7_usize)).is_empty(),
+            children(&tree, position!(1, 5)).is_empty(),
             "one position past the last node yields nothing rather than panicking"
         );
     }
@@ -1436,12 +1485,12 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert_eq!(
-            tree.fragment(NodeIndex::from(2_usize)),
+            tree.fragment(position!(1, 0)),
             Some(SourceFragment::from("f")),
             "the defined name's fragment is its identifier"
         );
         assert_eq!(
-            tree.fragment(NodeIndex::from(5_usize)),
+            tree.fragment(position!(1, 3)),
             Some(SourceFragment::from("return x")),
             "a structural node's fragment is everything it covers"
         );
@@ -1471,9 +1520,9 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert_eq!(
-            tree.node(NodeIndex::from(6_usize)).map(Node::label),
+            tree.node(position!(1, 4)).map(Node::label),
             Some(word()),
-            "one below the node count is the last position that resolves"
+            "the last offset of the last block is the last position that resolves"
         );
     }
 
@@ -1481,11 +1530,15 @@ mod tests
     fn a_position_past_the_arena_holds_no_node()
     {
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
-
         assert_eq!(
-            tree.node(NodeIndex::from(7_usize)).map(Node::label),
+            tree.node(position!(1, 5)).map(Node::label),
             None,
-            "the node count itself is the first position that does not"
+            "the offset past a block's last node does not"
+        );
+        assert_eq!(
+            tree.node(position!(2, 0)).map(Node::label),
+            None,
+            "and neither does a block past the last"
         );
     }
 
@@ -1515,7 +1568,7 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert_eq!(
-            tree.fragment(NodeIndex::from(7_usize)),
+            tree.fragment(position!(1, 5)),
             None,
             "one position past the last node names no fragment"
         );
@@ -1555,7 +1608,7 @@ mod tests
             SourceText::from(padded_source.as_str()),
             ByteOffset::from(8_usize),
         );
-        let definition = NodeIndex::from(1_usize);
+        let definition = position!(0, 1);
 
         assert_eq!(
             plain.key(definition),
@@ -1623,8 +1676,8 @@ mod tests
         let tight_tree = tight.finish(root).unwrap();
 
         assert_eq!(
-            spaced_tree.key(NodeIndex::from(1_usize)),
-            tight_tree.key(NodeIndex::from(1_usize)),
+            spaced_tree.key(position!(0, 1)),
+            tight_tree.key(position!(0, 1)),
             "a form over layout has the identity of the same form without it"
         );
         assert_eq!(
@@ -1633,12 +1686,12 @@ mod tests
             "and so does the tree"
         );
         assert_eq!(
-            spaced_tree.node(NodeIndex::from(3_usize)).map(Node::label),
+            spaced_tree.node(position!(1, 1)).map(Node::label),
             Some(NodeLabel::Space),
             "while the layout stays in the tree, between the tiles it separates"
         );
         assert_eq!(
-            spaced_tree.fragment(NodeIndex::from(3_usize)),
+            spaced_tree.fragment(position!(1, 1)),
             Some(SourceFragment::from("  ")),
             "covering exactly the bytes it was staged over"
         );

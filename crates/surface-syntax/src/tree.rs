@@ -1,5 +1,5 @@
-//! The flat node arena: [`SyntaxTree`], the [`Node`] it holds, and the
-//! [`NodeIndex`] that addresses one.
+//! The node arena: [`SyntaxTree`], the [`Node`] it holds, and the
+//! [`NodeIndex`] that addresses one by its layout block and its offset there.
 //!
 //! # Children are an index range, so the layout is level order by form
 //!
@@ -21,18 +21,27 @@
 //! walk. Whole-tree level order would spread a form's nodes over the arena, one
 //! run per depth.
 //!
+//! # A position names its block
+//!
+//! The layout is cut into blocks ([`LayoutBlock`]): a root with its children,
+//! then the descendants of each of its children with any, one block each. A
+//! position is a block and an offset in it ([`BlockOffset`]), so a node of one
+//! form keeps its position whatever another form holds. A table kept per node
+//! keeps one segment per block, and a form's segment is its own.
+//!
 //! # Parent before child, and the invariant that follows
 //!
-//! Every child's position is strictly above its parent's, and a parse's root is
-//! position zero. So a walk in ascending index order visits every parent before
-//! any of its children with no stack at all, an index comparison decides
-//! ancestry direction, and a cycle is unrepresentable rather than checked for.
+//! Every child's position is strictly after its parent's, block first and then
+//! offset, and a parse's root is the first offset of the first block. So a walk
+//! in ascending position order visits every parent before any of its children
+//! with no stack at all, a comparison of positions decides ancestry direction,
+//! and a cycle is unrepresentable rather than checked for.
 //!
 //! # Out-of-range positions fail closed; in-range foreign ones do not
 //!
-//! Every lookup here is checked, so a position at or above the node count
-//! resolves to nothing and a walk over it yields no children rather than
-//! panicking.
+//! Every lookup here is checked, so a position in a block the tree does not
+//! hold, or past its block's end, resolves to nothing and a walk over it
+//! yields no children rather than panicking.
 //!
 //! A position carries no tree provenance, though, so a position taken from
 //! another tree — or kept across a re-parse — that happens to be in range names
@@ -53,14 +62,14 @@
 //!
 //! # Joined trees
 //!
-//! [`SyntaxTree::joined`] lays one tree's nodes after another's, over the text
+//! [`SyntaxTree::joined`] lays one tree's blocks after another's, over the text
 //! that lays their sources end to end: the second tree's positions move up by
-//! the first's node count and its spans by the first source's length, and the
+//! the first's block count and its spans by the first source's length, and the
 //! join has one root per tree joined ([`SyntaxTree::roots`]). Every position of
 //! the first tree names the same node in the join, so what was read of the
 //! first tree by position stays true of the join. Each root's nodes keep their
 //! layout, so an ascending scan still visits every parent before its children
-//! and each form's descendants stay one range. The join's forms are the two
+//! and each form's descendants stay one block. The join's forms are the two
 //! trees' forms in order, and its digest is the one a parse of the whole text
 //! gives when its forms are those.
 
@@ -81,51 +90,165 @@ use crate::span::ByteSpan;
 use crate::span::SourceFragment;
 use crate::span::SourceText;
 
-/// The arena position of one node inside one syntax tree.
+/// One block of a tree's layout: a root with its children side by side, or the
+/// descendants of one of a root's children.
 ///
-/// A position is meaningful only in the tree it was read from: it carries no
-/// tree provenance, so an in-range position from another tree names whichever
-/// node sits there. The identity that survives a tree is the node's
-/// [`NodeKey`], and it is the one to hold across trees.
+/// The blocks follow the layout's order, so the block of a top-level form's
+/// descendants holds the form's whole subtree below the form itself.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct NodeIndex(usize);
+pub struct LayoutBlock(u32);
 
-impl From<usize> for NodeIndex
+impl From<usize> for LayoutBlock
 {
-    /// Read a `usize` as an arena position.
+    /// Read a `usize` as a block, saturating past `u32::MAX`, beyond any
+    /// layout a builder lays.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(position: usize) -> Self
+    fn from(block: usize) -> Self
     {
-        Self(position)
+        Self(u32::try_from(block).unwrap_or(u32::MAX))
     }
 }
 
-impl From<NodeIndex> for usize
+impl From<LayoutBlock> for usize
 {
-    /// Read the position back out as a `usize`.
+    /// Read the block back out as a `usize`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(position: NodeIndex) -> Self
+    fn from(block: LayoutBlock) -> Self
     {
-        position.0
+        Self::try_from(block.0).unwrap_or(Self::MAX)
     }
 }
 
-impl core::fmt::Display for NodeIndex
+/// A node's place within its layout block, counted from the block's first
+/// node.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BlockOffset(u32);
+
+impl From<usize> for BlockOffset
 {
-    /// Write the position.
+    /// Read a `usize` as an offset, saturating past `u32::MAX`, beyond any
+    /// block a builder lays.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(offset: usize) -> Self
+    {
+        Self(u32::try_from(offset).unwrap_or(u32::MAX))
+    }
+}
+
+impl From<BlockOffset> for usize
+{
+    /// Read the offset back out as a `usize`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(offset: BlockOffset) -> Self
+    {
+        Self::try_from(offset.0).unwrap_or(Self::MAX)
+    }
+}
+
+/// The position of one node inside one syntax tree: the layout block holding
+/// it and its offset there.
+///
+/// Positions order as the layout does, block before block and offset before
+/// offset within one, so an ascending scan visits every parent before its
+/// children. A top-level form's descendants are one block, and a position
+/// inside it names the form's node by the block and an offset the forms
+/// around it leave alone.
+///
+/// A position is meaningful only in the tree it was read from: it carries no
+/// tree provenance, so a position another tree also holds names whichever
+/// node sits there. The identity that survives a tree is the node's
+/// [`NodeKey`], and it is the one to hold across trees.
+///
+/// The block is the high half of one word and the offset the low half, so
+/// the word's order is the layout's and the next offset in a block is the
+/// next word.
+#[repr(transparent)]
+#[derive(Clone, Copy, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NodeIndex(u64);
+
+impl NodeIndex
+{
+    /// The position at `offset` within `block`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn at(
+        block: LayoutBlock,
+        offset: BlockOffset,
+    ) -> Self
+    {
+        let [o0, o1, o2, o3] = offset.0.to_le_bytes();
+        let [b0, b1, b2, b3] = block.0.to_le_bytes();
+        Self(u64::from_le_bytes([o0, o1, o2, o3, b0, b1, b2, b3]))
+    }
+
+    /// The layout block holding the node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn block(self) -> LayoutBlock
+    {
+        let [_, _, _, _, b0, b1, b2, b3] = self.0.to_le_bytes();
+        LayoutBlock(u32::from_le_bytes([b0, b1, b2, b3]))
+    }
+
+    /// The node's offset within its block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn offset(self) -> BlockOffset
+    {
+        let [o0, o1, o2, o3, _, _, _, _] = self.0.to_le_bytes();
+        BlockOffset(u32::from_le_bytes([o0, o1, o2, o3]))
+    }
+
+    /// The same offset in the block as far past `past` as this one lies past
+    /// the first, as a join moves the second tree's positions past the first's
+    /// blocks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn moved(
+        self,
+        past: LayoutBlock,
+    ) -> Self
+    {
+        Self::at(
+            LayoutBlock(self.block().0.saturating_add(past.0)),
+            self.offset(),
+        )
+    }
+}
+
+impl core::fmt::Debug for NodeIndex
+{
+    /// Write the position as its block and its offset, the fields a derived
+    /// form would write.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes the carried position through the `usize` rendering, so
-    ///   the width and fill options the caller set apply to it.
-    /// - provides: the arena position a diagnostic or a test message names.
+    /// - ensures: writes `NodeIndex` with the block and the offset as fields.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
     /// - executable: none — the formatter exposes a write-only sink; neither
@@ -133,10 +256,42 @@ impl core::fmt::Display for NodeIndex
     ///   predicate, and replaying writes changes the observed sink.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — zero, an ordinary index and the maximum host index
-    ///   retain their exact decimal value and requested fill, width and sign. A
-    ///   rejecting sink separates propagation from swallowed errors.
-    /// - witness: `tree::tests::formatters_preserve_numeric_options`
+    /// - hypothesis: L3 — a position in a block past the first writes that
+    ///   block and that offset, so a swapped or dropped half changes the text.
+    /// - witness: `tree::tests::a_position_debugs_as_its_block_and_offset`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.debug_struct("NodeIndex")
+            .field("block", &self.block())
+            .field("offset", &self.offset())
+            .finish()
+    }
+}
+
+impl core::fmt::Display for NodeIndex
+{
+    /// Write the position as its block and its offset, `block.offset`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the block, a full stop and the offset, padded as one
+    ///   string, so the width and fill options the caller set apply to it.
+    /// - provides: the position a diagnostic or a test message names.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes a write-only sink; neither
+    ///   emitted bytes nor the sink's failure state can be read back by a
+    ///   predicate, and replaying writes changes the observed sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first position, an ordinary one and the last a
+    ///   layout can hold keep their block and offset and the requested fill and
+    ///   width. A rejecting sink separates propagation from swallowed errors.
+    /// - witness: `tree::tests::formatters_preserve_padding_options`
     /// - witness: `tree::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
@@ -144,7 +299,7 @@ impl core::fmt::Display for NodeIndex
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        self.0.fmt(f)
+        f.pad(&alloc::format!("{}.{}", self.block().0, self.offset().0))
     }
 }
 
@@ -305,14 +460,15 @@ impl Node
     }
 }
 
-/// A forward walk over a contiguous range of arena positions.
+/// A forward walk over a contiguous range of positions within one layout
+/// block.
 ///
-/// One type serves both walks the arena offers — a node's children and a whole
-/// tree — because in this arena's layout both are ranges.
+/// A node's children and a top-level form's descendants are such a range, so
+/// one type serves both walks.
 ///
 /// # Specification
-/// - ensures: the walk yields a contiguous ascending range and remains
-///   exhausted after its end.
+/// - ensures: the walk yields a contiguous ascending range of one block's
+///   offsets and remains exhausted after its end.
 /// - executable: none — this type has no entry or return boundary; the
 ///   construction and observation methods state its executable obligations.
 ///
@@ -324,10 +480,10 @@ impl Node
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeIndices
 {
-    /// The next position the walk yields.
-    next: usize,
-    /// The position one past the last the walk yields.
-    end: usize,
+    /// The position the walk yields next.
+    next: NodeIndex,
+    /// The position one past the last the walk yields, in the same block.
+    end: NodeIndex,
 }
 
 impl NodeIndices
@@ -349,13 +505,36 @@ impl NodeIndices
     ///   size before and after repeated polls; a spurious element or nonzero
     ///   hint changes those observations.
     /// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
-    #[spec(ensures: |ret| ret.next == ret.end)]
+    #[spec(ensures: |ret| ret.next.0 == ret.end.0)]
     #[inline]
     const fn empty() -> Self
     {
         Self {
-            next: 0_usize,
-            end: 0_usize,
+            next: NodeIndex(0_u64),
+            end: NodeIndex(0_u64),
+        }
+    }
+
+    /// The walk over `count` offsets of `first`'s block from `first`'s,
+    /// saturating at the last offset a block holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(
+        first: NodeIndex,
+        count: ChildCount,
+    ) -> Self
+    {
+        let end = BlockOffset(
+            first
+                .offset()
+                .0
+                .saturating_add(u32::try_from(count.0).unwrap_or(u32::MAX)),
+        );
+        Self {
+            next: first,
+            end: NodeIndex::at(first.block(), end),
         }
     }
 }
@@ -371,13 +550,12 @@ impl Iterator for NodeIndices
     /// - ensures: the positions of the range in strictly ascending order, one
     ///   per call, and nothing once the end is reached; the walk stays
     ///   exhausted afterwards.
-    /// - provides: the forward order every walk over the arena sees, which in a
-    ///   layout by form is source order among siblings and parent-before-child
-    ///   over a whole tree.
+    /// - provides: the forward order every walk over a block sees, which in a
+    ///   layout by form is source order among siblings.
     /// - fails: never — exhaustion is the iterator's own absence, not a
     ///   failure.
-    /// - panics: none. The advance saturates, so a range ending at `usize::MAX`
-    ///   stops rather than overflowing.
+    /// - panics: none. The advance saturates, so a range ending at the last
+    ///   offset a block holds stops rather than overflowing.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, nonzero-origin and maximum-ended ranges are
@@ -388,16 +566,16 @@ impl Iterator for NodeIndices
     #[inline]
     #[spec(
         captures: cursor = self.next,
-        ensures: |ret| ret == (cursor < self.end).then_some(NodeIndex(cursor))
-            && self.next == if cursor < self.end { cursor.saturating_add(1) } else { cursor },
+        ensures: |ret| ret == (cursor < self.end).then_some(cursor)
+            && self.next == if cursor < self.end { NodeIndex(cursor.0.saturating_add(1)) } else { cursor },
     )]
     fn next(&mut self) -> Option<Self::Item>
     {
         if self.next >= self.end {
             return None;
         }
-        let position = NodeIndex(self.next);
-        self.next = self.next.saturating_add(1_usize);
+        let position = self.next;
+        self.next = NodeIndex(self.next.0.saturating_add(1_u64));
 
         Some(position)
     }
@@ -420,10 +598,11 @@ impl Iterator for NodeIndices
     ///   `ExactSizeIterator::len` detect loose bounds and premature exhaustion.
     /// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
     #[inline]
-    #[spec(ensures: |ret| ret == (self.end.saturating_sub(self.next), Some(self.end.saturating_sub(self.next))))]
+    #[spec(ensures: |ret| ret.0 == usize::try_from(self.end.0.saturating_sub(self.next.0)).unwrap_or(usize::MAX) && ret.1 == Some(ret.0))]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
-        let remaining = self.end.saturating_sub(self.next);
+        let remaining =
+            usize::try_from(self.end.0.saturating_sub(self.next.0)).unwrap_or(usize::MAX);
 
         (remaining, Some(remaining))
     }
@@ -433,18 +612,117 @@ impl ExactSizeIterator for NodeIndices
 {
 }
 
+/// A forward walk over every position of a tree, in its layout's order: block
+/// after block, each block's offsets in turn.
+///
+/// # Specification
+/// - ensures: every position the tree holds, once, ascending, and nothing past
+///   its end.
+/// - executable: none — this type has no entry or return boundary;
+///   [`SyntaxTree::positions`] and the walk's methods state its obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, one-block and many-block layouts are walked whole
+///   and compared position by position with the blocks they hold.
+/// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+/// - witness: `build::tests::each_form_s_descendants_are_one_range`
+#[derive(Clone, Debug)]
+pub struct Positions<'tree>
+{
+    /// Where each block starts among the tree's nodes, in layout order.
+    starts: &'tree [NodeCount],
+    /// How many nodes the tree holds.
+    count: usize,
+    /// How many positions the walk has yielded.
+    yielded: usize,
+    /// The block the next position lies in.
+    block: usize,
+}
+
+impl Iterator for Positions<'_>
+{
+    type Item = NodeIndex;
+
+    /// Yield the next position of the tree.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position of the node after the last one yielded, as its
+    ///   block and its offset there; nothing once every node is yielded.
+    /// - provides: the stackless whole-tree walk, every parent before its
+    ///   children.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Positions`].
+    /// - witness: `build::tests::each_form_s_descendants_are_one_range`
+    #[inline]
+    #[spec(
+        captures: before = self.yielded,
+        ensures: |ret| ret.is_some() == (before < self.count)
+            && self.yielded == if before < self.count { before.saturating_add(1) } else { before },
+    )]
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        if self.yielded >= self.count {
+            return None;
+        }
+        while self
+            .starts
+            .get(self.block.saturating_add(1))
+            .is_some_and(|next| next.0 <= self.yielded)
+        {
+            self.block = self.block.saturating_add(1);
+        }
+        let start = self.starts.get(self.block).map_or(0, |start| start.0);
+        let position = NodeIndex::at(
+            LayoutBlock::from(self.block),
+            BlockOffset::from(self.yielded.saturating_sub(start)),
+        );
+        self.yielded = self.yielded.saturating_add(1);
+
+        Some(position)
+    }
+
+    /// Report how many positions remain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the exact count of positions the walk will still yield.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Positions`].
+    /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+    #[inline]
+    #[spec(ensures: |ret| ret == (self.count.saturating_sub(self.yielded), Some(self.count.saturating_sub(self.yielded))))]
+    fn size_hint(&self) -> (usize, Option<usize>)
+    {
+        let remaining = self.count.saturating_sub(self.yielded);
+
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for Positions<'_>
+{
+}
+
 /// A concrete syntax tree: its source, its grammar, and its nodes laid out by
 /// form.
 ///
 /// A parse's root is at position zero, its children follow side by side, and
 /// then each child's descendants follow in level order, one child after
-/// another, so a top-level form's descendants are one contiguous range. A
-/// join's second root follows the first tree's nodes.
+/// another. The root with its children is one layout block, and each child's
+/// descendants are the next, so a top-level form's descendants are one block.
+/// A join's second root and its blocks follow the first tree's.
 ///
 /// # Specification
-/// - ensures: every stored child range is contiguous and strictly above its
-///   parent; each top-level form's descendants are one contiguous range; source
-///   and grammar describe the same immutable layout.
+/// - ensures: every stored child range lies within one block and strictly above
+///   its parent; each top-level form's descendants are one block; source and
+///   grammar describe the same immutable layout.
 /// - executable: none — this type has no entry or return boundary; the
 ///   construction and observation methods state its executable obligations.
 ///
@@ -468,11 +746,40 @@ pub struct SyntaxTree<'source>
     /// siblings adjacent, each form's descendants together — and the roots'
     /// runs in source order.
     nodes: Vec<Node>,
+    /// Where each layout block starts among `nodes`, ascending: a position's
+    /// block names its start here and its offset counts from it.
+    starts: Vec<NodeCount>,
     /// The positions of the roots, in source order.
     roots: Vec<NodeIndex>,
     /// The top-level forms, their digests, each node's form and rank, and
     /// the whole tree's digest.
     index: FormIndex,
+}
+
+/// Where `position` lies among `count` nodes whose blocks start at `starts`:
+/// the count of nodes laid out before it, or nothing for a block or an offset
+/// the layout does not hold.
+///
+/// Every lookup by position runs through this, so it carries no checked
+/// wrapper of its own: [`SyntaxTree::node`] and the layout's own
+/// specification state what it yields.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn flat(
+    starts: &[NodeCount],
+    count: NodeCount,
+    position: NodeIndex,
+) -> Option<NodeCount>
+{
+    let block = usize::from(position.block());
+    let start = starts.get(block)?.0;
+    let end = starts
+        .get(block.saturating_add(1))
+        .map_or(count.0, |end| end.0);
+    let at = start.checked_add(usize::from(position.offset()))?;
+    (at < end).then_some(NodeCount(at))
 }
 
 impl<'source> SyntaxTree<'source>
@@ -482,13 +789,13 @@ impl<'source> SyntaxTree<'source>
     ///
     /// # Specification
     /// - requires: `nodes` is empty or a layout by form — the root first, then
-    ///   its children, then each child's descendants as one contiguous range,
-    ///   every node's children occupying the contiguous range its `first_child`
-    ///   and `child_count` name, and every such range strictly above the node's
-    ///   own position; every span in `nodes` was validated against `source`.
-    ///   The only producer that establishes all of this is
-    ///   [`TreeBuilder::finish`], which is why the constructor is crate-private
-    ///   rather than public.
+    ///   its children, then each child's descendants as one block, every node's
+    ///   children occupying the range of one block its `first_child` and
+    ///   `child_count` name, and every such range strictly above the node's own
+    ///   position; `starts` holds each block's first node, ascending, the first
+    ///   zero; every span in `nodes` was validated against `source`. The only
+    ///   producer that establishes all of this is [`TreeBuilder::finish`],
+    ///   which is why the constructor is crate-private rather than public.
     /// - ensures: the tree holds exactly `nodes`, in the order given, over
     ///   `source` and under `grammar`; the layout is adopted rather than
     ///   checked or re-derived.
@@ -509,40 +816,35 @@ impl<'source> SyntaxTree<'source>
     /// - witness: `build::tests::the_root_is_the_first_position`
     /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
-    #[spec(ensures: |ref ret| {
-        let mut nodes = ret.nodes.as_slice();
-        let count = nodes.len();
-        let mut position = 0_usize;
-        let mut valid = matches!(ret.source.const_eq(source), crate::ConstEquality::Equal)
-            && matches!(ret.grammar.const_eq(grammar), crate::ConstEquality::Equal);
-        while let Some((node, tail)) = nodes.split_first() {
-            let first = node.first_child.0;
-            let children = node.child_count.0;
-            valid = valid && (children == 0_usize
-                || (first > position && first <= count && children <= count.saturating_sub(first)));
-            position = position.saturating_add(1_usize);
-            nodes = tail;
-        }
-        valid
-    })]
+    #[spec(ensures: |ref ret| matches!(ret.source.const_eq(source), crate::ConstEquality::Equal)
+        && matches!(ret.grammar.const_eq(grammar), crate::ConstEquality::Equal)
+        && ret.nodes.iter().enumerate().all(|(position, node)| node.child_count.0 == 0_usize
+            || flat(&ret.starts, NodeCount(ret.nodes.len()), node.first_child).is_some_and(|first| first.0 > position
+                && flat(
+                    &ret.starts,
+                    NodeCount(ret.nodes.len()),
+                    NodeIndex::at(node.first_child.block(), BlockOffset::from(usize::from(node.first_child.offset()).saturating_add(node.child_count.0).saturating_sub(1))),
+                ).is_some())))]
     #[inline]
     pub(crate) fn from_layout(
         source: SourceText<'source>,
         grammar: GrammarFingerprint,
         nodes: Vec<Node>,
+        starts: Vec<NodeCount>,
     ) -> Self
     {
-        let index = index_forms(source, &nodes);
+        let index = index_forms(source, &nodes, &starts);
         let roots = if nodes.is_empty() {
             Vec::new()
         }
         else {
-            Vec::from([NodeIndex(0_usize)])
+            Vec::from([NodeIndex::default()])
         };
         Self {
             source,
             grammar,
             nodes,
+            starts,
             roots,
             index,
         }
@@ -555,12 +857,13 @@ impl<'source> SyntaxTree<'source>
     /// - requires: nothing; a source that does not lay the two texts end to
     ///   end, and trees of two grammars, are refused.
     /// - ensures: on success, the tree over `source` under the two trees'
-    ///   grammar holding `before`'s nodes as they are, then `after`'s, each
-    ///   moved up by `before`'s node count — its child range likewise — and its
-    ///   span by `before`'s source length; its roots are `before`'s then
-    ///   `after`'s, moved likewise; its forms are `before`'s then `after`'s,
-    ///   moved likewise, each with its digest, so every node keeps its key; its
-    ///   digest is the one a parse of `source` gives when its forms are those.
+    ///   grammar holding `before`'s nodes and blocks as they are, then
+    ///   `after`'s, each block moved up by `before`'s block count — its child
+    ///   range likewise — and each span by `before`'s source length; its roots
+    ///   are `before`'s then `after`'s, moved likewise; its forms are
+    ///   `before`'s then `after`'s, moved likewise, each with its digest, so
+    ///   every node keeps its key; its digest is the one a parse of `source`
+    ///   gives when its forms are those.
     /// - provides: a closure's parse kept across edits with the document's
     ///   parse laid after it, so a position read in the closure's tree names
     ///   the same node in the join.
@@ -582,6 +885,7 @@ impl<'source> SyntaxTree<'source>
     /// - witness: `build::tests::a_join_refuses_a_text_or_a_grammar_of_its_own`
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref joined) => joined.nodes.len() == before.nodes.len().saturating_add(after.nodes.len())
+            && joined.starts.len() == before.starts.len().saturating_add(after.starts.len())
             && joined.roots.len() == before.roots.len().saturating_add(after.roots.len())
             && joined.index.forms.len() == before.index.forms.len().saturating_add(after.index.forms.len())
             && joined.nodes.get(.. before.nodes.len()) == Some(before.nodes.as_slice())
@@ -613,34 +917,33 @@ impl<'source> SyntaxTree<'source>
                 at: ByteOffset::from(at),
             });
         }
-        let moved = before.nodes.len();
+        let past = LayoutBlock::from(before.starts.len());
         let by = ByteLength::from(at);
-        let mut nodes = Vec::with_capacity(moved.saturating_add(after.nodes.len()));
+        let mut nodes = Vec::with_capacity(before.nodes.len().saturating_add(after.nodes.len()));
         nodes.extend_from_slice(&before.nodes);
         nodes.extend(after.nodes.iter().map(|node| Node {
             span: node.span.shifted(by),
-            first_child: NodeIndex(node.first_child.0.saturating_add(moved)),
+            first_child: node.first_child.moved(past),
             ..*node
         }));
+        let mut starts = Vec::with_capacity(before.starts.len().saturating_add(after.starts.len()));
+        starts.extend_from_slice(&before.starts);
+        starts.extend(
+            after
+                .starts
+                .iter()
+                .map(|start| NodeCount(start.0.saturating_add(before.nodes.len()))),
+        );
         let mut roots = Vec::with_capacity(before.roots.len().saturating_add(after.roots.len()));
         roots.extend_from_slice(&before.roots);
-        roots.extend(
-            after
-                .roots
-                .iter()
-                .map(|root| NodeIndex(root.0.saturating_add(moved))),
-        );
-        let index = joined_index(
-            (&before.index, &after.index),
-            source,
-            &nodes,
-            NodeIndex(moved),
-        );
+        roots.extend(after.roots.iter().map(|root| root.moved(past)));
+        let index = joined_index((&before.index, &after.index), source, &nodes, past);
 
         Ok(Self {
             source,
             grammar: before.grammar,
             nodes,
+            starts,
             roots,
             index,
         })
@@ -683,9 +986,9 @@ impl<'source> SyntaxTree<'source>
         self.index.forms.as_slice()
     }
 
-    /// The positions of the descendants of the top-level form at `form`, one
-    /// contiguous range the layout gives them, and nothing for a position no
-    /// top-level form stands at.
+    /// The positions of the descendants of the top-level form at `form`, the
+    /// one layout block they make up, and nothing for a position no top-level
+    /// form stands at.
     ///
     /// # Specification
     /// - requires: nothing — a position this tree does not hold is admissible
@@ -693,35 +996,35 @@ impl<'source> SyntaxTree<'source>
     /// - ensures: for a top-level form, every node reachable from it but
     ///   itself, each once, in ascending order, and no other; nothing
     ///   otherwise.
-    /// - provides: a form's nodes as one range, which a stage keyed by form
+    /// - provides: a form's nodes as one block, which a stage keyed by form
     ///   reads without walking the tree.
     /// - fails: yields nothing for a position that is no top-level form.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each form of the corpus's sources reaches exactly its
-    ///   range, and the forms' ranges with the root and its children cover the
+    ///   block, and the forms' blocks with the root and its children cover the
     ///   layout once.
     /// - witness: `build::tests::each_form_s_descendants_are_one_range`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.as_ref().is_some() == self.index.forms.binary_search(&form).is_ok()
-        && ret.as_ref().is_none_or(|walk| walk.next <= walk.end && walk.end <= self.nodes.len()))]
+        && ret.as_ref().is_none_or(|walk| walk.next <= walk.end))]
     pub fn descendants(
         &self,
         form: NodeIndex,
     ) -> Option<NodeIndices>
     {
-        let (slot, rank) = self.index.ranks.get(form.0).copied().flatten()?;
+        let (slot, rank) = self
+            .index
+            .ranks
+            .get(self.flat(form)?.0)
+            .copied()
+            .flatten()?;
         if rank != FormRank::default() {
             return None;
         }
-        let &(start, end) = self.index.ranges.get(slot.0)?;
-
-        Some(NodeIndices {
-            next: start.0,
-            end: end.0,
-        })
+        self.index.ranges.get(slot.0).cloned()
     }
 
     /// The cross-tree key of the node at `position`: its top-level form's
@@ -748,7 +1051,7 @@ impl<'source> SyntaxTree<'source>
     /// - witness: `build::tests::keys_survive_layout_and_another_forms_edit`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.is_none_or(|key| self.index.ranks.get(position.0).copied().flatten()
+    #[spec(ensures: |ret| ret.is_none_or(|key| self.flat(position).and_then(|at| self.index.ranks.get(at.0).copied().flatten())
         .and_then(|(slot, rank)| self.index.digests.get(slot.0).map(|&form| (form, rank)))
         == Some((key.form(), key.rank()))))]
     pub fn key(
@@ -756,7 +1059,12 @@ impl<'source> SyntaxTree<'source>
         position: NodeIndex,
     ) -> Option<NodeKey>
     {
-        let (slot, rank) = self.index.ranks.get(position.0).copied().flatten()?;
+        let (slot, rank) = self
+            .index
+            .ranks
+            .get(self.flat(position)?.0)
+            .copied()
+            .flatten()?;
         let form = self.index.digests.get(slot.0).copied()?;
 
         Some(NodeKey::new(form, rank))
@@ -786,12 +1094,13 @@ impl<'source> SyntaxTree<'source>
         self.grammar
     }
 
-    /// The position of the first root, which the layout fixes at zero.
+    /// The position of the first root, which the layout fixes at the first
+    /// offset of the first block.
     ///
     /// # Specification
     /// - requires: nothing; the tree need not hold any node.
-    /// - ensures: position zero, whatever the tree holds — the layout fixes the
-    ///   first root there rather than storing it.
+    /// - ensures: the first offset of the first block, whatever the tree holds
+    ///   — the layout fixes the first root there rather than storing it.
     /// - provides: the entry point of every walk of a parse. An empty tree
     ///   answers with a position it does not hold, which [`SyntaxTree::node`]
     ///   resolves to nothing; the alternative would be an absence every caller
@@ -801,17 +1110,17 @@ impl<'source> SyntaxTree<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — populated and empty layouts both designate zero; the
-    ///   former resolves its root while the latter does not. A shifted root or
-    ///   fabricated empty node changes these observations.
+    /// - hypothesis: L3 — populated and empty layouts both designate the first
+    ///   position; the former resolves its root while the latter does not. A
+    ///   shifted root or fabricated empty node changes these observations.
     /// - witness: `build::tests::the_root_is_the_first_position`
     /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
-    #[spec(ensures: |ret| ret.0 == 0_usize)]
+    #[spec(ensures: |ret| ret.0 == 0_u64)]
     #[inline]
     #[must_use]
     pub const fn root(&self) -> NodeIndex
     {
-        NodeIndex(0_usize)
+        NodeIndex::at(LayoutBlock(0), BlockOffset(0))
     }
 
     /// The positions of the roots, in source order: a parse's one root, one
@@ -844,32 +1153,76 @@ impl<'source> SyntaxTree<'source>
     /// - requires: nothing — a position this tree does not hold is admissible
     ///   input, including one carried over from another tree.
     /// - ensures: the node this tree lays out at `position`, for every position
-    ///   below the node count.
+    ///   whose block the tree holds and whose offset falls within that block.
     /// - provides: the single checked lookup [`SyntaxTree::children`] and
     ///   [`SyntaxTree::fragment`] are both built on, so the out-of-range case
     ///   is decided once rather than at each caller.
-    /// - fails: yields nothing at or above the node count. A position from
-    ///   another tree that is nevertheless in range resolves to this tree's
-    ///   node there; positions carry no tree provenance, and the module header
-    ///   states why the digest rather than the position is the identity that
-    ///   travels.
+    /// - fails: yields nothing for a block the tree does not hold and for an
+    ///   offset past its block. A position from another tree that this tree
+    ///   also holds resolves to this tree's node there; positions carry no tree
+    ///   provenance, and the module header states why the digest rather than
+    ///   the position is the identity that travels.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — one bounds comparison, separated by the boundary
-    ///   pair `node_count - 1` / `node_count`, the first asserted as an exact
-    ///   label and the second asserted absent.
+    /// - hypothesis: L3 only — one bounds comparison per block, separated by
+    ///   the boundary pair of the last node and the position past it, the first
+    ///   asserted as an exact label and the second asserted absent.
     /// - witness: `build::tests::the_last_position_holds_a_node`
     /// - witness: `build::tests::a_position_past_the_arena_holds_no_node`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.nodes.get(position.0))]
+    #[spec(ensures: |ret| ret.is_none_or(|_| usize::from(position.block()) < self.starts.len()))]
     pub fn node(
         &self,
         position: NodeIndex,
     ) -> Option<&Node>
     {
-        self.nodes.get(position.0)
+        self.nodes.get(self.flat(position)?.0)
+    }
+
+    /// Where `position` lies among this tree's nodes, or nothing for a
+    /// position it does not hold.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn flat(
+        &self,
+        position: NodeIndex,
+    ) -> Option<NodeCount>
+    {
+        flat(&self.starts, NodeCount(self.nodes.len()), position)
+    }
+
+    /// How many nodes each layout block holds, block by block.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one count per block, in block order, the counts summing to
+    ///   [`Self::node_count`].
+    /// - provides: the shape a table kept per block widens to.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — an iterator; the witness reads it against the
+    ///   positions it covers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each form's block holds the count of its walk, and
+    ///   the counts cover the layout once.
+    /// - witness: `build::tests::each_form_s_descendants_are_one_range`
+    #[must_use]
+    #[inline]
+    pub fn blocks(&self) -> impl ExactSizeIterator<Item = NodeCount> + '_
+    {
+        let count = self.nodes.len();
+        self.starts.iter().enumerate().map(move |(block, start)| {
+            let end = self
+                .starts
+                .get(block.saturating_add(1))
+                .map_or(count, |end| end.0);
+            NodeCount(end.saturating_sub(start.0))
+        })
     }
 
     /// Every position in the tree, in its layout's order.
@@ -891,12 +1244,44 @@ impl<'source> SyntaxTree<'source>
     /// - witness: `build::tests::the_root_is_the_first_position`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.next == 0 && ret.end == self.nodes.len())]
-    pub fn positions(&self) -> NodeIndices
+    #[spec(ensures: |ret| ret.len() == self.nodes.len())]
+    pub fn positions(&self) -> Positions<'_>
     {
-        NodeIndices {
-            next: 0_usize,
-            end: self.nodes.len(),
+        self.positions_from(LayoutBlock(0))
+    }
+
+    /// Every position from block `first` on, in the layout's order.
+    ///
+    /// # Specification
+    /// - requires: nothing; a block past the last yields nothing.
+    /// - ensures: the suffix of [`Self::positions`] whose positions lie in
+    ///   block `first` or after it, reached without walking the blocks before.
+    /// - provides: the walk over the forms a resumed lowering adds after the
+    ///   blocks it already read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-form tree walked from each of its blocks, and
+    ///   from one past the last, yields the whole walk's suffix from there.
+    /// - witness: `build::tests::a_walk_from_a_block_is_the_suffix_from_it`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.len() == self.nodes.len().saturating_sub(self.starts.get(usize::from(first)).map_or(self.nodes.len(), |start| start.0)))]
+    pub fn positions_from(
+        &self,
+        first: LayoutBlock,
+    ) -> Positions<'_>
+    {
+        let block = usize::from(first);
+        Positions {
+            starts: &self.starts,
+            count: self.nodes.len(),
+            yielded: self
+                .starts
+                .get(block)
+                .map_or(self.nodes.len(), |start| start.0),
+            block,
         }
     }
 
@@ -928,23 +1313,16 @@ impl<'source> SyntaxTree<'source>
     #[must_use]
     #[spec(ensures: |ret| self.node(position).map_or_else(
         || ret.next == ret.end,
-        |node| ret.next == node.first_child.0 && ret.end == node.first_child.0.saturating_add(node.child_count.0),
+        |node| ret == NodeIndices::run(node.first_child, node.child_count),
     ))]
     pub fn children(
         &self,
         position: NodeIndex,
     ) -> NodeIndices
     {
-        let Some(node) = self.node(position)
-        else {
-            return NodeIndices::empty();
-        };
-        let first = node.first_child.0;
-
-        NodeIndices {
-            next: first,
-            end: first.saturating_add(node.child_count.0),
-        }
+        self.node(position).map_or_else(NodeIndices::empty, |node| {
+            NodeIndices::run(node.first_child, node.child_count)
+        })
     }
 
     /// The source fragment the node at `position` covers.
@@ -1017,7 +1395,7 @@ struct FormSlot(usize);
 /// What a tree knows of its top-level forms.
 ///
 /// # Specification
-/// - ensures: one digest and one range per form, index for index; one rank
+/// - ensures: one digest and one block walk per form, index for index; one rank
 ///   entry per node.
 /// - executable: none — [`index_forms`] states the shape it builds.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1028,13 +1406,12 @@ struct FormIndex
     forms: Vec<NodeIndex>,
     /// Each form's digest, index for index with `forms`.
     digests: Vec<NodeDigest>,
-    /// Each form's descendants, index for index with `forms`: the one
-    /// contiguous range of positions the layout gives them, from its first
-    /// position to the position past its last.
-    ranges: Vec<(NodeIndex, NodeIndex)>,
-    /// Per position, the slot of the form holding the node and its rank
-    /// there; nothing for the root and for layout, documentation and what
-    /// they hold.
+    /// Each form's descendants, index for index with `forms`: the walk over
+    /// the one layout block they make up, empty for a form with no children.
+    ranges: Vec<NodeIndices>,
+    /// Per node, in the order of the tree's nodes, the slot of the form
+    /// holding the node and its rank there; nothing for the root and for
+    /// layout, documentation and what they hold.
     ranks: Vec<Option<(FormSlot, FormRank)>>,
     /// The whole tree's digest; nothing for an empty tree.
     digest: Option<NodeDigest>,
@@ -1045,18 +1422,18 @@ struct FormIndex
 /// nodes, and the whole tree's digest.
 ///
 /// # Specification
-/// - requires: `nodes` is empty or a layout by form whose spans were validated
-///   against `source`, as [`SyntaxTree::from_layout`] asks.
+/// - requires: `nodes` is empty or a layout by form whose blocks start at
+///   `starts` and whose spans were validated against `source`, as
+///   [`SyntaxTree::from_layout`] asks.
 /// - ensures: the forms are the root's significant children in order, each with
 ///   the digest of its preorder serialization — every significant node
 ///   reachable from the form through significant nodes, each as its label, its
 ///   significant child count and, when its label carries text, its text; such a
 ///   node holds its form's slot and preorder rank, the form's root first, and
-///   every other position holds nothing. Each form's range runs from its first
-///   child to the first child of the next top-level child that has one, the
-///   last form's to the layout's end. The tree's digest is the root's label,
-///   text and form count with the forms' digests in order, and is absent
-///   exactly when `nodes` is empty.
+///   every other node holds nothing. Each form's walk is the whole block its
+///   first child opens, and empty for a form with no children. The tree's
+///   digest is the root's label, text and form count with the forms' digests in
+///   order, and is absent exactly when `nodes` is empty.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1074,11 +1451,13 @@ struct FormIndex
     && ret.ranges.len() == ret.forms.len()
     && ret.digest.is_some() != nodes.is_empty()
     && ret.forms.iter().enumerate().all(|(slot, &form)| {
-        ret.ranks.get(form.0).copied().flatten() == Some((FormSlot(slot), FormRank::default()))
+        flat(starts, NodeCount(nodes.len()), form).and_then(|at| ret.ranks.get(at.0).copied().flatten())
+            == Some((FormSlot(slot), FormRank::default()))
     }))]
 fn index_forms(
     source: SourceText<'_>,
     nodes: &[Node],
+    starts: &[NodeCount],
 ) -> FormIndex
 {
     let mut index = FormIndex::default();
@@ -1097,37 +1476,46 @@ fn index_forms(
             .fragment(node.span)
             .unwrap_or_else(|_refused| SourceFragment::from(""))
     };
+    // A node's children lie in one block, so they are one run of the flat
+    // layout from where its first child lies.
+    let first_of = |node: &Node| {
+        if node.child_count.0 == 0 {
+            None
+        }
+        else {
+            flat(starts, NodeCount(nodes.len()), node.first_child).map(|first| first.0)
+        }
+    };
     let mut preimage = Preimage::default();
     let mut pending: Vec<usize> = Vec::new();
-    let first = root.first_child.0;
-    let tops = first .. first.saturating_add(root.child_count.0);
-    // Each top-level child's descendants run from its first child to the
-    // first child of the next top-level child that has one, the last to the
-    // end of the layout: one pass from the last child back.
-    let mut ranges = alloc::vec![(NodeIndex(0), NodeIndex(0)); tops.len()];
-    let mut next = nodes.len();
-    for (at, position) in tops.clone().enumerate().rev() {
-        let start = match nodes.get(position) {
-            Some(node) if node.child_count.0 > 0 => node.first_child.0,
-            Some(_) | None => next,
+    let tops = NodeIndices::run(root.first_child, root.child_count);
+    for top in tops {
+        let Some(position) = flat(starts, NodeCount(nodes.len()), top).map(|at| at.0)
+        else {
+            continue;
         };
-        if let Some(range) = ranges.get_mut(at) {
-            *range = (NodeIndex(start), NodeIndex(next.max(start)));
-        }
-        next = start;
-    }
-    for (at, position) in tops.enumerate() {
         if !significant(position) {
             continue;
         }
         let slot = FormSlot(index.forms.len());
-        index.forms.push(NodeIndex(position));
-        index.ranges.push(
-            ranges
-                .get(at)
-                .copied()
-                .unwrap_or((NodeIndex(next), NodeIndex(next))),
-        );
+        index.forms.push(top);
+        let range = nodes.get(position).map_or_else(NodeIndices::empty, |node| {
+            if node.child_count.0 == 0 {
+                return NodeIndices::empty();
+            }
+            let block = usize::from(node.first_child.block());
+            let length = starts.get(block).map_or(0, |start| {
+                starts
+                    .get(block.saturating_add(1))
+                    .map_or(nodes.len(), |end| end.0)
+                    .saturating_sub(start.0)
+            });
+            NodeIndices::run(
+                NodeIndex::at(node.first_child.block(), BlockOffset(0)),
+                ChildCount(length),
+            )
+        });
+        index.ranges.push(range);
         preimage.open_form();
         let mut rank = 0_u32;
         pending.push(position);
@@ -1140,13 +1528,14 @@ fn index_forms(
                 *entry = Some((slot, FormRank::from(rank)));
             }
             rank = rank.saturating_add(1_u32);
-            let start = node.first_child.0;
             let before = pending.len();
-            pending.extend(
-                (start .. start.saturating_add(node.child_count.0))
-                    .rev()
-                    .filter(|&child| significant(child)),
-            );
+            if let Some(start) = first_of(node) {
+                pending.extend(
+                    (start .. start.saturating_add(node.child_count.0))
+                        .rev()
+                        .filter(|&child| significant(child)),
+                );
+            }
             preimage.node(
                 node.label,
                 text(node),
@@ -1166,16 +1555,17 @@ fn index_forms(
 }
 
 /// The form index of `nodes` over `source`, the join of the trees `before` and
-/// `after` index, `after`'s nodes moved up to start at `moved`.
+/// `after` index, `after`'s blocks moved up past `before`'s, to start at
+/// `past`.
 ///
 /// # Specification
-/// - requires: `nodes` is `before`'s tree's nodes then `after`'s, moved up by
-///   `moved`, the position past `before`'s tree's last node.
-/// - ensures: `before`'s forms, digests, ranges and ranks, then `after`'s, each
-///   form, each range and each rank's slot moved past `before`'s; the digest
-///   folds the first node's label and text, the form count and every form's
-///   digest in order, as [`index_forms`] folds a parse's, and is absent exactly
-///   when `nodes` is empty.
+/// - requires: `nodes` is `before`'s tree's nodes then `after`'s, whose blocks
+///   are moved up to start at `past`, the count of `before`'s tree's blocks.
+/// - ensures: `before`'s forms, digests, walks and ranks, then `after`'s, each
+///   form and each walk moved up past `past` and each rank's slot moved past
+///   `before`'s; the digest folds the first node's label and text, the form
+///   count and every form's digest in order, as [`index_forms`] folds a
+///   parse's, and is absent exactly when `nodes` is empty.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1190,28 +1580,21 @@ fn joined_index(
     (before, after): (&FormIndex, &FormIndex),
     source: SourceText<'_>,
     nodes: &[Node],
-    moved: NodeIndex,
+    past: LayoutBlock,
 ) -> FormIndex
 {
     let slots = before.forms.len();
     let mut forms = Vec::with_capacity(slots.saturating_add(after.forms.len()));
     forms.extend_from_slice(&before.forms);
-    forms.extend(
-        after
-            .forms
-            .iter()
-            .map(|form| NodeIndex(form.0.saturating_add(moved.0))),
-    );
+    forms.extend(after.forms.iter().map(|form| form.moved(past)));
     let mut digests = Vec::with_capacity(forms.len());
     digests.extend_from_slice(&before.digests);
     digests.extend_from_slice(&after.digests);
     let mut ranges = Vec::with_capacity(forms.len());
     ranges.extend_from_slice(&before.ranges);
-    ranges.extend(after.ranges.iter().map(|&(start, end)| {
-        (
-            NodeIndex(start.0.saturating_add(moved.0)),
-            NodeIndex(end.0.saturating_add(moved.0)),
-        )
+    ranges.extend(after.ranges.iter().map(|walk| NodeIndices {
+        next: walk.next.moved(past),
+        end: walk.end.moved(past),
     }));
     let mut ranks = Vec::with_capacity(before.ranks.len().saturating_add(after.ranks.len()));
     ranks.extend_from_slice(&before.ranks);
@@ -1251,6 +1634,9 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use super::BlockOffset;
+    use super::ChildCount;
+    use super::LayoutBlock;
     use super::NodeIndex;
     use super::NodeIndices;
     use super::SyntaxTree;
@@ -1260,18 +1646,26 @@ mod tests
     #[test]
     fn index_ranges_advance_exactly_and_stay_exhausted()
     {
-        for (start, end) in [
+        let block = LayoutBlock::from(4_usize);
+        for (start, count) in [
             (0_usize, 0_usize),
+            (3, 0),
             (3, 3),
-            (3, 6),
-            (usize::MAX.saturating_sub(1), usize::MAX),
+            (usize::try_from(u32::MAX - 1).unwrap_or(usize::MAX), 1),
         ] {
-            let mut range = NodeIndices { next: start, end };
-            for index in start .. end {
-                let remaining = end.saturating_sub(index);
+            let first = NodeIndex::at(block, BlockOffset::from(start));
+            let mut range = NodeIndices::run(first, ChildCount(count));
+            for step in 0 .. count {
+                let remaining = count.saturating_sub(step);
                 assert_eq!(range.size_hint(), (remaining, Some(remaining)));
                 assert_eq!(range.len(), remaining);
-                assert_eq!(range.next(), Some(NodeIndex(index)));
+                assert_eq!(
+                    range.next(),
+                    Some(NodeIndex::at(
+                        block,
+                        BlockOffset::from(start.saturating_add(step))
+                    ))
+                );
             }
             for _ in 0_u8 .. 2_u8 {
                 assert_eq!(range.next(), None);
@@ -1289,12 +1683,13 @@ mod tests
     {
         let source = SourceText::from("");
         let grammar = GrammarFingerprint::from(7_u64);
-        let tree = SyntaxTree::from_layout(source, grammar, Vec::new());
+        let tree = SyntaxTree::from_layout(source, grammar, Vec::new(), Vec::new());
         assert_eq!(tree.source(), source);
         assert_eq!(tree.grammar(), grammar);
-        assert_eq!(tree.root(), NodeIndex(0));
+        assert_eq!(tree.root(), NodeIndex::default());
         assert_eq!(tree.node(tree.root()), None);
         assert_eq!(tree.positions().next(), None);
+        assert_eq!(tree.blocks().len(), 0);
         assert_eq!(tree.children(tree.root()).next(), None);
         assert_eq!(tree.fragment(tree.root()), None);
         assert_eq!(tree.digest(), None);
@@ -1303,12 +1698,27 @@ mod tests
     }
 
     #[test]
-    fn formatters_preserve_numeric_options()
+    fn formatters_preserve_padding_options()
     {
-        for count in [0_usize, 17, usize::MAX] {
+        let last = usize::try_from(u32::MAX).unwrap_or(usize::MAX);
+        for (block, offset) in [(0_usize, 0_usize), (2, 17), (last, 9)] {
+            let position = NodeIndex::at(LayoutBlock::from(block), BlockOffset::from(offset));
             assert_eq!(
-                alloc::format!("{:*>+24}", NodeIndex(count)),
-                alloc::format!("{count:*>+24}")
+                alloc::format!("{position:*>24}"),
+                alloc::format!("{:*>24}", alloc::format!("{block}.{offset}"))
+            );
+        }
+    }
+
+    #[test]
+    fn a_position_debugs_as_its_block_and_offset()
+    {
+        let last = usize::try_from(u32::MAX).unwrap_or(usize::MAX);
+        for (block, offset) in [(0_usize, 0_usize), (2, 17), (last, 9)] {
+            let (block, offset) = (LayoutBlock::from(block), BlockOffset::from(offset));
+            assert_eq!(
+                alloc::format!("{:?}", NodeIndex::at(block, offset)),
+                alloc::format!("NodeIndex {{ block: {block:?}, offset: {offset:?} }}")
             );
         }
     }
@@ -1319,7 +1729,7 @@ mod tests
         use core::fmt::Write as _;
         assert!(
             crate::test_support::RefusingSink
-                .write_fmt(format_args!("{}", NodeIndex(0)))
+                .write_fmt(format_args!("{}", NodeIndex::default()))
                 .is_err()
         );
     }

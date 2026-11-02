@@ -114,11 +114,14 @@ pub use crate::span::ByteOffset;
 pub use crate::span::ByteSpan;
 pub use crate::span::SourceFragment;
 pub use crate::span::SourceText;
+pub use crate::tree::BlockOffset;
 pub use crate::tree::ChildCount;
+pub use crate::tree::LayoutBlock;
 pub use crate::tree::Node;
 pub use crate::tree::NodeCount;
 pub use crate::tree::NodeIndex;
 pub use crate::tree::NodeIndices;
+pub use crate::tree::Positions;
 pub use crate::tree::SyntaxTree;
 
 /// Equality observed without invoking a non-const trait method.

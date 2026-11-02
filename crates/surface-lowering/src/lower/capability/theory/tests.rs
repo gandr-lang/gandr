@@ -75,7 +75,7 @@ fn fixing(sorts: impl IntoIterator<Item = Name>) -> BTreeMap<Name, NodeIndex>
     sorts
         .into_iter()
         .enumerate()
-        .map(|(position, sort)| (sort, NodeIndex::from(position.saturating_add(100))))
+        .map(|(position, sort)| (sort, crate::fixture::node(position.saturating_add(100))))
         .collect()
 }
 
@@ -83,7 +83,7 @@ fn fixing(sorts: impl IntoIterator<Item = Name>) -> BTreeMap<Name, NodeIndex>
 fn state_reads_as_a_get_and_a_put_2272()
 {
     let fixed = fixing([Name::from("S")]);
-    let integer = NodeIndex::from(100_usize);
+    let integer = crate::fixture::node(100_usize);
     let read = operations(&members(SourceText::from(STATE)), &fixed).unwrap();
     assert_eq!(
         vec![
@@ -111,7 +111,7 @@ fn state_reads_as_a_get_and_a_put_2272()
 fn a_value_operation_is_read_apart_from_the_effects_2288()
 {
     let fixed = fixing([Name::from("N")]);
-    let cost = NodeIndex::from(100_usize);
+    let cost = crate::fixture::node(100_usize);
     let members_of = members(SourceText::from(COST));
     let read = operations(&members_of, &fixed).unwrap();
     assert_eq!(

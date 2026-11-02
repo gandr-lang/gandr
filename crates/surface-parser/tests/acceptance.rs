@@ -162,7 +162,10 @@ fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Box<dyn Erro
     assert_eq!(top.len(), 2);
     assert_eq!(direct_tiles(tree, top[0]), ["def", "a", "=", ";"]);
     assert_eq!(direct_tiles(tree, top[1]), ["def", "x", "=", "0", ";"]);
-    let absent = NodeIndex::from(usize::MAX);
+    let absent = NodeIndex::at(
+        gandr_surface_syntax::LayoutBlock::from(usize::MAX),
+        gandr_surface_syntax::BlockOffset::from(usize::MAX),
+    );
     for start in [root, absent] {
         assert_eq!(
             find_meld_with_tile(tree, start, TileText::from("absent")),
@@ -2426,8 +2429,8 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
             result.obligations()
         );
         let tree = result.tree();
-        let read: Vec<bool> = (0 .. usize::from(tree.node_count()))
-            .map(NodeIndex::from)
+        let read: Vec<bool> = tree
+            .positions()
             .filter(|&node| text(tree, node) == "run")
             .filter_map(|node| match label_of(tree, node) {
                 Some(NodeLabel::Tile(mold)) => pbg

@@ -12,9 +12,11 @@ use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::BlockOffset;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::GrammarFingerprint;
+use gandr_surface_syntax::LayoutBlock;
 use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
@@ -121,9 +123,10 @@ pub fn repaired<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — exact endpoints are checked on every instrumented call.
-///   Synthetic-origin fixtures cover zero and the saturation boundary pair;
-///   ordinary malformed-literal fixtures distinguish nonempty source spans.
-/// - witness: `fixture::tests::synthetic_origins_saturate_only_at_the_position_ceiling`
+///   Synthetic-origin fixtures cover the spans at offset zero and at the
+///   position ceiling; ordinary malformed-literal fixtures distinguish nonempty
+///   source spans.
+/// - witness: `fixture::tests::synthetic_origins_span_one_byte_from_their_offset`
 /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
 #[spec(
     requires: start <= end,
@@ -164,33 +167,55 @@ pub fn registered(name: SurfaceName<'_>) -> RegisteredAttribute
     entry
 }
 
-/// A distinct origin naming the node at arena position `position`.
+/// A synthetic position: offset `offset` of the first layout block.
 ///
 /// # Specification
-/// - requires: nothing; every node position is admitted.
-/// - ensures: a written origin names the position, with a span starting there
-///   and ending at its saturating successor.
-/// - provides: distinct synthetic metadata without consulting a syntax tree.
-/// - fails: never; the ceiling position has an empty span.
+/// - requires: nothing; every offset is admitted.
+/// - ensures: the position in block zero at `offset`, so distinct offsets give
+///   distinct positions.
+/// - provides: distinct node identities without consulting a syntax tree.
+/// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — zero, the ceiling predecessor and the ceiling separate a
-///   fixed endpoint, ordinary increment and saturation. The observer checks
-///   node identity, both endpoints and written provenance; no association with
-///   a real syntax tree is claimed.
-/// - witness: `fixture::tests::synthetic_origins_saturate_only_at_the_position_ceiling`
+/// - hypothesis: L3 — zero and the offset ceiling each name block zero at their
+///   own offset; a shifted block or offset differs.
+/// - witness: `fixture::tests::synthetic_origins_span_one_byte_from_their_offset`
+#[spec(ensures: |ret| usize::from(ret.block()) == 0_usize && ret.offset() == BlockOffset::from(offset))]
+pub fn node<Offset>(offset: Offset) -> NodeIndex
+where
+    Offset: Copy,
+    BlockOffset: From<Offset>,
+{
+    NodeIndex::at(LayoutBlock::default(), BlockOffset::from(offset))
+}
+
+/// A distinct origin naming the node at `position`.
+///
+/// # Specification
+/// - requires: nothing; every node position is admitted.
+/// - ensures: a written origin names the position, with a span starting at its
+///   offset and ending one byte later.
+/// - provides: distinct synthetic metadata without consulting a syntax tree.
+/// - fails: never; an offset fits a byte offset with room for its successor.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and the offset ceiling separate a fixed endpoint
+///   from the largest offset. The observer checks node identity, both endpoints
+///   and written provenance; no association with a real syntax tree is claimed.
+/// - witness: `fixture::tests::synthetic_origins_span_one_byte_from_their_offset`
 #[spec(
     ensures: |ret| {
         ret.node() == position
-            && usize::from(ret.span().start()) == usize::from(position)
-            && usize::from(ret.span().end()) == usize::from(position).saturating_add(1_usize)
+            && usize::from(ret.span().start()) == usize::from(position.offset())
+            && usize::from(ret.span().end()) == usize::from(position.offset()).saturating_add(1_usize)
             && ret.provenance() == crate::origin::Provenance::Written
     },
 )]
 pub fn origin_at(position: NodeIndex) -> Origin
 {
-    let start = usize::from(position);
+    let start = usize::from(position.offset());
     let covered = span(
         ByteOffset::from(start),
         ByteOffset::from(start.saturating_add(1_usize)),
@@ -498,23 +523,23 @@ impl<'run, 'source> Handmade<'run, 'source>
 #[cfg(test)]
 mod tests
 {
-    use gandr_surface_syntax::NodeIndex;
-
+    use super::node;
     use super::origin_at;
     use crate::origin::Provenance;
 
     #[test]
-    fn synthetic_origins_saturate_only_at_the_position_ceiling()
+    fn synthetic_origins_span_one_byte_from_their_offset()
     {
-        for (position, end) in [
-            (0_usize, 1_usize),
-            (usize::MAX.saturating_sub(1_usize), usize::MAX),
-            (usize::MAX, usize::MAX),
-        ] {
-            let origin = origin_at(NodeIndex::from(position));
-            assert_eq!(origin.node(), NodeIndex::from(position));
-            assert_eq!(usize::from(origin.span().start()), position);
-            assert_eq!(usize::from(origin.span().end()), end);
+        let ceiling = usize::try_from(u32::MAX).unwrap();
+        for offset in [0_usize, ceiling] {
+            let position = node(offset);
+            let start = offset;
+            assert_eq!(usize::from(position.block()), 0);
+            assert_eq!(usize::from(position.offset()), start);
+            let origin = origin_at(position);
+            assert_eq!(origin.node(), position);
+            assert_eq!(usize::from(origin.span().start()), start);
+            assert_eq!(usize::from(origin.span().end()), start.saturating_add(1));
             assert_eq!(origin.provenance(), Provenance::Written);
         }
     }

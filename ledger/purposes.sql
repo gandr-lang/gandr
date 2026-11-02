@@ -3258,11 +3258,14 @@ INSERT INTO purpose VALUES('surface-syntax','span::ByteOffset','struct','A zero-
 INSERT INTO purpose VALUES('surface-syntax','span::ByteSpan','struct','The half-open byte range `[start, end)` one token or node covers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','span::SourceFragment','struct','The bytes one span covers: a slice of some SourceText, carrying no offset frame of its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','span::SourceText','struct','The complete source text one syntax tree was parsed from.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::BlockOffset','struct','Where a node lies within its layout block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::ChildCount','struct','A number of immediate children of one node.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::LayoutBlock','struct','One block of a tree''s layout: a root with its children, or the descendants of one top-level form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::Node','struct','One node: its label, the source it covers, and the arena range its children occupy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::NodeCount','struct','A number of nodes in one tree.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-syntax','tree::NodeIndex','struct','The arena position of one node inside one syntax tree.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-syntax','tree::NodeIndices','struct','A forward walk over a contiguous range of arena positions.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::NodeIndex','struct','The position of one node inside one syntax tree: its layout block and its offset there.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::NodeIndices','struct','A forward walk over a contiguous run of offsets in one layout block.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::Positions','struct','A forward walk over every position of a tree, block after block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::SyntaxTree','struct','A concrete syntax tree: its source, its grammar, and its nodes laid out by form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::App','struct','Holds the face''s state over one read-evaluate loop, so the loop''s transcript and the line being edited are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Handled','enum','Names what a key leaves the face to do, so the key''s handling is read.',NULL,'fits','sound',NULL);

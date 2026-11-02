@@ -2034,7 +2034,7 @@ impl<'source> Lowerer<'_, 'source>
                 // it returns, as a derived operation's transport is.
                 if operation == Operation::Transport
                     && let Reading::Value(_) = site.reading
-                    && let Some(held) = self.bridges.get_mut(usize::from(site.at.node))
+                    && let Some(held) = self.bridges.get_mut(site.at.node)
                 {
                     *held = super::Bridge::Inserted(Insertion::Endpoint);
                 }
@@ -2967,7 +2967,7 @@ impl<'source> Lowerer<'_, 'source>
         // The operation is the path its transport returns: pure, so where a
         // value is read it is that value, as an endpoint's computation is.
         if let Reading::Value(_) = site.reading
-            && let Some(held) = self.bridges.get_mut(usize::from(site.at.node))
+            && let Some(held) = self.bridges.get_mut(site.at.node)
         {
             *held = super::Bridge::Inserted(Insertion::Endpoint);
         }

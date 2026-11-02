@@ -2290,8 +2290,10 @@ mod tests
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::Origin;
     use gandr_surface_lowering::OriginTable;
+    use gandr_surface_syntax::BlockOffset;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::LayoutBlock;
     use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
@@ -2307,6 +2309,17 @@ mod tests
     use super::report_context;
     use super::report_span;
 
+    /// A synthetic position: offset `offset` of the first layout block.
+    ///
+    /// # Specification
+    /// trivial.
+    fn synthetic<Offset>(offset: Offset) -> NodeIndex
+    where
+        BlockOffset: From<Offset>,
+    {
+        NodeIndex::at(LayoutBlock::default(), BlockOffset::from(offset))
+    }
+
     #[test]
     fn refusal_locations_keep_origin_families_and_missing_nodes_distinct()
     {
@@ -2318,7 +2331,7 @@ mod tests
             .expect("ordered fixture spans")
         });
         let recorded: [Origin; 8_usize] =
-            core::array::from_fn(|index| Origin::new(NodeIndex::from(index), spans[index]));
+            core::array::from_fn(|index| Origin::new(synthetic(index), spans[index]));
         let mut arena = CoreArena::new();
         let values = [arena.value_unit(), arena.value_unit()];
         let computations = [
@@ -2395,7 +2408,7 @@ mod tests
             .expect("ordered fixture spans")
         });
         let recorded: [Origin; 3_usize] =
-            core::array::from_fn(|index| Origin::new(NodeIndex::from(index), spans[index]));
+            core::array::from_fn(|index| Origin::new(synthetic(index), spans[index]));
         let mut arena = CoreArena::new();
         let value = arena.value_unit();
         let computation = arena.computation_return(value);
@@ -2723,10 +2736,7 @@ mod tests
         let state = arena.value_type_unit();
         let mut origins = OriginTable::new();
         for (index, computation) in [action, fork, arm].into_iter().enumerate() {
-            origins.record_computation(
-                computation,
-                Origin::new(NodeIndex::from(index), spans[index]),
-            );
+            origins.record_computation(computation, Origin::new(synthetic(index), spans[index]));
         }
         let declaration = ByteSpan::new(ByteOffset::from(90_usize), ByteOffset::from(99_usize))
             .expect("the declaration is distinct from every node");
@@ -2874,7 +2884,7 @@ mod tests
             .expect("ordered fixture spans")
         });
         let recorded: [Origin; 16_usize] =
-            core::array::from_fn(|index| Origin::new(NodeIndex::from(index), spans[index]));
+            core::array::from_fn(|index| Origin::new(synthetic(index), spans[index]));
         let mut arena = CoreArena::new();
         let value = arena.value_unit();
         let computation = arena.computation_return(value);
