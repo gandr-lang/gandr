@@ -23,6 +23,7 @@ use gandr_surface_dispatcher::compose;
 use gandr_surface_parser::FormSplit;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::label;
+use gandr_surface_parser::parse;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::FormCount;
 use gandr_surface_session::Session;
@@ -185,6 +186,22 @@ fn a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_r
 fn a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root()
 {
     large_edit_script(SourceRoot::Fixture);
+}
+
+#[test]
+fn a_generated_module_parses_with_no_repair_4444()
+{
+    // Every shape the generator cycles through stands in 64 forms. A form the
+    // grammar refuses leaves a repair, and the edit loop then times recovery.
+    for root in [SourceRoot::Strict, SourceRoot::Fixture] {
+        let text = module(FormCount::from(64_usize), root).text();
+        let parsed = parse(&GRAMMAR, SourceText::from(text.as_str())).expect("the module parses");
+        assert!(
+            parsed.obligations().is_empty(),
+            "{root:?}: {:?}",
+            parsed.obligations()
+        );
+    }
 }
 
 /// A generated module of `LARGE` forms under `root`, then every class of edit
