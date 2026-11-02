@@ -3002,18 +3002,18 @@ where
     Some((bound, rest))
 }
 
-/// The bind `former` holds when it is a nested or returned computation the
-/// walk writes as a block, `{ run x <- c ; rest }`: one over a bind that
-/// [`nested_call`] does not write as the call it binds. No argument reads a
-/// statement bare.
+/// The bind `former` holds when it is a nested or returned computation whose
+/// statements stand where a value is read: one over a bind that
+/// [`nested_call`] does not write as the call it binds. Its slot writes them
+/// as a block, `{ run x <- c ; rest }` ([`Walk::bare_up_to`]).
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the body exactly when `former` is a nested or returned
 ///   computation whose body reads as a bind and [`nested_call`] finds no nested
 ///   call there; absent otherwise.
-/// - provides: the block [`Walk::visit`] and [`Walk::form`] write, and the
-///   expression surface [`surface_below`] reads its statements in.
+/// - provides: the expression surface [`surface_below`] reads its statements
+///   in.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -7744,7 +7744,7 @@ impl Walk<'_, '_>
                 let comma = self.leaf(Glyphs(","))?;
                 docs.push(self.space_or_break(comma)?);
             }
-            docs.push(item.doc);
+            docs.push(self.bare_up_to(*item, Binding::ARGUMENT)?);
         }
         let inner = self.builder.concat_all(&docs)?;
         let inner = self.none_or_break(inner)?;
@@ -9149,13 +9149,6 @@ impl Walk<'_, '_>
             {
                 Self::inlined(source, body, below(depth, kind), tasks);
                 return writes(Production("call_expression"), Ok(()));
-            },
-            // Any other run where a value is read is a block of its own,
-            // `{ run x <- c ; rest }`: an argument takes no statement bare,
-            // and a `cong`'s image at a point keeps the bind a typed binder
-            // checks the point with (#3942).
-            Former::Nested(_) | Former::Returned(_) if braced(source, &former).is_some() => {
-                Some(self.form(source, node, &former, admits))
             },
             // A quoted type whose head no expression reads, standing where an
             // expression is read, is written in the quote's own spelling,
@@ -10713,13 +10706,13 @@ impl Walk<'_, '_>
     ///   ascription as `(v : T)`, its two pieces the value and the type, but a
     ///   binary natural ascribed `Nat` as its numeral, `(5 : Nat)`, its one
     ///   piece the type; a truth value ascribed `Bool` the visit writes as its
-    ///   word; a nested computation or a returned value as the block of its
-    ///   statements, `{ run x <- c ; rest }`, its one piece the run. The forms
-    ///   the grammar does not write — native transport, a fixpoint `rec f { c
-    ///   }`, a fold, any other resumption `resume(k, c)`, `reset { c }`, `shift
-    ///   k { c }`, a lazy product `&{c, …}` and its observation `c.0`, and a
-    ///   positional projection off anything but a name, `(v.1).0` — make the
-    ///   presentation approximate.
+    ///   word. The forms the grammar does not write — native transport, a
+    ///   fixpoint `rec f { c }`, a fold, any other resumption `resume(k, c)`,
+    ///   `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
+    ///   observation `c.0`, and a positional projection off anything but a
+    ///   name, `(v.1).0` — make the presentation approximate, and so does a
+    ///   nested computation or a returned value, which the visit leaves for its
+    ///   slot to brace.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -10734,7 +10727,6 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
     /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
-    /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -11704,21 +11696,13 @@ impl Walk<'_, '_>
             | Former::Ua { .. }
             | Former::Compose { .. }
             | Former::Fill { .. }
+            | Former::Nested(_)
+            | Former::Returned(_)
             | Former::Unreadable(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(Unspelled::Misplaced);
                 let _ = parts.text("?");
                 Binding::Atom
-            },
-            // A run where a value is read, the visit's one way here: the
-            // block of its statements.
-            Former::Nested(_) | Former::Returned(_) => {
-                let _ = parts
-                    .text("{")
-                    .part(Part::Open)
-                    .piece(Binding::Sequence)
-                    .part(Part::Close);
-                writes(Production("block"), Binding::Atom)
             },
         };
         let pieces = Arity(parts.pieces);
@@ -12002,7 +11986,9 @@ impl Walk<'_, '_>
                         let comma = self.leaf(Glyphs(","))?;
                         items.push(self.space_or_break(comma)?);
                     }
-                    items.extend(entry.iter().rev().map(|piece| piece.doc));
+                    for &piece in entry.iter().rev() {
+                        items.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
+                    }
                 }
                 let inner = self.builder.concat_all(&items)?;
                 let inner = self.none_or_break(inner)?;

@@ -2266,7 +2266,7 @@ pub fn written_children<'tree>(
                     })
                 };
                 (pbg.mold(mold).is_err() || pbg.rule_of(mold).is_err())
-                    && (rejected(position) || tree.children(position).any(rejected))
+                    && (rejected(position) || written_children(pbg, tree, position).any(rejected))
             },
             | Err(_) => false,
         }
@@ -4076,7 +4076,7 @@ mod tests
                 })
                 .is_some_and(|declaration| {
                     ret.pieces.iter().all(|piece| {
-                        tree.children(declaration)
+                        super::written_children(pbg, tree, declaration)
                             .any(|child| child == piece.placed().node)
                     })
                 })

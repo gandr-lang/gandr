@@ -761,21 +761,23 @@ fn laid_out(
 }
 
 /// What a client shows in place of the lines `span` folds, written by the
-/// form at `holder` among its own tiles: the text before `span` on its first
-/// line, then what the form writes up to its first own `where`, `{`, `=` or
-/// `;` inside `span`, its layout collapsed, the body after a `where` elided as
-/// `where { … }`, after a `{` as `{ … }` and the definition after an `=` as
-/// `= …` with a final `;` kept; none when no such tile is inside `span`.
+/// form at `holder` among its own tiles, a shared block's among them: the text
+/// before `span` on its first line, then what the form writes up to its first
+/// own `where`, `{`, `=` or `;` inside `span`, its layout collapsed, the body
+/// after a `where` elided as `where { … }`, after a `{` as `{ … }` and the
+/// definition after an `=` as `= …` with a final `;` kept; none when no such
+/// tile is inside `span`.
 ///
 /// # Specification
 /// trivial.
 fn folded(
+    grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     holder: NodeIndex,
     span: ByteSpan,
 ) -> Option<String>
 {
-    let (opener, spelled) = tree.children(holder).find_map(|child| {
+    let (opener, spelled) = written_children(grammar, tree, holder).find_map(|child| {
         let start = body_start(tree, child)?;
         let inside = span.start() <= start && start < span.end();
         inside.then_some((start, tree.fragment(child)?))
@@ -1097,9 +1099,10 @@ fn member_kind(
 ///   line to its last; at a line where several start, the one reaching
 ///   furthest, the outermost of those nested there. Documentation and block
 ///   comments carry the `comment` kind and no collapsed text; forms and members
-///   no kind and, when one of their own `{`, `=` or `;` tiles is inside them,
-///   the text the first line holds before them followed by what they write up
-///   to that tile, layout collapsed, the rest elided. Ascending by first line.
+///   no kind and, when one of their own `{`, `=` or `;` tiles is inside them, a
+///   shared block's `{` among them, the text the first line holds before them
+///   followed by what they write up to that tile, layout collapsed, the rest
+///   elided. Ascending by first line.
 /// - provides: the answer to `textDocument/foldingRange`.
 /// - fails: never.
 /// - panics: none.
@@ -1116,6 +1119,7 @@ fn member_kind(
 #[spec(ensures: |ret| ret.iter().all(|fold| fold.start_line < fold.end_line)
     && ret.windows(2).all(|pair| matches!(pair, [first, second] if first.start_line < second.start_line)))]
 pub fn folds(
+    grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
     members: &[(NodeIndex, ByteSpan)],
@@ -1131,7 +1135,7 @@ pub fn folds(
                 start_line: range.start.line,
                 end_line: range.end.line,
                 kind: holder.is_none().then_some(COMMENT),
-                collapsed_text: holder.and_then(|holder| folded(tree, holder, span)),
+                collapsed_text: holder.and_then(|holder| folded(grammar, tree, holder, span)),
             });
         }
     };
@@ -1646,6 +1650,35 @@ mod tests
             "documentation, the function, the block comment, the theory, its multi-line \
              members and a definition after `=` fold, each form showing what it writes \
              before its body; the one-line forms and members do not"
+        );
+    }
+
+    /// A form whose block follows its tile holds the block as a form of its
+    /// own, and folds at that block's `{` as at its own.
+    #[test]
+    fn a_form_folds_at_the_brace_of_its_shared_block()
+    {
+        let source = "def f =\n  thunk {\n    return 1\n  } ;\n";
+        let answered: Vec<(u64, u64, Option<String>)> = Reading::of(SourceText::from(source))
+            .folds()
+            .iter()
+            .map(|fold| {
+                let value = serde_json::to_value(fold).expect("a fold encodes");
+                let line = |field| value.get(field).and_then(Value::as_u64).unwrap_or(u64::MAX);
+                let text = value
+                    .get("collapsedText")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                (line("startLine"), line("endLine"), text)
+            })
+            .collect();
+        assert_eq!(
+            answered,
+            [
+                (0, 3, Some("def f = …;".to_owned())),
+                (1, 3, Some("  thunk { … }".to_owned())),
+            ],
+            "the thunk shows what it writes before its block's brace"
         );
     }
 

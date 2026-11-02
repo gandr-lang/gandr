@@ -414,7 +414,7 @@ impl Reading
                     },
                 })
                 .collect(),
-            folds: folds(tree, &index, &members),
+            folds: folds(grammar, tree, &index, &members),
             skeleton: Skeleton::of(tree, &members),
             calls: Calls::of(grammar, tree),
             imports_end: None,
