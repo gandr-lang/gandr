@@ -2349,11 +2349,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is an injection in term position.
     /// - ensures: the injection of its value, read under the form's frame, into
     ///   the summand its index names, or its label names among the entries of
-    ///   the sum its annotation states.
+    ///   the sum its position states: an annotation, a definition's signature
+    ///   or the answer of the body it ends.
     /// - fails: the wrong-sort refusal where no value is read; the unannotated
-    ///   refusal for a label with no annotation stating a sum; the
-    ///   unresolved-name refusal for a label the sum does not have; the tiles'
-    ///   and the hole's own faults.
+    ///   refusal for a label where no sum is stated; the unresolved-name
+    ///   refusal for a label the sum does not have; the tiles' and the hole's
+    ///   own faults.
     /// - panics: none.
     ///
     /// # Errors
@@ -2361,8 +2362,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an index past the binary sum, a label under an
-    ///   annotation, a label without one, and a label the sum lacks.
+    ///   annotation and under a definition's signature, a label without either,
+    ///   and a label the sum lacks.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
+    /// - witness: `lower::arity::tests::labelled_forms_take_their_order_from_the_definition_s_signature_4376`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Injection(..))))]
     pub(super) fn injection(
         &mut self,
@@ -2381,7 +2384,7 @@ impl<'source> Lowerer<'_, 'source>
         let summand = match key {
             Key::Index(index, ..) => index,
             Key::Label(name, written) => {
-                let Some(&annotation) = self.classifiers.get(&site.at.node)
+                let (Some(annotation), _) = self.stated_value(site)?
                 else {
                     return Err(site.out(FragmentBoundary::Unannotated));
                 };
@@ -2406,10 +2409,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a copattern block in term position.
     /// - ensures: the lazy product of its clauses, of any number, in index
-    ///   order, or in the order of the labels of the lazy record its answer
-    ///   states; each clause read as a computation under the form's frame,
-    ///   answering the stated entry's type when one is stated, and opened as a
-    ///   body of its own, so an exit in it leaves the clause.
+    ///   order, or in the order of the labels of the lazy record its answer or
+    ///   its definition's thunked signature states; each clause read as a
+    ///   computation under the form's frame, answering the stated entry's type
+    ///   when one is stated, and opened as a body of its own, so an exit in it
+    ///   leaves the clause.
     /// - fails: the wrong-sort refusal where no computation is read; the
     ///   unannotated refusal for labelled clauses with no stated lazy record;
     ///   the unresolved-name refusal for a label the stated type lacks; a
@@ -2423,9 +2427,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — positional clauses, labelled clauses written out of
-    ///   the stated order, labelled clauses with no answer, one clause and
-    ///   none.
+    ///   the stated order under an answer and under a definition's signature,
+    ///   labelled clauses with neither, one clause and none.
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
+    /// - witness: `lower::arity::tests::labelled_forms_take_their_order_from_the_definition_s_signature_4376`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Copattern(_))))]
     pub(super) fn copattern(
         &mut self,
@@ -2443,7 +2448,11 @@ impl<'source> Lowerer<'_, 'source>
             closed(site, &mut cursor, TileName::BRACE_OPEN)?;
             self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?
         };
-        let answer = self.answers.get(&site.at.node).copied();
+        let answer = self
+            .answers
+            .get(&site.at.node)
+            .or_else(|| self.thunked.get(&site.at.node))
+            .copied();
         let stated = match answer {
             Some(answer) => {
                 self.stated_entries(site, answer.node, Former::LazyRecordType, Thunked(false))?
