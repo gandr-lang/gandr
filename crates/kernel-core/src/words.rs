@@ -1664,7 +1664,7 @@ pub fn appended(
 /// - hypothesis: L3 — as [`appended`], whose rows fire only in this family.
 /// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
 #[spec(ensures: |ret| ret.is_none_or(|left| arena.value(left).is_some()))]
-fn singleton(
+pub fn singleton(
     arena: &TermArena,
     motive: ValueTypeId,
 ) -> Option<ValueId>

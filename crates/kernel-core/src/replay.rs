@@ -2340,6 +2340,10 @@ enum RunStep
     Reads(ComputationId, HeldReading),
     /// This definition heads it, and the run unfolds it.
     Unfolds(ConstantIndex),
+    /// It returned this transport, which the append does not read and which
+    /// stands on this held call of this definition: the run unfolds the call
+    /// under the transport.
+    RunsPath(ComputationId, ComputationId, ConstantIndex),
     /// It stuck at a head the run does not unfold.
     Sticks,
 }
@@ -8221,12 +8225,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // unfolds and the run goes on, as the evaluator's run unfolds what
             // it meets and records no decision for it. An endpoint a call's
             // run returns is read on into its computation, holding every call
-            // there, as the evaluator evaluates a returned endpoint; one a
-            // bind's or a transport's run returns sticks. A value it returns
-            // moves along the path. A run that sticks leaves the operand as it
-            // was, and the transport runs its returned path first, or its
-            // operand; the conversion unfolds what the operand holds later, by
-            // a recorded step.
+            // there, as the evaluator evaluates a returned endpoint. One a
+            // bind's or a transport's run returns runs on as a call when it is
+            // one, runs the held call under a transport the append does not
+            // read, and sticks otherwise ([`Self::run_step`]). A value it
+            // returns moves along the path. A run that sticks leaves the
+            // operand as it was, and the transport runs its returned path
+            // first, or its operand; the conversion unfolds what the operand
+            // holds later, by a recorded step.
             if let Some(run) = held {
                 let read = if progress == Progress::Unchanged {
                     run.operand
@@ -8252,6 +8258,28 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         frames.clear();
                         progress = Progress::Reduced;
                         runs.push(Run::Held(run));
+                        continue 'endpoints;
+                    },
+                    RunStep::RunsPath(transport, call, constant) => {
+                        let Term::Computation(unfolded) =
+                            self.unfold_refolded(Term::Computation(call), constant)?
+                        else {
+                            return Err(unreadable());
+                        };
+                        let Some(&Computation::PathTransport { motive, value, .. }) =
+                            self.arena.computation(transport)
+                        else {
+                            return Err(unreadable());
+                        };
+                        let path = self.arena.value_returned(unfolded);
+                        let moved = self.arena.computation_path_transport(motive, path, value);
+                        focus = Closure::closed(moved);
+                        frames.clear();
+                        progress = Progress::Reduced;
+                        runs.push(Run::Held(HeldRun {
+                            reading: HeldReading::Returned,
+                            ..run
+                        }));
                         continue 'endpoints;
                     },
                     RunStep::Returns(value) => self.arena.computation_path_transport(
@@ -9025,24 +9053,30 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// level-two whisker's `⟨tr(…, here(…))⟩` runs on to `here(…)`. A call
     /// the run of a bind or a transport returns runs on as a call: the
     /// evaluator evaluates the operand to that held call, and its append runs
-    /// it. Any other endpoint such a run returns is left unread, and so is the
-    /// operand. A run that sticks at a head no definition unfolds,
-    /// or at a call an endpoint holds, leaves the operand as it was, and the
-    /// transport stands on its held path: `H(b) then ⟨ap(G, here(b))⟩` on
-    /// `ap`, and `assoc(f, g, h) then ⟨whiskerRight(…)⟩` on `whiskerRight`,
-    /// which the dialogue unfolds next. [`Self::reduce`] runs the operand by
-    /// its search-free steps and takes the step this names at each weak head
-    /// the run reaches.
+    /// it. A transport such a run returns, in a family the append does not
+    /// read and along a held call of a definition, runs that call under the
+    /// transport: the evaluator's run stance runs the call a stuck transport's
+    /// held path holds and puts the transport back on its result, as
+    /// `back(assoc(…))` reads on to `here(…)`. Any other endpoint such a run
+    /// returns is left unread, and so is the operand. A run that sticks at a
+    /// head no definition unfolds, or at a call an endpoint holds, leaves the
+    /// operand as it was, and the transport stands on its held path: `H(b)
+    /// then ⟨ap(G, here(b))⟩` on `ap`, and `assoc(f, g, h) then
+    /// ⟨whiskerRight(…)⟩` on `whiskerRight`, which the dialogue unfolds next.
+    /// [`Self::reduce`] runs the operand by its search-free steps and takes
+    /// the step this names at each weak head the run reaches.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Returns(v)` when `read` is `return v` and `v` is no returned
     ///   endpoint; `Reads(c, Returned)` when `read` is `return ⟨c⟩` and
     ///   `reading` is no operand; `Reads(c, Call)` when `read` is `return ⟨c⟩`,
-    ///   `reading` is an operand and `c` is a call; `Unfolds(k)` when `reading`
-    ///   is a call or an operand, the definition `k` heads `read`, and a
-    ///   constructor opens its gate if `k` is a recursive definition; `Sticks`
-    ///   otherwise.
+    ///   `reading` is an operand and `c` is a call; `RunsPath(c, h, k)` when
+    ///   `read` is `return ⟨c⟩`, `reading` is an operand and `c` is a transport
+    ///   the append does not read along `⟨h⟩`, a call the definition `k` heads;
+    ///   `Unfolds(k)` when `reading` is a call or an operand, the definition
+    ///   `k` heads `read`, and a constructor opens its gate if `k` is a
+    ///   recursive definition; `Sticks` otherwise.
     /// - provides: the replay's reading of the evaluator's held-operand run.
     /// - fails: never.
     /// - panics: none.
@@ -9059,14 +9093,20 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   read on, closes `coneSuspended3` at reflexivities a step before the
     ///   unfolding the checker records. A call the run of a transport returns,
     ///   left held, keeps the middle call of `(p₁ then p₂) then p₃` that the
-    ///   checker's append runs, and the replay refuses `ComparedShared`.
+    ///   checker's append runs, and the replay refuses `ComparedShared`. A
+    ///   transport the run of a transport returns, left held on its path's
+    ///   call, keeps `back(assoc(…))` where the checker's run reached
+    ///   reflexivity; read on into any transport, the run closes
+    ///   `coneSuspended3` early.
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
     /// - witness: `replay::tests::an_operand_s_run_runs_the_call_it_returns_4412`
+    /// - witness: `replay::tests::a_returned_transport_runs_its_held_path_s_call_4413`
     #[spec(ensures: |ret| match ret {
         RunStep::Returns(read) => self.arena.value(read).is_some(),
         RunStep::Reads(read, next) => self.arena.computation(read).is_some() && next != HeldReading::Operand,
+        RunStep::RunsPath(transport, call, _) => self.arena.computation(transport).is_some() && self.held_reading(call) == HeldReading::Call,
         RunStep::Unfolds(_) | RunStep::Sticks => true,
     })]
     fn run_step(
@@ -9080,6 +9120,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 return match reading {
                     HeldReading::Operand if self.held_reading(computation) == HeldReading::Call => {
                         RunStep::Reads(computation, HeldReading::Call)
+                    },
+                    HeldReading::Operand
+                        if let Some((call, constant)) = self.held_path_call(computation) =>
+                    {
+                        RunStep::RunsPath(computation, call, constant)
                     },
                     HeldReading::Operand => RunStep::Sticks,
                     HeldReading::Call | HeldReading::Returned => {
@@ -9111,6 +9156,61 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             return RunStep::Sticks;
         }
         RunStep::Unfolds(constant)
+    }
+
+    /// The held call `transport` stands on and the definition heading it,
+    /// when `transport` moves along that call in a family the append does not
+    /// read: the call the evaluator's run stance runs under a stuck transport.
+    ///
+    /// The evaluator's append reads only a family `y. Path(C, a, y)`, so a
+    /// transport in any other family, `back`'s among them, stands on its
+    /// held path. A run goes on through that path's call when a definition
+    /// heads it (`eval::resume_returned`, `runs_on`), and the transport moves
+    /// along what the call returns.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some((h, k))` exactly when `transport` is a path transport
+    ///   along `⟨h⟩` in a family [`crate::words::singleton`] does not read, `h`
+    ///   is a call, and the definition `k` heads it; `None` otherwise.
+    /// - provides: the call [`Self::run_step`] runs under a returned transport.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `back(assoc(…))` returned at reflexivities runs
+    ///   `assoc` and reads on to `here(…)`, as the checker's run does; in the
+    ///   family the append reads, the transport stays on its path.
+    /// - witness: `replay::tests::a_returned_transport_runs_its_held_path_s_call_4413`
+    #[spec(ensures: |ret| ret.is_none_or(|(call, _)| self.held_reading(call) == HeldReading::Call))]
+    fn held_path_call(
+        &self,
+        transport: ComputationId,
+    ) -> Option<(ComputationId, ConstantIndex)>
+    {
+        let Some(&Computation::PathTransport { motive, path, .. }) =
+            self.arena.computation(transport)
+        else {
+            return None;
+        };
+        let Some(&Value::Returned(call)) = self.arena.value(path)
+        else {
+            return None;
+        };
+        if crate::words::singleton(self.arena, motive).is_some()
+            || self.held_reading(call) != HeldReading::Call
+        {
+            return None;
+        }
+        let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) = self.shape(
+            Term::Computation(call),
+            &Frozen::default(),
+            ConversionSide::Left,
+        )
+        else {
+            return None;
+        };
+        Some((call, constant))
     }
 
     /// How a held operand's run first reads `operand`: as a call when a
