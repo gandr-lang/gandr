@@ -1027,6 +1027,31 @@ pub(crate) fn elaborate_roots<'source>(
                 }));
                 continue;
             },
+            Shape::Form {
+                former: Former::Module,
+                ..
+            } => {
+                // A module's data declarations and nested modules are read in
+                // its place, as declarations of their own (#4298).
+                for piece in pieces.pieces.iter().rev() {
+                    let Piece::Operand(member) = *piece
+                    else {
+                        continue;
+                    };
+                    let Some(inner) = tree.node(member.node)
+                    else {
+                        continue;
+                    };
+                    if let Shape::Form {
+                        former: Former::Data | Former::Module,
+                        ..
+                    } = shape_of(grammar, inner)?
+                    {
+                        pending.push(member.node);
+                    }
+                }
+                continue;
+            },
             Shape::Form { .. } | Shape::Root | Shape::Repair(_) => {},
         }
         let mut run = Run::new(&pieces.pieces, at.span);

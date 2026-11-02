@@ -1,0 +1,46 @@
+// A data declaration in a module body is a member of the module.
+//
+// A module groups a family with the functions over it, so the family belongs
+// beside its functions under the module's name.
+//
+// The collection admits the family into the module's container. Inside the
+// module, its name and its constructors stand bare. Outside it, `M.Box` names
+// the family. `M.B` names its constructor in a value and in a pattern, and
+// `M.Box.B` names it in a value.
+//
+// - see: #4298
+
+/// A module holding a family and a box of it.
+module M where {
+  /// A box holding one number.
+  data Box : Type where {
+    /// The box around `x`.
+    | B : (x : Integer) --> Box
+  }
+
+  /// A box built inside the module, by the bare constructor.
+  def one : Box = B(1);
+}
+
+/// A box built through the module.
+def two : M.Box = M.B(2);
+
+/// A box built through the module's family.
+def three : M.Box = M.Box.B(3);
+
+/// The number a box holds, matched through the module.
+def open(b : M.Box) -> Integer {
+  match b { M.B(x) => x }
+}
+
+/// A box built and opened through the module.
+@[ runs("5") ]
+def five() -> Integer {
+  open(M.B(5))
+}
+
+/// The module's own box, which a client opens.
+@[ runs("1") ]
+def own_box() -> Integer {
+  open(M.one)
+}

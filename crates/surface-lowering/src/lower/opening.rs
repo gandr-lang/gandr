@@ -151,7 +151,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::opening::tests::an_opened_module_answers_the_rest_of_its_block`
     /// - witness: `lower::opening::tests::an_unknown_module_is_refused_at_its_path`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| self.collected.structures.get(usize::from(*module)).is_some()))]
-    fn opened_module(
+    pub(super) fn opened_module(
         &mut self,
         site: Site,
         head: Placed,

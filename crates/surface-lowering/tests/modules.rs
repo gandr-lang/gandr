@@ -3504,6 +3504,68 @@ fn a_qualified_type_reference_resolves_through_the_namespace()
     );
 }
 
+/// A data declaration in a module body is the module's member: its family is
+/// `Box` inside the module and `M.Box` outside it, and its constructor the
+/// bare `B` inside, `M.B` outside in a value and in a pattern, and `M.Box.B`
+/// outside in a value; a module an opaque ascription seals keeps refusing it
+/// (#4298).
+#[test]
+fn a_module_member_family_is_named_through_the_module_4298()
+{
+    let source = "module M where { data Box : Type where { | B : (x : Integer) --> Box } def one \
+                      : Box = B(1); }\ndef two : M.Box = M.B(2);\ndef three : M.Box = \
+                      M.Box.B(3);\ndef open(b : M.Box) -> Integer { match b { M.B(x) => x } }";
+    let mut lowered = lower(source);
+    let family = lowered
+        .arena
+        .value_type(declared_type_of(&lowered, "M.one", Role::Declared))
+        .cloned();
+    assert!(
+        matches!(family, Some(ValueType::Data { .. })),
+        "the member's type is the family: {family:?}"
+    );
+    for path in ["two", "three"] {
+        assert_eq!(
+            lowered
+                .arena
+                .value_type(declared_type_of(&lowered, path, Role::Declared))
+                .cloned(),
+            family,
+            "`{path}` reads the family the module declares"
+        );
+    }
+    let Some(ValueType::Data { declaration, .. }) = family
+    else {
+        panic!("the member's type is the family: {family:?}");
+    };
+    assert_eq!(
+        lowered.module.constructor_spelling(declaration, name("B")),
+        gandr_surface_lowering::ConstructorSpelling::Qualified,
+        "a printer writes the module's constructor through the module"
+    );
+    let judged = verdicts(&mut lowered);
+    assert!(
+        judged
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and every declaration checks: {judged:?}"
+    );
+    let sealed = "module S :> #{ one : Integer } where { data Box : Type where { | B : Box } def \
+                      one = 1; }";
+    let found = rows(&lower(sealed));
+    assert!(
+        found.iter().any(|&(_, _, ref amounts)| matches!(
+            amounts,
+            Amounts::Refused(LoweringRefusal::OutOfFragment {
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            })
+        )),
+        "a sealed module refuses a data member: {found:?}"
+    );
+}
+
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {

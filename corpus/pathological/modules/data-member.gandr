@@ -1,0 +1,32 @@
+// A module's family names only the constructors it declares, and only
+// inside the module by their bare names.
+//
+// A path through a module to a constructor the family lacks names nothing,
+// and neither does a bare constructor name outside the module.
+//
+// The lowering refuses `M.Nope` as a member `M` lacks, and `M.Box.Nope` as
+// a member `Box` lacks. It refuses a bare `B` outside `M` as a name nothing
+// binds.
+//
+// - see: corpus/model/modules/data-member.gandr
+
+/// A module holding a family of one constructor.
+module M where {
+  /// A box holding one number.
+  data Box : Type where {
+    /// The box around `x`.
+    | B : (x : Integer) --> Box
+  }
+}
+
+/// A constructor the module does not hold.
+@[ refuses("UnknownMember") ]
+def nope : M.Box = M.Nope(1);
+
+/// A constructor the module's family does not declare.
+@[ refuses("UnknownMember") ]
+def under : M.Box = M.Box.Nope(1);
+
+/// The module's constructor, which a client writes bare outside the module.
+@[ refuses("UnresolvedName") ]
+def bare : M.Box = B(3);

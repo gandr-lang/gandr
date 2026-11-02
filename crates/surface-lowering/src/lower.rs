@@ -5097,8 +5097,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let _first = implicits.insert(constant, names);
         }
-        // Each constructor a source's own shadows, by its family's constant,
-        // so a printer writes it qualified.
+        // Each constructor a printer writes by its family's path, by its
+        // family's constant: one a source's own shadows, or a module family's.
         let mut shadowed: BTreeMap<ConstantIndex, BTreeSet<String>> = BTreeMap::new();
         for &(family, name) in &collected.shadowed {
             if let Some(entry) = collected.slots.get(usize::from(family)) {
@@ -13281,11 +13281,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   exported type component stands for what the component reads — the type
     ///   a manifest component or a type member names, the type member a
     ///   transparently ascribed abstract component reads, the atom an opaquely
-    ///   ascribed one's abstract type declares, or an instance's manifest type.
-    ///   The chain is walked by an explicit loop, and its links are left
-    ///   unread. A one-link path whose head is the alias of a path import reads
-    ///   the type the imported source declares under the member, as a static
-    ///   application of it.
+    ///   ascribed one's abstract type declares, or an instance's manifest type;
+    ///   a path ending at a data family a module exports stands for that
+    ///   family, as [`Self::module_family`] reads it. The chain is walked by an
+    ///   explicit loop, and its links are left unread. A one-link path whose
+    ///   head is the alias of a path import reads the type the imported source
+    ///   declares under the member, as a static application of it.
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -13447,6 +13448,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 name: self.name_at(head),
                 arity: HeadArity::Nullary,
             }),
+            PathResolution::Complete(Recognized::ModuleComponent) => {
+                self.module_family(site, &path, head, member)
+            },
             PathResolution::Complete(_) => Err(site.out(FragmentBoundary::WrongSort)),
         }
     }
@@ -13496,6 +13500,72 @@ impl<'run, 'source> Lowerer<'run, 'source>
             });
         }
         self.stated_type(site, stated)
+    }
+
+    /// Read the module component at `path`, the one `member` names under the
+    /// head `head`, as the data family it declares.
+    ///
+    /// # Specification
+    /// - requires: `path` resolves to a module's value component.
+    /// - ensures: the family over no argument, as [`Self::family`] reads it,
+    ///   when the component is a data family declared strictly before the
+    ///   declaration `site` belongs to.
+    /// - provides: a type path's reading of a family a module body declares.
+    /// - fails: the wrong-sort refusal for a component that is no data family;
+    ///   [`LoweringRefusal::ForwardMemberReference`] for one declared at or
+    ///   after the referring declaration; the export refusal of a component its
+    ///   source keeps private; the family's own refusals.
+    /// - panics: none.
+    /// - executable: none — the plan is the family's, which [`Self::family`]
+    ///   makes and its own predicate checks.
+    ///
+    /// # Errors
+    /// The component's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.Box` in a declared type and in a parameter's type
+    ///   lowers to the family a top-level `Box` lowers to.
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    fn module_family(
+        &mut self,
+        site: Site,
+        path: &NamePath,
+        head: Placed,
+        member: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(&exported) = self.exported.get(path)
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        let Some(held) = self.collected.slots.get(usize::from(exported))
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        let (constant, declared) = (held.constant, held.named.span);
+        let Maybe::Present(arity) = self.data_family(constant)
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+            && own <= exported
+        {
+            return Err(LoweringRefusal::ForwardMemberReference {
+                span: site.at.span,
+                name: self.name_at(member),
+                declared,
+            });
+        }
+        self.exported_across(site, self.name_at(head), exported)?;
+        self.resolved(member.span, Resolved::Declaration {
+            constant,
+            declared: Maybe::Absent(binder_type::Absent::Untyped),
+        });
+        let none = Stretch {
+            start: self.operands.len(),
+            end: self.operands.len(),
+        };
+        self.family(site, constant, arity, none)
     }
 
     /// The target and the selected type name of one link of a type path,
