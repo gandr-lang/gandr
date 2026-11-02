@@ -89,16 +89,16 @@ pub def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) =
 /// Counting up carried along negation is counting down.
 def stepNegated : Path(
   Unit + (Unit + Unit) => Unit + (Unit + Unit),
-  transport(\t. t => t, countsNegated, Up.incr),
+  transport(fun (t) { t => t }, countsNegated, Up.incr),
   Down.incr
-) = funext(transport(\t. t => t, countsNegated, Up.incr), Down.incr);
+) = funext(transport(fun (t) { t => t }, countsNegated, Up.incr), Down.incr);
 
 /// The reading carried along negation reads negated.
 def readNegated : Path(
   Unit + (Unit + Unit) => Integer,
-  transport(\t. t => Integer, countsNegated, Up.read),
+  transport(fun (t) { t => Integer }, countsNegated, Up.read),
   Down.read
-) = funext(transport(\t. t => Integer, countsNegated, Up.read), Down.read);
+) = funext(transport(fun (t) { t => Integer }, countsNegated, Up.read), Down.read);
 
 /// The two packed modules are one model along negation.
 pub def oneCounter : Path(Model(Counter), upModel, downModel) = (

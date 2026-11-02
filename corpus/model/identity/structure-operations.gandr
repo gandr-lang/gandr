@@ -26,14 +26,14 @@ pub def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} 
 
 /// The step carried along negation is the step: negating back, stepping and
 /// negating again steps.
-pub def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) = funext(
-  transport(\t. t => t, negation, not),
+pub def stepped : Path(Bool => Bool, transport(fun (t) { t => t }, negation, not), not) = funext(
+  transport(fun (t) { t => t }, negation, not),
   not
 );
 
 /// The reading carried along negation reads negated.
-pub def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) = funext(
-  transport(\t. t => Bool, negation, same),
+pub def reread : Path(Bool => Bool, transport(fun (t) { t => Bool }, negation, same), not) = funext(
+  transport(fun (t) { t => Bool }, negation, same),
   not
 );
 
@@ -47,8 +47,8 @@ def oneToggle : Path(
 
 /// The reading carried along negation is not the reading left as it is.
 @[ refuses("PointwiseDistinct") ]
-def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) = funext(
-  transport(\t. t => Bool, negation, same),
+def unread : Path(Bool => Bool, transport(fun (t) { t => Bool }, negation, same), same) = funext(
+  transport(fun (t) { t => Bool }, negation, same),
   same
 );
 
@@ -74,7 +74,11 @@ def readTagged(p : Bool * Unit) -> Bool {
 /// argument moves back by `tag`, and the reading takes both components of the
 /// pair that returns; the kernel ran `tag` once per component where the
 /// checker ran it once, and refused the pointwise evidence.
-def untagged : Path(Bool => Bool, transport(\t. t => Bool, tagging, readTagged), same) = funext(
-  transport(\t. t => Bool, tagging, readTagged),
+def untagged : Path(
+  Bool => Bool,
+  transport(fun (t) { t => Bool }, tagging, readTagged),
+  same
+) = funext(
+  transport(fun (t) { t => Bool }, tagging, readTagged),
   same
 );

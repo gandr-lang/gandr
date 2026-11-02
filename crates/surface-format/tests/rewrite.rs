@@ -520,7 +520,11 @@ fn the_path_composite_moves_both_ways()
     let explicit = format!(
         "{CIRCLE}def thrice : Path(
   Path(Circle, Base, Base),
-  transport(\\a. Path(Circle, Base, a), transport(\\a. Path(Circle, Base, a), loop, loop), loop),
+  transport(
+    fun (a) {{ Path(Circle, Base, a) }},
+    transport(fun (a) {{ Path(Circle, Base, a) }}, loop, loop),
+    loop
+  ),
   here(Base)
 );
 "
@@ -606,14 +610,14 @@ def spun : Path(Path(Circle, Base, Base), cong(spin, loop), cong(spin, loop)) ;
 
 def undone : Path(
   Path(Circle, Base, Base),
-  transport(\\a. Path(Circle, a, Base), loop, here(Base)),
-  transport(\\a. Path(Circle, a, Base), loop, here(Base))
+  transport(fun (a) {{ Path(Circle, a, Base) }}, loop, here(Base)),
+  transport(fun (a) {{ Path(Circle, a, Base) }}, loop, here(Base))
 );
 
 def spun : Path(
   Path(Circle, Base, Base),
-  transport(\\a. Path(Circle, spin(Base), spin(a)), loop, here(spin(Base))),
-  transport(\\a. Path(Circle, spin(Base), spin(a)), loop, here(spin(Base)))
+  transport(fun (a) {{ Path(Circle, spin(Base), spin(a)) }}, loop, here(spin(Base))),
+  transport(fun (a) {{ Path(Circle, spin(Base), spin(a)) }}, loop, here(spin(Base)))
 );
 "
     );
@@ -665,12 +669,12 @@ def undone : Path(Circle, Base, Base) = back(loop then loop);
     );
     let explicit = format!(
         "{CIRCLE}def two : Path(Circle, Base, Base);
-def two = transport(\\a. Path(Circle, Base, a), loop, loop);
+def two = transport(fun (a) {{ Path(Circle, Base, a) }}, loop, loop);
 
 def undone : Path(Circle, Base, Base);
 def undone = transport(
-  \\a. Path(Circle, a, Base),
-  transport(\\a. Path(Circle, Base, a), loop, loop),
+  fun (a) {{ Path(Circle, a, Base) }},
+  transport(fun (a) {{ Path(Circle, Base, a) }}, loop, loop),
   here(Base)
 );
 "
@@ -698,7 +702,7 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
     let grammar = grammar();
     let source = format!(
         "{CIRCLE}def twice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {{
-  transport(\\a. Path(Circle, Base, a), p, p)
+  transport(fun (a) {{ Path(Circle, Base, a) }}, p, p)
 }}
 "
     );
@@ -721,9 +725,9 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 {
     let grammar = grammar();
     for body in [
-        "transport(\\a. Path(Circle, Base, a), transport(\\a. Path(Circle, Base, a), p, p), p)",
-        "transport(\\a. Path(Circle, Base, a), p, transport(\\a. Path(Circle, a, Base), \
-         transport(\\a. Path(Circle, Base, a), p, p), here(Base)))",
+        "transport(fun (a) { Path(Circle, Base, a) }, transport(fun (a) { Path(Circle, Base, a) }, p, p), p)",
+        "transport(fun (a) { Path(Circle, Base, a) }, p, transport(fun (a) { Path(Circle, a, Base) }, \
+         transport(fun (a) { Path(Circle, Base, a) }, p, p), here(Base)))",
     ] {
         let source = format!(
             "{CIRCLE}def twice(p: Path(Circle, Base, Base)) -> Path(Circle, Base, Base) \
@@ -921,12 +925,12 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
 {
     let grammar = grammar();
     for value in [
-        "transport(\\a. Integer, loop, 5)",
+        "transport(fun (a) { Integer }, loop, 5)",
         "transport(+U (Circle -> -F Integer), loop, 5)",
-        "transport(\\a. Path(Circle, a, a), loop, here(Base))",
-        "transport(\\a. Path(Circle, Base, Base), loop, here(Base))",
-        "transport(\\a. Path(Circle, a, Base), loop, loop)",
-        "transport(\\a. Path(Circle, Base, a), loop)",
+        "transport(fun (a) { Path(Circle, a, a) }, loop, here(Base))",
+        "transport(fun (a) { Path(Circle, Base, Base) }, loop, here(Base))",
+        "transport(fun (a) { Path(Circle, a, Base) }, loop, loop)",
+        "transport(fun (a) { Path(Circle, Base, a) }, loop)",
     ] {
         let source = format!("{CIRCLE}def moved : Integer = {value};\n");
         assert_eq!(
@@ -968,15 +972,15 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
         }
 
         def onward(x : Circle, q : Path(Circle, x, Base)) -> -F Path(Circle, x, Base) {
-          transport(\a. Path(Circle, x, a), here(Base), q)
+          transport(fun (a) { Path(Circle, x, a) }, here(Base), q)
         }
 
         def stated(x : Circle, q : Path(Circle, x, Base)) -> -F Path(
           Path(Circle, x, Base),
-          transport(\a. Path(Circle, x, a), here(Base), q),
-          transport(\a. Path(Circle, x, a), here(Base), q)
+          transport(fun (a) { Path(Circle, x, a) }, here(Base), q),
+          transport(fun (a) { Path(Circle, x, a) }, here(Base), q)
         ) {
-          here(transport(\a. Path(Circle, x, a), here(Base), q))
+          here(transport(fun (a) { Path(Circle, x, a) }, here(Base), q))
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1015,26 +1019,28 @@ def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), q then
 
         def twice(q : Path(Circle, Base, Base)) -> -F Path(
           Path(Circle, Base, Base),
-          transport(\a. Path(Circle, Base, a), q, q),
-          transport(\a. Path(Circle, Base, a), q, q)
+          transport(fun (a) { Path(Circle, Base, a) }, q, q),
+          transport(fun (a) { Path(Circle, Base, a) }, q, q)
         ) {
-          here(transport(\a. Path(Circle, Base, a), q, q))
+          here(transport(fun (a) { Path(Circle, Base, a) }, q, q))
         }
 
         def beside(
           q : Path(Circle, Base, Base),
           r : Path(
             Path(Circle, Base, Base),
-            transport(\a. Path(Circle, Base, a), q, q),
-            transport(\a. Path(Circle, Base, a), q, q)
+            transport(fun (a) { Path(Circle, Base, a) }, q, q),
+            transport(fun (a) { Path(Circle, Base, a) }, q, q)
           )
         ) -> -F Path(
           Path(Circle, Base, Base),
-          transport(\a. Path(Circle, Base, a), q, q),
-          transport(\a. Path(Circle, Base, a), q, q)
+          transport(fun (a) { Path(Circle, Base, a) }, q, q),
+          transport(fun (a) { Path(Circle, Base, a) }, q, q)
         ) {
           transport(
-            \a. Path(Path(Circle, Base, Base), transport(\b. Path(Circle, Base, b), q, q), a),
+            fun (a) {
+              type(Path(Path(Circle, Base, Base), transport(fun (b) { Path(Circle, Base, b) }, q, q), a))
+            },
             twice(q),
             r
           )
@@ -1100,8 +1106,8 @@ fn a_composite_of_types_sugars_back_803()
 {
     let grammar = grammar();
     let source = "def joined(a: Type, b: Type, c: Type, p: Path(Type, a, b), q: Path(Type, b, c)) -> -F \
-                  Path(Path(Type, a, c), transport(\\d. Path(Type, a, d), q, p), transport(\\d. \
-                  Path(Type, a, d), q, p)) {\n  here(transport(\\d. Path(Type, a, d), q, p))\n}\n";
+                  Path(Path(Type, a, c), transport(fun (d) { Path(Type, a, d) }, q, p), transport(fun (d) { \
+                  Path(Type, a, d) }, q, p)) {\n  here(transport(fun (d) { Path(Type, a, d) }, q, p))\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1124,8 +1130,9 @@ fn a_composite_of_types_sugars_back_803()
 /// The value-function alias is written where the printer writes it: a thunk
 /// type standing as a call's argument, a transport's family, takes the alias
 /// over its domain list, the binder a later domain reads named and the one
-/// nothing reads left out (#2255), and one that is a static abstraction's
-/// body, a type, takes the alias, nullary among them.
+/// nothing reads left out (#2255). A static lambda's body is read as an
+/// expression, so it takes the alias over a domain and the thunk over none,
+/// `+U (-F X)`, as a quoted thunk type is (#4508).
 #[test]
 fn the_value_function_alias_is_written_where_the_printer_writes_it()
 {
@@ -1172,13 +1179,13 @@ def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
     .assert_eq(formatted.text().as_ref());
     let explicit = "\
 def motive : Type -> Type;
-def motive = \\X. +U (X -> -F X);
+def motive = fun (X) { +U (X -> -F X) };
 def suspended : Type -> Type;
-def suspended = \\X. +U (-F X);
+def suspended = fun (X) { +U (-F X) };
 ";
     let sugared = "\
-def motive : Type -> Type = \\X. X => X;
-def suspended : Type -> Type = \\X. () => X;
+def motive : Type -> Type = fun (X) { X => X };
+def suspended : Type -> Type = fun (X) { +U (-F X) };
 ";
     for (source, form, expected) in [
         (explicit, Form::Sugared, sugared),
@@ -1426,7 +1433,7 @@ fn an_importing_source_is_rewritten_beside_its_imports()
         formatted.into_text(),
         "import \"./circle.gandr\";\n\ndef twice : Path(
   Path(Circle, Base, Base),
-  transport(\\a. Path(Circle, Base, a), loop, loop),
+  transport(fun (a) { Path(Circle, Base, a) }, loop, loop),
   here(Base)
 );
 "

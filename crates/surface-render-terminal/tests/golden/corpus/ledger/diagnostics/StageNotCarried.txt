@@ -8,8 +8,8 @@ error[StageNotCarried]: the transport moves a value of the recursion along a pat
    │ │
 14 │ │┌   match n {
 15 │ ││     Zero => Zero,
-16 │ ││     Succ(m) => Succ(alongLoop[<](transport(\x. Nat, q, m), q))
-   │ ││                ┬────┬────────────┯━━━━━━━━━━━━━━━━━━━━━━━─────
+16 │ ││     Succ(m) => Succ(alongLoop[<](transport(fun (x) { Nat }, q, m), q))
+   │ ││                ┬────┬────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────
    │ ││                │    │            │
    │ ││                │    │            a path whose type is not a set
    │ ││                │    checked against `Nat`; while checking the argument of this application

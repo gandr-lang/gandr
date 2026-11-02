@@ -6679,7 +6679,7 @@ mod tests
             "import \"./here.gandr\" ;\ndata Point : Type where {\n  | Origin : Point\n}\ndef answer = 42 \
              ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { \
              return n + n }\ndef idAt(A : Type, x : A) -> -F A { x }\ndef opt : Type -> Type[-] \
-             ;\ndef opt = \\A. -F A ;\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U \
+             ;\ndef opt = fun (A) { -F A } ;\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U \
              (-F Integer) ;\ndef broken : String ;\ndef broken = 1 ;\ndef origin = Origin ;",
         );
         let laid = format!("{}\n{}", <&str>::from(sibling), <&str>::from(importer));
@@ -7325,13 +7325,13 @@ mod tests
         // as a code, and answers as every written type does, at its universe
         // or at the operator type ending in one.
         let source = SourceText::from(
-            "def pair : Type -> Type[-] ;\ndef pair = \\X. -F (X * X) ;\ndef arrow : Type ;\ndef \
+            "def pair : Type -> Type[-] ;\ndef pair = fun (X) { -F (X * X) } ;\ndef arrow : Type ;\ndef \
              arrow = +U (Integer -> -F Integer) ;\n",
         );
         let table = table(source);
         let at = |needle: &'static str| answer(&table, source, SourceText::from(needle));
         assert_eq!(
-            at("\\X."),
+            at("fun (X)"),
             agreed(Subject::Type, SourceText::from("Type -> Type[-]")),
             "a type family under its static binder"
         );
@@ -7865,7 +7865,7 @@ mod tests
     fn an_unused_part_of_a_static_application_answers_1080()
     {
         let source = SourceText::from(concat!(
-            "def twice : Type -> Type ;\ndef twice = \\Y. Y * Y ;\n\n",
+            "def twice : Type -> Type ;\ndef twice = fun (Y) { type(Y * Y) } ;\n\n",
             "def twiceFirst(p : twice(Integer)) -> -F Integer {\n",
             "  match p {\n    #{c, d} => return c\n  }\n}\n",
         ));
@@ -8558,9 +8558,9 @@ mod tests
     fn a_run_binder_bound_at_a_decode_answers_at_what_it_returns_298()
     {
         let source = SourceText::from(
-            "def raw : (Type -> Type[-]) -> Type -> Type -> Type ;\ndef raw = \\T. \\A. \\B. +U \
-             (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;\n\ndef pairs : raw(\\X. -F (X \
-             * X), Integer, Integer) ;\ndef pairs = (\n  thunk { fun (a) { return (a, a) } },\n  \
+            "def raw : (Type -> Type[-]) -> Type -> Type -> Type ;\ndef raw = fun (T) { fun (A) { fun (B) { type(+U \
+             (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;\n\ndef pairs : raw(fun (X) { -F (X \
+             * X) }, Integer, Integer) ;\ndef pairs = (\n  thunk { fun (a) { return (a, a) } },\n  \
              thunk { fun (m) { fun (k) { run p <- force m ; become (force k)(1) } } }\n) ;\n",
         );
         let table = table(source);

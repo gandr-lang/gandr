@@ -32,7 +32,7 @@ module ReaderSchema where {
   /// The reader of ages ridden back to the old schema.
   @[ checks ]
   def legacy(record : Old) -> Integer {
-    run read <- ride(\X. X, reader, age);
+    run read <- ride(fun (X) { X }, reader, age);
     read(record)
   }
   /// An old record's age, read through the ridden reader.

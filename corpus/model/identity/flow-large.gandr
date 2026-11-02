@@ -47,29 +47,29 @@ def packedSame : Path(Type[+, 1], Packed, Packed) = here(Packed);
 /// A packed list carried along reflexivity at its large type: the motive's
 /// binder ranges over `Type[+, 1]`, so its body decodes a code there.
 def packedMoved(p : Packed) -> Packed {
-  transport(\X. X, packedSame, p)
+  transport(fun (X) { X }, packedSame, p)
 }
 
 /// A packed list ridden along the stationary flow at its large type.
 def packedRode(p : Packed) -> Packed {
-  ride(\X. X, packedKept, p)
+  ride(fun (X) { X }, packedKept, p)
 }
 
 /// A list of packed lists carried along reflexivity: the decode under the
 /// list reads at the carrier's level as well.
 def packedLists(ps : List(Packed)) -> List(Packed) {
-  transport(\X. List(X), packedSame, ps)
+  transport(fun (X) { List(X) }, packedSame, ps)
 }
 
 /// A packed list ridden into a box along a given flow between the two large
 /// types: the endpoints differ, so the ride moves by the table's decode row,
 /// read at the flow's level.
 def packedCarried(f : Flow(Type[+, 1], Packed, Boxed), p : Packed) -> Boxed {
-  ride(\X. X, f, p)
+  ride(fun (X) { X }, f, p)
 }
 
 /// A list of packed lists ridden into a list of boxes along the same flow:
 /// the list row carries the decode beneath it.
 def boxedLists(f : Flow(Type[+, 1], Packed, Boxed), ps : List(Packed)) -> List(Boxed) {
-  ride(\X. List(X), f, ps)
+  ride(fun (X) { List(X) }, f, ps)
 }

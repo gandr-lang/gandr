@@ -50,19 +50,19 @@ def thenStart(
 /// Motives whose fixed endpoints differ by unfolding `itself(A, x)`.
 def unfoldEnd(A : Type, x : A, y : A, k : A, s : Path(A, y, x), r : Path(A, y, k)) -> Path(
   Path(A, k, x),
-  transport(\c. Path(A, c, itself(A, x)), r, s),
-  transport(\c. Path(A, c, x), r, s)
+  transport(fun (c) { Path(A, c, itself(A, x)) }, r, s),
+  transport(fun (c) { Path(A, c, x) }, r, s)
 ) {
-  here(transport(\c. Path(A, c, x), r, s))
+  here(transport(fun (c) { Path(A, c, x) }, r, s))
 }
 
 /// Motives whose fixed endpoints differ by a transport along a reflexivity.
 def hereEnd(A : Type, x : A, y : A, k : A, s : Path(A, y, x), r : Path(A, y, k)) -> Path(
   Path(A, k, x),
-  transport(\c. Path(A, c, transport(\d. A, here(x), x)), r, s),
-  transport(\c. Path(A, c, x), r, s)
+  transport(fun (c) { Path(A, c, transport(fun (d) { A }, here(x), x)) }, r, s),
+  transport(fun (c) { Path(A, c, x) }, r, s)
 ) {
-  here(transport(\c. Path(A, c, x), r, s))
+  here(transport(fun (c) { Path(A, c, x) }, r, s))
 }
 
 /// Motives whose fixed endpoints differ by the right unit of a composite.
@@ -79,10 +79,10 @@ def unitEnd(
   r : Path(Path(A, x, z), k, m)
 ) -> Path(
   Path(Path(A, x, z), m, f then g),
-  transport(\c. Path(Path(A, x, z), c, (f then g) then here(z)), r, s),
-  transport(\c. Path(Path(A, x, z), c, f then g), r, s)
+  transport(fun (c) { Path(Path(A, x, z), c, (f then g) then here(z)) }, r, s),
+  transport(fun (c) { Path(Path(A, x, z), c, f then g) }, r, s)
 ) {
-  here(transport(\c. Path(Path(A, x, z), c, f then g), r, s))
+  here(transport(fun (c) { Path(Path(A, x, z), c, f then g) }, r, s))
 }
 
 /// Motives whose fixed endpoints differ by the right unit of a variable path.
@@ -97,8 +97,8 @@ def unitVariableEnd(
   r : Path(Path(A, x, z), k, m)
 ) -> Path(
   Path(Path(A, x, z), m, f),
-  transport(\c. Path(Path(A, x, z), c, f then here(z)), r, s),
-  transport(\c. Path(Path(A, x, z), c, f), r, s)
+  transport(fun (c) { Path(Path(A, x, z), c, f then here(z)) }, r, s),
+  transport(fun (c) { Path(Path(A, x, z), c, f) }, r, s)
 ) {
-  here(transport(\c. Path(Path(A, x, z), c, f), r, s))
+  here(transport(fun (c) { Path(Path(A, x, z), c, f) }, r, s))
 }

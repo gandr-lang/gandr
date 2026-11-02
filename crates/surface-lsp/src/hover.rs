@@ -2432,7 +2432,7 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "def pair : Type -> Type[-] ;\ndef pair = \\X. -$0F (X * X) ;\n"
+                "def pair : Type -> Type[-] ;\ndef pair = fun (X) { -$0F (X * X) } ;\n"
             )),
             Ok(fenced(SourceText::from("-F (X * X) : Type[-]")))
         );

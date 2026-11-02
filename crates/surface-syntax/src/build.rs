@@ -690,7 +690,7 @@ mod tests
 
     /// The fixture source: one definition whose body is a lambda over a
     /// returner, which is the shallowest shape reaching depth four.
-    const LAMBDA_SOURCE: &str = r#"def f = \x. return x ;"#;
+    const LAMBDA_SOURCE: &str = r#"def f = fun (x) { return x } ;"#;
 
     /// The grammar every fixture tree is built under.
     ///
@@ -778,7 +778,7 @@ mod tests
     /// ] ] ] ]`, whose deepest path is four edges long.
     ///
     /// # Specification
-    /// - requires: `source` holds at least `padding + 22` bytes, and every
+    /// - requires: `source` holds at least `padding + 30` bytes, and every
     ///   shifted span below falls on a character boundary of it.
     /// - ensures: the finished tree of that shape over `source`, with each
     ///   node's span shifted by `padding`.
@@ -796,7 +796,7 @@ mod tests
     /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
     #[spec(
-        requires: [0_usize, 4, 5, 8, 9, 10, 12, 19, 20, 22].into_iter().all(|offset| {
+        requires: [0_usize, 4, 5, 8, 13, 14, 18, 25, 26, 28, 30].into_iter().all(|offset| {
             usize::from(padding).checked_add(offset).is_some_and(|position| source.as_ref().is_char_boundary(position))
         }),
         ensures: |ret| ret.source() == source && ret.node_count() == NodeCount::from(7_usize)
@@ -816,17 +816,17 @@ mod tests
             )
         };
         let name = builder.node(word(), at(4, 5), &[]).unwrap();
-        let binder = builder.node(word(), at(9, 10), &[]).unwrap();
-        let body = builder.node(word(), at(19, 20), &[]).unwrap();
-        let returned = builder.node(returner(), at(12, 20), &[body]).unwrap();
+        let binder = builder.node(word(), at(13, 14), &[]).unwrap();
+        let body = builder.node(word(), at(25, 26), &[]).unwrap();
+        let returned = builder.node(returner(), at(18, 26), &[body]).unwrap();
         let abstraction = builder
-            .node(lambda(), at(8, 20), &[binder, returned])
+            .node(lambda(), at(8, 28), &[binder, returned])
             .unwrap();
         let declaration = builder
-            .node(definition(), at(0, 22), &[name, abstraction])
+            .node(definition(), at(0, 30), &[name, abstraction])
             .unwrap();
         let root = builder
-            .node(NodeLabel::Wald, at(0, 22), &[declaration])
+            .node(NodeLabel::Wald, at(0, 30), &[declaration])
             .unwrap();
 
         builder.finish(root).unwrap()
@@ -1096,22 +1096,22 @@ mod tests
                 )
             };
             let name = builder.node(word(), at(4, 5), &[]).unwrap();
-            let binder = builder.node(word(), at(9, 10), &[]).unwrap();
-            let body = builder.node(word(), at(19, 20), &[]).unwrap();
-            let returned = builder.node(returner(), at(12, 20), &[body]).unwrap();
+            let binder = builder.node(word(), at(13, 14), &[]).unwrap();
+            let body = builder.node(word(), at(25, 26), &[]).unwrap();
+            let returned = builder.node(returner(), at(18, 26), &[body]).unwrap();
             let abstraction = builder
-                .node(lambda(), at(8, 20), &[binder, returned])
+                .node(lambda(), at(8, 28), &[binder, returned])
                 .unwrap();
             builder
-                .node(definition(), at(0, 22), &[name, abstraction])
+                .node(definition(), at(0, 30), &[name, abstraction])
                 .unwrap()
         };
         let first = form(0);
-        let second = form(23);
+        let second = form(31);
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let layout = builder.node(NodeLabel::Space, at(22, 23), &[]).unwrap();
+        let layout = builder.node(NodeLabel::Space, at(30, 31), &[]).unwrap();
         let root = builder
-            .node(NodeLabel::Wald, at(0, 45), &[first, layout, second])
+            .node(NodeLabel::Wald, at(0, 61), &[first, layout, second])
             .unwrap();
         let tree = builder.finish(root).unwrap();
 
@@ -1458,8 +1458,8 @@ mod tests
         };
 
         assert_eq!(
-            tree.spanned(span(8, 20)),
-            Some(SourceFragment::from("\\x. return x")),
+            tree.spanned(span(8, 28)),
+            Some(SourceFragment::from("fun (x) { return x }")),
             "the bytes of several nodes, as written"
         );
         assert_eq!(tree.spanned(span(8, 100)), None, "a span past the text");

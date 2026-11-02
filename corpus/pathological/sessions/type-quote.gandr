@@ -11,7 +11,7 @@ def quoted_receive : Flow(Type, ?String. end, !String. end) = stay(type(?String.
 /// the code of no session at any point of the motive (#1728).
 @[ refuses("OpenSessionPayload") ]
 def open_payload : Path(Type, ?String. end, ?String. end) = transport(
-  \X. Path(Type, type(?String. end), type(?X. end)),
+  fun (X) { Path(Type, type(?String. end), type(?X. end)) },
   here(String),
   here(type(?String. end))
 );

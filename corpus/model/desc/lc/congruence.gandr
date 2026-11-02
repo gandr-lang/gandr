@@ -39,5 +39,5 @@ pub def substCong(s : Env, x : Term, y : Term, p : Path(Term, x, y)) -> Path(
   subst(x, s),
   subst(y, s)
 ) {
-  transport(\z. Path(Term, subst(x, s), subst(z, s)), p, here(subst(x, s)))
+  transport(fun (z) { Path(Term, subst(x, s), subst(z, s)) }, p, here(subst(x, s)))
 }

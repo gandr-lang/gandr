@@ -36,10 +36,10 @@ pub def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), 
     Ix(n) => h(n),
     Lam(b) => cong(lamOf, substId[<](b, Lift(s), fun (n) { substIdLift(s, h, n) })),
     Ap(f, x) => transport(
-      \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, x)),
+      fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, x)) },
       substId[<](f, s, h),
       transport(
-        \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)),
+        fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)) },
         substId[<](x, s, h),
         here(Ap(subst(f, s), subst(x, s)))
       )

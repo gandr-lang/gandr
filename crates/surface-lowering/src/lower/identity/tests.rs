@@ -378,7 +378,7 @@ fn a_list_moves_along_a_universe_equivalence()
     let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\ndef negation : Path(Type, Bool, Bool);\ndef negation = equiv(not, not);\n";
     let mut arena = CoreArena::new();
     let source = format!(
-        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(\\X. List(X), negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
+        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "negation".into())
@@ -423,7 +423,7 @@ fn a_list_moves_along_a_universe_equivalence()
         .collect();
     written.sort_unstable_by_key(|&(at, _)| at);
     let expected: Vec<(usize, Provenance)> = source
-        .match_indices("\\X. List(X)")
+        .match_indices("fun (X) { List(X) }")
         .map(|(at, _)| (at, Provenance::Written))
         .collect();
     assert_eq!(
@@ -1217,8 +1217,6 @@ fn a_reflexivity_composes_at_a_point_of_any_type_3834()
 /// binder with no type. The binder takes the type of the path's points, so
 /// the fixture's declaration lowers and checks. The transport the printer
 /// spells it as, `b then g` over its motive's binder, lowers and checks too.
-/// The static abstraction `\q. e` is a type operator, so `cong` refuses it
-/// as no function.
 #[test]
 fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
 {
@@ -1242,7 +1240,7 @@ fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
         SourceText::from(
             "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
              a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then \
-             g, f2 then g) {\n  transport(\\b. Path(Path(A, x, z), f1 then g, b then g), a, \
+             g, f2 then g) {\n  transport(fun (b) { Path(Path(A, x, z), f1 then g, b then g) }, a, \
              here(f1 then g))\n}\n",
         ),
         &mut arena,
@@ -1256,25 +1254,6 @@ fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
         outcome_of(&spelled, "whiskered".into())
     );
     assert_accepted(&judged(&spelled, &mut arena));
-    let abstracted = lowered(
-        SourceText::from(
-            "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
-             a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then \
-             g, f2 then g) {\n  cong(\\q. q then g, a)\n}\n",
-        ),
-        &mut arena,
-    );
-    assert!(
-        matches!(
-            outcome_of(&abstracted, "whiskered".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::NotAFunction,
-                ..
-            })
-        ),
-        "`\\q. e` is no function: {:?}",
-        outcome_of(&abstracted, "whiskered".into())
-    );
 }
 
 /// #3829: `cong` over a lambda was refused `Unannotated` wherever its
@@ -1374,20 +1353,20 @@ fn a_lambda_stating_its_binders_type_maps_as_the_unstated_one_3919()
 
 /// #3786: a transport through a family a parameter names, `P : A => Type`,
 /// was refused in a body and in a type when the motive named `P`, and in a
-/// body when the motive called it, `\a. P(a)`. The named motive moves through
-/// `a. ⟨force P a⟩`, and the called one reads `P` past every parameter no
-/// type names.
+/// body when the motive called it, `fun (a) { P(a) }`. The named motive moves
+/// through `a. ⟨force P a⟩`, and the called one reads `P` past every parameter
+/// no type names.
 #[test]
 fn a_transport_moves_through_a_family_a_parameter_names_3786()
 {
     let telescope = "(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x))";
     let source = format!(
         "def movedNamed{telescope} -> P(y) {{\n  transport(P, p, v)\n}}\n\
-         def movedLambda{telescope} -> P(y) {{\n  transport(\\a. P(a), p, v)\n}}\n\
+         def movedLambda{telescope} -> P(y) {{\n  transport(fun (a) {{ P(a) }}, p, v)\n}}\n\
          def statedNamed{telescope} -> Path(P(y), transport(P, p, v), transport(P, p, v)) {{\n  \
          here(transport(P, p, v))\n}}\n\
          def movedLate(A : Type, x : A, y : A, p : Path(A, x, y), P : A => Type, v : P(x)) -> \
-         P(y) {{\n  transport(\\a. P(a), p, v)\n}}\n"
+         P(y) {{\n  transport(fun (a) {{ P(a) }}, p, v)\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1537,7 +1516,7 @@ fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "def derived : Path(Circle, Base, Base);\ndef derived = loop then loop;\n",
-            "def written : Path(Circle, Base, Base);\ndef written = transport(\\a. Path(Circle, Base, a), loop, loop);\n",
+            "def written : Path(Circle, Base, Base);\ndef written = transport(fun (a) { Path(Circle, Base, a) }, loop, loop);\n",
         )),
         &mut arena,
     );
@@ -1585,7 +1564,7 @@ fn back_at_a_looped_point_moves_its_empty_word_1003()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "def derived : Path(Circle, Base, Base);\ndef derived = back(loop);\n",
-            "def written : Path(Circle, Base, Base);\ndef written = transport(\\a. Path(Circle, a, Base), loop, here(Base));\n",
+            "def written : Path(Circle, Base, Base);\ndef written = transport(fun (a) { Path(Circle, a, Base) }, loop, here(Base));\n",
         )),
         &mut arena,
     );
@@ -2315,7 +2294,7 @@ fn a_run_rides_a_flow_between_sessions()
 {
     let mut arena = CoreArena::new();
     let source = format!(
-        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded(selected(report), sent(\"progress\"), closed);\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become ride(\\X. Run(X), Evolution.sub, receipt)\n}}\n"
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded(selected(report), sent(\"progress\"), closed);\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become ride(fun (X) {{ Run(X) }}, Evolution.sub, receipt)\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed {
@@ -3110,17 +3089,17 @@ fn transports_whose_motive_starts_differ_by_a_reduction_convert_4179()
              Path(Path(A, x, z), h, k)) -> Path(Path(Path(A, x, z), f then g, k), fromUnit(A, x, \
              y, z, f, g, h, s) then r, s then r) {\n  here(s then r)\n}\n\ndef unfoldStart(A : \
              Type, x : A, y : A, k : A, s : Path(A, x, y), r : Path(A, y, k)) -> Path(Path(A, x, \
-             k), transport(\\c. Path(A, same(A, x), c), r, s), transport(\\c. Path(A, x, c), r, \
-             s)) {\n  here(transport(\\c. Path(A, x, c), r, s))\n}\n\ndef hereStart(A : Type, x : \
+             k), transport(fun (c) { Path(A, same(A, x), c) }, r, s), transport(fun (c) { Path(A, x, c) }, r, \
+             s)) {\n  here(transport(fun (c) { Path(A, x, c) }, r, s))\n}\n\ndef hereStart(A : Type, x : \
              A, y : A, k : A, s : Path(A, x, y), r : Path(A, y, k)) -> Path(Path(A, x, k), \
-             transport(\\c. Path(A, transport(\\d. A, here(x), x), c), r, s), transport(\\c. \
-             Path(A, x, c), r, s)) {\n  here(transport(\\c. Path(A, x, c), r, s))\n}\n\ndef \
+             transport(fun (c) { Path(A, transport(fun (d) { A }, here(x), x), c) }, r, s), transport(fun (c) { \
+             Path(A, x, c) }, r, s)) {\n  here(transport(fun (c) { Path(A, x, c) }, r, s))\n}\n\ndef \
              unitStart(A : Type, x : A, y : A, z : A, k : Path(A, x, z), f : Path(A, x, y), g : \
              Path(A, y, z), s : Path(Path(A, x, z), f then g, k), m : Path(A, x, z), r : \
-             Path(Path(A, x, z), k, m)) -> Path(Path(Path(A, x, z), f then g, m), transport(\\c. \
-             Path(Path(A, x, z), (f then g) then here(z), c), r, s), transport(\\c. Path(Path(A, \
-             x, z), f then g, c), r, s)) {\n  here(transport(\\c. Path(Path(A, x, z), f then g, \
-             c), r, s))\n}\n",
+             Path(Path(A, x, z), k, m)) -> Path(Path(Path(A, x, z), f then g, m), transport(fun (c) { \
+             Path(Path(A, x, z), (f then g) then here(z), c) }, r, s), transport(fun (c) { Path(Path(A, \
+             x, z), f then g, c) }, r, s)) {\n  here(transport(fun (c) { Path(Path(A, x, z), f then g, \
+             c) }, r, s))\n}\n",
         ),
         &mut arena,
     );
@@ -3343,7 +3322,7 @@ fn a_fill_lowers_to_its_generator_and_cells()
         SourceText::from(concat!(
             "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
             "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {\n  thunk { fun (f) { thunk { fun (g) { here(composite(A, x, y, z, f, g)) } } } }\n}\n",
-            "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  transport(\\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))\n}\n",
+            "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  transport(fun (a) { Path(Path(A, x, z), fm then g, a then g) }, fa, here(fm then g))\n}\n",
             "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(Path(A, x, z), fm then g, fp then g), here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g), rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)) {\n  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))\n}\n",
         )),
         &mut arena,

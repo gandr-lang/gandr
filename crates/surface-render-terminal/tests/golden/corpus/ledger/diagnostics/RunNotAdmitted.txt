@@ -1,10 +1,10 @@
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/ledger/diagnostics/RunNotAdmitted.gandr:27:56
+   ╭▸ corpus/ledger/diagnostics/RunNotAdmitted.gandr:27:64
    │
-27 │ def retired = thunk { ride(\X. Run(X), Evolution.keep, served) } ;
-   │               ┬───────┬────────────────────────────────┯━━━━━───
-   │               │       │                                │
-   │               │       │                                a label the protocol does not admit here
+27 │ def retired = thunk { ride(fun (X) { Run(X) }, Evolution.keep, served) } ;
+   │               ┬───────┬────────────────────────────────────────┯━━━━━───
+   │               │       │                                        │
+   │               │       │                                        a label the protocol does not admit here
    │               │       checked against `-F Run(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
    │               checked against `() => Run(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the body of this thunk
    │

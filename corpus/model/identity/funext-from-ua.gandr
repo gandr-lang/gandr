@@ -63,13 +63,13 @@ def diagEquiv(b : Type) -> b ≃ #{x : b, y : b, p : Path(b, x, y)} {
 /// again is itself, at every function, by `J` on the path.
 def roundTrip(b : Type, x : Type, y : Type, p : Path(Type, x, y)) -> (u : y => b) => Path(
   y => b,
-  transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), u)),
+  transport(fun (Z) { Z => b }, p, transport(fun (Z) { Z => b }, back(p), u)),
   u
 ) {
   transport(
     (w : Type, z : Path(Type, x, w)) => (v : w => b) => Path(
       w => b,
-      transport(\Z. Z => b, z, transport(\Z. Z => b, back(z), v)),
+      transport(fun (Z) { Z => b }, z, transport(fun (Z) { Z => b }, back(z), v)),
       v
     ),
     p,
@@ -89,17 +89,17 @@ def carryPath(
   u : x => b,
   v : x => b,
   e : Path(x => b, u, v)
-) -> Path(y => b, transport(\Z. Z => b, p, u), transport(\Z. Z => b, p, v)) {
+) -> Path(y => b, transport(fun (Z) { Z => b }, p, u), transport(fun (Z) { Z => b }, p, v)) {
   transport(
     (w : x => b, Path(x => b, u, w)) => Path(
       y => b,
-      transport(\Z. Z => b, p, u),
-      transport(\Z. Z => b, p, w)
+      transport(fun (Z) { Z => b }, p, u),
+      transport(fun (Z) { Z => b }, p, w)
     ),
     e,
     here(u),
     here(e),
-    here(transport(\Z. Z => b, p, u))
+    here(transport(fun (Z) { Z => b }, p, u))
   )
 }
 
@@ -127,7 +127,11 @@ def carryInjective(
   p : Path(Type, x, y),
   u : y => b,
   v : y => b,
-  e : Path(x => b, transport(\Z. Z => b, back(p), u), transport(\Z. Z => b, back(p), v))
+  e : Path(
+    x => b,
+    transport(fun (Z) { Z => b }, back(p), u),
+    transport(fun (Z) { Z => b }, back(p), v)
+  )
 ) -> Path(y => b, u, v) {
   run all <- roundTrip(b, x, y, p);
   run l <- all(u);
@@ -137,16 +141,16 @@ def carryInjective(
     x,
     y,
     p,
-    transport(\Z. Z => b, back(p), u),
-    transport(\Z. Z => b, back(p), v),
+    transport(fun (Z) { Z => b }, back(p), u),
+    transport(fun (Z) { Z => b }, back(p), v),
     e
   );
   chain(
     b,
     y,
     u,
-    transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), u)),
-    transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), v)),
+    transport(fun (Z) { Z => b }, p, transport(fun (Z) { Z => b }, back(p), u)),
+    transport(fun (Z) { Z => b }, p, transport(fun (Z) { Z => b }, back(p), v)),
     v,
     l,
     c,

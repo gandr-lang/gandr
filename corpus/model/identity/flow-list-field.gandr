@@ -28,7 +28,7 @@ module Roster where {
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> New {
-    ride(\X. X, upgrade, old)
+    ride(fun (X) { X }, upgrade, old)
   }
   /// A record of two scores migrated by a run.
   @[ runs("(cons(90, cons(85, nil)), \"ada\")") ]

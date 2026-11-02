@@ -1039,7 +1039,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
     let presentation = present_computation(
         &source,
         CoreNode::Computation(computation),
-        PageWidth::from(100_u32),
+        PageWidth::from(120_u32),
         Form::Sugared.into(),
     )
     .expect("the body lays out");
@@ -1051,7 +1051,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fun (a) { match a { Base => Base, loop => transport(\\b. Path(Circle, b, Base), \
+                "fun (a) { match a { Base => Base, loop => transport(fun (b) { Path(Circle, b, Base) }, \
                  loop, here(Base)) } }"
             ),
             Fidelity::Faithful,

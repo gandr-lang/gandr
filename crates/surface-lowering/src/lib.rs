@@ -71,8 +71,8 @@
 //! and because nothing the lowering *refuses* may become an obligation, which
 //! the failure classifier states by leaving its absence class empty.
 //!
-//! **Type operators lower to the static calculus over codes.** `\A. T` is a
-//! static lambda over the code of its body, an arrow where a value type is
+//! **Type operators lower to the static calculus over codes.** `fun (A) { T }`
+//! is a static lambda over the code of its body, an arrow where a value type is
 //! read is a static Pi, and an operator a binder or a declaration names,
 //! applied to arguments, is a static application — the decode of one where a
 //! type is read. `A * B` and `(a, b)` are the eager product and its pair,

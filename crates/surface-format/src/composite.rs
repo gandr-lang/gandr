@@ -2,11 +2,11 @@
 //! lowering derived them, for the explicit spelling of `p then q`, `back(p)`
 //! and `cong(f, p)`.
 //!
-//! `p then q` is the transport `transport(\y. Path(A, a, y), q, p)`, `back(p)`
-//! is `transport(\y. Path(A, y, a), p, here(a))` and `cong(f, p)` is
-//! `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))`: their carrier and
-//! fixed endpoint the type of `p`, which the lowering derives from the
-//! operands; the syntax does not hold them. So the explicit spelling reads
+//! `p then q` is the transport `transport(fun (y) { Path(A, a, y) }, q, p)`,
+//! `back(p)` is `transport(fun (y) { Path(A, y, a) }, p, here(a))` and `cong(f,
+//! p)` is `transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))`: their
+//! carrier and fixed endpoint the type of `p`, which the lowering derives from
+//! the operands; the syntax does not hold them. So the explicit spelling reads
 //! them from the lowering: the transport the lowering minted at the
 //! operation's span, spelled through the shared printer in the explicit
 //! form, its first argument the motive and its third the value it moves,

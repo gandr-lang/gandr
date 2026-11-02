@@ -247,8 +247,6 @@ const COUNTED: &[&str] = &[
     "type send_session_type",
     "type staged_type",
     "type staged_type name",
-    "type static_abstraction",
-    "type static_abstraction name",
     "type sum_type",
     "type telescope_type",
     "type type_application",

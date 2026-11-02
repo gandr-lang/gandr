@@ -39,7 +39,7 @@ def observedAscribed() -> Integer { observe((upManifest : Model(Counter))) }
 
 /// The manifest counter carried along negation.
 pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = transport(
-  \x. Model(Counter) with sort C = x,
+  fun (x) { type(Model(Counter) with sort C = x) },
   countsNegated,
   upManifest
 );
@@ -100,7 +100,7 @@ def observedBoth() -> Integer { observeShown(upBoth) }
 /// The counter with both sorts manifest carried along negation of its
 /// counts, its readings fixed as they are.
 def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = transport(
-  \x. Model(ReadCounter) with sort C = x with sort R = Integer,
+  fun (x) { type(Model(ReadCounter) with sort C = x with sort R = Integer) },
   countsNegated,
   upBoth
 );

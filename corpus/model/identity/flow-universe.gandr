@@ -18,4 +18,4 @@ def shifted : Flow(Type, Schema.Old, Schema.New) = shift;
 
 /// Riding the relation translates a record of the old schema.
 @[ runs("(30, \"ada\", +{.0 = unit})") ]
-def ridden() -> Schema.New { ride(\X. X, shift, ("ada", 30)) }
+def ridden() -> Schema.New { ride(fun (X) { X }, shift, ("ada", 30)) }

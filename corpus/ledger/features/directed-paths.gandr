@@ -49,7 +49,7 @@ module Versions where {
   @[ checks ]
   def moved(record : V1) -> V3 {
     run along <- both() ;
-    ride(\X. X, along, record)
+    ride(fun (X) { X }, along, record)
   }
   /// A first-version record migrated to the third by a run.
   @[ runs("(+{.1 = unit}, 30, \"ada\")") ]

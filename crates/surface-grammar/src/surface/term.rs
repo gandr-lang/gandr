@@ -1,26 +1,27 @@
 //! The term surface: item, declaration, statement, pattern, instantiation,
 //! expression and lexical forms.
 //!
-//! # Type operators: the static abstraction and the value function space
+//! # Type operators: the static lambda and the value function space
 //!
-//! A type operator is written `\A. T`: the backslash, one binder — a type name
-//! or a type variable — a dot and the body, which runs as far right as the
-//! arrow's group lets it, so `\T. \A. \B. T(A) * B` nests three binders. The
-//! labeler reads a backslash in code as one tile; escape sequences stay inside
-//! strings and characters, where their scanners read them. Applying an
-//! operator reuses `type_application`, `T(A, B)`, whose head is a type name or
-//! a type variable: a declaration is named by a lowercase identifier, which
-//! molds as a type variable in type position, so an operator declared by `def`
-//! applies as `raw_rel_monad(T, A, B)`. Admitting the variable head added one
-//! mold and moved the fingerprint from `0x8feb_efc4_2bd0_36d1`.
+//! A type operator is written as the term lambda, `fun (A) { T }`: one binder
+//! and a block holding the body alone. The grammar molds it where a type is
+//! read too, inside a type application's arguments. The lowering reads its
+//! sort from where it stands: a transport's or a ride's motive, a body a
+//! static classifier `K -> J` answers, and an argument at a parameter of such
+//! a classifier are static. The block reads its body in the expression
+//! grammar, so a body whose outermost operator is a product `*` or a sum `+`
+//! writes the quote, `fun (Y) { type(Y * Y) }`. Applying an operator reuses
+//! `type_application`, `T(A, B)`, whose head is a type name or a type
+//! variable: a declaration is named by a lowercase identifier, which molds as
+//! a type variable in type position, so an operator declared by `def` applies
+//! as `raw_rel_monad(T, A, B)`.
 //!
-//! - Alternatives: a keyword lead such as `fun` at the type sort, which ties
-//!   with the term lambda wherever a definition's body stands, where a
-//!   type-only lead molds unopposed; a binder list `\A B. T`, which saves a few
-//!   backslashes and adds a repetition the lowering would curry anyway.
-//! - Reversal: a binder that needs its classifier written beside it (`\(T :
-//!   Type -> Type[-]). …`) would take the parenthesized binder as a second
-//!   alternative of the same rule.
+//! - Alternatives: a `fun` rule of the type sort, which ties with the term
+//!   lambda wherever a definition's body stands; a reading of `*` and `+` as
+//!   the product and the sum in a static body, which gives one operator two
+//!   meanings by position.
+//! - Reversal: a binder that needs its classifier written beside it, `fun (T :
+//!   Type -> Type[-]) { … }`, is the typed parameter the lambda already molds.
 //!
 //! The value function space `A => B` is the alias of the thunked arrow `+U (A
 //! -> -F B)`, and `(A, B) => C` its n-ary form, `+U (A -> B -> -F C)`. It is an
@@ -4467,7 +4468,7 @@ fn primary_expressions(
     lambda.adaptations.push(Adaptation::new(
         RuleName("lambda_expression"),
         SurfaceForm("type_abstraction"),
-        AdaptationReason("factored into the fun family: the type-abstraction tail `[ tyvars ] { … }` shares the `fn` prefix and discriminates on the leading `[` tile"),
+        AdaptationReason("factored into the fun family: the type-abstraction tail `[ tyvars ] { … }` shares the `fun` prefix and discriminates on the leading `[` tile"),
     ));
     out.push(lambda);
     out.push(r(

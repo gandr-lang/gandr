@@ -1,4 +1,4 @@
 /// `function_type`: a function type.
 @[ checks ]
 def twice : Type -> Type ;
-def twice = \Y. Y * Y ;
+def twice = fun (Y) { type(Y * Y) } ;

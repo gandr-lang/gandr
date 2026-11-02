@@ -30,7 +30,7 @@ def assocAtHere(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y,
 
 /// A dependent function's action on a reflexivity is the reflexivity at its value.
 def apdAtHere(A : Type, P : A => Type, F : (a : A) => P(a), x : A) -> Path(
-  Path(P(x), transport(\a. P(a), here(x), F(x)), F(x)),
+  Path(P(x), transport(fun (a) { P(a) }, here(x), F(x)), F(x)),
   apd(A, P, F, x, x, here(x)),
   here(F(x))
 ) {

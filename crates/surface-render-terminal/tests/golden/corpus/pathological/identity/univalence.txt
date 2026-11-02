@@ -25,10 +25,10 @@ error[LevelMismatch]: this code lives in a larger universe than the one expected
    │   │                 │
    │ ┌─┘                 checked against `(Type ≃ Type) -> Type -> -F Type`; while checking the body of this function; binds e : Type ≃ Type
    │ │
-32 │ │   transport(\X. X, ua(e), x)
-   │ │   ┬────────────────┬────────
-   │ │   │                │
-   │ │   │                synthesised; while checking the next premise of this
+32 │ │   transport(fun (X) { X }, ua(e), x)
+   │ │   ┬────────────────────────┬────────
+   │ │   │                        │
+   │ │   │                        synthesised; while checking the next premise of this
    │ │   checked against `-F Type`; while synthesising the path this element transport follows
 33 │ │ }
    │ └─┘ checked against `(Type ≃ Type, Type) => Type`; while checking the body of this thunk
@@ -37,7 +37,7 @@ error[LevelMismatch]: this code lives in a larger universe than the one expected
    ╰ note: `alongTypeSelf` is refused with LevelMismatch, as its expectation states
 
 error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
-   ╭▸ corpus/pathological/identity/univalence.gandr:50:20
+   ╭▸ corpus/pathological/identity/univalence.gandr:50:28
    │
 40 │ ┌ def alongLiteral(
 41 │ │   a : Type,
@@ -57,10 +57,10 @@ error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
 48 │ │   x : a
    │ │   ─ checked against `a -> -F b`; while checking the body of this function; binds x : a
 49 │ │ ) -> b {
-50 │ │   transport(\X. X, ua((t, ((g, s), (h, r)))), x)
-   │ │   ┬────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━────
-   │ │   │                │
-   │ │   │                its type is not of the required shape
+50 │ │   transport(fun (X) { X }, ua((t, ((g, s), (h, r)))), x)
+   │ │   ┬────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━────
+   │ │   │                        │
+   │ │   │                        its type is not of the required shape
    │ │   checked against `-F b`; while synthesising the path this element transport follows
 51 │ │ }
    │ └─┘ checked; while checking the body of this thunk

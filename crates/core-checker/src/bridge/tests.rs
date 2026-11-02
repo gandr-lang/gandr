@@ -4787,7 +4787,7 @@ fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
     // def flip : Flow(Type, Bool, Bool) = forward(not) ;
-    // def flipped : Path(Bool, ride(\X. X, flip, .0), .1) = here(.1) ;
+    // def flipped : Path(Bool, ride(fun (X) { X }, flip, .0), .1) = here(.1) ;
     // The ride is stuck on `flip` until `flip` unfolds: a step only the
     // recorded dialogue names.
     let mut arena = CoreArena::new();
@@ -4818,10 +4818,10 @@ fn a_ride_through_named_translators_crosses_with_their_unfoldings_308()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
     // def both : Path(#{Bool, Bool},
-    //   ride(\X. X, flowProduct(forward(not), forward(not)), #{.0, .1}),
+    //   ride(fun (X) { X }, flowProduct(forward(not), forward(not)), #{.0, .1}),
     //   #{.1, .0}) = here(#{.1, .0}) ;
     // def each : Path(#{Bool, Bool},
-    //   ride(\X. #{X, X}, forward(not), #{.0, .1}), #{.1, .0})
+    //   ride(fun (X) { type(#{X, X}) }, forward(not), #{.0, .1}), #{.1, .0})
     //   = here(#{.1, .0}) ;
     // Each component's translator is the definition `not`, which unfolds
     // only once the components before it have returned.

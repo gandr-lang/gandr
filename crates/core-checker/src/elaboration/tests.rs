@@ -1024,7 +1024,8 @@ fn unchanged_paths_keep_their_ids_beside_a_lift()
 fn a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837()
 {
     // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
-    // def rode : () => Type = ? ; filled as thunk { ride(\X. X, kept, Integer) }
+    // def rode : () => Type = ? ; filled as thunk { ride(fun (X) { X }, kept,
+    // Integer) }
     let mut arena = CoreArena::new();
     let small = arena.value_type_universe(
         Sort::Ground(gandr_kernel_term::GroundSort::Value),

@@ -3,8 +3,8 @@ error[NonCovariantMotive]: a flow runs one way: `ride` may use the moving endpoi
    │
 13 │ ┌   @[ refuses("NonCovariantMotive") ]
 14 │ │   def reversed() -> Flow(Type, New, Old) {
-15 │ │     ride(\X. Flow(Type, X, Old), upgrade, stay(Old))
-   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
+15 │ │     ride(fun (X) { Flow(Type, X, Old) }, upgrade, stay(Old))
+   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
 16 │ │   }
    │ └───┘ checked against `() => Flow(Type, Integer * String, String * Integer)`; while checking the body of this thunk
    │
@@ -15,8 +15,8 @@ error[NonCovariantMotive]: a flow runs one way: `ride` may use the moving endpoi
    │
 23 │ ┌   @[ refuses("NonCovariantMotive") ]
 24 │ │   def reader() -> New => Count {
-25 │ │     ride(\X. X => Count, upgrade, age)
-   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
+25 │ │     ride(fun (X) { X => Count }, upgrade, age)
+   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
 26 │ │   }
    │ └───┘ checked against `() => Integer * String => Integer`; while checking the body of this thunk
    │

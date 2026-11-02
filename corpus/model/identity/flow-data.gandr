@@ -42,7 +42,7 @@ module Rename where {
   /// One value ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> Other {
-    ride(\X. X, renamed, old)
+    ride(fun (X) { X }, renamed, old)
   }
   /// A value migrated by a run.
   @[ runs("Make(3)") ]
@@ -65,7 +65,7 @@ pub module Shapes where {
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
   def all(shapes : List(Shape)) -> List(Figure) {
-    ride(\X. List(X), redrawn, shapes)
+    ride(fun (X) { List(X) }, redrawn, shapes)
   }
   /// Two shapes migrated by a run.
   @[ runs("cons(Round(1), cons(Box(3, 2), nil))") ]

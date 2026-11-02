@@ -67,8 +67,8 @@
 //! `#{.l = v, …}`, a record update `#{b | l = v, …}`, `+{.i = v}`, `here(a)`,
 //! `funext(f, g)`, `equiv(f, g)`, univalence at a stratum
 //! `ua[n, k](a, b, f, g)` with its two descriptions by name, the static
-//! abstraction `\a. v`, and a static application as its spine, `f(a, b)` for
-//! `f` applied to `a` and then to `b` (the type operators of
+//! abstraction `fun (a) { v }`, and a static application as its spine, `f(a,
+//! b)` for `f` applied to `a` and then to `b` (the type operators of
 //! `gandr-surface-grammar`). Every braced former is written between its
 //! delimiters at any arity from one, its labels in their declared order.
 //!
@@ -79,9 +79,9 @@
 //! the tuple `(a, b)` of two components or more; the value-function alias
 //! `A => C`, `() => C` and `(A, B) => C` for a thunk over a chain of
 //! non-dependent arrows ending in a pure returner; and the path composite
-//! `p then q` for the returned transport `transport(\y. Path(A, a, y), q, p)`
-//! it derives, the carrier and the fixed endpoint naming no `y` (#754). A
-//! dependent arrow, an effectful returner, a record, a sum or product of one
+//! `p then q` for the returned transport `transport(fun (y) { Path(A, a, y) },
+//! q, p)` it derives, the carrier and the fixed endpoint naming no `y` (#754).
+//! A dependent arrow, an effectful returner, a record, a sum or product of one
 //! component and the empty ones keep their explicit spelling. Sugared is what
 //! every reader-facing
 //! face shows — a hover, a diagnostic, the REPL, the terminal face and a

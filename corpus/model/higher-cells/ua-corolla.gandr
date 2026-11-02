@@ -24,7 +24,7 @@ def opposite = ua[
 /// Transport along it swaps the binary corolla's boolean.
 def moves : Path(
   Unit * (+{Unit} * Bool),
-  transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
+  transport(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
   (unit, (+{.0 = unit}, +{.1 = unit}))
 ) = here((unit, (+{.0 = unit}, +{.1 = unit})));
 
@@ -32,7 +32,7 @@ def moves : Path(
 @[ refuses("EndpointMismatch") ]
 def stays : Path(
   Unit * (+{Unit} * Bool),
-  transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
+  transport(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
   (unit, (+{.0 = unit}, +{.0 = unit}))
 ) = here((unit, (+{.0 = unit}, +{.0 = unit})));
 

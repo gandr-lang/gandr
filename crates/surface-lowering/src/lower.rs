@@ -158,9 +158,9 @@
 //! `(A1, …, An) => B` are value types, `-F A` is a computation type, `A -> C`
 //! is a computation type except where a value type is read, where it is a
 //! static Pi (§ Type operators are static functions over codes), a thunk, a
-//! name, a number, a string, `unit`, a tuple and a static abstraction `\A. T`
-//! are values, a returner, a force, a lambda, an application and a block are
-//! computations, a name in type position is the sort its binder's universe
+//! name, a number, a string, `unit`, a tuple and a static abstraction `fun (A)
+//! { T }` are values, a returner, a force, a lambda, an application and a block
+//! are computations, a name in type position is the sort its binder's universe
 //! classifies, and a grouping is whatever it wraps. A mismatch is therefore
 //! refused where the form stands, carrying the sort its position demanded,
 //! except at the five positions the insertions (§ Five insertions, by the sort
@@ -336,9 +336,9 @@
 //!
 //! # Type operators are static functions over codes
 //!
-//! `\A. T` lowers to a static lambda over the code of `T`: the body is read
-//! where a value is read, so a type written there is quoted, and `A` binds one
-//! more value variable, which a type in the body decodes. An arrow standing
+//! `fun (A) { T }` lowers to a static lambda over the code of `T`: the body is
+//! read where a value is read, so a type written there is quoted, and `A` binds
+//! one more value variable, which a type in the body decodes. An arrow standing
 //! where a value type is read — a signature that classifies an operator, an
 //! operand of another such arrow — is the static Pi, both sides read as value
 //! types; `Type -> Type[-]` classifies the operators from value types to
@@ -353,11 +353,11 @@
 //! one arrow per argument: `raw_rel_monad : (Type -> Type[-]) -> Type -> Type
 //! -> Type` applied to three arguments decodes at `Type`, and a binder `t :
 //! Type -> Type[-]` applied to one decodes at `Type[-]`. An operator whose
-//! written type says nothing — the binder of `\A. T` — decodes at the default
-//! (§ Universes and the fuss-free default) its position reads. The binder of
-//! `\A. T` is written with no type: the declaration's signature classifies the
-//! abstraction, and the checker refuses an argument of the wrong sort or level
-//! as `SortMismatch`, naming both.
+//! written type says nothing — the binder of `fun (A) { T }` — decodes at the
+//! default (§ Universes and the fuss-free default) its position reads. The
+//! binder of `fun (A) { T }` is written with no type: the declaration's
+//! signature classifies the abstraction, and the checker refuses an argument of
+//! the wrong sort or level as `SortMismatch`, naming both.
 //!
 //! The alternatives were a typed binder `\(A : K). T` and a decode always at
 //! the fuss-free default. The typed binder was declined because the operators
@@ -1146,7 +1146,7 @@ impl Reading
     ///   wrong family.
     /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
-    /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+    /// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
     #[spec(
         ensures: |ret| {
             matches!(
@@ -1359,7 +1359,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1412,7 +1412,6 @@ fn ending(former: Former) -> Ending
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType
-        | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
@@ -1461,7 +1460,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1500,7 +1499,7 @@ fn iterating(former: Former) -> Ending
 ///   from the positional quote, including a static abstraction.
 /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
 /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
-/// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+/// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
 #[spec(
     ensures: |ret| {
         matches!(
@@ -1563,7 +1562,6 @@ fn iterating(former: Former) -> Ending
                     | Former::LabelledSumType
                     | Former::LazyRecordType
                     | Former::ValueFunctionType
-                    | Former::StaticAbstraction
                     | Former::ParenthesizedType
                     | Former::PathType
                     | Former::BridgeType
@@ -1650,7 +1648,6 @@ const fn family_of(former: Former) -> Family
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType
-        | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
@@ -2229,6 +2226,32 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// Where a span stands against the static lambdas' bodies.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Within
+{
+    /// Inside a static lambda's body, where a call is a static application.
+    StaticBody,
+    /// Outside every static lambda's body.
+    Elsewhere,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a static lambda's position states no classifier.
+    pub mod classified {
+        /// The position fixes the static sort and states no arrow.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A transport's or a ride's motive, whose binder ranges over
+            /// the path's points.
+            Motive,
+        }
+    }
+}
+
 quenchant_shape::reason_enum! {
     /// Why a `run` statement's binder splits no tuple.
     pub mod untupled {
@@ -2439,7 +2462,7 @@ const THROUGH_PRELUDE: [&str; 5] = ["==", "<", "<=", ">", ">="];
 /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
 /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
 /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
-/// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+/// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Plan
 {
@@ -3344,10 +3367,22 @@ struct Lowerer<'run, 'source>
     /// out of into the body's context, and never make the signature's arrows
     /// dependent (#547).
     in_quote: BTreeSet<NodeIndex>,
-    /// The body of each static abstraction, the type its operator denotes: a
+    /// The body of each static lambda, the type its operator denotes: a
     /// dynamic call written there unquotes the code it returns, and the body
     /// quotes that type (#3786).
     static_bodies: BTreeSet<NodeIndex>,
+    /// Each lambda whose position reads it as a static lambda, with the
+    /// static classifier `K -> J` the position states when it states one: a
+    /// transport's or a ride's motive, which states none, an argument at a
+    /// static application's parameter, and a static lambda's body under the
+    /// arrow its own classifier answers (#4508).
+    static_lambdas: BTreeMap<NodeIndex, Maybe<NodeIndex, classified::Absent>>,
+    /// The span of each static lambda's body: a call written there is the
+    /// static application a type spells (#4508).
+    static_spans: Vec<ByteSpan>,
+    /// Each call read as a value inside a static lambda's body, which
+    /// [`Lowerer::static_call`] plans as a static application (#4508).
+    static_calls: BTreeSet<NodeIndex>,
     /// The terms standing at an endpoint: a path type's endpoints,
     /// reflexivity's point and every node under one, where a computation
     /// standing as a value is the value it returns.
@@ -4214,7 +4249,7 @@ pub fn lower_module<'source>(
 /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
 /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
 /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
-/// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+/// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
 /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
 /// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
 /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
@@ -4672,7 +4707,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.nullary.is_empty()
         && self.typed_heads.is_empty()
         && self.supplied.is_empty()
-        && self.regions.is_empty())]
+        && self.regions.is_empty()
+        && self.static_lambdas.is_empty()
+        && self.static_spans.is_empty()
+        && self.static_calls.is_empty())]
     fn end_source(&mut self)
     {
         self.classifiers.clear();
@@ -4718,6 +4756,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.typed_heads.clear();
         self.supplied.clear();
         self.regions.clear();
+        self.static_lambdas.clear();
+        self.static_spans.clear();
+        self.static_calls.clear();
     }
 
     /// The module every source lowered amounts to: its attributes,
@@ -5353,6 +5394,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             in_type: BTreeSet::new(),
             in_quote: BTreeSet::new(),
             static_bodies: BTreeSet::new(),
+            static_lambdas: BTreeMap::new(),
+            static_spans: Vec::new(),
+            static_calls: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
             over_points: BTreeMap::new(),
             binders_over_points: BTreeMap::new(),
@@ -7191,7 +7235,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::LabelledSumType => self.labelled_sum_type(site, cursor),
             Former::LazyRecordType => self.lazy_record_type(site, cursor),
             Former::ValueFunctionType => self.value_function(site, cursor),
-            Former::StaticAbstraction => self.static_abstraction(site, cursor),
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             Former::PathType => self.path_type(site, cursor, Relating::Path),
             Former::BridgeType => self.path_type(site, cursor, Relating::Bridge),
@@ -9840,7 +9883,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   parameter, its binder written untyped, records its binder in
     ///   [`Self::argued_binders`] with the parameter and the arrow's domain
     ///   (#3921). A matching lambda, `fun { | … }`, is
-    ///   [`Self::matching_lambda`]'s.
+    ///   [`Self::matching_lambda`]'s, and a lambda its position reads as a type
+    ///   operator ([`Self::static_at`]) is [`Self::static_lambda`]'s.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
     ///   computation; the unadmitted refusal for a type abstraction; the arity
@@ -9865,7 +9909,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(site.at.node), Some(&Plan::Lambda(Block { statements, .. }, _)) if statements.start <= statements.end && statements.end <= self.statements.len())
-                || matches!(self.plans.get(site.at.node), Some(&Plan::Case(_)))
+                || matches!(self.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::StaticLambda(_))))
         },
     )]
     fn lambda(
@@ -9879,6 +9923,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let _keyword = ahead.tile(TileName::FUN);
         if let Maybe::Present(_) = ahead.at(TileName::BRACE_OPEN) {
             return self.matching_lambda(site, cursor);
+        }
+        // A lambda standing where a static former is read is a type operator
+        // (#4508).
+        if let Some(classifier) = self.static_at(site)? {
+            return self.static_lambda(site, cursor, classifier);
         }
         let frame = self.require(site, Produced::Computation)?;
         let _keyword = cursor.tile(TileName::FUN);
@@ -11668,13 +11717,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && constructed.fields.end == self.operands.len()
                     },
                     | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Fill { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
-                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
-                        matches!(site.reading, Reading::Value(_))
-                    },
-                    | Some(&(Plan::Data(..) | Plan::Codata(..))) => {
+                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..) | Plan::Data(..) | Plan::Codata(..))) => {
                         matches!(site.reading, Reading::Value(_)) || site.reading.family() == Family::Type
                     },
-                    | Some(&(Plan::Decode(..) | Plan::Unquote(..))) => site.reading.family() == Family::Type,
+                    | Some(&(Plan::Relation(..) | Plan::Bundle(_))) => site.reading.family() == Family::Type,
+                    | Some(&(Plan::Decode(..) | Plan::Unquote(..))) => {
+                        site.reading.family() == Family::Type || self.static_calls.contains(&site.at.node)
+                    },
+                    | Some(&(Plan::StaticApplication(..) | Plan::Called(..))) => {
+                        self.static_calls.contains(&site.at.node)
+                    },
                     | _ => false,
                 }
         },
@@ -11733,6 +11785,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let _head = cursor.operands();
             return self.generic_call(site, derivation, cursor);
+        }
+        if let Reading::Value(_) = site.reading
+            && self.in_static_body(site.at.span) == Within::StaticBody
+            && self.static_call(site, &mut cursor)? == arity::Planned(true)
+        {
+            return Ok(());
         }
         if site.reading.family() == Family::Type {
             return self.typed_call(site, cursor);
@@ -11861,7 +11919,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a static application, or the unquote of a function's call. A descent
     ///   head `f[<]` ([`Self::descent_head`]) applied to the arguments is the
     ///   unquote of its fixpoint's call, as [`Self::staged_descent`] plans it.
-    ///   Any other head is refused by its sort.
+    ///   A head spelling a type former, `Path(A, x, y)`, is that former as
+    ///   [`Self::applied_head`] reads it. Any other head is refused by its
+    ///   sort.
     /// - provides: a quoted type's call read as the same type its binder's type
     ///   writes.
     /// - fails: the wrong-sort refusal for a head that is not a resolving name,
@@ -11883,7 +11943,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Decode(..) | Plan::Unquote(..) | Plan::Data(..) | Plan::Codata(..)))
+                    Some(&(Plan::Decode(..) | Plan::Unquote(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..) | Plan::Bundle(_)))
                 )
         },
     )]
@@ -11909,6 +11969,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 end: self.operands.len(),
             };
             return self.staged_descent(site, named, written);
+        }
+        // A type former the expression grammar molds as a call, `Path(A, x,
+        // y)`, is the former the type grammar spells (#4508).
+        if let Maybe::Present(name) = self.former_head(site, head)? {
+            let _head = cursor.operands();
+            let start = self.operands.len();
+            arguments(site, &mut cursor, &mut self.operands)?;
+            let written = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            return self.applied_head(site, head, name, written, &[]);
         }
         let named = self.tree.node(head.node).is_some_and(|node| {
             matches!(
@@ -11938,6 +12010,113 @@ impl<'run, 'source> Lowerer<'run, 'source>
             end: self.operands.len(),
         };
         self.static_application(site, resolved, applied)
+    }
+
+    /// A call written in a static lambda's body, read as the static
+    /// application the type grammar spells there (#4508).
+    ///
+    /// The block of `fun (X) { T }` molds its body in the expression grammar,
+    /// so a type application written there, `F(X)`, is a call form. Read as
+    /// that application, a head a binder or a declaration answers applies its
+    /// code to the arguments as [`Self::static_application`] plans it.
+    ///
+    /// # Specification
+    /// - requires: `site` is a call read as a value inside a static lambda's
+    ///   body, and `cursor` holds its pieces.
+    /// - ensures: for a head that is one name or one capitalised name resolving
+    ///   to a binder or a declaration, the static application of it to the
+    ///   arguments, the cursor past them; nothing planned and the cursor
+    ///   untouched for any other head.
+    /// - provides: a static body's type application spelled as a call.
+    /// - fails: the refusals of the name's resolution, the arguments and the
+    ///   application.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a static lambda over a binder holding an operator
+    ///   applies it to its own binder, read back as the static application.
+    /// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |planned| !planned.0 || (self.plans.get(site.at.node).is_some() && self.static_calls.contains(&site.at.node))))]
+    fn static_call(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let Run::One(head) = cursor.clone().operands()
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let named = self.tree.node(head.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Name | Former::Constructor,
+                    ..
+                })
+            )
+        });
+        if !named {
+            return Ok(arity::Planned(false));
+        }
+        let name = self.name_at(head);
+        let at_head = Site { at: head, ..site };
+        let Maybe::Present(resolved) = self.resolve_name(at_head, site.reading.frame(), name)?
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let _first = self.typed_heads.insert(site.at.node, head.node);
+        self.resolved(head.span, resolved);
+        let _head = cursor.operands();
+        let start = self.operands.len();
+        arguments(site, cursor, &mut self.operands)?;
+        let applied = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        let _first = self.static_calls.insert(site.at.node);
+        self.static_application(site, resolved, applied)?;
+        Ok(arity::Planned(true))
+    }
+
+    /// Whether `span` lies inside a static lambda's body.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Within::StaticBody`] exactly when a body
+    ///   [`Self::static_spans`] records covers `span`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::static_call`].
+    /// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the recorded bodies once; the check scans them once more"
+        )
+    )]
+    #[spec(ensures: |ret| (ret == Within::StaticBody) == self.static_spans.iter().any(|body| body.start() <= span.start() && span.end() <= body.end()))]
+    fn in_static_body(
+        &self,
+        span: ByteSpan,
+    ) -> Within
+    {
+        if self
+            .static_spans
+            .iter()
+            .any(|body| body.start() <= span.start() && span.end() <= body.end())
+        {
+            Within::StaticBody
+        }
+        else {
+            Within::Elsewhere
+        }
     }
 
     /// The name a call's head descends on, when the head is a descent `f[<]`.
@@ -12600,7 +12779,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   that family's computation type at no arguments; then a head an earlier
     ///   declaration answers is that code, read as the static application of it
     ///   to no arguments. Any other head resolves against the nullary table and
-    ///   is planned as its atom.
+    ///   is planned as its atom, and `Type` as the value universe at the
+    ///   fuss-free level.
     /// - provides: the type-head half of resolution, the expansion of a
     ///   manifest type component and a type member, the atom of a sealed one,
     ///   and the decode of a value name in type position.
@@ -12639,6 +12819,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 | Plan::Sealed(_)
                                 | Plan::Instantiated(..)
                                 | Plan::Atom(_)
+                                | Plan::Universe(_)
                                 | Plan::Decode(_, _, _)
                                 | Plan::StaticApplication(_, _)
                                 | Plan::Data(_, _)
@@ -12677,16 +12858,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.static_application(site, resolved, none);
         }
         let _frame = self.require(site, Produced::ValueType)?;
-        let Maybe::Present(atom) = type_atom(name)
-        else {
-            return Err(LoweringRefusal::UnresolvedTypeHead {
-                span: site.at.span,
-                name,
-                arity: HeadArity::Nullary,
-            });
+        // The expression grammar molds `Type` as a name, so a type position
+        // there reads it as the universe the type grammar's tile spells
+        // (#4508).
+        let plan = match type_atom(name) {
+            Maybe::Present(atom) => Plan::Atom(atom),
+            Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
+                Plan::Universe(Universe::FUSS_FREE)
+            },
+            Maybe::Absent(_) => {
+                return Err(LoweringRefusal::UnresolvedTypeHead {
+                    span: site.at.span,
+                    name,
+                    arity: HeadArity::Nullary,
+                });
+            },
         };
 
-        self.plan(site, Plan::Atom(atom));
+        self.plan(site, plan);
 
         Ok(())
     }
@@ -14377,6 +14566,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Code::Bound { binder, .. } = code {
             let _telescope = self.name_in_type(site.at.node, binder);
         }
+        // An argument at a parameter the operator's classifier states as a
+        // static arrow is a type operator where it is a lambda (#4508).
+        if !dynamic && let Maybe::Present(written) = declared {
+            let mut classifier = written;
+            for position in applied.start .. applied.end {
+                let Some((domain, codomain)) = self.static_arrow(classifier)?
+                else {
+                    break;
+                };
+                if let Some(&argument) = self.operands.get(position)
+                    && self.static_arrow(domain)?.is_some()
+                {
+                    let _first = self.static_lambdas.insert(argument, Maybe::Present(domain));
+                }
+                classifier = codomain;
+            }
+        }
         for position in applied.start .. applied.end {
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
@@ -15033,35 +15239,123 @@ impl<'run, 'source> Lowerer<'run, 'source>
         listed
     }
 
-    /// Classify a static abstraction, `\A. T`.
+    /// Whether the lambda at `site` stands where a static former is read, and
+    /// the static classifier its position states when it states one.
     ///
     /// # Specification
-    /// - requires: `site` is a static abstraction in term or type position.
-    /// - ensures: an abstraction standing as a value binds its one type name in
-    ///   a frame extending its own, untyped — the checker reads the type from
-    ///   the operator's signature — reads its body as a value under that frame,
-    ///   so a type written there is quoted, and is planned as the static lambda
-    ///   over it. The body is filed in [`Self::static_bodies`], so a dynamic
-    ///   call written there is the type of the code it returns (#3786). A
-    ///   transport's motive [`Self::over_points`] records keeps its binder
-    ///   untyped, and records it with the carrier of its path (#3773).
-    /// - provides: the introduction of a type operator.
-    /// - fails: yields the wrong-sort refusal where no value is read, a
-    ///   misplaced-tile fault for a binder out of shape, the binder policy's
-    ///   refusal, and the hole's own refusal.
+    /// - requires: `site` is a lambda.
+    /// - ensures: `Some` with the classifier [`Self::static_lambdas`] files for
+    ///   a lambda filed there; `Some` with the written type for a definition's
+    ///   body whose signature, and for an argument whose parameter's written
+    ///   type, is a static arrow `K -> J` ([`Self::static_arrow`]); `None` for
+    ///   any other lambda, one a thunked arrow or the alias answers among them.
+    /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
     /// # Errors
-    /// The abstraction's refusal.
+    /// The walk's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one abstraction, two nested whose body names both
-    ///   binders, and an abstraction where a value type is read, each asserted
-    ///   as the exact core node read back out of the arena or the exact
-    ///   refusal; a lowercase binder name; a body calling a binder that holds a
-    ///   family.
-    /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
-    /// - witness: `lower::tests::a_static_abstraction_binds_a_lowercase_name`
+    /// - hypothesis: L3 — a motive, a signed definition's body and the body
+    ///   nested in it, and an argument at a parameter of a static classifier
+    ///   each lower as a static lambda, and a lambda the alias answers lowers
+    ///   as a dynamic one.
+    /// - witness: `lower::tests::a_lambda_s_position_decides_its_sort_4508`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || self.static_lambdas.contains_key(&site.at.node) || self.inherited.contains_key(&site.at.node) || self.parameter_typed.contains_key(&site.at.node)))]
+    fn static_at(
+        &mut self,
+        site: Site,
+    ) -> Result<Option<Maybe<NodeIndex, classified::Absent>>, LoweringRefusal<'source>>
+    {
+        if let Some(&classifier) = self.static_lambdas.get(&site.at.node) {
+            return Ok(Some(classifier));
+        }
+        let stated = match (
+            self.inherited.get(&site.at.node),
+            self.parameter_typed.get(&site.at.node),
+        ) {
+            (Some(&native::Classifier::Written(signature)), _) => signature,
+            (_, Some(called)) => called.typed.node,
+            _ => return Ok(None),
+        };
+        Ok(self.static_arrow(stated)?.map(|_| Maybe::Present(stated)))
+    }
+
+    /// The domain and the codomain of `classifier` when it is a static arrow:
+    /// its parentheses stripped, an arrow `K -> J` of two operands, the
+    /// classifier of a type operator where a value type is written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the arrow's two operands for an arrow; nothing for any other
+    ///   form, a thunked arrow `+U (A -> -F B)` and the alias `A => B` among
+    ///   them.
+    /// - fails: as [`Self::unwrapped`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::static_at`].
+    /// - witness: `lower::tests::a_lambda_s_position_decides_its_sort_4508`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(domain, codomain)| domain != codomain)))]
+    fn static_arrow(
+        &mut self,
+        classifier: NodeIndex,
+    ) -> Result<Option<(NodeIndex, NodeIndex)>, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(native::Unwrapped {
+            former: Former::ArrowType,
+            ref operands,
+            ..
+        }) = self.unwrapped(classifier)?
+        else {
+            return Ok(None);
+        };
+        Ok(match *operands.as_slice() {
+            [domain, codomain] => Some((domain, codomain)),
+            _ => None,
+        })
+    }
+
+    /// Classify a static lambda, `fun (A) { T }`: a lambda whose position
+    /// reads it as a type operator ([`Self::static_at`]), over `classifier`
+    /// when the position states one.
+    ///
+    /// # Specification
+    /// - requires: `site` is a lambda [`Self::static_at`] answers with
+    ///   `classifier`.
+    /// - ensures: the lambda binds its one name in a frame extending its own,
+    ///   untyped — the checker reads the type from the operator's classifier —
+    ///   reads the one operand its block holds as a value under that frame, so
+    ///   a type written there is quoted, and is planned as the static lambda
+    ///   over it. The body is filed in [`Self::static_bodies`], so a dynamic
+    ///   call written there is the type of the code it returns (#3786). Where
+    ///   the classifier's codomain is itself a static arrow, the body is filed
+    ///   in [`Self::static_lambdas`] with it, so a lambda written there is
+    ///   static too. A transport's motive [`Self::over_points`] records keeps
+    ///   its binder untyped, and records it with the carrier of its path
+    ///   (#3773).
+    /// - provides: the introduction of a type operator.
+    /// - fails: yields the wrong-sort refusal where no value is read, and for a
+    ///   block holding a statement, at the block; the arity refusal for a
+    ///   binder count other than one; the unadmitted refusal for a type
+    ///   abstraction; a misplaced-tile fault for a binder out of shape or
+    ///   typed; the binder policy's refusal; and the hole's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The lambda's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one static lambda, two nested whose body names both
+    ///   binders, a static lambda where a value type is read, two binders and a
+    ///   statement, each asserted as the exact core node read back out of the
+    ///   arena or the exact refusal; a lowercase binder name; a body calling a
+    ///   binder that holds a family.
+    /// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
+    /// - witness: `lower::tests::a_static_lambda_binds_a_lowercase_name`
     /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     #[spec(
         ensures: |ret| {
@@ -15072,17 +15366,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 )
         },
     )]
-    fn static_abstraction(
+    fn static_lambda(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
+        classifier: Maybe<NodeIndex, classified::Absent>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Value)?;
-        closed(site, &mut cursor, TileName::BACKSLASH)?;
+        closed(site, &mut cursor, TileName::FUN)?;
+        if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
+            return Err(site.folded(
+                FormName::TYPE_ABSTRACTION,
+                FragmentBoundary::Unadmitted(Unbuilt::TypeAbstraction),
+            ));
+        }
+        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let binder = match cursor.peek() {
             Maybe::Present(Piece::Tile { label, at })
-                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+                if label == TileName::IDENTIFIER
+                    || label == TileName::TYPE_IDENTIFIER
+                    || label == TileName::TYPE_VARIABLE =>
             {
                 let _binder = cursor.tile(label);
                 at
@@ -15091,8 +15395,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             },
         };
-        closed(site, &mut cursor, TileName::DOT)?;
-        let body = site.one(cursor.operands())?;
+        // A type operator abstracts one type; a curried one nests.
+        if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
+            let mut ahead = cursor.clone();
+            let mut count = 1_usize;
+            while let Maybe::Present(_) = ahead.tile(TileName::COMMA) {
+                count = count.saturating_add(1_usize);
+                let _next = ahead.read();
+            }
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
+        }
+        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        let Maybe::Present(open) = cursor.tile(TileName::BRACE_OPEN)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        // The block holds the body alone: a statement has no reading in a
+        // type.
+        let statement = Site {
+            at: Placed {
+                node: site.at.node,
+                span: ByteSpan::new(open.span.start(), site.at.span.end()).unwrap_or(site.at.span),
+            },
+            name: FormName::BLOCK,
+            reading: Reading::Value(frame),
+        };
+        let Run::One(body) = cursor.operands()
+        else {
+            return Err(statement.out(FragmentBoundary::WrongSort));
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
+            return Err(statement.out(FragmentBoundary::WrongSort));
+        }
         exhausted(site, &cursor)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
@@ -15103,7 +15437,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&carrier) = self.over_points.get(&site.at.node) {
             let _first = self.binders_over_points.insert(extended, carrier);
         }
+        if let Maybe::Present(classifier) = classifier
+            && let Some((_, codomain)) = self.static_arrow(classifier)?
+            && self.static_arrow(codomain)?.is_some()
+        {
+            let _first = self
+                .static_lambdas
+                .insert(body.node, Maybe::Present(codomain));
+        }
         let _body = self.static_bodies.insert(body.node);
+        self.static_spans.push(body.span);
         self.read(body.node, Reading::Value(Frame::Inner(extended)));
 
         self.plan(site, Plan::StaticLambda(body.node));
@@ -16540,14 +16883,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_decode(code, arguments, universe, sink, origin)
             },
             Plan::Unquote(code, arguments, universe) => {
-                let head = match self
-                    .typed_heads
-                    .get(&origin.node())
-                    .map(|&head| self.origin_at(head))
-                {
-                    Some(Maybe::Present(head)) => head,
-                    Some(Maybe::Absent(_)) | None => origin,
-                };
+                let head = self.written_head(origin);
                 self.mint_unquote(code, arguments, universe, sink, (origin, head))
             },
             Plan::Carrier(code, selected, ref label) => {
@@ -16556,9 +16892,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::FixedCarrier(code, written) => {
                 self.mint_fixed_carrier(code, written, sink, origin)
             },
-            Plan::Called(code, arguments) => self
-                .mint_called(code, arguments, sink, (origin, origin))
-                .map(Lowered::Computation),
+            Plan::Called(code, arguments) => {
+                let head = self.written_head(origin);
+                self.mint_called(code, arguments, sink, (origin, head))
+                    .map(Lowered::Computation)
+            },
             Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
@@ -16775,8 +17113,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — bound and constant codes are applied to their
     ///   arguments in source order; every node in the static application spine
-    ///   records the written origin, rather than an inserted decode origin; a
-    ///   type family's parameter named alone is labelled at its written kind.
+    ///   records the written origin, rather than an inserted decode origin, the
+    ///   operator of a call the head it is written at; a type family's
+    ///   parameter named alone is labelled at its written kind.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
@@ -16831,7 +17170,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Code::Constant(constant) => sink.arena.value_constant(constant),
         };
-        sink.origins.record_value(applied, origin);
+        // An operator written as a call's head, `F(X)`, answers at that head.
+        let operator = if written.is_empty() {
+            origin
+        }
+        else {
+            self.written_head(origin)
+        };
+        sink.origins.record_value(applied, operator);
         for &argument in written {
             let Maybe::Present(passed) = self.value_at(argument)
             else {
@@ -16842,6 +17188,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Maybe::Present(applied)
+    }
+
+    /// The origin of the head a call at `origin` was written with, when a
+    /// call the expression grammar molds stands where a static application or
+    /// an unquote is planned; `origin` itself otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the origin [`Self::typed_heads`] records for the call's head
+    ///   when one is recorded and placed; `origin` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a static body's calls and a quoted carrier's call,
+    ///   whose heads answer at their own spans.
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `lower::tests::a_call_at_a_quoted_path_carrier_unquotes_as_at_a_binder_3573`
+    #[spec(ensures: |ret| ret == origin || self.typed_heads.contains_key(&origin.node()))]
+    fn written_head(
+        &self,
+        origin: Origin,
+    ) -> Origin
+    {
+        match self
+            .typed_heads
+            .get(&origin.node())
+            .map(|&head| self.origin_at(head))
+        {
+            Some(Maybe::Present(head)) => head,
+            Some(Maybe::Absent(_)) | None => origin,
+        }
     }
 
     /// Carry out a decode's plan: the code, and the type it denotes.
@@ -17544,7 +17922,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   fragment, not arbitrary foreign identifiers.
     /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
-    /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+    /// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     #[spec(
@@ -22714,7 +23092,6 @@ pub fn parse_literal(
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType
-        | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
@@ -26482,11 +26859,16 @@ def ended() -> -F [Div] Unit {
     }
 
     #[test]
-    fn a_static_abstraction_binds_its_name_over_a_quoted_body()
+    fn a_static_lambda_binds_its_name_over_a_quoted_body()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from("def k = \\A. \\B. A * B ;"), &mut arena);
+        let module = lowered(
+            SourceText::from(
+                "def k : Type -> Type -> Type ; def k = fun (A) { fun (B) { type(A * B) } } ;",
+            ),
+            &mut arena,
+        );
         let lambda = |id| match arena.value(id) {
             Some(&Value::StaticLambda(body)) => Some(body),
             _ => None,
@@ -26509,7 +26891,7 @@ def ended() -> -F [Div] Unit {
 
         let Some(inner) = lambda(body_of(outcomes(&module)[0])).and_then(lambda)
         else {
-            panic!("each backslash is one static lambda");
+            panic!("each `fun` at a static arrow is one static lambda");
         };
         let Some(&Value::Quote(quoted)) = arena.value(inner)
         else {
@@ -26534,14 +26916,14 @@ def ended() -> -F [Div] Unit {
              is read"
         );
         assert_eq!(
-            refusal(SourceText::from("def m : \\A. A ;")),
+            refusal(SourceText::from("def m : fun (A) { A } ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 13_usize),
-                form: FormName::from(NamedKind("static_abstraction")),
+                span: at(8_usize, 21_usize),
+                form: FormName::from(NamedKind("lambda_expression")),
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "a static abstraction is a value, not a type"
+            "a lambda is a value, not a type"
         );
     }
 
@@ -26551,8 +26933,9 @@ def ended() -> -F [Div] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def t : Type -> Type[-, 1] ; def a : +U (t(Integer)) ; def w = \\X. t(X) ; def k \
-                 = \\G. \\A. +U (G(A)) * A ;",
+                "def t : Type -> Type[-, 1] ; def a : +U (t(Integer)) ; def w : Type -> Type[-, 1] ; \
+                 def w = fun (X) { t(X) } ; def k : (Type -> Type[-]) -> Type -> Type ; def k = fun \
+                 (G) { fun (A) { type(+U (G(A)) * A) } } ;",
             ),
             &mut arena,
         );
@@ -29084,17 +29467,95 @@ def ended() -> -F [Div] Unit {
     }
 
     #[test]
-    fn a_static_abstraction_binds_a_lowercase_name()
+    fn a_static_lambda_binds_a_lowercase_name()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def t : Type -> Type ; def w = \\x. t(x) ;"),
+            SourceText::from(
+                "def t : Type -> Type ; def w : Type -> Type ; def w = fun (x) { t(x) } ;",
+            ),
             &mut arena,
         );
         assert!(
             !matches!(outcome_named(&module, "w"), DeclarationOutcome::Refused(_)),
             "a type variable binds as a type identifier does: {:?}",
             outcome_named(&module, "w")
+        );
+    }
+
+    /// #4508: one `fun` is a static lambda where its position states a static
+    /// arrow — its definition's signature, an operator's parameter — and the
+    /// dynamic lambda elsewhere. A static lambda binds one name and its body
+    /// is a type, so two parameters and a block of statements are refused.
+    #[test]
+    fn a_lambda_s_position_decides_its_sort_4508()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def apply : (Type -> Type) -> Type -> Type ; def apply = fun (F) { fun (X) { F(X) } \
+                 } ; def pairs : apply(fun (Y) { type(Y * Y) }, Integer) ; def id : +U (Integer -> \
+                 -F Integer) ; def id = thunk { fun (x) { return x } } ; def two : Type -> Type -> \
+                 Type ; def two = fun (A, B) { A } ; def held : Type -> Type ; def held = fun (A) { \
+                 let x = A ; x } ;",
+            ),
+            &mut arena,
+        );
+        let body = |name: &str| arena.value(body_of(outcome_named(&module, name)));
+        let Some(&Value::StaticLambda(over_f)) = body("apply")
+        else {
+            panic!("a definition at a static arrow is a static lambda");
+        };
+        assert!(
+            matches!(arena.value(over_f), Some(&Value::StaticLambda(_))),
+            "and so is the lambda its codomain's static arrow types"
+        );
+        let Some(&ValueType::Element { code, .. }) =
+            arena.value_type(declared_of(outcome_named(&module, "pairs")))
+        else {
+            panic!("the operator applied where a type is read decodes");
+        };
+        let Some(&Value::StaticApplication(head, _)) = arena.value(code)
+        else {
+            panic!("the operator applies statically");
+        };
+        let Some(&Value::StaticApplication(_, argument)) = arena.value(head)
+        else {
+            panic!("to both its arguments");
+        };
+        assert!(
+            matches!(arena.value(argument), Some(&Value::StaticLambda(_))),
+            "an argument at a static arrow's parameter is a static lambda"
+        );
+        let Some(&Value::Thunk(suspended)) = body("id")
+        else {
+            panic!("the function is a thunk");
+        };
+        assert!(
+            matches!(arena.computation(suspended), Some(&Computation::Lambda(_))),
+            "a thunk's lambda is the dynamic one"
+        );
+        assert!(
+            matches!(
+                outcome_named(&module, "two"),
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::Arity(_),
+                    ..
+                })
+            ),
+            "a static lambda binds one name: {:?}",
+            outcome_named(&module, "two")
+        );
+        assert!(
+            matches!(
+                outcome_named(&module, "held"),
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::WrongSort,
+                    ..
+                })
+            ),
+            "a static lambda's body is a type, not statements: {:?}",
+            outcome_named(&module, "held")
         );
     }
 

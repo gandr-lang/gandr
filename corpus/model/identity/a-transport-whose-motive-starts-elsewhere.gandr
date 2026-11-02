@@ -22,8 +22,8 @@ def unitVariable(
   r : Path(Path(A, x, z), f, m)
 ) -> Path(
   Path(Path(A, x, z), f, m),
-  transport(\c. Path(Path(A, x, z), f then here(z), c), r, here(f)),
-  transport(\c. Path(Path(A, x, z), f, c), r, here(f))
+  transport(fun (c) { Path(Path(A, x, z), f then here(z), c) }, r, here(f)),
+  transport(fun (c) { Path(Path(A, x, z), f, c) }, r, here(f))
 ) {
-  here(transport(\c. Path(Path(A, x, z), f, c), r, here(f)))
+  here(transport(fun (c) { Path(Path(A, x, z), f, c) }, r, here(f)))
 }

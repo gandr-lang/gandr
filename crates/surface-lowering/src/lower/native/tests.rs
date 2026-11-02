@@ -2791,19 +2791,19 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
 }
 
 /// #2112: a constructor returned against a result written as a type-level
-/// definition's application, `-> opt(Integer)` with `opt = \A. -F Maybe(A)`,
-/// dropped the declaration as `Unminted`: the answer is the decode of the
-/// application, no returner, so the constructor had no classifier. It reads
-/// through the definition's body, at a closed argument, at a type parameter,
-/// and through a definition that unfolds to `opt`; one answering a constant
-/// with no written body is refused as unannotated, never dropped.
+/// definition's application, `-> opt(Integer)` with `opt = fun (A) { -F
+/// Maybe(A) }`, dropped the declaration as `Unminted`: the answer is the decode
+/// of the application, no returner, so the constructor had no classifier. It
+/// reads through the definition's body, at a closed argument, at a type
+/// parameter, and through a definition that unfolds to `opt`; one answering a
+/// constant with no written body is refused as unannotated, never dropped.
 #[test]
 fn a_constructor_answers_a_definition_s_application_2112()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def opt : Type -> Type[-] ;\ndef opt = \\A. -F Maybe(A) ;\n\
-         def again : Type -> Type[-] ;\ndef again = \\A. opt(A) ;\n\
+        "{MAYBE}def opt : Type -> Type[-] ;\ndef opt = fun (A) {{ -F Maybe(A) }} ;\n\
+         def again : Type -> Type[-] ;\ndef again = fun (A) {{ opt(A) }} ;\n\
          def some1() -> opt(Integer) {{ return Some(1) }}\n\
          def none(A : Type) -> opt(A) {{ return None }}\n\
          def twice() -> again(Integer) {{ return Some(2) }}\n"

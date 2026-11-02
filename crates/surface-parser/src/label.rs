@@ -1959,10 +1959,6 @@ fn scan_one(
         b'#' => scan_hash(bytes, pos),
         b'"' => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
         b'\'' => scan_character(bytes, pos),
-        // In code a backslash is the static abstraction's lead `\A. T`, one
-        // tile; escape sequences belong to strings and characters, whose
-        // scanners read them.
-        b'\\' => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
         b'0' ..= b'9' => scan_number(bytes, pos),
         b'.' => scan_dot(bytes, pos),
         b'_' => scan_word_or_underscore(bytes, pos),
@@ -4360,23 +4356,20 @@ mod tests
         );
     }
     #[test]
-    fn a_backslash_in_code_is_one_tile_and_an_escape_in_a_string()
+    fn a_backslash_in_code_is_unknown_and_an_escape_in_a_string()
     {
         let lexed = |src: &str| tiles(SourceFragment::from(src), &label(SourceFragment::from(src)));
         let punct = |text: &str| (Lexeme::Punct, text.to_owned());
         let upper = |text: &str| (Lexeme::UpperWord, text.to_owned());
         assert_eq!(
-            lexed(r"\T.\A. T"),
+            lexed(r"\T. T"),
             vec![
-                punct("\\"),
+                (Lexeme::Unknown, "\\".to_owned()),
                 upper("T"),
-                punct("."),
-                punct("\\"),
-                upper("A"),
                 punct("."),
                 upper("T"),
             ],
-            "the abstraction's lead stands apart from the binder it introduces"
+            "no form leads with a backslash in code, so it is an unknown byte (#4508)"
         );
         assert_eq!(
             lexed(r#""\T""#),

@@ -1756,41 +1756,41 @@ enum Elaboration
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an expression for a thunk's body and for the statements of a
+/// - ensures: an expression for a thunk's body, a static lambda's body, a
+///   transport's and a ride's motive and operands, and the statements of a
 ///   nested or returned computation over a bind, which the grammar reads
-///   between their braces as an expression in either sort, so a type argument
-///   of a call there is quoted (#1102); a type for a type slot of a value or a
-///   computation that writes itself — an annotation, a binder's type, a typed
-///   bind's result — where the expression grammar embeds a type, and for a
-///   static abstraction's body, which the grammar reads as a type; `surface`
-///   itself otherwise. A quote, any other nested or returned computation and an
-///   ascription, elided or written as the match that answers it, write nothing
-///   of their own around a slot, so their slot is read as they are; a type
-///   former's value slot is read as the type is, since every type application
-///   reads its arguments in the type's own sort and a path or a flow whose
-///   endpoints are codes is over a universe, which reads them as types. A call
-///   reads its own head and arguments as expressions, which [`Walk::visit`]
-///   schedules itself.
+///   between their braces or a call's parentheses as an expression in either
+///   sort, so a type argument of a call there is quoted (#1102, #4508); a type
+///   for a type slot of a value or a computation that writes itself — an
+///   annotation, a binder's type, a typed bind's result — where the expression
+///   grammar embeds a type; `surface` itself otherwise. A quote, any other
+///   nested or returned computation and an ascription, elided or written as the
+///   match that answers it, write nothing of their own around a slot, so their
+///   slot is read as they are; a type former's value slot is read as the type
+///   is, since every type application reads its arguments in the type's own
+///   sort and a path or a flow whose endpoints are codes is over a universe,
+///   which reads them as types. A call reads its own head and arguments as
+///   expressions, which [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a quote as an argument, as a definition's body, as a
-///   static abstraction's body, as a decoded code in a type position, as a
-///   call's argument in a thunk a path type's endpoint writes and as a value a
-///   block in a path type's endpoint binds distinguish the slots an expression
-///   reads from those a type reads.
+///   static lambda's body, as a decoded code in a type position, as a call's
+///   argument in a thunk a path type's endpoint writes and as a value a block
+///   in a path type's endpoint binds distinguish the slots an expression reads
+///   from those a type reads.
 /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
 /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
-#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_)) || braced(source, former).is_some() {
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some() {
     Surface::Expression
-} else if matches!(*former, Former::StaticLambda(_)) || (!matches!(*former,
+} else if !matches!(*former,
     Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
     && matches!(kind(former), Kind::Value | Kind::Computation)
-    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
+    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
 {
     Surface::Type
 } else {
@@ -1805,9 +1805,17 @@ fn surface_below<S>(
 where
     S: Source + ?Sized,
 {
-    // A thunk's body and a block's statements are written between braces,
-    // which either grammar reads as an expression.
-    if matches!(*former, Former::Thunk(_)) || braced(source, former).is_some() {
+    // A thunk's body, a static lambda's body and a block's statements are
+    // written between braces, and a transport's motive and operands between a
+    // call's parentheses, which either grammar reads as an expression.
+    if matches!(
+        *former,
+        Former::Thunk(_)
+            | Former::StaticLambda(_)
+            | Former::PathTransport { .. }
+            | Former::Ride { .. }
+    ) || braced(source, former).is_some()
+    {
         return Surface::Expression;
     }
     let writes_nothing = matches!(
@@ -1819,12 +1827,9 @@ where
             | Former::Ascription { .. }
             | Former::Place { .. }
     );
-    // A static abstraction `\A. T` is a type form: its body is read as a type.
-    let typed_body = matches!(*former, Former::StaticLambda(_));
-    if typed_body
-        || (!writes_nothing
-            && matches!(kind(former), Kind::Value | Kind::Computation)
-            && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
+    if !writes_nothing
+        && matches!(kind(former), Kind::Value | Kind::Computation)
+        && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
     {
         Surface::Type
     }
@@ -1851,8 +1856,8 @@ enum Binding
     Qualified,
     /// A name, a literal, a universe, a bracketed or braced form, a call.
     Atom,
-    /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fun (x) { c }` or
-    /// `thunk { c }`.
+    /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fun (x) { c }`, the
+    /// static lambda `fun (a) { v }` or `thunk { c }`.
     Prefix,
     /// `g ∷ p`, a word's letter before the rest, nested to the right.
     Cons,
@@ -1867,8 +1872,7 @@ enum Binding
     Lazy,
     /// `A ≃ B`, `A ≅ B` or `A ⇝ B`, nested to the right.
     Relation,
-    /// `A -> C`, `(x : A) -> C`, `A => B`, or the static abstraction `\a. v`,
-    /// whose body runs as far right as an arrow's codomain.
+    /// `A -> C`, `(x : A) -> C` or `A => B`.
     Arrow,
     /// `run x <- c ; rest`, whose rest runs to the end of the block it stands
     /// in; anywhere else it is a block of its own, `{ … }`.
@@ -2786,9 +2790,14 @@ enum Join
     /// it, its labels as written: the fields alone where the record spells
     /// them whole, else the product.
     RecordProduct,
-    /// A static abstraction over its body, its binder named as a dependent
-    /// arrow's is.
-    StaticLambda,
+    /// A static lambda over its body, `fun (a) { v }`, its binder named as a
+    /// dependent arrow's is; `quoted`, the body in the quote's own spelling,
+    /// `fun (a) { type(T) }`.
+    StaticLambda
+    {
+        /// Whether the body is written `type(T)`.
+        quoted: bool,
+    },
     /// An operator applied to this many arguments: the spine of static
     /// applications it was written as, or of a call.
     Apply(Arity),
@@ -3974,7 +3983,7 @@ fn passing<Node>(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Derived<Node>
 {
-    /// `p then q`: `transport(\y. Path(A, a, y), q, p)`.
+    /// `p then q`: `transport(fun (y) { Path(A, a, y) }, q, p)`.
     Composite
     {
         /// The first path, the transported value.
@@ -3982,9 +3991,10 @@ enum Derived<Node>
         /// The second path, along which it moves.
         path: Node,
     },
-    /// `back(p)`: `transport(\y. Path(A, y, a), p, here(a))`.
+    /// `back(p)`: `transport(fun (y) { Path(A, y, a) }, p, here(a))`.
     Inverse(Node),
-    /// `cong(f, p)`: `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))`.
+    /// `cong(f, p)`: `transport(fun (y) { Path(B, f(a), f(y)) }, p,
+    /// here(f(a)))`.
     Congruence
     {
         /// The map, as the motive holds it, one binder deeper.
@@ -7529,7 +7539,7 @@ impl Walk<'_, '_>
     ///   state's own node is a receive, a selection or an offer; as a sum of
     ///   one or more components that is not `Bool`; as a lazy product or a
     ///   labelled record type of one or more components; as a telescope type;
-    ///   as a model type; in the sugared form, as a product of two or more
+    ///   as a model type; in the sugared `form`, as a product of two or more
     ///   components; or as a path type whose carrier reads as none of a base
     ///   type, a sealed abstract type, a family or a product at arity zero,
     ///   `Bool`, or a decoded variable or constant.
@@ -7559,7 +7569,7 @@ impl Walk<'_, '_>
         | Former::Sum(arity) => usize::from(arity) >= 1_usize && named_sum(source, node).is_none(),
         | Former::With(arity) | Former::RecordType(arity) => usize::from(arity) >= 1_usize,
         | Former::Sigma { .. } | Former::Model { .. } => true,
-        | Former::Product(arity) => self.form == Form::Sugared && usize::from(arity) >= 2_usize,
+        | Former::Product(arity) => form == Form::Sugared && usize::from(arity) >= 2_usize,
         | Former::Path { carrier, .. } => match source.read(carrier) {
             | Former::BaseType(_) | Former::Abstract(_) => false,
             | Former::Data { arity, .. } | Former::Product(arity) => usize::from(arity) != 0_usize,
@@ -7570,9 +7580,9 @@ impl Walk<'_, '_>
         | _ => false,
     })]
     fn unread_head<S>(
-        &self,
         source: &S,
         node: S::Node,
+        form: Form,
     ) -> Bare
     where
         S: Source + ?Sized,
@@ -7610,7 +7620,7 @@ impl Walk<'_, '_>
         // `#{A, B}` reads as the product's code, `A * B` as the product of two
         // codes.
         else if let Former::Product(arity) = former {
-            self.form == Form::Sugared && usize::from(arity) >= 2_usize
+            form == Form::Sugared && usize::from(arity) >= 2_usize
         }
         // An expression reads a path type's carrier as an expression too: a
         // name stands for the type it names, but anything else, such as a
@@ -7659,13 +7669,14 @@ impl Walk<'_, '_>
     ///   parts.
     /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
     #[spec(
-        captures: [entry = self.remaining, head = self.unread_head(source, quoted)],
+        captures: [entry = self.remaining, head = Self::unread_head(source, quoted, form)],
         ensures: |ret| self.remaining <= entry && (entry == 0_u32 || head == Bare::Reads || ret == Bare::Unread),
     )]
     fn unread_as_expression<S>(
         &mut self,
         source: &S,
         quoted: S::Node,
+        form: Form,
     ) -> Bare
     where
         S: Source + ?Sized,
@@ -7677,7 +7688,7 @@ impl Walk<'_, '_>
                 return Bare::Reads;
             };
             self.remaining = left;
-            if self.unread_head(source, node) == Bare::Unread {
+            if Self::unread_head(source, node, form) == Bare::Unread {
                 return Bare::Unread;
             }
             let former = source.read(node);
@@ -8890,8 +8901,36 @@ impl Walk<'_, '_>
                 self.links.push(record_link(source, node));
                 Some(writes(Production("telescope_type"), Join::Sigma))
             },
-            Former::StaticLambda(_) => {
-                Some(writes(Production("static_abstraction"), Join::StaticLambda))
+            // A static lambda's body is read as an expression between its
+            // braces: a type no expression reads there in the sugared form,
+            // or a product whose braces would open the block, is written in
+            // the quote's own spelling. The decision reads the sugared form in
+            // either form, so a body moved between the forms keeps its quote
+            // (#4508).
+            Former::StaticLambda(body) => {
+                let held = if let Former::Quote(held) = source.read(body) {
+                    Some((held, Admits::ValueType))
+                }
+                else if let Former::QuoteComputation(held) = source.read(body) {
+                    Some((held, Admits::CompType))
+                }
+                else {
+                    None
+                };
+                let quoted = if let Some((held, admits)) = held
+                    && (matches!(source.read(held), Former::Product(arity) if usize::from(arity) >= 1_usize)
+                        || self.unread_as_expression(source, held, Form::Sugared) == Bare::Unread)
+                {
+                    shaped = Some(Vec::from([Slot::of(held, admits, Binds::ONE)]));
+                    true
+                }
+                else {
+                    false
+                };
+                Some(writes(
+                    Production("lambda_expression"),
+                    Join::StaticLambda { quoted },
+                ))
             },
             Former::Record(arity) => {
                 Some(writes(Production("telescope_expression"), Join::Braced {
@@ -9125,7 +9164,7 @@ impl Walk<'_, '_>
             // the type itself.
             Former::Quote(quoted) | Former::QuoteComputation(quoted)
                 if self.surface == Surface::Expression
-                    && self.unread_as_expression(source, quoted) == Bare::Unread =>
+                    && self.unread_as_expression(source, quoted, self.form) == Bare::Unread =>
             {
                 Some(writes(
                     Production("type_quote_expression"),
@@ -10653,10 +10692,10 @@ impl Walk<'_, '_>
     ///   classifier; a primitive as a call of its name, an operation performed
     ///   as the call `I.op(v)` through its interface's name, but a string
     ///   append as the interpolated string `"…${ v }…"` that lowers to it;
-    ///   `transport(…)` over its motive — `\a. M`, or `+U M` for a telescope —
-    ///   and operands; `v.l` and `v.i`; `match v { … }` with one arm per branch
-    ///   but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
-    ///   constructor's applied to its field binders, its equations unwritten,
+    ///   `transport(…)` over its motive — `fun (a) { M }`, or `+U M` for a
+    ///   telescope — and operands; `v.l` and `v.i`; `match v { … }` with one
+    ///   arm per branch but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or
+    ///   a constructor's applied to its field binders, its equations unwritten,
     ///   `?` for a constructor the source cannot name; `handle { c } with {
     ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`,
     ///   over a theory `handle c : T with sort C = A …` with the sorts its
@@ -11067,20 +11106,31 @@ impl Walk<'_, '_>
                 let _ = parts.text("abandon").arguments(Arity(1_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
-            Former::PathTransport { .. } | Former::Ride { .. } => {
+            // The motive is a static lambda, its body read in the expression
+            // grammar between the braces: a type no expression reads there,
+            // or a product whose braces would open the block, is written in
+            // the quote's own spelling, `type(T)` (#4508).
+            Former::PathTransport { motive, .. } | Former::Ride { motive, .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {
-                    "ride(\\"
+                    "ride(fun ("
                 }
                 else {
-                    "transport(\\"
+                    "transport(fun ("
                 };
-                let _ = parts
+                let quoted = matches!(source.read(motive), Former::Product(arity) if usize::from(arity) >= 1_usize)
+                    || self.unread_as_expression(source, motive, Form::Sugared) == Bare::Unread;
+                let opened = parts
                     .text(lead)
                     .part(Part::Binder(0_usize))
-                    .text(".")
-                    .part(Part::Space)
-                    .piece(Binding::Arrow)
-                    .rest(Arity(2_usize));
+                    .text(") {")
+                    .part(Part::Space);
+                let closed = if quoted {
+                    opened.text("type(").piece(Binding::ARGUMENT).text(")")
+                }
+                else {
+                    opened.piece(Binding::Arrow)
+                };
+                let _ = closed.part(Part::Space).text("}").rest(Arity(2_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
             Former::TelescopeTransport { .. } => {
@@ -11788,13 +11838,12 @@ impl Walk<'_, '_>
     ///   break after the arrow; `(x : A) -> C` naming the binder by the binders
     ///   open outside it, a break after the arrow; `#{x : A, y : B}` naming its
     ///   first label so and its second by the next name, a break after the
-    ///   comma; `\a. v` naming its binder so, a break after the dot; `f(a1, …,
-    ///   an)` with the operator parenthesized unless it is an atom, a block
-    ///   when it is a bind; every list with a break after each comma and before
-    ///   the closer; `run x <- c ; rest` naming its binder so, the bound
-    ///   computation a block when it is itself a bind, a soft line after the
-    ///   semicolon; `fun (x) { c }` naming its binder so and `thunk { c }`,
-    ///   each a block.
+    ///   comma; `f(a1, …, an)` with the operator parenthesized unless it is an
+    ///   atom, a block when it is a bind; every list with a break after each
+    ///   comma and before the closer; `run x <- c ; rest` naming its binder so,
+    ///   the bound computation a block when it is itself a bind, a soft line
+    ///   after the semicolon; `fun (x) { c }` and the static lambda `fun (a) {
+    ///   v }` naming their binder so, and `thunk { c }`, each a block.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -11823,7 +11872,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_dependent_pair_ignoring_its_binder_spells_as_the_product_771`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner { close: None, .. } | Join::OpenRow { .. } | Join::StaticLambda | Join::Lambda | Join::Thunk
+            Join::Prefix(_) | Join::EffectReturner { close: None, .. } | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
@@ -11841,8 +11890,8 @@ impl Walk<'_, '_>
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
-                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Lambda | Join::TypedLambda | Join::Thunk => Binding::Prefix,
-                    Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(..) => Binding::Arrow,
+                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
+                    Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
@@ -12178,14 +12227,21 @@ impl Walk<'_, '_>
                 self.fields = fields;
                 spelled
             },
-            Join::StaticLambda => {
+            Join::StaticLambda { .. } | Join::Lambda => {
                 let body = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let lead = self.leaf(Glyphs("\\"))?;
-                let dot = self.leaf(Glyphs("."))?;
-                let head = self.builder.concat_all(&[lead, binder, dot])?;
-                let head = self.space_or_break(head)?;
-                (self.builder.concat(head, body.doc)?, Binding::Arrow)
+                let open = self.leaf(Glyphs("fun ("))?;
+                let close = self.leaf(Glyphs(") {"))?;
+                let head = self.builder.concat_all(&[open, binder, close])?;
+                let body = if matches!(join, Join::StaticLambda { quoted: true }) {
+                    let quote = self.leaf(Glyphs("type("))?;
+                    let shut = self.leaf(Glyphs(")"))?;
+                    self.builder.concat_all(&[quote, body.doc, shut])?
+                }
+                else {
+                    body.doc
+                };
+                (self.block(head, body)?, Binding::Prefix)
             },
             Join::Sequence => {
                 let rest = self.pop()?;
@@ -12219,14 +12275,6 @@ impl Walk<'_, '_>
                     ])?,
                     Binding::Sequence,
                 )
-            },
-            Join::Lambda => {
-                let body = self.pop()?;
-                let binder = self.binder(OpenBinders(0_usize))?;
-                let open = self.leaf(Glyphs("fun ("))?;
-                let close = self.leaf(Glyphs(") {"))?;
-                let head = self.builder.concat_all(&[open, binder, close])?;
-                (self.block(head, body.doc)?, Binding::Prefix)
             },
             Join::TypedLambda => {
                 let body = self.pop()?;

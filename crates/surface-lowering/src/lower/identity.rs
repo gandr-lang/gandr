@@ -1,7 +1,7 @@
 //! Element identity in the lowering: the path type `Path(A, a, b)`, its
 //! reflexivity `here(a)`, function extensionality `funext(f, g)`, universe
 //! equivalence `equiv(f, g)`, the product of two universe paths
-//! `pathProduct(p, q)`, transport `transport(\X. T, p, v)` and its
+//! `pathProduct(p, q)`, transport `transport(fun (X) { T }, p, v)` and its
 //! dependent form `transport(M, p, z₀, q, v)`, and `back`, `then` and `cong`,
 //! each unfolded to the transport it derives; and the native list's
 //! constructors `nil` and `cons(h, t)`, the recursive motive transport first
@@ -61,12 +61,12 @@
 //!
 //! # `transport` states its motive
 //!
-//! `transport(\X. T, p, v)` moves `v : T[a/X]` along `p : Path(A, a, b)` to
-//! `T[b/X]`. Its motive is written as a static abstraction whose body is the
-//! family over the path's carrier, so `\X. List(X)` over a universe path is
-//! `y. List(El y)`; the transport stands as a computation. A motive written
-//! any other way is refused as unannotated. The alternative, inferring the
-//! motive from the expected type, is higher-order unification, which the
+//! `transport(fun (X) { T }, p, v)` moves `v : T[a/X]` along `p : Path(A, a,
+//! b)` to `T[b/X]`. Its motive is written as a static abstraction whose body is
+//! the family over the path's carrier, so `fun (X) { List(X) }` over a universe
+//! path is `y. List(El y)`; the transport stands as a computation. A motive
+//! written any other way is refused as unannotated. The alternative, inferring
+//! the motive from the expected type, is higher-order unification, which the
 //! checker does not do. Reversal: a checker that elaborates the motive from
 //! the operand's and the answer's types.
 //!
@@ -87,8 +87,8 @@
 //! codomain of the map its signature states. An operation
 //! whose motive's path — `back`'s and `cong`'s path, `then`'s first — is read
 //! no such way, or whose function did not lower, is refused as unannotated,
-//! and `cong` at a constructor or a static abstraction `\q. e` as
-//! [`FragmentBoundary::NotAFunction`]. A lambda `fun (q) { e }` as `cong`'s
+//! and `cong` at a constructor as [`FragmentBoundary::NotAFunction`]. A
+//! lambda `fun (q) { e }` as `cong`'s
 //! function takes the carrier its path's written type states, and the
 //! motive reads its body `e` where `⟨f y⟩` would stand. The
 //! operation then stands as the value its pure transport returns, so it is an
@@ -154,10 +154,10 @@
 //! type other than a thunk as the returner over it, and the checker refuses
 //! its shape by name. The alternative, a binder form of its own for motives,
 //! would duplicate the telescope the dependent arrow already reads; the one
-//! binder transport's static abstraction, `\X. T`, binds a type, not a point
-//! and an element. Reversal: a type-level lambda in argument position would
-//! write the motive as the family it is. `J` is not a primitive: it is this
-//! transport in the singleton,
+//! binder transport's static lambda, `fun (X) { T }`, binds a type, not a
+//! point and an element. Reversal: a type-level lambda in argument position
+//! would write the motive as the family it is. `J` is not a primitive: it is
+//! this transport in the singleton,
 //! `transport(+U ((y : A) -> (q : Path(A, a, y)) -> -F C), p, here(a),
 //! here(p), d)`, written as an ordinary definition.
 //!
@@ -179,7 +179,7 @@
 //! record the decisions the kernel replays. `Flow(A, a, b)` is read as
 //! `Path(A, a, b)` is. `stay(a)` is the identity flow, `f then g` composes
 //! two flows where the position answers a written flow type, and
-//! `ride(\X. T, f, v)` moves `v` along `f` in the family its static
+//! `ride(fun (X) { T }, f, v)` moves `v` along `f` in the family its static
 //! abstraction states, as `transport` does. The alternatives — an infix
 //! `A <: B`, statements over translators as `equiv` takes — are recorded with
 //! the checker's rules.
@@ -199,7 +199,7 @@
 //! position's answer, once the checker elaborates against expected types.
 //!
 //! `back(f)` where the position answers a written flow type is the symmetry
-//! ride `ride(\y. Flow(A, y, b), f, stay(b))`
+//! ride `ride(fun (y) { Flow(A, y, b) }, f, stay(b))`
 //! (`gandr_core_term::identity::back_flow`), which the checker refuses by
 //! its motive; `cong` has no flow reading.
 //!
@@ -326,6 +326,7 @@ use super::Universe;
 use super::arguments;
 use super::arity::Dependent;
 use super::arity::Place;
+use super::classified;
 use super::closed;
 use super::exactly;
 use super::exhausted;
@@ -548,7 +549,7 @@ pub(super) enum Operation
     Univalence,
     /// `pathProduct(p, q)`.
     PathProduct,
-    /// `transport(\X. T, p, v)`.
+    /// `transport(fun (X) { T }, p, v)`.
     Transport,
     /// `back(p)`.
     Back,
@@ -568,7 +569,7 @@ pub(super) enum Operation
     Arrow,
     /// `flowProduct(p, q)`.
     FlowProduct,
-    /// `ride(\X. T, f, v)`.
+    /// `ride(fun (X) { T }, f, v)`.
     Ride,
     /// `recorded(m₀, …, mₙ)`.
     Recorded,
@@ -1762,14 +1763,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   `flowProduct(p, q)`, `cons(h, t)`, `bisim(A, B)` and `sim(A, B)` stand
     ///   as values reading both operands as values, and `bisim(A, B, p)` all
     ///   three; `ua(e)` stands as a value reading its record as a value, its
-    ///   forward map derived from it; `transport(\X. T, p, v)` and `ride(\X. T,
-    ///   f, v)` stand as computations reading their motive, path or flow and
-    ///   value as values, the transport read as a value being the value it
-    ///   returns, as a derived operation is, since it runs nothing, and
-    ///   `transport(M, p, z₀, q, v)` as a computation reading its motive as a
-    ///   value type and the other four as values; `back(p)` and `cong(f, p)`
-    ///   stand as computations derived as [`Self::derive`] does; `recorded(m₀,
-    ///   …, mₙ)` stands as a value over its moves, each read as
+    ///   forward map derived from it; `transport(fun (X) { T }, p, v)` and
+    ///   `ride(fun (X) { T }, f, v)` stand as computations reading their
+    ///   motive, path or flow and value as values, the transport read as a
+    ///   value being the value it returns, as a derived operation is, since it
+    ///   runs nothing, and `transport(M, p, z₀, q, v)` as a computation reading
+    ///   its motive as a value type and the other four as values; `back(p)` and
+    ///   `cong(f, p)` stand as computations derived as [`Self::derive`] does;
+    ///   `recorded(m₀, …, mₙ)` stands as a value over its moves, each read as
     ///   [`Self::recorded_move`] reads it, and `dialogue(m₀, …, mₙ)` over its
     ///   moves, each read as [`Self::dialogue_move`] reads it; `decompose(d)`
     ///   stands as a computation reading its dialogue as a value. Every operand
@@ -1999,7 +2000,7 @@ impl<'source> Lowerer<'_, 'source>
                 if matches!(operation, Operation::Transport)
                     && let Some(node) = self.tree.node(motive)
                     && let Shape::Form {
-                        former: Former::StaticAbstraction,
+                        former: Former::Lambda,
                         ..
                     } = shape_of(self.pbg, node)?
                 {
@@ -2104,15 +2105,16 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Require a transport's or a ride's motive to be written as a static
-    /// abstraction, or as the name of a parameter holding a family.
+    /// Require a transport's or a ride's motive to be written as a lambda,
+    /// read as a static one, or as the name of a parameter holding a family.
     ///
     /// # Specification
     /// - requires: `motive` is the first operand of the transport or the ride
     ///   at `site`, which stands under `frame`.
-    /// - ensures: `Ok` exactly when the operand is a static abstraction, `\X.
-    ///   T`, whose body is the family the operation moves its value in, or a
-    ///   bare name resolving to a binder whose written type is a thunk or the
+    /// - ensures: `Ok` exactly when the operand is a lambda, `fun (X) { T }`,
+    ///   filed in [`Self::static_lambdas`] so it lowers as the static lambda
+    ///   whose body is the family the operation moves its value in (#4508), or
+    ///   a bare name resolving to a binder whose written type is a thunk or the
     ///   alias, `P : A => Type`, whose calls are that family (#3786).
     /// - fails: the unannotated refusal at `site` for any other operand; the
     ///   refusals the tree's molds yield and the name's own refusal from its
@@ -2123,14 +2125,14 @@ impl<'source> Lowerer<'_, 'source>
     /// The motive's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an abstraction motive lowers, a parameter holding a
-    ///   family lowers, and a declaration's name is refused.
+    /// - hypothesis: L3 — a lambda motive lowers, a parameter holding a family
+    ///   lowers, and a declaration's name is refused.
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
     /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
     /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
     #[spec(ensures: |ret| ret.is_err() || matches!(
         self.tree.node(motive).map(|node| shape_of(self.pbg, node)),
-        Some(Ok(Shape::Form { former: Former::StaticAbstraction | Former::Name | Former::Constructor, .. }))
+        Some(Ok(Shape::Form { former: Former::Lambda | Former::Name | Former::Constructor, .. }))
     ))]
     fn stated_motive(
         &mut self,
@@ -2146,9 +2148,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         match shape_of(self.pbg, node)? {
             Shape::Form {
-                former: Former::StaticAbstraction,
+                former: Former::Lambda,
                 ..
-            } => Ok(()),
+            } => {
+                let _first = self
+                    .static_lambdas
+                    .insert(motive, Maybe::Absent(classified::Absent::Motive));
+                Ok(())
+            },
             // A capitalised name is read as a constructor, so a family's
             // parameter is spelled either way; a constructor resolves to no
             // binder and is refused.
@@ -2801,12 +2808,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   bridged to one.
     /// - ensures: as [`Self::derived`] plans it, the position's answer read
     ///   first.
-    /// - fails: [`FragmentBoundary::NotAFunction`] for `cong` at a constructor
-    ///   or at a static abstraction `\q. e`; the unannotated refusal where the
-    ///   position answers a type that is not a written path type, or for a
-    ///   composite or `cong` a written flow type, under at most a returner and
-    ///   parentheses; the refusals of [`Self::derived`]; the function name's
-    ///   own refusal.
+    /// - fails: [`FragmentBoundary::NotAFunction`] for `cong` at a constructor;
+    ///   the unannotated refusal where the position answers a type that is not
+    ///   a written path type, or for a composite or `cong` a written flow type,
+    ///   under at most a returner and parentheses; the refusals of
+    ///   [`Self::derived`]; the function name's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2987,16 +2993,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: a lambda `fun (q) { e }` is pointed at its path
     ///   ([`Self::point`]), so its binder takes the carrier and it is minted as
     ///   its thunk; any other map is left as it is.
-    /// - fails: [`FragmentBoundary::NotAFunction`] for a static abstraction, a
-    ///   type operator and no function; the path name's own refusal.
+    /// - fails: the path name's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// The map's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lambda over a path parameter lowers and checks, and
-    ///   `\q. e` is refused as no function.
+    /// - hypothesis: L3 — a lambda over a path parameter lowers and checks.
     /// - witness: `lower::identity::tests::a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773`
     #[spec(ensures: |ret| ret.is_err() || self.over_points.get(&function).is_none_or(|&carrier| self.plans.get(carrier).is_some()))]
     fn cong_map(
@@ -3012,10 +3016,6 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         };
         match shape_of(self.pbg, node)? {
-            Shape::Form {
-                former: Former::StaticAbstraction,
-                ..
-            } => Err(site.out(FragmentBoundary::NotAFunction)),
             Shape::Form {
                 former: Former::Lambda,
                 ..
@@ -4231,7 +4231,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LabelledSumType
                 | Former::LazyRecordType
                 | Former::ValueFunctionType
-                | Former::StaticAbstraction
                 | Former::BridgeType
                 | Former::CapabilityType
                 | Former::AtType
@@ -5512,17 +5511,17 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Mint `transport(\X. T, p, v)` or `transport(P, p, v)`: the element
-    /// transport in the family the motive denotes under its binder.
+    /// Mint `transport(fun (X) { T }, p, v)` or `transport(P, p, v)`: the
+    /// element transport in the family the motive denotes under its binder.
     ///
     /// # Specification
     /// - requires: the three operands are already minted or absent.
     /// - ensures: the transport of the value along the path in the decode of
     ///   the motive's body at level zero, which the checker reads at the level
     ///   of the universe the path lives in — the quoted type itself when the
-    ///   body quotes one, so `\X. List(X)` is `y. List(El y)`. A parameter
-    ///   holding a family is the family of the code its call at the binder
-    ///   returns, `y. El ⟨force P y⟩` (#3786). The transport carries the
+    ///   body quotes one, so `fun (X) { List(X) }` is `y. List(El y)`. A
+    ///   parameter holding a family is the family of the code its call at the
+    ///   binder returns, `y. El ⟨force P y⟩` (#3786). The transport carries the
     ///   written origin, every other node minted for it the inserted identity
     ///   origin, and the motive's written origin is recorded against the
     ///   transport, so a face answers each written motive at its family's
@@ -5578,19 +5577,20 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(root))
     }
 
-    /// Mint `ride(\X. T, f, v)` or `ride(P, f, v)`: the ride of the value
-    /// along the flow in the family the motive denotes under its binder.
+    /// Mint `ride(fun (X) { T }, f, v)` or `ride(P, f, v)`: the ride of the
+    /// value along the flow in the family the motive denotes under its
+    /// binder.
     ///
     /// # Specification
     /// - requires: the three operands are already minted or absent.
     /// - ensures: the ride of the value along the flow in the decode of the
     ///   motive's body at level zero, which the checker reads at the level of
     ///   the universe the flow lives in — the quoted type itself when the body
-    ///   quotes one, so `\X. Run(X)` is `y. Run(y)`, and a parameter holding a
-    ///   family as a transport reads it. The ride carries the written origin
-    ///   and the family the inserted identity origin, and the motive's written
-    ///   origin is recorded against the ride, as a transport's is. Nothing when
-    ///   an operand did not lower.
+    ///   quotes one, so `fun (X) { Run(X) }` is `y. Run(y)`, and a parameter
+    ///   holding a family as a transport reads it. The ride carries the written
+    ///   origin and the family the inserted identity origin, and the motive's
+    ///   written origin is recorded against the ride, as a transport's is.
+    ///   Nothing when an operand did not lower.
     /// - fails: never.
     /// - panics: none.
     ///

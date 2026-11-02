@@ -22,14 +22,14 @@ import "../../model/identity/circle.gandr" ;
 /// Transport forward along a path between types, the map `idtoequiv` packages.
 @[ checks ]
 def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
-  transport(\X. X, p, x)
+  transport(fun (X) { X }, p, x)
 }
 
 /// Transport back along a path between types: the map the round trips are
 /// stated over.
 @[ checks ]
 def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
-  transport(\X. X, back(p), y)
+  transport(fun (X) { X }, back(p), y)
 }
 
 /// The transport back written out in a record's field converts, under the
@@ -37,11 +37,11 @@ def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
 @[ checks ]
 def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   g : b => a,
-  law : (z : b) => Path(a, g(z), transport(\X. X, back(p), z))
+  law : (z : b) => Path(a, g(z), transport(fun (X) { X }, back(p), z))
 } {
   (
-    fun (z) { transport(\X. X, back(p), z) },
-    fun (z) { here(transport(\X. X, back(p), z)) }
+    fun (z) { transport(fun (X) { X }, back(p), z) },
+    fun (z) { here(transport(fun (X) { X }, back(p), z)) }
   )
 }
 
@@ -108,11 +108,11 @@ def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
     fun (x) { fwdAlong(a, b, p, x) },
     (
       (
-        fun (y) { transport(\X. X, back(p), y) },
+        fun (y) { transport(fun (X) { X }, back(p), y) },
         fun (x) { sectAlong(a, b, p, x) }
       ),
       (
-        fun (y) { transport(\X. X, back(p), y) },
+        fun (y) { transport(fun (X) { X }, back(p), y) },
         fun (y) { retrAlong(a, b, p, y) }
       )
     )
@@ -169,14 +169,14 @@ def uaBeta(
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[ runs("S(Z)") ]
-def uaBetaRun() -> Int { transport(\X. X, ua(winding), loop) }
+def uaBetaRun() -> Int { transport(fun (X) { X }, ua(winding), loop) }
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
 @[ checks ]
 def windingBeta(x : Path(Circle, Base, Base)) -> Path(
   Int,
-  transport(\X. X, loopsAreIntegers, x),
+  transport(fun (X) { X }, loopsAreIntegers, x),
   wind(x)
 ) {
   here(wind(x))
@@ -184,4 +184,4 @@ def windingBeta(x : Path(Circle, Base, Base)) -> Path(
 
 /// A loop carried to the integers runs to its winding number.
 @[ runs("S(Z)") ]
-def windingRun() -> Int { transport(\X. X, loopsAreIntegers, loop) }
+def windingRun() -> Int { transport(fun (X) { X }, loopsAreIntegers, loop) }

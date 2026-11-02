@@ -14,7 +14,7 @@ def movedNamed(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x
 
 /// A body carries a value through a lambda over the family.
 def movedLambda(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x)) -> P(y) {
-  transport(\a. P(a), p, v)
+  transport(fun (a) { P(a) }, p, v)
 }
 
 /// A type carries a value through a family that it names.
@@ -29,7 +29,7 @@ def statedNamed(A : Type, P : A => Type, x : A, v : P(x)) -> Path(
 /// A type carries a value through a lambda over the family.
 def statedLambda(A : Type, P : A => Type, x : A, v : P(x)) -> Path(
   P(x),
-  transport(\a. P(a), here(x), v),
+  transport(fun (a) { P(a) }, here(x), v),
   v
 ) {
   here(v)
@@ -38,5 +38,5 @@ def statedLambda(A : Type, P : A => Type, x : A, v : P(x)) -> Path(
 /// A body carries a value through a lambda over the family. The path stands
 /// between the family and the value, and no type names it.
 def movedPastThePath(A : Type, x : A, y : A, p : Path(A, x, y), P : A => Type, v : P(x)) -> P(y) {
-  transport(\a. P(a), p, v)
+  transport(fun (a) { P(a) }, p, v)
 }

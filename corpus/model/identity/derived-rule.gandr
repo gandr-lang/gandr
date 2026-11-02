@@ -91,6 +91,6 @@ def invMulParity() -> Path(Bit, One, One) {
 def overDerived(
   M : Bit => Type,
   v : M(One)
-) -> Path(M(One), transport(\b. M(b), invMulParity(), v), v) {
+) -> Path(M(One), transport(fun (b) { M(b) }, invMulParity(), v), v) {
   here(v)
 }

@@ -5213,7 +5213,6 @@ impl<'source> Collector<'_, 'source>
                     | Former::LabelledSumType
                     | Former::LazyRecordType
                     | Former::ValueFunctionType
-                    | Former::StaticAbstraction
                     | Former::ParenthesizedType
                     | Former::PathType
                     | Former::BridgeType

@@ -57,7 +57,7 @@ def served : Run(Seat.SeatEnd) = recorded(
 
 /// A recorded run ridden forward along the simulation.
 def forward(receipt : Run(Seat.SeatEnd)) -> Run(Evolution.SeatEnd′) {
-  ride(\X. Run(X), Evolution.sub, receipt)
+  ride(fun (X) { Run(X) }, Evolution.sub, receipt)
 }
 
 /// The old run ridden forward by a run: the record is unchanged.

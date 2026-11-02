@@ -46,12 +46,12 @@ def relabel : Celsius ≃ Fahrenheit = (
 /// A Celsius value carried along the path the relabelling makes is the
 /// Fahrenheit value of its integer, by a run: the book's Lemma 2.10.5.
 @[ runs("Fah(20)") ]
-def relabelled() -> Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
+def relabelled() -> Fahrenheit { transport(fun (X) { X }, ua(relabel), Cel(20)) }
 
 /// #2140: the transport written as a tuple's component runs first, and the
 /// other component keeps its place.
 @[ runs("(Fah(20), 1)") ]
-def carriedInTuple() -> Fahrenheit * Integer { (transport(\X. X, ua(relabel), Cel(20)), 1) }
+def carriedInTuple() -> Fahrenheit * Integer { (transport(fun (X) { X }, ua(relabel), Cel(20)), 1) }
 
 /// A thermometer reading one Fahrenheit temperature.
 data Thermometer : Type where {
@@ -61,15 +61,15 @@ data Thermometer : Type where {
 /// #2140: the transport written as a constructor's field runs before the
 /// constructor is built.
 @[ runs("Reads(Fah(20))") ]
-def carriedInField() -> Thermometer { Reads(transport(\X. X, ua(relabel), Cel(20))) }
+def carriedInField() -> Thermometer { Reads(transport(fun (X) { X }, ua(relabel), Cel(20))) }
 
 /// #2140: a case on the transport runs it, then the arm its answer selects.
 @[ runs("20") ]
 def carriedScrutinised() -> Integer {
-  match transport(\X. X, ua(relabel), Cel(20)) { Fah(x) => x }
+  match transport(fun (X) { X }, ua(relabel), Cel(20)) { Fah(x) => x }
 }
 
 /// Another Celsius value carried along the same path. No signature states its
 /// type: the transport's own type is `Fahrenheit`.
 @[ runs("Fah(36)") ]
-def carried = transport(\X. X, ua(relabel), Cel(36));
+def carried = transport(fun (X) { X }, ua(relabel), Cel(36));

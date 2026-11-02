@@ -32,7 +32,7 @@ def nestedIsComposite(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g
 
 /// The right whisker of `fa` by `g`: the transport along `fa` of the composite's first half.
 def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
-  transport(\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))
+  transport(fun (a) { Path(Path(A, x, z), fm then g, a then g) }, fa, here(fm then g))
 }
 
 /// The whisker `[2](1, 0)`: a 2-cell beside a 1-cell, composed at level two.
@@ -66,7 +66,7 @@ def horizontal(A : Type, x : A, y : A, z : A, f : Path(A, x, y), f2 : Path(A, x,
 
 /// The left whisker of `ga` by `f`: the transport along `ga` of the composite's second half.
 def leftWhisker(A : Type, x : A, y : A, z : A, f : Path(A, x, y), gm : Path(A, y, z), gp : Path(A, y, z), ga : Path(Path(A, y, z), gm, gp)) -> Path(Path(A, x, z), f then gm, f then gp) {
-  transport(\a. Path(Path(A, x, z), f then gm, f then a), ga, here(f then gm))
+  transport(fun (a) { Path(Path(A, x, z), f then gm, f then a) }, ga, here(f then gm))
 }
 
 /// The horizontal composite is the right whisker of `a` then the left whisker of `b`, so reflexivity relates the two.

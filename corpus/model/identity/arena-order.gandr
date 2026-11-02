@@ -70,16 +70,16 @@ def builtBAC : #{ids : Type, start : ids, next : ids => ids, label : ids => Inte
 /// The links carried along the relabelling are the other order's links.
 def linksRelabelled : Path(
   Unit + (Unit + Unit) => Unit + (Unit + Unit),
-  transport(\t. t => t, relabelling, nextABC),
+  transport(fun (t) { t => t }, relabelling, nextABC),
   nextBAC
-) = funext(transport(\t. t => t, relabelling, nextABC), nextBAC);
+) = funext(transport(fun (t) { t => t }, relabelling, nextABC), nextBAC);
 
 /// The labels carried along the relabelling are the other order's labels.
 def labelsRelabelled : Path(
   Unit + (Unit + Unit) => Integer,
-  transport(\t. t => Integer, relabelling, labelABC),
+  transport(fun (t) { t => Integer }, relabelling, labelABC),
   labelBAC
-) = funext(transport(\t. t => Integer, relabelling, labelABC), labelBAC);
+) = funext(transport(fun (t) { t => Integer }, relabelling, labelABC), labelBAC);
 
 /// The two allocation orders build one arena: the ids along the relabelling,
 /// the start carried to `a`'s new id, and the links and labels carried to the

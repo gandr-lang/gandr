@@ -63,7 +63,7 @@ def heard : Run(Ask.Coded) = recorded(received(One), closed);
 /// Carried along the path, the run heard the one decoded: a yes.
 def heardDecoded : Path(
   Run(Ask.Decoded),
-  transport(\X. Run(?X. end), codes, heard),
+  transport(fun (X) { Run(type(?X. end)) }, codes, heard),
   recorded(received(Yes), closed)
 ) = here(recorded(received(Yes), closed));
 
@@ -71,13 +71,13 @@ def heardDecoded : Path(
 @[ refuses("EndpointMismatch") ]
 def heardKept : Path(
   Run(Ask.Decoded),
-  transport(\X. Run(?X. end), codes, heard),
+  transport(fun (X) { Run(type(?X. end)) }, codes, heard),
   recorded(received(No), closed)
 ) = here(recorded(received(No), closed));
 
 /// The carried run, computed.
 def heardRun() -> Run(Ask.Decoded) {
-  transport(\X. Run(?X. end), codes, heard)
+  transport(fun (X) { Run(type(?X. end)) }, codes, heard)
 }
 
 /// On the machine the carried run hears the yes, as it does by conversion.
