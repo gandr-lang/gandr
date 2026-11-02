@@ -3,7 +3,7 @@ error[SignatureMismatch.Sort]: this import is read at `Spelled`, whose `answer` 
   │
 3 │ theory Spelled where {
   │        ─────── declared here
-  ‡
+  ┆
 8 │ import "../syntax/pub-declaration.gandr" as declared : Spelled;
   │                                                        ━━━━━━━ a member the import finds at another type
   │
@@ -15,7 +15,7 @@ error[SignatureMismatch.Sort]: this import is read at `Spelled`, whose `answer` 
    │
  8 │ import "../syntax/pub-declaration.gandr" as declared : Spelled;
    │                                                        ━━━━━━━ a member the import finds at another type
-   ‡
+   ┆
 11 │ def relayed = declared.answer;
    │     ─────── declared here
    │

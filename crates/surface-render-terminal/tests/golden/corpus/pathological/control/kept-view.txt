@@ -41,7 +41,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 30 │ │││       resume(v, v)
 31 │ │││     };
    │ ││└─────┘ checked against `-F [Proc, c : Proc] Integer`; while checking the body of this access
-   ‡ ││
+   ┆ ┆┆
 35 │ ││      oper exit(code, k) => pure 0
 36 │ ││    }
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
@@ -63,7 +63,7 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 46 │ ││     access s as v { resume(v, v + 1) };
    │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
 47 │ ││     force k
-   ‡ ││
+   ┆ ┆┆
 50 │ ││     oper exit(code, k) => pure 0
 51 │ ││   }
    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
@@ -88,7 +88,7 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
    │ ││     │                        checked against `-F (() => Integer)`; while judging the value this returns
    │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
 62 │ ││     force j
-   ‡ ││
+   ┆ ┆┆
 65 │ ││     oper exit(code, k) => pure 0
 66 │ ││   }
    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}

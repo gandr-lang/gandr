@@ -14,7 +14,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 13 │ def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
    │                ───────────────────────── the type it is checked against
-   ‡
+   ┆
 18 │ def unpaired() -> Integer { tag_of(loose) }
    │ ┬───────────────────────────┬──────┯━━━━───
    │ │                           │      │

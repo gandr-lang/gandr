@@ -471,8 +471,8 @@ impl From<BoundaryTags> for FieldBytes<BOUNDARY_TAGS_LEN>
     fn from(tags: BoundaryTags) -> Self
     {
         let mut bytes = [0_u8; BOUNDARY_TAGS_LEN];
-        for (chunk, word) in bytes.chunks_exact_mut(8).zip(tags.0) {
-            chunk.copy_from_slice(&word.to_le_bytes());
+        for (chunk, word) in bytes.as_chunks_mut::<8>().0.iter_mut().zip(tags.0) {
+            *chunk = word.to_le_bytes();
         }
         Self(bytes)
     }
@@ -488,10 +488,8 @@ impl From<FieldBytes<BOUNDARY_TAGS_LEN>> for BoundaryTags
     fn from(FieldBytes(bytes): FieldBytes<BOUNDARY_TAGS_LEN>) -> Self
     {
         let mut words = [0_u64; 4];
-        for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(8)) {
-            let mut little = [0_u8; 8];
-            little.copy_from_slice(chunk);
-            *word = u64::from_le_bytes(little);
+        for (word, chunk) in words.iter_mut().zip(bytes.as_chunks::<8>().0) {
+            *word = u64::from_le_bytes(*chunk);
         }
         Self(words)
     }

@@ -10,10 +10,10 @@ error[UsedAfterClose]: the endpoint is used after `close`
 13 │ │   fork (first : File.Closer) {
    │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
 14 │ │     recv(first) as held;
-   ‡ │
+   ┆ ┆
 18 │ │   fork (second : File.Closer) {
    │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
-   ‡ │
+   ┆ ┆
 23 │ │   send(one, file);
    │ │   ─────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
 24 │ │   send(two, file);

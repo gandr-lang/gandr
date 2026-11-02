@@ -13,7 +13,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││     the type it is checked against
    │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
 15 │ ││     force back
-   ‡ ││
+   ┆ ┆┆
 18 │ ││     oper exit(code, rest) => pure 0
 19 │ ││   }
    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}

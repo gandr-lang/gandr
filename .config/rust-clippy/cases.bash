@@ -7,7 +7,7 @@
 # pin, and runs it with a channel, a repository under the scratch cache (a
 # later case reads what an earlier one fetched), a source (`upstream`, or
 # `absent` for none) and a command: `clone` is a driver build's clone of
-# rust-clippy, printing its `master` and the parent's `rust-toolchain.toml`;
+# rust-clippy, printing its `main` and the parent's `rust-toolchain.toml`;
 # `touch` marks that the command ran. A case with `"mv": "bsd"` runs with an
 # `mv` that refuses `-T` as darwin's BSD `mv` does (#3601). The exit and
 # output are compared, `{sets}` and `{after}` standing for the commits, and a
@@ -42,7 +42,7 @@ while IFS= read -r case; do
   awk -v rev="$pin" '/^rev=/ { print "rev=" rev; next } { print }' "$root/.github/docker/rust-clippy.bash" > "$scratch/rust-clippy.bash"
   chmod +x "$scratch/rust-clippy.bash"
   case $(jq -r .run <<< "$case") in
-    clone) command=(bash -c 'rm -rf "$1" && git clone --quiet https://github.com/rust-lang/rust-clippy "$1" && git -C "$1" rev-parse master && git -C "$1" show master^:rust-toolchain.toml' _ "$scratch/clone") ;;
+    clone) command=(bash -c 'rm -rf "$1" && git clone --quiet https://github.com/rust-lang/rust-clippy "$1" && git -C "$1" rev-parse main && git -C "$1" show main^:rust-toolchain.toml' _ "$scratch/clone") ;;
     touch) command=(touch "$scratch/ran") ;;
   esac
   rm -f "$scratch/ran"

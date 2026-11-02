@@ -3,7 +3,7 @@ error[ImportCycle]: this import leads back to this source, so its declarations a
   │
 4 │ import "./import-cycle-a.gandr";
   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ leads back to this source
-  ‡
+  ┆
 8 │ data Right : Type where {
   │      ───── declared here
   │

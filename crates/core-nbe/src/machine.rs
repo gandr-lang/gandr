@@ -3031,7 +3031,7 @@ where
     ) -> Result<DefinitionHeight, ConversionFault>
     {
         let mut tallest = DefinitionHeight::default();
-        for glued in [pair.0, pair.1] {
+        for glued in <[Glued; 2]>::from(pair) {
             let neutral = match glued {
                 Glued::Value(value) => match self.domain.value(value) {
                     Some(&DomainValue::Neutral { neutral, .. }) => neutral,

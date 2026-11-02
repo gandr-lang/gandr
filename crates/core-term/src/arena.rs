@@ -2167,7 +2167,7 @@ impl CoreArena
             reason = "parity: the body settles the row once; the check settles it once more"
         )
     )]
-    #[spec(captures: expected = self.settled_row(row.clone()), ensures: |ret| self.value(ret) == Some(&Value::Row(expected.clone())))]
+    #[spec(captures: expected = Value::Row(self.settled_row(row.clone())), ensures: |ret| self.value(ret) == Some(&expected))]
     pub fn value_row(
         &mut self,
         row: crate::effect::EffectRow,
@@ -2226,7 +2226,7 @@ impl CoreArena
             reason = "parity: the body settles the row once; the check settles it once more"
         )
     )]
-    #[spec(captures: expected = self.settled_row(effects.clone()), ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner { result, effects: expected.clone() }))]
+    #[spec(captures: expected = CompType::Returner { result, effects: self.settled_row(effects.clone()) }, ensures: |ret| self.comp_type(ret) == Some(&expected))]
     #[inline]
     pub fn comp_type_returner_with_effects(
         &mut self,

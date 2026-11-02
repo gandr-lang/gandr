@@ -1415,7 +1415,7 @@ run = ".config/mise/host-lock-cases.bash"
 # `.config/rust-clippy/cases.json` against a scratch rust-clippy: a driver
 # build's clone, the kept repository and the two refusals.
 ["check:rust-clippy"]
-description = "A Dylint driver build's rust-clippy clone reads the pinned commit as master; a pin off the toolchain's channel is refused"
+description = "A Dylint driver build's rust-clippy clone reads the pinned commit as main; a pin off the toolchain's channel is refused"
 tools.jq = "1.8.1"
 run = ".config/rust-clippy/cases.bash"
 
@@ -1771,7 +1771,7 @@ echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their r
 ["check:debug"]
 description = "The lldb formatters pick each recorded enum's variant or raw tag, read each recorded extent only inside memory, cut each recorded summary at its depth and quote each recorded string on one line, and lldb.bash launches each recorded system's lldb as recorded"
 tools.jq = "1.8.1"
-tools.python = "3.14.9"
+tools.python = "3.15.2"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1923,7 +1923,7 @@ echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as re
 ["check:bench"]
 description = "The bench harness writes each recorded run's row or outcome, past bound where a bound was met, and names each recorded example's built-ins past n = 3, and the stress timer reports each recorded command's status and peak"
 tools.jq = "1.8.1"
-tools.python = "3.14.9"
+tools.python = "3.15.2"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2066,9 +2066,9 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # unread, so the template is held here.
 ["check:prose"]
 description = "The parsed sentence rules, against the prose ledger"
-tools.python = "3.14.9"
-tools."github:astral-sh/uv" = "0.13.5"
-tools."pipx:spacy" = { version = "3.8.18", uvx_args = "--python 3.14.9 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
+tools.python = "3.15.2"
+tools."github:astral-sh/uv" = "0.13.6"
+tools."pipx:spacy" = { version = "3.8.18", uvx_args = "--python 3.15.2 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
 usage = 'flag "--write" help="rewrite corpus/prose.ledger from the findings instead of comparing"'
 run = '''
 #!/usr/bin/env bash

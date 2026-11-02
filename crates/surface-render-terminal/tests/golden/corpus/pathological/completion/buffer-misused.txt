@@ -7,7 +7,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │ ││     ━━━ a buffer never handed back
 13 │ ││     pure unit
 14 │ ││   } with {
-   ‡ ││
+   ┆ ┆┆
 17 │ ││     oper free(b, k) => k(unit)
 18 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
@@ -30,7 +30,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    │ ││     │      │
    │ ││     │      a buffer already handed back
    │ ││     checked against `-F [Ring, r : Ring] Unit`; while checking the payload of this operation
-   ‡ ││
+   ┆ ┆┆
 31 │ ││     oper free(b, k) => k(unit)
 32 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
@@ -53,7 +53,7 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
    │ ││     │                   checked against `-F Buf`; while judging the value this returns
    │ ││     checked against `-F [Ring, r : Ring] Unit`; while finishing the type of this
 41 │ ││     r.free(b)
-   ‡ ││
+   ┆ ┆┆
 45 │ ││     oper free(b, k) => k(unit)
 46 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
@@ -70,7 +70,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 54 │ │┃     run b <- r.alloc(4096);
 55 │ │┃     r.free(b)
 56 │ │┃   } with {
-   ‡ │┃
+   ┆ ┆┇
 59 │ │┃     oper free(b, k) => k(unit)
 60 │ │┃   }
    │ │┗━━━┛ a buffer never handed back
@@ -87,12 +87,12 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 68 │ ││     run b <- r.alloc(4096);
 69 │ ││     r.free(b)
 70 │ ││   } with {
-   ‡ ││
+   ┆ ┆┆
 73 │ ││       fork (kernel : ?Buf. end) {
    │ ││       ──── checked against `-F Unit`; while checking the child this forks
 74 │ ││         recv(kernel) as held;
    │ ││         ━━━━ a buffer never handed back
-   ‡ ││
+   ┆ ┆┆
 80 │ ││     oper free(b, k) => k(unit)
 81 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the rest of this receive's block; binds r : Integer * Buf, _ : Stack(-F Buf, -F Unit), n : Integer, _ : Buf
@@ -109,7 +109,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
  88 │ ││     run b <- r.alloc(4096);
  89 │ ││     r.free(b)
  90 │ ││   } with {
-    ‡ ││
+    ┆ ┆┆
  93 │ ││       fork (kernel : ?Buf. !Buf. !Buf. end) {
     │ ││       ──── checked against `-F Unit`; while checking the child this forks
  94 │ ││         recv(kernel) as held;
@@ -121,7 +121,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
     │ ││         │            │
     │ ││         │            a buffer already handed back
     │ ││         checked against `-F Unit`; while synthesising the computation this binds
-    ‡ ││
+    ┆ ┆┆
 105 │ ││     oper free(b, k) => k(unit)
 106 │ ││   }
     │ │└───┘ checked against `-F Unit`; while checking the rest of this receive's block; binds r : Integer * Buf, _ : Stack(-F Buf, -F Unit), n : Integer, _ : Buf
@@ -146,7 +146,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
     │ │││                ━━━━━━━━━ a buffer never handed back
 118 │ │││     }
     │ ││└─────┘ checked against `-F [Ring, r : Ring] Unit`; while checking the branches of this case
-    ‡ ││
+    ┆ ┆┆
 122 │ ││      oper free(b, k) => k(unit)
 123 │ ││    }
     │ │└────┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}

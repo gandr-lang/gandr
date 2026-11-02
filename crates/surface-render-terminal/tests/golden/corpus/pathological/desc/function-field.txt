@@ -9,7 +9,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 14 │ │┃     Done(_x) => 0,
 15 │ │┃     Get(k) => {
 16 │ │┃       run q <- k(0);
-   ‡ │┃
+   ┆ ┆┇
 23 │ │┃   }
    │ │┗━━━┛ a case its datatype's rules do not admit
 24 │ │  }

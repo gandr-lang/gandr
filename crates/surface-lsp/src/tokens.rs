@@ -431,7 +431,7 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 /// - witness: `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`
 /// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
 #[spec(ensures: |ret| ret.0.len().is_multiple_of(INTEGERS_PER_TOKEN)
-    && ret.0.chunks_exact(INTEGERS_PER_TOKEN).all(|token|
+    && ret.0.as_chunks::<INTEGERS_PER_TOKEN>().0.iter().all(|token|
         matches!(token, &[_, _, length, kind, bits] if length > 0
             && usize::try_from(kind).is_ok_and(|index| index < TOKEN_TYPES.len())
             && bits & !15_u32 == 0))

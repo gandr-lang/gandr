@@ -637,8 +637,7 @@ fn identity(key: &toml::Value) -> Option<KernelIdentity>
         return None;
     }
     let mut bytes = [0_u8; 32];
-    for (byte, pair) in bytes.iter_mut().zip(digits.chunks_exact(2)) {
-        let [high, low] = <[u8; 2]>::try_from(pair).ok()?;
+    for (byte, &[high, low]) in bytes.iter_mut().zip(digits.as_chunks::<2>().0) {
         let high = char::from(high).to_digit(16)?;
         let low = char::from(low).to_digit(16)?;
         *byte = u8::try_from(high.checked_mul(16)?.checked_add(low)?).ok()?;

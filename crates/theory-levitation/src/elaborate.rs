@@ -1035,7 +1035,7 @@ pub fn redex_occurrences(body: &CircuitBody)
     #[spec(
         captures: before = stack.len(),
         ensures: stack.get(before ..).is_some_and(|added| added.len().is_multiple_of(3)
-            && added.chunks_exact(3).all(|steps| matches!(*steps, [Walk::Ascend, Walk::Term(_), Walk::Descend(_)]))),
+            && added.as_chunks::<3>().0.iter().all(|steps| matches!(*steps, [Walk::Ascend, Walk::Term(_), Walk::Descend(_)]))),
     )]
     fn push_args<'body, A>(
         stack: &mut Vec<Walk<'body>>,

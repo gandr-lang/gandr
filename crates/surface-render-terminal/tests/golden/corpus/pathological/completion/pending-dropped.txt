@@ -9,7 +9,7 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    │ │   the endpoint was opened by this fork
 12 │ │     recv(kernel) as sqe;
 13 │ │     send(kernel, Ring.done);
-   ‡ │
+   ┆ ┆
 17 │ │   pure unit
 18 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk

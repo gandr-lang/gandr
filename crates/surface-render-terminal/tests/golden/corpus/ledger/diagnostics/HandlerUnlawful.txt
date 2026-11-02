@@ -5,7 +5,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 14 │ ┃     st.put(1);
 15 │ ┃     run a <- st.get();
 16 │ ┃     pure a
-   ‡ ┃
+   ┆ ┇
 20 │ ┃     oper put(s, k) => k(unit)
 21 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory

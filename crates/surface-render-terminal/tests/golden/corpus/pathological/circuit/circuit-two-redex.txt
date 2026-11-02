@@ -5,7 +5,7 @@ error[UndescribedMember.ParallelRedexes]: this member is a circuit rule rewritin
  7 │ ┃     rule p : Nat ==> Nat,
  8 │ ┃     rule q : Nat ==> Nat,
  9 │ ┃     data x : Nat,
-   ‡ ┃
+   ┆ ┇
 14 │ ┃     node : add(x′, y′) --> (z);
 15 │ ┃   };
    │ ┗━━━┛ a member the description does not read

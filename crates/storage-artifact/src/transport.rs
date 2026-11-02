@@ -612,7 +612,7 @@ impl TransportStepIndex
     /// - witness: `transport::tests::a_shared_identity_with_equal_content_sums_the_grading`
     #[inline]
     #[spec(captures: before = (self.entries.get(&address).cloned(), cert.clone()), ensures: |output| match before.0 {
-        None => output.is_ok() && self.entries.get(&address) == Some(&(before.1.clone(), multiplicity)),
+        None => output.is_ok() && self.entries.get(&address).is_some_and(|graded| graded.0 == before.1 && graded.1 == multiplicity),
         Some((ref held, count)) => match output {
             Ok(()) => held == &before.1 && self.entries.get(&address).is_some_and(|graded| &graded.0 == held && u32::from(graded.1) == u32::from(count).saturating_add(u32::from(multiplicity))),
             Err(TransportStepObstruction::ContentAddressCollision { address: conflict, held: ref retained, ref offered }) => held != &before.1 && conflict == address && retained.as_ref() == held && offered.as_ref() == &before.1 && self.entries.get(&address) == Some(&(held.clone(), count)),

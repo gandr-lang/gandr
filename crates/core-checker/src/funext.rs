@@ -366,7 +366,7 @@ pub fn decide(
 {
     let unsupported = CheckRefusal::FunextUnsupported { at, classifier };
     let distinct = CheckRefusal::PointwiseDistinct { at };
-    for function in [functions.0, functions.1] {
+    for function in <[ValueId; 2]>::from(functions) {
         let reach = loose_reach(context.arena(), CoreNode::Term(TermNode::Value(function)))?;
         if usize::from(reach) != 0 {
             return Err(unsupported);

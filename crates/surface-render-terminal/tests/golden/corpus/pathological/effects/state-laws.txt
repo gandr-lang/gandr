@@ -5,7 +5,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 13 │ ┃     st.put(1);
 14 │ ┃     run a <- st.get();
 15 │ ┃     pure a
-   ‡ ┃
+   ┆ ┇
 19 │ ┃     oper put(s, k) => k(unit)
 20 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
@@ -19,7 +19,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 29 │ ┃     st.put(1);
 30 │ ┃     run a <- st.get();
 31 │ ┃     pure thunk { fn (s : Integer) { pure a } }
-   ‡ ┃
+   ┆ ┇
 35 │ ┃     oper put(s, k) => pure thunk { fn (t : Integer) { run g <- k(unit); g(s + t) } }
 36 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory

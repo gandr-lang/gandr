@@ -181,13 +181,10 @@ impl Hasher for Fold
         bytes: &[u8],
     )
     {
-        let mut chunks = bytes.chunks_exact(8);
-        for chunk in &mut chunks {
-            let mut word = [0_u8; 8];
-            word.copy_from_slice(chunk);
-            self.write_u64(u64::from_le_bytes(word));
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.write_u64(u64::from_le_bytes(*word));
         }
-        let rest = chunks.remainder();
         if !rest.is_empty() {
             let mut word = [0_u8; 8];
             for (target, byte) in word.iter_mut().zip(rest) {

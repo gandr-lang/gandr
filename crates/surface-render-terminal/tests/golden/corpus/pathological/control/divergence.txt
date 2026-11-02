@@ -11,7 +11,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 12 │ │┃     run below <- 1 < 0;
 13 │ │┃     match below {
 14 │ │┃       true => break(x),
-   ‡ │┃
+   ┆ ┆┇
 17 │ │┃   };
    │ │┗━━━┛ its type does not convert: expected `-F Bool`, found `-F [Div] Bool`
 18 │ │    y
@@ -26,7 +26,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 22 │   def spin(x : Bool) -> [Div] Bool {
    │                         ────────── the type it synthesises
-   ‡
+   ┆
 36 │   def spinFirst(x : Bool) -> Bool {
    │   │             ┬            ──── the type it is checked against
    │   │             │
@@ -45,7 +45,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 22 │    def spin(x : Bool) -> [Div] Bool {
    │                          ────────── the type it synthesises
-   ‡
+   ┆
 44 │    def tamed(x : Bool) -> Bool {
    │    │         ─ checked against `Bool -> -F Bool`; while checking the body of this function; binds x : Bool
    │ ┌──┘

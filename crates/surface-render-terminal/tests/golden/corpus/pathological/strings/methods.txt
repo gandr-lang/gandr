@@ -86,7 +86,7 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
 55 │ │   run xs <- match t -> -F List(Integer) {
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds xs : List(Integer)
 56 │ │     Inline(bs) => s.bytes(),
-   ‡ │
+   ┆ ┆
 59 │ │   s.len()
    │ │   ━━━━━━━ a held value a consumed receiver already took
 60 │ │ }

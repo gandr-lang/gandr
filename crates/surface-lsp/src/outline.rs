@@ -648,11 +648,7 @@ fn declared(
                         matches!(tree.node(later).map(Node::label), Some(NodeLabel::Tile(_)))
                     })
                     .collect();
-                for pair in after.chunks_exact(2) {
-                    let &[dot, segment] = pair
-                    else {
-                        break;
-                    };
+                for &[dot, segment] in after.as_chunks::<2>().0 {
                     let Some(written) = tree.fragment(segment)
                     else {
                         break;

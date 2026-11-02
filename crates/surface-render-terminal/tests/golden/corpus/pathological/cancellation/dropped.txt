@@ -6,7 +6,7 @@ error[ContinuationUnspent]: the operation's continuation holds something that mu
 13 │ ││     fork (task : Cancel.Join) {
 14 │ ││       send(task, Cancel.notes);
 15 │ ││       close(task)
-   ‡ ││
+   ┆ ┆┆
 22 │ ││     oper exit(code, k) => pure unit
    │ ││                           ━━━━━━━━━ a continuation never resumed or abandoned
 23 │ ││   }

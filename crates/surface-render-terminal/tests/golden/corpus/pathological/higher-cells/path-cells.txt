@@ -5,7 +5,7 @@ error[NoFiller.Omitted]: the module omits this law, and its sides do not convert
 66 │ ┃   /// The one object.
 67 │ ┃   type Ob = One;
 68 │ ┃   /// The numbers, each a cell from the object to itself.
-   ‡ ┃
+   ┆ ┇
 75 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus(f, g) }
 76 │ ┃ }
    │ ┗━┛ a law whose sides do not convert
@@ -20,7 +20,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` o
  97 │ ┃     st.put(1);
  98 │ ┃     run a <- st.get();
  99 │ ┃     pure a
-    ‡ ┃
+    ┆ ┇
 103 │ ┃     oper put(s, k) => pure 9
 104 │ ┃   }
     │ ┗━━━┛ not shown to satisfy a law of its theory

@@ -3,7 +3,7 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
   │
 1 │   def save(c : Cap { read, write }) -> [Fs] Unit {
   │                ─────────────────── the type it is checked against
-  ‡
+  ┆
 6 │   def widen(c : Cap { read }) -> [Fs] Unit {
   │   │         ┬   ──────────── the type it synthesises
   │   │         │

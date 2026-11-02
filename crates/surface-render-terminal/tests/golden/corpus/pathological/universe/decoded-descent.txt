@@ -23,7 +23,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │ │││││           │           │              checked against `UL`; while finishing the type of this
    │ │││││           │           synthesised; while checking the argument of this application
    │ │││││           checked against `-F Nat`; while synthesising the computation this binds
-   ‡ │││││
+   ┆ ┆┆┆┆┆
 32 │ │││││       }
    │ ││││└───────┘ checked against `-F Nat`; while checking the body of this function; binds _ : elL(a), _ : List(elL(a))
 33 │ ││││      } },

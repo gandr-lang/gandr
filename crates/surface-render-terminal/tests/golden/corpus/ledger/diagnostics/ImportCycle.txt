@@ -3,7 +3,7 @@ error[ImportCycle]: this import leads back to this source, so its declarations a
   │
 2 │ import "ImportCycle.gandr" ;
   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ leads back to this source
-  ‡
+  ┆
 5 │ def a = 1 ;
   │     ─ declared here
   │

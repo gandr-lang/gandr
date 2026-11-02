@@ -10,7 +10,7 @@ error[UsedAfterClose]: the endpoint is used after `close`
 13 │ │   fork (closer : File.Closer) {
    │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
 14 │ │     recv(closer) as held;
-   ‡ │
+   ┆ ┆
 18 │ │   send(task, file);
    │ │   ──────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
 19 │ │   close(file);

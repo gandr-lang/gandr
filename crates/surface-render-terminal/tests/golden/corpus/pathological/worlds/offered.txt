@@ -22,7 +22,7 @@ error[DuplicateDefinition]: `offers` is defined twice
    │
 46 │ pub offers [store = Absent];
    │     ──────────────────────── first written here
-   ‡
+   ┆
 50 │ pub offers [store = Echo];
    │     ━━━━━━━━━━━━━━━━━━━━━━ written again here
    │

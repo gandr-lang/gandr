@@ -3,7 +3,7 @@ error[SignatureMismatch.Unstated]: this import is read at `Greeted`, whose `gree
   │
 3 │ theory Greeted where {
   │        ─────── declared here
-  ‡
+  ┆
 9 │ import "../features/package-address.gandr" as addressed : Greeted;
   │                                                           ━━━━━━━ a member the match reads no type for
   │
@@ -15,7 +15,7 @@ error[SignatureMismatch.Unstated]: this import is read at `Greeted`, whose `gree
    │
  9 │ import "../features/package-address.gandr" as addressed : Greeted;
    │                                                           ━━━━━━━ a member the match reads no type for
-   ‡
+   ┆
 12 │ def relayed = addressed.greeting;
    │     ─────── declared here
    │

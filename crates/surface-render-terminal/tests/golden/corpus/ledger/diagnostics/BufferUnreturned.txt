@@ -7,7 +7,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │ ││     ━━━ a buffer never handed back
  6 │ ││     pure unit
  7 │ ││   } with {
-   ‡ ││
+   ┆ ┆┆
 10 │ ││     oper free(b, k) => k(unit)
 11 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}

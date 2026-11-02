@@ -285,8 +285,8 @@ pub fn admitting() -> AdmissionPolicy
 /// trivial.
 pub fn took(taken: AdmittedCount)
 {
-    let _before = TAKEN.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |held| {
-        Some(held.saturating_add(u32::from(taken)))
+    let _before = TAKEN.update(Ordering::Relaxed, Ordering::Relaxed, |held| {
+        held.saturating_add(u32::from(taken))
     });
 }
 

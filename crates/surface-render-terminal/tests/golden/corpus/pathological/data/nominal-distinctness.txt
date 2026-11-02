@@ -15,7 +15,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 18 │ type Temp = Fahrenheit;
    │             ────────── the type it is checked against
-   ‡
+   ┆
 27 │ def aliased = (Cel(20) : Temp);
    │                ┯━━━━━━
    │                │

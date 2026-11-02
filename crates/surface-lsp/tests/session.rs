@@ -1671,11 +1671,7 @@ mod sweeps
             assert_eq!(stream.len() % 5, 0_usize, "five integers per token");
             let (mut row, mut col) = (0_u64, 0_u64);
             decoded.clear();
-            for token in stream.chunks_exact(5) {
-                let &[line_delta, start_delta, length, _, _] = token
-                else {
-                    panic!("a chunk of five holds five integers");
-                };
+            for &[line_delta, start_delta, length, _, _] in stream.as_chunks::<5>().0 {
                 if line_delta == 0 {
                     col += start_delta;
                 }

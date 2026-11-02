@@ -3,7 +3,7 @@ error[EquivUnsupported]: `equiv` needs two closed pure translators between types
    │
  9 │ def same(n : Nat) -> -F Nat {
    │              ─── the type it synthesises
-   ‡
+   ┆
 15 │ def recursive = equiv(same, same) ;
    │                 ━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Nat`
    │
