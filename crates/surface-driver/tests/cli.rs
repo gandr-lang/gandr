@@ -196,7 +196,9 @@ fn homes() -> PathBuf
 ///   user's configuration, cache and data directories are this test's own,
 ///   under [`homes`], so neither a file on the host nor an earlier run or
 ///   another test reaches a case through them, and no case writes the host's
-///   store. No `GANDR_TOOLCHAIN` reaches the driver, so it runs itself.
+///   store. Neither `GANDR_TOOLCHAIN` nor the `CARGO_MANIFEST_DIR` the test
+///   runner sets reaches the driver, so it selects as a shell does and, with no
+///   toolchain under the test's data directory, runs itself.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -222,6 +224,7 @@ where
     command.env("XDG_CACHE_HOME", homes.join("cache"));
     command.env("XDG_DATA_HOME", homes.join("data"));
     command.env_remove("GANDR_TOOLCHAIN");
+    command.env_remove("CARGO_MANIFEST_DIR");
     command
 }
 
@@ -2960,9 +2963,10 @@ fn a_relay_reaches_only_a_hub_of_its_own_build()
     let relay = |driver: &Path| {
         let mut command = Command::new(driver);
         for (key, value) in gandr::<&str>(&[]).get_envs() {
-            if let Some(value) = value {
-                let _set = command.env(key, value);
-            }
+            let _set = match value {
+                Some(value) => command.env(key, value),
+                None => command.env_remove(key),
+            };
         }
         let _configured = command
             .args(["mcp", "--linger-ms", "3000"])
@@ -3091,9 +3095,10 @@ impl Builds
     {
         let mut command = Command::new(self.first.join("gandr"));
         for (key, value) in gandr::<&str>(&[]).get_envs() {
-            if let Some(value) = value {
-                let _set = command.env(key, value);
-            }
+            let _set = match value {
+                Some(value) => command.env(key, value),
+                None => command.env_remove(key),
+            };
         }
         let _configured = command
             .args(arguments)
@@ -4640,6 +4645,45 @@ fn a_linked_toolchain_is_the_one_the_proxy_runs()
         stderr(&unbuilt).starts_with("gandr: the toolchain `empty` holds no "),
         "a directory with no `gandr` is refused: {}",
         stderr(&unbuilt)
+    );
+}
+
+/// #4511: cargo running the driver's own package runs that build, whatever
+/// the default names, so a gate in a worktree judges the worktree's driver;
+/// `CARGO_MANIFEST_DIR` naming another directory selects as before.
+#[cfg(unix)]
+#[test]
+fn a_cargo_run_of_the_driver_runs_its_own_build_4511()
+{
+    let scratch = Scratch::new(Path::new("toolchain-cargo-run"));
+    let data = scratch.0.join("data");
+    let build = fake_toolchain(&scratch, Path::new("fake"));
+    let link = proxied(
+        &["toolchain", "link", "fake", &build.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    let under = |manifest: &Path| {
+        let mut command = gandr(&["--version"]);
+        let _placed = command
+            .current_dir(&scratch.0)
+            .env("XDG_DATA_HOME", &data)
+            .env("CARGO_MANIFEST_DIR", manifest);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        stdout(&output)
+    };
+    assert_eq!(
+        under(Path::new(env!("CARGO_MANIFEST_DIR"))),
+        format!("gandr {}\n", env!("CARGO_PKG_VERSION")),
+        "cargo running the driver's own package runs that build, not the default"
+    );
+    assert_eq!(
+        under(&scratch.0),
+        "ran fake --version\n",
+        "another package's manifest directory leaves the selection to the default"
     );
 }
 

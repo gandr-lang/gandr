@@ -20,9 +20,11 @@
 //! arguments. The new image selects again, finds itself and runs. It sets no
 //! variable of its own, so a running face selects as the user did and
 //! follows a later switch. The driver runs itself when nothing
-//! names a toolchain, when the selection names the running executable, and
-//! for `gandr toolchain`, which manages the toolchains whatever is selected.
-//! A name that names no installed toolchain is refused before any verb runs.
+//! names a toolchain, when the selection names the running executable, when
+//! cargo runs the driver's own package (`cargo run` and `cargo test` set
+//! `CARGO_MANIFEST_DIR` to the directory it was built from), and for `gandr
+//! toolchain`, which manages the toolchains whatever is selected. A name
+//! that names no installed toolchain is refused before any verb runs.
 //!
 //! The nearest package manifest's `[toolchain]` constraint then holds the
 //! selection: [`constraint`] refuses a toolchain named outright that leaves
@@ -497,9 +499,10 @@ pub enum Proxied
 /// # Specification
 /// - requires: called before the driver reads its arguments.
 /// - ensures: [`Proxied::Itself`] when nothing names a toolchain, when the
-///   arguments open with `toolchain`, or when the selected toolchain's `gandr`
-///   is the running executable. The selection is [`select`]'s, held to the
-///   nearest manifest's constraint as [`constraint::constrained`] holds it.
+///   arguments open with `toolchain`, when `CARGO_MANIFEST_DIR` is the
+///   directory this build was built from, or when the selected toolchain's
+///   `gandr` is the running executable. The selection is [`select`]'s, held to
+///   the nearest manifest's constraint as [`constraint::constrained`] holds it.
 ///   Otherwise, on Unix, the process is replaced by that executable with the
 ///   same arguments and environment; elsewhere it runs as a child and its
 ///   status is returned.
@@ -513,16 +516,23 @@ pub enum Proxied
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a linked toolchain runs in the driver's place, the
-///   selection's sources rank in order, and an unknown name is refused.
+///   selection's sources rank in order, an unknown name is refused, and a cargo
+///   run of the driver's own package runs that build.
 /// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
 /// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
 /// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source`
+/// - witness: `tests::cli::a_cargo_run_of_the_driver_runs_its_own_build_4511`
 pub fn proxy() -> Result<Proxied, ToolchainFault>
 {
     let mut arguments = std::env::args_os();
     let _program = arguments.next();
     let arguments: Vec<OsString> = arguments.collect();
     if arguments.first().is_some_and(|verb| verb == "toolchain") {
+        return Ok(Proxied::Itself);
+    }
+    // Cargo running this package runs the build it made (#4511): a gate in a
+    // worktree judges the worktree's driver, never the default toolchain.
+    if CargoRun::now() == CargoRun(true) {
         return Ok(Proxied::Itself);
     }
     let environment =
@@ -695,8 +705,8 @@ quenchant_shape::reason_enum! {
             Unselected,
             /// The selection, or the image it names, cannot be read.
             Unreadable,
-            /// The face follows no selection: its socket is named, or its own
-            /// image cannot be read.
+            /// The face follows no selection: its socket is named, its own
+            /// image cannot be read, or cargo runs its own build.
             Unfollowed,
         }
     }
@@ -710,7 +720,7 @@ quenchant_shape::reason_enum! {
 /// - ensures: the path when the selection, made as [`proxy`] makes it, names a
 ///   `gandr` that is another file than `running`. A selection that cannot be
 ///   read keeps the running image, so a face never stops serving because a
-///   toolchain broke.
+///   toolchain broke; a face cargo runs from its own package follows none.
 /// - panics: none.
 /// - executable: none — the answer is the file system's.
 ///
@@ -720,6 +730,9 @@ quenchant_shape::reason_enum! {
 #[cfg(unix)]
 pub fn moved(running: Image) -> Maybe<PathBuf, unmoved::Absent>
 {
+    if CargoRun::now() == CargoRun(true) {
+        return Maybe::Absent(unmoved::Absent::Unfollowed);
+    }
     let Ok((toolchains, default)) = homes()
     else {
         return Maybe::Absent(unmoved::Absent::Unreadable);
@@ -785,6 +798,38 @@ pub fn switch(
         .env(HANDOVER, handover);
     let error = command.exec();
     ToolchainFault::Io { path, error }
+}
+
+/// Whether cargo runs this package's own build: `cargo run` and `cargo test`
+/// set `CARGO_MANIFEST_DIR` to the directory the build was built from, and a
+/// build so run runs itself, whatever the selection names, so a gate in a
+/// worktree judges that worktree's driver.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CargoRun(bool);
+
+impl CargoRun
+{
+    /// The reading of this process's environment.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `CargoRun(true)` exactly when `CARGO_MANIFEST_DIR` is the
+    ///   directory this build was built from.
+    /// - panics: none.
+    /// - executable: none — the answer is the environment's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cargo run of the driver runs its own build, and a
+    ///   run with no such variable selects as before.
+    /// - witness: `tests::cli::a_cargo_run_of_the_driver_runs_its_own_build_4511`
+    fn now() -> Self
+    {
+        Self(
+            std::env::var_os("CARGO_MANIFEST_DIR")
+                .is_some_and(|directory| directory == env!("CARGO_MANIFEST_DIR")),
+        )
+    }
 }
 
 /// Link the build in `path` as the toolchain `name`, replacing any link of
