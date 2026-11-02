@@ -1317,6 +1317,38 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
     );
 }
 
+/// #4376: a lazy record or a labelled sum written at its labels, as a
+/// definition whose signature states its type, was refused `Unannotated`.
+/// Each takes its labels' order from the signature, as under an annotation.
+#[test]
+fn labelled_forms_take_their_order_from_the_definition_s_signature_4376()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def err : +{ok : Integer, err : String} ;\ndef err = +{.err = \"no\"} ;\ndef swapped : \
+         +U &{name : -F String, size : -F Integer} ;\ndef swapped = &{.size => 1, .name => \
+         \"unit\"} ;\ndef positional : +U &{-F String, -F Integer} ;\ndef positional = &{.0 => \
+         \"unit\", .1 => 1} ;\n",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "err").first().map(String::as_str),
+        Some("in1"),
+        "a label takes the index it has in the sum the signature states"
+    );
+    assert_eq!(
+        body(&arena, &module, "swapped"),
+        body(&arena, &module, "positional"),
+        "labelled clauses take the order of the lazy record the signature states"
+    );
+    let source = "def absent : +{ok : Integer} ;\ndef absent = +{.gone = 1} ;\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("gone")),
+        "a label the signed sum lacks is unresolved"
+    );
+}
+
 #[test]
 fn a_co_bundle_is_the_lazy_record_of_its_labels()
 {
