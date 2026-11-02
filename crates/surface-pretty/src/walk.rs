@@ -4012,9 +4012,12 @@ enum Derived<Node>
 ///   `here`. The motive's carrier, its other endpoint and an action's map, read
 ///   down through every child [`children`] lists, name no intuitionistic
 ///   variable counting out to the motive's binder; absent otherwise, and absent
-///   when that scan reads more than [`VISIT_BUDGET`] nodes. A well-typed
-///   transport of these shapes moves the reflexivity at the endpoint the
-///   derivation would, up to conversion, so the operation stands for it.
+///   when that scan reads more than [`VISIT_BUDGET`] nodes. A composite that
+///   moves `here(a)` is absent where the motive's other endpoint reads
+///   [`Start::Apart`] from `a`, since `p then q` reads back taking `p`'s start
+///   for it. A well-typed transport of these shapes moves the reflexivity at
+///   the endpoint the derivation would, up to conversion, so the operation
+///   stands for it.
 /// - provides: the shapes `p then q`, `back(p)` and `cong(f, p)` derive
 ///   (`gandr_core_term::identity`), which the sugared form writes as the
 ///   lowering reads them back.
@@ -4032,6 +4035,7 @@ enum Derived<Node>
 ///   binder count fails the goldens.
 /// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
 /// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
+/// - witness: `tests::goldens::a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(body), Former::PathTransport { .. }))]
 fn derived<S>(
     source: &S,
@@ -4093,9 +4097,19 @@ where
         ) => zone == other_zone && index == other_index,
         _ => false,
     };
+    // A moved `here(a)` starts at `a`. The composite reads back taking that
+    // start for the motive's fixed endpoint, so an endpoint written apart from
+    // `a` keeps the transport. A moved path that writes no start keeps the
+    // composite, which reads back taking that path's stated start.
+    let starts = if let Former::Here(point) = source.read(value) {
+        start(source, point, left) == Start::Alike
+    }
+    else {
+        true
+    };
     // The parts of the motive that must not name its binder, with the
     // operation they make.
-    let (operation, apart) = if moving(right) {
+    let (operation, apart) = if moving(right) && starts {
         (Derived::Composite { value, path }, [carrier, left, carrier])
     }
     else if moving(left) && (reflexive || empty) {
@@ -4147,6 +4161,105 @@ where
         }
     }
     Some(operation)
+}
+
+/// How a motive's fixed endpoint reads against the start of the reflexivity
+/// the transport moves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Start
+{
+    /// Nothing written tells the two apart.
+    Alike,
+    /// The two are written apart, so the composite would read back with
+    /// another start.
+    Apart,
+}
+
+/// How `fixed`, read one intuitionistic binder deeper, reads against `point`:
+/// a motive's fixed endpoint against the start of the reflexivity it moves.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Start::Apart`] exactly when the walk down both nodes in step
+///   meets two formers of different kinds, two different constants, or two
+///   variables that differ once `fixed`'s intuitionistic index counts one
+///   binder more. The walk descends through `here`, a returned value, a forced
+///   thunk and an application. Two formers of one kind it does not descend
+///   through read as alike, as does a walk past [`VISIT_BUDGET`] pairs.
+/// - provides: the cases where the composite `here(a) then q` reads back with
+///   another start than the transport it stands for.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer restates the walk, and only a second walk of
+///   both nodes would check it.
+///
+/// # Termination
+/// Every turn pops one pending pair and spends one of at most
+/// [`VISIT_BUDGET`] visits.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a motive starting at a composite against a moved
+///   reflexivity at a variable, and a moved reflexivity of a reflexivity
+///   against a motive starting at that reflexivity. A walk that read every pair
+///   alike, or missed the binder's shift, fails the census sweep on the
+///   exemplars.
+/// - witness: `tests::goldens::a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218`
+fn start<S>(
+    source: &S,
+    point: S::Node,
+    fixed: S::Node,
+) -> Start
+where
+    S: Source + ?Sized,
+{
+    let mut pending = Vec::from([(point, fixed)]);
+    let mut visits = 0_u32;
+    while let Some((point, fixed)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Start::Alike;
+        }
+        match (source.read(point), source.read(fixed)) {
+            (Former::Constant(point), Former::Constant(fixed)) => {
+                if point != fixed {
+                    return Start::Apart;
+                }
+            },
+            (
+                Former::Variable { zone, index },
+                Former::Variable {
+                    zone: fixed_zone,
+                    index: fixed_index,
+                },
+            ) => {
+                let shifted = if zone == Zone::Intuitionistic {
+                    u32::from(index).checked_add(1_u32)
+                }
+                else {
+                    Some(u32::from(index))
+                };
+                if zone != fixed_zone || shifted != Some(u32::from(fixed_index)) {
+                    return Start::Apart;
+                }
+            },
+            (Former::Here(point), Former::Here(fixed))
+            | (Former::Returned(point), Former::Returned(fixed))
+            | (Former::Force(point), Former::Force(fixed)) => pending.push((point, fixed)),
+            (
+                Former::Application(map, argument),
+                Former::Application(fixed_map, fixed_argument),
+            ) => {
+                pending.push((map, fixed_map));
+                pending.push((argument, fixed_argument));
+            },
+            (point, fixed) => {
+                if core::mem::discriminant(&point) != core::mem::discriminant(&fixed) {
+                    return Start::Apart;
+                }
+            },
+        }
+    }
+    Start::Alike
 }
 
 /// The former the walk reads at `node` in `form`, in a position admitting

@@ -4386,6 +4386,58 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     }
 }
 
+/// A transport of `here(a)` is the composite `here(a) then q` only where its
+/// motive starts at `a`: the composite reads back taking `a` for that start.
+/// A motive starting elsewhere keeps the transport, and one starting at a
+/// reflexivity matches a moved reflexivity of it (#4218).
+#[test]
+fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let around = core.value_constant(ConstantIndex::from(2_usize));
+    let other = core.value_constant(ConstantIndex::from(3_usize));
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let reflexivity = core.value_here(base);
+    let at_base = core.value_type_path(circle, base, bound);
+    let agreeing = core.computation_path_transport(at_base, around, reflexivity);
+    let agreeing = core.value_returned(agreeing);
+    let at_other = core.value_type_path(circle, other, bound);
+    let apart = core.computation_path_transport(at_other, around, reflexivity);
+    let apart = core.value_returned(apart);
+    let loops = core.value_type_path(circle, base, base);
+    let lifted = gandr_core_term::shift_value_type(&mut core, loops, gandr_core_term::Binders::ONE)
+        .settle(&mut core);
+    let at_reflexivity = core.value_type_path(lifted, reflexivity, bound);
+    let doubled = core.value_here(reflexivity);
+    let squared = core.computation_path_transport(at_reflexivity, around, doubled);
+    let squared = core.value_returned(squared);
+    let names = [
+        Name::from("Circle"),
+        Name::from("base"),
+        Name::from("loop"),
+        Name::from("other"),
+    ];
+    let source = CoreSource::new(&core, &names);
+    for (root, expected) in [
+        (agreeing, "here(base) then loop"),
+        (
+            apart,
+            "transport(\\a. Path(Circle, other, a), loop, here(base))",
+        ),
+        (squared, "here(here(base)) then loop"),
+    ] {
+        let rendered = presented_in(
+            &source,
+            Root::Value(CoreNode::Value(root)),
+            wide(),
+            Form::Sugared,
+        );
+        assert_eq!(rendered.as_ref(), expected);
+    }
+}
+
 /// A composite a transport reads as its path or as the value it moves stays
 /// the transport it derives: nothing there states the composite's type, and
 /// the lowering reads `p then q` only where something does, as a call's
