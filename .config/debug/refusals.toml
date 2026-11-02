@@ -6,6 +6,11 @@
 # task runs, so a site that moves needs no edit here. A refusal this table
 # lacks is one more `[refusal.<Name>]` table.
 
+[refusal.Unheld]
+sites = [
+  { file = "crates/storage-store/src/roots.rs", pattern = '^\s*unrooted\(RootsFault::Unheld \{' },
+]
+
 [refusal.EndpointMismatch]
 sites = [
   { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*return Err\(CheckRefusal::EndpointMismatch \{' },

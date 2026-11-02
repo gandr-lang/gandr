@@ -42,6 +42,7 @@ use gandr_storage_records::NodeHash;
 use gandr_storage_records::Record;
 use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
+use gandr_storage_records::RecordTreeError;
 use gandr_storage_records::TreeParams;
 use gandr_storage_records::decode_node;
 use gandr_storage_values::ChunkDigest;
@@ -240,7 +241,8 @@ impl Roots
     ///   from `nodes` and build again to `tree`. Only the tree's own nodes are
     ///   learned and read.
     /// - provides: the tree every full reading starts from.
-    /// - fails: [`StoreError::Record`] for a node the plane cannot find or
+    /// - fails: [`StoreError::Roots`] with [`RootsFault::Unheld`] for a node of
+    ///   the tree the plane does not hold, [`StoreError::Record`] for one it
     ///   refuses, and [`StoreError::Roots`] for anything else that is not a
     ///   roots tree.
     /// - panics: none.
@@ -254,6 +256,7 @@ impl Roots
     ///   store reads the first's tree after a fold.
     /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
     /// - witness: `tests::store::two_stores_keep_each_other_s_roots_across_a_fold_4081`
+    /// - witness: `tests::store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397`
     fn tree(
         directory: &Path,
         nodes: &mut NodeDirectory,
@@ -265,7 +268,15 @@ impl Roots
             path: path.clone(),
             fault,
         };
-        let records = leaves(nodes, tree)?;
+        let records = leaves(nodes, tree).map_err(|fault| match fault {
+            StoreError::Record(RecordTreeError::UnknownNode { hash }) => {
+                unrooted(RootsFault::Unheld { node: hash })
+            },
+            other @ (StoreError::Io { .. }
+            | StoreError::Value(_)
+            | StoreError::Record(_)
+            | StoreError::Roots { .. }) => other,
+        })?;
         let refs: Vec<RecordRef<'_>> = records.iter().map(Record::as_record_ref).collect();
         let built = RecordTree::build(&refs, TreeParams::current()).map_err(StoreError::Record)?;
         if built.root_node_hash() != tree {
