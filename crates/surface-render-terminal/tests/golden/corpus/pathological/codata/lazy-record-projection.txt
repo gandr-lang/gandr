@@ -14,12 +14,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
   │   │              ┬                                ┬────────      ─────── the type it is checked against
   │   │              │                                │
   │   │              │                                the type it synthesises
-  │ ┌─┘              checked against `+U (-F Integer & -F String) -> -F Integer`; while checking the body of this function; binds m : +U (-F Integer & -F String)
+  │ ┌─┘              checked against `+U &{get : -F Integer, put : -F String} -> -F Integer`; while checking the body of this function; binds m : +U &{get : -F Integer, put : -F String}
   │ │
 3 │ │   m.put
   │ │   ━━━━━ its type does not convert: expected `-F Integer`, found `-F String`
 4 │ │ }
-  │ └─┘ checked against `+U (-F Integer & -F String) => Integer`; while checking the body of this thunk
+  │ └─┘ checked against `+U &{get : -F Integer, put : -F String} => Integer`; while checking the body of this thunk
   │
   ├ note: `wrong_side` is refused with TypeMismatch, as its expectation states
   ╰ help: change the term or the type it is checked against, so that the two types agree
@@ -30,15 +30,15 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 7 │   def swapped(n : Integer) -> &{get : -F Integer, put : -F String} {
   │   │           ┬                          ─────── the type it is checked against
   │   │           │
-  │ ┌─┘           checked against `Integer -> -F Integer & -F String`; while checking the body of this function; binds n : Integer
+  │ ┌─┘           checked against `Integer -> &{get : -F Integer, put : -F String}`; while checking the body of this function; binds n : Integer
   │ │
 8 │ │   &{.get => "s", .put => n}
   │ │   ┬─────────┯━━────────────
   │ │   │         │
   │ │   │         its type does not convert: expected `Integer`, found `String`
-  │ │   checked against `-F Integer & -F String`; while checking the remaining parts of this
+  │ │   checked against `&{get : -F Integer, put : -F String}`; while checking the remaining parts of this
 9 │ │ }
-  │ └─┘ checked against `+U (Integer -> -F Integer & -F String)`; while checking the body of this thunk
+  │ └─┘ checked against `+U (Integer -> &{get : -F Integer, put : -F String})`; while checking the body of this thunk
   │
   ├ note: `swapped` is refused with TypeMismatch, as its expectation states
   ╰ help: change the term or the type it is checked against, so that the two types agree
@@ -77,12 +77,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │   │               ┬                                ┬────────      ─────── the type it is checked against
    │   │               │                                │
    │   │               │                                the type it synthesises
-   │ ┌─┘               checked against `+U (-F Integer & -F String) -> -F Integer`; while checking the body of this function; binds m : +U (-F Integer & -F String)
+   │ ┌─┘               checked against `+U &{get : -F Integer, put : -F String} -> -F Integer`; while checking the body of this function; binds m : +U &{get : -F Integer, put : -F String}
    │ │
 32 │ │   m.1
    │ │   ━━━ its type does not convert: expected `-F Integer`, found `-F String`
 33 │ │ }
-   │ └─┘ checked against `+U (-F Integer & -F String) => Integer`; while checking the body of this thunk
+   │ └─┘ checked against `+U &{get : -F Integer, put : -F String} => Integer`; while checking the body of this thunk
    │
    ├ note: `wrong_place` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

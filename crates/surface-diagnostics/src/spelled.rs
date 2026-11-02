@@ -86,6 +86,7 @@ use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::ConstructorSpelling;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::ReadAs;
 use gandr_surface_lowering::Role;
@@ -108,6 +109,7 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::binders::written_entry_names;
 use crate::binders::written_names;
 use crate::frame::framed;
 use crate::frame::opened;
@@ -600,6 +602,22 @@ fn spell<'failure>(
         text,
     )
     .collect();
+    let sum_labels: Vec<(ValueTypeId, Vec<Name<'_>>)> = written_entry_names(
+        origins
+            .sum_labels()
+            .iter()
+            .map(|&(sum, ref labels)| (sum, labels.iter().map(Origin::span))),
+        text,
+    )
+    .collect();
+    let with_labels: Vec<(CompTypeId, Vec<Name<'_>>)> = written_entry_names(
+        origins
+            .with_labels()
+            .iter()
+            .map(|&(with, ref labels)| (with, labels.iter().map(Origin::span))),
+        text,
+    )
+    .collect();
     let mut relations = origins.relations().to_vec();
     relations.sort_by_key(|&(related, _)| related);
     let mut models: Vec<(ValueTypeId, Modelled<'_>)> = origins
@@ -625,6 +643,7 @@ fn spell<'failure>(
         .naming(&constructors)
         .naming_arrows(&arrows)
         .naming_pairs(&pairs, &seconds)
+        .naming_entries(&sum_labels, &with_labels)
         .relating(&relations)
         .modeling(&models)
         .naming_implicits(&implicits)

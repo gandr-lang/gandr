@@ -2452,6 +2452,81 @@ fn a_dependent_record_spells_its_written_labels_1613()
     }
 }
 
+/// A sum and a lazy record type the source writes over labels spell each
+/// entry under its label in both forms. The same types written at positions
+/// keep their positional spellings, and labels not one per entry are not
+/// read (#4395).
+#[test]
+fn a_sum_and_a_lazy_record_spell_their_written_labels_4395()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let string = core.value_type_base(BaseType::String);
+    let unit = core.value_type_unit();
+    let labelled_sum = core.value_type_sum(&[integer, string, unit]);
+    let positional_sum = core.value_type_sum(&[integer, string, unit]);
+    let short_sum = core.value_type_sum(&[integer, string]);
+    let returns_integer = core.comp_type_returner(integer);
+    let returns_string = core.comp_type_returner(string);
+    let labelled_with = core.comp_type_with(&[returns_integer, returns_string]);
+    let positional_with = core.comp_type_with(&[returns_integer, returns_string]);
+    let thunked_with = core.value_type_thunk(labelled_with);
+    let observing = core.comp_type_arrow(thunked_with, returns_integer);
+    let sum_labels = [
+        (
+            labelled_sum,
+            Vec::from([Name::from("ok"), Name::from("err"), Name::from("gone")]),
+        ),
+        (short_sum, Vec::from([Name::from("only")])),
+    ];
+    let with_labels = [(
+        labelled_with,
+        Vec::from([Name::from("get"), Name::from("put")]),
+    )];
+    let source = CoreSource::new(&core, &[]).naming_entries(&sum_labels, &with_labels);
+    for (root, sugared, explicit) in [
+        (
+            CoreNode::ValueType(labelled_sum),
+            "+{ok : Integer, err : String, gone : Unit}",
+            "+{ok : Integer, err : String, gone : Unit}",
+        ),
+        (
+            CoreNode::ValueType(positional_sum),
+            "Integer + String + Unit",
+            "+{Integer, String, Unit}",
+        ),
+        (
+            CoreNode::ValueType(short_sum),
+            "Integer + String",
+            "+{Integer, String}",
+        ),
+        (
+            CoreNode::CompType(labelled_with),
+            "&{get : -F Integer, put : -F String}",
+            "&{get : -F Integer, put : -F String}",
+        ),
+        (
+            CoreNode::CompType(positional_with),
+            "-F Integer & -F String",
+            "&{-F Integer, -F String}",
+        ),
+        (
+            CoreNode::CompType(observing),
+            "+U &{get : -F Integer, put : -F String} -> -F Integer",
+            "+U &{get : -F Integer, put : -F String} -> -F Integer",
+        ),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented = presented_in(&source, Root::Type(root), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// A positional selection of one field off a binder whose type is a
 /// dependent record spells that field's label, the first, a middle and the
 /// last among them: the surface reads no position off a dependent record

@@ -497,6 +497,12 @@ pub struct CoreSource<'arena>
     /// The label the source writes for each dependent pair's second
     /// component, ascending by the pair.
     seconds: &'arena [(ValueTypeId, Name<'arena>)],
+    /// The labels the source writes a sum over, one per summand in written
+    /// order, ascending by the sum.
+    sum_labels: &'arena [(ValueTypeId, Vec<Name<'arena>>)],
+    /// The labels the source writes a lazy record type over, one per entry
+    /// in written order, ascending by the lazy product.
+    with_labels: &'arena [(CompTypeId, Vec<Name<'arena>>)],
     /// The relation each type the source writes as `A ≅ B`, `A ≃ B` or
     /// `A ⇝ B` abbreviates, ascending by the type.
     relations: &'arena [(ValueTypeId, Relation)],
@@ -561,6 +567,8 @@ impl<'arena> CoreSource<'arena>
             arrows: &[],
             pairs: &[],
             seconds: &[],
+            sum_labels: &[],
+            with_labels: &[],
             relations: &[],
             models: &[],
             scopes: &[],
@@ -731,6 +739,27 @@ impl<'arena> CoreSource<'arena>
         Self {
             pairs,
             seconds,
+            ..self
+        }
+    }
+
+    /// This source, spelling each sum `sum_labels` holds and each lazy
+    /// product `with_labels` holds under the labels it was written over,
+    /// each ascending by the type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming_entries(
+        self,
+        sum_labels: &'arena [(ValueTypeId, Vec<Name<'arena>>)],
+        with_labels: &'arena [(CompTypeId, Vec<Name<'arena>>)],
+    ) -> Self
+    {
+        Self {
+            sum_labels,
+            with_labels,
             ..self
         }
     }
@@ -2679,17 +2708,21 @@ impl Source for CoreSource<'_>
     }
 
     /// The label of entry `index` of the record, the record update, the record
-    /// type, the handler or the offer `node` names in the arena.
+    /// type, the handler, the offer, the sum or the lazy product `node` names
+    /// in the arena.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: of the node `node` restores to, the label at `index` among a
     ///   held record's or record type's fields, the fields a record update
-    ///   writes and an offer's arms, in label order, and the operation a
-    ///   handler's clause at `index` answers; none for an index past them,
-    ///   another former, another family or a missing handle.
+    ///   writes and an offer's arms, in label order, the operation a handler's
+    ///   clause at `index` answers, and the label the source writes for a sum's
+    ///   summand or a lazy product's entry at `index`; none for an index past
+    ///   them, a sum or lazy product the source writes at positions, another
+    ///   former, another family or a missing handle.
     /// - provides: the printer's reading of a record's labels, a handler's
-    ///   operations and an offer's labels.
+    ///   operations, an offer's labels and the labels a sum and a lazy record
+    ///   type are written over.
     /// - fails: never.
     /// - panics: none.
     /// - intension: as [`Self::component`], linear in the fields before it.
@@ -2697,14 +2730,17 @@ impl Source for CoreSource<'_>
     /// # Adequacy
     /// - hypothesis: L3 — records and record types of two fields written out of
     ///   label order spell each field under its own label, and a handler's
-    ///   clause its operation; a direct read past the fields and of a tuple
-    ///   observes the absence.
+    ///   clause its operation; a sum and a lazy record type written over labels
+    ///   spell each entry under its label; a direct read past the fields and of
+    ///   a tuple observes the absence.
     /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_sum_and_a_lazy_record_spell_their_written_labels_4395`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(self.unstaged(id)) {
             | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | Some(&ValueType::Sum(ref parts)) => entry_label(self.sum_labels, id, Arity::from(parts.len()), index).map(AsRef::as_ref),
             | Some(_) | None => None,
         },
         | CoreNode::Value(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value(id) {
@@ -2716,7 +2752,10 @@ impl Source for CoreSource<'_>
             | Some(_) | None => None,
         },
         | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
-        | CoreNode::CompType(_) => ret.is_none(),
+        | CoreNode::CompType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.comp_type(id) {
+            | Some(&CompType::With(ref components)) => entry_label(self.with_labels, id, Arity::from(components.len()), index).map(AsRef::as_ref),
+            | Some(_) | None => None,
+        },
     })]
     #[inline]
     fn label(
@@ -2729,6 +2768,10 @@ impl Source for CoreSource<'_>
         let label: &str = match self.restoration.restored(node) {
             CoreNode::ValueType(id) => match *self.arena.value_type(self.unstaged(id))? {
                 ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                ValueType::Sum(ref parts) => {
+                    entry_label(self.sum_labels, id, Arity::from(parts.len()), index)
+                        .map(AsRef::as_ref)
+                },
                 ValueType::Data { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
@@ -2743,7 +2786,6 @@ impl Source for CoreSource<'_>
                 | ValueType::Row
                 | ValueType::RowTail(_)
                 | ValueType::Product(_)
-                | ValueType::Sum(_)
                 | ValueType::List(_)
                 | ValueType::Thunk(_)
                 | ValueType::Universe { .. }
@@ -2862,7 +2904,18 @@ impl Source for CoreSource<'_>
                 | Computation::Ascribe { .. }
                 | Computation::Project(..) => None,
             },
-            CoreNode::CompType(_) => None,
+            CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
+                CompType::With(ref components) => {
+                    entry_label(self.with_labels, id, Arity::from(components.len()), index)
+                        .map(AsRef::as_ref)
+                },
+                CompType::Unknown
+                | CompType::Codata { .. }
+                | CompType::Returner { .. }
+                | CompType::Arrow { .. }
+                | CompType::Pi { .. }
+                | CompType::Element { .. } => None,
+            },
         }?;
         Some(Name::from(label))
     }
@@ -3246,6 +3299,28 @@ where
         .ok()
         .and_then(|at| names.get(at))
         .map(|&(_, name)| name)
+}
+
+/// The label `labels` holds for entry `at` of the former `id` names, when it
+/// holds one label per entry of its `arity`.
+///
+/// # Specification
+/// trivial.
+fn entry_label<'held, 'name, Id>(
+    labels: &'held [(Id, Vec<Name<'name>>)],
+    id: Id,
+    arity: Arity,
+    at: Component,
+) -> Option<&'held Name<'name>>
+where
+    Id: Ord + Copy,
+{
+    let &(_, ref written) = labels
+        .binary_search_by_key(&id, |&(held, _)| held)
+        .ok()
+        .and_then(|position| labels.get(position))
+        .filter(|&&(_, ref written)| written.len() == usize::from(arity))?;
+    written.get(usize::from(at))
 }
 
 #[cfg(test)]

@@ -1528,6 +1528,41 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// Push the label each entry is written at onto the operand store, in
+    /// order, when every entry is labelled by name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stretch naming one label per entry when every entry is
+    ///   labelled by name, and an empty stretch otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::labelled_sum_type`] and
+    ///   [`Self::lazy_record_type`].
+    /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
+    #[spec(captures: before = self.operands.len(), ensures: |ret| ret.start == before && ret.end == self.operands.len() && (ret.end == ret.start || ret.end.saturating_sub(ret.start) == entries.len()))]
+    fn stored_labels(
+        &mut self,
+        entries: &[Entry<'source>],
+    ) -> Stretch
+    {
+        let start = self.operands.len();
+        if entries
+            .iter()
+            .all(|entry| matches!(entry.key, Key::Label(..)))
+        {
+            self.operands
+                .extend(entries.iter().map(|entry| entry.keyed_at().node));
+        }
+
+        Stretch {
+            start,
+            end: self.operands.len(),
+        }
+    }
+
     /// The fields of labelled entries, by label, each read as `reading` and
     /// its label kept against it.
     ///
@@ -1712,8 +1747,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a sum over labels in type position.
     /// - ensures: braces whose every entry is a session form are the select,
     ///   read whole as a session type; otherwise the sum of its entries' types
-    ///   in written order, the labels erased, each read as a value type under
-    ///   the form's frame.
+    ///   in written order, the labels erased from the sum and kept beside it,
+    ///   each read as a value type under the form's frame.
     /// - fails: the wrong-sort refusal where no value type is read; a misplaced
     ///   entry where session forms and other types mix; the entries' and the
     ///   labels' own refusals.
@@ -1726,7 +1761,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the empty sum, a positional and a labelled sum.
     /// - witness: `lower::arity::tests::a_sum_over_labels_lowers_to_the_sum_of_its_entries`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Sum(_) | Plan::Session(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Sum(..) | Plan::Session(..)))))]
     pub(super) fn labelled_sum_type(
         &mut self,
         site: Site,
@@ -1745,11 +1780,12 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::ValueType)?;
         let (Arranged::Positional(entries) | Arranged::Labelled(entries)) = arrange(site, entries)?;
         let summands = self.stored(&entries);
+        let labels = self.stored_labels(&entries);
         for entry in &entries {
             self.read(entry.held.at().node, Reading::ValueType(frame));
             self.label_entry(entry, Reading::ValueType(frame));
         }
-        self.plan(site, Plan::Sum(summands));
+        self.plan(site, Plan::Sum(summands, labels));
 
         Ok(())
     }
@@ -1761,7 +1797,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: braces whose every entry is a session form are the offer,
     ///   read whole as a session type; otherwise the lazy product of its
     ///   entries, of any number, each read as a computation type under the
-    ///   form's frame.
+    ///   form's frame, the labels erased from the product and kept beside it.
     /// - fails: the wrong-sort refusal where no computation type is read; a
     ///   misplaced entry where session forms and other types mix; the entries'
     ///   and the labels' own refusals.
@@ -1774,7 +1810,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — none, one, two and three entries.
     /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
     /// - witness: `lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Session(..) | &Plan::With(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Session(..) | &Plan::With(..))))]
     pub(super) fn lazy_record_type(
         &mut self,
         site: Site,
@@ -1793,11 +1829,12 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::CompType)?;
         let (Arranged::Positional(entries) | Arranged::Labelled(entries)) = arrange(site, entries)?;
         let components = self.stored(&entries);
+        let labels = self.stored_labels(&entries);
         for entry in &entries {
             self.read(entry.held.at().node, Reading::CompType(frame));
             self.label_entry(entry, Reading::CompType(frame));
         }
-        self.plan(site, Plan::With(components));
+        self.plan(site, Plan::With(components, labels));
 
         Ok(())
     }
@@ -4057,19 +4094,23 @@ impl<'source> Lowerer<'_, 'source>
     /// Mint a sum over its summands.
     ///
     /// # Specification
-    /// - requires: every summand is already minted or absent.
-    /// - ensures: the sum of the summands in order, with the written origin;
-    ///   nothing when a summand did not lower.
+    /// - requires: every summand is already minted or absent, and `labels` is
+    ///   empty or names one label per summand.
+    /// - ensures: the sum of the summands in order, with the written origin
+    ///   and, when every label answers one, the origins of its labels; nothing
+    ///   when a summand did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::labelled_sum_type`].
     /// - witness: `lower::arity::tests::a_sum_over_labels_lowers_to_the_sum_of_its_entries`
+    /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_sum(
         &self,
         summands: Stretch,
+        labels: Stretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -4084,8 +4125,43 @@ impl<'source> Lowerer<'_, 'source>
         }
         let id = sink.arena.value_type_sum(&parts);
         sink.origins.record_value_type(id, origin);
+        if let Some(labels) = self.label_origins(labels) {
+            sink.origins.record_sum_labels(id, labels);
+        }
 
         Maybe::Present(Lowered::ValueType(id))
+    }
+
+    /// Where each label of `labels` is written, when every one answers an
+    /// origin.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one origin per label in order, or none when `labels` is empty
+    ///   or a label answers no origin.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_sum`].
+    /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|origins| !origins.is_empty() && origins.len() == labels.end.saturating_sub(labels.start)))]
+    fn label_origins(
+        &self,
+        labels: Stretch,
+    ) -> Option<Vec<Origin>>
+    {
+        let written = stretch(&self.operands, labels);
+        if written.is_empty() {
+            return None;
+        }
+        written
+            .iter()
+            .map(|&label| match self.origin_at(label) {
+                Maybe::Present(origin) => Some(origin),
+                Maybe::Absent(_) => None,
+            })
+            .collect()
     }
 
     /// Mint an injection.
@@ -4118,19 +4194,23 @@ impl<'source> Lowerer<'_, 'source>
     /// Mint a lazy record type: the lazy product of its entries.
     ///
     /// # Specification
-    /// - requires: every entry is already minted or absent.
+    /// - requires: every entry is already minted or absent, and `labels` is
+    ///   empty or names one label per entry.
     /// - ensures: `With(C1, …, Cn)` in written order, of any number of entries,
-    ///   with the written origin; nothing when an entry did not lower.
+    ///   with the written origin and, when every label answers one, the origins
+    ///   of its labels; nothing when an entry did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::lazy_record_type`].
     /// - witness: `lower::arity::tests::a_lazy_record_lowers_to_one_lazy_product`
+    /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_with(
         &self,
         entries: Stretch,
+        labels: Stretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -4145,6 +4225,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         let with = sink.arena.comp_type_with(&parts);
         sink.origins.record_comp_type(with, origin);
+        if let Some(labels) = self.label_origins(labels) {
+            sink.origins.record_with_labels(with, labels);
+        }
 
         Maybe::Present(Lowered::CompType(with))
     }

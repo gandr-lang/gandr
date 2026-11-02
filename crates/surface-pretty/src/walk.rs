@@ -1207,10 +1207,21 @@ where
     };
     match *former {
         Former::Stack(first, second) => Vec::from([comp_type(first), comp_type(second)]),
-        Former::With(arity) => components(arity, Admits::CompType, Binds::NONE, None),
-        Former::Product(arity) | Former::Sum(arity) => {
-            components(arity, Admits::ValueType, Binds::NONE, None)
-        },
+        // A sum or a lazy record the source writes over labels spells each
+        // entry after its label (#4395).
+        Former::With(arity) => components(
+            arity,
+            Admits::CompType,
+            Binds::NONE,
+            entry_labels(source, node),
+        ),
+        Former::Sum(arity) => components(
+            arity,
+            Admits::ValueType,
+            Binds::NONE,
+            entry_labels(source, node),
+        ),
+        Former::Product(arity) => components(arity, Admits::ValueType, Binds::NONE, None),
         Former::Session { payloads, .. } => {
             components(payloads, Admits::ValueType, Binds::NONE, None)
         },
@@ -2156,6 +2167,35 @@ where
                 })
         });
     two_units.then_some(Glyphs("Bool"))
+}
+
+/// The label kind a sum's or a lazy product's entries spell under, when the
+/// source writes `node` over labels.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Label::Field`] when `source` answers a label for `node`'s first
+///   entry, and none otherwise.
+/// - provides: the one choice of a labelled spelling the slots and the join
+///   share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sum and a lazy record type written over labels, and
+///   each written at positions, spell apart.
+/// - witness: `tests::goldens::a_sum_and_a_lazy_record_spell_their_written_labels_4395`
+#[spec(ensures: |ret| ret.is_some() == source.label(node, Component::from(0_usize)).is_some() && ret.is_none_or(|label| label == Label::Field))]
+fn entry_labels<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Label>
+where
+    S: Source + ?Sized,
+{
+    source
+        .label(node, Component::from(0_usize))
+        .map(|_| Label::Field)
 }
 
 /// The word the surface writes the injection `value` by where it is ascribed
@@ -8356,6 +8396,13 @@ impl Walk<'_, '_>
                 Production("type_application"),
                 Join::Bracket(Bracket::Stack),
             )),
+            Former::With(arity) if let Some(label) = entry_labels(source, node) => {
+                Some(writes(Production("lazy_record_type"), Join::Braced {
+                    brace: Brace::Ampersand,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(label),
+                }))
+            },
             Former::With(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
                 Some(writes(Production("lazy_product_type"), Join::Infix {
                     infix: Infix::Lazy,
@@ -8627,6 +8674,13 @@ impl Walk<'_, '_>
                 Some(writes(Production("product_type"), Join::Infix {
                     infix: Infix::Product,
                     arity: Arity(usize::from(arity)),
+                }))
+            },
+            Former::Sum(arity) if let Some(label) = entry_labels(source, node) => {
+                Some(writes(Production("labelled_sum_type"), Join::Braced {
+                    brace: Brace::Plus,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(label),
                 }))
             },
             Former::Sum(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {

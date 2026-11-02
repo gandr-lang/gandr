@@ -59,6 +59,14 @@ def bundled() -> &{get : -F Integer, put : -F String} {
 @[ runs("7") ]
 def bundle_got() -> Integer { observe(bundled) }
 
+/// A lazy record written at its labels answers each label's entry. The
+/// printer spells its signature under those labels.
+def signed : +U &{get : -F Integer, put : -F String} = &{.put => "s", .get => 9};
+
+/// `observe` reads the entry `signed` writes at `get`. It runs to that entry.
+@[ runs("9") ]
+def signed_got() -> Integer { observe(signed) }
+
 /// An entry observed by its position, counted from zero, is the entry its
 /// label names: `m.1` is `m.put`.
 def placed(m : +U &{get : -F Integer, put : -F String}) -> String {

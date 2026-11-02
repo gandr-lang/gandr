@@ -2529,11 +2529,13 @@ enum Plan
         NodeIndex,
         Option<NodeIndex>,
     ),
-    /// The sum of the value types in the lowerer's operand store, in order.
-    Sum(Stretch),
+    /// The sum of the value types in the lowerer's operand store, in order,
+    /// and the labels its entries are written at, none for a positional sum.
+    Sum(Stretch, Stretch),
     /// The lazy record of the computation types in the lowerer's operand
-    /// store, in order: one lazy product of them all.
-    With(Stretch),
+    /// store, in order: one lazy product of them all. The labels its entries
+    /// are written at follow, none for a positional lazy record.
+    With(Stretch, Stretch),
     /// A case of no arms over a scrutinee stated at no data type and no path
     /// type: the eliminator of the empty sum.
     EmptyCase(NodeIndex),
@@ -14696,7 +14698,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Product(components) | Plan::Sum(components) | Plan::With(components))) if components.end.saturating_sub(components.start) >= 2_usize
+                    Some(&(Plan::Product(components) | Plan::Sum(components, _) | Plan::With(components, _))) if components.end.saturating_sub(components.start) >= 2_usize
                 )
         },
     )]
@@ -14753,11 +14755,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 );
             }
         }
+        // A chain writes no label.
+        let unlabelled = Stretch { start: 0, end: 0 };
         let plan = if lazy {
-            Plan::With(components)
+            Plan::With(components, unlabelled)
         }
         else if former == Former::SumType {
-            Plan::Sum(components)
+            Plan::Sum(components, unlabelled)
         }
         else {
             Plan::Product(components)
@@ -16281,7 +16285,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::StaticPi(..)
                 | Plan::Product(..)
                 | Plan::RecordType(..)
-                | Plan::Sum(_)
+                | Plan::Sum(..)
                 | Plan::Former(
                     TypeFormer::Thunk
                     | TypeFormer::List
@@ -16304,7 +16308,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
                 | Plan::FixedCarrier(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
@@ -16580,8 +16584,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::RecordType(ref fields, binders, last, labelled) => {
                 self.mint_labelled_type(fields, binders, (last, labelled), sink, origin)
             },
-            Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
-            Plan::With(entries) => self.mint_with(entries, sink, origin),
+            Plan::Sum(summands, labels) => self.mint_sum(summands, labels, sink, origin),
+            Plan::With(entries, labels) => self.mint_with(entries, labels, sink, origin),
             Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
             Plan::Observe(subject, observed, thunked) => {
                 self.mint_observe(subject, observed, thunked, sink, origin)
@@ -17764,8 +17768,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::EmptyCase(_)
             | Plan::Product(_)
             | Plan::RecordType(..)
-            | Plan::Sum(_)
-            | Plan::With(_)
+            | Plan::Sum(..)
+            | Plan::With(..)
             | Plan::Copattern(_)
             | Plan::Observe(..)
             | Plan::Select(..)
