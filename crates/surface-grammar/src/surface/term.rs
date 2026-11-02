@@ -4011,12 +4011,17 @@ fn law_admission_tail() -> Regex
     ])
 }
 
-/// Build a module type member, `type T = τ ;` or `type T(a : A, …) = τ ;`.
+/// Build a module type member, `type T = τ ;` or `type T(a : A, …) = τ ;`,
+/// or a record type with the faces it names over its labels, `type T = #{ … }
+/// where { face f = { a, b }; … }`.
+///
+/// The faces block ends the member at its `}`, as a `data` or a `module`
+/// block does, so every brace in the member closes in it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `type`, a type name, an optional parameter list, `=`, a type hole
-///   and `;`.
+/// - ensures: `type`, a type name, an optional parameter list, `=`, a type
+///   hole, then `;` or a faces block.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4026,7 +4031,7 @@ fn law_admission_tail() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref ends) if ends.len() == 2))))]
 fn type_member_tail() -> Regex
 {
     seq([
@@ -4035,7 +4040,46 @@ fn type_member_tail() -> Regex
         opt(head_params()),
         t(TileLabel("=")),
         h(Sort::Type),
-        t(TileLabel(";")),
+        alt([t(TileLabel(";")), record_faces()]),
+    ])
+}
+
+/// Build a record type's faces, `where { face secure = { port, tls }; … }`:
+/// each face a set of the record's labels, written as a theory block's `face`
+/// member is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `where`, `{`, any number of `face` members each closed by `;`,
+///   and `}`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "where")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
+fn record_faces() -> Regex
+{
+    seq([
+        t(TileLabel("where")),
+        t(TileLabel("{")),
+        repeat(seq([
+            t(TileLabel("face")),
+            t(TileLabel("identifier")),
+            t(TileLabel("=")),
+            t(TileLabel("{")),
+            opt(seq([
+                t(TileLabel("identifier")),
+                repeat(seq([t(TileLabel(",")), t(TileLabel("identifier"))])),
+            ])),
+            t(TileLabel("}")),
+            t(TileLabel(";")),
+        ])),
+        t(TileLabel("}")),
     ])
 }
 

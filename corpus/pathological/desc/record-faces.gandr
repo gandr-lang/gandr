@@ -1,0 +1,30 @@
+// A record type's faces refused: one face holds a label the record lacks, and
+// one face is named twice.
+//
+// A face lists only labels its record holds, and each face has its own name.
+// The refusal stands at the label or at the second name.
+//
+// The types stand in a module, whose members carry the verdict each refusal
+// states. Each refusal names the face and the record type.
+//
+// - see: `model/desc/record-faces.gandr` — the faces read
+// - see: `pathological/desc/shaped-signature.gandr` — a theory's faces refused
+//   alike
+
+/// Two record types, each with a faces block the check refuses.
+module Faces where {
+  /// `bad` holds `cert`, which the record does not label: the face is refused
+  /// at the label (`FaceOutsideShape`).
+  @[ refuses("IllFormedDescription") ]
+  type Outside = #{host : String, port : Integer} where {
+    face bad = { port, cert };
+  }
+
+  /// The block names `addr` twice: the second is refused at its name
+  /// (`DuplicateFaceName`).
+  @[ refuses("IllFormedDescription") ]
+  type Twice = #{host : String, port : Integer} where {
+    face addr = { host };
+    face addr = { port };
+  }
+}

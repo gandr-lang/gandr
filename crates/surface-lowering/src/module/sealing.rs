@@ -85,12 +85,16 @@
 //!   _Journal of Functional Programming_ 24(5) (2014).
 //!   <https://doi.org/10.1017/S0956796814000264>
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::SealExtent;
+use gandr_theory_shapes::Boundary;
+use gandr_theory_shapes::BoundaryError;
+use gandr_theory_shapes::Subshape;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -99,6 +103,7 @@ use super::Container;
 use super::DeclarationSlot;
 use super::Half;
 use super::Operand;
+use super::RecordFaces;
 use super::Role;
 use super::SlotIndex;
 use super::SortCheck;
@@ -110,6 +115,7 @@ use super::declaration_half;
 use super::misplaced_in;
 use super::one_in;
 use super::slot_refusal;
+use crate::WfKind;
 use crate::error::AscriptionForm;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
@@ -121,6 +127,7 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -529,8 +536,10 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Read the type member `member`, `type T = τ ;` or the family `type T(a :
-    /// A, …) = τ ;`, written in `container` — a module's body or a source's
-    /// top level — after the attribute blocks written before it.
+    /// A, …) = τ ;`, or a record type with its faces block, `type T = #{ … }
+    /// where { face f = { a, … }; … }`, written in `container` — a module's
+    /// body or a source's top level — after the attribute blocks written
+    /// before it.
     ///
     /// The attributes are kept on the member's held slot, decorating the
     /// member's form: the member declares nothing, so they state the verdict
@@ -545,7 +554,10 @@ impl<'source> Collector<'_, 'source>
     ///   ones — with a fresh held slot owning `τ` and carrying the member's
     ///   attributes; one binding parameters is filed as a family, its slot
     ///   owning the parameters' types too; a second member of an earlier one's
-    ///   name in the same container is refused naming the first.
+    ///   name in the same container is refused naming the first. A faces
+    ///   block's faces are filed by the held slot, read over the record's
+    ///   labels ([`Self::record_faces`]); a face it refuses refuses the slot,
+    ///   which keeps the member's attributes.
     /// - provides: the type-member half of [`Self::member`] and of a source's
     ///   top level.
     /// - fails: a member out of shape, or with an attribute block out of shape,
@@ -555,7 +567,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`] naming the module form, and an
-    /// attribute block's own refusal.
+    /// attribute block's own refusal; a refused face is held on the slot.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a read member, a repeated one and a repaired one take
@@ -565,6 +577,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::a_repeated_type_member_is_refused_naming_the_first`
     /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
     /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.top_types.len()),
         ensures: |_| {
@@ -610,7 +624,13 @@ impl<'source> Collector<'_, 'source>
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
         let defined = one_in(FormName::MODULE, cursor.operands())?;
-        let _semicolon = cursor.tile(TileName::SEMICOLON);
+        let written = match cursor.tile(TileName::WHERE) {
+            Maybe::Present(_) => Some(Self::written_faces(&mut cursor)?),
+            Maybe::Absent(_) => {
+                let _semicolon = cursor.tile(TileName::SEMICOLON);
+                None
+            },
+        };
         if let Maybe::Present(_) = cursor.peek() {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
@@ -630,7 +650,24 @@ impl<'source> Collector<'_, 'source>
             let _held = self.refuse_held(container, name, member, named, refusal);
             return Ok(());
         }
+        let faces = match written {
+            Some(written) => match self.record_faces(name, defined, &written) {
+                Ok(faces) => Some(faces),
+                Err(refusal) => {
+                    // The member's attributes state the refusal's verdict.
+                    let held = self.refuse_held(container, name, member, named, refusal);
+                    if let Some(slot) = self.collected.slots.get_mut(held.0) {
+                        slot.attributes = attributes;
+                    }
+                    return Ok(());
+                },
+            },
+            None => None,
+        };
         let held = self.held(container, name, member, named);
+        if let Some(faces) = faces {
+            let _first = self.collected.record_faces.insert(held, faces);
+        }
         if let Some(slot) = self.collected.slots.get_mut(held.0) {
             slot.attributes = attributes;
         }
@@ -665,6 +702,160 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// Read the faces block of a record type member, after its `where`: each
+    /// face's name tile and the label tiles it lists, in written order.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the block's `where`.
+    /// - ensures: one entry per `face f = { a, … };` member, its labels in
+    ///   written order, and `cursor` past the block's `}`.
+    /// - fails: a block out of shape is refused at the first tile out of place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] naming the module form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block of two faces reads both, in order.
+    /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |faces| faces.iter().all(|&(face, ref labels)| labels.iter().all(|label| face.span.end() <= label.span.start()))))]
+    fn written_faces(
+        cursor: &mut Cursor<'_>
+    ) -> Result<Vec<(Placed, Vec<Placed>)>, LoweringRefusal<'source>>
+    {
+        let out_of_place = |cursor: &Cursor<'_>| misplaced_in(FormName::MODULE, cursor.here());
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
+            return Err(out_of_place(cursor));
+        }
+        let mut faces = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::FACE) {
+            let Maybe::Present(face) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(out_of_place(cursor));
+            };
+            for opener in [TileName::EQUALS, TileName::BRACE_OPEN] {
+                if let Maybe::Absent(_) = cursor.tile(opener) {
+                    return Err(out_of_place(cursor));
+                }
+            }
+            let mut labels = Vec::new();
+            while let Maybe::Present(label) = cursor.tile(TileName::IDENTIFIER) {
+                labels.push(label);
+                if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                    break;
+                }
+            }
+            for closer in [TileName::BRACE_CLOSE, TileName::SEMICOLON] {
+                if let Maybe::Absent(_) = cursor.tile(closer) {
+                    return Err(out_of_place(cursor));
+                }
+            }
+            faces.push((face, labels));
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
+            return Err(out_of_place(cursor));
+        }
+
+        Ok(faces)
+    }
+
+    /// The faces `written` names over the labels of the record type `defined`,
+    /// the type member `name` states: its labels are the boundary, and each
+    /// face the subshape holding the labels it lists.
+    ///
+    /// # Specification
+    /// - requires: `written` is [`Self::written_faces`]'s reading of the
+    ///   member's block.
+    /// - ensures: the boundary holds exactly the labels of `defined`'s keyed
+    ///   entries, none for a type that is no record, and one face per written
+    ///   face, in written order.
+    /// - fails: a face listing a label the record lacks is refused at that
+    ///   label, a face named twice at its second name, and a label listed twice
+    ///   in one face, or a record labelling twice, at the face or the type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::IllFormedDescription`] as `FaceOutsideShape` or
+    /// `DuplicateFaceName`, naming the face and the type, and
+    /// [`LoweringRefusal::MalformedForm`] naming the module form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two faces over three labels are read, and a face
+    ///   listing a fourth is refused by it.
+    /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |faces| faces.name == name && faces.faces.len() == written.len()))]
+    fn record_faces(
+        &self,
+        name: SurfaceName<'source>,
+        defined: Placed,
+        written: &[(Placed, Vec<Placed>)],
+    ) -> Result<RecordFaces<'source>, LoweringRefusal<'source>>
+    {
+        let mut entries = Pieces::new();
+        read_pieces(self.pbg, self.tree, defined.node, &mut entries)?;
+        let mut scratch = Pieces::new();
+        let mut labels = Vec::new();
+        if let Some(&Piece::Tile { label, .. }) = entries.pieces.first()
+            && label == TileName::RECORD
+        {
+            for (at, piece) in entries.pieces.iter().enumerate() {
+                if let (&Piece::Operand(key), Some(&Piece::Tile { label: next, .. })) =
+                    (piece, entries.pieces.get(at.saturating_add(1)))
+                    && next == TileName::COLON
+                    && let Some(written_key) = self.lone_name(key.node, &mut scratch)?
+                {
+                    labels.push(self.name_of(written_key));
+                }
+            }
+        }
+        let Ok(boundary) = Boundary::new(labels)
+        else {
+            return Err(misplaced_in(FormName::MODULE, defined.span));
+        };
+        let mut faces: Vec<(SurfaceName<'source>, Subshape)> = Vec::with_capacity(written.len());
+        let mut held = Vec::new();
+        let mut named = BTreeSet::new();
+        for &(face, ref listed) in written {
+            let face_name = self.name_of(face);
+            if !named.insert(face_name) {
+                // As a theory's: the boundary first, then the face it names twice.
+                return Err(LoweringRefusal::IllFormedDescription {
+                    span: face.span,
+                    kind: WfKind::DuplicateFaceName,
+                    subjects: [Maybe::Present(name), Maybe::Present(face_name)],
+                });
+            }
+            held.clear();
+            held.extend(listed.iter().map(|&label| self.name_of(label)));
+            match boundary.face(&held) {
+                Ok(subshape) => faces.push((face_name, subshape)),
+                Err(BoundaryError::Unbound(outside)) => {
+                    let span = listed
+                        .iter()
+                        .find(|&&label| self.name_of(label) == outside)
+                        .map_or(face.span, |label| label.span);
+                    return Err(LoweringRefusal::IllFormedDescription {
+                        span,
+                        kind: WfKind::FaceOutsideShape,
+                        subjects: [Maybe::Present(face_name), Maybe::Present(name)],
+                    });
+                },
+                Err(
+                    BoundaryError::Repeated(_)
+                    | BoundaryError::Disagreement(_)
+                    | BoundaryError::Shape(_),
+                ) => return Err(misplaced_in(FormName::MODULE, face.span)),
+            }
+        }
+
+        Ok(RecordFaces {
+            name,
+            boundary,
+            faces,
+        })
     }
 
     /// Match the abstract component `component`, at place `ordinal` in the

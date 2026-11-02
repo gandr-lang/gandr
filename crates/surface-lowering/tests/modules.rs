@@ -67,6 +67,7 @@ use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::TelescopeFault;
+use gandr_surface_lowering::WfKind;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::DottedName;
 use gandr_surface_lowering::namespace::NamePath;
@@ -2480,6 +2481,115 @@ fn a_top_level_type_member_names_its_type_for_the_source_1834()
             Amounts::Refused(LoweringRefusal::UnresolvedTypeHead { .. })
         )]),
         "a declaration written before the member does not see it"
+    );
+}
+
+/// The record type `Config` over three labels with the faces block `$faces`,
+/// then `$rest`, as one literal source.
+macro_rules! faced {
+    ($faces:literal, $rest:literal) => {
+        concat!(
+            "type Config = #{host : String, port : Integer, tls : Bool} where { ",
+            $faces,
+            " }\n",
+            $rest
+        )
+    };
+}
+
+#[test]
+fn a_record_type_names_its_faces_over_its_labels()
+{
+    use gandr_theory_shapes::Membership::Inside;
+    use gandr_theory_shapes::Membership::Outside;
+
+    let source = faced!(
+        "face secure = {tls, port}; face addr = {host, port}; face none = {};",
+        "def local : Config; def local = #{ .host = \"h\", .port = 1, .tls = true };"
+    );
+    let mut lowered = lower(source);
+    assert_eq!(
+        verdicts(&mut lowered),
+        [judged(1_usize, Judgement::Checked)],
+        "a record type with faces still states its record"
+    );
+    let [ref record] = *lowered.module.record_faces()
+    else {
+        panic!("one record type names faces");
+    };
+    assert_eq!(record.name, name("Config"));
+    let names: Vec<_> = (0_usize .. 3_usize)
+        .filter_map(|point| record.boundary.name(point.into()).ok())
+        .collect();
+    assert_eq!(
+        names,
+        [name("host"), name("port"), name("tls")],
+        "the record's labels are its boundary, in name order"
+    );
+    let faces: Vec<_> = record
+        .faces
+        .iter()
+        .map(|&(face, ref subshape)| (face, subshape.decisions().to_vec()))
+        .collect();
+    assert_eq!(
+        faces,
+        [
+            (name("secure"), vec![Outside, Inside, Inside]),
+            (name("addr"), vec![Inside, Inside, Outside]),
+            (name("none"), vec![Outside, Outside, Outside]),
+        ],
+        "each face holds the labels it lists, in written order, whatever order it lists them in"
+    );
+
+    let bare =
+        "type Config = #{host : String}; def local : Config; def local = #{ .host = \"h\" };";
+    assert!(
+        lower(bare).module.record_faces().is_empty(),
+        "a record type with no faces block names no faces"
+    );
+}
+
+#[test]
+fn a_face_past_a_record_s_labels_is_refused_by_the_label()
+{
+    let refused = |span, kind, subjects: [&'static str; 2]| {
+        Amounts::Refused(LoweringRefusal::IllFormedDescription {
+            span,
+            kind,
+            subjects: subjects.map(|subject| Maybe::Present(name(subject))),
+        })
+    };
+    let outside = faced!("face secure = {port, tls}; face bad = {port, cert};", "");
+    let lowered = lower(outside);
+    assert_eq!(
+        rows(&lowered),
+        [row(
+            "Config",
+            Role::Held,
+            refused(
+                span_of(outside, "cert", 0_usize),
+                WfKind::FaceOutsideShape,
+                ["bad", "Config"]
+            )
+        )],
+        "the face is refused at the label the record lacks"
+    );
+    assert!(
+        lowered.module.record_faces().is_empty(),
+        "and the refused type names no faces"
+    );
+
+    let twice = faced!("face bad = {port}; face bad = {tls};", "");
+    assert_eq!(
+        rows(&lower(twice)),
+        [row(
+            "Config",
+            Role::Held,
+            refused(span_of(twice, "bad", 1_usize), WfKind::DuplicateFaceName, [
+                "Config", "bad"
+            ])
+        )],
+        "a face named twice is refused at its second name, naming the boundary first"
     );
 }
 
