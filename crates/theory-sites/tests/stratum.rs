@@ -798,8 +798,10 @@ fn a_stratum_replays_its_image_and_refuses_a_damaged_one_4034()
         .as_ref()
         .get(1 ..)
         .expect("an image leads with its version")
-        .chunks_exact(8)
-        .map(|word| u64::from_le_bytes(word.try_into().expect("eight bytes")))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|word| u64::from_le_bytes(*word))
         .collect();
     let imaged = |words: &[u64]| {
         let mut bytes = vec![1_u8];
@@ -911,8 +913,10 @@ fn level_two_replays_its_image_and_refuses_a_damaged_one_4123()
         .as_ref()
         .get(1 ..)
         .expect("an image leads with its level")
-        .chunks_exact(8)
-        .map(|word| u64::from_le_bytes(word.try_into().expect("eight bytes")))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|word| u64::from_le_bytes(*word))
         .collect();
     let damaged = |position: usize, word: u64| {
         let mut words = words.clone();

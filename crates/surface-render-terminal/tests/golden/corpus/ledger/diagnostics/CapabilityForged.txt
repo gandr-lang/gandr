@@ -3,7 +3,7 @@ error[CapabilityForged]: a capability cannot be made from a term; only one held 
   │
 2 │   def peek(c : Cap {read}) -> -F [Fs] String {
   │                ────────── the type it is checked against
-  ‡
+  ┆
 7 │ ┌ def forged() -> -F [Fs] String {
 8 │ │   peek("fs")
   │ │   ┬────┯━━━─

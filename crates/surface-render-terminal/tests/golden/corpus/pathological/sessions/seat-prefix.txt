@@ -21,7 +21,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 24 │ def opened : Prefix(Seat.SeatEnd) = recorded(received("task"));
    │              ──────────────────── the type it synthesises
-   ‡
+   ┆
 28 │ def promoted : Run(Seat.SeatEnd) = opened;
    │                ┬────────────────   ━━━━━━ its type does not convert: expected `Run(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t, retire : end}})`
    │                │

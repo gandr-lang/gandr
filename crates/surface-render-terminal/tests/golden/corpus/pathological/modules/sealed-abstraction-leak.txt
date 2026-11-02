@@ -3,7 +3,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
   │
 1 │ module Counter :> #{ type T, zero : T } where {
   │                                     ─ the type it synthesises
-  ‡
+  ┆
 8 │ def leaked : Integer = Counter.zero;
   │              ┬──────   ━━━━━━━━━━━━ its type does not convert: expected `Integer`, found `Counter.T`
   │              │

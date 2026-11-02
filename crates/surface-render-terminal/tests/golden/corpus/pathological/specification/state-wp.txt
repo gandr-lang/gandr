@@ -5,7 +5,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 13 │ ┃     run n <- st.get();
 14 │ ┃     st.put(n + 1);
 15 │ ┃     pure fn (q) { fn (s) { q(unit, s) } }
-   ‡ ┃
+   ┆ ┇
 19 │ ┃     oper put(_s, k) => pure fn (q) { fn (old) { run w <- k(unit); w(q, old) } }
 20 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory

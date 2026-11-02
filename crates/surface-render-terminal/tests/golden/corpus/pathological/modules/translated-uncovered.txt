@@ -3,7 +3,7 @@ error[SignatureMismatch.Missing]: this import is read at `Wider`, whose `extra` 
    │
 16 │ theory Wider where {
    │        ───── declared here
-   ‡
+   ┆
 24 │ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
    │                                                                ━━━━━ a member the import finds no declaration of
    │
@@ -15,7 +15,7 @@ error[SignatureMismatch.Missing]: this import is read at `Wider`, whose `extra` 
    │
 24 │ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
    │                                                                ━━━━━ a member the import finds no declaration of
-   ‡
+   ┆
 28 │ def widened() -> Integer { newer.answer }
    │     ─────── declared here
    │

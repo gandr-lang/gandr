@@ -11,7 +11,7 @@ error[MissingRecordField]: the record is missing a field
    │
 10 │ type Band = #{low : Integer, high : Integer};
    │             ──────────────────────────────── the type it is checked against
-   ‡
+   ┆
 14 │ def partial : Band = #{low = 200000};
    │                      ━━━━━━━━━━━━━━━ a required field is missing
    │

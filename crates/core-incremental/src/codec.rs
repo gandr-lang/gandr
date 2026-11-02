@@ -5224,22 +5224,27 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecError>
             .iter()
             .all(|(child, _)| usize::from(child) < nodes.len())
     }),
-    captures:[expected_roots=roots.clone()],
+    captures:[root_frontier=roots.clone().try_fold(0_usize, |next, root| {
+        let index = usize::from(root);
+        if index >= nodes.len() {
+            Err(CodecError::Corrupt)
+        }
+        else if index > next {
+            Err(CodecError::NonCanonical)
+        }
+        else if index == next {
+            Ok(next.saturating_add(1))
+        }
+        else {
+            Ok(next)
+        }
+    })],
     ensures: |ret| {
         ret == 'discovery: {
-            let mut next = 0_usize;
-            for root in expected_roots.clone() {
-                let index = usize::from(root);
-                if index >= nodes.len() {
-                    break 'discovery Err(CodecError::Corrupt);
-                }
-                if index > next {
-                    break 'discovery Err(CodecError::NonCanonical);
-                }
-                if index == next {
-                    next = next.saturating_add(1);
-                }
-            }
+            let mut next = match root_frontier {
+                Ok(next) => next,
+                Err(error) => break 'discovery Err(error),
+            };
             for (index, node) in nodes.iter().enumerate() {
                 if index >= next {
                     break 'discovery Err(CodecError::NonCanonical);

@@ -26,11 +26,11 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 22 │ ││││         thunk { fn (x) { run y : (() => Integer) at inner <- pass(x); pure y } }
 23 │ ││││       ) <- pure here(thunk { fn (x) { run z : (() => Integer) at outer <- pure x; pass(z) } });
    │ │││└───────┘ formed; while checking the remaining parts of this
-   ‡ │││
+   ┆ ┆┆┆
 27 │ │││        oper exit(code, rest) => pure 0
 28 │ │││      }
    │ ││└──────┘ checked against `-F [Proc, outer : Proc] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
-   ‡ ││
+   ┆ ┆┆
 31 │ ││       oper exit(code, rest) => pure 0
 32 │ ││     }
    │ │└─────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
@@ -62,11 +62,11 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
    │ │││            │    │
    │ │││            │    not both endpoints of the path
    │ │││            checked; while judging the value this returns
-   ‡ │││
+   ┆ ┆┆┆
 51 │ │││       oper exit(code, rest) => pure 0
 52 │ │││     }
    │ ││└─────┘ checked against `-F [Proc, outer : Proc] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
-   ‡ ││
+   ┆ ┆┆
 55 │ ││      oper exit(code, rest) => pure 0
 56 │ ││    }
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}

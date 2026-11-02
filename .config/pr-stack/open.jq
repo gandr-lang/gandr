@@ -7,7 +7,7 @@
 # (auto-merge), so its branch is about to be deleted and nothing new stacks on
 # it (#1455); `held` when it carries the `landing` label, a `pr:land` waiting
 # to queue it (#1556); `stack` the number of the linked stack holding it, or
-# null (#1520); `bot` when an app such as Dependabot opened it, so nothing
+# null (#1520); `bot` when an app such as Renovate opened it, so nothing
 # stacks on it (#2550); `hold` why it is held on purpose, or null: `owner`
 # for the owner's `hold:owner` label, which outlasts a draft taken back
 # (#3253), then `draft` for a draft (`pr:hold`, #2972). A held pull request

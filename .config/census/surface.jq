@@ -18,11 +18,11 @@
 #
 # A `#[spec]` attribute does not reach rustdoc's JSON, which the attribute's
 # macro has consumed, so the task counts those in the sources. The reading is
-# rustdoc's JSON format 58; another format stops the program with an error
+# rustdoc's JSON format 61; another format stops the program with an error
 # naming it.
 
-if .format_version != 58 then
-  error("rustdoc JSON format \(.format_version): .config/census/surface.jq reads format 58; read its `index`, `paths` and type forms against the new format and move the version with it")
+if .format_version != 61 then
+  error("rustdoc JSON format \(.format_version): .config/census/surface.jq reads format 61; read its `index`, `paths` and type forms against the new format and move the version with it")
 end
 | .paths as $paths
 | ([.index[] | select(.inner.impl? and .inner.impl.trait != null) | .inner.impl.items[] | tostring]) as $fixed

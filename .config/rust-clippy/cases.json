@@ -1,6 +1,6 @@
 [
   {
-    "name": "#3531: a driver build's clone of rust-clippy reads the pinned commit as master, and its parent with it, as Dylint's walk needs",
+    "name": "#3531: a driver build's clone of rust-clippy reads the pinned commit as main, and its parent with it, as Dylint's walk needs",
     "pin": "sets",
     "channel": "nightly-2026-06-25",
     "repository": "served",

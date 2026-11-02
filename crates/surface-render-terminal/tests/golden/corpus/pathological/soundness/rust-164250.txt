@@ -19,11 +19,11 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    │ │││       │                                    checked against `-F ((() => Integer) at outer)`; while checking the body of this access
    │ │││       checked against `-F [Proc, inner : Proc] Integer`; while finishing the type of this
 31 │ │││       force q2
-   ‡ │││
+   ┆ ┆┆┆
 34 │ │││       oper exit(code, k) => pure 0
 35 │ │││     };
    │ ││└─────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
-   ‡ ││
+   ┆ ┆┆
 39 │ ││      oper exit(code, k) => pure 0
 40 │ ││    }
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}

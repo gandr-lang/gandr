@@ -1714,7 +1714,7 @@ impl KeyCounter
 fn mint_arena_key() -> Result<ArenaKey, BuildError>
 {
     let previous = NEXT_ARENA_KEY
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
             KeyCounter { next }
                 .mint()
                 .ok()

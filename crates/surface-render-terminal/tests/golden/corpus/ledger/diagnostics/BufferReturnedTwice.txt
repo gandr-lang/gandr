@@ -12,7 +12,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    │ ││     │      │
    │ ││     │      a buffer already handed back
    │ ││     checked against `-F [Ring, r : Ring] Unit`; while checking the payload of this operation
-   ‡ ││
+   ┆ ┆┆
 11 │ ││     oper free(b, k) => k(unit)
 12 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}

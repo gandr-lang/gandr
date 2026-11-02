@@ -789,15 +789,22 @@ impl<A: CellAlphabet> StepRecord<A> for Vec<ReplayStep<A>>
 ///   first failure. The recording observer contains only the successful prefix;
 ///   continuing, dropping or duplicating notifications changes it.
 /// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
-#[spec(captures: initial = start.clone(), ensures: |output| match path.iter().try_fold(initial.clone(), |current, step| {
+#[spec(captures: initial = start.clone(), ensures: |output| match path.iter().try_fold(None, |reached: Option<A::Cmd>, step| {
+    let current = reached.as_ref().unwrap_or(&initial);
     match store.get(step.cell) {
         Maybe::Absent(_) => Err(ReplayPathOutcome::Stuck { application: step.clone(), reason: StuckStep::UnissuedCell }),
-        Maybe::Present(cell) => match rewrite_at(cell, &current, &step.at) {
-            Maybe::Present(result) => Ok(result),
+        Maybe::Present(cell) => match rewrite_at(cell, current, &step.at) {
+            Maybe::Present(result) => Ok(Some(result)),
             Maybe::Absent(reason) => Err(ReplayPathOutcome::Stuck { application: step.clone(), reason: StuckStep::DoesNotFire(reason) }),
         },
     }
-}) { Ok(term) => output == ReplayPathOutcome::Reached(term), Err(expected) => output == expected })]
+}) {
+    Ok(term) => match output {
+        ReplayPathOutcome::Reached(ref reached) => reached == term.as_ref().unwrap_or(&initial),
+        ReplayPathOutcome::Stuck { .. } => false,
+    },
+    Err(expected) => output == expected,
+})]
 fn run_path<A, R>(
     store: &CellStore<A>,
     start: A::Cmd,

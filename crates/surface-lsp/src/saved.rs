@@ -79,10 +79,6 @@ static BUILD: OnceLock<Maybe<BackendArtifact, unidentified::Absent>> = OnceLock:
 ///   a record keyed by another identity is pruned.
 /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
 /// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
-#[expect(
-    clippy::std_instead_of_core,
-    reason = "`core::io::ErrorKind` is not stable yet"
-)]
 fn build() -> Maybe<BackendArtifact, unidentified::Absent>
 {
     *BUILD.get_or_init(|| {

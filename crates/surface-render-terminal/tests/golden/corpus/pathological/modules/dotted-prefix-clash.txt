@@ -3,7 +3,7 @@ error[DuplicateDefinition]: `Kit` is defined twice
    │
  7 │ module Kit where {
    │        ─── first written here
-   ‡
+   ┆
 14 │ theory Kit.Labelled where {
    │        ━━━ written again here
    │

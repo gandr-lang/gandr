@@ -80,7 +80,7 @@ error[UsedAfterClose]: the endpoint is used after `close`
    │ │     ──────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
 33 │ │     close(held);
    │ │     ━━━━━━━━━━━ an endpoint already closed
-   ‡ │
+   ┆ ┆
 38 │ │   close(desk)
 39 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
@@ -95,7 +95,7 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
 46 │ │     fork (inner : end) { close(inner) } as held;
 47 │ │     send(seat, held);
-   ‡ │
+   ┆ ┆
 50 │ │   recv(desk) as passed;
    │ │   ┯━━━
    │ │   │

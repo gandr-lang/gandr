@@ -44,7 +44,7 @@ includes = [".config/mise/tasks"]
 # resolution misses, and that hazard recurs with every upstream default
 # change.
 [tools]
-"cargo:dylint-link" = "6.2.0"
+"cargo:dylint-link" = "6.3.2"
 "cargo:hotpath" = { version = "0.30.3", features = ["hotpath", "hotpath-mcp", "tui"] }
 # The features ledger's engine (`ledger/README.md`): one pinned sqlite3 writes
 # the same dump on every machine and in CI, and the conda build is the
@@ -80,7 +80,7 @@ node = "26.13.0"
 # The dylint release ships Linux-only binaries, so the pins stay cargo: for
 # macOS workstations; CI's native binstall fetches the Linux assets.
 [tools."cargo:cargo-dylint"]
-version = "6.2.0"
+version = "6.3.2"
 
 # sizelint publishes no release binaries; the one remaining source build.
 [tools."cargo:sizelint"]

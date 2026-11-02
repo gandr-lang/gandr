@@ -99,10 +99,6 @@ pub enum Failure
 /// - hypothesis: L3 — actual missing-record and directory-read errors separate
 ///   `NotFound` from `Other`, and each kind is classified directly.
 /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
-#[expect(
-    clippy::std_instead_of_core,
-    reason = "`core::io::ErrorKind` is not stable yet"
-)]
 #[spec(
     ensures: |ret| (ret == Failure::NotFound) == (error.kind() == std::io::ErrorKind::NotFound),
 )]

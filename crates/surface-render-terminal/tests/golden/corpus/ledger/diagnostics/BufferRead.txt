@@ -12,7 +12,7 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
    │ ││     │                   checked against `-F Buf`; while judging the value this returns
    │ ││     checked against `-F [Ring, r : Ring] Unit`; while finishing the type of this
  7 │ ││     r.free(b)
-   ‡ ││
+   ┆ ┆┆
 11 │ ││     oper free(b, k) => k(unit)
 12 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}

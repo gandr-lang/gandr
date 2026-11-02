@@ -1201,10 +1201,6 @@ fn nested_process_local_and_opaque_forms_report_exact_errors()
 }
 
 #[test]
-#[expect(
-    clippy::std_instead_of_core,
-    reason = "`core::io::ErrorKind` is not stable yet"
-)]
 fn file_load_distinguishes_not_found_from_other_read_errors()
 {
     let scratch = Scratch::new(Label("not-found"));

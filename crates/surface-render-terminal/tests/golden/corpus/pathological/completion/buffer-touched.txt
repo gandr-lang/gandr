@@ -10,7 +10,7 @@ error[UsedAfterClose]: the endpoint is used after `close`
 14 │ │   fork (kernel : Ring.Moving) {
    │ │   ──── checked against `-F Unit`; while checking the rest of this fork's parent
 15 │ │     recv(kernel) as held;
-   ‡ │
+   ┆ ┆
 20 │ │   send(ring, buffer);
    │ │   ────────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
 21 │ │   close(buffer);

@@ -8,7 +8,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 10 │ │   identitySpec,
 11 │ │   exampleBody,
 12 │ │   True,
-   ‡ │
+   ┆ ┆
 15 │ │   return fn (h) { h }
    │ │   ┬──────┬────────┯──
    │ │   │      │        │

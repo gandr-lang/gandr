@@ -6,7 +6,7 @@ error[ContinuationCaptured]: the continuation is used inside a thunk, which may 
 14 │ ││     fork (task : Cancel.Join) {
 15 │ ││       send(task, Cancel.notes);
 16 │ ││       close(task)
-   ‡ ││
+   ┆ ┆┆
 23 │ ││     oper exit(code, k) => force thunk { k(unit) }
    │ ││                           ┬─────┯━━━━━━━━━━━━━━━━
    │ ││                           │     │

@@ -750,7 +750,7 @@ impl<G> DescTable<G>
     ///   duplicate identities retain the first entry, and a distinct serial
     ///   remains absent.
     /// - witness: `tests::constructor_menu::description_registry_retains_generic_grades_and_first_identity`
-    #[spec(captures: expected = desc.id.clone(), ensures: |ret| ret == SignatureRef::single(expected.clone()))]
+    #[spec(captures: expected = SignatureRef::single(desc.id.clone()), ensures: |ret| ret == expected)]
     pub fn insert(
         &mut self,
         desc: TheoryDesc<G>,

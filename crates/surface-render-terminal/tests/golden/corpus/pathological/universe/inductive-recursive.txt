@@ -34,7 +34,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │
 49 │        | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
    │                                          ━━━━ not below the stage its recursion wants
-   ‡
+   ┆
 55 │      def rec decode(u : Odd) -> -F Type {
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
@@ -59,7 +59,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │
 49 │        | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
    │                                          ━━━━ not below the stage its recursion wants
-   ‡
+   ┆
 55 │      def rec decode(u : Odd) -> -F Type {
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
@@ -84,7 +84,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │
 49 │        | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
    │                                          ━━━━ not below the stage its recursion wants
-   ‡
+   ┆
 55 │      def rec decode(u : Odd) -> -F Type {
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
@@ -175,7 +175,7 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 101 │ ┃     /// The naturals, at every level.
 102 │ ┃     | NatV : (n : Nat) --> ULevel(n)
 103 │ ┃     /// The universe a level down, a code one level up.
-    ‡ ┃
+    ┆ ┇
 106 │ ┃     | PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n)
 107 │ ┃   }
     │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
@@ -190,7 +190,7 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
 113 │ ┃     match u {
 114 │ ┃       NatV(m) => return Nat,
 115 │ ┃       TypeV(m) => return (ULevel(m)),
-    ‡ ┃
+    ┆ ┇
 118 │ ┃   }
     │ ┗━━━┛ the declared type under a function's domain, where no stage reaches it
     │

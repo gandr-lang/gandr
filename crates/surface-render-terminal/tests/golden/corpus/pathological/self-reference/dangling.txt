@@ -23,7 +23,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    │ │││       synthesised; while judging the value this returns
 14 │ │││     };
    │ ││└─────┘ synthesised; while checking the body of this access
-   ‡ ││
+   ┆ ┆┆
 18 │ ││      oper exit(code, k) => k(unit)
 19 │ ││    };
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}

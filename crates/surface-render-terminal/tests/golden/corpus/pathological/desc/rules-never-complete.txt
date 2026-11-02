@@ -5,7 +5,7 @@ error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two 
 12 │ ┃   sort Proc : Type;
 13 │ ┃   oper nil : () --> Proc;
 14 │ ┃   oper par : (p : Proc, q : Proc) --> Proc;
-   ‡ ┃
+   ┆ ┇
 17 │ ┃   rule scope : par(nu(p), q) ==> nu(par(p, q));
    │ ┃   ──────────────────────────────────────────── the rule it overlaps
 18 │ ┃ }
@@ -20,7 +20,7 @@ error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two 
 25 │ ┃   sort Name : Atom;
 26 │ ┃   sort Proc : Type;
 27 │ ┃   oper nil : () --> Proc;
-   ‡ ┃
+   ┆ ┇
 31 │ ┃   rule scope : par(nu(bind a. p), q) ==> nu(bind a. par(p, q)) where { | a # q };
    │ ┃   ────────────────────────────────────────────────────────────────────────────── the rule it overlaps
 32 │ ┃ }

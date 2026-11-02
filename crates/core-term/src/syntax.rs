@@ -4563,7 +4563,7 @@ mod tests
             }
             while level.len() > 1 {
                 above.clear();
-                for pair in level.chunks_exact(2) {
+                for pair in level.as_chunks::<2>().0 {
                     above.push(arena.value_tuple(pair));
                 }
                 core::mem::swap(&mut level, &mut above);

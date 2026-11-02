@@ -3,7 +3,7 @@ error[ImportShadows]: `answer` is bound by an import and again in this source
   │
 3 │ import "../syntax/pub-declaration.gandr" ;
   │ ────────────────────────────────────────── first written here
-  ‡
+  ┆
 6 │ def answer = 43 ;
   │     ━━━━━━ bound here and by an import
   │

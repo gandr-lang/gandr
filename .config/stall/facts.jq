@@ -8,7 +8,7 @@
 # Output: `{prs, merged, filed, claimed}`; `prs` one entry per open pull
 # request:
 #   number, draft, head, base, oid  as GitHub names them;
-#   bot       an app (Dependabot) opened it: the triage lane closes it and
+#   bot       an app (Renovate) opened it: the triage lane closes it and
 #             makes its change by hand, so no stall kind reads it;
 #   created   when it was opened, in epoch seconds;
 #   mergeable `MERGEABLE`, `CONFLICTING` or `UNKNOWN`;

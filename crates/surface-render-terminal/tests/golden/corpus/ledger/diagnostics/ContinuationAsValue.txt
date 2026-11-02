@@ -6,7 +6,7 @@ error[ContinuationAsValue]: this continuation holds something that must end, so 
 19 │ ││     fork (task : Cancel.Join) {
 20 │ ││       send(task, Cancel.notes);
 21 │ ││       close(task)
-   ‡ ││
+   ┆ ┆┆
 28 │ ││     oper exit(code, k) => resume_stack(k)
    │ ││                           ┬────────────┯─
    │ ││                           │            │

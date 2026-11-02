@@ -3,7 +3,7 @@ error[FamilyArgumentClassifier]: argument 0 of the type operator has the wrong k
   │
 3 │ def twice : Type -> Type ;
   │             ──── the type it is checked against
-  ‡
+  ┆
 7 │ def wrong(p : twice(1)) -> -F Integer {
   │           ┬   ┬─────┯─
   │           │   │     │

@@ -7,7 +7,8 @@
 # reads that metadata too, so no independently editable binary revision exists.
 # Either way the rust-clippy commit the Dylint driver's build reads
 # (`.github/docker/rust-clippy.bash`, for the CI image and `check:dylint`)
-# moves with them: the commit that set the channel under the Clippy tag.
+# moves with them: the commit on the Clippy tag's first-parent line that set
+# the channel.
 ["toolchain:bump"]
 description = "Move the compiler and its local or external lint source together"
 usage = '''
@@ -60,10 +61,11 @@ case "$channel" in
   *) echo 'toolchain:bump: source carries no usable nightly channel' >&2; exit 1 ;;
 esac
 
-# The tag's commit sets the channel on rust-clippy's first-parent line:
-# rust-clippy.bash serves it to the driver's build as `master`, and the
-# build's walk stops there because the commit's first parent names an earlier
-# channel.
+# Dylint's walk yields the commit on rust-clippy's first-parent line that set
+# the channel: the first whose first parent names an earlier one.
+# rust-clippy.bash serves that commit to the driver's build as `main`, so the
+# walk stops there. A tag may sit a few commits after it, so the bump walks
+# the tag's first parents back to it.
 case "$clippy_tag" in
   rust-[0-9]*) ;;
   *) echo 'toolchain:bump: source carries no rust-<stable> clippy_utils tag' >&2; exit 1 ;;
@@ -72,11 +74,20 @@ clippy_channel_at() {
   gh api --jq .content "repos/rust-lang/rust-clippy/contents/rust-toolchain.toml?ref=$1" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p'
 }
 clippy_rev=$(gh api --jq .sha "repos/rust-lang/rust-clippy/commits/$clippy_tag")
-clippy_parent=$(gh api --jq '.parents[0].sha' "repos/rust-lang/rust-clippy/commits/$clippy_rev")
-if [ "$(clippy_channel_at "$clippy_rev")" != "$channel" ] || [ "$(clippy_channel_at "$clippy_parent")" = "$channel" ]; then
-  echo "toolchain:bump: rust-clippy $clippy_tag ($clippy_rev) does not set $channel" >&2
+if [ "$(clippy_channel_at "$clippy_rev")" != "$channel" ]; then
+  echo "toolchain:bump: rust-clippy $clippy_tag ($clippy_rev) does not name $channel" >&2
   exit 1
 fi
+steps=0
+while clippy_parent=$(gh api --jq '.parents[0].sha' "repos/rust-lang/rust-clippy/commits/$clippy_rev") \
+  && [ "$(clippy_channel_at "$clippy_parent")" = "$channel" ]; do
+  clippy_rev=$clippy_parent
+  steps=$((steps + 1))
+  if [ "$steps" -ge 500 ]; then
+    echo "toolchain:bump: no commit within 500 first parents of rust-clippy $clippy_tag sets $channel" >&2
+    exit 1
+  fi
+done
 
 # Values enter Perl through environment variables, never program interpolation.
 export WORKFLOW_OLD_REV="$old_revision" WORKFLOW_NEW_REV="$revision" WORKFLOW_CHANNEL="$channel" WORKFLOW_STABLE="$version" CLIPPY_TAG="$clippy_tag" CLIPPY_REV="$clippy_rev"
@@ -101,9 +112,8 @@ echo 'external consumers: mise run check'
 # `rust-toolchain.toml` to the newest nightly, apart from the rust-clippy tag
 # the Dylint driver is built against; the channel moves only with
 # `toolchain:bump` above. The driver and its linker follow the library's
-# `dylint_linting`, and the CI image builds the driver against its pinned
-# rust-clippy clone, which 6.3's build script, reading a `main` branch, cannot
-# use. The global config's tools stay with the user.
+# `dylint_linting` at the pinned quenchant revision. The global config's tools
+# stay with the user.
 ["tools:bump"]
 description = "Bump every project tool pin but the compiler and the Dylint driver, each moved with what it is built against"
 run = "mise upgrade --bump --no-global --exclude rust --exclude cargo:cargo-dylint --exclude cargo:dylint-link"

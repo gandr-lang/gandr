@@ -103,7 +103,7 @@ default-features = false
 # consumers:
 # - surface-render-terminal
 [workspace.dependencies.annotate-snippets]
-version = "0.12.16"
+version = "0.12.17"
 default-features = false
 
 # Executable specifications through the core-only quenchant facade, named
@@ -186,7 +186,7 @@ default-features = false
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
 git = "https://github.com/gandr-lang/quenchant"
-rev = "8b8d0702d69409549e855606a85492c777e05fc9"
+rev = "784e83247511e46131affc7538ba25aa7830557d"
 default-features = false
 features = ["anodized"]
 
@@ -1057,7 +1057,7 @@ default-features = false
 # - surface-lsp
 # - theory-coherent-resolutions
 [workspace.dependencies.hotpath]
-version = "0.28.6"
+version = "0.30.3"
 default-features = false
 
 # QUIC endpoints dialed by public key: the host's `Net` interface, one
@@ -1070,7 +1070,7 @@ default-features = false
 # consumers:
 # - runtime-net
 [workspace.dependencies.iroh]
-version = "=1.3.0"
+version = "=1.4.1"
 default-features = false
 features = ["tls-ring"]
 
@@ -1081,7 +1081,7 @@ features = ["tls-ring"]
 # consumers:
 # - runtime-net
 [workspace.dependencies.iroh-mdns-address-lookup]
-version = "=0.6.0"
+version = "=0.6.1"
 default-features = false
 
 # The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
@@ -1120,7 +1120,7 @@ default-features = false
 # consumers:
 # - surface-dispatcher
 [workspace.dependencies.memmap2]
-version = "0.9.11"
+version = "0.9.12"
 default-features = false
 
 # A pseudo-terminal pair for the driver's tests: a child given a terminal on
@@ -1149,7 +1149,7 @@ features = ["term"]
 # - surface-lsp
 # - surface-repl
 [workspace.dependencies.notify]
-version = "8.2.0"
+version = "8.2.1"
 default-features = false
 features = ["macos_fsevent"]
 
@@ -1269,7 +1269,7 @@ features = ["std"]
 # - kernel-core
 [workspace.dependencies.quenchant-arith]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "8b8d0702d69409549e855606a85492c777e05fc9"
+rev = "784e83247511e46131affc7538ba25aa7830557d"
 default-features = false
 
 # Named non-failure absence, sealed at each decision site.
@@ -1321,7 +1321,7 @@ default-features = false
 # - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "8b8d0702d69409549e855606a85492c777e05fc9"
+rev = "784e83247511e46131affc7538ba25aa7830557d"
 default-features = false
 
 # The terminal face's renderer: layout, styled text and widgets, the headless
@@ -1372,7 +1372,7 @@ features = ["std", "string"]
 # consumers:
 # - core-checker (dev)
 [workspace.dependencies.ringbuf]
-version = "0.5.3"
+version = "0.6.0"
 default-features = false
 features = ["alloc"]
 
@@ -1386,7 +1386,7 @@ features = ["alloc"]
 # consumers:
 # - workflow-test-timing
 [workspace.dependencies.roxmltree]
-version = "0.21.1"
+version = "0.21.2"
 default-features = false
 
 # Wait-free per-worker observer queues.
@@ -1395,7 +1395,7 @@ default-features = false
 # consumers:
 # - core-checker (dev)
 [workspace.dependencies.rtrb]
-version = "0.4.0"
+version = "0.4.1"
 default-features = false
 
 # The line editor of the read-evaluate loop's terminal face: raw-mode input,
@@ -1756,7 +1756,7 @@ private_intra_doc_links = "allow"
 # from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "8855df3b4c669cfe11e903c3c9076c0792d15134"
+rev = "784e83247511e46131affc7538ba25aa7830557d"
 pattern = "crates/quenchant-dylints"
 
 # The everyday unoptimized build keeps full debuginfo, which lldb reads. It

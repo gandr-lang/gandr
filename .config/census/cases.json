@@ -3,7 +3,7 @@
     "name": "a trait implementation's items name no boundary type but keep their clauses; a nested bullet and another crate's item count nothing",
     "program": "surface.jq",
     "input": {
-      "format_version": 58,
+      "format_version": 61,
       "index": {
         "1": {
           "crate_id": 0,
@@ -177,7 +177,7 @@
     }
   },
   {
-    "name": "a rustdoc JSON format other than 58 stops the program",
+    "name": "a rustdoc JSON format other than 61 stops the program",
     "program": "surface.jq",
     "input": {
       "format_version": 57,

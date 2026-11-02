@@ -304,7 +304,7 @@ fn is_tile(
 /// - witness: `tests::asynchronous_axioms::a_missing_pairwise_tile_removes_both_cube_routes`
 #[spec(requires: matches!(store.get(forward.0.cell), Maybe::Present(_))
     && matches!(store.get(backward.0.cell), Maybe::Present(_)), ensures: |output| output == Presence::Absent || {
-    let target = |path: ThreePath<'_>| [path.0, path.1, path.2].into_iter()
+    let target = |path: ThreePath<'_>| <[_; 3]>::from(path).into_iter()
         .try_fold(peak.clone(), |current, step| {
             let Maybe::Present(cell) = store.get(step.cell) else { return None; };
             match rewrite_at(cell, &current, &step.at) {
@@ -367,7 +367,7 @@ fn front_chain(
 /// - witness: `tests::asynchronous_axioms::the_cube_property_holds_for_every_pair_of_three_paths`
 /// - witness: `tests::asynchronous_axioms::a_missing_pairwise_tile_removes_both_cube_routes`
 #[spec(ensures: |output| output == Presence::Absent || {
-    let target = |path: ThreePath<'_>| [path.0, path.1, path.2].into_iter()
+    let target = |path: ThreePath<'_>| <[_; 3]>::from(path).into_iter()
         .try_fold(peak.clone(), |current, step| {
             let Maybe::Present(cell) = store.get(step.cell) else { return None; };
             match rewrite_at(cell, &current, &step.at) {

@@ -3,7 +3,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 13 │ def first(xs : List(Integer)) -> Integer {
    │                     ─────── the type it is checked against
-   ‡
+   ┆
 23 │ def mistyped() -> Integer { first(Cons("no", Nil)) }
    │ ┬───────────────────────────┬─────┬────┯━━━─────────
    │ │                           │     │    │
