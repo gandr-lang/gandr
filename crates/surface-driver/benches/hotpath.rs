@@ -10,9 +10,18 @@
 //! | `component floor` | `gandr check` of a directory of sixty-four components of one definition each, every one laid after the prelude | what each component pays to reuse the prelude's judgement: its lowering resumed onto the prelude's (`lower_onto_closure`), its program continued from the prelude's (`Program::after`) and its readmission resumed from the prelude's record (`Crossed::resume`) |
 //! | `prelude resolve` | `gandr check` of one component whose `==` and `<` resolve at the integers, the strings and a point whose `Eq` member is derived | the prelude's lowering and judgement (`lower_closure`, `judge_closure`), the candidates a model slot collects (`Lowerer::model_candidates`), each candidate's packing, an include's among them (`Lowerer::packed_structure`), the include's reduct maps (`Lowerer::mint_reducts`), the checker's trial of each candidate (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`) |
 //! | `many candidates` | `gandr check` of one body calling a function sixteen times, each call leaving out a model implicit sixteen modules in scope answer | each candidate's trial against the one solver store all sixteen slots share (`tried`), and the slots' resolution (`Deferrals::resolve`) |
-//! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
-//! | `lsp burst` | the same session, erasing the end of that line one character per change, every change read in one frame | the server's recheck, once per burst |
-//! | `lsp comment edit` | a language-server session that opens the group laws and adds a comment line before their first, outside the rule block | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
+//! | `lsp first keystroke` | a language-server session that opens the same source, waits for the open's judgement, then erases one line; only the change is timed | the server's first recheck, which also builds the closure's lowering and judgement once |
+//! | `lsp keystroke` | the same session after its first keystroke, erasing the next line; only this change is timed | the server's recheck with the closure warm, the cost each later keystroke pays |
+//! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per change, every change sent in one write; only the burst is timed | the server's recheck, once per burst |
+//! | `lsp comment edit` | a session that opens the group laws, waits for the open's judgement, then adds a comment line before their first, outside the rule block; only the change is timed | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
+//!
+//! Each language-server workload serves its session on the bench's thread,
+//! and a client on a thread of its own speaks to it over pipes. The client
+//! waits for a judgement by asking for the document's symbols, which the
+//! server answers once the document's judgement settles. A workload's block
+//! runs on the client's thread, so it counts the client's allocations alone.
+//! The server's allocations are counted under its own functions,
+//! `recheck::judge_laid` among them.
 //!
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
@@ -45,6 +54,9 @@
 
 mod support;
 
+use std::io::BufReader;
+use std::io::Read as _;
+use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -54,6 +66,7 @@ use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_lsp::Spelling;
+use quenchant_shape::shape::Maybe;
 use support::check;
 use support::corpus;
 
@@ -200,75 +213,203 @@ fn framed(message: &serde_json::Value) -> Vec<u8>
     frame
 }
 
-/// Serve a language-server session that opens `path`, whose text is `text`,
-/// changes it to each of `edits` in order, each a whole text at the next
-/// version, then shuts the session down. Every message is in the input before
-/// the server reads it, so the changes are read together.
+/// A language-server client speaking to a session over pipes. It opens one
+/// document, waits for the open's judgement, and then runs its workload's
+/// changes, each timed apart from the open.
+struct Client
+{
+    /// Where the client's messages go.
+    input: std::io::PipeWriter,
+    /// What the server writes.
+    output: BufReader<std::io::PipeReader>,
+    /// The document's URI.
+    uri: String,
+    /// The document's latest version.
+    version: u32,
+    /// The identifier of the client's latest request.
+    asked: u32,
+}
+
+impl Client
+{
+    /// Write `messages` to the server in one write, so it reads them together.
+    ///
+    /// # Specification
+    /// trivial.
+    fn send(
+        &mut self,
+        messages: &[serde_json::Value],
+    )
+    {
+        let frames: Vec<u8> = messages.iter().flat_map(framed).collect();
+        self.input
+            .write_all(&frames)
+            .expect("the server reads its input");
+    }
+
+    /// Send the request `method` with `params`, and read the server's
+    /// messages until its response.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ask(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+    )
+    {
+        self.asked = self.asked.saturating_add(1);
+        let id = self.asked;
+        self.send(&[
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
+        ]);
+        loop {
+            let Maybe::Present(body) =
+                gandr_surface_lsp::read_frame(&mut self.output).expect("the server's output reads")
+            else {
+                panic!("the server ended before it answered `{method}`");
+            };
+            let message: serde_json::Value =
+                serde_json::from_slice(body.as_ref()).expect("the server writes JSON");
+            if message.get("method").is_none() && message.get("id") == Some(&serde_json::json!(id))
+            {
+                return;
+            }
+        }
+    }
+
+    /// Wait until the document's latest judgement settles: a request reading
+    /// the document is answered only then.
+    ///
+    /// # Specification
+    /// trivial.
+    fn settle(&mut self)
+    {
+        let params = serde_json::json!({"textDocument": {"uri": self.uri}});
+        self.ask("textDocument/documentSymbol", &params);
+    }
+
+    /// Change the document to each of `edits` in order, each a whole text at
+    /// the next version, sent in one write, and wait until the last change's
+    /// judgement settles.
+    ///
+    /// # Specification
+    /// trivial.
+    fn change(
+        &mut self,
+        edits: &[String],
+    )
+    {
+        let changes: Vec<serde_json::Value> = edits
+            .iter()
+            .map(|edit| {
+                self.version = self.version.saturating_add(1);
+                serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": self.uri, "version": self.version},
+                    "contentChanges": [{"text": edit}],
+                }})
+            })
+            .collect();
+        self.send(&changes);
+        self.settle();
+    }
+}
+
+/// Serve a language-server session on this thread while a client on its own
+/// thread opens `path` at `text`, waits for the open's judgement, runs
+/// `workload`, and shuts the session down.
 ///
 /// # Specification
 /// trivial.
-fn lsp_session(
+fn live(
     path: &Path,
-    text: &str,
-    edits: &[String],
+    text: String,
+    workload: impl FnOnce(&mut Client) + Send + 'static,
 )
 {
+    let (mut read, input) = std::io::pipe().expect("the input pipe opens");
+    let (output, mut written) = std::io::pipe().expect("the output pipe opens");
     let uri = format!("file://{}", path.display());
-    let mut session = Vec::from([
-        serde_json::json!({"jsonrpc": "2.0", "id": 1_u8, "method": "initialize", "params": {}}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
-            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_u8, "text": text},
-        }}),
-    ]);
-    session.extend(edits.iter().zip(2_u32 ..).map(|(edit, version)| {
-        serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
-            "textDocument": {"uri": uri, "version": version},
-            "contentChanges": [{"text": edit}],
-        }})
-    }));
-    session.extend([
-        serde_json::json!({"jsonrpc": "2.0", "id": 2_u8, "method": "shutdown"}),
-        serde_json::json!({"jsonrpc": "2.0", "method": "exit"}),
-    ]);
-    let frames: Vec<u8> = session.iter().flat_map(framed).collect();
-    let mut input: &[u8] = &frames;
-    let mut output = Vec::new();
-    let mut log = Vec::new();
-    // The workspace's own pool has one thread, so each admission runs where
-    // it is submitted and the counts the report judges stay exact.
+    let client = std::thread::spawn(move || {
+        let mut client = Client {
+            input,
+            output: BufReader::new(output),
+            uri,
+            version: 1,
+            asked: 0,
+        };
+        client.ask("initialize", &serde_json::json!({}));
+        client.send(&[
+            serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": client.uri, "languageId": "gandr", "version": 1_u8, "text": text},
+            }}),
+        ]);
+        client.settle();
+        workload(&mut client);
+        client.ask("shutdown", &serde_json::Value::Null);
+        client.send(&[serde_json::json!({"jsonrpc": "2.0", "method": "exit"})]);
+        drop(client.input);
+        let mut rest = Vec::new();
+        client
+            .output
+            .read_to_end(&mut rest)
+            .expect("the server's output reads to its end");
+    });
+    // The server runs on this thread, so the profiler attributes each of its
+    // functions' allocations as it does for the other workloads. The
+    // workspace's own pool has one thread, so each admission runs where it is
+    // submitted and the counts the report judges stay exact.
     let served = gandr_surface_lsp::serve(
-        &mut input,
-        &mut output,
-        &mut log,
+        &mut BufReader::new(&mut read),
+        &mut written,
+        &mut std::io::sink(),
         gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
     )
     .expect("the session is served");
-    core::hint::black_box((served, output, log));
+    drop(written);
+    client.join().expect("the client's thread ends");
+    core::hint::black_box(served);
 }
 
-/// Open [`SOURCE`] in a language-server session, erase its middle line as one
-/// keystroke would leave it, then shut the session down.
+/// `text` with the lines at `left_out` left out.
 ///
 /// # Specification
 /// trivial.
-fn lsp_keystroke()
+fn erased(
+    text: &str,
+    left_out: &[usize],
+) -> String
 {
-    let text = std::fs::read_to_string(source()).expect("the model source reads");
-    let lines: Vec<&str> = text.lines().collect();
-    let erased_at = lines.len().checked_div(2).unwrap_or_default();
-    let kept: Vec<&str> = lines
-        .iter()
+    text.lines()
         .enumerate()
-        .filter(|&(at, _)| at != erased_at)
-        .map(|(_, line)| *line)
-        .collect();
-    lsp_session(&source(), &text, &[kept.join("\n")]);
+        .filter(|&(at, _)| !left_out.contains(&at))
+        .map(|(_, line)| line)
+        .collect::<Vec<&str>>()
+        .join("\n")
 }
 
-/// Open [`SOURCE`] in a language-server session, erase the last [`BURST`]
-/// characters of its middle line one keystroke at a time, every change read in
-/// one frame, then shut the session down.
+/// Open [`SOURCE`] in a language-server session and wait for the open's
+/// judgement. Erase its middle line, timed as the first keystroke, then the
+/// line after it, timed as a keystroke with the closure warm.
+///
+/// # Specification
+/// trivial.
+fn lsp_keystrokes()
+{
+    let text = std::fs::read_to_string(source()).expect("the model source reads");
+    let middle = text.lines().count().checked_div(2).unwrap_or_default();
+    let first = erased(&text, &[middle]);
+    let second = erased(&text, &[middle, middle.saturating_add(1)]);
+    live(&source(), text, move |client| {
+        hotpath::measure_block!("lsp first keystroke", client.change(&[first]));
+        hotpath::measure_block!("lsp keystroke", client.change(&[second]));
+    });
+}
+
+/// Open [`SOURCE`] in a language-server session and wait for the open's
+/// judgement. Erase the last [`BURST`] characters of its middle line one
+/// keystroke at a time, every change sent in one write, timed as one burst.
 ///
 /// # Specification
 /// trivial.
@@ -295,11 +436,14 @@ fn lsp_burst()
                 .join("\n")
         })
         .collect();
-    lsp_session(&source(), &text, &edits);
+    live(&source(), text, move |client| {
+        hotpath::measure_block!("lsp burst", client.change(&edits));
+    });
 }
 
-/// Open the group laws in a language-server session, add a comment line
-/// before their first, outside the rule block, then shut the session down.
+/// Open the group laws in a language-server session and wait for the open's
+/// judgement. Add a comment line before their first, outside the rule block,
+/// timed as one change.
 ///
 /// # Specification
 /// trivial.
@@ -307,10 +451,14 @@ fn lsp_comment_edit()
 {
     let laws = corpus(COMPLETION[0]);
     let text = std::fs::read_to_string(&laws).expect("the group laws read");
-    lsp_session(&laws, &text, &[format!("// Edited.\n{text}")]);
+    let edited = format!("// Edited.\n{text}");
+    live(&laws, text, move |client| {
+        hotpath::measure_block!("lsp comment edit", client.change(&[edited]));
+    });
 }
 
-/// Run each workload once under its own measured block.
+/// Run each workload once under its own measured block. A language-server
+/// workload times its changes alone, each under its own block.
 ///
 /// # Specification
 /// trivial.
@@ -324,7 +472,7 @@ fn main()
     hotpath::measure_block!("component floor", component_floor());
     hotpath::measure_block!("prelude resolve", prelude_resolve());
     hotpath::measure_block!("many candidates", many_candidates());
-    hotpath::measure_block!("lsp keystroke", lsp_keystroke());
-    hotpath::measure_block!("lsp burst", lsp_burst());
-    hotpath::measure_block!("lsp comment edit", lsp_comment_edit());
+    lsp_keystrokes();
+    lsp_burst();
+    lsp_comment_edit();
 }
