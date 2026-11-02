@@ -6043,6 +6043,74 @@ def cylinderCompositeAtHere(A : Type, x : A) -> Path(
         );
     }
 
+    /// A stack of two squares, the side-by-side composite of their reversed
+    /// squares reversed, with the whiskers level-two composites, called at
+    /// reflexivities: the kernel re-derives the call the checker accepts.
+    #[test]
+    fn a_stack_of_level_two_whiskered_squares_replays_at_reflexivities_4435()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(
+                r"/// The left whisker, as a level-two composite.
+def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), f then g1, f then g2) {
+  compose[4, 9](chain(2, (0, 1)), (f, b))
+}
+/// The right whisker, as a level-two composite.
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  compose[4, 9](chain(2, (1, 0)), (a, g))
+}
+/// The associator, by conversion.
+def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
+  here((f then g) then h)
+}
+/// Two squares side by side compose to a square, through two associators.
+def cylinderComposite2(A : Type, x : A, y : A, f : Path(A, x, y), x2 : A, y2 : A, f2 : Path(A, x2, y2), xs : Path(A, x, x2), ys : Path(A, y, y2), a : Path(Path(A, x, y2), f then ys, xs then f2), z : A, g : Path(A, y, z), z2 : A, g2 : Path(A, y2, z2), zs : Path(A, z, z2), b : Path(Path(A, y, z2), g then zs, ys then g2)) -> Path(Path(A, x, z2), (f then g) then zs, xs then (f2 then g2)) {
+  assoc(A, x, y, z, z2, f, g, zs)
+    then whiskerLeft(A, x, y, z2, f, g then zs, ys then g2, b)
+    then back(assoc(A, x, y, y2, z2, f, ys, g2))
+    then whiskerRight(A, x, y2, z2, f then ys, xs then f2, a, g2)
+    then assoc(A, x, x2, y2, z2, xs, f2, g2)
+}
+/// A stack of two squares composes to a square, the composite of their reversed squares reversed.
+def cylinderStack2(A : Type, x : A, y : A, f : Path(A, x, y), x2 : A, y2 : A, f2 : Path(A, x2, y2), xs : Path(A, x, x2), ys : Path(A, y, y2), a : Path(Path(A, x, y2), f then ys, xs then f2), x3 : A, y3 : A, f3 : Path(A, x3, y3), xs2 : Path(A, x2, x3), ys2 : Path(A, y2, y3), b : Path(Path(A, x2, y3), f2 then ys2, xs2 then f3)) -> Path(Path(A, x, y3), f then (ys then ys2), (xs then xs2) then f3) {
+  back(cylinderComposite2(A, x, x2, xs, y, y2, ys, f, f2, back(a), x3, xs2, y3, ys2, f3, back(b)))
+}
+/// A stack of two squares of reflexivities composes to the reflexivity of the reflexivity.
+def cylinderStackAtHere(A : Type, x : A) -> Path(
+  Path(Path(A, x, x), here(x), here(x)),
+  cylinderStack2(A, x, x, here(x), x, x, here(x), here(x), here(x), here(here(x)), x, x, here(x), here(x), here(x), here(here(x))),
+  here(here(x))
+) {
+  here(here(here(x)))
+}
+",
+            ),
+        );
+        let outcomes: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        let checks = Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            outcomes,
+            [
+                "whiskerLeft",
+                "whiskerRight",
+                "assoc",
+                "cylinderComposite2",
+                "cylinderStack2",
+                "cylinderStackAtHere"
+            ]
+            .map(|name| (name.to_owned(), checks.clone()))
+            .to_vec(),
+            "every definition checks, and the kernel re-derives each"
+        );
+    }
+
     /// A fill whose generator's body is itself a fill, read at reflexivities:
     /// the outer fill reaches its base, the generator at the source face, and
     /// the inner fill there reaches its own. The kernel re-derives the
