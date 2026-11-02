@@ -2129,18 +2129,19 @@ fn ended(served: Result<Served, gandr_surface_lsp::TransportFault>) -> ExitCode
     }
 }
 
-/// The socket `socket` names, or the one the current directory's workspace
-/// names when it names none.
+/// The socket `socket` names, or the one the running build's hub of the
+/// current directory's workspace listens on when it names none.
 ///
 /// # Specification
 /// trivial.
 #[cfg(unix)]
 fn hub_socket(socket: Option<PathBuf>) -> std::io::Result<PathBuf>
 {
-    match socket {
-        Some(socket) => Ok(socket),
-        None => gandr_surface_lsp::socket_for(&std::env::current_dir()?),
+    if let Some(socket) = socket {
+        return Ok(socket);
     }
+    let workspace = std::env::current_dir()?;
+    gandr_surface_lsp::socket_for(&workspace).map_err(std::io::Error::other)
 }
 
 /// Note `error`, what stopped reaching or running the hub, on standard error

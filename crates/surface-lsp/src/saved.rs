@@ -17,8 +17,8 @@
 //! copy's judgement runs persists once that judgement is published; a change
 //! read before then withdraws it, since the judgement is then of another text.
 //!
-//! The set is keyed by the identity of the checker build that judged it, the
-//! BLAKE3 digest of the running executable, so a set another build judged is
+//! The set is keyed by the identity of the checker build that judged it,
+//! read off the running executable's digest, so a set another build judged is
 //! never restored; and each save prunes by it: every record another build
 //! judged is deleted, the running build the one the server can name. The
 //! store is a cache of judgements the server makes anyway: a set it fails to
@@ -34,7 +34,6 @@
 use alloc::boxed::Box;
 use core::fmt;
 use std::path::Path;
-use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
@@ -44,69 +43,8 @@ use gandr_core_incremental::RestoreFrom;
 use gandr_core_incremental::Restorer;
 use quenchant_shape::shape::Maybe;
 
+use crate::build::unidentified;
 use crate::recheck::DocumentSession;
-
-quenchant_shape::reason_enum! {
-    /// Why the running build has no identity to key checkpoints by.
-    pub mod unidentified {
-        /// The reason none is known.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The platform does not say where the executable is.
-            Unlocated,
-            /// The executable could not be read.
-            Unread,
-        }
-    }
-}
-
-/// The identity of the running build, read once per process.
-static BUILD: OnceLock<Maybe<BackendArtifact, unidentified::Absent>> = OnceLock::new();
-
-/// The identity of the running build: the BLAKE3 digest of its executable,
-/// read the first time a save or an open asks.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the same answer on every call in a process; the digest of the
-///   bytes of the executable the process runs when it can be read.
-/// - provides: `unidentified::Absent` naming why it cannot.
-/// - panics: none.
-/// - executable: none — restating the digest rereads the whole executable.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a set a save keyed by it restores in the same build, and
-///   a record keyed by another identity is pruned.
-/// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
-/// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
-fn build() -> Maybe<BackendArtifact, unidentified::Absent>
-{
-    *BUILD.get_or_init(|| {
-        let Ok(path) = std::env::current_exe()
-        else {
-            return Maybe::Absent(unidentified::Absent::Unlocated);
-        };
-        let Ok(mut file) = std::fs::File::open(path)
-        else {
-            return Maybe::Absent(unidentified::Absent::Unread);
-        };
-        let mut hasher = blake3::Hasher::new();
-        let mut buffer = alloc::vec![0_u8; 1 << 16];
-        loop {
-            match std::io::Read::read(&mut file, &mut buffer) {
-                Ok(0) => break,
-                Ok(read) => {
-                    let _hashed = hasher.update(buffer.get(.. read).unwrap_or_default());
-                },
-                Err(ref error) if error.kind() == std::io::ErrorKind::Interrupted => {},
-                Err(_error) => return Maybe::Absent(unidentified::Absent::Unread),
-            }
-        }
-        Maybe::Present(BackendArtifact::from(
-            hasher.finalize().as_bytes().as_slice(),
-        ))
-    })
-}
 
 /// Where saves keep their copies' checkpoints and opens restore from.
 ///
@@ -149,12 +87,7 @@ impl fmt::Display for Unsaved
     ) -> fmt::Result
     {
         match *self {
-            Self::Unidentified(unidentified::Absent::Unlocated) => {
-                f.write_str("the running executable cannot be located")
-            },
-            Self::Unidentified(unidentified::Absent::Unread) => {
-                f.write_str("the running executable cannot be read")
-            },
+            Self::Unidentified(reason) => write!(f, "{reason}"),
             Self::Store(error) => write!(f, "{error}"),
         }
     }
@@ -191,7 +124,8 @@ impl Saved
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a restorer over the store, keyed by [`build`]'s identity.
+    /// - ensures: a restorer over the store, keyed by the running build's
+    ///   identity.
     /// - provides: `unidentified::Absent` when the build has none.
     /// - panics: none.
     ///
@@ -199,13 +133,16 @@ impl Saved
     /// - hypothesis: L3 — as [`Saved`].
     /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
     #[spec(ensures: |ret| matches!(
-        (&ret, build()),
+        (&ret, crate::build::running()),
         (&Maybe::Present(_), Maybe::Present(_)) | (&Maybe::Absent(_), Maybe::Absent(_))
     ))]
     pub(crate) fn restorer(&self) -> Maybe<Box<dyn Restorer>, unidentified::Absent>
     {
-        build().map(|backend| -> Box<dyn Restorer> {
-            Box::new(RestoreFrom::new(self.store.clone(), backend))
+        crate::build::running().map(|build| -> Box<dyn Restorer> {
+            Box::new(RestoreFrom::new(
+                self.store.clone(),
+                BackendArtifact::from(build),
+            ))
         })
     }
 
@@ -228,14 +165,14 @@ impl Saved
     /// - hypothesis: L3 — as [`Saved`].
     /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
     /// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
-    #[spec(ensures: |ret| !matches!(ret, Err(Unsaved::Unidentified(_))) || matches!(build(), Maybe::Absent(_)))]
+    #[spec(ensures: |ret| !matches!(ret, Err(Unsaved::Unidentified(_))) || matches!(crate::build::running(), Maybe::Absent(_)))]
     pub(crate) fn keep(
         &self,
         session: &DocumentSession,
     ) -> Result<(), Unsaved>
     {
-        let backend = match build() {
-            Maybe::Present(backend) => backend,
+        let backend = match crate::build::running() {
+            Maybe::Present(build) => BackendArtifact::from(build),
             Maybe::Absent(reason) => return Err(Unsaved::Unidentified(reason)),
         };
         if let Ok(ref judging) = *session {

@@ -2910,6 +2910,91 @@ fn lsp_clients_share_one_engine_hub()
     );
 }
 
+/// Two builds' relays in one workspace each start a hub of their own, and a
+/// second relay of one build reaches the hub its first started.
+///
+/// Linux alone: the other build is the driver with one byte appended, which a
+/// platform that checks an executable's signature would refuse to run.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_relay_reaches_only_a_hub_of_its_own_build()
+{
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("builds"));
+    let runtime = scratch.0.join("run");
+    let workspace = scratch.0.join("workspace");
+    std::fs::create_dir_all(&workspace).expect("the workspace is made");
+    let built = PathBuf::from(env!("CARGO_BIN_EXE_gandr"));
+    let other = scratch.0.join("gandr");
+    let _copied = std::fs::copy(&built, &other).expect("the driver is copied");
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&other)
+        .and_then(|mut file| file.write_all(&[0_u8]))
+        .expect("the copy is made another build");
+    let relay = |driver: &Path| {
+        let mut command = Command::new(driver);
+        for (key, value) in gandr::<&str>(&[]).get_envs() {
+            if let Some(value) = value {
+                let _set = command.env(key, value);
+            }
+        }
+        let _configured = command
+            .args(["mcp", "--linger-ms", "3000"])
+            .current_dir(&workspace)
+            .env("XDG_RUNTIME_DIR", &runtime)
+            .stdin(Stdio::null());
+        // A test thread forking while the copy was open for writing holds it
+        // until that child execs, and the kernel refuses to run it meanwhile.
+        let output = loop {
+            match command.output() {
+                Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(core::time::Duration::from_millis(20));
+                },
+                ran => break ran.expect("the relay runs"),
+            }
+        };
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    };
+    let sockets = || {
+        std::fs::read_dir(runtime.join("gandr")).map_or(0_usize, |entries| {
+            entries
+                .filter(|entry| {
+                    entry.as_ref().is_ok_and(|entry| {
+                        entry
+                            .path()
+                            .extension()
+                            .is_some_and(|extension| extension == "sock")
+                    })
+                })
+                .count()
+        })
+    };
+    relay(&built);
+    assert_eq!(sockets(), 1_usize, "the first relay starts a hub");
+    relay(&other);
+    assert_eq!(
+        sockets(),
+        2_usize,
+        "a relay of another build starts a hub of its own"
+    );
+    relay(&built);
+    assert_eq!(
+        sockets(),
+        2_usize,
+        "a second relay of one build reaches the hub its first started"
+    );
+    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+    while sockets() != 0_usize && std::time::Instant::now() < deadline {
+        std::thread::sleep(core::time::Duration::from_millis(50));
+    }
+    assert_eq!(
+        sockets(),
+        0_usize,
+        "each hub lingers out once its clients leave"
+    );
+}
+
 #[test]
 fn mcp_reads_what_an_editor_holds_open()
 {

@@ -28,13 +28,21 @@
 //!
 //! **Discovery.** The socket is `$XDG_RUNTIME_DIR/gandr/<digest>.sock`, or
 //! `<temporary directory>/gandr-$USER/<digest>.sock` without that variable,
-//! where the digest is the first sixteen hex digits of the canonical workspace
-//! path's BLAKE3 hash; the directory is created readable by its owner alone.
-//! Sixteen digits keep the path under the 104 bytes the smallest platform limit
-//! allows inside a long per-user temporary directory. `bind` answers `Served`
-//! when a hub accepts on the socket, and removes and rebinds a socket file
-//! nothing accepts on, so a hub that died leaves no lock behind. The socket
-//! file is the lock: no second file says who owns it.
+//! where the digest is the first sixteen hex digits of the BLAKE3 hash of the
+//! running build's identity followed by the canonical workspace path; the
+//! directory is created readable by its owner alone. Sixteen digits keep the
+//! path under the 104 bytes the smallest platform limit allows inside a long
+//! per-user temporary directory. `bind` answers `Served` when a hub accepts on
+//! the socket, and removes and rebinds a socket file nothing accepts on, so a
+//! hub that died leaves no lock behind. The socket file is the lock: no second
+//! file says who owns it.
+//!
+//! **One build per hub.** A client reaches only a hub its own build started,
+//! because the build is part of the socket's name. A rebuilt driver's first
+//! relay starts a hub of the new build, and a hub of the old build lingers out
+//! once its last client leaves. The build's identity is the digest of the
+//! running executable, which the `build` module reads once per process, so a
+//! relay pays one read of its executable when it starts.
 //!
 //! **Serialisation.** One mutex guards the workspace; a connection holds it
 //! while it handles a frame and runs the admission that frame left, and sends
@@ -57,15 +65,18 @@
 //! that a face beside the editors could not read; one workspace per hub
 //! holds every copy where every face reads it. A lock file beside the socket
 //! would name the owner's process, at the cost of a second file whose staleness
-//! needs the same probe the socket answers directly. A hub that exits with its
-//! last client would cost the next editor start a cold session; the linger
-//! keeps a restart warm and returns the memory soon after. Per-document locks
-//! would let two clients' edits to different documents run at once; the one
-//! lock is simpler and no measurement shows contention. Making the relay read
-//! the hub's answers to learn whether `shutdown` succeeded would cost a parse
-//! per frame both ways for a case only a client that sends `shutdown` before
-//! `initialize` reaches. The read-evaluate loop as a client is not in this
-//! crate yet; a client speaking another protocol than the Language Server
+//! needs the same probe the socket answers directly. Naming the socket by the
+//! version alone would let two builds of one version share a hub, and a
+//! version exchanged after connecting would need a refusal in every protocol
+//! the hub serves; the name settles it before a byte is sent. A hub that exits
+//! with its last client would cost the next editor start a cold session; the
+//! linger keeps a restart warm and returns the memory soon after. Per-document
+//! locks would let two clients' edits to different documents run at once; the
+//! one lock is simpler and no measurement shows contention. Making the relay
+//! read the hub's answers to learn whether `shutdown` succeeded would cost a
+//! parse per frame both ways for a case only a client that sends `shutdown`
+//! before `initialize` reaches. The read-evaluate loop as a client is not in
+//! this crate yet; a client speaking another protocol than the Language Server
 //! Protocol is a second face over the same `Workspace`.
 //!
 //! **Reversal.** Measured contention on the workspace lock moves it per
@@ -102,6 +113,8 @@ use std::time::Instant;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::build::Build;
+use crate::build::unidentified;
 use crate::disk::Disk;
 use crate::quiet::Inbox;
 use crate::quiet::Met;
@@ -137,11 +150,12 @@ pub const LINGER: Duration = Duration::from_secs(60);
 /// idle hub wakes fifty times a second, a cost no profile has found.
 const POLL: Duration = Duration::from_millis(20);
 
-/// The hex digits of the workspace digest a socket is named by.
+/// The hex digits of the build and workspace digest a socket is named by.
 ///
-/// economy: 16 digits, 64 bits. Collisions between one user's workspaces are
-/// out of reach, and the name keeps a socket path under the 104 bytes the
-/// smallest platform limit allows, inside a long per-user temporary directory.
+/// economy: 16 digits, 64 bits. Collisions between one user's workspaces and
+/// builds are out of reach, and the name keeps a socket path under the 104
+/// bytes the smallest platform limit allows, inside a long per-user temporary
+/// directory.
 const NAME_DIGITS: usize = 16;
 
 quenchant_shape::reason_enum! {
@@ -165,22 +179,70 @@ pub fn lock<Held>(mutex: &Mutex<Held>) -> MutexGuard<'_, Held>
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The socket the hub serving the workspace rooted at `root` listens on.
+/// Why no socket could be named for a workspace.
+#[derive(Debug)]
+pub enum Unnamed
+{
+    /// The workspace's root could not be canonicalised.
+    Unresolved(io::Error),
+    /// The running build has no identity to name the socket by.
+    Unidentified(unidentified::Absent),
+}
+
+impl core::fmt::Display for Unnamed
+{
+    /// Writes why no socket was named.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Unresolved(ref error) => write!(f, "the workspace's root: {error}"),
+            Self::Unidentified(reason) => write!(f, "{reason}"),
+        }
+    }
+}
+
+impl core::error::Error for Unnamed
+{
+    /// The file system's error when the root could not be resolved.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
+    {
+        match *self {
+            Self::Unresolved(ref error) => Some(error),
+            Self::Unidentified(_) => None,
+        }
+    }
+}
+
+/// The socket the hub of the running build serving the workspace rooted at
+/// `root` listens on.
 ///
 /// # Specification
 /// - requires: nothing; `root` is resolved through the file system.
-/// - ensures: the path is `$XDG_RUNTIME_DIR/gandr/<digest>.sock` when that
-///   variable is set, `<temporary directory>/gandr-$USER/<digest>.sock`
-///   otherwise, where the digest is the first sixteen hex digits of the BLAKE3
-///   hash of the canonical root. Every spelling of one directory names one
-///   socket.
+/// - ensures: the path is `$XDG_RUNTIME_DIR/gandr/<name>` when that variable is
+///   set, `<temporary directory>/gandr-$USER/<name>` otherwise, where the name
+///   is [`socket_name`]'s for the running build and the canonical root. Every
+///   spelling of one directory names one socket for one build.
 /// - provides: discovery: a client and the hub it starts agree on the socket
-///   without exchanging it.
-/// - fails: when `root` cannot be canonicalised.
+///   without exchanging it, and a client of another build names another.
+/// - fails: when `root` cannot be canonicalised, or the running build has no
+///   identity.
 /// - panics: none.
 ///
 /// # Errors
-/// The error canonicalising `root` returned.
+/// - [`Unnamed::Unresolved`]: canonicalising `root` failed.
+/// - [`Unnamed::Unidentified`]: the running executable cannot be located or
+///   read.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a directory named directly and through a `..` detour
@@ -189,9 +251,13 @@ pub fn lock<Held>(mutex: &Mutex<Held>) -> MutexGuard<'_, Held>
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |socket|
     socket.extension().is_some_and(|extension| extension == "sock")))]
 #[inline]
-pub fn socket_for(root: &Path) -> Result<PathBuf, io::Error>
+pub fn socket_for(root: &Path) -> Result<PathBuf, Unnamed>
 {
-    let root = std::fs::canonicalize(root)?;
+    let root = std::fs::canonicalize(root).map_err(Unnamed::Unresolved)?;
+    let build = match crate::build::running() {
+        Maybe::Present(build) => build,
+        Maybe::Absent(reason) => return Err(Unnamed::Unidentified(reason)),
+    };
     let directory = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(
         || {
             let mut name = std::ffi::OsString::from("gandr-");
@@ -200,13 +266,41 @@ pub fn socket_for(root: &Path) -> Result<PathBuf, io::Error>
         },
         |runtime| PathBuf::from(runtime).join("gandr"),
     );
-    let digest = blake3::hash(root.as_os_str().as_encoded_bytes()).to_hex();
-    let name: String = digest
+    Ok(directory.join(socket_name(build, &root)))
+}
+
+/// The file name of the socket `build`'s hub serving the workspace at the
+/// canonical `root` listens on.
+///
+/// # Specification
+/// - requires: `root` is canonical, so every spelling of one directory is one
+///   path.
+/// - ensures: the first sixteen hex digits of the BLAKE3 hash of `build`'s
+///   identity followed by `root`'s bytes, then `.sock`.
+/// - provides: one name per build and workspace.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two builds over one root name two sockets, and one build
+///   over one root names one.
+/// - witness: `hub::tests::two_builds_of_one_workspace_name_two_sockets`
+#[spec(ensures: |ret| ret.strip_suffix(".sock").is_some_and(|digits| digits.len() == NAME_DIGITS))]
+fn socket_name(
+    build: Build,
+    root: &Path,
+) -> String
+{
+    let mut hasher = blake3::Hasher::new();
+    let _named = hasher
+        .update(&build.0)
+        .update(root.as_os_str().as_encoded_bytes());
+    hasher
+        .finalize()
+        .to_hex()
         .chars()
         .take(NAME_DIGITS)
         .chain(".sock".chars())
-        .collect();
-    Ok(directory.join(name))
+        .collect()
 }
 
 /// Listen on `socket`, unless another hub already does.
@@ -731,6 +825,8 @@ mod tests
     use super::relay;
     use super::run_hub;
     use super::socket_for;
+    use super::socket_name;
+    use crate::build::Build;
     use crate::bus::RENDER_BUS_PREFACE;
     use crate::server::Served;
     use crate::transport::Body;
@@ -960,6 +1056,28 @@ mod tests
         );
         assert_ne!(socket_for(&second).expect("the sibling resolves"), named);
         assert!(socket_for(&scratch.0.join("absent")).is_err());
+    }
+
+    #[test]
+    fn two_builds_of_one_workspace_name_two_sockets()
+    {
+        let root = Path::new("/workspace");
+        let (old, new) = (Build([1_u8; 32]), Build([2_u8; 32]));
+        assert_eq!(
+            socket_name(old, root),
+            socket_name(old, root),
+            "one build names one socket for a workspace"
+        );
+        assert_ne!(
+            socket_name(old, root),
+            socket_name(new, root),
+            "a client of a new build never reaches a hub an old build started"
+        );
+        assert_ne!(
+            socket_name(old, root),
+            socket_name(old, Path::new("/elsewhere")),
+            "one build names a socket per workspace"
+        );
     }
 
     #[test]
