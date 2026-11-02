@@ -59,7 +59,7 @@ pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
   match l {
     Nil => here(Nil),
     Cons(x, rest) => transport(
-      \z. Path(Ints, Cons(x, untag(tag(rest))), Cons(x, z)),
+      fun (z) { Path(Ints, Cons(x, untag(tag(rest))), Cons(x, z)) },
       untagged[<](rest),
       here(Cons(x, untag(tag(rest))))
     )
@@ -71,7 +71,7 @@ pub def rec tagged(l : Tagged) -> Path(Tagged, tag(untag(l)), l) {
   match l {
     TagNil => here(TagNil),
     TagCons(x, rest) => transport(
-      \z. Path(Tagged, TagCons(x, tag(untag(rest))), TagCons(x, z)),
+      fun (z) { Path(Tagged, TagCons(x, tag(untag(rest))), TagCons(x, z)) },
       tagged[<](rest),
       here(TagCons(x, tag(untag(rest))))
     )
@@ -102,7 +102,7 @@ pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
     Nil => here(Nil),
     Cons(x, Nil) => here(Cons(x, Nil)),
     Cons(x, Cons(y, rest)) => transport(
-      \z. Path(Ints, Cons(x, Cons(y, unpack(pack(rest)))), Cons(x, Cons(y, z))),
+      fun (z) { Path(Ints, Cons(x, Cons(y, unpack(pack(rest)))), Cons(x, Cons(y, z))) },
       unpacked[<](rest),
       here(Cons(x, Cons(y, unpack(pack(rest)))))
     )
@@ -115,7 +115,7 @@ pub def rec packed(p : Packed) -> Path(Packed, pack(unpack(p)), p) {
     Empty => here(Empty),
     One(x) => here(One(x)),
     Many(x, y, rest) => transport(
-      \z. Path(Packed, Many(x, y, pack(unpack(rest))), Many(x, y, z)),
+      fun (z) { Path(Packed, Many(x, y, pack(unpack(rest))), Many(x, y, z)) },
       packed[<](rest),
       here(Many(x, y, pack(unpack(rest))))
     )
@@ -136,7 +136,7 @@ pub def packedPath : Path(Type, Ints, Packed) = ua(packedLayout);
 
 /// A tagged list moved to the packed layout along one admission's reverse and the other.
 pub def relayout(p : Path(Type, Ints, Tagged), q : Path(Type, Ints, Packed), l : Tagged) -> Packed {
-  transport(\X. X, back(p) then q, l)
+  transport(fun (X) { X }, back(p) then q, l)
 }
 
 /// One, two and three, laid out tagged.
@@ -151,7 +151,7 @@ pub def taggedIsPacked : Path(Type, Tagged, Packed) = back(taggedPath) then pack
 
 /// One, two and three move along the named composite as along the two admissions.
 @[ runs("Many(1i32, 2i32, One(3i32))") ]
-def movedNamed() -> Packed { transport(\X. X, taggedIsPacked, oneTwoThree) }
+def movedNamed() -> Packed { transport(fun (X) { X }, taggedIsPacked, oneTwoThree) }
 
 /// The length of a list, written once over the list.
 pub def rec length(l : Ints) -> Integer {
@@ -167,13 +167,13 @@ pub def rec length(l : Ints) -> Integer {
 /// The length on the tagged layout, by transport along its admission.
 @[ runs("3") ]
 def taggedLength() -> Integer {
-  run f <- transport(\X. X => Integer, taggedPath, fun (l) { length(l) });
+  run f <- transport(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
   f(oneTwoThree)
 }
 
 /// The length on the packed layout, by transport along its admission.
 @[ runs("3") ]
 def packedLength() -> Integer {
-  run f <- transport(\X. X => Integer, packedPath, fun (l) { length(l) });
+  run f <- transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
   f(Many(1i32, 2i32, One(3i32)))
 }

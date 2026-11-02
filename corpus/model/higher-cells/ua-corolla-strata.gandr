@@ -21,7 +21,7 @@ def raised = ua[
 /// degree-two unit stage.
 def lifts : Path(
   Unit * (+{Unit} * (Bool * Unit)),
-  transport(\X. X, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
+  transport(fun (X) { X }, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
   (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
 ) = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));
 

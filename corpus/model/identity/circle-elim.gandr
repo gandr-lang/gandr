@@ -70,17 +70,17 @@ def moved : Path(
 /// which fixes the loop.
 def conjugated : Path(
   Path(Circle, Base, Base),
-  transport(\x. Path(Circle, x, x), loop, loop),
+  transport(fun (x) { Path(Circle, x, x) }, loop, loop),
   loop
 ) = here(loop);
 
 /// Transport in a constant family is the identity.
-def constant : Path(Int, transport(\x. Int, loop, Z), Z) = here(Z);
+def constant : Path(Int, transport(fun (x) { Int }, loop, Z), Z) = here(Z);
 
 /// Transport in a family running its point through the flip is the flip's
 /// image of the loop, its inverse: the family's transport is its `cong`.
 def flipped : Path(
   Path(Circle, Base, Base),
-  transport(\x. Path(Circle, Base, invLooper(x)), loop, here(Base)),
+  transport(fun (x) { Path(Circle, Base, invLooper(x)) }, loop, here(Base)),
   back(loop) ∷ here(Base)
 ) = here(back(loop) ∷ here(Base));

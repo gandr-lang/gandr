@@ -96,10 +96,10 @@ def transported(
   v : M(x)
 ) -> Path(
   M(w),
-  transport(\a. M(a), f then (g then h), v),
-  transport(\a. M(a), h, transport(\a. M(a), g, transport(\a. M(a), f, v)))
+  transport(fun (a) { M(a) }, f then (g then h), v),
+  transport(fun (a) { M(a) }, h, transport(fun (a) { M(a) }, g, transport(fun (a) { M(a) }, f, v)))
 ) {
-  here(transport(\a. M(a), f then (g then h), v))
+  here(transport(fun (a) { M(a) }, f then (g then h), v))
 }
 
 /// A loop between two paths at the circle's point nests as any path does.

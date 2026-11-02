@@ -30,7 +30,7 @@ def loopsRound(
   p : Path(Type, Path(Circle, Base, Base), Int),
   x : Path(Circle, Base, Base)
 ) -> Path(Circle, Base, Base) {
-  transport(\X. X, p then back(p), x)
+  transport(fun (X) { X }, p then back(p), x)
 }
 
 /// A loop carried to the integers and back again is the loop, by a run.
@@ -47,4 +47,4 @@ def loopsAndBack : Path(
 
 /// A loop carried along the named round trip is the loop, by a run.
 @[ runs("loop ∷ here(Base)") ]
-def namedRoundRun() -> Path(Circle, Base, Base) { transport(\X. X, loopsAndBack, loop) }
+def namedRoundRun() -> Path(Circle, Base, Base) { transport(fun (X) { X }, loopsAndBack, loop) }

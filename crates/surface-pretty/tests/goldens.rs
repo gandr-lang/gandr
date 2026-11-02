@@ -2614,7 +2614,7 @@ fn an_unlabelled_second_field_takes_a_generated_name_3278()
 }
 
 /// The static formers spell as the grammar writes them: a static Pi as an
-/// arrow between value types, a static abstraction as `\a. v` with its
+/// arrow between value types, a static abstraction as `fun (a) { v }` with its
 /// binder named as a dependent arrow's is, and a spine of static
 /// applications as one application of its operator, whether read as a
 /// value or as the type its decode denotes.
@@ -2657,16 +2657,22 @@ fn static_operators_spell_as_the_grammar_writes_them()
             Root::Type(CoreNode::ValueType(classifier)),
             "(Type -> Type[-]) -> Type -> Type",
         ),
-        (Root::Value(CoreNode::Value(squaring)), "\\a. -F #{a, a}"),
-        (Root::Value(CoreNode::Value(nested)), "\\a. \\b. #{a, b}"),
+        (
+            Root::Value(CoreNode::Value(squaring)),
+            "fun (a) { type(-F #{a, a}) }",
+        ),
+        (
+            Root::Value(CoreNode::Value(nested)),
+            "fun (a) { fun (b) { type(#{a, b}) } }",
+        ),
         (Root::Value(CoreNode::Value(once)), "t(Integer)"),
         (
             Root::Value(CoreNode::Value(applied)),
-            "t(\\a. -F #{a, a}, Integer, Integer)",
+            "t(fun (a) { type(-F #{a, a}) }, Integer, Integer)",
         ),
         (
             Root::Type(CoreNode::ValueType(decoded)),
-            "t(\\a. -F #{a, a}, Integer, Integer)",
+            "t(fun (a) { type(-F #{a, a}) }, Integer, Integer)",
         ),
     ] {
         assert_eq!(
@@ -2972,7 +2978,10 @@ fn a_static_redex_prints_as_its_reduct_401()
         (Root::Value(CoreNode::Value(once)), "Integer"),
         (Root::Value(CoreNode::Value(past)), "t(Integer)"),
         (Root::Value(CoreNode::Value(paired)), "#{Integer, Unit}"),
-        (Root::Value(CoreNode::Value(half)), "\\a. #{Integer, a}"),
+        (
+            Root::Value(CoreNode::Value(half)),
+            "fun (a) { type(#{Integer, a}) }",
+        ),
     ] {
         assert_eq!(
             spelled(&source, root),
@@ -3370,8 +3379,9 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
 /// of two or more components is written `type(T)` where an expression
 /// stands in the sugared form, alone, as an argument and under a type
 /// former; the explicit form's `#{A, B}` reads as the product's code and
-/// stays bare. A static abstraction's body is read as a type, where the chain
-/// stands bare: `\a. type(a * a)` does not parse.
+/// stays bare. A static lambda's body is read as an expression between its
+/// braces, so its chain is quoted in the sugared form and its product in the
+/// explicit form, whose `#{` would open the block (#4508).
 #[test]
 fn a_quoted_chain_is_quoted_1127()
 {
@@ -3412,7 +3422,11 @@ fn a_quoted_chain_is_quoted_1127()
             "stay(type(Unit * Integer))",
             "stay(#{Unit, Integer})",
         ),
-        (operator, "\\a. a * a", "\\a. #{a, a}"),
+        (
+            operator,
+            "fun (a) { type(a * a) }",
+            "fun (a) { type(#{a, a}) }",
+        ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4373,12 +4387,12 @@ fn a_returned_composite_of_paths_is_written_infix_754()
         (
             composite,
             Form::Explicit,
-            "transport(\\a. Path(Circle, base, a), loop, loop)",
+            "transport(fun (a) { Path(Circle, base, a) }, loop, loop)",
         ),
         (
             transported,
             Form::Sugared,
-            "transport(\\a. Path(Circle, a, a), loop, loop)",
+            "transport(fun (a) { Path(Circle, a, a) }, loop, loop)",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4424,7 +4438,7 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
         (agreeing, "here(base) then loop"),
         (
             apart,
-            "transport(\\a. Path(Circle, other, a), loop, here(base))",
+            "transport(fun (a) { Path(Circle, other, a) }, loop, here(base))",
         ),
         (squared, "here(here(base)) then loop"),
     ] {
@@ -4478,8 +4492,8 @@ fn a_composite_a_transport_moves_stays_explicit_815()
     );
     assert_eq!(
         rendered.as_ref(),
-        "transport(\\a. Path(Circle, a, a), transport(\\a. Path(Circle, base, a), loop, loop), \
-         transport(\\a. Path(Circle, base, a), loop, loop))"
+        "transport(fun (a) { Path(Circle, a, a) }, transport(fun (a) { Path(Circle, base, a) }, loop, loop), \
+         transport(fun (a) { Path(Circle, base, a) }, loop, loop))"
     );
     let rendered = presented_in(
         &source,
@@ -4543,19 +4557,19 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
         (
             inverse,
             Form::Explicit,
-            "transport(\\a. Path(Circle, a, base), loop, here(base))",
+            "transport(fun (a) { Path(Circle, a, base) }, loop, here(base))",
         ),
         (action, Form::Sugared, "cong(spin, loop)"),
         (
             action,
             Form::Explicit,
-            "transport(\\a. Path(Circle, spin(base), spin(a)), loop, here(spin(base)))",
+            "transport(fun (a) { Path(Circle, spin(base), spin(a)) }, loop, here(spin(base)))",
         ),
         (mapped, Form::Sugared, "cong(f, loop)"),
         (
             unmapped,
             Form::Sugared,
-            "transport(\\a. Path(Circle, base, spin(a)), loop, here(base))",
+            "transport(fun (a) { Path(Circle, base, spin(a)) }, loop, here(base))",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4698,7 +4712,7 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         ),
         (
             body(riding),
-            "fun (a) { ride(\\b. Run(b), a, a) }",
+            "fun (a) { ride(fun (b) { Run(b) }, a, a) }",
             Fidelity::Faithful,
         ),
         (

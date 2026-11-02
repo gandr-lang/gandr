@@ -13,7 +13,7 @@ import "./seat-prefix.gandr";
 
 /// An open play ridden forward along the simulation (#1318).
 def carried(play : Prefix(Seat.SeatEnd)) -> Prefix(Evolution.SeatEnd′) {
-  ride(\X. Prefix(X), Evolution.sub, play)
+  ride(fun (X) { Prefix(X) }, Evolution.sub, play)
 }
 
 /// The open play ridden forward: the record is unchanged, still open.

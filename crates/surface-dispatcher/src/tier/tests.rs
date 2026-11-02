@@ -12,7 +12,8 @@ use super::Emitted;
 #[test]
 fn the_emitter_meets_a_pair_computing_one_value_2282()
 {
-    // def id = thunk { \x. return x } ; def spin = thunk { \x. force spin x } ;
+    // def id = thunk { fun (x) { return x } } ; def spin = thunk { fun (x) { force
+    // spin x } } ;
     let mut core = CoreArena::new();
     let unit = core.value_unit();
     let truth = core.value_injection(Side::Left.into(), unit);

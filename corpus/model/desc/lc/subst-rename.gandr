@@ -22,7 +22,7 @@ def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
   rename(look(m, u, S(Z)), RLift(q))
 ) {
   transport(
-    \z. Path(Term, rename(z, RLift(q)), rename(look(m, u, S(Z)), RLift(q))),
+    fun (z) { Path(Term, rename(z, RLift(q)), rename(look(m, u, S(Z)), RLift(q))) },
     lookWeakens(m, u, Z),
     here(rename(look(m, u, S(Z)), RLift(q)))
   )
@@ -104,18 +104,18 @@ def rec substRenameSquare(
       )
     ),
     Ap(f, x) => transport(
-      \z. Path(
+      fun (z) { Path(
         Term,
         Ap(subst(rename(f, r), s), subst(rename(x, r), s)),
         Ap(z, rename(subst(x, u), q))
-      ),
+      ) },
       substRenameSquare[<](f, r, s, u, q, h),
       transport(
-        \z. Path(
+        fun (z) { Path(
           Term,
           Ap(subst(rename(f, r), s), subst(rename(x, r), s)),
           Ap(subst(rename(f, r), s), z)
-        ),
+        ) },
         substRenameSquare[<](x, r, s, u, q, h),
         here(Ap(subst(rename(f, r), s), subst(rename(x, r), s)))
       )

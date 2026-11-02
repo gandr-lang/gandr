@@ -311,8 +311,8 @@
 //! nothing the engine searched. `bisim(A, B, p)` relates two protocols whose
 //! payload types differ, `p` a path for each pair of payload types that do
 //! not convert. `Run(S)` classifies the finite recorded traces
-//! the protocol's monitor accepts, and `ride(\X. Run(X), f, r)` moves a run
-//! along a flow by the recorded-run consumer, refusing by move a run the
+//! the protocol's monitor accepts, and `ride(fun (X) { Run(X) }, f, r)` moves a
+//! run along a flow by the recorded-run consumer, refusing by move a run the
 //! target does not admit. A consumer may take a protocol's receipts as its
 //! runs, compatibility of two protocols as a `Flow` the kernel replays, and
 //! their equivalence as a `Path`. The rules, the decisions and their

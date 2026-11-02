@@ -58,12 +58,12 @@
 //!
 //! A value's schema evolution is a `forward` from the old code to the new; the
 //! compatibility of the two is the `Flow(Type, Old, New)` the core decides and
-//! the kernel replays; the move of a value is `ride(\X. X, migration, v)`, and
-//! of a value inside any first-order container a ride whose motive is that
-//! container over `X`. Two migrations compose by `then`, and a function moves
-//! along `arrow(d, c)` by riding its argument back and its result forward.
-//! Nothing reverses a flow: a migration that must also run backward is two
-//! flows, or an `equiv`.
+//! the kernel replays; the move of a value is `ride(fun (X) { X }, migration,
+//! v)`, and of a value inside any first-order container a ride whose motive is
+//! that container over `X`. Two migrations compose by `then`, and a function
+//! moves along `arrow(d, c)` by riding its argument back and its result
+//! forward. Nothing reverses a flow: a migration that must also run backward is
+//! two flows, or an `equiv`.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;

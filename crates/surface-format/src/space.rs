@@ -45,8 +45,7 @@ const APART: [&str; 10] = [
 ];
 
 /// The rules a `.` ends a binder or a session's message in, a body after it.
-const BINDINGS: [&str; 6] = [
-    "static_abstraction",
+const BINDINGS: [&str; 5] = [
     "bind_expression",
     "theory_declaration",
     "mu_session_type",

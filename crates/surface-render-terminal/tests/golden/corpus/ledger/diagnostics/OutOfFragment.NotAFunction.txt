@@ -1,4 +1,4 @@
-error[OutOfFragment.NotAFunction]: `cong` maps a path by a function, and neither a constructor nor a type operator `\q. e` is one; write `fun (q) { e }`, or a function definition that applies the constructor
+error[OutOfFragment.NotAFunction]: `cong` maps a path by a function, and a constructor is none; write `fun (q) { e }`, or a function definition that applies the constructor
    ╭▸ corpus/ledger/diagnostics/OutOfFragment.NotAFunction.gandr:10:21
    │
 10 │ def cong_at_point = cong(Base, loop) ;

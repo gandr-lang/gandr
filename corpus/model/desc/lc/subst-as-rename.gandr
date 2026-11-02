@@ -52,10 +52,10 @@ pub def rec substRenames(
       substRenames[<](b, Lift(s), RLift(r), fun (n) { substRenamesLift(s, r, h, n) })
     ),
     Ap(f, x) => transport(
-      \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, rename(x, r))),
+      fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, rename(x, r))) },
       substRenames[<](f, s, r, h),
       transport(
-        \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)),
+        fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)) },
         substRenames[<](x, s, r, h),
         here(Ap(subst(f, s), subst(x, s)))
       )

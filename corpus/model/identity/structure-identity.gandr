@@ -18,7 +18,7 @@ def corners : Path(Integer * Integer, (2, 3), (2, 3)) = (here(2), here(3));
 /// the swapped pair by a reflexivity in each place.
 def swappedPair : Path(
   Bool * Bool,
-  transport(\t. t * t, negation, (+{.0 = unit}, +{.1 = unit})),
+  transport(fun (t) { type(t * t) }, negation, (+{.0 = unit}, +{.1 = unit})),
   (+{.1 = unit}, +{.0 = unit})
 ) = (here(+{.1 = unit}), here(+{.0 = unit}));
 

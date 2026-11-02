@@ -209,7 +209,7 @@ fn the_printer_decides_every_inner_space()
                   def p = #{ a = 1 , b = - 2 } ;\n\
                   def q : +{ A : Integer , B : Unit } ;\n\
                   def g[ r : Row ]( k : Integer ) -> [ Div | r ] Unit { pure unit }\n\
-                  def l = \\ x . x ;\n\
+                  def l = fun( x ){ x } ;\n\
                   def c = thunk { fun( x ) { x } } ;\n\
                   def m = r . a [ 0 ] ;\n\
                   module M :> #{type T} where { type T = Integer ; }\n\
@@ -223,7 +223,7 @@ fn the_printer_decides_every_inner_space()
          def p = #{a = 1, b = -2};\n\
          def q : +{A : Integer, B : Unit};\n\
          def g[r : Row](k : Integer) -> [Div | r] Unit { pure unit }\n\
-         def l = \\x. x;\n\
+         def l = fun (x) { x };\n\
          def c = thunk { fun (x) { x } };\n\
          def m = r.a[0];\n\
          module M :> #{ type T } where { type T = Integer; }\n\

@@ -62,8 +62,8 @@ use quenchant_shape::shape::Maybe;
 /// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
 const EXPLICIT: &str = "\
         def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[+, 0] ;
-        def raw_rel_monad = \\T. \\A. \\B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;
-        def unit_and_bind : raw_rel_monad(\\X. -F (X * X), Integer, Integer) ;
+        def raw_rel_monad = fun (T) { fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;
+        def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer) ;
         def unit_and_bind_spelled :
           (Integer => Integer * Integer)
           * ((+U (-F (Integer * Integer)), Integer => Integer * Integer) => Integer * Integer) ;
@@ -88,8 +88,8 @@ const EXPLICIT: &str = "\
 /// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
 const ELIDED: &str = "\
         def raw_rel_monad : (Type -> Type[-]) -> Type -> Type -> Type ;
-        def raw_rel_monad = \\T. \\A. \\B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;
-        def unit_and_bind : raw_rel_monad(\\X. -F (X * X), Integer, Integer) ;
+        def raw_rel_monad = fun (T) { fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;
+        def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer) ;
         def unit_and_bind_spelled :
           (Integer => Integer * Integer)
           * ((+U (-F (Integer * Integer)), Integer => Integer * Integer) => Integer * Integer) ;
@@ -116,9 +116,9 @@ const ELIDED: &str = "\
 /// - witness: `tests::static_operators::a_negative_carrier_where_a_value_type_is_read_names_both_universes`
 const SORT_ERRORS: &str = "\
         def in_a_product : (Type -> Type[-]) -> Type -> Type ;
-        def in_a_product = \\T. \\A. T(A) * A ;
+        def in_a_product = fun (T) { fun (A) { type(T(A) * A) } } ;
         def under_a_returner : (Type -> Type[-]) -> Type -> Type[-] ;
-        def under_a_returner = \\T. \\A. -F (T(A)) ;
+        def under_a_returner = fun (T) { fun (A) { -F (T(A)) } } ;
     ";
 
 /// What one spelling elaborates to: the checker's verdict on each

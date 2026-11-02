@@ -19,10 +19,10 @@ def passed(B : Type, b : B) -> B {
 /// Two transports along a variable path, their values one unfolding apart.
 def stuckOnVariable(B : Type, Q : B => Type, x : B, y : B, p : Path(B, x, y), v : Q(x)) -> Path(
   Q(y),
-  transport(\z. Q(z), p, v),
-  transport(\z. Q(z), p, passed(Q(x), v))
+  transport(fun (z) { Q(z) }, p, v),
+  transport(fun (z) { Q(z) }, p, passed(Q(x), v))
 ) {
-  here(transport(\z. Q(z), p, v))
+  here(transport(fun (z) { Q(z) }, p, v))
 }
 
 /// Two transports move along a variable function's path, and their values are
@@ -36,8 +36,12 @@ def heldInFamily(
   f : A => Path(B, x, y),
   a : A,
   v : Q(x)
-) -> Path(Q(y), transport(\z. Q(z), f(a), v), transport(\z. Q(z), f(a), passed(Q(x), v))) {
-  here(transport(\z. Q(z), f(a), v))
+) -> Path(
+  Q(y),
+  transport(fun (z) { Q(z) }, f(a), v),
+  transport(fun (z) { Q(z) }, f(a), passed(Q(x), v))
+) {
+  here(transport(fun (z) { Q(z) }, f(a), v))
 }
 
 /// A variable function takes two transports along a variable function's path,
@@ -53,6 +57,10 @@ def heldUnderCall(
   a : A,
   h : Q(y) => C,
   v : Q(x)
-) -> Path(C, h(transport(\z. Q(z), f(a), v)), h(transport(\z. Q(z), f(a), passed(Q(x), v)))) {
-  here(h(transport(\z. Q(z), f(a), v)))
+) -> Path(
+  C,
+  h(transport(fun (z) { Q(z) }, f(a), v)),
+  h(transport(fun (z) { Q(z) }, f(a), passed(Q(x), v)))
+) {
+  here(h(transport(fun (z) { Q(z) }, f(a), v)))
 }

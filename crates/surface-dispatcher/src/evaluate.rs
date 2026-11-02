@@ -4112,7 +4112,7 @@ def alias : Type ; def alias = small ;
 def again : Type ; def again = alias ;
 def wide : Type ; def wide = String ;
 def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  transport(\y. Path(Integer, y, y), p then p, here(1))
+  transport(fun (y) { Path(Integer, y, y) }, p then p, here(1))
 }",
         );
         assert!(
@@ -4143,7 +4143,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     {
         let mut laws = program(
             r"def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  transport(\y. Path(Integer, y, y), p then p, here(1))
+  transport(fun (y) { Path(Integer, y, y) }, p then p, here(1))
 }
 def reached : +U (-F Path(Integer, 1, 1)) ; def reached = thunk { law(here(1)) } ;
 def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return reached } ;",
@@ -4175,7 +4175,7 @@ def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return rea
     fn a_run_reaching_a_static_code_is_blocked_by_it()
     {
         let mut codes = program(
-            r"def twice : Type -> Type ; def twice = \Y. Y * Y ;
+            r"def twice : Type -> Type ; def twice = fun (Y) { type(Y * Y) } ;
 def again : Type -> Type ; def again = twice ;
 def held : +U (-F (Type -> Type)) ; def held = thunk { return twice } ;
 def kept : +U (-F (+U (-F (Type -> Type)))) ; def kept = thunk { return held } ;",
@@ -4408,7 +4408,7 @@ def bad : Integer ; def bad = "text" ;"#,
             r#"def answer = 42 ; def later : Integer ;
 def bad : Integer ; def bad = "text" ;
 def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  transport(\y. Path(Integer, y, y), p then p, here(1))
+  transport(fun (y) { Path(Integer, y, y) }, p then p, here(1))
 }"#,
         );
         let defined = written.met(ConstantIndex::from(0_usize));

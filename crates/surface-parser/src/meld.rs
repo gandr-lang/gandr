@@ -54,27 +54,27 @@
 //! # A required tail runs as far as its group yields
 //!
 //! A form whose last symbol is a required sort hole — `mu a . S`, the session
-//! types, the static abstraction `\A. T`, `+U[r] C`, `package [ T ] C` — has
-//! no tile to end it, so the melder decides where its tail stops.
+//! types, the recursive protocol `rec a => S`, `+U[r] C`, `package [ T ] C` —
+//! has no tile to end it, so the melder decides where its tail stops.
 //! It stops where a prefix operator at the form's own group would stop: the
 //! form closes once its tail is a whole operand run of the hole's sort, every
 //! operator in it holding the operands it wants, and the next tile does not
 //! continue that run. An infix or postfix operator, or a left-absorbing form
 //! start, of the hole's sort continues the run exactly when the form's group
-//! yields to it. So `\A. A * B` abstracts over the product, `\A. -F A` keeps
-//! the returner in the abstraction, `\A. A => B` keeps the arrow of its own
-//! right-associative group, and `+U[1] C * D` closes the bridge before the
-//! product, its group being tighter. The decision runs twice: before a token is
-//! gathered, against every mold its labels may take, so the frontier the molder
-//! ranks against is the one the stream will leave; and again as the chosen tile
-//! is pushed.
+//! yields to it. So `rec a => a * b` recurses over the product, `rec a => -F
+//! a` keeps the returner in the protocol, `rec a => a -> b` keeps the arrow of
+//! its own right-associative group, and `+U[1] C * D` closes the bridge before
+//! the product, its group being tighter. The decision runs twice: before a
+//! token is gathered, against every mold its labels may take, so the frontier
+//! the molder ranks against is the one the stream will leave; and again as the
+//! chosen tile is pushed.
 //!
 //! The alternatives were closing the tail at its first operand, which reads
-//! `\A. A * B` as a product of an abstraction and cannot read `\A. -F A` at
-//! all, a prefix operator's operand being a run rather than one operand; and a
-//! closing tile for each binder form, `\A. { T }`, which spends a bracket on
-//! every binder. Reversal: if a form needs a tail tighter than its own group,
-//! that tail gets its own group in the precedence table.
+//! `rec a => a * b` as a product of a protocol and cannot read `rec a => -F
+//! a` at all, a prefix operator's operand being a run rather than one
+//! operand; and a closing tile for each binder form, `rec a => { S }`, which
+//! spends a bracket on every binder. Reversal: if a form needs a tail tighter
+//! than its own group, that tail gets its own group in the precedence table.
 //!
 //! # The tree the melder commits
 //!
@@ -3047,14 +3047,14 @@ impl<'pbg> MeldState<'pbg>
     /// Clean-close each required-tail form whose tail is whole and which the
     /// incoming tile does not continue.
     ///
-    /// A form ending in a required sort hole — `mu a . S`, `\A. T`, `+U[r] C`
-    /// — has no tile to end it. It closes once its tail is whole, every
+    /// A form ending in a required sort hole — `mu a . S`, `rec a => S`, `+U[r]
+    /// C` — has no tile to end it. It closes once its tail is whole, every
     /// operator above the frontier holding the operands it wants, and the
     /// incoming tile does not continue that tail: an infix or postfix
     /// operator, or a left-absorbing form start, of the hole's sort continues
     /// it exactly when the form's own group yields to the tile, the precedence
-    /// a prefix operator at that group would give it. So `\A. A * B` and
-    /// `\A. -F A` keep the product and the returner inside the abstraction,
+    /// a prefix operator at that group would give it. So `rec a => a * b` and
+    /// `rec a => -F a` keep the product and the returner inside the protocol,
     /// while `+U[r] C * D` closes the bridge before the product. Unlike
     /// [`settle_completable`](Self::settle_completable), this path is
     /// stateful: the form's LAST tile is not completable while its required
@@ -11237,19 +11237,22 @@ mod tests
             Ok(spans)
         };
         assert_eq!(
-            vec![r"\A. A * B".to_owned()],
-            spans_of(r"def g : \A. A * B ;", "static_abstraction")?,
-            "a product binds tighter than the abstraction and stays in its body"
+            vec!["rec a => a * b".to_owned()],
+            spans_of("def g : rec a => a * b ;", "mu_session_type")?,
+            "a product binds tighter than the protocol and stays in its body"
         );
         assert_eq!(
-            vec![r"\A. -F A".to_owned()],
-            spans_of(r"def g : \A. -F A ;", "static_abstraction")?,
+            vec!["rec a => -F a".to_owned()],
+            spans_of("def g : rec a => -F a ;", "mu_session_type")?,
             "a prefix operator's operand completes the body before the `;`"
         );
         assert_eq!(
-            vec![r"\A. A => \B. B".to_owned(), r"\B. B".to_owned()],
-            spans_of(r"def g : \A. A => \B. B ;", "static_abstraction")?,
-            "an arrow of the abstraction's own right-associative group stays in its body"
+            vec![
+                "rec a => a -> rec b => b".to_owned(),
+                "rec b => b".to_owned()
+            ],
+            spans_of("def g : rec a => a -> rec b => b ;", "mu_session_type")?,
+            "an arrow of the protocol's own right-associative group stays in its body"
         );
         assert_eq!(
             vec!["+U[1] C".to_owned()],

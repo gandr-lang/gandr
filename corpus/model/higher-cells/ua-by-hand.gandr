@@ -46,7 +46,7 @@ module ByHand where {
   @[ checks ]
   def moves : Path(
     Tel,
-    transport(\X. X, opposite_by_hand, (unit, (+{.0 = unit}, +{.0 = unit}))),
+    transport(fun (X) { X }, opposite_by_hand, (unit, (+{.0 = unit}, +{.0 = unit}))),
     (unit, (+{.0 = unit}, +{.1 = unit}))
   ) = here((unit, (+{.0 = unit}, +{.1 = unit})));
 
@@ -54,8 +54,8 @@ module ByHand where {
   @[ checks ]
   def alike : Path(
     Tel,
-    transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
-    transport(\X. X, opposite_by_hand, (unit, (+{.0 = unit}, +{.0 = unit})))
+    transport(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
+    transport(fun (X) { X }, opposite_by_hand, (unit, (+{.0 = unit}, +{.0 = unit})))
   ) = here((unit, (+{.0 = unit}, +{.1 = unit})));
 
   /// The directed twin written by hand.
@@ -68,7 +68,7 @@ module ByHand where {
   /// A telescope ridden along the directed twin.
   @[ checks ]
   def forth(t : Tel) -> Tel {
-    ride(\X. X, opposite_dir_by_hand, t)
+    ride(fun (X) { X }, opposite_dir_by_hand, t)
   }
 
   /// A telescope ridden forward by a run.
@@ -79,13 +79,13 @@ module ByHand where {
   @[ checks ]
   def rides : Path(
     Tel,
-    ride(\X. X, opposite_dir_by_hand, (unit, (+{.0 = unit}, +{.0 = unit}))),
+    ride(fun (X) { X }, opposite_dir_by_hand, (unit, (+{.0 = unit}, +{.0 = unit}))),
     (unit, (+{.0 = unit}, +{.1 = unit}))
   ) = here((unit, (+{.0 = unit}, +{.1 = unit})));
 
   /// A ride that would reverse the flow reads it contravariantly, refused.
   @[ refuses("NonCovariantMotive") ]
   def reversed() -> Flow(Type, Tel, Tel) {
-    ride(\X. Flow(Type, X, Tel), opposite_dir_by_hand, stay(Tel))
+    ride(fun (X) { Flow(Type, X, Tel) }, opposite_dir_by_hand, stay(Tel))
   }
 }

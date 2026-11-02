@@ -1145,7 +1145,6 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType
-        | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType

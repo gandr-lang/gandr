@@ -11,12 +11,12 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
   ╰ help: give `here` a point that both endpoints convert to, or change the endpoints
 
 error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
-   ╭▸ corpus/pathological/sessions/type-quote.gandr:14:43
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:14:49
    │
 13 │   def open_payload : Path(Type, ?String. end, ?String. end) = transport(
    │ ┌─────────────────────────────────────────────────────────────┘
-14 │ │   \X. Path(Type, type(?String. end), type(?X. end)),
-   │ │                                           ━━━━━━━ a session payload open over a binder
+14 │ │   fun (X) { Path(Type, type(?String. end), type(?X. end)) },
+   │ │                                                 ━━━━━━━ a session payload open over a binder
 15 │ │   here(String),
 16 │ │   here(type(?String. end))
 17 │ │ );

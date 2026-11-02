@@ -70,9 +70,9 @@ pub def apd(
   x : A,
   y : A,
   p : Path(A, x, y)
-) -> Path(P(y), transport(\a. P(a), p, F(x)), F(y)) {
+) -> Path(P(y), transport(fun (a) { P(a) }, p, F(x)), F(y)) {
   transport(
-    (v : A, k : Path(A, x, v)) => Path(P(v), transport(\a. P(a), k, F(x)), F(v)),
+    (v : A, k : Path(A, x, v)) => Path(P(v), transport(fun (a) { P(a) }, k, F(x)), F(v)),
     p,
     here(x),
     here(p),

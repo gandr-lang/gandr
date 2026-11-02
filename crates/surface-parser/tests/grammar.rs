@@ -113,10 +113,10 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// A type operator is a static abstraction `\A. T`, applied as `T(A)`, and the
-/// value function space is `A => B` or `(A, B) => C`; each molds clean as a
-/// declared type, as a definition's value and as an operator's argument, the
-/// n-ary alias with its binders as a call's argument too, and a case arm's
+/// A type operator is a static abstraction `fun (A) { T }`, applied as `T(A)`,
+/// and the value function space is `A => B` or `(A, B) => C`; each molds clean
+/// as a declared type, as a definition's value and as an operator's argument,
+/// the n-ary alias with its binders as a call's argument too, and a case arm's
 /// `=>` still molds beside them.
 #[test]
 fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
@@ -126,11 +126,14 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
             "declared operator",
             "def f : (Type -> Type[-]) -> Type -> Type;",
         ),
-        ("one binder", r"def f = \X. -F (X * X);"),
-        ("nested binders", r"def f = \T. \A. \b. +U (A -> T(A)) * b;"),
+        ("one binder", r"def f = fun (X) { -F (X * X) };"),
+        (
+            "nested binders",
+            r"def f = fun (T) { fun (A) { fun (b) { type(+U (A -> T(A)) * b) } } };",
+        ),
         (
             "abstraction argument",
-            r"def f : G(\X. -F (X * X), Integer);",
+            r"def f : G(fun (X) { -F (X * X) }, Integer);",
         ),
         ("unary alias", "def f : Integer => Integer * Integer;"),
         ("n-ary alias", "def f : (A, B => C) => D;"),

@@ -118,7 +118,7 @@ def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) = (
 );
 
 /// Five, carried along `both` through the constant family.
-def moved() -> Integer { transport(\s. Integer, both, 5) }
+def moved() -> Integer { transport(fun (s) { Integer }, both, 5) }
 
 /// A later entry's type may apply the earlier one: the type printed for the
 /// pair, `Path(Integer, e.0(0), 0)` at its second entry, reads back to it

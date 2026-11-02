@@ -498,8 +498,6 @@ impl TileName
     /// The lazy product's `&`, and the opener of the lazy record over labels
     /// and of the copattern block, `&{`.
     pub const AMPERSAND: Self = Self("&");
-    /// The static abstraction's lead `\`.
-    pub const BACKSLASH: Self = Self("\\");
     /// The keyword `admitted` closing a module's law member: the host asserts
     /// the law.
     pub const ADMITTED: Self = Self("admitted");
@@ -971,8 +969,6 @@ pub enum Former
     /// The value function space `A => B`, `(A, B) => C`, or the telescope
     /// `(x : A, y : B(x)) => C`: the alias of the thunked arrow.
     ValueFunctionType,
-    /// The static abstraction `\A. T`.
-    StaticAbstraction,
     /// A parenthesised type.
     ParenthesizedType,
     /// The element path type `Path(A, a, b)`: a value type over a carrier
@@ -1081,7 +1077,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 75_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1130,7 +1126,6 @@ impl Former
         Self::LabelledSumType,
         Self::LazyRecordType,
         Self::ValueFunctionType,
-        Self::StaticAbstraction,
         Self::ParenthesizedType,
         Self::PathType,
         Self::BridgeType,
@@ -1184,7 +1179,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 140_usize] = [
+pub const FORMERS: [(&str, Former); 139_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1240,7 +1235,6 @@ pub const FORMERS: [(&str, Former); 140_usize] = [
     ("labelled_sum_type", Former::LabelledSumType),
     ("lazy_record_type", Former::LazyRecordType),
     ("value_function_type", Former::ValueFunctionType),
-    ("static_abstraction", Former::StaticAbstraction),
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
     ("bridge_type", Former::BridgeType),

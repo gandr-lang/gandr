@@ -3,7 +3,7 @@
 def open_payload : Path(Type, ?String. end, ?String. end) ;
 
 def open_payload = transport(
-  \X. Path(Type, type(?String. end), type(?X. end)),
+  fun (X) { Path(Type, type(?String. end), type(?X. end)) },
   here(String),
   here(type(?String. end))
 ) ;

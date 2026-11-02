@@ -81,14 +81,14 @@ pub enum RewriteName
     /// The default grade of a thunk type: `+U[ω] B` and `+U B`, both forms
     /// leaving it unwritten as the printer does.
     DefaultGrade,
-    /// The path composite: `transport(\y. Path(A, a, y), q, p)` and
+    /// The path composite: `transport(fun (y) { Path(A, a, y) }, q, p)` and
     /// `p then q`.
     PathComposite,
-    /// The path inverse: `transport(\y. Path(A, y, a), p, here(a))` and
-    /// `back(p)`.
+    /// The path inverse: `transport(fun (y) { Path(A, y, a) }, p, here(a))`
+    /// and `back(p)`.
     PathInverse,
-    /// A map's action on a path: `transport(\y. Path(B, f(a), f(y)), p,
-    /// here(f(a)))` and `cong(f, p)`.
+    /// A map's action on a path: `transport(fun (y) { Path(B, f(a), f(y)) },
+    /// p, here(f(a)))` and `cong(f, p)`.
     PathAction,
     /// A tail's exit: `return v` where a path through a body ends, over a
     /// value, and `v`; only the sugared form moves it, leaving out the
@@ -307,7 +307,7 @@ pub const REWRITES: [Rewrite; 33] = [
         name: RewriteName::PathComposite,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("transport(\\y. Path(A, a, y), q, p)"),
+        from: Spelling("transport(fun (y) { Path(A, a, y) }, q, p)"),
         to: Spelling("p then q"),
         enabled: Enabled::On,
     },
@@ -316,14 +316,14 @@ pub const REWRITES: [Rewrite; 33] = [
         direction: Direction::Desugar,
         mold: MoldName("binary_expression.then"),
         from: Spelling("p then q"),
-        to: Spelling("transport(\\y. Path(A, a, y), q, p)"),
+        to: Spelling("transport(fun (y) { Path(A, a, y) }, q, p)"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathInverse,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("transport(\\y. Path(A, y, a), p, here(a))"),
+        from: Spelling("transport(fun (y) { Path(A, y, a) }, p, here(a))"),
         to: Spelling("back(p)"),
         enabled: Enabled::On,
     },
@@ -332,14 +332,14 @@ pub const REWRITES: [Rewrite; 33] = [
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
         from: Spelling("back(p)"),
-        to: Spelling("transport(\\y. Path(A, y, a), p, here(a))"),
+        to: Spelling("transport(fun (y) { Path(A, y, a) }, p, here(a))"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathAction,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("transport(\\y. Path(B, f(a), f(y)), p, here(f(a)))"),
+        from: Spelling("transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))"),
         to: Spelling("cong(f, p)"),
         enabled: Enabled::On,
     },
@@ -348,7 +348,7 @@ pub const REWRITES: [Rewrite; 33] = [
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
         from: Spelling("cong(f, p)"),
-        to: Spelling("transport(\\y. Path(B, f(a), f(y)), p, here(f(a)))"),
+        to: Spelling("transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -692,7 +692,6 @@ impl Band
             "binary_expression.then"
             | "function_type"
             | "value_function_type"
-            | "static_abstraction"
             | "union_type"
             | "equivalence_type"
             | "isomorphism_type"
@@ -1282,9 +1281,7 @@ impl<'source> Respelling<'_, 'source>
                 Some("def_value" | "module_definition_member" | "attributed_module_member"),
                 Some("->"),
             ) => Context::Type,
-            (Some(rule), _) if rule.ends_with("_type") || rule == "static_abstraction" => {
-                Context::Type
-            },
+            (Some(rule), _) if rule.ends_with("_type") => Context::Type,
             _ => Context::Value,
         }
     }
@@ -3111,11 +3108,12 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// The derived path operation the transport call whose parts are `parts`
-    /// spells, when its motive `\y. Path(A, l, r)` is one the lowering
-    /// derives: `p then q` for `transport(\y. Path(A, a, y), q, p)`, `back(p)`
-    /// for `transport(\y. Path(A, y, a), p, here(a))` and `cong(f, p)` for
-    /// `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))`, where neither the
-    /// carrier, the fixed endpoint nor the map names `y`.
+    /// spells, when its motive `fun (y) { Path(A, l, r) }` is one the
+    /// lowering derives: `p then q` for `transport(fun (y) { Path(A, a, y) },
+    /// q, p)`, `back(p)` for `transport(fun (y) { Path(A, y, a) }, p,
+    /// here(a))` and `cong(f, p)` for `transport(fun (y) { Path(B, f(a),
+    /// f(y)) }, p, here(f(a)))`, where neither the carrier, the fixed endpoint
+    /// nor the map names `y`.
     ///
     /// # Specification
     /// trivial.
@@ -3140,16 +3138,17 @@ impl<'source> Respelling<'_, 'source>
         {
             return None;
         }
-        if self.rule(motive) != Some(MoldName("static_abstraction")) {
+        if self.rule(motive) != Some(MoldName("lambda_expression")) {
             return None;
         }
         let (abstraction, _) = self.parts(motive);
         let (owns, body) = split(&abstraction);
-        let (&[_, binder, _], &[Child::Node(body)]) = (owns.as_slice(), body.as_slice())
+        let (&[_, _, binder, _, _, _], &[Child::Node(body)]) = (owns.as_slice(), body.as_slice())
         else {
             return None;
         };
-        if self.rule(body) != Some(MoldName("path_type")) {
+        // The block molds `Path(A, l, r)` as a call of `Path`.
+        if self.rule(body) != Some(MoldName("call_expression")) {
             return None;
         }
         let (typed, _) = self.parts(body);
@@ -3169,6 +3168,16 @@ impl<'source> Respelling<'_, 'source>
                     ")" => {},
                     _ if opened => endpoints.last_mut()?.0.push(text),
                     _ => {},
+                },
+                Role::Operand(child) if !opened => {
+                    if self
+                        .tokens(child)
+                        .iter()
+                        .map(|&token| <&str>::from(token))
+                        .ne(["Path"])
+                    {
+                        return None;
+                    }
                 },
                 Role::Operand(child) => {
                     let endpoint = endpoints.last_mut()?;
@@ -3406,7 +3415,7 @@ const RULES: [MoldName; 35] = [
     MoldName("at_type"),
     MoldName("function_type"),
     MoldName("value_function_type"),
-    MoldName("static_abstraction"),
+    MoldName("lambda_expression"),
     MoldName("union_type"),
     MoldName("equivalence_type"),
     MoldName("isomorphism_type"),

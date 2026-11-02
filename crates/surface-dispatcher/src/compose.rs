@@ -5796,7 +5796,7 @@ module M : #{ x: Integer, z: Integer } where { def x = 1; }"#,
             SourceText::from(
                 r"/// The 2-path `here(f then g1)` moved along `b`.
 def liftLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), f then g1, f then g2) {
-  transport(\c. Path(Path(A, x, z), f then g1, f then c), b, here(f then g1))
+  transport(fun (c) { Path(Path(A, x, z), f then g1, f then c) }, b, here(f then g1))
 }
 /// Two lifts composed.
 def two(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2), g3 : Path(A, y, z), c : Path(Path(A, y, z), g2, g3)) -> Path(Path(A, x, z), f then g1, f then g3) {
@@ -5850,7 +5850,7 @@ def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A,
 }
 /// The 2-path `here(f1 then g)` moved along `a`.
 def liftRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  transport(\c. Path(Path(A, x, z), f1 then g, c then g), a, here(f1 then g))
+  transport(fun (c) { Path(Path(A, x, z), f1 then g, c then g) }, a, here(f1 then g))
 }
 /// A lift whiskered by the reflexivity at its end, against the lift.
 def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(
@@ -6141,7 +6141,7 @@ def selfFillOver(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : P
 }
 /// The right whisker the outer fill lifts by.
 def liftRight(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {
-  transport(\c. Path(Path(A, x, z), fm then g, c then g), fa, here(fm then g))
+  transport(fun (c) { Path(Path(A, x, z), fm then g, c then g) }, fa, here(fm then g))
 }
 /// The outer fill, its generator's body a fill.
 def nestedFill(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
@@ -7321,7 +7321,7 @@ def delivered() -> -F Unit {
         assert_eq!(
             unused(
                 "def chosen[x : t](t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
-                 -> Type ;\ndef apply = \\F. \\X. F(X) ;\n"
+                 -> Type ;\ndef apply = fun (F) { fun (X) { F(X) } } ;\n"
             ),
             [""; 0],
             "a binder read only in a type, or only by a static application, is used"

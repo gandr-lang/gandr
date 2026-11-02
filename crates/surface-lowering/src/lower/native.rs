@@ -13,8 +13,8 @@
 //! answer of the body it ends, `+U (-F T(…))`, `() => T(…)` or a function's
 //! stated result, through a tail, a `pure` there or a `return` — a result
 //! written as a top-level definition's application, `-> opt(Integer)` with
-//! `opt = \A. -F Maybe(A)`, read through the definition's body; its parent's
-//! classifier, for a field typed by the family itself or by one of its
+//! `opt = fun (A) { -F Maybe(A) }`, read through the definition's body; its
+//! parent's classifier, for a field typed by the family itself or by one of its
 //! parameters; and, where it is written as an argument of a data family, that
 //! family's parameter at its place with the parameters before it replaced by
 //! the arguments written for them: `Inl(a)` in `Tagged(Integer, String,

@@ -84,7 +84,7 @@ def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 /// is a function of the state, so the state it is handed is negated back and
 /// the computation it answers negated forth.
 def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = transport(
-  \x. Model(State) with sort S = x with sort C = (x => Integer),
+  fun (x) { type(Model(State) with sort S = x with sort C = (x => Integer)) },
   countsNegated,
   passing
 );

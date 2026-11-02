@@ -13,6 +13,6 @@ data Nat : Type where {
 def rec alongLoop(n : Nat, q : Path(Circle, Base, Base)) -> Nat {
   match n {
     Zero => Zero,
-    Succ(m) => Succ(alongLoop[<](transport(\x. Nat, q, m), q))
+    Succ(m) => Succ(alongLoop[<](transport(fun (x) { Nat }, q, m), q))
   }
 }

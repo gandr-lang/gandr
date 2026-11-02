@@ -37,7 +37,7 @@ def overGenerated(
 ) -> Path(
   Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
   transport(
-    \s. Path(Path(Path(A, x, x), here(x), here(x)), s, s),
+    fun (s) { Path(Path(Path(A, x, x), here(x), here(x)), s, s) },
     fill[1, 3](chain(1), selfLoop(A, x, x), (here(here(x)))),
     v
   ),
@@ -49,7 +49,7 @@ def overGenerated(
 /// A composite of `here` cells: `transport` over it reduces to its base.
 def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path(
   M(x),
-  transport(\a. M(a), compose[3, 5](chain(2), (here(x), here(x))), v),
+  transport(fun (a) { M(a) }, compose[3, 5](chain(2), (here(x), here(x))), v),
   v
 ) {
   here(v)
@@ -57,6 +57,9 @@ def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path(
 
 /// A carried cell: `transport` over the circle's `loop` stays stuck by name.
 @[ refuses("EndpointMismatch") ]
-def overCarried(M : Circle => Type, v : M(Base)) -> Path(M(Base), transport(\c. M(c), loop, v), v) {
+def overCarried(
+  M : Circle => Type,
+  v : M(Base)
+) -> Path(M(Base), transport(fun (c) { M(c) }, loop, v), v) {
   here(v)
 }

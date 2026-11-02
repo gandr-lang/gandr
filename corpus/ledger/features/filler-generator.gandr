@@ -62,7 +62,7 @@ def rightWhisker(
   fa : Path(Path(A, x, y), fm, fp),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), fm then g, fp then g) {
-  transport(\a. Path(Path(A, x, z), fm then g, a then g), fa, here(fm then g))
+  transport(fun (a) { Path(Path(A, x, z), fm then g, a then g) }, fa, here(fm then g))
 }
 
 /// The left whisker of `ga` by `f`: the transport along `ga` the generator lifts the second cell by.
@@ -76,7 +76,7 @@ def leftWhisker(
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp)
 ) -> Path(Path(A, x, z), f then gm, f then gp) {
-  transport(\a. Path(Path(A, x, z), f then gm, f then a), ga, here(f then gm))
+  transport(fun (a) { Path(Path(A, x, z), f then gm, f then a) }, ga, here(f then gm))
 }
 
 /// The 2-chain's first cell lifts along `fa`, and each side whiskers `fa` by `g`.

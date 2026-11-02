@@ -21,6 +21,6 @@ def twoFivePacked() -> Packed {
 /// The length, written once over the list, counts two on the packed layout.
 @[ runs("2") ]
 def twoFiveLength() -> Integer {
-  run f <- transport(\X. X => Integer, packedPath, fun (l) { length(l) });
+  run f <- transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
   f(Many(2i32, 5i32, Empty))
 }

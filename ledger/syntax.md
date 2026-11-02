@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x8c3f74d77624f4b5`
-- Rules: 176 — 175 committed, 1 internal
-- Molds: 3032
+- Grammar fingerprint: `0x68c7d0a7455f5ae8`
+- Rules: 175 — 174 committed, 1 internal
+- Molds: 3028
 - Attributes: 17
 
 ## Reading a form
@@ -161,14 +161,13 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`redirection_operator`](../corpus/ledger/syntax/redirection-operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 42 rules
+## `type` — 41 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
 | [`package_type`](../corpus/ledger/syntax/package-type.gandr) | `package [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `package_type` * | unadmitted | Keyword, Other, Type |
 | [`function_type`](../corpus/ledger/syntax/function-type.gandr) | `TYPE -> TYPE` | `type.arrow` | `function_type` | admitted | Operator |
 | [`value_function_type`](../corpus/ledger/syntax/value-function-type.gandr) | `TYPE => TYPE` | `type.arrow` | `value_function_type` * | admitted | Operator |
-| [`static_abstraction`](../corpus/ledger/syntax/static-abstraction.gandr) | `\ ⦅ ‹type_identifier› ‖ ‹type_variable› ⦆ . TYPE` | `type.arrow` | `static_abstraction` * | admitted | Operator, Type, TypeVariable, Other |
 | [`union_type`](../corpus/ledger/syntax/union-type.gandr) | `TYPE \| TYPE` | `type.union` | `union_type` | unadmitted | Operator |
 | [`lazy_product_type`](../corpus/ledger/syntax/lazy-product-type.gandr) | `TYPE & TYPE` | `type.lazy_product` | `lazy_product_type` | admitted | Operator |
 | [`equivalence_type`](../corpus/ledger/syntax/equivalence-type.gandr) | `TYPE ≃ TYPE` or `TYPE <~> TYPE` | `type.equivalence` | `equivalence_type` * | admitted | Operator |
@@ -267,7 +266,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 112 of 176 rules decided at every token
+## Decisions — 111 of 175 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -392,7 +391,6 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `package_type` | type | 7 | `package` | — | 2 |
 | `function_type` | type | 1 | `->` | — | 0 |
 | `value_function_type` | type | 1 | `=>` | — | 0 |
-| `static_abstraction` | type | 4 | `\` | — | 0 |
 | `union_type` | type | 1 | `\|` | — | 0 |
 | `lazy_product_type` | type | 1 | `&` | — | 0 |
 | `equivalence_type` | type | 1 | `≃` | — | 0 |
@@ -450,7 +448,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 18 | `-F` | `f_type`, `f_type.row` | 4 |
 | `f_type.result.labelled` | type | 17 | `[` | `f_type.result` | 4 |
 
-## Menus — 206 labels
+## Menus — 205 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
@@ -459,14 +457,14 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `identifier` | 385 | 55 | 3 |
 | `:` | 278 | 32 | 0 |
 | `,` | 275 | 53 | 0 |
-| `type_identifier` | 171 | 35 | 2 |
+| `type_identifier` | 170 | 34 | 2 |
 | `;` | 153 | 25 | 1 |
 | `=` | 144 | 31 | 0 |
 | `)` | 127 | 43 | 0 |
 | `(` | 123 | 42 | 4 |
 | `}` | 79 | 41 | 0 |
-| `type_variable` | 71 | 16 | 3 |
-| `.` | 70 | 33 | 3 |
+| `type_variable` | 70 | 15 | 3 |
+| `.` | 69 | 32 | 3 |
 | `]` | 67 | 41 | 0 |
 | `{` | 62 | 32 | 2 |
 | `[` | 61 | 38 | 7 |
@@ -585,7 +583,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `Unit` | 1 | 1 | 1 |
 | `Unknown` | 1 | 1 | 1 |
 | `Void` | 1 | 1 | 1 |
-| `\` | 1 | 1 | 1 |
 | `abort` | 1 | 1 | 1 |
 | `access` | 1 | 1 | 1 |
 | `acquire` | 1 | 1 | 1 |

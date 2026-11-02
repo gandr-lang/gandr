@@ -22,12 +22,12 @@ pub module Schema where {
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> New {
-    ride(\X. X, upgrade, old)
+    ride(fun (X) { X }, upgrade, old)
   }
   /// A list of records ridden along the flow in the family of lists.
   @[ checks ]
   def everyone(olds : List(Old)) -> List(New) {
-    ride(\X. List(X), upgrade, olds)
+    ride(fun (X) { List(X) }, upgrade, olds)
   }
   /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]

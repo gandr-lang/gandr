@@ -18,18 +18,18 @@ def handedBack(B : Type, b : B) -> B {
 /// Two transports in a family of loops, their values one unfolding apart.
 def transportInALoopFamily(B : Type, x : B, y : B, p : Path(B, x, y), v : Path(B, x, x)) -> Path(
   Path(B, y, y),
-  transport(\z. Path(B, z, z), p, v),
-  transport(\z. Path(B, z, z), p, handedBack(Path(B, x, x), v))
+  transport(fun (z) { Path(B, z, z) }, p, v),
+  transport(fun (z) { Path(B, z, z) }, p, handedBack(Path(B, x, x), v))
 ) {
-  here(transport(\z. Path(B, z, z), p, v))
+  here(transport(fun (z) { Path(B, z, z) }, p, v))
 }
 
 /// Two transports in a family of paths to a fixed point, their values one
 /// unfolding apart.
 def transportInAFreeFamily(B : Type, x : B, y : B, p : Path(B, x, y), v : Path(B, x, x)) -> Path(
   Path(B, y, x),
-  transport(\z. Path(B, z, x), p, v),
-  transport(\z. Path(B, z, x), p, handedBack(Path(B, x, x), v))
+  transport(fun (z) { Path(B, z, x) }, p, v),
+  transport(fun (z) { Path(B, z, x) }, p, handedBack(Path(B, x, x), v))
 ) {
-  here(transport(\z. Path(B, z, x), p, v))
+  here(transport(fun (z) { Path(B, z, x) }, p, v))
 }

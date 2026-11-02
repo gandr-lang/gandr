@@ -29,7 +29,7 @@ def loopsBack(
   p : Path(Type, Path(Circle, Base, Base), Int),
   y : Int
 ) -> Path(Circle, Base, Base) {
-  transport(\X. X, back(p), y)
+  transport(fun (X) { X }, back(p), y)
 }
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
@@ -42,4 +42,6 @@ def integersAreLoops : Path(Type, Int, Path(Circle, Base, Base)) = back(loopsAre
 
 /// Two carried along the named reversal is the word of two loops, by a run.
 @[ runs("loop ∷ loop ∷ here(Base)") ]
-def namedBackRun() -> Path(Circle, Base, Base) { transport(\X. X, integersAreLoops, S(S(Z))) }
+def namedBackRun() -> Path(Circle, Base, Base) {
+  transport(fun (X) { X }, integersAreLoops, S(S(Z)))
+}

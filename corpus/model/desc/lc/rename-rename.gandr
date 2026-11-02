@@ -48,18 +48,18 @@ pub def rec renameRename(
       )
     ),
     Ap(f, x) => transport(
-      \z. Path(
+      fun (z) { Path(
         Term,
         Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
         Ap(z, rename(x, a3))
-      ),
+      ) },
       renameRename[<](f, a1, a2, a3, h),
       transport(
-        \z. Path(
+        fun (z) { Path(
           Term,
           Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
           Ap(rename(rename(f, a1), a2), z)
-        ),
+        ) },
         renameRename[<](x, a1, a2, a3, h),
         here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
       )
@@ -106,18 +106,18 @@ pub def rec renameSquare(
       )
     ),
     Ap(f, x) => transport(
-      \z. Path(
+      fun (z) { Path(
         Term,
         Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
         Ap(z, rename(rename(x, a3), a4))
-      ),
+      ) },
       renameSquare[<](f, a1, a2, a3, a4, h),
       transport(
-        \z. Path(
+        fun (z) { Path(
           Term,
           Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
           Ap(rename(rename(f, a1), a2), z)
-        ),
+        ) },
         renameSquare[<](x, a1, a2, a3, a4, h),
         here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
       )

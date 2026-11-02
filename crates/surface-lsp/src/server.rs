@@ -11200,7 +11200,7 @@ mod tests
             (elim.as_str(), "def involutive("),
             (
                 elim.as_str(),
-                "transport(\\x. Path(Circle, Base, invLooper(x))",
+                "transport(fun (x) { Path(Circle, Base, invLooper(x)) }",
             ),
         ]
         .map(|(text, held)| {
@@ -11219,7 +11219,7 @@ mod tests
                 "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(8_u32)), [
                     location("circle-elim.gandr", involutive_at, 43, 52),
                     location("circle-elim.gandr", involutive_at, 53, 62),
-                    location("circle-elim.gandr", flipped_at, 35, 44),
+                    location("circle-elim.gandr", flipped_at, 41, 50),
                 ]]})
             ),
             "the flip's command shows the importer's three calls of it: twice in \

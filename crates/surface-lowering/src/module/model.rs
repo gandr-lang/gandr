@@ -1686,7 +1686,6 @@ pub fn spine_domains<'source>(
             | Former::LabelledSumType
             | Former::LazyRecordType
             | Former::ValueFunctionType
-            | Former::StaticAbstraction
             | Former::PathType
             | Former::BridgeType
             | Former::RelationType

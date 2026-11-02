@@ -31,7 +31,7 @@ def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
   subst(wk(look(m, s1, Z)), Lift(s2))
 ) {
   transport(
-    \z. Path(Term, subst(look(m, s1, S(Z)), Lift(s2)), subst(z, Lift(s2))),
+    fun (z) { Path(Term, subst(look(m, s1, S(Z)), Lift(s2)), subst(z, Lift(s2))) },
     lookWeakens(m, s1, Z),
     here(subst(look(m, s1, S(Z)), Lift(s2)))
   )
@@ -102,18 +102,18 @@ pub def rec substSquare(
       )
     ),
     Ap(f, x) => transport(
-      \z. Path(
+      fun (z) { Path(
         Term,
         Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
         Ap(z, subst(subst(x, u1), u2))
-      ),
+      ) },
       substSquare[<](f, s1, s2, u1, u2, h),
       transport(
-        \z. Path(
+        fun (z) { Path(
           Term,
           Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
           Ap(subst(subst(f, s1), s2), z)
-        ),
+        ) },
         substSquare[<](x, s1, s2, u1, u2, h),
         here(Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)))
       )

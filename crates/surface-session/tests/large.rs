@@ -333,7 +333,7 @@ pub fn module(
                     "def m{i} : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[+, 0] ;"
                 ));
                 shape.push(format!(
-                    "def m{i} = \\T. \\A. \\B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;"
+                    "def m{i} = fun (T) {{ fun (A) {{ fun (B) {{ type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) }} }} }} ;"
                 ));
             },
             4 => {

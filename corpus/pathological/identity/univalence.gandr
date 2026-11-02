@@ -29,7 +29,7 @@ def collapsedPath : Path(Type, Two, One) = ua((
 /// `Type[1]`, not of `Type`.
 @[ refuses("LevelMismatch") ]
 def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
-  transport(\X. X, ua(e), x)
+  transport(fun (X) { X }, ua(e), x)
 }
 
 /// A record written out where nothing names the path it builds, refused at
@@ -47,7 +47,7 @@ def alongLiteral(
   r : (y : b) => Path(b, t(h(y)), y),
   x : a
 ) -> b {
-  transport(\X. X, ua((t, ((g, s), (h, r)))), x)
+  transport(fun (X) { X }, ua((t, ((g, s), (h, r)))), x)
 }
 
 /// `ua` after `idtoequiv` converted with the path, refused even at

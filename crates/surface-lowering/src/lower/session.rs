@@ -486,7 +486,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LazyProductType
                 | Former::TelescopeType
                 | Former::ValueFunctionType
-                | Former::StaticAbstraction
                 | Former::ParenthesizedType
                 | Former::PathType
                 | Former::BridgeType
@@ -606,7 +605,6 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::LabelledSumType
                         | Former::LazyRecordType
                         | Former::ValueFunctionType
-                        | Former::StaticAbstraction
                         | Former::PathType
                         | Former::BridgeType
                         | Former::RelationType
@@ -680,7 +678,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LazyProductType
                 | Former::TelescopeType
                 | Former::ValueFunctionType
-                | Former::StaticAbstraction
                 | Former::PathType
                 | Former::BridgeType
                 | Former::RelationType

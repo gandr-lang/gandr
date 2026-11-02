@@ -64,14 +64,14 @@
 //!
 //! # Riding a flow
 //!
-//! `ride(\X. T, f, v)` moves `v : T[a]` along `f : Flow(A, a, b)` and
+//! `ride(fun (X) { T }, f, v)` moves `v : T[a]` along `f : Flow(A, a, b)` and
 //! synthesises `F T[b]`. The motive is closed but for `X` and reads `X` only
 //! covariantly: a flow's source and an arrow's or a dependent arrow's domain
 //! reverse the variance, and every other position a code stands at — a path,
 //! a data argument, a session payload — is invariant. A motive that reads `X`
 //! elsewhere is [`CheckRefusal::NonCovariantMotive`], which is how symmetry
-//! is refused: `ride(\X. Flow(Type, X, a), f, stay(a))` would turn `f` into
-//! its reverse.
+//! is refused: `ride(fun (X) { Flow(Type, X, a) }, f, stay(a))` would turn `f`
+//! into its reverse.
 //!
 //! A motive that does not read `X`, and a flow whose two endpoints convert,
 //! ride as the identity, as does any ride along a flow whose carrier is no

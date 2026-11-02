@@ -1444,7 +1444,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LazyProductType
                 | Former::TelescopeType
                 | Former::ValueFunctionType
-                | Former::StaticAbstraction
                 | Former::PathType
                 | Former::BridgeType
                 | Former::RelationType

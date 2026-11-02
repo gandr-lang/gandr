@@ -625,7 +625,7 @@ pub enum Former<'source, Node>
         /// The row it is open through: a value type that reads as its row.
         tail: Option<Node>,
     },
-    /// A static abstraction `\a. v`, its body under one binder.
+    /// A static abstraction `fun (a) { v }`, its body under one binder.
     StaticLambda(Node),
     /// A static application of an operator to one argument; the printer
     /// spells a spine of them as one application, `f(a, b)`.
@@ -860,7 +860,7 @@ pub enum Former<'source, Node>
     },
     /// Transport along a native universe path, `transport(p, x)`.
     Transport(Node, Node),
-    /// Transport along an element path, `transport(\a. M, p, x)`: the
+    /// Transport along an element path, `transport(fun (a) { M }, p, x)`: the
     /// motive, a value type under one binder, the path and the value.
     PathTransport
     {
@@ -886,8 +886,8 @@ pub enum Former<'source, Node>
         /// The value transported.
         value: Node,
     },
-    /// Transport along a flow, `ride(\a. M, f, x)`: the motive, a value type
-    /// under one binder, the flow and the value.
+    /// Transport along a flow, `ride(fun (a) { M }, f, x)`: the motive, a value
+    /// type under one binder, the flow and the value.
     Ride
     {
         /// The motive, under one binder.
