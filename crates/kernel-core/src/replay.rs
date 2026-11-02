@@ -3408,7 +3408,9 @@ where
     }
 
     /// A cong chain whose functions compose to the identity, read as the
-    /// `return` of its path; every other term unchanged.
+    /// `return` of its path, and a run of links along the value a bind binds
+    /// that composes to the identity, read as the computation the bind runs;
+    /// every other term unchanged.
     ///
     /// A **link** is a transport of a reflexivity in a family `y. Path(D, l,
     /// r)` whose carrier and left endpoint never read `y`; a **chain** is a
@@ -3420,13 +3422,21 @@ where
     /// [`Self::present`]: transport along `cong(f, p)` is transport along `p`
     /// in the family pulled back along `f`, and a family whose right endpoint
     /// is its binder is the singleton, whose transport of a reflexivity is
-    /// the path.
+    /// the path. A **run** is the continuations of the binds outside some
+    /// bind `M to x. …`, each a link along the path the bind binds, the
+    /// innermost along `x`. A run whose composite right endpoint reads as
+    /// `y` is `return x` by the same singleton, so the bind is `M to x.
+    /// return x`, which the η-law of bind reads as `M`. A chain over `p` is
+    /// read first, then the longest run that composes to the identity.
     ///
     /// **Choice.** The chain is read as the engine reads it, by the forced
     /// replay of its composite: the reading chooses nothing — the evaluator
     /// fires the one step each head admits — so no decision of the trace
     /// records it, and the forced loop of [`convert`] reads it as the
-    /// recorded one does. **Alternatives.** A decision naming the fusion,
+    /// recorded one does. A run is the engine's own reading too: the engine
+    /// runs a bind over a stuck computation with that computation as the
+    /// returned endpoint for `x`, and a run composing to the identity returns
+    /// that endpoint. **Alternatives.** A decision naming the fusion,
     /// which would restate a reduction the kernel re-derives anyway; fusing to
     /// a composite family rather than to the identity, which needs a family
     /// rebuilt by substitution and compared by its function. **Reversal.** A
@@ -3437,9 +3447,10 @@ where
     /// - requires: nothing.
     /// - ensures: `return p` when `term` is a computation that is a chain over
     ///   `p` whose composite right endpoint normalizes, within the budget and
-    ///   with no refusal, to the family's bound variable; `term` itself
-    ///   otherwise, a value among them. Every step of the reading is charged to
-    ///   the budget.
+    ///   with no refusal, to the family's bound variable; otherwise `M` when
+    ///   `term` is binds over `M to x. …` whose continuations outside `M` are a
+    ///   run composing so, `M` the innermost such; `term` itself otherwise, a
+    ///   value among them. Every step of the reading is charged to the budget.
     /// - provides: cong fusion to the identity in the replay's weak head form,
     ///   before any rule of the table reads a computation goal.
     /// - fails: [`Stop::Budget`] when the reading outruns the budget.
@@ -3449,18 +3460,20 @@ where
     /// As `- fails:`.
     ///
     /// # Termination
-    /// - reason: the `while let` loop peeling binds and the `for` loop over the
-    ///   continuations, not recursion; each normalization is bounded by the
-    ///   budget.
-    /// - measure: the binds still to peel, then the continuations still to
-    ///   compose.
+    /// - reason: the `while let` loops peeling binds and shortening the run,
+    ///   not recursion; each normalization is bounded by the budget.
+    /// - measure: the binds still to peel, then the runs still to compose.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over the presented circle, `run q <- cong(unlooped,
     ///   p); cong(looped, q)` converts with `return p` in the forced loop with
     ///   the two definitions unfoldable, and a chain composing to `looped ∘
-    ///   looped` does not.
+    ///   looped` does not. `cong(looped, p)` under binds into `cong(looped, x)`
+    ///   and then `cong(unlooped, y)` replays `ComparedShared` against
+    ///   `cong(looped, p)` under the rules; a run composing to `looped ∘
+    ///   looped`, and the same run over a free circle, do not.
     /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    /// - witness: `replay::tests::a_run_composing_to_the_identity_reads_as_its_bound_computation_4255`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| self.spent >= before
@@ -3476,41 +3489,95 @@ where
         else {
             return Ok(term);
         };
-        let mut continuations = Vec::new();
+        // Each bind's computation and continuation, outermost first.
+        let mut binds = Vec::new();
         let mut focus = computation;
         while let Some(&Computation::Bind(bound, body)) = self.arena.computation(focus) {
-            continuations.push(body);
+            binds.push((bound, body));
             focus = bound;
         }
-        let Some(&Computation::PathTransport {
+        if let Some(&Computation::PathTransport {
             motive,
             path,
             value,
         }) = self.arena.computation(focus)
-        else {
-            return Ok(term);
-        };
-        if !matches!(self.arena.value(value), Some(&Value::Here { .. })) {
-            return Ok(term);
+            && matches!(self.arena.value(value), Some(&Value::Here { .. }))
+            && let Linked::Right(image) = self.link(motive)
+        {
+            let composite = self.composed(image, &binds, path)?;
+            if composite == Composite::Bound {
+                return Ok(Term::Computation(self.arena.computation_return(path)));
+            }
         }
-        let Linked::Right(mut image) = self.link(motive)
-        else {
-            return Ok(term);
-        };
+        // The longest run first: every bind, then each without its innermost.
+        let mut run = binds.as_slice();
+        while let Some((&(bound, _), outer)) = run.split_last() {
+            let closed = self.arena.value_unit();
+            let identity = self.arena.value_variable(DeBruijnIndex::from(0_u32));
+            let composite = self.composed(identity, run, closed)?;
+            if composite == Composite::Bound {
+                return Ok(Term::Computation(bound));
+            }
+            run = outer;
+        }
+        Ok(term)
+    }
+
+    /// What `image`, a right endpoint under a family's binder, reads as once
+    /// composed with each continuation of `binds` as a link, innermost first.
+    ///
+    /// # Specification
+    /// - requires: `binds` lists each bind's computation and continuation,
+    ///   outermost first; `opening` lives in the arena.
+    /// - ensures: [`Composite::Bound`] exactly when every continuation is a
+    ///   link along the path its bind binds, transporting a reflexivity in a
+    ///   family that reads that path only past its own binder, and
+    ///   [`Self::composite`] reads the composite right endpoint as the bound
+    ///   variable; [`Composite::Other`] otherwise. Every step is charged to the
+    ///   budget.
+    /// - provides: the identity test of [`Self::fuse`] for a chain and for a
+    ///   run, with `opening` standing for the path each family ignores.
+    /// - fails: [`Stop::Budget`] when the reading outruns the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop over the continuations, not recursion; the
+    ///   normalization is bounded by the budget.
+    /// - measure: the continuations still to compose.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fuse`].
+    /// - witness: `replay::tests::a_cong_chain_composing_to_the_identity_replays_as_its_path`
+    /// - witness: `replay::tests::a_run_composing_to_the_identity_reads_as_its_bound_computation_4255`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget),
+    )]
+    fn composed(
+        &mut self,
+        mut image: ValueId,
+        binds: &[(ComputationId, ComputationId)],
+        opening: ValueId,
+    ) -> Result<Composite, Stop>
+    {
         let bound = DeBruijnIndex::from(0_u32);
-        for body in continuations.into_iter().rev() {
+        for &(_, body) in binds.iter().rev() {
             let Some(&Computation::PathTransport {
                 motive,
                 path: along,
                 value,
             }) = self.arena.computation(body)
             else {
-                return Ok(term);
+                return Ok(Composite::Other);
             };
             if !matches!(self.arena.value(along), Some(&Value::Variable(index)) if index == bound)
                 || !matches!(self.arena.value(value), Some(&Value::Here { .. }))
             {
-                return Ok(term);
+                return Ok(Composite::Other);
             }
             // The family reads the path the bind binds only past its own
             // binder: closed off there, it must ignore its innermost index.
@@ -3527,16 +3594,16 @@ where
                 crate::element_identity::Family::Type(probe),
             ) == crate::element_identity::BinderUse::Read
             {
-                return Ok(term);
+                return Ok(Composite::Other);
             }
-            let opened = self.instantiate(body, path);
+            let opened = self.instantiate(body, opening);
             let Some(&Computation::PathTransport { motive, .. }) = self.arena.computation(opened)
             else {
-                return Ok(term);
+                return Ok(Composite::Other);
             };
             let Linked::Right(right) = self.link(motive)
             else {
-                return Ok(term);
+                return Ok(Composite::Other);
             };
             let lifted = shift_value(
                 self.arena,
@@ -3554,10 +3621,7 @@ where
         self.unfoldings = self.evaluator;
         let read = self.composite(image);
         self.unfoldings = rules;
-        match read? {
-            Composite::Bound => Ok(Term::Computation(self.arena.computation_return(path))),
-            Composite::Other => Ok(term),
-        }
+        read
     }
 
     /// A stuck composite's transport read as the transport along each of its

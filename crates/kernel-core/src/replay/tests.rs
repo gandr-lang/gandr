@@ -3081,6 +3081,120 @@ fn a_cong_chain_composing_to_the_identity_replays_as_its_path()
     );
 }
 
+/// A transport stuck at a path under binds into links whose functions
+/// compose to the identity, against the transport. `cong(looped, p) to x.
+/// cong(looped, x) to y. cong(unlooped, y)` holds the run `y. unlooped(y) ∘
+/// looped`, which the circle's rules read as the identity, so the binds are
+/// the η-expansion of `cong(looped, p)`. The whole chain composes to
+/// `looped`, which no chain reading fuses. The engine reads the binds
+/// through, so its trace closes the pair as shared (#4255).
+#[test]
+fn a_run_composing_to_the_identity_reads_as_its_bound_computation_4255()
+{
+    let (base, looped, unlooped) = (
+        ConstructorTag::from(0_usize),
+        ConstructorTag::from(1_usize),
+        ConstructorTag::from(2_usize),
+    );
+    let x = RuleNode::Variable(RuleVariable::from(0_u32));
+    let rules = Presentation::new(alloc::vec![
+        PresentedRule::new(
+            [
+                RuleNode::Constructor(looped),
+                RuleNode::Constructor(unlooped),
+                x
+            ]
+            .into(),
+            [x].into(),
+        ),
+        PresentedRule::new(
+            [
+                RuleNode::Constructor(unlooped),
+                RuleNode::Constructor(looped),
+                x
+            ]
+            .into(),
+            [x].into(),
+        ),
+    ]);
+    let verdict = |presentation: Presentation, outer: usize| {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(presentation);
+        let _circle = environment.add_decl(staged).expect("the circle admits");
+        let mut arena = environment.arena().clone();
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let letter = |arena: &mut TermArena, tag| {
+            let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let word = arena.value_constructor(own, tag, alloc::vec![occurrence]);
+            let returned = arena.computation_return(word);
+            let lambda = arena.computation_lambda(returned);
+            arena.value_thunk(lambda)
+        };
+        let functions = [letter(&mut arena, looped), letter(&mut arena, unlooped)];
+        let at_base = arena.value_constructor(own, base, Vec::new());
+        // `cong(function, v)` for the constant at `function`, `v` the
+        // variable at index 0: the transport of `here(base)` along `v` in
+        // the family `c. Path(own, base, function(c))`.
+        let cong = |arena: &mut TermArena, function: usize| {
+            let along = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let named = arena.value_constant(ConstantIndex::from(function));
+            let forced = arena.computation_force(named);
+            let application = arena.computation_application(forced, along);
+            let image = arena.value_returned(application);
+            let motive = arena.value_type_path(own, at_base, image);
+            let reflexivity = arena.value_here(at_base);
+            arena.computation_path_transport(motive, along, reflexivity)
+        };
+        let stuck = cong(&mut arena, 1);
+        let middle = cong(&mut arena, 1);
+        let last = cong(&mut arena, outer);
+        let inner = arena.computation_bind(stuck, middle);
+        let binds = arena.computation_bind(inner, last);
+        let unfoldings = Unfoldings::new(alloc::vec![
+            Unfoldable::Opaque,
+            Unfoldable::Body(functions[0]),
+            Unfoldable::Body(functions[1])
+        ])
+        .presenting(Presentations::of(environment.entries()));
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(binds, stuck),
+            EngineClaim::Convertible,
+            &[SHARED],
+        )
+    };
+    assert_eq!(
+        verdict(rules.clone(), 2),
+        KernelVerdict::Convertible,
+        "`unlooped ∘ looped` is the identity under the rules, so the binds are the transport"
+    );
+    assert_ne!(
+        verdict(rules, 1),
+        KernelVerdict::Convertible,
+        "a run composing to `looped ∘ looped` is not the bind's η-expansion"
+    );
+    assert_ne!(
+        verdict(Presentation::default(), 2),
+        KernelVerdict::Convertible,
+        "over a free circle `unloop(loop(y))` is not `y`"
+    );
+}
+
 #[test]
 fn a_lazy_pairing_meets_a_neutral_by_its_projections()
 {

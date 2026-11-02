@@ -5828,6 +5828,56 @@ def unfolded(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z
         );
     }
 
+    /// A defined 2-path whiskered by the reflexivity at its end, against the
+    /// 2-path. The whisker unfolds to the lift under a bind into `cong` of
+    /// `q then here(z)`, which reads as the identity, and the kernel
+    /// re-derives the reflexivity as the checker accepts it.
+    #[test]
+    fn a_defined_two_path_whiskered_by_a_reflexivity_replays_4255()
+    {
+        let grammar = grammar();
+        let report = settled(
+            &grammar,
+            CorpusRoot::Strict,
+            SourceText::from(
+                r"/// `cong` as a definition.
+def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+  cong(F, p)
+}
+/// The 2-path `a` whiskered on the right by `g`.
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  ap(Path(A, x, y), Path(A, x, z), (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
+}
+/// The 2-path `here(f1 then g)` moved along `a`.
+def liftRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  transport(\c. Path(Path(A, x, z), f1 then g, c then g), a, here(f1 then g))
+}
+/// A lift whiskered by the reflexivity at its end, against the lift.
+def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(
+  Path(Path(A, x, z), f1 then g, f2 then g),
+  whiskerRight(A, x, z, z, f1 then g, f2 then g, liftRight(A, x, y, z, f1, f2, a, g), here(z)),
+  liftRight(A, x, y, z, f1, f2, a, g)
+) {
+  here(liftRight(A, x, y, z, f1, f2, a, g))
+}
+",
+            ),
+        );
+        let outcomes: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        let checks = Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize));
+        assert_eq!(
+            outcomes,
+            ["ap", "whiskerRight", "liftRight", "whiskeredByHere"]
+                .map(|name| (name.to_owned(), checks.clone()))
+                .to_vec(),
+            "every definition checks, and the kernel re-derives each"
+        );
+    }
+
     /// A fill whose generator's body is itself a fill, read at reflexivities:
     /// the outer fill reaches its base, the generator at the source face, and
     /// the inner fill there reaches its own. The kernel re-derives the
