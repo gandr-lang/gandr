@@ -17,18 +17,18 @@ module Roster where {
   }
   /// The flow from the old record to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) = forward(toNew);
+  def upgrade : Flow(Type, Old, New) = Flow.into(toNew);
   /// A list kept whole: the flow from a list code to itself.
   @[ checks ]
   def wrap(xs : List(Integer)) -> List(Integer) {
     xs
   }
   @[ checks ]
-  def lists : Flow(Type, List(Integer), List(Integer)) = forward(wrap);
+  def lists : Flow(Type, List(Integer), List(Integer)) = Flow.into(wrap);
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> New {
-    ride(fun (X) { X }, upgrade, old)
+    Flow.ride(fun (X) { X }, upgrade, old)
   }
   /// A record of two scores migrated by a run.
   @[ runs("(cons(90, cons(85, nil)), \"ada\")") ]

@@ -1,7 +1,7 @@
 /// `respects`: names the laws a recursive definition respects.
 @[ checks ]
 def unit_law : Path(Integer, 0, 0) ;
-def unit_law = here(0) ;
+def unit_law = Path.here(0) ;
 @[ respects(unit_law) ]
 @[ checks ]
 def rec count(n : Integer) -> -F Integer {

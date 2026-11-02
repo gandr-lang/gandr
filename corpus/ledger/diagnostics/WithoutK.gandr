@@ -5,5 +5,5 @@ def uip(n: Integer, p: Path(Integer, n, n), q: Path(Integer, n, n)) -> -F(Path(
   p,
   q
 )) {
-  match p { here => match q { here => return here(p) } }
+  match p { here => match q { here => return Path.here(p) } }
 }

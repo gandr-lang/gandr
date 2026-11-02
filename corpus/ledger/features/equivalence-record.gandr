@@ -26,7 +26,7 @@ def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
 /// the left inverse's round trip at `h(y)`, makes the two inverses agree at
 /// `y`; carried along the forward map, that agreement turns the right
 /// inverse's round trip into the left one's. Each map is stated as `a => b`,
-/// which `cong` reads as it reads `+U (a -> -F b)` (#791).
+/// which `Path.ap` reads as it reads `+U (a -> -F b)` (#791).
 @[ checks ]
 def leftRetraction(
   a : Type,
@@ -38,7 +38,7 @@ def leftRetraction(
   sh : Path(a, g(t(h(y))), h(y)),
   ry : Path(b, t(h(y)), y)
 ) -> Path(b, t(g(y)), y) {
-  back(cong(t, back(sh) then cong(g, ry))) then ry
+  Path.step(Path.back(Path.ap(t, Path.step(Path.back(sh), Path.ap(g, ry)))), ry)
 }
 
 /// A bi-invertible map is a quasi-inverse: the forward map, the left inverse
@@ -58,5 +58,5 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b {
 /// which that type does not read, and the type reads back as written (#674).
 @[ checks ]
 def equivHere(a : Type, b : Type, e : a ≃ b) -> Path(a ≃ b, e, e) {
-  here(e)
+  Path.here(e)
 }

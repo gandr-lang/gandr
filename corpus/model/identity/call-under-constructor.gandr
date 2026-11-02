@@ -13,9 +13,9 @@ import "./int-sum.gandr";
 /// first rule reads as the call `plus(Z, x)` itself (#424).
 def rec underSuccessor(b : Int) -> Path(Int, S(plus(Z, b)), S(b)) {
   match b {
-    Z => here(S(Z)),
-    S(x) => cong(up, underSuccessor[<](x)),
-    P(x) => cong(down, underSuccessor[<](x))
+    Z => Path.here(S(Z)),
+    S(x) => Path.ap(up, underSuccessor[<](x)),
+    P(x) => Path.ap(down, underSuccessor[<](x))
   }
 }
 
@@ -24,8 +24,8 @@ def rec underSuccessor(b : Int) -> Path(Int, S(plus(Z, b)), S(b)) {
 @[ refuses("EndpointMismatch") ]
 def rec offByOne(b : Int) -> Path(Int, S(plus(Z, b)), b) {
   match b {
-    Z => here(S(Z)),
-    S(x) => cong(up, offByOne[<](x)),
-    P(x) => cong(down, offByOne[<](x))
+    Z => Path.here(S(Z)),
+    S(x) => Path.ap(up, offByOne[<](x)),
+    P(x) => Path.ap(down, offByOne[<](x))
   }
 }

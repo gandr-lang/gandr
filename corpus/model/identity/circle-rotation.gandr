@@ -17,7 +17,7 @@ import "./circle-apart.gandr";
 /// The unit squared: `mul(Base, Base)` computes the point without spelling
 /// it, so the path from it to itself is the circle's words, and reflexivity
 /// at the point inhabits it.
-def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = here(Base);
+def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = Path.here(Base);
 
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
 /// invLooper b ≡ a`, `_·_` associating to the left). The obligation over `a`
@@ -29,7 +29,7 @@ def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = here(Base);
 def rotInv1(a : Circle, b : Circle) -> Path(Circle, mul(mul(b, a), invLooper(b)), a) {
   match a {
     Base => match b {
-      Base => here(Base)
+      Base => Path.here(Base)
     }
   }
 }
@@ -39,7 +39,7 @@ def rotInv1(a : Circle, b : Circle) -> Path(Circle, mul(mul(b, a), invLooper(b))
 def rotInv2(a : Circle, b : Circle) -> Path(Circle, mul(mul(invLooper(b), a), b), a) {
   match a {
     Base => match b {
-      Base => here(Base)
+      Base => Path.here(Base)
     }
   }
 }
@@ -49,7 +49,7 @@ def rotInv2(a : Circle, b : Circle) -> Path(Circle, mul(mul(invLooper(b), a), b)
 def rotInv3(a : Circle, b : Circle) -> Path(Circle, mul(b, invLooper(mul(invLooper(a), b))), a) {
   match a {
     Base => match b {
-      Base => here(Base)
+      Base => Path.here(Base)
     }
   }
 }
@@ -59,7 +59,7 @@ def rotInv3(a : Circle, b : Circle) -> Path(Circle, mul(b, invLooper(mul(invLoop
 def rotInv4(a : Circle, b : Circle) -> Path(Circle, mul(invLooper(mul(b, invLooper(a))), b), a) {
   match a {
     Base => match b {
-      Base => here(Base)
+      Base => Path.here(Base)
     }
   }
 }
@@ -73,7 +73,7 @@ def atBase(f : (x : Circle) => Path(Circle, x, x)) -> Path(Circle, Base, Base) {
 /// 6.4.2, cubical's `rotLoop` against `refl`): a path between the two
 /// functions, evaluated at the point, would make the loop the empty word.
 def distinct(e : Path((x : Circle) => Path(Circle, x, x), selfloop, selfrefl)) -> Empty {
-  loop_apart(cong(atBase, e))
+  loop_apart(Path.ap(atBase, e))
 }
 
 /// A map out of the circle is its point and the loop's image (the forward
@@ -81,7 +81,7 @@ def distinct(e : Path((x : Circle) => Path(Circle, x, x), selfloop, selfrefl)) -
 /// the point's call before the loop's image is checked, and the image's type
 /// reads the point through what that call returns.
 def toLoop(f : Circle => Int) -> #{point : Int, around : Path(Int, point, point)} {
-  (f(Base), cong(f, loop))
+  (f(Base), Path.ap(f, loop))
 }
 
 /// A point and a loop at it make a map out of the circle, at a point of it: a

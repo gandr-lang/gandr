@@ -24,7 +24,7 @@ def quadrupled : Path(
   Nat,
   doubleNat(doubleNat(Succ(Zero))),
   Succ(Succ(Succ(Succ(Zero))))
-) = here(Succ(Succ(Succ(Succ(Zero)))));
+) = Path.here(Succ(Succ(Succ(Succ(Zero)))));
 
 /// The nested call's value is four, not three.
 @[ refuses("EndpointMismatch") ]
@@ -32,21 +32,21 @@ def miscounted : Path(
   Nat,
   doubleNat(doubleNat(Succ(Zero))),
   Succ(Succ(Succ(Zero)))
-) = here(Succ(Succ(Succ(Zero))));
+) = Path.here(Succ(Succ(Succ(Zero))));
 
 /// `up(down(Z))` is `S` over the held call `down(Z)`; read, that call is
 /// `P(Z)`, and `S(P(Z))` rewrites to `Z`.
-def turned_back : Path(Int, up(down(Z)), Z) = here(Z);
+def turned_back : Path(Int, up(down(Z)), Z) = Path.here(Z);
 
 /// The same law at every integer: the inner call's argument is a variable,
 /// and the rule cancels around it.
 def turn_unturn(n : Int) -> Path(Int, up(down(n)), n) {
-  here(n)
+  Path.here(n)
 }
 
 /// Reading the inner call cancels a step; it does not add one.
 @[ refuses("EndpointMismatch") ]
-def overturned : Path(Int, up(down(Z)), S(Z)) = here(S(Z));
+def overturned : Path(Int, up(down(Z)), S(Z)) = Path.here(S(Z));
 
 /// The function a call returns, bound and applied.
 def bound(k : Integer => Integer => Integer, s : Integer) -> Integer {
@@ -64,7 +64,7 @@ def bound_is_applied(
   k : Integer => Integer => Integer,
   s : Integer
 ) -> Path(Integer, bound(k, s), apply(k(s), s)) {
-  here(bound(k, s))
+  Path.here(bound(k, s))
 }
 
 /// The call's function applied to `s` is not it applied to zero.
@@ -73,7 +73,7 @@ def applied_elsewhere(
   k : Integer => Integer => Integer,
   s : Integer
 ) -> Path(Integer, bound(k, s), apply(k(s), 0)) {
-  here(bound(k, s))
+  Path.here(bound(k, s))
 }
 
 /// The call bound before a function that applies what it binds.
@@ -94,5 +94,5 @@ def outside_is_inside(
   k : Integer => Integer => Integer,
   s : Integer
 ) -> Path(Integer => Integer, bound_outside(k, s), bound_inside(k, s)) {
-  here(bound_outside(k, s))
+  Path.here(bound_outside(k, s))
 }

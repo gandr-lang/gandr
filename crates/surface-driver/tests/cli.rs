@@ -964,8 +964,8 @@ fn check_reports_each_cell_a_source_discharges_4112()
     );
     assert_eq!(
         cells(&reported),
-        [format!("{}: Converts.refl: here", source.display())],
-        "the law whose sides convert is the one cell, discharged `here`"
+        [format!("{}: Converts.refl: Path.here", source.display())],
+        "the law whose sides convert is the one cell, discharged `Path.here`"
     );
     let plain = ran(gandr(&[Path::new("check"), &source]));
     assert!(cells(&plain).is_empty(), "a check lists no cell unasked");

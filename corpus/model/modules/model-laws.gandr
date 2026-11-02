@@ -6,7 +6,7 @@
 // a type of its own proves each law by a definition at the law's path; a
 // model at a host primitive admits each, `law refl admitted;`, and the
 // report's audit lists the admission in place of an obligation. A model that
-// leaves a law out has the checker discharge it: `here` at the law's left
+// leaves a law out has the checker discharge it: `Path.here` at the law's left
 // side, where its sides convert (#4112). A theory including a lawful one
 // restricts its models to the included theory's, the laws carried by name.
 // The refusals are beside `../../pathological/modules/model-laws.gandr`.
@@ -34,8 +34,8 @@ data Single : Type where {
 /// Every two values of `Single` are alike, so each law is a reflexivity.
 module LawfulSingle : Model(Lawful) with sort Carrier = Single where {
   def alike(a : Single, b : Single) -> Bool { true }
-  def refl(a : Single) -> Path(Bool, alike(a, a), true) { here(true) }
-  def sym(a : Single, b : Single) -> Path(Bool, alike(a, b), alike(b, a)) { here(true) }
+  def refl(a : Single) -> Path(Bool, alike(a, a), true) { Path.here(true) }
+  def sym(a : Single, b : Single) -> Path(Bool, alike(a, b), alike(b, a)) { Path.here(true) }
   def trans(
     a : Single,
     b : Single,
@@ -43,12 +43,12 @@ module LawfulSingle : Model(Lawful) with sort Carrier = Single where {
     p : Path(Bool, alike(a, b), true),
     q : Path(Bool, alike(b, c), true)
   ) -> Path(Bool, alike(a, c), true) {
-    here(true)
+    Path.here(true)
   }
 }
 
 /// The same decision with its laws left out. Each law's sides convert, so
-/// the checker discharges each by `here`.
+/// the checker discharges each by `Path.here`.
 module LawfulOmitted : Model(Lawful) with sort Carrier = Single where {
   /// Every two values are alike.
   def alike(a : Single, b : Single) -> Bool { true }

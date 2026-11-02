@@ -11,7 +11,7 @@ module Schema where {
 }
 @[ checks ]
 def shift : Schema.Old ⇝ Schema.New ;
-def shift = forward(Schema.toNew) ;
+def shift = Flow.into(Schema.toNew) ;
 @[ checks ]
 def shiftAscii : Schema.Old ~~> Schema.New ;
-def shiftAscii = forward(Schema.toNew) ;
+def shiftAscii = Flow.into(Schema.toNew) ;

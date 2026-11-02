@@ -31,5 +31,5 @@ def countsCommute(s : Nat => Nat, z : Nat) -> Path(
   iterate(times(sixteen, sixteen), s, z),
   iterate(plus(times(sixteen, eight), times(eight, sixteen)), s, z)
 ) {
-  here(iterate(times(sixteen, sixteen), s, z))
+  Path.here(iterate(times(sixteen, sixteen), s, z))
 }

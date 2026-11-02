@@ -1229,7 +1229,7 @@ mod tests
         let arm = "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return \
                    1\n  }\n}\n";
         let branch = "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n";
-        let last = "def twice : Integer ;\ndef twice = loop then loop \n";
+        let last = "def twice : Integer ;\ndef twice = loop ∷ loop \n";
         let binder = "data Stack : Type where {\n  | Empty : Stack\n  | Push : (x  Integer, rest : Stack) --> Stack\n}\n";
         for (source, at, why) in [
             (
@@ -1284,7 +1284,7 @@ mod tests
         assert!(
             !minted(parsed.tree()).contains(&ByteOffset::from(after(last, "= loop"))),
             "a definition's last `;` left out is never minted inside its body, where \
-             `(def twice = loop;) then loop` would read"
+             `(def twice = loop;) ∷ loop` would read"
         );
     }
 

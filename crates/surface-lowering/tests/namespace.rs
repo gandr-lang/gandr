@@ -1670,7 +1670,7 @@ fn the_prelude_offers_no_presentation_constructor_2302()
     let source = "data Shape : Type where {\n  | Circle : (r : Integer) --> Shape\n}\ndata Figure : \
                   Type where {\n  | Round : (r : Integer) --> Figure\n}\ndef toFigure(shape : Shape) \
                   -> Figure {\n  match shape {\n    Circle(r) => Round(r)\n  }\n}\ndef redrawn : \
-                  Flow(Type, Shape, Figure) = forward(toFigure) ;\n";
+                  Flow(Type, Shape, Figure) = Flow.into(toFigure) ;\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1691,7 +1691,7 @@ fn the_prelude_offers_no_presentation_constructor_2302()
 fn a_source_s_type_shadows_the_prelude_s_constructor_3287()
 {
     let pbg = grammar();
-    let source = "data One : Type where {\n  | Single : One\n}\ndef same : Path(Type, One, One) = here(One) ;\n";
+    let source = "data One : Type where {\n  | Single : One\n}\ndef same : Path(Type, One, One) = Path.here(One) ;\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");

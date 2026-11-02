@@ -28,17 +28,17 @@ pub def around(c : Words) -> Words {
 def built() -> Words { around(Loop(Nil)) }
 
 /// Conversion reads a word by its normal form: a cancelled loop is a loop.
-def cancelled_word : Path(Words, Loop(Unloop(Loop(Nil))), Loop(Nil)) = here(Loop(Nil));
+def cancelled_word : Path(Words, Loop(Unloop(Loop(Nil))), Loop(Nil)) = Path.here(Loop(Nil));
 
 /// A path between words stands at the path between their normal forms.
 def respelled : Path(Words, Loop(Nil), Loop(Nil)) = cancelled_word;
 
 /// Two words that both cancel to the empty word are one word.
-def both_cancel : Path(Words, Unloop(Loop(Nil)), Loop(Unloop(Nil))) = here(Nil);
+def both_cancel : Path(Words, Unloop(Loop(Nil)), Loop(Unloop(Nil))) = Path.here(Nil);
 
 /// No rule identifies a loop with the empty word.
 @[ refuses("EndpointMismatch") ]
-def loop_not_nil : Path(Words, Loop(Nil), Nil) = here(Nil);
+def loop_not_nil : Path(Words, Loop(Nil), Nil) = Path.here(Nil);
 
 /// A case that tells a loop from its inverse, refused: `Unloop(Loop(Nil))`
 /// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
@@ -56,7 +56,7 @@ def tell_words(c : Words) -> Integer {
 /// differ.
 @[ refuses("EndpointMismatch") ]
 def two_is_one() -> Path(Integer, 2, 1) {
-  cong(tell_words, both_cancel)
+  Path.ap(tell_words, both_cancel)
 }
 
 /// The mirror: a loop for an inverse and an inverse for a loop. At
@@ -78,11 +78,11 @@ def mirrored() -> Words { mirror(Loop(Nil)) }
 /// form, `Loop(Unloop(Nil))` is `Nil`, whose mirror is `Nil`; unfolded
 /// letter by letter, the mirror is `Unloop(Loop(Nil))`, which is `Nil`
 /// again. The two readings agree because the mirror respects the rules.
-def mirror_cancelled : Path(Words, mirror(Loop(Unloop(Nil))), Nil) = here(Nil);
+def mirror_cancelled : Path(Words, mirror(Loop(Unloop(Nil))), Nil) = Path.here(Nil);
 
 /// The mirror of a respelled loop is the inverse of the loop.
 def mirror_respelled : Path(
   Words,
   mirror(Loop(Unloop(Loop(Nil)))),
   Unloop(Nil)
-) = here(Unloop(Nil));
+) = Path.here(Unloop(Nil));

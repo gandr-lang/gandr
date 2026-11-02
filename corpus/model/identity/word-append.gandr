@@ -1,4 +1,4 @@
-// `p then q` moves `p` along `q` in `y. Path(A, a, y)`, and that transport
+// `Path.step(p, q)` moves `p` along `q` in `y. Path(A, a, y)`, and that transport
 // appends on its first word whatever `q` is: the empty word is the unit, and
 // a letter stays first (#422). Two definitions whose composites are one
 // transport, stuck on its two parameters, name one path (#440). The
@@ -12,45 +12,45 @@ def comp(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Circle, Base, Base) {
-  p then q
+  Path.step(p, q)
 }
 
 /// Reflexivity is the composite's left unit (#422).
 def leftUnit(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  here(Base) then p,
+  Path.step(Path.here(Base), p),
   p
 ) {
-  here(p)
+  Path.here(p)
 }
 
 /// So it is through the composite's definition.
 def leftUnitComp(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  comp(here(Base), p),
+  comp(Path.here(Base), p),
   p
 ) {
-  here(p)
+  Path.here(p)
 }
 
 /// A letter before the empty word stays before a path composed after it
 /// (#422).
 def letterFirst(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  comp(loop ∷ here(Base), p),
+  comp(loop ∷ Path.here(Base), p),
   loop ∷ p
 ) {
-  here(loop ∷ p)
+  Path.here(loop ∷ p)
 }
 
 /// And no letter is dropped: the loop composed with `p` is not `p`.
 @[ refuses("EndpointMismatch") ]
 def letterKept(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  comp(loop ∷ here(Base), p),
+  comp(loop ∷ Path.here(Base), p),
   p
 ) {
-  here(p)
+  Path.here(p)
 }
 
 /// The composite again, under another name.
@@ -58,7 +58,7 @@ def other(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Circle, Base, Base) {
-  p then q
+  Path.step(p, q)
 }
 
 /// The composite with its two paths swapped.
@@ -66,7 +66,7 @@ def compSwapped(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Circle, Base, Base) {
-  q then p
+  Path.step(q, p)
 }
 
 /// Both names unfold to one transport stuck on `q`, whose motives close over
@@ -75,7 +75,7 @@ def sameComposite(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
-  here(comp(p, q))
+  Path.here(comp(p, q))
 }
 
 /// So the two composites agree after a letter (#440).
@@ -83,7 +83,7 @@ def sameAfterLetter(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
-  here(loop ∷ comp(p, q))
+  Path.here(loop ∷ comp(p, q))
 }
 
 /// And a letter before `p` comes first through either name.
@@ -91,7 +91,7 @@ def letterThroughNames(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Path(Circle, Base, Base), comp(loop ∷ p, q), loop ∷ other(p, q)) {
-  here(loop ∷ comp(p, q))
+  Path.here(loop ∷ comp(p, q))
 }
 
 /// The transports along `p` and along `q` are not one: the swapped composite
@@ -101,5 +101,5 @@ def swapped(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Path(Circle, Base, Base), comp(p, q), compSwapped(p, q)) {
-  here(comp(p, q))
+  Path.here(comp(p, q))
 }

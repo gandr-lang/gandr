@@ -12,8 +12,8 @@ import "./rename-rename.gandr";
 /// A term under `k + 1` binders is the term under `k` weakened.
 def shiftByWeakens(a : Term, k : N) -> Path(Term, shiftBy(a, S(k)), wk(shiftBy(a, k))) {
   match k {
-    Z => here(wk(a)),
-    S(i) => back(renameRename(
+    Z => Path.here(wk(a)),
+    S(i) => Path.back(renameRename(
       a,
       RShift(S(i)),
       RShift(S(Z)),
@@ -28,15 +28,15 @@ def shiftByWeakens(a : Term, k : N) -> Path(Term, shiftBy(a, S(k)), wk(shiftBy(a
 pub def rec lookWeakens(n : N, s : Env, k : N) -> Path(Term, look(n, s, S(k)), wk(look(n, s, k))) {
   match s {
     Shift(j) => match n {
-      Z => back(ixShiftAdds(plusTwo(Z, j, k), S(Z))),
-      S(m) => back(ixShiftAdds(plusTwo(S(m), j, k), S(Z)))
+      Z => Path.back(ixShiftAdds(plusTwo(Z, j, k), S(Z))),
+      S(m) => Path.back(ixShiftAdds(plusTwo(S(m), j, k), S(Z)))
     },
     Cons(a, r) => match n {
       Z => shiftByWeakens(a, k),
       S(m) => lookWeakens[<](m, r, k)
     },
     Lift(r) => match n {
-      Z => back(ixShiftAdds(plus(Z, k), S(Z))),
+      Z => Path.back(ixShiftAdds(plus(Z, k), S(Z))),
       S(m) => lookWeakens[<](m, r, S(k))
     }
   }

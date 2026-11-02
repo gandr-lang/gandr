@@ -30,7 +30,7 @@ def walkedTwo : () => Nat = walk(two, Zero);
 
 /// One step at a variable.
 def walkOnce(b : Nat, c : Nat) -> Path(Nat, walk(Succ(b), c), Succ(walk(b, succ(c)))) {
-  here(Succ(walk(b, succ(c))))
+  Path.here(Succ(walk(b, succ(c))))
 }
 
 /// One step at another walk's stuck call: the step's recursive call
@@ -40,5 +40,5 @@ def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   walk(Succ(walk(b, c1)), c2),
   Succ(walk(walk(b, c1), succ(c2)))
 ) {
-  here(Succ(walk(walk(b, c1), succ(c2))))
+  Path.here(Succ(walk(walk(b, c1), succ(c2))))
 }

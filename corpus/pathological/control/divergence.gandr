@@ -57,5 +57,5 @@ def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> Path(
   thunk { fun (x) { let _ = g(x); f(x) } },
   thunk { fun (x) { f(x) } }
 ) {
-  here(thunk { fun (x) { f(x) } })
+  Path.here(thunk { fun (x) { f(x) } })
 }

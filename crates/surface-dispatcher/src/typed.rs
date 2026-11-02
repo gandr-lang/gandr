@@ -7567,10 +7567,10 @@ mod tests
              S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
              -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
              back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
-             Base, Base) {\n  match n {\n    Z => return here(Base),\n    S(x) => { let c = \
+             Base, Base) {\n  match n {\n    Z => return Path.here(Base),\n    S(x) => { let c = \
              spin[<](x); return loop ∷ c },\n    P(x) => { let c = spin[<](x); return \
              back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  match x {\n    \
-             Base => Base,\n    loop => back(loop)\n  }\n}\n",
+             Base => Base,\n    loop => Path.back(loop)\n  }\n}\n",
         );
         let table = table(source);
         let text = <&str>::from(source);
@@ -7672,7 +7672,7 @@ mod tests
             "a loop's declared name at its path type"
         );
         assert_eq!(
-            at("loop => back"),
+            at("loop => Path.back"),
             pattern("loop", path),
             "a loop arm's loop at its path type"
         );
@@ -8249,7 +8249,7 @@ mod tests
              +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become \
              compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F \
              q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {\n    return \
-             here(f)\n  }\n}\n",
+             Path.here(f)\n  }\n}\n",
         );
         let table = table(source);
         assert_eq!(
@@ -8675,10 +8675,10 @@ mod tests
         let record = "#{ x : b, y : b, p : Path(b, x, y) }";
         let source = format!(
             "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  match w {{\n    \
-             #{{.x = u, .y = v, .p = q}} => here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
+             #{{.x = u, .y = v, .p = q}} => Path.here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
              Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fun (w) {{ w }} }},\n    \
-             ((thunk {{ fun (w) {{ w }} }}, thunk {{ fun (w) {{ here(w) }} }}), (thunk {{ fun (w) \
-             {{ w }} }}, thunk {{ fun (w) {{ here(w) }} }}))\n  )\n}}\n\ndef selfMap(b : Type) -> \
+             ((thunk {{ fun (w) {{ w }} }}, thunk {{ fun (w) {{ Path.here(w) }} }}), (thunk {{ fun (w) \
+             {{ w }} }}, thunk {{ fun (w) {{ Path.here(w) }} }}))\n  )\n}}\n\ndef selfMap(b : Type) -> \
              -F ({record} => {record}) {{\n  thunk {{ fun (w) {{ w }} }}\n}}\n"
         );
         let source = SourceText::from(source.as_str());
@@ -8735,8 +8735,8 @@ mod tests
     {
         let source = SourceText::from(
             "def typeSelf : Type ≃ Type ;\ndef typeSelf = #{thunk { fun (x) { return x } }, \
-             #{#{thunk { fun (x) { return x } }, thunk { fun (x) { here(x) } }}, #{thunk { fun (y) \
-             { return y } }, thunk { fun (y) { here(y) } }}}} ;\n",
+             #{#{thunk { fun (x) { return x } }, thunk { fun (x) { Path.here(x) } }}, #{thunk { fun (y) \
+             { return y } }, thunk { fun (y) { Path.here(y) } }}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
@@ -8764,7 +8764,7 @@ mod tests
     {
         let source = SourceText::from(
             "def same(x : Type) -> -F Type {\n  return x\n}\n\ndef sameTwice(x : Type) -> -F \
-             Path(Type, same(same(x)), x) {\n  return here(x)\n}\n\ndef typeSelf : Type ≃ Type \
+             Path(Type, same(same(x)), x) {\n  return Path.here(x)\n}\n\ndef typeSelf : Type ≃ Type \
              ;\ndef typeSelf = #{same, #{#{same, sameTwice}, #{same, sameTwice}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -8895,7 +8895,7 @@ mod tests
         let source = SourceText::from(
             "def corner = #{ x = 1, y = 2 };\n\ndef commute : Path(\n  #{x : Integer, y : \
              Integer},\n  #{ #{ corner | x = 9 } | y = 3 },\n  #{ #{ corner | y = 3 } | x = 9 \
-             }\n) ;\ndef commute = here(#{ x = 9, y = 3 }) ;\n",
+             }\n) ;\ndef commute = Path.here(#{ x = 9, y = 3 }) ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
@@ -8923,7 +8923,7 @@ mod tests
     {
         let source = SourceText::from(
             "def againAt(\n  b : Type,\n  w : #{ x : b, y : b, p : Path(b, x, y) }\n) -> -F \
-             Path(#{ x : b, y : b, p : Path(b, x, y) }, w, w) {\n  here(w)\n}\n",
+             Path(#{ x : b, y : b, p : Path(b, x, y) }, w, w) {\n  Path.here(w)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9086,15 +9086,15 @@ mod tests
         let source = SourceText::from(
             "def agrees(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  w : A,\n  p : Path(A, x, \
              y),\n  q : Path(A, y, z),\n  r : Path(A, z, w)\n) -> Path(Path(A, x, w), compose[5, \
-             7](chain(3), (p, q, r)), (p then q) then r) {\n  here((p then q) then r)\n}\n\ndef \
+             7](chain(3), (p, q, r)), Path.step(Path.step(p, q), r)) {\n  Path.here(Path.step(Path.step(p, q), r))\n}\n\ndef \
              alone(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(Path(A, x, y), compose[0, \
-             0](chain(1), p), p) {\n  here(p)\n}\n",
+             0](chain(1), p), p) {\n  Path.here(p)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for composite in [
-            "Path(Path(A, x, w), compose[5, 7](chain(3), (p, q, r)), (p then q) then r)",
+            "Path(Path(A, x, w), compose[5, 7](chain(3), (p, q, r)), Path.step(Path.step(p, q), r))",
             "Path(Path(A, x, y), compose[0, 0](chain(1), p), p)",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
@@ -9121,11 +9121,11 @@ mod tests
     {
         let source = SourceText::from(
             "def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), \
-             f, f) {\n  thunk { fun (f) { here(f) } }\n}\n\ndef filled(\n  A : Type,\n  x : A,\n  y \
+             f, f) {\n  thunk { fun (f) { Path.here(f) } }\n}\n\ndef filled(\n  A : Type,\n  x : A,\n  y \
              : A,\n  fm : Path(A, x, y),\n  fp : Path(A, x, y),\n  fa : Path(Path(A, x, y), fm, \
-             fp)\n) -> Path(Path(Path(Path(A, x, y), fm, fp), here(fm) then fa, fa then \
-             here(fp)), fill[1, 3](chain(1), selfLoop(A, x, y), fa), fill[1, 3](chain(1), \
-             selfLoop(A, x, y), fa)) {\n  here(fill[1, 3](chain(1), selfLoop(A, x, y), fa))\n}\n",
+             fp)\n) -> Path(Path(Path(Path(A, x, y), fm, fp), Path.step(Path.here(fm), fa), Path.step(fa, \
+             Path.here(fp))), fill[1, 3](chain(1), selfLoop(A, x, y), fa), fill[1, 3](chain(1), \
+             selfLoop(A, x, y), fa)) {\n  Path.here(fill[1, 3](chain(1), selfLoop(A, x, y), fa))\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
@@ -9159,8 +9159,8 @@ mod tests
         let source = SourceText::from(
             "def whiskerRight(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, y),\n  \
              f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) -> \
-             Path(Path(A, x, z), f1 then g, f2 then g) {\n  cong((thunk { fun (q : Path(A, x, y)) \
-             { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n",
+             Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {\n  Path.ap((thunk { fun (q : Path(A, x, y)) \
+             { Path.step(q, g) } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9171,8 +9171,9 @@ mod tests
         assert!(
             reads
                 .iter()
-                .any(|&(ref spelled, _)| spelled.contains(" : Path(A, x, y)) {")),
-            "a printed type's lambda states its parameter's written type: {reads:?}"
+                .any(|&(ref spelled, _)| spelled.replace('\n', "").contains(" : Path(A, x, y)) {")),
+            "a printed type's lambda states its parameter's written type, wherever the page \
+             breaks it: {reads:?}"
         );
         let moved: Vec<_> = reads
             .iter()
@@ -9236,9 +9237,9 @@ mod tests
         let source = SourceText::from(
             "def whiskerStatedHere(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, \
              y),\n  f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) \
-             -> Path(\n  Path(Path(A, x, z), f1 then g, f2 then g),\n  cong(fun (q : Path(A, x, y)) \
-             { q then g }, a),\n  cong(fun (q : Path(A, x, y)) { q then g }, a)\n) {\n  here(cong(fun \
-             (q : Path(A, x, y)) { q then g }, a))\n}\n",
+             -> Path(\n  Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)),\n  Path.ap(fun (q : Path(A, x, y)) \
+             { Path.step(q, g) }, a),\n  Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a)\n) {\n  Path.here(Path.ap(fun \
+             (q : Path(A, x, y)) { Path.step(q, g) }, a))\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, super::RoundTrip)> = table(source)
@@ -9249,7 +9250,7 @@ mod tests
         assert!(
             reads
                 .iter()
-                .any(|&(ref spelled, _)| spelled.contains("transport(")),
+                .any(|&(ref spelled, _)| spelled.contains("Path.walk(")),
             "a printed type holds the image: {reads:?}"
         );
         let unread: Vec<_> = reads
@@ -9310,7 +9311,7 @@ mod tests
         let source = SourceText::from(
             "def k(\n  a : Type,\n  b : Type,\n  t : a => b,\n  g : b => a,\n  s : (x : a) => \
              Path(a, g(t(x)), x),\n  h : b => a,\n  r : (y : b) => Path(b, t(h(y)), y),\n  y : \
-             b\n) -> -F Path((y : b) => Path(b, t(h(y)), y), r, r) { return here(r) }\n",
+             b\n) -> -F Path((y : b) => Path(b, t(h(y)), y), r, r) { return Path.here(r) }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9537,7 +9538,7 @@ mod tests
     fn a_printed_wildcard_is_settled_before_its_read_back_2179()
     {
         let source = SourceText::from(
-            "def endSigned = (here(3) : Path(Integer, 3, _)) ;\ndef endApart = (here(3) : \
+            "def endSigned = (Path.here(3) : Path(Integer, 3, _)) ;\ndef endApart = (Path.here(3) : \
              Path(Integer, 4, _)) ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");

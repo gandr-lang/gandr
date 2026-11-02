@@ -55,10 +55,10 @@
 //! `Fidelity::Approximate`: these forms have no surface parser syntax, and an
 //! equivalence’s display does not include its classifier or replay evidence.
 //! The core adapter and checkpoint adapter expose the same value-child
-//! positions. The product of two universe paths, `pathProduct(p, q)`, is the
+//! positions. The product of two universe paths, `Path.product(p, q)`, is the
 //! one native former the surface writes: the lowering reads the call back to
 //! the same node, so it is faithful, its components in order and each as
-//! faithful as its own spelling. Its directed twin `flowProduct(p, q)` is the
+//! faithful as its own spelling. Its directed twin `Flow.product(p, q)` is the
 //! kernel's own former, written and printed the same way.
 //!
 //! **Choice.** Show the structural constructor instead of an unreadable marker,
@@ -72,11 +72,11 @@
 //!
 //! # Element identity
 //!
-//! `here(a)` is the surface spelling of element identity, and it is faithful:
-//! the grammar parses the call and the lowering mints the witness. It is not
-//! the native `refl`, which stays approximate. The point is the call's one
-//! argument, so a pair reads `here(#{2, 2})`. Function extensionality is
-//! `funext(f, g)` and a universe equivalence `equiv(f, g)` by the same
+//! `Path.here(a)` is the surface spelling of element identity, and it is
+//! faithful: the grammar parses the call and the lowering mints the witness. It
+//! is not the native `refl`, which stays approximate. The point is the call's
+//! one argument, so a pair reads `Path.here(#{2, 2})`. Function extensionality
+//! is `Path.funext(f, g)` and a universe equivalence `equiv(f, g)` by the same
 //! reasoning, their two functions in order; the native certificate a checked
 //! `equiv` erases to prints the same call, approximately, without its evidence.
 //! Univalence at a stratum is `ua[n, k](a, b, f, g)`, faithful too: the
@@ -441,7 +441,7 @@ enum Kind
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::Row { .. } | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Compose { .. } | Former::Fill { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
-        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Step(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_) | Former::Decompose(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
@@ -519,6 +519,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::SessionRelated(..)
         | Former::Stay(_)
         | Former::Then(..)
+        | Former::Step(..)
         | Former::Back(_)
         | Former::Cong(..)
         | Former::FlowProduct(..)
@@ -1290,6 +1291,7 @@ where
         | Former::Equiv(first, second)
         | Former::SessionRelated(_, first, second, None)
         | Former::Then(first, second)
+        | Former::Step(first, second)
         | Former::FlowProduct(first, second)
         | Former::FunctionFlow(first, second)
         | Former::Ua {
@@ -1843,7 +1845,7 @@ where
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
 /// atom, then the bridges and the keyword-led computations, then a word's
-/// cons, then a composite `then`, then the infix `*`, `+` and `&` the sugared
+/// cons, then the infix `*`, `+` and `&` the sugared
 /// form writes, then the relations `≃`, `≅` and `⇝` between types, then `->`
 /// and `=>`, then a bind's statements. Every arity-shaped former is an atom,
 /// its entries between its own delimiters.
@@ -1861,9 +1863,6 @@ enum Binding
     Prefix,
     /// `g ∷ p`, a word's letter before the rest, nested to the right.
     Cons,
-    /// `p then q`, at the grammar's comparison precedence, looser than a
-    /// cons.
-    Composite,
     /// `A * B`.
     Product,
     /// `A + B`.
@@ -2571,9 +2570,9 @@ enum Bracket
     List,
     /// A native path classifier.
     PathUniverse,
-    /// Element identity, `here(a)`.
+    /// Element identity, `Path.here(a)`.
     Here,
-    /// Function extensionality, `funext(f, g)`.
+    /// Function extensionality, `Path.funext(f, g)`.
     Funext,
     /// A universe equivalence, `equiv(f, g)`.
     Equiv,
@@ -2587,23 +2586,23 @@ enum Bracket
     PathProduct,
     /// A native cell, `cons(head, tail)`.
     ListCons,
-    /// A session equivalence, `bisim(a, b)`.
+    /// A session equivalence, `Path.bisim(a, b)`.
     Bisim,
-    /// A session equivalence with its payload paths, `bisim(a, b, p)`.
+    /// A session equivalence with its payload paths, `Path.bisim(a, b, p)`.
     BisimPaid,
-    /// A session simulation, `sim(a, b)`.
+    /// A session simulation, `Flow.sim(a, b)`.
     Sim,
-    /// Directed reflexivity, `stay(a)`.
+    /// Directed reflexivity, `Flow.stay(a)`.
     Stay,
-    /// A path's inverse, `back(p)`.
+    /// A path's inverse, `Path.back(p)`.
     Back,
-    /// A map's action on a path, `cong(f, p)`.
+    /// A map's action on a path, `Path.ap(f, p)`.
     Cong,
-    /// The product of two universe flows, `flowProduct(p, q)`.
+    /// The product of two universe flows, `Flow.product(p, q)`.
     FlowProduct,
-    /// A forward flow, `forward(f)`.
+    /// A forward flow, `Flow.into(f)`.
     Forward,
-    /// A function flow, `arrow(d, c)`.
+    /// A function flow, `Flow.arrow(d, c)`.
     Arrow,
     /// The recorded runs of a session code, `Run(s)`.
     Run,
@@ -2627,7 +2626,7 @@ impl Bracket
     /// - requires: nothing.
     /// - ensures: the former's head followed by `(`; a native equivalence's
     ///   maps share `equiv(` with a universe equivalence, and a paid
-    ///   bisimulation `bisim(` with an unpaid one.
+    ///   bisimulation `Path.bisim(` with an unpaid one.
     /// - provides: the opening glyphs of every bracketed former.
     /// - panics: none.
     /// - executable: none — a clause would restate the match arm by arm.
@@ -2642,21 +2641,21 @@ impl Bracket
             Self::Stack => "Stack(",
             Self::List => "List(",
             Self::PathUniverse => "Path_U(",
-            Self::Here => "here(",
-            Self::Funext => "funext(",
+            Self::Here => "Path.here(",
+            Self::Funext => "Path.funext(",
             Self::Equiv | Self::PathEquiv => "equiv(",
             Self::Univalence => "ua(",
             Self::PathRefl => "refl(",
-            Self::PathProduct => "pathProduct(",
+            Self::PathProduct => "Path.product(",
             Self::ListCons => "cons(",
-            Self::Bisim | Self::BisimPaid => "bisim(",
-            Self::Sim => "sim(",
-            Self::Stay => "stay(",
-            Self::Back => "back(",
-            Self::Cong => "cong(",
-            Self::FlowProduct => "flowProduct(",
-            Self::Forward => "forward(",
-            Self::Arrow => "arrow(",
+            Self::Bisim | Self::BisimPaid => "Path.bisim(",
+            Self::Sim => "Flow.sim(",
+            Self::Stay => "Flow.stay(",
+            Self::Back => "Path.back(",
+            Self::Cong => "Path.ap(",
+            Self::FlowProduct => "Flow.product(",
+            Self::Forward => "Flow.into(",
+            Self::Arrow => "Flow.arrow(",
             Self::Run => "Run(",
             Self::Prefix => "Prefix(",
             Self::Dialogue => "Dialogue(",
@@ -3997,7 +3996,7 @@ fn passing<Node>(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Derived<Node>
 {
-    /// `p then q`: `transport(fun (y) { Path(A, a, y) }, q, p)`.
+    /// `Path.step(p, q)`: `Path.walk(fun (y) { Path(A, a, y) }, q, p)`.
     Composite
     {
         /// The first path, the transported value.
@@ -4005,10 +4004,10 @@ enum Derived<Node>
         /// The second path, along which it moves.
         path: Node,
     },
-    /// `back(p)`: `transport(fun (y) { Path(A, y, a) }, p, here(a))`.
+    /// `Path.back(p)`: `Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))`.
     Inverse(Node),
-    /// `cong(f, p)`: `transport(fun (y) { Path(B, f(a), f(y)) }, p,
-    /// here(f(a)))`.
+    /// `Path.ap(f, p)`: `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p,
+    /// Path.here(f(a)))`.
     Congruence
     {
         /// The map, as the motive holds it, one binder deeper.
@@ -4020,9 +4019,9 @@ enum Derived<Node>
 
 /// The derived path operation `body` is the transport of: a path transport
 /// whose motive is `Path(A, a, y)` over its own binder `y` (a composite), or
-/// `Path(A, y, a)` moving reflexivity, `here(a)` or the empty word at a looped
-/// point `a` (an inverse), or `Path(B, f(a), f(y))` moving `here` (an action
-/// on a path), where every other part of the
+/// `Path(A, y, a)` moving reflexivity, `Path.here(a)` or the empty word at a
+/// looped point `a` (an inverse), or `Path(B, f(a), f(y))` moving `here` (an
+/// action on a path), where every other part of the
 /// motive names no `y`.
 ///
 /// # Specification
@@ -4037,13 +4036,13 @@ enum Derived<Node>
 ///   down through every child [`children`] lists, name no intuitionistic
 ///   variable counting out to the motive's binder; absent otherwise, and absent
 ///   when that scan reads more than [`VISIT_BUDGET`] nodes. A composite that
-///   moves `here(a)` is absent where the motive's other endpoint reads
-///   [`Start::Apart`] from `a`, since `p then q` reads back taking `p`'s start
-///   for it. A well-typed transport of these shapes moves the reflexivity at
-///   the endpoint the derivation would, up to conversion, so the operation
+///   moves `Path.here(a)` is absent where the motive's other endpoint reads
+///   [`Start::Apart`] from `a`, since `Path.step(p, q)` reads back taking `p`'s
+///   start for it. A well-typed transport of these shapes moves the reflexivity
+///   at the endpoint the derivation would, up to conversion, so the operation
 ///   stands for it.
-/// - provides: the shapes `p then q`, `back(p)` and `cong(f, p)` derive
-///   (`gandr_core_term::identity`), which the sugared form writes as the
+/// - provides: the shapes `Path.step(p, q)`, `Path.back(p)` and `Path.ap(f, p)`
+///   derive (`gandr_core_term::identity`), which the sugared form writes as the
 ///   lowering reads them back.
 /// - fails: never.
 /// - panics: none.
@@ -4057,7 +4056,7 @@ enum Derived<Node>
 ///   endpoint names the motive's binder, an inverse and an action on a loop; a
 ///   scan that skipped the endpoints, read the wrong index or ignored the
 ///   binder count fails the goldens.
-/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
+/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_as_a_step_754`
 /// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
 /// - witness: `tests::goldens::a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(body), Former::PathTransport { .. }))]
@@ -4288,12 +4287,12 @@ where
 
 /// The former the walk reads at `node` in `form`, in a position admitting
 /// `admits`: the source's, but in the sugared form a returned transport that
-/// a derived path operation builds reads as that operation, `p then q`,
-/// `back(p)` or `cong(f, p)`, where the position states its type.
+/// a derived path operation builds reads as that operation, `Path.step(p, q)`,
+/// `Path.back(p)` or `Path.ap(f, p)`, where the position states its type.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
-/// - ensures: [`Former::Then`], [`Former::Back`] or [`Former::Cong`] over what
+/// - ensures: [`Former::Step`], [`Former::Back`] or [`Former::Cong`] over what
 ///   [`derived`] answers when `form` is [`Form::Sugared`], `admits` is not
 ///   [`Admits::Operand`] and `node` reads as [`Former::Returned`] over a body
 ///   [`derived`] answers; what `source` reads at `node` otherwise.
@@ -4306,7 +4305,7 @@ where
 ///   transport's operand; a read that rewrote the explicit form, a transport
 ///   standing as a computation rather than a returned value, or an operation
 ///   written where nothing states its type changes a spelling.
-/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
+/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_as_a_step_754`
 /// - witness: `tests::goldens::a_composite_a_transport_moves_stays_explicit_815`
 /// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
 #[spec(ensures: |ref ret| (form == Form::Sugared && admits != Admits::Operand)
@@ -4327,7 +4326,7 @@ where
         && let Some(operation) = derived(source, body)
     {
         return match operation {
-            Derived::Composite { value, path } => Former::Then(value, path),
+            Derived::Composite { value, path } => Former::Step(value, path),
             Derived::Inverse(path) => Former::Back(path),
             Derived::Congruence { map, path } => Former::Cong(map, path),
         };
@@ -7151,6 +7150,7 @@ impl Walk<'_, '_>
                 | Former::SessionRelated(..)
                 | Former::Stay(_)
                 | Former::Then(..)
+                | Former::Step(..)
                 | Former::Back(_)
                 | Former::Cong(..)
                 | Former::FlowProduct(..)
@@ -8505,6 +8505,7 @@ impl Walk<'_, '_>
             | Former::Lazy(..)
             | Former::Annotated { .. }
             | Former::Then(..)
+            | Former::Step(..)
             | Former::Project(..)
             | Former::Send { .. }
             | Former::Receive { .. }
@@ -10740,7 +10741,7 @@ impl Walk<'_, '_>
     ///   classifier; a primitive as a call of its name, an operation performed
     ///   as the call `I.op(v)` through its interface's name, but a string
     ///   append as the interpolated string `"…${ v }…"` that lowers to it;
-    ///   `transport(…)` over its motive — `fun (a) { M }`, or `+U M` for a
+    ///   `Path.walk(…)` over its motive — `fun (a) { M }`, or `+U M` for a
     ///   telescope — and operands; `v.l` and `v.i`; `match v { … }` with one
     ///   arm per branch but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or
     ///   a constructor's applied to its field binders, its equations unwritten,
@@ -11135,7 +11136,7 @@ impl Walk<'_, '_>
             },
             Former::Transport(..) => {
                 self.note(Unspelled::Notation(Notation::Transport));
-                let _ = parts.text("transport").arguments(Arity(2_usize));
+                let _ = parts.text("Path.walk").arguments(Arity(2_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
             Former::Resume(stack, computation) => {
@@ -11159,10 +11160,10 @@ impl Walk<'_, '_>
             // the quote's own spelling, `type(T)` (#4508).
             Former::PathTransport { motive, .. } | Former::Ride { motive, .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {
-                    "ride(fun ("
+                    "Flow.ride(fun ("
                 }
                 else {
-                    "transport(fun ("
+                    "Path.walk(fun ("
                 };
                 let quoted = matches!(source.read(motive), Former::Product(arity) if usize::from(arity) >= 1_usize)
                     || self.unread_as_expression(source, motive, Form::Sugared) == Bare::Unread;
@@ -11182,7 +11183,7 @@ impl Walk<'_, '_>
             },
             Former::TelescopeTransport { .. } => {
                 let _ = parts
-                    .text("transport(")
+                    .text("Path.walk(")
                     .piece(Binding::ARGUMENT)
                     .rest(Arity(4_usize));
                 writes(Production("call_expression"), Binding::Atom)
@@ -11461,18 +11462,21 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Tight).text("}");
                 writes(Production("lazy_record_expression"), Binding::Atom)
             },
-            // A flow composite is written infix, as the surface writes it and
-            // the lowering reads it back where a flow is answered (#631); so
-            // is a path composite the sugared form reads off its transport
-            // (#754).
-            // A cons is tighter than `then`, so it stands bare on either side;
-            // a composite operand stands in parentheses (#1255).
-            Former::Then(..) => {
+            // A flow composite is the call `Flow.then(f, g)`, and a path
+            // composite the sugared form reads off its transport (#754) the
+            // call `Path.step(p, q)`: each operation under its former.
+            Former::Then(..) | Former::Step(..) => {
+                let head = if matches!(*former, Former::Then(..)) {
+                    "Flow.then("
+                }
+                else {
+                    "Path.step("
+                };
                 let _ = parts
-                    .piece(Binding::Cons)
-                    .text(" then ")
-                    .piece(Binding::Cons);
-                writes(Production("binary_expression.then"), Binding::Composite)
+                    .text(head)
+                    .piece(Binding::ARGUMENT)
+                    .rest(Arity(1_usize));
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::Send { endpoint, .. } => {
                 let _ = parts

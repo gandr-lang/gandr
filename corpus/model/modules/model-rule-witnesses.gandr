@@ -3,16 +3,16 @@
 //
 // A `Path` is a cell a program carries. A model owes one `Path` component per
 // rule, between the rule's two sides read in its carrier. Where the carrier
-// converts the two sides, `here` witnesses the rule. Where it does not, the
+// converts the two sides, `Path.here` witnesses the rule. Where it does not, the
 // model writes the path. The presented type is the initial model, where every
-// witness is `here`.
+// witness is `Path.here`.
 //
 // Two models of one left unit law over the naturals show both witnesses. The
-// one joining on the left argument converts the law's sides, and `here`
+// one joining on the left argument converts the law's sides, and `Path.here`
 // witnesses it. The one joining on the right argument leaves them apart, and
 // an induction witnesses it.
 //
-// - see: `model-ascription.gandr` — a rule `here` witnesses at each case
+// - see: `model-ascription.gandr` — a rule `Path.here` witnesses at each case
 // - see: `model-laws.gandr` — a law stated as its path type
 
 /// The naturals, apart from any theory.
@@ -35,7 +35,7 @@ theory LeftUnit where {
   rule unitL : mul(e(), x) <=> x;
 }
 
-/// One more tick, as a function `cong` can take.
+/// One more tick, as a function `Path.ap` can take.
 def tick(n : Ticks) -> Ticks { Tick(n) }
 
 /// Joins two counts by recursion on the left one.
@@ -57,8 +57,8 @@ def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
 /// Joining no tick on the left leaves a count as it is, by induction on it.
 def rec noTickJoinsRight(n : Ticks) -> Path(Ticks, joinRight(NoTick, n), n) {
   match n {
-    NoTick => here(NoTick),
-    Tick(k) => cong(tick, noTickJoinsRight[<](k))
+    NoTick => Path.here(NoTick),
+    Tick(k) => Path.ap(tick, noTickJoinsRight[<](k))
   }
 }
 
@@ -73,8 +73,8 @@ module ByLeft : Model(LeftUnit) where {
   /// The product joins on the left.
   def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft(x, y) }
 
-  /// `mul(e(), x)` computes to `x`, so `here` witnesses the rule.
-  def unitL(x : Ticks) -> Path(Ticks, mul(e(), x), x) { here(x) }
+  /// `mul(e(), x)` computes to `x`, so `Path.here` witnesses the rule.
+  def unitL(x : Ticks) -> Path(Ticks, mul(e(), x), x) { Path.here(x) }
 }
 
 /// Joining on the right as a model: its carrier leaves the rule's sides apart.

@@ -571,7 +571,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// `path`, a step's path at its redex, carried up the step's context:
-    /// `cong(C, path)` from the whole term before the step, the context read
+    /// `Path.ap(C, path)` from the whole term before the step, the context read
     /// as the family `h. Path(S, C[a], C[h])` rather than as a function, so
     /// no map stands to be synthesised.
     ///

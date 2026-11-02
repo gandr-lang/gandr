@@ -5,7 +5,7 @@
 // lookups agree at every index, and likewise for two composites. Each is an
 // induction on the term whose hypothesis is the pointwise one, lifted once
 // under each abstraction; an application's two paths are joined by
-// `transport`.
+// `Path.walk`.
 
 // The naturals; the syntax; the congruences.
 import "../model-in-source.gandr";
@@ -21,8 +21,8 @@ def renameRenameLift(
   n : N
 ) -> Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(n, RLift(a3))) {
   match n {
-    Z => here(Z),
-    S(m) => cong(succOf, h(m))
+    Z => Path.here(Z),
+    S(m) => Path.ap(succOf, h(m))
   }
 }
 
@@ -36,8 +36,8 @@ pub def rec renameRename(
   h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(n, a3))
 ) -> Path(Term, rename(rename(t, a1), a2), rename(t, a3)) {
   match t {
-    Ix(n) => cong(ixOf, h(n)),
-    Lam(b) => cong(
+    Ix(n) => Path.ap(ixOf, h(n)),
+    Lam(b) => Path.ap(
       lamOf,
       renameRename[<](
         b,
@@ -47,21 +47,21 @@ pub def rec renameRename(
         fun (n) { renameRenameLift(a1, a2, a3, h, n) }
       )
     ),
-    Ap(f, x) => transport(
+    Ap(f, x) => Path.walk(
       fun (z) { Path(
         Term,
         Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
         Ap(z, rename(x, a3))
       ) },
       renameRename[<](f, a1, a2, a3, h),
-      transport(
+      Path.walk(
         fun (z) { Path(
           Term,
           Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
           Ap(rename(rename(f, a1), a2), z)
         ) },
         renameRename[<](x, a1, a2, a3, h),
-        here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
+        Path.here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
       )
     )
   }
@@ -77,8 +77,8 @@ def renameSquareLift(
   n : N
 ) -> Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(rlook(n, RLift(a3)), RLift(a4))) {
   match n {
-    Z => here(Z),
-    S(m) => cong(succOf, h(m))
+    Z => Path.here(Z),
+    S(m) => Path.ap(succOf, h(m))
   }
 }
 
@@ -93,8 +93,8 @@ pub def rec renameSquare(
   h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(rlook(n, a3), a4))
 ) -> Path(Term, rename(rename(t, a1), a2), rename(rename(t, a3), a4)) {
   match t {
-    Ix(n) => cong(ixOf, h(n)),
-    Lam(b) => cong(
+    Ix(n) => Path.ap(ixOf, h(n)),
+    Lam(b) => Path.ap(
       lamOf,
       renameSquare[<](
         b,
@@ -105,21 +105,21 @@ pub def rec renameSquare(
         fun (n) { renameSquareLift(a1, a2, a3, a4, h, n) }
       )
     ),
-    Ap(f, x) => transport(
+    Ap(f, x) => Path.walk(
       fun (z) { Path(
         Term,
         Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
         Ap(z, rename(rename(x, a3), a4))
       ) },
       renameSquare[<](f, a1, a2, a3, a4, h),
-      transport(
+      Path.walk(
         fun (z) { Path(
           Term,
           Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)),
           Ap(rename(rename(f, a1), a2), z)
         ) },
         renameSquare[<](x, a1, a2, a3, a4, h),
-        here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
+        Path.here(Ap(rename(rename(f, a1), a2), rename(rename(x, a1), a2)))
       )
     )
   }

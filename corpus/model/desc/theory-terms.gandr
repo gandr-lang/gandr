@@ -39,7 +39,7 @@ def cancelled : Path(
   Terms(Mag),
   Mag.mul(Mag.mul(Mag.one, Mag.mul(Mag.one, Mag.one)), Mag.one),
   Mag.one
-) = here(Mag.one);
+) = Path.here(Mag.one);
 
 /// A term a function builds, which runs to itself.
 @[ runs("Mag.mul(Mag.one, Mag.one)") ]
@@ -67,8 +67,8 @@ def tick(n : Ticks) -> Ticks { Tick(n) }
 /// No tick on the right, by induction.
 def rec noTickRight(n : Ticks) -> Path(Ticks, joinLeft(n, NoTick), n) {
   match n {
-    NoTick => here(NoTick),
-    Tick(k) => cong(tick, noTickRight[<](k))
+    NoTick => Path.here(NoTick),
+    Tick(k) => Path.ap(tick, noTickRight[<](k))
   }
 }
 
@@ -81,7 +81,7 @@ module Counts : Model(Mag) where {
   /// The product joins the counts.
   def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft(x, y) }
   /// The left unit holds by conversion.
-  def unitL(x : Ticks) -> Path(Ticks, mul(one(), x), x) { here(x) }
+  def unitL(x : Ticks) -> Path(Ticks, mul(one(), x), x) { Path.here(x) }
   /// The right unit holds by induction.
   def unitR(x : Ticks) -> Path(Ticks, mul(x, one()), x) { noTickRight(x) }
 }

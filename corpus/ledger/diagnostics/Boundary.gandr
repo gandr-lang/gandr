@@ -10,8 +10,8 @@ module Schema where {
   }
   @[ checks ]
   def upgrade : Flow(Type, Old, New) ;
-  def upgrade = forward(toNew) ;
+  def upgrade = Flow.into(toNew) ;
   @[ refuses("Boundary") ]
   def reader : Flow(Type, Old => Integer, New => Integer) ;
-  def reader = arrow(upgrade, stay(Integer)) ;
+  def reader = Flow.arrow(upgrade, Flow.stay(Integer)) ;
 }

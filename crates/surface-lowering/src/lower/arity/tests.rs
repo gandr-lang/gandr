@@ -509,7 +509,7 @@ fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
         "def two : #{n : Integer, v : Path(Integer, n, n)} ; def three : #{a : Integer, b : \
          Integer, c : Path(Integer, a, a)} ; def late : #{a : Integer, b : Integer, c : \
          Path(Integer, b, b)} ; def plain : #{n : Integer, s : String} ; def pair : #{n : \
-         Integer, v : Path(Integer, n, n)} ; def pair = #{2, here(2)} ;",
+         Integer, v : Path(Integer, n, n)} ; def pair = #{2, Path.here(2)} ;",
         &mut arena,
     );
 

@@ -1,26 +1,27 @@
 //! The transports of the derived path operations a source writes, as its
-//! lowering derived them, for the explicit spelling of `p then q`, `back(p)`
-//! and `cong(f, p)`.
+//! lowering derived them, for the explicit spelling of `Path.step(p, q)`,
+//! `Path.back(p)` and `Path.ap(f, p)`.
 //!
-//! `p then q` is the transport `transport(fun (y) { Path(A, a, y) }, q, p)`,
-//! `back(p)` is `transport(fun (y) { Path(A, y, a) }, p, here(a))` and `cong(f,
-//! p)` is `transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))`: their
-//! carrier and fixed endpoint the type of `p`, which the lowering derives from
-//! the operands; the syntax does not hold them. So the explicit spelling reads
-//! them from the lowering: the transport the lowering minted at the
-//! operation's span, spelled through the shared printer in the explicit
-//! form, its first argument the motive and its third the value it moves,
-//! under the names the source writes for the binders around the operation.
-//! An operation whose transport the printer cannot spell faithfully — one
-//! standing under a binder the source names nothing — has none, keeps its
-//! spelling and is reported. `p then q` lowers to the composite of its two
-//! cells, which returns the transport above as the fold it realises: the
-//! fold is read at the composite's own node.
+//! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path(A, a, y) }, q,
+//! p)`, `Path.back(p)` is `Path.walk(fun (y) { Path(A, y, a) }, p,
+//! Path.here(a))` and `Path.ap(f, p)` is `Path.walk(fun (y) { Path(B, f(a),
+//! f(y)) }, p, Path.here(f(a)))`: their carrier and fixed endpoint the type of
+//! `p`, which the lowering derives from the operands; the syntax does not hold
+//! them. So the explicit spelling reads them from the lowering: the transport
+//! the lowering minted at the operation's span, spelled through the shared
+//! printer in the explicit form, its first argument the motive and its third
+//! the value it moves, under the names the source writes for the binders around
+//! the operation. An operation whose transport the printer cannot spell
+//! faithfully — one standing under a binder the source names nothing — has
+//! none, keeps its spelling and is reported. `Path.step(p, q)` lowers to the
+//! composite of its two cells, which returns the transport above as the fold it
+//! realises: the fold is read at the composite's own node.
 //!
 //! # References
 //!
-//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `p then q` is the
-//!   composite at the 2-chain, whose explicit spelling is the fold it realises.
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `Path.step(p, q)`
+//!   is the composite at the 2-chain, whose explicit spelling is the fold it
+//!   realises.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -78,7 +79,8 @@ pub enum Spaced
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Standing
 {
-    /// A transport returned as a value: the printer writes it `p then q`.
+    /// A transport returned as a value: the printer writes it
+    /// `Path.step(p, q)`.
     Returned,
     /// A transport otherwise, a body's last step among them: the printer
     /// writes it as written.
@@ -110,8 +112,8 @@ pub struct Motives
     /// The transports the lowering derived and the printer spells.
     derived: Vec<Derived>,
     /// The spans of the transports, written or derived, the lowering returns
-    /// as values: those the printer writes as `p then q`. A transport standing
-    /// as a computation, a body's last step, it writes as written.
+    /// as values: those the printer writes as `Path.step(p, q)`. A transport
+    /// standing as a computation, a body's last step, it writes as written.
     returned: Vec<ByteSpan>,
     /// The spans of the flow composites, which the core holds as written.
     flows: Vec<ByteSpan>,
@@ -415,7 +417,7 @@ pub fn within(
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
 }
 
-/// The tokens of the first and the third argument of `transport(…)` as
+/// The tokens of the first and the third argument of `Path.walk(…)` as
 /// `text` spells it: the motive and the value it moves.
 ///
 /// # Specification
@@ -432,7 +434,8 @@ fn arguments(spelled: SourceFragment<'_>) -> Option<(Vec<Token>, Vec<Token>)>
             text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)?;
         Some((token.lexeme, written))
     });
-    let (Some((_, "transport")), Some((_, "("))) = (read.next(), read.next())
+    let (Some((_, "Path")), Some((_, ".")), Some((_, "walk")), Some((_, "("))) =
+        (read.next(), read.next(), read.next(), read.next())
     else {
         return None;
     };

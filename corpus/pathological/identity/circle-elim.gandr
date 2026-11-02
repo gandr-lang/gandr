@@ -16,7 +16,7 @@ data Circle : Type where {
 @[ refuses("LoopNotRespected") ]
 def contractible(x : Circle) -> Path(Circle, Base, x) {
   match x {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
@@ -39,7 +39,7 @@ def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path(Circle, 
 def doubled(x : Circle) -> Circle {
   match x {
     Base => Base,
-    loop => loop ∷ loop ∷ here(Base)
+    loop => loop ∷ loop ∷ Path.here(Base)
   }
 }
 
@@ -49,8 +49,8 @@ def doubled(x : Circle) -> Circle {
 @[ refuses("EndpointMismatch") ]
 def misjoined(x : Circle) -> Path(Circle, Base, x) {
   match x {
-    Base => here(Base),
-    loop => here(here(Base))
+    Base => Path.here(Base),
+    loop => Path.here(Path.here(Base))
   }
 }
 
@@ -62,10 +62,10 @@ data Marked : Type where {
 }
 
 /// A composite whose second path starts where the first does not end: the
-/// turn ends at `Mark`, and `here(Elsewhere)` starts at `Elsewhere`. `then` is
+/// turn ends at `Mark`, and `Path.here(Elsewhere)` starts at `Elsewhere`. `Path.step` is
 /// the composite of the 2-chain, so its one inner wire does not fill.
 @[ refuses("ComposeDoesNotFill") ]
-def misjoined_then : Path(Marked, Mark, Elsewhere) = turn then here(Elsewhere);
+def misjoined_then : Path(Marked, Mark, Elsewhere) = Path.step(turn, Path.here(Elsewhere));
 
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
@@ -78,13 +78,13 @@ def kept(x : Marked) -> Marked {
 
 /// Reflexivity at the looped point, wanted at a path whose endpoints compute
 /// the other point: `kept(Elsewhere)` computes `Elsewhere`, which the turn
-/// never reaches, so the path is no words and `here(Mark)` does not inhabit
+/// never reaches, so the path is no words and `Path.here(Mark)` does not inhabit
 /// it (#485).
 @[ refuses("TypeMismatch") ]
-def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) = here(Mark);
+def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) = Path.here(Mark);
 
-/// `cong` maps a path by a function, and the point's constructor is not one:
+/// `Path.ap` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.
 @[ refuses("OutOfFragment.NotAFunction") ]
 def cong_at_point : Path(Circle, Base, Base);
-def cong_at_point = cong(Base, loop);
+def cong_at_point = Path.ap(Base, loop);

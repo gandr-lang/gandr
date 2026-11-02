@@ -6,7 +6,7 @@
 // reading, so `math.path`'s associator writes the cell.
 //
 // The model writes the right unit law by conversion and the associator by the
-// theorem. A model leaving the associator out has it discharged by `here`: the
+// theorem. A model leaving the associator out has it discharged by `Path.here`: the
 // two nestings of a chain of paths convert.
 //
 // - see: `pathological/higher-cells/path-cells.gandr` — a model of the naturals
@@ -33,7 +33,7 @@ def associator(
   f : Path(Circle, a, b),
   g : Path(Circle, b, c),
   h : Path(Circle, c, d)
-) -> Path(Path(Circle, a, d), (f then g) then h, f then (g then h)) {
+) -> Path(Path(Circle, a, d), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   assoc(Circle, a, b, c, d, f, g, h)
 }
 
@@ -72,7 +72,7 @@ module PathCells : Model(Glob) where {
   type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
 
   /// The reflexivity.
-  def id(a : Circle) -> Path(Circle, a, a) { here(a) }
+  def id(a : Circle) -> Path(Circle, a, a) { Path.here(a) }
 
   /// The composite.
   def comp(
@@ -86,7 +86,7 @@ module PathCells : Model(Glob) where {
     a,
     c
   ) {
-    f then g
+    Path.step(f, g)
   }
 
   /// The right unit law, by conversion.
@@ -95,7 +95,7 @@ module PathCells : Model(Glob) where {
     comp(a, b, b, f, id(b)),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 
   /// The associator cell, by `math.path`'s theorem.
@@ -116,7 +116,7 @@ module PathCells : Model(Glob) where {
   }
 }
 
-/// The circle's paths with the associator left out, which `here` discharges.
+/// The circle's paths with the associator left out, which `Path.here` discharges.
 module Discharged : Model(Glob) where {
   /// The circle's points.
   type Ob = Circle;
@@ -124,7 +124,7 @@ module Discharged : Model(Glob) where {
   type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
 
   /// The reflexivity.
-  def id(a : Circle) -> Path(Circle, a, a) { here(a) }
+  def id(a : Circle) -> Path(Circle, a, a) { Path.here(a) }
 
   /// The composite.
   def comp(
@@ -138,7 +138,7 @@ module Discharged : Model(Glob) where {
     a,
     c
   ) {
-    f then g
+    Path.step(f, g)
   }
 
   /// The right unit law, by conversion.
@@ -147,6 +147,6 @@ module Discharged : Model(Glob) where {
     comp(a, b, b, f, id(b)),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 }

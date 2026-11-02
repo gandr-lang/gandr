@@ -10,5 +10,5 @@ import "../../model/sessions/run-transport.gandr";
 /// passes. The path checks against the pair it is owed, but it is open.
 @[ refuses("ShapeMismatch") ]
 def anyProtocol(e : Bit ≃ Answer) -> Path(Type, Ask.Coded, Ask.Decoded) {
-  bisim(Ask.Coded, Ask.Decoded, ua(e))
+  Path.bisim(Ask.Coded, Ask.Decoded, ua(e))
 }

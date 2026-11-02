@@ -9,10 +9,10 @@ module Schema where {
     }
   }
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) = forward(toNew);
+  def upgrade : Flow(Type, Old, New) = Flow.into(toNew);
   @[ refuses("NonCovariantMotive") ]
   def reversed() -> Flow(Type, New, Old) {
-    ride(fun (X) { Flow(Type, X, Old) }, upgrade, stay(Old))
+    Flow.ride(fun (X) { Flow(Type, X, Old) }, upgrade, Flow.stay(Old))
   }
   @[ checks ]
   def age(record : Old) -> Count {
@@ -22,6 +22,6 @@ module Schema where {
   }
   @[ refuses("NonCovariantMotive") ]
   def reader() -> New => Count {
-    ride(fun (X) { X => Count }, upgrade, age)
+    Flow.ride(fun (X) { X => Count }, upgrade, age)
   }
 }

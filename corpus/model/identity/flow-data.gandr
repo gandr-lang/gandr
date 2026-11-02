@@ -38,11 +38,11 @@ module Rename where {
   }
   /// The flow from the old type to the new, by its translator.
   @[ checks ]
-  def renamed : Flow(Type, Old, Other) = forward(toOther);
+  def renamed : Flow(Type, Old, Other) = Flow.into(toOther);
   /// One value ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> Other {
-    ride(fun (X) { X }, renamed, old)
+    Flow.ride(fun (X) { X }, renamed, old)
   }
   /// A value migrated by a run.
   @[ runs("Make(3)") ]
@@ -61,11 +61,11 @@ pub module Shapes where {
   }
   /// The flow from the old shapes to the new.
   @[ checks ]
-  def redrawn : Flow(Type, Shape, Figure) = forward(toFigure);
+  def redrawn : Flow(Type, Shape, Figure) = Flow.into(toFigure);
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
   def all(shapes : List(Shape)) -> List(Figure) {
-    ride(fun (X) { List(X) }, redrawn, shapes)
+    Flow.ride(fun (X) { List(X) }, redrawn, shapes)
   }
   /// Two shapes migrated by a run.
   @[ runs("cons(Round(1), cons(Box(3, 2), nil))") ]

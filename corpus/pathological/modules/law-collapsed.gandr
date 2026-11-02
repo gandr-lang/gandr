@@ -49,5 +49,5 @@ theory WithK where {
   /// The carrier.
   sort Carrier : Type;
   /// Every loop at a point is reflexivity: a path between paths.
-  law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, here(a));
+  law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, Path.here(a));
 }

@@ -398,7 +398,7 @@ fn lowered(
                      in, or of a member of its mutual block; this one names another function",
                 ),
                 FragmentBoundary::NotAFunction => f.write_str(
-                    "`cong` maps a path by a function, and a constructor is none; write `fun \
+                    "`Path.ap` maps a path by a function, and a constructor is none; write `fun \
                      (q) { e }`, or a function definition that applies the constructor",
                 ),
                 FragmentBoundary::NotInTail => write!(
@@ -758,8 +758,8 @@ fn lowered(
              `return` leaves past the handler, or end the subject with its result"
         ),
         LoweringRefusal::WithoutK { .. } => f.write_str(
-            "a path cannot be matched against `here`; use it by transport, through `back`, \
-             `then` or `cong`",
+            "a path cannot be matched against `here`; use it by `Path.walk`, through \
+             `Path.back`, `Path.step` or `Path.ap`",
         ),
         LoweringRefusal::DirectedCell { .. } => f.write_str(
             "a cell between two terms is written `<->`; a directed cell `-->` between terms is \
@@ -964,18 +964,18 @@ fn checked(
             f.write_str("a universe path needs a quoted, closed, first-order code at each end")
         },
         CheckRefusal::EndpointMismatch { .. } => {
-            f.write_str("`here` needs both endpoints of the path to equal its point")
+            f.write_str("`Path.here` needs both endpoints of the path to equal its point")
         },
         CheckRefusal::CompoundEndpoint { .. } => {
             f.write_str("a path endpoint must compute a value without effects")
         },
         CheckRefusal::FunextUnsupported { .. } => f.write_str(
-            "`funext` needs two closed pure functions between types built from units, \
+            "`Path.funext` needs two closed pure functions between types built from units, \
              integers, strings, pairs, two-way sums and data types that do not hold \
              themselves; an argument may itself be a function between such types",
         ),
         CheckRefusal::PointwiseDistinct { .. } => f.write_str(
-            "`funext` needs both functions to agree at every input: return the same value, \
+            "`Path.funext` needs both functions to agree at every input: return the same value, \
              or apply their function argument at the same input",
         ),
         CheckRefusal::EquivUnsupported { .. } => f.write_str(
@@ -993,7 +993,7 @@ fn checked(
             f.write_str("`equiv` needs each round trip to return its input")
         },
         CheckRefusal::NotOver { .. } => f.write_str(
-            "`transport` needs its identity over the path to start from the start transported \
+            "`Path.walk` needs its identity over the path to start from the start transported \
              along the path",
         ),
         CheckRefusal::UaUncertified { stratum, .. } => match stratum {
@@ -1111,10 +1111,10 @@ fn checked(
             ),
         },
         CheckRefusal::SessionNotEquivalent { .. } => {
-            f.write_str("`bisim` needs the two protocols to behave alike at every step")
+            f.write_str("`Path.bisim` needs the two protocols to behave alike at every step")
         },
         CheckRefusal::SessionNotSubtype { .. } => f.write_str(
-            "`sim` needs its first protocol to select no more and offer no less than its second",
+            "`Flow.sim` needs its first protocol to select no more and offer no less than its second",
         ),
         CheckRefusal::SessionCodeExpected { .. } => {
             f.write_str("a session identity relates two session types")
@@ -1131,11 +1131,11 @@ fn checked(
             "the module omits this law, and its sides do not convert, so nothing discharges it",
         ),
         CheckRefusal::NonCovariantMotive { .. } => f.write_str(
-            "a flow runs one way: `ride` may use the moving endpoint only where a run of it \
+            "a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it \
              would be produced",
         ),
         CheckRefusal::RideUnsupported { .. } => f.write_str(
-            "`ride` moves a run of the moving endpoint, a value whose type does not depend \
+            "`Flow.ride` moves a run of the moving endpoint, a value whose type does not depend \
              on it, or a value the flow's translator computes",
         ),
         CheckRefusal::RunNotAdmitted { .. } => f.write_str("the protocol does not admit this run"),
@@ -1146,7 +1146,7 @@ fn checked(
             f.write_str("this dialogue is logged out of its causal order")
         },
         CheckRefusal::ForwardUnsupported { .. } => {
-            f.write_str("`forward` cannot image this translator at every input")
+            f.write_str("`Flow.into` cannot image this translator at every input")
         },
         CheckRefusal::Boundary { .. } => {
             f.write_str("this boundary flow runs against the variance of its position")

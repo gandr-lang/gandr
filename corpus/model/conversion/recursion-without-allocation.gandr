@@ -30,5 +30,5 @@ def rec calls(n : Nat) -> Bool {
 
 /// Every call answers true.
 def callsAnswerTrue() -> Path(Bool, calls(twelve), true) {
-  here(true)
+  Path.here(true)
 }

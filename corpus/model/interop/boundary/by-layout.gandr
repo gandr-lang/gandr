@@ -122,7 +122,7 @@ pub def taggedLengthAt(w : u64) -> [Memory] Integer {
   match read {
     None => -1,
     Some(l) => {
-      let f = transport(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
+      let f = Path.walk(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
       f(l)
     }
   }
@@ -134,7 +134,7 @@ pub def packedLengthAt(w : u64) -> [Memory] Integer {
   match read {
     None => -1,
     Some(l) => {
-      let f = transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
+      let f = Path.walk(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
       f(l)
     }
   }

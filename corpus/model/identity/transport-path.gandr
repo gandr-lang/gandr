@@ -1,4 +1,4 @@
-// Transport, the HoTT book's § 2.3 (`transport`), along reflexivity at a
+// Transport, the HoTT book's § 2.3 (`Path.walk`), along reflexivity at a
 // motive whose fibres are path types: the element it returns is a path, an
 // element of another type is none, and transport along the path it returns
 // runs it first. Along reflexivity, at a path-type motive and in the
@@ -7,42 +7,42 @@
 /// A reflexive transport at a path-type motive returns a path.
 def moved_end : Path(
   Path(Integer, 2, 2),
-  transport(fun (x) { Path(Integer, x, x) }, here(2), here(2)),
-  here(2)
-) = here(here(2));
+  Path.walk(fun (x) { Path(Integer, x, x) }, Path.here(2), Path.here(2)),
+  Path.here(2)
+) = Path.here(Path.here(2));
 
 /// A reflexive transport at a path-type motive returns its path, by a run: the
 /// path runs as its two maps, both the identity.
 @[ runs("(thunk { fun (a) { a } }, thunk { fun (a) { a } })") ]
 def moved_end_run() -> Path(Integer, 2, 2) {
-  transport(fun (x) { Path(Integer, x, x) }, here(2), here(2))
+  Path.walk(fun (x) { Path(Integer, x, x) }, Path.here(2), Path.here(2))
 }
 
 /// A transported unit is no path between integers.
 @[ refuses("TypeMismatch") ]
 def unit_end : Path(
   Path(Integer, 2, 2),
-  transport(fun (x) { Unit }, here(2), unit),
-  here(2)
-) = here(here(2));
+  Path.walk(fun (x) { Unit }, Path.here(2), unit),
+  Path.here(2)
+) = Path.here(Path.here(2));
 
 /// Transport along the path a reflexive transport returns, in the universe,
-/// is the identity: the inner transport runs to `here(a)` first (#649).
+/// is the identity: the inner transport runs to `Path.here(a)` first (#649).
 def along_returned(
   a : Type,
   x : a
 ) -> Path(
   a,
-  transport(fun (X) { X }, transport(fun (c) { Path(Type, c, a) }, here(a), here(a)), x),
+  Path.walk(fun (X) { X }, Path.walk(fun (c) { Path(Type, c, a) }, Path.here(a), Path.here(a)), x),
   x
 ) {
-  here(x)
+  Path.here(x)
 }
 
 /// Transport along reflexivity in the universe keeps the value, by
 /// conversion.
-def along_here : Path(Integer, transport(fun (X) { X }, here(Integer), 2), 2) = here(2);
+def along_here : Path(Integer, Path.walk(fun (X) { X }, Path.here(Integer), 2), 2) = Path.here(2);
 
 /// Transport along reflexivity in the universe keeps the value, by a run.
 @[ runs("2") ]
-def along_here_run() -> Integer { transport(fun (X) { X }, here(Integer), 2) }
+def along_here_run() -> Integer { Path.walk(fun (X) { X }, Path.here(Integer), 2) }

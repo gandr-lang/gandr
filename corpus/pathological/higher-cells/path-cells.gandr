@@ -6,12 +6,12 @@
 // A model of the naturals under addition, one object and its numbers as the
 // cells, leaving the associator out is refused `NoFiller.Omitted` by its name.
 // Addition recurses on its second argument, so the two nestings of three
-// variables do not convert and `here` does not fill the cell. A scope whose
+// variables do not convert and `Path.here` does not fill the cell. A scope whose
 // clauses tell a stated law's sides apart is refused `HandlerUnlawful` naming
 // the law.
 //
 // - see: `model/higher-cells/path-cells.gandr` — the model writing the cell,
-//   and the circle's paths, whose associator `here` fills
+//   and the circle's paths, whose associator `Path.here` fills
 
 /// The globular theory at dimension one, its associator a cell.
 theory Glob where {

@@ -14,7 +14,7 @@
 // A rule collapses terms the constructors build, so the type is their
 // quotient; a cell adds a path between points the constructors build, so the
 // paths at the point are the words over it. `IntOp` is presented by rules:
-// `S(P(x))` is `x`. `Circle` carries a cell: `loop` is apart from `here(Base)`.
+// `S(P(x))` is `x`. `Circle` carries a cell: `loop` is apart from `Path.here(Base)`.
 // The integers here carry an operation the base's do not, so they are named
 // apart from them.
 
@@ -36,7 +36,7 @@ data IntOp : Type where {
 
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
 /// the path between them.
-def collapsed : Path(IntOp, S(P(Z)), Z) = here(Z);
+def collapsed : Path(IntOp, S(P(Z)), Z) = Path.here(Z);
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
 /// Path(Circle, Base, Base)`.
@@ -46,15 +46,15 @@ data Circle : Type where {
 }
 
 /// A cell adds: the loop's inverse is `back(loop)`, and the cancellation
-/// `loop then back(loop)` is the empty word by the rules the cell mints on
+/// `Path.step(loop, Path.back(loop))` is the empty word by the rules the cell mints on
 /// its words.
 def cancelled : Path(
   Path(Circle, Base, Base),
-  loop then back(loop),
-  here(Base)
-) = here(here(Base));
+  Path.step(loop, Path.back(loop)),
+  Path.here(Base)
+) = Path.here(Path.here(Base));
 
 /// A cell is not a rule: no rule identifies the loop with the empty word, so
 /// reflexivity does not prove it.
 @[ refuses("EndpointMismatch") ]
-def notARule : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base));
+def notARule : Path(Path(Circle, Base, Base), loop, Path.here(Base)) = Path.here(Path.here(Base));

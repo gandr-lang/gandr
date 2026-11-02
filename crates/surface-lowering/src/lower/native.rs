@@ -94,7 +94,7 @@
 //! so in turn: an arm variable at such a level, and the scrutinee's variable
 //! through its fields, read as the answer does. A parameterless family is
 //! refined so, and so are the words over a looped point: a case over
-//! `p : Path(Circle, Base, Base)` answers its motive at `here(Base)`,
+//! `p : Path(Circle, Base, Base)` answers its motive at `Path.here(Base)`,
 //! `loop ∷ q` and `back(loop) ∷ q`, each the words' own constructor, which
 //! both checkers read at the path type. A family with parameters and the
 //! presentation's own keep the answer as written under the fields, and an
@@ -1097,8 +1097,8 @@ pub(super) struct Answer
 /// - executable: none — the frame is a coordinate.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `loop => back(loop)` takes its endpoints from the path
-///   over the loop, and a written answer from itself.
+/// - hypothesis: L3 — `loop => Path.back(loop)` takes its endpoints from the
+///   path over the loop, and a written answer from itself.
 /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Over
@@ -4411,7 +4411,7 @@ impl<'source> Lowerer<'_, 'source>
         }))
     }
 
-    /// The empty word `here(point)` is, when `point` spells the point a
+    /// The empty word `Path.here(point)` is, when `point` spells the point a
     /// family's loops are at.
     ///
     /// # Specification
@@ -4419,8 +4419,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the empty word of the first words whose point `point` spells
     ///   as a closed term over their family's constructors, each written node
     ///   of the point recorded with the words so it answers at their family;
-    ///   the unnamed absence when no words are at it, and `here(point)` stays
-    ///   reflexivity.
+    ///   the unnamed absence when no words are at it, and `Path.here(point)`
+    ///   stays reflexivity.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///

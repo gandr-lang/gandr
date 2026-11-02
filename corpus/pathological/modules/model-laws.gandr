@@ -26,7 +26,7 @@ module Overadmitted : Model(Decided) with sort Carrier = Lone where {
   def alike(a : Lone, b : Lone) -> Bool { true }
   @[ refuses("UnprovenLaw.Admitted") ]
   law refl admitted;
-  def sym(a : Lone, b : Lone) -> Path(Bool, alike(a, b), alike(b, a)) { here(true) }
+  def sym(a : Lone, b : Lone) -> Path(Bool, alike(a, b), alike(b, a)) { Path.here(true) }
 }
 
 /// Float equality as an `Eq`: its symmetry is the host's, its reflexivity no

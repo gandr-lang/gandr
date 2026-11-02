@@ -689,8 +689,6 @@ impl TileName
     pub const TILDE: Self = Self("~");
     /// A run of plain text inside a string's own tiles.
     pub const STRING_FRAGMENT: Self = Self("string_fragment");
-    /// The infix composite of two paths, `then`.
-    pub const THEN: Self = Self("then");
     /// The thunk keyword `thunk`.
     pub const THUNK: Self = Self("thunk");
     /// The type-component keyword `type` of a module signature.

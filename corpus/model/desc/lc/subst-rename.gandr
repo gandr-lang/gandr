@@ -21,10 +21,10 @@ def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
   rename(wk(look(m, u, Z)), RLift(q)),
   rename(look(m, u, S(Z)), RLift(q))
 ) {
-  transport(
+  Path.walk(
     fun (z) { Path(Term, rename(z, RLift(q)), rename(look(m, u, S(Z)), RLift(q))) },
     lookWeakens(m, u, Z),
-    here(rename(look(m, u, S(Z)), RLift(q)))
+    Path.here(rename(look(m, u, S(Z)), RLift(q)))
   )
 }
 
@@ -49,7 +49,7 @@ def weakenedSquare(
   h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q)),
   m : N
 ) -> Path(Term, wk(look(rlook(m, r), s, Z)), wk(rename(look(m, u, Z), q))) {
-  cong(wk, h(m))
+  Path.ap(wk, h(m))
 }
 
 /// A pointwise agreement of renaming then substituting with substituting
@@ -63,7 +63,7 @@ def substRenameSquareLift(
   n : N
 ) -> Path(Term, look(rlook(n, RLift(r)), Lift(s), Z), rename(look(n, Lift(u), Z), RLift(q))) {
   match n {
-    Z => here(Ix(Z)),
+    Z => Path.here(Ix(Z)),
     S(m) => compose[7, 9](chain(4), (
       lookWeakens(rlook(m, r), s, Z),
       weakenedSquare(r, s, u, q, h, m),
@@ -92,7 +92,7 @@ def rec substRenameSquare(
 ) -> Path(Term, subst(rename(t, r), s), rename(subst(t, u), q)) {
   match t {
     Ix(n) => h(n),
-    Lam(b) => cong(
+    Lam(b) => Path.ap(
       lamOf,
       substRenameSquare[<](
         b,
@@ -103,21 +103,21 @@ def rec substRenameSquare(
         fun (n) { substRenameSquareLift(r, s, u, q, h, n) }
       )
     ),
-    Ap(f, x) => transport(
+    Ap(f, x) => Path.walk(
       fun (z) { Path(
         Term,
         Ap(subst(rename(f, r), s), subst(rename(x, r), s)),
         Ap(z, rename(subst(x, u), q))
       ) },
       substRenameSquare[<](f, r, s, u, q, h),
-      transport(
+      Path.walk(
         fun (z) { Path(
           Term,
           Ap(subst(rename(f, r), s), subst(rename(x, r), s)),
           Ap(subst(rename(f, r), s), z)
         ) },
         substRenameSquare[<](x, r, s, u, q, h),
-        here(Ap(subst(rename(f, r), s), subst(rename(x, r), s)))
+        Path.here(Ap(subst(rename(f, r), s), subst(rename(x, r), s)))
       )
     )
   }

@@ -46,9 +46,9 @@ def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename});
 /// Transport along it relabels the corolla's element.
 def swaps : Path(
   Unit * (Unit + Unit + Unit + Unit),
-  transport(fun (X) { X }, dual, (unit, +{.1 = unit})),
+  Path.walk(fun (X) { X }, dual, (unit, +{.1 = unit})),
   (unit, +{.3 = unit})
-) = here((unit, +{.3 = unit}));
+) = Path.here((unit, +{.3 = unit}));
 
 /// A relabelling that does not commute with the corolla's symmetry.
 @[ refuses("NotNatural") ]

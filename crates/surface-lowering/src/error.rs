@@ -2325,7 +2325,8 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::WithoutK { .. } => f.write_str(
                 "a path is matched against `here`, which is axiom K; a path is used by \
-                 transport, and `back`, `then` and `cong` derive what a match would",
+                 `Path.walk`, and `Path.back`, `Path.step` and `Path.ap` derive what a match \
+                 would",
             ),
             Self::DirectedCell { .. } => f.write_str(
                 "a directed cell `-->` between two terms builds no word of a path type; a cell \

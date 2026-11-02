@@ -1,0 +1,29 @@
+// A source binds the old bare names of the identity and flow operations as
+// ordinary names.
+//
+// The operations stand under their formers, `Path.here` and `Path.ap` among
+// them, so `here` and `cong` name nothing until a source declares them. A
+// library then keeps those short words for its own functions.
+//
+// A call of such a name resolves to its binder, never to the operation under
+// the former, and the former's operation still answers beside it.
+//
+// - see: `../../pathological/identity/bare-operations.gandr` — the bare names
+//   refused where nothing binds them
+
+/// A function a source names `here`, as any other name.
+def here(n : Integer) -> Integer { n + 1 }
+
+/// A function a source names `cong`, as any other name.
+def cong(n : Integer) -> Integer { n * 2 }
+
+/// The bound `here` answers, not reflexivity.
+@[ runs("5") ]
+def bumped() -> Integer { here(4) }
+
+/// The bound `cong` answers, not the action on a path.
+@[ runs("8") ]
+def doubled() -> Integer { cong(4) }
+
+/// Reflexivity still stands under its former beside the bound name.
+def stillReflexive : Path(Integer, 5, 5) = Path.here(5);

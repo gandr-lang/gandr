@@ -1,7 +1,7 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
    ╭▸ corpus/pathological/modules/law-collapsed.gandr:52:63
    │
-52 │   law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, here(a));
+52 │   law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, Path.here(a));
    │                                                               ━━━━━━━ out of place
    │
    ├ note: `WithK` is refused with MalformedForm, as its expectation states

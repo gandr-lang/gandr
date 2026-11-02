@@ -50,7 +50,7 @@ module Successor : Model(PointedMonoid) where {
     g : Integer => Integer,
     h : Integer => Integer
   ) -> Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
-    here(thunk { andThen(f, thunk { andThen(g, h) }) })
+    Path.here(thunk { andThen(f, thunk { andThen(g, h) }) })
   }
 
   /// The left unit law, included.
@@ -59,7 +59,7 @@ module Successor : Model(PointedMonoid) where {
     mul(one(), f),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 
   /// The right unit law, included.
@@ -68,7 +68,7 @@ module Successor : Model(PointedMonoid) where {
     mul(f, one()),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 }
 

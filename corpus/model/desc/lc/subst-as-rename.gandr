@@ -17,7 +17,7 @@ def weakenedVariable(
   h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r))),
   m : N
 ) -> Path(Term, wk(look(m, s, Z)), wk(Ix(rlook(m, r)))) {
-  cong(wk, h(m))
+  Path.ap(wk, h(m))
 }
 
 /// A substitution renaming at every index renames at every index of its
@@ -29,7 +29,7 @@ def substRenamesLift(
   n : N
 ) -> Path(Term, look(n, Lift(s), Z), Ix(rlook(n, RLift(r)))) {
   match n {
-    Z => here(Ix(Z)),
+    Z => Path.here(Ix(Z)),
     S(m) => compose[5, 7](chain(3), (
       lookWeakens(m, s, Z),
       weakenedVariable(s, r, h, m),
@@ -47,17 +47,17 @@ pub def rec substRenames(
 ) -> Path(Term, subst(t, s), rename(t, r)) {
   match t {
     Ix(n) => h(n),
-    Lam(b) => cong(
+    Lam(b) => Path.ap(
       lamOf,
       substRenames[<](b, Lift(s), RLift(r), fun (n) { substRenamesLift(s, r, h, n) })
     ),
-    Ap(f, x) => transport(
+    Ap(f, x) => Path.walk(
       fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, rename(x, r))) },
       substRenames[<](f, s, r, h),
-      transport(
+      Path.walk(
         fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)) },
         substRenames[<](x, s, r, h),
-        here(Ap(subst(f, s), subst(x, s)))
+        Path.here(Ap(subst(f, s), subst(x, s)))
       )
     )
   }
@@ -66,7 +66,7 @@ pub def rec substRenames(
 /// The substitution shifting by one renames each index by the shift by one.
 pub def shiftOneRenames(i : N) -> Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
   match i {
-    Z => here(Ix(S(Z))),
-    S(j) => here(Ix(S(S(j))))
+    Z => Path.here(Ix(S(Z))),
+    S(j) => Path.here(Ix(S(S(j))))
   }
 }

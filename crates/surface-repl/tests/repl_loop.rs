@@ -986,8 +986,16 @@ fn a_value_is_written_in_the_spelling_asked_782()
         String::from_utf8(output).expect("the transcript is UTF-8")
     };
     for (spelling, word, relation) in [
-        (Spelling::Unicode, "loop ∷ here(Base)", "Integer ≃ String"),
-        (Spelling::Ascii, "loop :: here(Base)", "Integer <~> String"),
+        (
+            Spelling::Unicode,
+            "loop ∷ Path.here(Base)",
+            "Integer ≃ String",
+        ),
+        (
+            Spelling::Ascii,
+            "loop :: Path.here(Base)",
+            "Integer <~> String",
+        ),
     ] {
         let written = transcript(spelling);
         assert!(

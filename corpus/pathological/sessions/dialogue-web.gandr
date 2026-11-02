@@ -14,12 +14,16 @@ module Ask where {
 /// Reporting and handing off are different plays: no path joins them
 /// (#1214).
 @[ refuses("EndpointMismatch") ]
-def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = here(retiring);
+def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = Path.here(retiring);
 
 /// Their webs differ as well: one is series-parallel and the other leaves a
 /// prime node (#2078).
 @[ refuses("EndpointMismatch") ]
-def apartWebs : Path(Web, decompose(retiring), decompose(handedOff)) = here(decompose(retiring));
+def apartWebs : Path(
+  Web,
+  decompose(retiring),
+  decompose(handedOff)
+) = Path.here(decompose(retiring));
 
 /// A receipt that hears other than was sent has no send to match it
 /// (#1214).

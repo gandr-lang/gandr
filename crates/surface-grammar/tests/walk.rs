@@ -53,14 +53,16 @@ use gandr_theory_graphs::WalkChainLength;
 /// module member taking the top level's definition family (#4145), then by a
 /// record type's faces block (#4453), then by the lambda keyword `fun` (#4484),
 /// then by the static abstraction folding into `fun` (#4508),
-/// then by the block's statements losing the `run` and `hold` heads (#4466).
-const BUILT_IN_FINGERPRINT: u64 = 0xe920_1244_af7d_499b;
+/// then by the block's statements losing the `run` and `hold` heads (#4466),
+/// then by the infix `then` leaving the grammar: a composite is a call under
+/// its former, `Path.step(p, q)` or `Flow.then(f, g)`.
+const BUILT_IN_FINGERPRINT: u64 = 0xc048_b33b_171e_f45b;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2953);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2952);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 96;
@@ -237,7 +239,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("subshell_close", 1),
     ("subshell_open", 1),
     ("tail", 1),
-    ("then", 1),
     ("theory", 1),
     ("thunk", 1),
     ("true", 2),

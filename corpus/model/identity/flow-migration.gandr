@@ -18,16 +18,16 @@ pub module Schema where {
   }
   /// The flow from the old schema to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) = forward(toNew);
+  def upgrade : Flow(Type, Old, New) = Flow.into(toNew);
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> New {
-    ride(fun (X) { X }, upgrade, old)
+    Flow.ride(fun (X) { X }, upgrade, old)
   }
   /// A list of records ridden along the flow in the family of lists.
   @[ checks ]
   def everyone(olds : List(Old)) -> List(New) {
-    ride(fun (X) { List(X) }, upgrade, olds)
+    Flow.ride(fun (X) { List(X) }, upgrade, olds)
   }
   /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]

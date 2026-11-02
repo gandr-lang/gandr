@@ -60,7 +60,7 @@ def steady(signal : Signal) -> Signal {
 
 /// Two functions related at their function code by extensionality: they
 /// agree at both signals.
-def toggledTwice : Bridge(Signal => Signal, toggleTwice, steady) = funext(
+def toggledTwice : Bridge(Signal => Signal, toggleTwice, steady) = Path.funext(
   toggleTwice,
   steady
 );
@@ -69,4 +69,4 @@ def toggledTwice : Bridge(Signal => Signal, toggleTwice, steady) = funext(
 def originOtherBridge : Bridge(Point.T, Point.origin, Point.other) = unit;
 
 /// A sealed point related to itself by the reflexivity its atom states.
-def originHere : Bridge(Point.T, Point.origin, Point.origin) = here(Point.origin);
+def originHere : Bridge(Point.T, Point.origin, Point.origin) = Path.here(Point.origin);

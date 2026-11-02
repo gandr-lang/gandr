@@ -3,7 +3,7 @@
 // of the identity record is not reflexivity: two paths between types that
 // transport alike are not one path. `idtoequiv` after `ua` is the record once
 // its inverses are determined by its map, which needs function extensionality
-// from a homotopy at any two functions; `funext` decides closed first-order
+// from a homotopy at any two functions; `Path.funext` decides closed first-order
 // functions only, and `ua` gives the rest
 // (`../../model/identity/funext-from-ua.gandr`).
 
@@ -15,8 +15,8 @@ import "../../model/higher-cells/ua-type.gandr";
 /// `ua` of the identity record at reflexivity, read as reflexivity: the case
 /// `J` leaves of `uaEta`, refused (#520).
 @[ refuses("EndpointMismatch") ]
-def uaEtaRefl(a : Type) -> Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a)) {
-  here(here(a))
+def uaEtaRefl(a : Type) -> Path(Path(Type, a, a), ua(idtoequiv(a, a, Path.here(a))), Path.here(a)) {
+  Path.here(Path.here(a))
 }
 
 /// `ua` of the packaged stratum path, read as the path itself: refused at the
@@ -27,11 +27,11 @@ def uaEtaStratum() -> Path(
   ua(idtoequiv(AtStratum.Tel, AtStratum.Tel, AtStratum.opposite)),
   AtStratum.opposite
 ) {
-  here(AtStratum.opposite)
+  Path.here(AtStratum.opposite)
 }
 
 /// Two functions that agree at every point are one function, from the
-/// homotopy: past the functions `funext` decides, refused (#520).
+/// homotopy: past the functions `Path.funext` decides, refused (#520).
 @[ refuses("FunextUnsupported") ]
 def funextFromHomotopy(
   a : Type,
@@ -40,5 +40,5 @@ def funextFromHomotopy(
   g : a => b,
   h : (x : a) => Path(b, f(x), g(x))
 ) -> Path(a => b, f, g) {
-  funext(f, g)
+  Path.funext(f, g)
 }

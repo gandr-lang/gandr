@@ -35,16 +35,16 @@ def encode(a : Answer) -> Bit {
 /// Encoding a decoded bit gives the bit back.
 def encoded(b : Bit) -> Path(Bit, encode(decode(b)), b) {
   match b {
-    Zero => here(Zero),
-    One => here(One),
+    Zero => Path.here(Zero),
+    One => Path.here(One),
   }
 }
 
 /// Decoding an encoded answer gives the answer back.
 def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
   match a {
-    No => here(No),
-    Yes => here(Yes),
+    No => Path.here(No),
+    Yes => Path.here(Yes),
   }
 }
 
@@ -63,21 +63,21 @@ def heard : Run(Ask.Coded) = recorded(received(One), closed);
 /// Carried along the path, the run heard the one decoded: a yes.
 def heardDecoded : Path(
   Run(Ask.Decoded),
-  transport(fun (X) { Run(type(?X. end)) }, codes, heard),
+  Path.walk(fun (X) { Run(type(?X. end)) }, codes, heard),
   recorded(received(Yes), closed)
-) = here(recorded(received(Yes), closed));
+) = Path.here(recorded(received(Yes), closed));
 
 /// The payload moves: the carried run is no run that heard a no.
 @[ refuses("EndpointMismatch") ]
 def heardKept : Path(
   Run(Ask.Decoded),
-  transport(fun (X) { Run(type(?X. end)) }, codes, heard),
+  Path.walk(fun (X) { Run(type(?X. end)) }, codes, heard),
   recorded(received(No), closed)
-) = here(recorded(received(No), closed));
+) = Path.here(recorded(received(No), closed));
 
 /// The carried run, computed.
 def heardRun() -> Run(Ask.Decoded) {
-  transport(fun (X) { Run(type(?X. end)) }, codes, heard)
+  Path.walk(fun (X) { Run(type(?X. end)) }, codes, heard)
 }
 
 /// On the machine the carried run hears the yes, as it does by conversion.

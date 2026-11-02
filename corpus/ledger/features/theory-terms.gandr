@@ -28,7 +28,7 @@ def cancelled : Path(
   Terms(Mag),
   Mag.mul(Mag.one, Mag.mul(Mag.one, Mag.one)),
   Mag.one
-) = here(Mag.one);
+) = Path.here(Mag.one);
 
 /// The terms' fold into themselves: each rule's two sides convert under it.
 @[ checks ]

@@ -15,15 +15,15 @@ import "../../model/identity/circle-base.gandr" ;
 @[ checks ]
 def reduced : Path(
   Nat,
-  transport(
+  Path.walk(
     (y : Nat, Path(Nat, Zero, y)) => Nat,
-    here(Zero),
-    here(Zero),
-    here(here(Zero)),
+    Path.here(Zero),
+    Path.here(Zero),
+    Path.here(Path.here(Zero)),
     Succ(Zero)
   ),
   Succ(Zero)
-) = here(Succ(Zero));
+) = Path.here(Succ(Zero));
 
 /// The unit type's evidence between its point and itself, a closed path
 /// that is no reflexivity.
@@ -35,40 +35,40 @@ def unitPath : Path(Unit, unit, unit) = unit;
 @[ checks ]
 def carriedUnit : Path(
   Nat,
-  transport(
+  Path.walk(
     (y : Unit, Path(Unit, unit, y)) => Nat,
     unitPath,
-    here(unit),
-    here(unitPath),
+    Path.here(unit),
+    Path.here(unitPath),
     Succ(Zero)
   ),
   Succ(Zero)
-) = here(Succ(Zero));
+) = Path.here(Succ(Zero));
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre (#1886).
 @[ checks ]
 def backUnit : Path(
   Path(Unit, unit, unit),
-  transport(
+  Path.walk(
     (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit),
     unitPath,
-    here(unit),
-    here(unitPath),
-    here(unit)
+    Path.here(unit),
+    Path.here(unitPath),
+    Path.here(unit)
   ),
   unit
-) = here(unit);
+) = Path.here(unit);
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
 @[ checks ]
 def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
-  transport(
+  Path.walk(
     (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a),
     q,
-    here(a),
-    here(q),
-    here(a)
+    Path.here(a),
+    Path.here(q),
+    Path.here(a)
   )
 }

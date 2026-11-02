@@ -1,8 +1,8 @@
 error[ShapeMismatch]: expected an element path type `Path(A, a, b)`
    ╭▸ corpus/pathological/identity/bridge.gandr:16:40
    │
-16 │ def fourHere : Bridge(Integer, 4, 4) = here(4);
-   │                ┬────────────────────   ━━━━━━━ its type is not of the required shape: found `Bridge(Integer, 4, 4)`
+16 │ def fourHere : Bridge(Integer, 4, 4) = Path.here(4);
+   │                ┬────────────────────   ━━━━━━━━━━━━ its type is not of the required shape: found `Bridge(Integer, 4, 4)`
    │                │
    │                the type met, where an element path type `Path(A, a, b)` is required
    │

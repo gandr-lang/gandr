@@ -64,7 +64,7 @@ module Reassociating(S : Model(Semi)) where {
     S.mul(x, S.mul(y, z)),
     S.mul(S.mul(x, y), z)
   ) {
-    back(S.assoc(x, y, z))
+    Path.back(S.assoc(x, y, z))
   }
 }
 
@@ -80,7 +80,7 @@ module OnePoint : Model(Semi) where {
     mul(mul(x, y), z),
     mul(x, mul(y, z))
   ) {
-    here(unit)
+    Path.here(unit)
   }
 }
 

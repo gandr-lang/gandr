@@ -5,17 +5,17 @@
 
 /// Reflexivity at a variable of a type parameter.
 def path_var(a : Type, x : a) -> Path(a, x, x) {
-  here(x)
+  Path.here(x)
 }
 
 /// Reflexivity at a function.
 def path_fun(f : Integer => Integer) -> Path(Integer => Integer, f, f) {
-  here(f)
+  Path.here(f)
 }
 
 /// Reflexivity at an application.
 def path_app(n : Integer) -> Path(Integer, n + 1, n + 1) {
-  here(n + 1)
+  Path.here(n + 1)
 }
 
 /// A family indexed by an integer, one element at each index.

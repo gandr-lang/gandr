@@ -1,5 +1,5 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:47:25
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:47:28
    │
 25 │ ┌  def popShared(
 26 │ │    blocks : Vals,
@@ -24,8 +24,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ┆ ┆
 45 │ │┌   (
 46 │ ││     SomeV(IntV(b)),
-47 │ ││     (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
-   │ ││                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
+47 │ ││     (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+   │ ││                            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
 48 │ ││   )
    │ │└───┘ checked; while judging the value this returns
 49 │ │  }
@@ -35,7 +35,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:75:25
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:75:28
    │
 53 │ ┌  def popListedAsEmpty(
 54 │ │    blocks : Vals,
@@ -60,8 +60,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ┆ ┆
 73 │ │┌   (
 74 │ ││     SomeV(IntV(b)),
-75 │ ││     (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
-   │ ││                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
+75 │ ││     (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+   │ ││                            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
 76 │ ││   )
    │ │└───┘ checked; while judging the value this returns
 77 │ │  }

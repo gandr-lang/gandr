@@ -7,7 +7,7 @@ module Evolution where {
   type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
   @[ checks ]
   def keep : Flow(Type, SeatEnd, Kept) ;
-  def keep = sim(SeatEnd, Kept) ;
+  def keep = Flow.sim(SeatEnd, Kept) ;
 }
 
 @[ checks ]
@@ -24,4 +24,4 @@ def served = recorded(
 @[ refuses("RunNotAdmitted") ]
 def retired : () => Run(Evolution.Kept) ;
 
-def retired = thunk { ride(fun (X) { Run(X) }, Evolution.keep, served) } ;
+def retired = thunk { Flow.ride(fun (X) { Run(X) }, Evolution.keep, served) } ;

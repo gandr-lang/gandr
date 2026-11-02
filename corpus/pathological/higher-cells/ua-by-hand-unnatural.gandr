@@ -23,7 +23,7 @@ module Unnatural where {
   }
 
   @[ checks ]
-  def crossed_by_hand : Path(Type, Tel, Tel) = pathProduct(here(Unit), equiv(cross, cross));
+  def crossed_by_hand : Path(Type, Tel, Tel) = Path.product(Path.here(Unit), equiv(cross, cross));
 
   @[ refuses("NotNatural") ]
   def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross});

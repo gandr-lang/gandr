@@ -64,8 +64,8 @@
 //! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
 //! type and a constant by name, and a decode as the code it reads; values are
 //! `unit`, literals with their canonical digits and escapes, `#{a, b, …}`,
-//! `#{.l = v, …}`, a record update `#{b | l = v, …}`, `+{.i = v}`, `here(a)`,
-//! `funext(f, g)`, `equiv(f, g)`, univalence at a stratum
+//! `#{.l = v, …}`, a record update `#{b | l = v, …}`, `+{.i = v}`,
+//! `Path.here(a)`, `Path.funext(f, g)`, `equiv(f, g)`, univalence at a stratum
 //! `ua[n, k](a, b, f, g)` with its two descriptions by name, the static
 //! abstraction `fun (a) { v }`, and a static application as its spine, `f(a,
 //! b)` for `f` applied to `a` and then to `b` (the type operators of
@@ -79,11 +79,11 @@
 //! the tuple `(a, b)` of two components or more; the value-function alias
 //! `A => C`, `() => C` and `(A, B) => C` for a thunk over a chain of
 //! non-dependent arrows ending in a pure returner; and the path composite
-//! `p then q` for the returned transport `transport(fun (y) { Path(A, a, y) },
-//! q, p)` it derives, the carrier and the fixed endpoint naming no `y` (#754).
-//! A dependent arrow, an effectful returner, a record, a sum or product of one
-//! component and the empty ones keep their explicit spelling. Sugared is what
-//! every reader-facing
+//! `Path.step(p, q)` for the returned transport `Path.walk(fun (y) { Path(A, a,
+//! y) }, q, p)` it derives, the carrier and the fixed endpoint naming no `y`
+//! (#754). A dependent arrow, an effectful returner, a record, a sum or product
+//! of one component and the empty ones keep their explicit spelling. Sugared is
+//! what every reader-facing
 //! face shows — a hover, a diagnostic, the REPL, the terminal face and a
 //! run's value; explicit is what an editor's `gandr.presentation.form` asks
 //! for, and what the golden fixtures of the core's own spellings pin.
@@ -443,7 +443,7 @@ pub enum Form
     /// Every sugar the grammar parses where the core's shape is exactly the
     /// sugar's: the value-function alias `(A, B) => C` for `+U (A -> B -> -F
     /// C)`, the infix `A * B`, `A + B` and `C & D`, the tuple `(a, b)`, and
-    /// the path composite `p then q` for the transport it derives.
+    /// the path composite `Path.step(p, q)` for the transport it derives.
     /// The form every face a person reads takes by default.
     Sugared,
     /// What the core holds, former by former: `+U (A -> B -> -F C)`,
@@ -831,8 +831,8 @@ where
 /// - ensures: the root written as [`present_type`] writes a type, a value's
 ///   formers spelled `unit`, as their literal, `#{a, b}`, `#{.l = v}` in label
 ///   order, `#{b | l = v}` in label order, `+{.i = v}` at any summand,
-///   `here(a)`, `funext(f, g)`, `equiv(f, g)`, `ua[n, k](a, b, f, g)`, a
-///   constant by its name and the code of a type as the type; a thunk is
+///   `Path.here(a)`, `Path.funext(f, g)`, `equiv(f, g)`, `ua[n, k](a, b, f,
+///   g)`, a constant by its name and the code of a type as the type; a thunk is
 ///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
 ///   written `<deep>` inside the formers around it, each making the
 ///   presentation approximate. Output has the same line-ending and width

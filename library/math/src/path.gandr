@@ -2,14 +2,14 @@
 //
 // The composites of naturality and coherence state their types in a
 // path's endpoints and its action under a function. The native forms
-// `then` and `cong` synthesise their types from their operands, so a
+// `Path.step` and `Path.ap` synthesise their types from their operands, so a
 // statement over a variable function needs the endpoints written. A
 // reflexivity reads its type off its point (#3834). These definitions write
 // the endpoints, and prove the groupoid laws of composition beside them.
 //
 // Each law is a definition at its path type. The associator and the left
 // unitor go by based path induction on their last path, the telescope
-// form of `transport`. The right unitor holds by conversion, because a
+// form of `Path.walk`. The right unitor holds by conversion, because a
 // composite with a reflexivity on the right reduces to its left operand.
 // The whiskers are the level-two composites over the 2-chain, one column
 // holding the 2-cell, which `fill` lifts a side of its square by.
@@ -26,12 +26,12 @@
 
 /// The composite of two paths, whose type states its endpoints.
 pub def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
-  p then q
+  Path.step(p, q)
 }
 
 /// A function's action on a path, whose type states its endpoints.
 pub def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
-  cong(F, p)
+  Path.ap(F, p)
 }
 
 /// The left whisker: a path composed before a path of paths, the level-two composite whose second column holds the 2-cell.
@@ -44,7 +44,7 @@ pub def whiskerLeft(
   g1 : Path(A, y, z),
   g2 : Path(A, y, z),
   b : Path(Path(A, y, z), g1, g2)
-) -> Path(Path(A, x, z), f then g1, f then g2) {
+) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g2)) {
   compose[4, 9](chain(2, (0, 1)), (f, b))
 }
 
@@ -58,7 +58,7 @@ pub def whiskerRight(
   f2 : Path(A, x, y),
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
-) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
   compose[4, 9](chain(2, (1, 0)), (a, g))
 }
 
@@ -70,13 +70,13 @@ pub def apd(
   x : A,
   y : A,
   p : Path(A, x, y)
-) -> Path(P(y), transport(fun (a) { P(a) }, p, F(x)), F(y)) {
-  transport(
-    (v : A, k : Path(A, x, v)) => Path(P(v), transport(fun (a) { P(a) }, k, F(x)), F(v)),
+) -> Path(P(y), Path.walk(fun (a) { P(a) }, p, F(x)), F(y)) {
+  Path.walk(
+    (v : A, k : Path(A, x, v)) => Path(P(v), Path.walk(fun (a) { P(a) }, k, F(x)), F(v)),
     p,
-    here(x),
-    here(p),
-    here(F(x))
+    Path.here(x),
+    Path.here(p),
+    Path.here(F(x))
   )
 }
 
@@ -95,16 +95,16 @@ pub def apComp(
   ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, y, p),
   ap(B, C, G, F(x), F(y), ap(A, B, F, x, y, p))
 ) {
-  transport(
+  Path.walk(
     (v : A, k : Path(A, x, v)) => Path(
       Path(C, G(F(x)), G(F(v))),
       ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, v, k),
       ap(B, C, G, F(x), F(v), ap(A, B, F, x, v, k))
     ),
     p,
-    here(x),
-    here(p),
-    here(here(G(F(x))))
+    Path.here(x),
+    Path.here(p),
+    Path.here(Path.here(G(F(x))))
   )
 }
 
@@ -118,32 +118,32 @@ pub def assoc(
   f : Path(A, x, y),
   g : Path(A, y, z),
   h : Path(A, z, w)
-) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
-  here((f then g) then h)
+) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+  Path.here(Path.step(Path.step(f, g), h))
 }
 
 /// The left unitor: a reflexivity composed on the left leaves a path, by based path induction on it.
 pub def leftUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
   Path(A, x, y),
-  join(A, x, x, y, here(x), p),
+  join(A, x, x, y, Path.here(x), p),
   p
 ) {
-  transport(
-    (v : A, k : Path(A, x, v)) => Path(Path(A, x, v), join(A, x, x, v, here(x), k), k),
+  Path.walk(
+    (v : A, k : Path(A, x, v)) => Path(Path(A, x, v), join(A, x, x, v, Path.here(x), k), k),
     p,
-    here(x),
-    here(p),
-    here(here(x))
+    Path.here(x),
+    Path.here(p),
+    Path.here(Path.here(x))
   )
 }
 
 /// The right unitor: a reflexivity composed on the right leaves a path, by conversion.
 pub def rightUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
   Path(A, x, y),
-  join(A, x, y, y, p, here(y)),
+  join(A, x, y, y, p, Path.here(y)),
   p
 ) {
-  here(p)
+  Path.here(p)
 }
 
 /// A homotopy's naturality along a path: the homotopy at the start then `G`'s action meets `F`'s action then the homotopy at the end, by based path induction on the path.
@@ -161,15 +161,15 @@ pub def natural(
   join(B, F(a), G(a), G(b), H(a), ap(A, B, G, a, b, p)),
   join(B, F(a), F(b), G(b), ap(A, B, F, a, b, p), H(b))
 ) {
-  transport(
+  Path.walk(
     (v : A, k : Path(A, a, v)) => Path(
       Path(B, F(a), G(v)),
       join(B, F(a), G(a), G(v), H(a), ap(A, B, G, a, v, k)),
       join(B, F(a), F(v), G(v), ap(A, B, F, a, v, k), H(v))
     ),
     p,
-    here(a),
-    here(p),
-    here(H(a))
+    Path.here(a),
+    Path.here(p),
+    Path.here(H(a))
   )
 }

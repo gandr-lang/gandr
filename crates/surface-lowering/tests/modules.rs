@@ -4056,7 +4056,7 @@ fn a_forward_member_reference_is_refused_by_position()
     );
     forward(
         "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\nmodule M where { def w : \
-             Path(Circle, Base, Base) ; def w = loop ∷ here(Base) ; def loop = 1 ; }",
+             Path(Circle, Base, Base) ; def w = loop ∷ Path.here(Base) ; def loop = 1 ; }",
         "M.w",
         "loop",
         1_usize,
@@ -4137,7 +4137,7 @@ fn a_type_member_reads_types_and_never_values()
     );
     let static_only = "data Bit : Type where { | Low : Bit | High : Bit }\nmodule M where {\n  type Three = \
                        Path(Integer, 3, 3);\n  type Lowered = Path(Bit, Low, Low);\n  def three \
-                       : Three ;\n  def three = here(3);\n}\n";
+                       : Three ;\n  def three = Path.here(3);\n}\n";
     let mut lowered = lower(static_only);
     let found = rows(&lowered);
     assert!(

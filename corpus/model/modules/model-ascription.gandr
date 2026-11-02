@@ -71,8 +71,8 @@ module Bits : Model(Toggle) where {
   @[ checks ]
   def twice(b : Bit) -> Path(Bit, flip(flip(b)), b) {
     match b {
-      Low => here(Low),
-      High => here(High)
+      Low => Path.here(Low),
+      High => Path.here(High)
     }
   }
 }

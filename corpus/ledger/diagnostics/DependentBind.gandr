@@ -8,7 +8,7 @@ def one() -> -F Integer {
 def bound() -> -F Integer {
   let p = {
     let n = one();
-    pure here(n)
+    pure Path.here(n)
   };
   pure 1
 }

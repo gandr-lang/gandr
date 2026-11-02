@@ -1808,7 +1808,7 @@ fn a_model_type_spells_as_written_2246()
     }
     for (root, spelling) in [
         (quoted, "type(Model(Counter))"),
-        (argument, "stay(type(Model(Counter)))"),
+        (argument, "Flow.stay(type(Model(Counter)))"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented =
@@ -3252,7 +3252,11 @@ fn a_type_no_expression_reads_is_quoted_839()
         (boolean, "Bool", "Bool"),
         (integer, "Integer", "Integer"),
         (lazy_one, "type(&{-F Integer})", "type(&{-F Integer})"),
-        (argument, "stay(type(+{Integer}))", "stay(type(+{Integer}))"),
+        (
+            argument,
+            "Flow.stay(type(+{Integer}))",
+            "Flow.stay(type(+{Integer}))",
+        ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -3283,7 +3287,7 @@ fn a_quoted_record_type_is_quoted_1459()
     let source = CoreSource::new(&core, &[]);
     for (root, spelling) in [
         (record, "type(#{start : Unit, step : Integer})"),
-        (argument, "stay(type(#{start : Unit, step : Integer}))"),
+        (argument, "Flow.stay(type(#{start : Unit, step : Integer}))"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -3314,7 +3318,7 @@ fn a_quoted_telescope_type_is_quoted_1514()
         (telescope, "type(#{a : Integer, b : Path(Integer, a, a)})"),
         (
             argument,
-            "stay(type(#{a : Integer, b : Path(Integer, a, a)}))",
+            "Flow.stay(type(#{a : Integer, b : Path(Integer, a, a)}))",
         ),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
@@ -3359,7 +3363,7 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
         (over_application, "type(Path(Maybe(Nat), a, c))"),
-        (argument, "stay(type(Path(Maybe(Nat), a, c)))"),
+        (argument, "Flow.stay(type(Path(Maybe(Nat), a, c)))"),
         (over_nullary, "Path(Nat, a, c)"),
         (over_base, "Path(Integer, a, c)"),
     ] {
@@ -3419,8 +3423,8 @@ fn a_quoted_chain_is_quoted_1127()
         ),
         (
             argument,
-            "stay(type(Unit * Integer))",
-            "stay(#{Unit, Integer})",
+            "Flow.stay(type(Unit * Integer))",
+            "Flow.stay(#{Unit, Integer})",
         ),
         (
             operator,
@@ -3634,7 +3638,7 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
             (Name::from("loop"), Arity::from(1_usize)),
             (Name::from("back(loop)"), Arity::from(1_usize)),
         ],
-        Name::from("here(Base)"),
+        Name::from("Path.here(Base)"),
     );
     let unnamed = CoreSource::new(&core, &names);
     let named = CoreSource::new(&core, &names).naming(&constructors);
@@ -3642,16 +3646,16 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
         (&named, zero, faithful(Written("Zero"))),
         (&named, one, faithful(Written("Succ(Zero)"))),
         (&unnamed, one, approximate(Written("?(?)"))),
-        (&named, nil, faithful(Written("here(Base)"))),
+        (&named, nil, faithful(Written("Path.here(Base)"))),
         (
             &named,
             word,
-            faithful(Written("back(loop) ∷ loop ∷ here(Base)")),
+            faithful(Written("back(loop) ∷ loop ∷ Path.here(Base)")),
         ),
         (
             &named,
             counted,
-            faithful(Written("Succ(back(loop) ∷ loop ∷ here(Base))")),
+            faithful(Written("Succ(back(loop) ∷ loop ∷ Path.here(Base))")),
         ),
         (&unnamed, word, approximate(Written("?(?(?))"))),
     ] {
@@ -3851,7 +3855,7 @@ fn fidelity_follows_nodes_not_the_characters_of_a_name()
     );
 }
 
-/// Element identity spells `here(a)`, and a pair inside it uses the
+/// Element identity spells `Path.here(a)`, and a pair inside it uses the
 /// grammar's tuple spelling, not the binary sugar.
 #[test]
 fn here_witness_pins_identity_notation()
@@ -3866,7 +3870,7 @@ fn here_witness_pins_identity_notation()
         let rendered = presented(&source, root, page);
         assert_eq!(
             rendered.as_ref(),
-            "here(#{2, 2})",
+            "Path.here(#{2, 2})",
             "identity notation is `here` around the point, at {page:?}"
         );
         assert_eq!(
@@ -3877,7 +3881,7 @@ fn here_witness_pins_identity_notation()
     }
 }
 
-/// Function extensionality spells `funext(f, g)`, its functions in the
+/// Function extensionality spells `Path.funext(f, g)`, its functions in the
 /// order the core holds them, and is faithful: the grammar parses it.
 #[test]
 fn funext_spells_its_functions_in_order()
@@ -3891,7 +3895,7 @@ fn funext_spells_its_functions_in_order()
     agrees(&core, &names, CoreNode::Value(witness));
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(witness))),
-        faithful(Written("funext(twice, same)")),
+        faithful(Written("Path.funext(twice, same)")),
         "the first function is the path's source"
     );
 }
@@ -4237,7 +4241,7 @@ fn native_paths_preserve_ordered_endpoints_and_maps()
         (Root::Value(CoreNode::Value(first)), "refl(Unit)"),
         (
             Root::Value(CoreNode::Value(product)),
-            "pathProduct(refl(Unit), refl(Integer))",
+            "Path.product(refl(Unit), refl(Integer))",
         ),
         (
             Root::Value(CoreNode::Value(equiv)),
@@ -4250,7 +4254,7 @@ fn native_paths_preserve_ordered_endpoints_and_maps()
     }
 }
 
-/// The product of written universe paths spells `pathProduct(p, q)`,
+/// The product of written universe paths spells `Path.product(p, q)`,
 /// nested to the right as written, faithful: the lowering reads the call
 /// back to the same node.
 #[test]
@@ -4272,12 +4276,12 @@ fn a_product_of_written_paths_spells_as_written()
     let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
     assert_eq!(
         rendered.as_ref(),
-        "pathProduct(here(Unit), pathProduct(equiv(keep, keep), equiv(exchange, exchange)))"
+        "Path.product(Path.here(Unit), Path.product(equiv(keep, keep), equiv(exchange, exchange)))"
     );
     assert_eq!(rendered.fidelity(), Fidelity::Faithful);
 }
 
-/// The product of two universe flows spells `flowProduct(p, q)`, nested
+/// The product of two universe flows spells `Flow.product(p, q)`, nested
 /// to the right as written, faithful as the path product is.
 #[test]
 fn a_product_of_flows_spells_as_written()
@@ -4298,17 +4302,17 @@ fn a_product_of_flows_spells_as_written()
     let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
     assert_eq!(
         rendered.as_ref(),
-        "flowProduct(stay(Unit), flowProduct(forward(keep), forward(exchange)))"
+        "Flow.product(Flow.stay(Unit), Flow.product(Flow.into(keep), Flow.into(exchange)))"
     );
     assert_eq!(rendered.fidelity(), Fidelity::Faithful);
 }
 
-/// A flow composite spells infix, `f then g`, as the surface writes it and
-/// the lowering reads it back (#631); a composite operand stands in
-/// parentheses, and a word's cons, which binds tighter than `then`, stands
-/// bare on either side, as the formatter writes it (#1255).
+/// A flow composite spells as a call under its former, `Flow.then(f, g)`, as
+/// the surface writes it and the lowering reads it back (#631); a composite
+/// operand and a word's cons each stand bare as an argument, as the
+/// formatter writes them (#1255).
 #[test]
-fn a_composite_of_flows_spells_infix()
+fn a_composite_of_flows_spells_as_a_call()
 {
     let mut core = CoreArena::new();
     let keep = core.value_constant(ConstantIndex::from(0_usize));
@@ -4341,13 +4345,13 @@ fn a_composite_of_flows_spells_infix()
         agrees_naming(&core, &names, &constructors, CoreNode::Value(root));
     }
     for (root, expected) in [
-        (composite, "forward(keep) then forward(exchange)"),
+        (composite, "Flow.then(Flow.into(keep), Flow.into(exchange))"),
         (
             nested,
-            "(forward(keep) then forward(exchange)) then forward(keep)",
+            "Flow.then(Flow.then(Flow.into(keep), Flow.into(exchange)), Flow.into(keep))",
         ),
-        (consed_first, "loop ∷ base then forward(keep)"),
-        (consed_second, "forward(keep) then loop ∷ base"),
+        (consed_first, "Flow.then(loop ∷ base, Flow.into(keep))"),
+        (consed_second, "Flow.then(Flow.into(keep), loop ∷ base)"),
     ] {
         let rendered = presented(&source, Root::Value(CoreNode::Value(root)), wide());
         assert_eq!(
@@ -4357,12 +4361,13 @@ fn a_composite_of_flows_spells_infix()
     }
 }
 
-/// A returned composite of paths spells infix in the sugared form, `p then
-/// q`, as the surface writes it and the lowering derives its transport;
-/// the explicit form writes the transport. A transport whose fixed endpoint
-/// names the motive's binder is no composite and keeps its spelling (#754).
+/// A returned composite of paths spells as a step in the sugared form,
+/// `Path.step(p, q)`, as the surface writes it and the lowering derives its
+/// transport; the explicit form writes the transport. A transport whose fixed
+/// endpoint names the motive's binder is no composite and keeps its spelling
+/// (#754).
 #[test]
-fn a_returned_composite_of_paths_is_written_infix_754()
+fn a_returned_composite_of_paths_is_written_as_a_step_754()
 {
     let mut core = CoreArena::new();
     let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
@@ -4383,16 +4388,16 @@ fn a_returned_composite_of_paths_is_written_infix_754()
         agrees(&core, &names, CoreNode::Value(root));
     }
     for (root, form, expected) in [
-        (composite, Form::Sugared, "loop then loop"),
+        (composite, Form::Sugared, "Path.step(loop, loop)"),
         (
             composite,
             Form::Explicit,
-            "transport(fun (a) { Path(Circle, base, a) }, loop, loop)",
+            "Path.walk(fun (a) { Path(Circle, base, a) }, loop, loop)",
         ),
         (
             transported,
             Form::Sugared,
-            "transport(fun (a) { Path(Circle, a, a) }, loop, loop)",
+            "Path.walk(fun (a) { Path(Circle, a, a) }, loop, loop)",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4400,8 +4405,9 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     }
 }
 
-/// A transport of `here(a)` is the composite `here(a) then q` only where its
-/// motive starts at `a`: the composite reads back taking `a` for that start.
+/// A transport of `Path.here(a)` is the composite `Path.step(Path.here(a), q)`
+/// only where its motive starts at `a`: the composite reads back taking `a`
+/// for that start.
 /// A motive starting elsewhere keeps the transport, and one starting at a
 /// reflexivity matches a moved reflexivity of it (#4218).
 #[test]
@@ -4435,12 +4441,12 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
     ];
     let source = CoreSource::new(&core, &names);
     for (root, expected) in [
-        (agreeing, "here(base) then loop"),
+        (agreeing, "Path.step(Path.here(base), loop)"),
         (
             apart,
-            "transport(fun (a) { Path(Circle, other, a) }, loop, here(base))",
+            "Path.walk(fun (a) { Path(Circle, other, a) }, loop, Path.here(base))",
         ),
-        (squared, "here(here(base)) then loop"),
+        (squared, "Path.step(Path.here(Path.here(base)), loop)"),
     ] {
         let rendered = presented_in(
             &source,
@@ -4454,8 +4460,8 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
 
 /// A composite a transport reads as its path or as the value it moves stays
 /// the transport it derives: nothing there states the composite's type, and
-/// the lowering reads `p then q` only where something does, as a call's
-/// argument (#815).
+/// the lowering reads `Path.step(p, q)` only where something does, as a
+/// call's argument (#815).
 #[test]
 fn a_composite_a_transport_moves_stays_explicit_815()
 {
@@ -4492,8 +4498,8 @@ fn a_composite_a_transport_moves_stays_explicit_815()
     );
     assert_eq!(
         rendered.as_ref(),
-        "transport(fun (a) { Path(Circle, a, a) }, transport(fun (a) { Path(Circle, base, a) }, loop, loop), \
-         transport(fun (a) { Path(Circle, base, a) }, loop, loop))"
+        "Path.walk(fun (a) { Path(Circle, a, a) }, Path.walk(fun (a) { Path(Circle, base, a) }, loop, loop), \
+         Path.walk(fun (a) { Path(Circle, base, a) }, loop, loop))"
     );
     let rendered = presented_in(
         &source,
@@ -4501,12 +4507,12 @@ fn a_composite_a_transport_moves_stays_explicit_815()
         wide(),
         Form::Sugared,
     );
-    assert_eq!(rendered.as_ref(), "sect(loop then loop)");
+    assert_eq!(rendered.as_ref(), "sect(Path.step(loop, loop))");
 }
 
 /// A returned inverse and a returned action on a path spell as written in
-/// the sugared form, `back(p)` and `cong(f, p)`, as the lowering derives
-/// their transports; the explicit form writes the transports. A map the
+/// the sugared form, `Path.back(p)` and `Path.ap(f, p)`, as the lowering
+/// derives their transports; the explicit form writes the transports. A map the
 /// action reads off its motive one binder deeper is spelled as the source
 /// names it, a parameter among them; a transport whose fixed endpoint is no
 /// image of the map keeps its spelling (#778).
@@ -4532,7 +4538,7 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
     let mapped = gandr_core_term::identity::cong(&mut core, circle, parameter, start, around);
     let mapped = core.value_returned(mapped);
     // A transport whose fixed endpoint is no image of the map is no action:
-    // `cong(spin, loop)` would derive `Path(Circle, spin(base), spin(a))`.
+    // `Path.ap(spin, loop)` would derive `Path(Circle, spin(base), spin(a))`.
     let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = core.computation_force(spin);
     let applied = core.computation_application(forced, bound);
@@ -4553,23 +4559,23 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
         agrees(&core, &names, CoreNode::Value(root));
     }
     for (root, form, expected) in [
-        (inverse, Form::Sugared, "back(loop)"),
+        (inverse, Form::Sugared, "Path.back(loop)"),
         (
             inverse,
             Form::Explicit,
-            "transport(fun (a) { Path(Circle, a, base) }, loop, here(base))",
+            "Path.walk(fun (a) { Path(Circle, a, base) }, loop, Path.here(base))",
         ),
-        (action, Form::Sugared, "cong(spin, loop)"),
+        (action, Form::Sugared, "Path.ap(spin, loop)"),
         (
             action,
             Form::Explicit,
-            "transport(fun (a) { Path(Circle, spin(base), spin(a)) }, loop, here(spin(base)))",
+            "Path.walk(fun (a) { Path(Circle, spin(base), spin(a)) }, loop, Path.here(spin(base)))",
         ),
-        (mapped, Form::Sugared, "cong(f, loop)"),
+        (mapped, Form::Sugared, "Path.ap(f, loop)"),
         (
             unmapped,
             Form::Sugared,
-            "transport(fun (a) { Path(Circle, base, spin(a)) }, loop, here(base))",
+            "Path.walk(fun (a) { Path(Circle, base, spin(a)) }, loop, Path.here(base))",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4712,7 +4718,7 @@ fn an_elaborated_body_prints_with_its_exits_elided()
         ),
         (
             body(riding),
-            "fun (a) { ride(fun (b) { Run(b) }, a, a) }",
+            "fun (a) { Flow.ride(fun (b) { Run(b) }, a, a) }",
             Fidelity::Faithful,
         ),
         (
@@ -6247,9 +6253,9 @@ fn arms_sharing_a_body_bind_distinct_fields_815()
 }
 
 /// A case over words writes each arm as the surface reads it back: the empty
-/// word bare, `here`, though a value writes it at its point, `here(Base)`, and
-/// each letter before the rest of the word, `back(loop) ∷ b`, never applied to
-/// it (`back(loop)(b)` does not parse, #815).
+/// word bare, `here`, though a value writes it at its point, `Path.here(Base)`,
+/// and each letter before the rest of the word, `back(loop) ∷ b`, never applied
+/// to it (`back(loop)(b)` does not parse, #815).
 #[test]
 fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
 {
@@ -6278,7 +6284,7 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
             (Name::from("loop"), Arity::from(1_usize)),
             (Name::from("back(loop)"), Arity::from(1_usize)),
         ],
-        Name::from("here(Base)"),
+        Name::from("Path.here(Base)"),
     );
     constructors.case(data_case, FamilyKey::Named(Name::from("Loops")));
     let source = CoreSource::new(&core, &names).naming(&constructors);

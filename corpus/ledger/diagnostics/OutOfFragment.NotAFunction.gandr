@@ -1,4 +1,4 @@
-/// `OutOfFragment.NotAFunction`: a form out of the fragment: the form is `cong` at a constructor, which is not a function.
+/// `OutOfFragment.NotAFunction`: a form out of the fragment: the form is `Path.ap` at a constructor, which is not a function.
 data Circle : Type where {
   | Base : Circle
   | loop : Base <-> Base
@@ -7,4 +7,4 @@ data Circle : Type where {
 @[ refuses("OutOfFragment.NotAFunction") ]
 def cong_at_point : Path(Circle, Base, Base) ;
 
-def cong_at_point = cong(Base, loop) ;
+def cong_at_point = Path.ap(Base, loop) ;

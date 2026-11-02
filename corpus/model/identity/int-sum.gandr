@@ -19,13 +19,13 @@ pub def rec plus(a : Int, b : Int) -> Int {
 
 /// A successor on the left of a sum comes out of it (cubical's `sucℤ+`), by
 /// induction on the right summand: the kernel reads the endpoint `S(plus(a,
-/// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `cong(up, …)` and
-/// `cong(down, …)` arms as transports along the recursive path.
+/// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `Path.ap(up, …)`
+/// and `Path.ap(down, …)` arms as transports along the recursive path.
 pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
   match b {
-    Z => here(S(a)),
-    S(x) => cong(up, plusS[<](a, x)),
-    P(x) => cong(down, plusS[<](a, x))
+    Z => Path.here(S(a)),
+    S(x) => Path.ap(up, plusS[<](a, x)),
+    P(x) => Path.ap(down, plusS[<](a, x))
   }
 }
 
@@ -33,18 +33,18 @@ pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
 /// as `plusS`.
 pub def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
   match b {
-    Z => here(P(a)),
-    S(x) => cong(up, plusP[<](a, x)),
-    P(x) => cong(down, plusP[<](a, x))
+    Z => Path.here(P(a)),
+    S(x) => Path.ap(up, plusP[<](a, x)),
+    P(x) => Path.ap(down, plusP[<](a, x))
   }
 }
 
 /// Zero is a left unit of the sum, by induction on the right summand.
 pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
   match b {
-    Z => here(Z),
-    S(x) => cong(up, plusZ[<](x)),
-    P(x) => cong(down, plusZ[<](x))
+    Z => Path.here(Z),
+    S(x) => Path.ap(up, plusZ[<](x)),
+    P(x) => Path.ap(down, plusZ[<](x))
   }
 }
 
@@ -55,8 +55,8 @@ pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
 /// endpoints alone (#427).
 pub def rec plusComm(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
   match b {
-    Z => back(plusZ(a)),
-    S(x) => cong(up, plusComm[<](a, x)) then back(plusS(x, a)),
-    P(x) => cong(down, plusComm[<](a, x)) then back(plusP(x, a))
+    Z => Path.back(plusZ(a)),
+    S(x) => Path.step(Path.ap(up, plusComm[<](a, x)), Path.back(plusS(x, a))),
+    P(x) => Path.step(Path.ap(down, plusComm[<](a, x)), Path.back(plusP(x, a)))
   }
 }

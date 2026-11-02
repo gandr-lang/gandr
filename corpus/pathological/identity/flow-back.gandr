@@ -8,9 +8,9 @@ module Schema where {
     }
   }
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) = forward(toNew);
+  def upgrade : Flow(Type, Old, New) = Flow.into(toNew);
   @[ refuses("NonCovariantMotive") ]
   def downgrade() -> Flow(Type, New, Old) {
-    back(upgrade)
+    Path.back(upgrade)
   }
 }

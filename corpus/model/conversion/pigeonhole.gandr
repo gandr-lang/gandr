@@ -100,5 +100,5 @@ def pigeons : Formula = Not(And(
 
 /// No assignment places every pigeon in a hole of its own.
 def pigeonsDoNotFit() -> Path(Bool, tautology(Succ(Succ(four)), pigeons, Unset), true) {
-  here(true)
+  Path.here(true)
 }

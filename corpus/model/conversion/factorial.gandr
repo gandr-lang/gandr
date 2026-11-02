@@ -46,10 +46,10 @@ def rec even(n : Nat) -> Bool {
 
 /// The two definitions agree at six.
 def factAgrees() -> Path(Nat, fact(Succ(Succ(four))), factFrom(Succ(Succ(four)), Succ(Zero))) {
-  here(fact(Succ(Succ(four))))
+  Path.here(fact(Succ(Succ(four))))
 }
 
 /// The factorial of five is even.
 def factEven() -> Path(Bool, even(fact(Succ(four))), true) {
-  here(true)
+  Path.here(true)
 }

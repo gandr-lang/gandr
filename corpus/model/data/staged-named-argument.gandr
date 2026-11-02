@@ -23,19 +23,19 @@ def rec le(a : Nat, b : Nat) -> Bool {
 }
 
 /// Zero is at most one, the second argument through the name.
-def zeroAtMostOne : Path(Bool, le(Zero, oneByName), true) = here(true);
+def zeroAtMostOne : Path(Bool, le(Zero, oneByName), true) = Path.here(true);
 
 /// One is at most one, both arguments through the name.
-def oneAtMostOne : Path(Bool, le(oneByName, oneByName), true) = here(true);
+def oneAtMostOne : Path(Bool, le(oneByName, oneByName), true) = Path.here(true);
 
 /// Zero is at most three, a name reached through the name `two`.
-def zeroAtMostThree : Path(Bool, le(Zero, three), true) = here(true);
+def zeroAtMostThree : Path(Bool, le(Zero, three), true) = Path.here(true);
 
 /// One is at most three, the gate opening on a name at each call.
-def oneAtMostThree : Path(Bool, le(oneByName, three), true) = here(true);
+def oneAtMostThree : Path(Bool, le(oneByName, three), true) = Path.here(true);
 
 /// Three is not at most one.
-def threeAboveOne : Path(Bool, le(three, oneByName), false) = here(false);
+def threeAboveOne : Path(Bool, le(three, oneByName), false) = Path.here(false);
 
 /// Whether the first natural is at most both the second and the third; it recurses on the third.
 def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
@@ -52,7 +52,7 @@ def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
 }
 
 /// Zero comes first, and the third reaches its gate through a name.
-def zeroFirst : Path(Bool, leBoth(Zero, oneByName, three), true) = here(true);
+def zeroFirst : Path(Bool, leBoth(Zero, oneByName, three), true) = Path.here(true);
 
 /// Positive binary numerals, the high bit outermost.
 data Pos : Type where {
@@ -99,4 +99,4 @@ def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp {
 }
 
 /// One is below two, the second positive through the name.
-def oneBelowTwo : Path(Cmp, cmpPos(H, twoPos, Eq), Lt) = here(Lt);
+def oneBelowTwo : Path(Cmp, cmpPos(H, twoPos, Eq), Lt) = Path.here(Lt);

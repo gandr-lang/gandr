@@ -21,9 +21,9 @@ def raised = ua[
 /// degree-two unit stage.
 def lifts : Path(
   Unit * (+{Unit} * (Bool * Unit)),
-  transport(fun (X) { X }, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
+  Path.walk(fun (X) { X }, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
   (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
-) = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));
+) = Path.here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));
 
 /// The magma to itself by the swap at bound six and degree six.
 def six = ua[

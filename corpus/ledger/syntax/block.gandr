@@ -11,7 +11,7 @@ def answer() -> -F Integer {
 @[ checks ]
 def three() -> -F Path(Integer, 3, 3) {
   let x = 3;
-  return here(x)
+  return Path.here(x)
 }
 
 /// The checker checks the value a `let` binds at the `let`, read or not.

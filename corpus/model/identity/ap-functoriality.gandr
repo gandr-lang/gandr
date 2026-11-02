@@ -10,12 +10,12 @@
 // square as composing with both.
 //
 // - see: #3969 — the kernel's reading of an endpoint through its bind
-// - see: `then-units-in-the-kernel.gandr` — reflexivity's units under `then`
+// - see: `then-units-in-the-kernel.gandr` — reflexivity's units under `Path.step`
 // - see: `transport-dependent.gandr` — based path induction
 
 /// A function's action on a path, whose type states its endpoints.
 def actOn(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
-  cong(F, p)
+  Path.ap(F, p)
 }
 
 /// `G` after `F` acts on a path as their composite does.
@@ -33,16 +33,16 @@ def apComp(
   actOn(B, C, G, F(x), F(y), actOn(A, B, F, x, y, p)),
   actOn(A, C, (fun (a : A) { G(F(a)) } : A => C), x, y, p)
 ) {
-  transport(
+  Path.walk(
     (v : A, k : Path(A, x, v)) => Path(
       Path(C, G(F(x)), G(F(v))),
       actOn(B, C, G, F(x), F(v), actOn(A, B, F, x, v, k)),
       actOn(A, C, (fun (a : A) { G(F(a)) } : A => C), x, v, k)
     ),
     p,
-    here(x),
-    here(p),
-    here(here(G(F(x))))
+    Path.here(x),
+    Path.here(p),
+    Path.here(Path.here(G(F(x))))
   )
 }
 
@@ -59,17 +59,17 @@ def apThenThen(
   fp : Path(A, x, y),
   fa : Path(Path(A, x, y), fm, fp)
 ) -> Path(
-  Path(Path(A, x, w), (fm then g) then h, (fp then g) then h),
+  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(Path.step(fp, g), h)),
   actOn(
     Path(A, x, z),
     Path(A, x, w),
-    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
-    fm then g,
-    fp then g,
+    (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w)),
+    Path.step(fm, g),
+    Path.step(fp, g),
     actOn(
       Path(A, x, y),
       Path(A, x, z),
-      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+      (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
       fm,
       fp,
       fa
@@ -78,25 +78,25 @@ def apThenThen(
   actOn(
     Path(A, x, y),
     Path(A, x, w),
-    (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { Path.step(Path.step(q, g), h) } : Path(A, x, y) => Path(A, x, w)),
     fm,
     fp,
     fa
   )
 ) {
-  transport(
+  Path.walk(
     (kp : Path(A, x, y), e : Path(Path(A, x, y), fm, kp)) => Path(
-      Path(Path(A, x, w), (fm then g) then h, (kp then g) then h),
+      Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(Path.step(kp, g), h)),
       actOn(
         Path(A, x, z),
         Path(A, x, w),
-        (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
-        fm then g,
-        kp then g,
+        (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w)),
+        Path.step(fm, g),
+        Path.step(kp, g),
         actOn(
           Path(A, x, y),
           Path(A, x, z),
-          (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+          (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
           fm,
           kp,
           e
@@ -105,15 +105,17 @@ def apThenThen(
       actOn(
         Path(A, x, y),
         Path(A, x, w),
-        (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+        (fun (q : Path(A, x, y)) {
+          Path.step(Path.step(q, g), h)
+        } : Path(A, x, y) => Path(A, x, w)),
         fm,
         kp,
         e
       )
     ),
     fa,
-    here(fm),
-    here(fa),
-    here(here((fm then g) then h))
+    Path.here(fm),
+    Path.here(fa),
+    Path.here(Path.here(Path.step(Path.step(fm, g), h)))
   )
 }

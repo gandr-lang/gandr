@@ -33,17 +33,17 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:38:3
    │
 33 │   def cancelled(e : Path(
-   │   │             ─ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ here(Base), here(Base)) -> -F Empty`; while checking the body of this function; binds e : Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ here(Base), here(Base))
+   │   │             ─ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base)) -> -F Empty`; while checking the body of this function; binds e : Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base))
    │ ┌─┘
    │ │
 34 │ │   Path(Circle, Base, Base),
-35 │ │   loop ∷ back(loop) ∷ here(Base),
-36 │ │   here(Base)
+35 │ │   loop ∷ back(loop) ∷ Path.here(Base),
+36 │ │   Path.here(Base)
 37 │ │ )) -> Empty {
 38 │ │   match e {}
    │ │   ━━━━━━━━━━ a path whose endpoints are not apart
 39 │ │ }
-   │ └─┘ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ here(Base), here(Base)) => Empty`; while checking the body of this thunk
+   │ └─┘ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base)) => Empty`; while checking the body of this thunk
    │
    ├ note: `cancelled` is refused with NotApart, as its expectation states
    ╰ help: write an arm for the path, because its endpoints can be equal

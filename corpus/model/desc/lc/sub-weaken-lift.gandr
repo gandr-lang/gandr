@@ -20,12 +20,12 @@ def lookShiftedOnce(
   s : Env,
   n : N
 ) -> Path(Term, look(n, s, S(Z)), subst(look(n, s, Z), Shift(S(Z)))) {
-  lookWeakens(n, s, Z) then back(substRenames(
+  Path.step(lookWeakens(n, s, Z), Path.back(substRenames(
     look(n, s, Z),
     Shift(S(Z)),
     RShift(S(Z)),
     fun (i) { shiftOneRenames(i) }
-  ))
+  )))
 }
 
 /// The two composites of law 3 agree at every index.

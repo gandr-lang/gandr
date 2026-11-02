@@ -15,13 +15,13 @@ def combine(x : Integer, y : Integer) -> Integer {
 /// Zero on the left, not by reflexivity.
 @[ refuses("EndpointMismatch") ]
 def unitL(x : Integer) -> Path(Integer, combine(neutral, x), x) {
-  here(x)
+  Path.here(x)
 }
 
 /// Zero on the right, not by reflexivity.
 @[ refuses("EndpointMismatch") ]
 def unitR(x : Integer) -> Path(Integer, combine(x, neutral), x) {
-  here(x)
+  Path.here(x)
 }
 
 /// Associativity, not by reflexivity.
@@ -31,5 +31,5 @@ def assoc(x : Integer, y : Integer, z : Integer) -> Path(
   combine(combine(x, y), z),
   combine(x, combine(y, z))
 ) {
-  here(combine(combine(x, y), z))
+  Path.here(combine(combine(x, y), z))
 }

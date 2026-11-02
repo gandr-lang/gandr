@@ -12,10 +12,11 @@
 // interval and nothing owed. `loop-space.gandr` states the same mechanism one
 // stratum down, on terms.
 //
-// The operations on paths are the book's own: `p then q`, `back(p)` and
-// `cong(f, p)` stand bare, in a body and in a type, each reading its path's
-// type off the words it acts on — the loop, a word, or another operation over
-// one — and `cong` its codomain off the function's written result. Nothing
+// The operations on paths are the book's own, each under `Path`:
+// `Path.step(p, q)`, `Path.back(p)` and `Path.ap(f, p)` stand in a body and
+// in a type, each reading its path's type off the words it acts on — the
+// loop, a word, or another operation over one — and `Path.ap` its codomain
+// off the function's written result. Nothing
 // here defines them or annotates them. The alternative, each operation
 // written where a path type is stated, repeats what the words already say.
 // Reversal: a cell between two distinct points, whose words spell neither
@@ -28,42 +29,43 @@ import "../../model/identity/circle-base.gandr" ;
 import "../../model/identity/equivalence.gandr" ;
 
 /// The loop's word: one letter before the empty word.
-@[ runs("loop ∷ here(Base)") ]
+@[ runs("loop ∷ Path.here(Base)") ]
 def once() -> Path(Circle, Base, Base) { loop }
 
-/// The inverse of the loop is the letter `back(loop)`, by conversion.
+/// The inverse of the loop is the letter `back(loop)`, by conversion, which
+/// `Path.back(loop)` converts to.
 @[ checks ]
 def unwound : Path(
   Path(Circle, Base, Base),
-  back(loop),
-  back(loop) ∷ here(Base)
-) = here(back(loop) ∷ here(Base)) ;
+  Path.back(loop),
+  back(loop) ∷ Path.here(Base)
+) = Path.here(back(loop) ∷ Path.here(Base)) ;
 
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
 @[ checks ]
 def cancelled : Path(
   Path(Circle, Base, Base),
-  loop then back(loop),
-  here(Base)
-) = here(here(Base)) ;
+  Path.step(loop, Path.back(loop)),
+  Path.here(Base)
+) = Path.here(Path.here(Base)) ;
 
 /// Winding twice around and spinning the count back gives the word the
 /// composite is, by conversion.
 @[ checks ]
 def round : Path(
   Path(Circle, Base, Base),
-  spin(wind(loop then loop)),
-  loop ∷ loop ∷ here(Base)
-) = here(loop ∷ loop ∷ here(Base)) ;
+  spin(wind(Path.step(loop, loop))),
+  loop ∷ loop ∷ Path.here(Base)
+) = Path.here(loop ∷ loop ∷ Path.here(Base)) ;
 
 /// The composite the round trip gives: the loop twice, by conversion.
 @[ checks ]
 def twice : Path(
   Path(Circle, Base, Base),
-  loop then loop,
-  loop ∷ loop ∷ here(Base)
-) = here(loop ∷ loop ∷ here(Base)) ;
+  Path.step(loop, loop),
+  loop ∷ loop ∷ Path.here(Base)
+) = Path.here(loop ∷ loop ∷ Path.here(Base)) ;
 
 /// Spinning two successors and winding the word counts two.
 @[ runs("S(S(Z))") ]
@@ -87,4 +89,4 @@ def windingByIso : Path(
   Path(Circle, Base, Base) ≃ Int,
   winding,
   isoToEquiv(Path(Circle, Base, Base), Int, windingIso)
-) = here(winding) ;
+) = Path.here(winding) ;

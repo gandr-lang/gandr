@@ -10,10 +10,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 58 │ │    p
 59 │ │  ) {
 60 │ │┌   match p {
-61 │ ││     here => here(here(Base)),
+61 │ ││     here => Path.here(Path.here(Base)),
 62 │ ││     loop ∷ q => forged[<](q),
    │ ││                 ━━━━━━━━━━━━ its type does not convert: expected `-F Path(Path(Circle, Base, Base), spin(wind(loop ∷ q)), loop ∷ q)`, found `-F Path(Path(Circle, Base, Base), spin(wind(q)), q)`
-63 │ ││     back(loop) ∷ q => { let ih = forged[<](q); cong(unloopOn, ih) }
+63 │ ││     back(loop) ∷ q => { let ih = forged[<](q); Path.ap(unloopOn, ih) }
 64 │ ││   }
    │ │└───┘ checked against `-F Path(Path(Circle, Base, Base), spin(wind(p)), p)`; while checking the body of this function; binds q : Path(Circle, Base, Base)
 65 │ │  }
@@ -30,9 +30,9 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
    │ ┌──┘
    │ │
 74 │ │┏   match p {
-75 │ │┃     here => here(here(Base)),
-76 │ │┃     loop ∷ q => { let ih = rewound[<](q); cong(loopOn, ih) },
-77 │ │┃     back(loop) ∷ q => here(back(loop) ∷ q)
+75 │ │┃     here => Path.here(Path.here(Base)),
+76 │ │┃     loop ∷ q => { let ih = rewound[<](q); Path.ap(loopOn, ih) },
+77 │ │┃     back(loop) ∷ q => Path.here(back(loop) ∷ q)
 78 │ │┃   }
    │ │┗━━━┛ a case its datatype's rules do not admit
 79 │ │  }

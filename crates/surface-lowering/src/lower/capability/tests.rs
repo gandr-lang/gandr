@@ -1880,7 +1880,7 @@ const PASSING: &str = concat!(
     "    put(s, put(u, k)),\n",
     "    put(u, k)\n",
     "  ) {\n",
-    "    here(put(u, k))\n",
+    "    Path.here(put(u, k))\n",
     "  }\n",
     "}\n",
 );
@@ -2067,10 +2067,10 @@ const COUNTING: &str = concat!(
     "    thunk { fun (n) { let m = b(n); a(m) } }\n",
     "  }\n",
     "  def chargeZero(k : (Integer => Integer) => Integer) -> Path((Integer => Integer) => Integer, charge(zero, k), k) {\n",
-    "    here(k)\n",
+    "    Path.here(k)\n",
     "  }\n",
     "  def chargeTwice(a : Integer => Integer, b : Integer => Integer, k : (Integer => Integer) => Integer) -> Path((Integer => Integer) => Integer, charge(a, charge(b, k)), charge(plus(a, b), k)) {\n",
-    "    here(charge(plus(a, b), k))\n",
+    "    Path.here(charge(plus(a, b), k))\n",
     "  }\n",
     "}\n",
 );

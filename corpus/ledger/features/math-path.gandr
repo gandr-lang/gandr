@@ -5,58 +5,58 @@
 /// Each law computes at a reflexivity, so each declaration states a law there and proves it by reflexivity.
 ///
 /// - see: library/math/src/path.gandr
-/// - see: #3786 — a family that `transport` takes by name, which `apd` writes as a lambda until then
+/// - see: #3786 — a family that `Path.walk` takes by name, which `apd` writes as a lambda until then
 
 // `join`, `ap`, `apd`, `apComp`, `assoc`, `leftUnit`, `natural`, `rightUnit`.
 import "../../../library/math/src/path.gandr";
 
 /// The left unitor at a reflexivity is the reflexivity of that reflexivity.
 def leftUnitAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), join(A, x, x, x, here(x), here(x)), here(x)),
-  leftUnit(A, x, x, here(x)),
-  here(here(x))
+  Path(Path(A, x, x), join(A, x, x, x, Path.here(x), Path.here(x)), Path.here(x)),
+  leftUnit(A, x, x, Path.here(x)),
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// The associator with a reflexivity last is the reflexivity of the first two paths composed.
 def assocAtHere(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(
-  Path(Path(A, x, z), (f then g) then here(z), f then (g then here(z))),
-  assoc(A, x, y, z, z, f, g, here(z)),
-  here(f then g)
+  Path(Path(A, x, z), Path.step(Path.step(f, g), Path.here(z)), Path.step(f, Path.step(g, Path.here(z)))),
+  assoc(A, x, y, z, z, f, g, Path.here(z)),
+  Path.here(Path.step(f, g))
 ) {
-  here(here(f then g))
+  Path.here(Path.here(Path.step(f, g)))
 }
 
 /// A dependent function's action on a reflexivity is the reflexivity at its value.
 def apdAtHere(A : Type, P : A => Type, F : (a : A) => P(a), x : A) -> Path(
-  Path(P(x), transport(fun (a) { P(a) }, here(x), F(x)), F(x)),
-  apd(A, P, F, x, x, here(x)),
-  here(F(x))
+  Path(P(x), Path.walk(fun (a) { P(a) }, Path.here(x), F(x)), F(x)),
+  apd(A, P, F, x, x, Path.here(x)),
+  Path.here(F(x))
 ) {
-  here(here(F(x)))
+  Path.here(Path.here(F(x)))
 }
 
 /// A function's action on a reflexivity is the reflexivity at its value.
 def apAtHere(A : Type, B : Type, F : A => B, x : A) -> Path(
   Path(B, F(x), F(x)),
-  ap(A, B, F, x, x, here(x)),
-  here(F(x))
+  ap(A, B, F, x, x, Path.here(x)),
+  Path.here(F(x))
 ) {
-  here(here(F(x)))
+  Path.here(Path.here(F(x)))
 }
 
 /// `ap`'s functoriality at a reflexivity is the reflexivity at the composite's value.
 def apCompAtHere(A : Type, B : Type, C : Type, F : A => B, G : B => C, x : A) -> Path(
   Path(
     Path(C, G(F(x)), G(F(x))),
-    ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, x, here(x)),
-    ap(B, C, G, F(x), F(x), ap(A, B, F, x, x, here(x)))
+    ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, x, Path.here(x)),
+    ap(B, C, G, F(x), F(x), ap(A, B, F, x, x, Path.here(x)))
   ),
-  apComp(A, B, C, F, G, x, x, here(x)),
-  here(here(G(F(x))))
+  apComp(A, B, C, F, G, x, x, Path.here(x)),
+  Path.here(Path.here(G(F(x))))
 ) {
-  here(here(here(G(F(x)))))
+  Path.here(Path.here(Path.here(G(F(x)))))
 }
 
 /// A homotopy's naturality along a reflexivity is the reflexivity of the homotopy at its point.
@@ -70,11 +70,11 @@ def naturalAtHere(
 ) -> Path(
   Path(
     Path(B, F(a), G(a)),
-    join(B, F(a), G(a), G(a), H(a), ap(A, B, G, a, a, here(a))),
-    join(B, F(a), F(a), G(a), ap(A, B, F, a, a, here(a)), H(a))
+    join(B, F(a), G(a), G(a), H(a), ap(A, B, G, a, a, Path.here(a))),
+    join(B, F(a), F(a), G(a), ap(A, B, F, a, a, Path.here(a)), H(a))
   ),
-  natural(A, B, F, G, H, a, a, here(a)),
-  here(H(a))
+  natural(A, B, F, G, H, a, a, Path.here(a)),
+  Path.here(H(a))
 ) {
-  here(here(H(a)))
+  Path.here(Path.here(H(a)))
 }

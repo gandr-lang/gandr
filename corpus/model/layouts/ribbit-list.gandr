@@ -57,11 +57,11 @@ pub def rec untag(l : Tagged) -> Ints {
 /// Reading a tagged list back undoes laying it out, cell by cell.
 pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
   match l {
-    Nil => here(Nil),
-    Cons(x, rest) => transport(
+    Nil => Path.here(Nil),
+    Cons(x, rest) => Path.walk(
       fun (z) { Path(Ints, Cons(x, untag(tag(rest))), Cons(x, z)) },
       untagged[<](rest),
-      here(Cons(x, untag(tag(rest))))
+      Path.here(Cons(x, untag(tag(rest))))
     )
   }
 }
@@ -69,11 +69,11 @@ pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
 /// Laying a list out tagged undoes reading it back, cell by cell.
 pub def rec tagged(l : Tagged) -> Path(Tagged, tag(untag(l)), l) {
   match l {
-    TagNil => here(TagNil),
-    TagCons(x, rest) => transport(
+    TagNil => Path.here(TagNil),
+    TagCons(x, rest) => Path.walk(
       fun (z) { Path(Tagged, TagCons(x, tag(untag(rest))), TagCons(x, z)) },
       tagged[<](rest),
-      here(TagCons(x, tag(untag(rest))))
+      Path.here(TagCons(x, tag(untag(rest))))
     )
   }
 }
@@ -99,12 +99,12 @@ pub def rec unpack(p : Packed) -> Ints {
 /// Reading a packed list back undoes packing it, two elements at a time.
 pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
   match l {
-    Nil => here(Nil),
-    Cons(x, Nil) => here(Cons(x, Nil)),
-    Cons(x, Cons(y, rest)) => transport(
+    Nil => Path.here(Nil),
+    Cons(x, Nil) => Path.here(Cons(x, Nil)),
+    Cons(x, Cons(y, rest)) => Path.walk(
       fun (z) { Path(Ints, Cons(x, Cons(y, unpack(pack(rest)))), Cons(x, Cons(y, z))) },
       unpacked[<](rest),
-      here(Cons(x, Cons(y, unpack(pack(rest)))))
+      Path.here(Cons(x, Cons(y, unpack(pack(rest)))))
     )
   }
 }
@@ -112,12 +112,12 @@ pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
 /// Packing a list undoes reading it back, two elements at a time.
 pub def rec packed(p : Packed) -> Path(Packed, pack(unpack(p)), p) {
   match p {
-    Empty => here(Empty),
-    One(x) => here(One(x)),
-    Many(x, y, rest) => transport(
+    Empty => Path.here(Empty),
+    One(x) => Path.here(One(x)),
+    Many(x, y, rest) => Path.walk(
       fun (z) { Path(Packed, Many(x, y, pack(unpack(rest))), Many(x, y, z)) },
       packed[<](rest),
-      here(Many(x, y, pack(unpack(rest))))
+      Path.here(Many(x, y, pack(unpack(rest))))
     )
   }
 }
@@ -136,7 +136,7 @@ pub def packedPath : Path(Type, Ints, Packed) = ua(packedLayout);
 
 /// A tagged list moved to the packed layout along one admission's reverse and the other.
 pub def relayout(p : Path(Type, Ints, Tagged), q : Path(Type, Ints, Packed), l : Tagged) -> Packed {
-  transport(fun (X) { X }, back(p) then q, l)
+  Path.walk(fun (X) { X }, Path.step(Path.back(p), q), l)
 }
 
 /// One, two and three, laid out tagged.
@@ -147,11 +147,11 @@ pub def oneTwoThree : Tagged = TagCons(1i32, TagCons(2i32, TagCons(3i32, TagNil)
 def moved() -> Packed { relayout(taggedPath, packedPath, oneTwoThree) }
 
 /// The tagged layout is the packed one, as types, through the list.
-pub def taggedIsPacked : Path(Type, Tagged, Packed) = back(taggedPath) then packedPath;
+pub def taggedIsPacked : Path(Type, Tagged, Packed) = Path.step(Path.back(taggedPath), packedPath);
 
 /// One, two and three move along the named composite as along the two admissions.
 @[ runs("Many(1i32, 2i32, One(3i32))") ]
-def movedNamed() -> Packed { transport(fun (X) { X }, taggedIsPacked, oneTwoThree) }
+def movedNamed() -> Packed { Path.walk(fun (X) { X }, taggedIsPacked, oneTwoThree) }
 
 /// The length of a list, written once over the list.
 pub def rec length(l : Ints) -> Integer {
@@ -167,13 +167,13 @@ pub def rec length(l : Ints) -> Integer {
 /// The length on the tagged layout, by transport along its admission.
 @[ runs("3") ]
 def taggedLength() -> Integer {
-  let f = transport(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
+  let f = Path.walk(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
   f(oneTwoThree)
 }
 
 /// The length on the packed layout, by transport along its admission.
 @[ runs("3") ]
 def packedLength() -> Integer {
-  let f = transport(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
+  let f = Path.walk(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
   f(Many(1i32, 2i32, One(3i32)))
 }

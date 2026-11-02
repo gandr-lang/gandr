@@ -14,7 +14,7 @@ def walkTwiceOvershot(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   walk(Succ(walk(b, c1)), c2),
   Succ(walk(walk(b, c1), succ(succ(c2))))
 ) {
-  here(Succ(walk(walk(b, c1), succ(succ(c2)))))
+  Path.here(Succ(walk(walk(b, c1), succ(succ(c2)))))
 }
 
 /// The step with the stuck call's own accumulator changed.
@@ -24,5 +24,5 @@ def walkTwiceInner(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   walk(Succ(walk(b, c1)), c2),
   Succ(walk(walk(b, succ(c1)), succ(c2)))
 ) {
-  here(Succ(walk(walk(b, succ(c1)), succ(c2))))
+  Path.here(Succ(walk(walk(b, succ(c1)), succ(c2))))
 }

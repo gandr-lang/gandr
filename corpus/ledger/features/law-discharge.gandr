@@ -1,6 +1,6 @@
 /// `law-discharge`: a law a model leaves out, discharged by the checker.
 ///
-/// Implemented: the lowering states a law the model leaves out at the law's type with no body. The checker mints `here` at the law's left side under its binders and judges it as a written body, and the kernel replays it. A law whose sides part is refused `NoFiller.Omitted` by its name. `gandr check --report cells` prints `Omitting.refl: here` and the other two cells.
+/// Implemented: the lowering states a law the model leaves out at the law's type with no body. The checker mints `Path.here` at the law's left side under its binders and judges it as a written body, and the kernel replays it. A law whose sides part is refused `NoFiller.Omitted` by its name. `gandr check --report cells` prints `Omitting.refl: Path.here` and the other two cells.
 ///
 /// Not implemented: the derived source, a law completion's derivation proves inside the module (#4141), and the generated source at the stratum the theory certifies (#4142).
 ///

@@ -223,7 +223,7 @@ fn tail_of(
     computation
 }
 
-/// The fold `then` stands for: `p then q` at paths returns the binary
+/// The fold `Path.step` stands for: `Path.step(p, q)` returns the binary
 /// composite, whose realisation is the transport.
 ///
 /// # Specification
@@ -234,7 +234,7 @@ fn tail_of(
 /// - panics: if `id` returns no binary composite.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the witnesses read `then`'s transport here.
+/// - hypothesis: L3 — the witnesses read `Path.step`'s transport here.
 /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
 #[spec(ensures: |ret| matches!(arena.computation(id), Some(&Computation::Return(returned))
     if matches!(arena.value(returned), Some(&Value::Compose { realised, .. }) if realised == ret)))]
@@ -280,7 +280,7 @@ fn a_path_type_and_reflexivity_lower_to_their_formers()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("def p : Path(Integer, 4, 4);\ndef p = here(4);\n"),
+        SourceText::from("def p : Path(Integer, 4, 4);\ndef p = Path.here(4);\n"),
         &mut arena,
     );
     let DeclarationOutcome::Completed {
@@ -310,7 +310,7 @@ fn a_path_type_and_reflexivity_lower_to_their_formers()
     assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = "def p = here(4, 5);\n";
+    let source = "def p = Path.here(4, 5);\n";
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
         matches!(
@@ -325,12 +325,73 @@ fn a_path_type_and_reflexivity_lower_to_their_formers()
 }
 
 #[test]
+fn an_operation_answers_only_under_its_former()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def held : Path(Integer, 4, 4);\ndef held = Path.here(4);\n\
+             def stayed : Flow(Integer, 4, 4);\ndef stayed = Flow.stay(4);\n\
+             def bare : Path(Integer, 4, 4);\ndef bare = here(4);\n\
+             def crossed : Path(Integer, 4, 4);\ndef crossed = Flow.here(4);\n",
+        ),
+        &mut arena,
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "held".into())
+    else {
+        panic!("`Path.here` lowers");
+    };
+    assert!(
+        matches!(arena.value(body), Some(&Value::Here(_))),
+        "`Path.here` is reflexivity"
+    );
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "stayed".into())
+    else {
+        panic!("`Flow.stay` lowers");
+    };
+    assert!(
+        matches!(arena.value(body), Some(&Value::Stay(_))),
+        "`Flow.stay` is directed reflexivity"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "bare".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("here")
+        ),
+        "a bare spelling is an ordinary name no binder answers"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "crossed".into()),
+            DeclarationOutcome::Refused(_)
+        ),
+        "an operation under another former answers nothing"
+    );
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def here(n : Integer) -> Integer { n }\ndef bound() -> Integer { here(4) }\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        !matches!(
+            outcome_of(&module, "bound".into()),
+            DeclarationOutcome::Refused(_)
+        ),
+        "a source binds a freed spelling as an ordinary name"
+    );
+}
+
+#[test]
 fn funext_lowers_to_its_former()
 {
     let functions = "def id(b: +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\ndef again(b: +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\n";
     let mut arena = CoreArena::new();
     let source = format!(
-        "{functions}def same : Path(+U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}}), id, again);\ndef same = funext(id, again);\n"
+        "{functions}def same : Path(+U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}}), id, again);\ndef same = Path.funext(id, again);\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "same".into())
@@ -339,7 +400,7 @@ fn funext_lowers_to_its_former()
     };
     let Some(&Value::Funext(left, right)) = arena.value(body)
     else {
-        panic!("`funext(id, again)` is function extensionality");
+        panic!("`Path.funext(id, again)` is function extensionality");
     };
     assert!(
         matches!(arena.value(left), Some(&Value::Constant(constant)) if usize::from(constant) == 0)
@@ -349,7 +410,7 @@ fn funext_lowers_to_its_former()
     assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = format!("{functions}def once = funext(id);\n");
+    let source = format!("{functions}def once = Path.funext(id);\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -368,7 +429,7 @@ fn funext_lowers_to_its_former()
     let Some(&Computation::Application(..)) =
         arena.computation(tail_of(&module, &arena, "call".into()))
     else {
-        panic!("a declaration named `funext` shadows the operation");
+        panic!("a declaration named `funext` is an ordinary name");
     };
 }
 
@@ -378,7 +439,7 @@ fn a_list_moves_along_a_universe_equivalence()
     let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\ndef negation : Path(Type, Bool, Bool);\ndef negation = equiv(not, not);\n";
     let mut arena = CoreArena::new();
     let source = format!(
-        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
+        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "negation".into())
@@ -447,7 +508,7 @@ fn a_list_moves_along_a_universe_equivalence()
 
     let mut arena = CoreArena::new();
     let source = format!(
-        "{negation}def named(xs: List(Bool)) -> -F List(Bool) {{\n  become transport(negation, negation, xs)\n}}\ndef half = cons(unit);\n"
+        "{negation}def named(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(negation, negation, xs)\n}}\ndef half = cons(unit);\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
@@ -490,7 +551,8 @@ fn a_path_product_lowers_to_its_former()
 {
     let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def paired = pathProduct(here(Unit), equiv(not, not));\n");
+    let source =
+        format!("{negation}def paired = Path.product(Path.here(Unit), equiv(not, not));\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Bodied { body } = outcome_of(&module, "paired".into())
     else {
@@ -513,7 +575,7 @@ fn a_path_product_lowers_to_its_former()
     );
 
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def half = pathProduct(equiv(not, not));\n");
+    let source = format!("{negation}def half = Path.product(equiv(not, not));\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -532,7 +594,7 @@ fn a_flow_product_lowers_to_its_former()
 {
     let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  }\n}\n";
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def paired = flowProduct(stay(Unit), forward(not));\n");
+    let source = format!("{negation}def paired = Flow.product(Flow.stay(Unit), Flow.into(not));\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Bodied { body } = outcome_of(&module, "paired".into())
     else {
@@ -550,7 +612,7 @@ fn a_flow_product_lowers_to_its_former()
     assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def half = flowProduct(forward(not));\n");
+    let source = format!("{negation}def half = Flow.product(Flow.into(not));\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -570,7 +632,7 @@ fn a_computation_endpoint_is_the_value_it_returns()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def dbl(x: Integer) -> -F Integer {\n  become x + x\n}\ndef same(x: Integer, y: Integer) -> -F Path(Integer, dbl(dbl(x)), dbl(dbl(x))) {\n  return here(dbl(dbl(x)))\n}\n",
+            "def dbl(x: Integer) -> -F Integer {\n  become x + x\n}\ndef same(x: Integer, y: Integer) -> -F Path(Integer, dbl(dbl(x)), dbl(dbl(x))) {\n  return Path.here(dbl(dbl(x)))\n}\n",
         ),
         &mut arena,
     );
@@ -635,8 +697,8 @@ fn a_lambda_argument_in_an_endpoint_is_its_thunk_3697()
     let module = lowered(
         SourceText::from(
             "def atTrue(p : Bool => Bool) -> Bool { p(true) }\n\
-             def inTypeAnnotated : Path(Bool, atTrue(fun (a : Bool) { a }), true) = here(true);\n\
-             def inTypeBare : Path(Bool, atTrue(fun (a) { a }), true) = here(true);\n",
+             def inTypeAnnotated : Path(Bool, atTrue(fun (a : Bool) { a }), true) = Path.here(true);\n\
+             def inTypeBare : Path(Bool, atTrue(fun (a) { a }), true) = Path.here(true);\n",
         ),
         &mut arena,
     );
@@ -684,8 +746,8 @@ fn a_lambda_endpoint_is_its_thunk_3767()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def direct : Path(Bool => Bool, fun (a) { a }, fun (a) { a }) = here(fun (a) { a });\n\
-             def result(d : Bool => Bool) -> Path(Bool => Bool, fun (a) { d(a) }, fun (a) { d(a) }) {\n  here(fun (a) { d(a) })\n}\n",
+            "def direct : Path(Bool => Bool, fun (a) { a }, fun (a) { a }) = Path.here(fun (a) { a });\n\
+             def result(d : Bool => Bool) -> Path(Bool => Bool, fun (a) { d(a) }, fun (a) { d(a) }) {\n  Path.here(fun (a) { d(a) })\n}\n",
         ),
         &mut arena,
     );
@@ -766,14 +828,14 @@ fn a_lambda_endpoint_is_its_thunk_3767()
 fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
 {
     let source = "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
-                  a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, f2 then g) {\n  \
-                  cong((thunk { fun (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n";
+                  a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {\n  \
+                  Path.ap((thunk { fun (q : Path(A, x, y)) { Path.step(q, g) } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n";
     let spanned = |text: &str| {
         let start = source.find(text).expect("the source writes the text");
         (start, start.saturating_add(text.len()))
     };
-    let thunk = spanned("thunk { fun (q : Path(A, x, y)) { q then g } }");
-    let function = spanned("fun (q : Path(A, x, y)) { q then g }");
+    let thunk = spanned("thunk { fun (q : Path(A, x, y)) { Path.step(q, g) } }");
+    let function = spanned("fun (q : Path(A, x, y)) { Path.step(q, g) }");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let at =
@@ -1039,7 +1101,7 @@ fn a_bridge_type_lowers_to_the_core_bridge_3427()
 
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("def four : Bridge(Integer, 4, 4);\ndef four = here(4);\n"),
+        SourceText::from("def four : Bridge(Integer, 4, 4);\ndef four = Path.here(4);\n"),
         &mut arena,
     );
     let report = judged(&module, &mut arena);
@@ -1077,10 +1139,10 @@ fn back_then_and_cong_unfold_to_transports()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def flip(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, b, a) {\n  become back(p)\n}\n",
-            "def join(a: Integer, b: Integer, c: Integer, p: Path(Integer, a, b), q: Path(Integer, b, c)) -> -F(Path(Integer, a, c)) {\n  become p then q\n}\n",
+            "def flip(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, b, a) {\n  become Path.back(p)\n}\n",
+            "def join(a: Integer, b: Integer, c: Integer, p: Path(Integer, a, b), q: Path(Integer, b, c)) -> -F(Path(Integer, a, c)) {\n  become Path.step(p, q)\n}\n",
             "def dbl(x: Integer) -> -F Integer {\n  become x + x\n}\n",
-            "def image(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, dbl(a), dbl(b)) {\n  become cong(dbl, p)\n}\n",
+            "def image(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, dbl(a), dbl(b)) {\n  become Path.ap(dbl, p)\n}\n",
         )),
         &mut arena,
     );
@@ -1190,9 +1252,9 @@ fn then_and_cong_in_a_type_take_their_types_from_their_operands_3772()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// #3834: a reflexivity `here(x)` read its type only when `x`'s binder wrote
+/// #3834: a reflexivity `Path.here(x)` read its type only when `x`'s binder wrote
 /// a path type, so `then` refused one first as unannotated, and a composite
-/// ending in one first too. `here(x)` reads `Path(A, x, x)` off a binder
+/// ending in one first too. `Path.here(x)` reads `Path(A, x, x)` off a binder
 /// written at `A`, so the fixture's declarations lower and check.
 #[test]
 fn a_reflexivity_composes_at_a_point_of_any_type_3834()
@@ -1220,7 +1282,8 @@ fn a_reflexivity_composes_at_a_point_of_any_type_3834()
 /// #3773: a lambda `fun (q) { e }` as `cong`'s function was refused, its
 /// binder with no type. The binder takes the type of the path's points, so
 /// the fixture's declaration lowers and checks. The transport the printer
-/// spells it as, `b then g` over its motive's binder, lowers and checks too.
+/// spells it as, `Path.step(b, g)` over its motive's binder, lowers and checks
+/// too.
 #[test]
 fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
 {
@@ -1243,9 +1306,9 @@ fn a_lambda_as_congs_function_is_a_function_of_the_paths_points_3773()
     let spelled = lowered(
         SourceText::from(
             "def whiskered(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
-             a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then \
-             g, f2 then g) {\n  transport(fun (b) { Path(Path(A, x, z), f1 then g, b then g) }, a, \
-             here(f1 then g))\n}\n",
+             a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, \
+             g), Path.step(f2, g)) {\n  Path.walk(fun (b) { Path(Path(A, x, z), Path.step(f1, g), Path.step(b, g)) }, a, \
+             Path.here(Path.step(f1, g)))\n}\n",
         ),
         &mut arena,
     );
@@ -1269,12 +1332,12 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
 {
     let telescope = "(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
                      Path(Path(A, x, y), f1, f2), g : Path(A, y, z))";
-    let whisker = "cong(fun (q) { q then g }, a)";
+    let whisker = "Path.ap(fun (q) { Path.step(q, g) }, a)";
     let source = format!(
-        "def underThen{telescope} -> Path(Path(A, x, z), f1 then g, f2 then g) {{\n  {whisker} \
-         then here(f2 then g)\n}}\n\
-         def asEndpoint{telescope} -> Path(Path(Path(A, x, z), f1 then g, f2 then g), {whisker}, \
-         {whisker}) {{\n  here({whisker})\n}}\n"
+        "def underThen{telescope} -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {{\n  \
+         Path.step({whisker}, Path.here(Path.step(f2, g)))\n}}\n\
+         def asEndpoint{telescope} -> Path(Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)), \
+         {whisker}, {whisker}) {{\n  Path.here({whisker})\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1306,8 +1369,7 @@ fn a_lambda_cong_maps_synthesises_its_path_where_none_is_answered_3829()
     let unwritten = lowered(
         SourceText::from(
             "def unwritten(A : Type, x : A, y : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
-             Path(Path(A, x, y), f1, f2), g : Path(A, y, y)) -> Path(Path(A, x, y), f1 then g, f2 \
-             then g) {\n  cong(fun (q) { q then g }, back(back(a))) then here(f2 then g)\n}\n",
+             Path(Path(A, x, y), f1, f2), g : Path(A, y, y)) -> Path(Path(A, x, y), Path.step(f1, g), Path.step(f2, g)) {\n  Path.step(Path.ap(fun (q) { Path.step(q, g) }, Path.back(Path.back(a))), Path.here(Path.step(f2, g)))\n}\n",
         ),
         &mut arena,
     );
@@ -1333,12 +1395,12 @@ fn a_lambda_stating_its_binders_type_maps_as_the_unstated_one_3919()
 {
     let telescope = "(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : \
                      Path(Path(A, x, y), f1, f2), g : Path(A, y, z))";
-    let whisker = "cong(fun (q : Path(A, x, y)) { q then g }, a)";
+    let whisker = "Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a)";
     let source = format!(
-        "def underThen{telescope} -> Path(Path(A, x, z), f1 then g, f2 then g) {{\n  {whisker} \
-         then here(f2 then g)\n}}\n\
-         def asEndpoint{telescope} -> Path(Path(Path(A, x, z), f1 then g, f2 then g), {whisker}, \
-         {whisker}) {{\n  here({whisker})\n}}\n"
+        "def underThen{telescope} -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {{\n  \
+         Path.step({whisker}, Path.here(Path.step(f2, g)))\n}}\n\
+         def asEndpoint{telescope} -> Path(Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)), \
+         {whisker}, {whisker}) {{\n  Path.here({whisker})\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1365,12 +1427,12 @@ fn a_transport_moves_through_a_family_a_parameter_names_3786()
 {
     let telescope = "(A : Type, P : A => Type, x : A, y : A, p : Path(A, x, y), v : P(x))";
     let source = format!(
-        "def movedNamed{telescope} -> P(y) {{\n  transport(P, p, v)\n}}\n\
-         def movedLambda{telescope} -> P(y) {{\n  transport(fun (a) {{ P(a) }}, p, v)\n}}\n\
-         def statedNamed{telescope} -> Path(P(y), transport(P, p, v), transport(P, p, v)) {{\n  \
-         here(transport(P, p, v))\n}}\n\
+        "def movedNamed{telescope} -> P(y) {{\n  Path.walk(P, p, v)\n}}\n\
+         def movedLambda{telescope} -> P(y) {{\n  Path.walk(fun (a) {{ P(a) }}, p, v)\n}}\n\
+         def statedNamed{telescope} -> Path(P(y), Path.walk(P, p, v), Path.walk(P, p, v)) {{\n  \
+         Path.here(Path.walk(P, p, v))\n}}\n\
          def movedLate(A : Type, x : A, y : A, p : Path(A, x, y), P : A => Type, v : P(x)) -> \
-         P(y) {{\n  transport(fun (a) {{ P(a) }}, p, v)\n}}\n"
+         P(y) {{\n  Path.walk(fun (a) {{ P(a) }}, p, v)\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1418,7 +1480,7 @@ fn a_transport_moves_through_a_family_a_parameter_names_3786()
     let typed = lowered(
         SourceText::from(
             "def typed(A : Type, B : Type, x : A, y : A, p : Path(A, x, y), v : B) -> B {\n  \
-             transport(B, p, v)\n}\n",
+             Path.walk(B, p, v)\n}\n",
         ),
         &mut arena,
     );
@@ -1441,7 +1503,7 @@ fn a_transport_moves_through_a_family_a_parameter_names_3786()
 #[test]
 fn a_parameter_map_under_cong_answers_at_its_bytes_443()
 {
-    let source = "def mapped(f: Integer => Integer, a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, f(a), f(b)) {\n  become cong(f, p)\n}\n";
+    let source = "def mapped(f: Integer => Integer, a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, f(a), f(b)) {\n  become Path.ap(f, p)\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(&Computation::PathTransport { motive, .. }) =
@@ -1463,9 +1525,9 @@ fn a_parameter_map_under_cong_answers_at_its_bytes_443()
         other => panic!("the motive is a path type: {other:?}"),
     };
     let at = source
-        .find("cong(f")
-        .expect("the body writes `cong(f`")
-        .saturating_add(5);
+        .find("Path.ap(f")
+        .expect("the body writes `Path.ap(f`")
+        .saturating_add(8);
     assert_eq!(
         module
             .origins()
@@ -1486,9 +1548,9 @@ fn a_derived_operation_needs_a_written_path_answer()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def g(p: Path(Integer, 1, 1)) -> -F Integer {\n  become back(p)\n}\n",
+            "def g(p: Path(Integer, 1, 1)) -> -F Integer {\n  become Path.back(p)\n}\n",
             "data Triple(a : Type, b : Type, c : Type) : Type where {\n  | Mk : Triple(a, b, c)\n}\n",
-            "def three(p: Path(Integer, 1, 1)) -> -F Triple(Integer, Integer, Integer) {\n  become back(p)\n}\n",
+            "def three(p: Path(Integer, 1, 1)) -> -F Triple(Integer, Integer, Integer) {\n  become Path.back(p)\n}\n",
         )),
         &mut arena,
     );
@@ -1509,9 +1571,9 @@ fn a_derived_operation_needs_a_written_path_answer()
 }
 
 /// #985: a written transport read as a value is the value it returns, as the
-/// derived composite's fold is, so `loop then loop` and its explicit spelling
-/// lower to one transport; before, the written one nested a run that no
-/// computation encloses.
+/// derived composite's fold is, so `Path.step(loop, loop)` and its explicit
+/// spelling lower to one transport; before, the written one nested a run that
+/// no computation encloses.
 #[test]
 fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
 {
@@ -1519,8 +1581,8 @@ fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
     let module = lowered(
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
-            "def derived : Path(Circle, Base, Base);\ndef derived = loop then loop;\n",
-            "def written : Path(Circle, Base, Base);\ndef written = transport(fun (a) { Path(Circle, Base, a) }, loop, loop);\n",
+            "def derived : Path(Circle, Base, Base);\ndef derived = Path.step(loop, loop);\n",
+            "def written : Path(Circle, Base, Base);\ndef written = Path.walk(fun (a) { Path(Circle, Base, a) }, loop, loop);\n",
         )),
         &mut arena,
     );
@@ -1556,9 +1618,9 @@ fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
     }
 }
 
-/// #1003: `back(loop)` at the circle's point moves the empty word, as the
-/// written transport's `here(Base)` lowers there, so the two spellings lower
-/// to one transport. Away from a looped point it moves `here`, as
+/// #1003: `Path.back(loop)` at the circle's point moves the empty word, as the
+/// written transport's `Path.here(Base)` lowers there, so the two spellings
+/// lower to one transport. Away from a looped point it moves `here`, as
 /// `back_then_and_cong_unfold_to_transports` pins.
 #[test]
 fn back_at_a_looped_point_moves_its_empty_word_1003()
@@ -1567,8 +1629,8 @@ fn back_at_a_looped_point_moves_its_empty_word_1003()
     let module = lowered(
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
-            "def derived : Path(Circle, Base, Base);\ndef derived = back(loop);\n",
-            "def written : Path(Circle, Base, Base);\ndef written = transport(fun (a) { Path(Circle, a, Base) }, loop, here(Base));\n",
+            "def derived : Path(Circle, Base, Base);\ndef derived = Path.back(loop);\n",
+            "def written : Path(Circle, Base, Base);\ndef written = Path.walk(fun (a) { Path(Circle, a, Base) }, loop, Path.here(Base));\n",
         )),
         &mut arena,
     );
@@ -1618,14 +1680,14 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "def collapse(x : Circle) -> -F Circle {\n  match x {\n    Base => Base\n  }\n}\n",
-            "def two : Path(Circle, Base, Base);\ndef two = loop then loop;\n",
-            "def undone : Path(Circle, Base, Base);\ndef undone = back(loop then loop);\n",
-            "def collapsed : Path(Path(Circle, Base, Base), cong(collapse, loop), here(Base));\n",
-            "def unread : Path(Integer, 1, 1);\ndef unread = back(here(1));\n",
-            "def pointed : Path(Circle, Base, Base);\ndef pointed = cong(Base, loop);\n",
+            "def two : Path(Circle, Base, Base);\ndef two = Path.step(loop, loop);\n",
+            "def undone : Path(Circle, Base, Base);\ndef undone = Path.back(Path.step(loop, loop));\n",
+            "def collapsed : Path(Path(Circle, Base, Base), Path.ap(collapse, loop), Path.here(Base));\n",
+            "def unread : Path(Integer, 1, 1);\ndef unread = Path.back(Path.here(1));\n",
+            "def pointed : Path(Circle, Base, Base);\ndef pointed = Path.ap(Base, loop);\n",
             "def broken(x : Circle) -> -F Bogus {\n  match x {\n    Base => Base\n  }\n}\n",
-            "def over_broken : Path(Circle, Base, Base);\ndef over_broken = cong(broken, loop);\n",
-            "def emptyFirst : Path(Circle, Base, Base);\ndef emptyFirst = here(Base) then loop;\n",
+            "def over_broken : Path(Circle, Base, Base);\ndef over_broken = Path.ap(broken, loop);\n",
+            "def emptyFirst : Path(Circle, Base, Base);\ndef emptyFirst = Path.step(Path.here(Base), loop);\n",
         )),
         &mut arena,
     );
@@ -1753,30 +1815,30 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
             "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             // A parameter, in a body and in a type.
-            "def inBody(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  back(p)\n}\n",
-            "def inType(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then loop, p then loop) {\n  here(p then loop)\n}\n",
+            "def inBody(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  Path.back(p)\n}\n",
+            "def inType(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), Path.step(p, loop), Path.step(p, loop)) {\n  Path.here(Path.step(p, loop))\n}\n",
             // A call of a definition, in a body and in a type; a later call of
             // the one whose type holds the operation.
-            "def twice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  p then p\n}\n",
-            "def overCall(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  back(twice(p))\n}\n",
-            "def inTypeCall(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {\n  here(twice(p) then p)\n}\n",
-            "def later(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {\n  back(inTypeCall(p))\n}\n",
+            "def twice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  Path.step(p, p)\n}\n",
+            "def overCall(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {\n  Path.back(twice(p))\n}\n",
+            "def inTypeCall(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), Path.step(twice(p), p), Path.step(twice(p), p)) {\n  Path.here(Path.step(twice(p), p))\n}\n",
+            "def later(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), Path.step(twice(p), p), Path.step(twice(p), p)) {\n  Path.back(inTypeCall(p))\n}\n",
             // A call of a signature, and a recursive call's descent.
             "def sig : (a : Int) => Path(Int, a, a) ;\n",
-            "def overSig(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, sig(a)) then here(S(a))\n}\n",
-            "def rec descend(b : Int) -> -F Path(Int, b, b) {\n  match b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](x)) then here(S(x))\n  }\n}\n",
+            "def overSig(a : Int) -> -F Path(Int, S(a), S(a)) {\n  Path.step(Path.ap(up, sig(a)), Path.here(S(a)))\n}\n",
+            "def rec descend(b : Int) -> -F Path(Int, b, b) {\n  match b {\n    Z => Path.here(Z),\n    S(x) => Path.step(Path.ap(up, descend[<](x)), Path.here(S(x)))\n  }\n}\n",
             // `cong` over a parameter function.
-            "def mapped(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
+            "def mapped(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  Path.back(Path.ap(f, loop))\n}\n",
             // A parameter of no path type.
-            "def pointed(c : Circle) -> -F Path(Circle, Base, Base) {\n  back(c) then loop\n}\n",
+            "def pointed(c : Circle) -> -F Path(Circle, Base, Base) {\n  Path.step(Path.back(c), loop)\n}\n",
             // A parameter composed in a signature's own type, under a call,
             // and a `cong` over a call of that signature: the signature's
             // result is minted after the parameter types the composite inside
             // it reads, though they stand deeper in the tree.
             "def size(p : Path(Circle, Base, Base)) -> -F Circle {\n  return Base\n}\n",
             "def same(c : Circle) -> -F Circle {\n  return c\n}\n",
-            "def joined : (q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) => Path(Circle, size(p then q), size(p then q)) ;\n",
-            "def unjoined(p : Path(Circle, Base, Base)) -> -F Path(Circle, same(size(p then p)), same(size(p then p))) {\n  back(cong(same, joined(p, p)))\n}\n",
+            "def joined : (q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) => Path(Circle, size(Path.step(p, q)), size(Path.step(p, q))) ;\n",
+            "def unjoined(p : Path(Circle, Base, Base)) -> -F Path(Circle, same(size(Path.step(p, p))), same(size(Path.step(p, p)))) {\n  Path.back(Path.ap(same, joined(p, p)))\n}\n",
         )),
         &mut arena,
     );
@@ -1829,10 +1891,10 @@ fn a_derived_operation_reads_a_named_paths_stated_type_2995()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "def named : Path(Circle, Base, Base) = loop;\n",
-            "def flipped : Path(Circle, Base, Base) = back(named);\n",
-            "def round : Path(Circle, Base, Base) = named then back(named);\n",
+            "def flipped : Path(Circle, Base, Base) = Path.back(named);\n",
+            "def round : Path(Circle, Base, Base) = Path.step(named, Path.back(named));\n",
             "def unstated = loop;\n",
-            "def overUnstated : Path(Circle, Base, Base) = back(unstated);\n",
+            "def overUnstated : Path(Circle, Base, Base) = Path.back(unstated);\n",
         )),
         &mut arena,
     );
@@ -1871,10 +1933,10 @@ fn a_call_reads_a_dependent_result_through_either_spelling_812()
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             "def sugared : (a : Int) => Path(Int, a, a) ;\n",
             "def thunked : +U ((a : Int) -> -F Path(Int, a, a)) ;\n",
-            "def overSugared(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, sugared(a)) then here(S(a))\n}\n",
-            "def overThunked(a : Int) -> -F Path(Int, S(a), S(a)) {\n  cong(up, thunked(a)) then here(S(a))\n}\n",
+            "def overSugared(a : Int) -> -F Path(Int, S(a), S(a)) {\n  Path.step(Path.ap(up, sugared(a)), Path.here(S(a)))\n}\n",
+            "def overThunked(a : Int) -> -F Path(Int, S(a), S(a)) {\n  Path.step(Path.ap(up, thunked(a)), Path.here(S(a)))\n}\n",
             "def pair : +U ((a : Int) -> (b : Int) -> -F Path(Int, b, b)) ;\n",
-            "def overPair(a : Int, b : Int) -> -F Path(Int, S(b), S(b)) {\n  cong(up, pair(a, b)) then here(S(b))\n}\n",
+            "def overPair(a : Int, b : Int) -> -F Path(Int, S(b), S(b)) {\n  Path.step(Path.ap(up, pair(a, b)), Path.here(S(b)))\n}\n",
         )),
         &mut arena,
     );
@@ -1902,8 +1964,8 @@ fn a_call_reads_a_non_dependent_result_through_either_spelling()
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
             "def sugared : Int => Path(Int, Z, Z) ;\n",
             "def thunked : +U (Int -> -F Path(Int, Z, Z)) ;\n",
-            "def overSugared(a : Int) -> -F Path(Int, S(Z), S(Z)) {\n  cong(up, sugared(a)) then here(S(Z))\n}\n",
-            "def overThunked(a : Int) -> -F Path(Int, S(Z), S(Z)) {\n  cong(up, thunked(a)) then here(S(Z))\n}\n",
+            "def overSugared(a : Int) -> -F Path(Int, S(Z), S(Z)) {\n  Path.step(Path.ap(up, sugared(a)), Path.here(S(Z)))\n}\n",
+            "def overThunked(a : Int) -> -F Path(Int, S(Z), S(Z)) {\n  Path.step(Path.ap(up, thunked(a)), Path.here(S(Z)))\n}\n",
         )),
         &mut arena,
     );
@@ -1929,7 +1991,7 @@ fn a_descent_reads_its_path_result_past_a_leading_parameter()
         SourceText::from(concat!(
             "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n}\n",
             "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
-            "def rec descend(k : Int, b : Int) -> -F Path(Int, b, b) {\n  match b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](k, x)) then here(S(x))\n  }\n}\n",
+            "def rec descend(k : Int, b : Int) -> -F Path(Int, b, b) {\n  match b {\n    Z => Path.here(Z),\n    S(x) => Path.step(Path.ap(up, descend[<](k, x)), Path.here(S(x)))\n  }\n}\n",
         )),
         &mut arena,
     );
@@ -1954,9 +2016,9 @@ fn cong_reads_a_map_stated_as_a_value_function_791()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "data Int : Type where {\n  | Z : Int\n}\n",
-            "def explicit(f : +U (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
-            "def sugared(f : Circle => Int) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
-            "def grouped(f : (Circle => Int)) -> -F Path(Int, f(Base), f(Base)) {\n  back(cong(f, loop))\n}\n",
+            "def explicit(f : +U (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {\n  Path.back(Path.ap(f, loop))\n}\n",
+            "def sugared(f : Circle => Int) -> -F Path(Int, f(Base), f(Base)) {\n  Path.back(Path.ap(f, loop))\n}\n",
+            "def grouped(f : (Circle => Int)) -> -F Path(Int, f(Base), f(Base)) {\n  Path.back(Path.ap(f, loop))\n}\n",
         )),
         &mut arena,
     );
@@ -1987,10 +2049,10 @@ fn cong_reads_a_map_its_signature_states_778()
             "def sugared = thunk { fun (a) { a } } ;\n",
             "def explicit : +U (Circle -> -F Circle) ;\n",
             "def explicit = thunk { fun (a) { return a } } ;\n",
-            "def overSugared : Path(Path(Circle, Base, Base), cong(sugared, loop), loop) ;\n",
-            "def overSugared = here(loop) ;\n",
-            "def overExplicit : Path(Path(Circle, Base, Base), cong(explicit, loop), loop) ;\n",
-            "def overExplicit = here(loop) ;\n",
+            "def overSugared : Path(Path(Circle, Base, Base), Path.ap(sugared, loop), loop) ;\n",
+            "def overSugared = Path.here(loop) ;\n",
+            "def overExplicit : Path(Path(Circle, Base, Base), Path.ap(explicit, loop), loop) ;\n",
+            "def overExplicit = Path.here(loop) ;\n",
         )),
         &mut arena,
     );
@@ -2055,13 +2117,13 @@ fn a_dependent_transport_lowers_to_its_telescope()
     let mut arena = CoreArena::new();
     let source = concat!(
         "def moved(a: Integer, b: Integer, q: Path(Integer, a, b), z0: Path(Integer, a, a), o: Integer, v: Integer) -> -F Integer {\n",
-        "  become transport(+U ((y : Integer) -> (z : Path(Integer, a, y)) -> -F Path(Path(Integer, a, y), z, z)), q, z0, o, v)\n",
+        "  become Path.walk(+U ((y : Integer) -> (z : Path(Integer, a, y)) -> -F Path(Path(Integer, a, y), z, z)), q, z0, o, v)\n",
         "}\n",
         "def plain(n: Integer, q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
-        "  become transport(+U (Integer -> Integer -> -F Path(Integer, n, n)), q, v, v, v)\n",
+        "  become Path.walk(+U (Integer -> Integer -> -F Path(Integer, n, n)), q, v, v, v)\n",
         "}\n",
         "def short(q: Path(Integer, 1, 2), v: Integer) -> -F Integer {\n",
-        "  become transport(+U (Integer -> Integer -> -F Integer), q, v, v)\n",
+        "  become Path.walk(+U (Integer -> Integer -> -F Integer), q, v, v)\n",
         "}\n",
     );
     let module = lowered(SourceText::from(source), &mut arena);
@@ -2180,7 +2242,7 @@ fn session_statements_lower_to_their_formers()
 {
     let mut arena = CoreArena::new();
     let source = format!(
-        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n  def eq : Path(Type, Old, Same);\n  def eq = bisim(Old, Same);\n  def kept : Flow(Type, Old, Old);\n  def kept = stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {{\n    become kept then sub\n  }}\n}}\n"
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = Flow.sim(Old, New);\n  def eq : Path(Type, Old, Same);\n  def eq = Path.bisim(Old, Same);\n  def kept : Flow(Type, Old, Old);\n  def kept = Flow.stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {{\n    become Flow.then(kept, sub)\n  }}\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let quoted = |at| matches!(arena.value(at), Some(&Value::Quote(code)) if matches!(arena.value_type(code), Some(&ValueType::Session(_))));
@@ -2254,7 +2316,7 @@ fn session_statements_lower_to_their_formers()
 
     let mut arena = CoreArena::new();
     let source = format!(
-        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n  def flip() -> -F Flow(Type, New, Old) {{\n    become back(sub)\n  }}\n  def half = sim(Old);\n}}\n"
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = Flow.sim(Old, New);\n  def flip() -> -F Flow(Type, New, Old) {{\n    become Path.back(sub)\n  }}\n  def half = Flow.sim(Old);\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let Some(&Computation::Ride {
@@ -2298,7 +2360,7 @@ fn a_run_rides_a_flow_between_sessions()
 {
     let mut arena = CoreArena::new();
     let source = format!(
-        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = sim(Old, New);\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded(selected(report), sent(\"progress\"), closed);\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become ride(fun (X) {{ Run(X) }}, Evolution.sub, receipt)\n}}\n"
+        "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = Flow.sim(Old, New);\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded(selected(report), sent(\"progress\"), closed);\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become Flow.ride(fun (X) {{ Run(X) }}, Evolution.sub, receipt)\n}}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed {
@@ -2367,12 +2429,12 @@ fn directed_statements_lower_to_their_formers()
             "  def toNew(old: Old) -> -F New {\n    match old { #{name, age} => return #{age, name} }\n  }\n",
             "  def same(n: Integer) -> -F Integer {\n    return n\n  }\n",
             "  def upgrade : Flow(Type, Old, New);\n",
-            "  def upgrade = forward(toNew);\n",
+            "  def upgrade = Flow.into(toNew);\n",
             "  def kept : Flow(Type, Integer, Integer);\n",
-            "  def kept = forward(same);\n",
+            "  def kept = Flow.into(same);\n",
             "  def reader : Flow(Type, ReadNew, ReadOld);\n",
-            "  def reader = arrow(upgrade, kept);\n",
-            "  def both = forward(toNew, same);\n",
+            "  def reader = Flow.arrow(upgrade, kept);\n",
+            "  def both = Flow.into(toNew, same);\n",
             "}\n",
         )),
         &mut arena,
@@ -2428,7 +2490,7 @@ fn a_move_out_of_shape_is_refused()
             "def bare = recorded(sent);\n",
             "def twice = recorded(sent(1, 2));\n",
             "def called = recorded(selected(f(1)));\n",
-            "def named(receipt: Integer) -> -F Integer {\n  become ride(receipt, receipt, receipt)\n}\n",
+            "def named(receipt: Integer) -> -F Integer {\n  become Flow.ride(receipt, receipt, receipt)\n}\n",
         )),
         &mut arena,
     );
@@ -2858,12 +2920,12 @@ fn a_call_s_lambda_argument_reads_its_parameter_s_domain_3921()
             "def applyPath(A : Type, x : A, y : A, z : A, F : Path(A, x, y) => Path(A, x, z), p : \
              Path(A, x, y)) -> Path(A, x, z) {\n  F(p)\n}\n\ndef dependentThen(A : Type, x : A, \
              y : A, z : A, g : Path(A, y, z), p : Path(A, x, y)) -> Path(A, x, z) {\n  \
-             applyPath(A, x, y, z, fun (q) { q then g }, p)\n}\n\ndef statedThen(A : Type, x : \
+             applyPath(A, x, y, z, fun (q) { Path.step(q, g) }, p)\n}\n\ndef statedThen(A : Type, x : \
              A, y : A, z : A, g : Path(A, y, z), p : Path(A, x, y)) -> Path(A, x, z) {\n  \
-             applyPath(A, x, y, z, fun (q : Path(A, x, y)) { q then g }, p)\n}\n\ndef \
+             applyPath(A, x, y, z, fun (q : Path(A, x, y)) { Path.step(q, g) }, p)\n}\n\ndef \
              applyBack(b : Type, u : b, v : b, f : Path(b, u, v) => Path(b, v, u), p : Path(b, \
              u, v)) -> Path(b, v, u) {\n  f(p)\n}\n\ndef reversed(A : Type, x : A, y : A, p : \
-             Path(A, x, y)) -> Path(A, y, x) {\n  applyBack(A, x, y, fun (q) { back(q) }, p)\n}\n",
+             Path(A, x, y)) -> Path(A, y, x) {\n  applyBack(A, x, y, fun (q) { Path.back(q) }, p)\n}\n",
         ),
         &mut arena,
     );
@@ -2891,33 +2953,37 @@ fn two_ap_calls_whose_arguments_reduce_alike_convert_4005()
 {
     let telescope = "(A : Type, x : A, y : A, z : A, w : A, fm : Path(A, x, y), fp : Path(A, x, y), \
                      fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z), h : Path(A, z, w))";
-    let pre = "(fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z))";
-    let post = "(fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))";
-    let square = "Path(Path(A, x, w), (fm then g) then h, (fp then g) then h)";
+    let pre = "(fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z))";
+    let post = "(fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w))";
+    let square =
+        "Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(Path.step(fp, g), h))";
     let inner_ap = format!("ap(Path(A, x, y), Path(A, x, z), {pre}, fm, fp, fa)");
     let inner_whisker = "whiskerRight(A, x, y, z, fm, fp, fa, g)";
     let outer_ap = |inner: &str| {
-        format!("ap(Path(A, x, z), Path(A, x, w), {post}, fm then g, fp then g, {inner})")
+        format!(
+            "ap(Path(A, x, z), Path(A, x, w), {post}, Path.step(fm, g), Path.step(fp, g), {inner})"
+        )
     };
-    let outer_whisker =
-        |inner: &str| format!("whiskerRight(A, x, z, w, fm then g, fp then g, {inner}, h)");
+    let outer_whisker = |inner: &str| {
+        format!("whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(fp, g), {inner}, h)")
+    };
     let at_lambdas =
         format!("(Path(A, x, y), Path(A, x, z), Path(A, x, w), {pre}, {post}, fm, fp, fa)");
     let source = format!(
         "def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, \
-         F(x), F(y)) {{\n  cong(F, p)\n}}\n\
+         F(x), F(y)) {{\n  Path.ap(F, p)\n}}\n\
          def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), \
-         a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), f1 then g, \
-         f2 then g) {{\n  ap(Path(A, x, y), Path(A, x, z), {pre}, f1, f2, a)\n}}\n\
+         a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), \
+         Path.step(f2, g)) {{\n  ap(Path(A, x, y), Path(A, x, z), {pre}, f1, f2, a)\n}}\n\
          def apAp(A : Type, B : Type, C : Type, F : A => B, G : B => C, x : A, y : A, p : \
          Path(A, x, y)) -> Path(C, G(F(x)), G(F(y))) {{\n  ap(B, C, G, F(x), F(y), ap(A, B, F, \
          x, y, p))\n}}\n\
          def underAp{telescope} -> Path({square}, {under_ap_left}, {under_ap_right}) {{\n  \
-         here({under_ap_right})\n}}\n\
+         Path.here({under_ap_right})\n}}\n\
          def underWhisker{telescope} -> Path({square}, {under_whisker_left}, \
-         {under_whisker_right}) {{\n  here({under_whisker_right})\n}}\n\
+         {under_whisker_right}) {{\n  Path.here({under_whisker_right})\n}}\n\
          def nestedAtLambdas{telescope} -> Path({square}, {under_ap_left}, apAp{at_lambdas}) \
-         {{\n  here({under_ap_left})\n}}\n",
+         {{\n  Path.here({under_ap_left})\n}}\n",
         under_ap_left = outer_ap(&inner_ap),
         under_ap_right = outer_ap(inner_whisker),
         under_whisker_left = outer_whisker(&inner_ap),
@@ -2939,9 +3005,9 @@ fn two_ap_calls_whose_arguments_reduce_alike_convert_4005()
 }
 
 /// #4038: a composite typed by `join` was refused against `then` over the same
-/// paths where the endpoints are stuck. `join`'s body is `p then q`, so its
-/// call converts with the native composite at variable endpoints, at a stuck
-/// composite and at an application of a variable function.
+/// paths where the endpoints are stuck. `join`'s body is `Path.step(p, q)`, so
+/// its call converts with the native composite at variable endpoints, at a
+/// stuck composite and at an application of a variable function.
 #[test]
 fn a_composite_typed_by_join_over_stuck_endpoints_converts_with_then_4038()
 {
@@ -2949,17 +3015,16 @@ fn a_composite_typed_by_join_over_stuck_endpoints_converts_with_then_4038()
     let module = lowered(
         SourceText::from(
             "def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> \
-             Path(A, x, z) {\n  p then q\n}\n\ndef lemj(A : Type, x : A, y : A, z : A, p : \
+             Path(A, x, z) {\n  Path.step(p, q)\n}\n\ndef lemj(A : Type, x : A, y : A, z : A, p : \
              Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), join(A, x, y, z, p, q), \
-             join(A, x, y, z, p, q)) {\n  here(join(A, x, y, z, p, q))\n}\n\ndef \
+             join(A, x, y, z, p, q)) {\n  Path.here(join(A, x, y, z, p, q))\n}\n\ndef \
              atVariables(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) \
-             -> Path(Path(A, x, z), p then q, p then q) {\n  lemj(A, x, y, z, p, q)\n}\n\ndef \
+             -> Path(Path(A, x, z), Path.step(p, q), Path.step(p, q)) {\n  lemj(A, x, y, z, p, q)\n}\n\ndef \
              atComposite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z), \
-             p : Path(Path(A, x, z), f then g, f then g), q : Path(Path(A, x, z), f then g, f \
-             then g)) -> Path(Path(Path(A, x, z), f then g, f then g), p then q, p then q) {\n  \
-             lemj(Path(A, x, z), f then g, f then g, f then g, p, q)\n}\n\ndef \
+             p : Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)), q : Path(Path(A, x, z), Path.step(f, g), Path.step(f, g))) -> Path(Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)), Path.step(p, q), Path.step(p, q)) {\n  \
+             lemj(Path(A, x, z), Path.step(f, g), Path.step(f, g), Path.step(f, g), p, q)\n}\n\ndef \
              atApplication(A : Type, F : A => A, x : A, y : A, z : A, p : Path(A, F(x), F(y)), \
-             q : Path(A, F(y), z)) -> Path(Path(A, F(x), z), p then q, p then q) {\n  lemj(A, \
+             q : Path(A, F(y), z)) -> Path(Path(A, F(x), z), Path.step(p, q), Path.step(p, q)) {\n  lemj(A, \
              F(x), F(y), z, p, q)\n}\n",
         ),
         &mut arena,
@@ -2977,7 +3042,7 @@ fn a_composite_typed_by_join_over_stuck_endpoints_converts_with_then_4038()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// #4065: a stuck call passed to a parameter whose type writes `p then q` was
+/// #4065: a stuck call passed to a parameter whose type writes `Path.step(p, q)` was
 /// refused against the same call written in place. A variable passed there
 /// converts, and so do one stuck call and two.
 #[test]
@@ -2987,17 +3052,16 @@ fn a_stuck_call_passed_to_a_parameter_converts_with_the_call_written_in_its_type
     let module = lowered(
         SourceText::from(
             "def act(A : Type, F : A => A, x : A, y : A, p : Path(A, x, y)) -> Path(A, F(x), \
-             F(y)) {\n  cong(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
-             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), p then q, p then q) {\n  \
-             here(p then q)\n}\n\ndef junction(A : Type, F : A => A, x : A, y : A, z : A, r : \
-             Path(A, x, y), s : Path(A, y, z)) -> Path(Path(A, F(x), F(z)), act(A, F, x, y, r) \
-             then act(A, F, y, z, s), act(A, F, x, y, r) then act(A, F, y, z, s)) {\n  \
+             F(y)) {\n  Path.ap(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
+             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(p, q), Path.step(p, q)) {\n  \
+             Path.here(Path.step(p, q))\n}\n\ndef junction(A : Type, F : A => A, x : A, y : A, z : A, r : \
+             Path(A, x, y), s : Path(A, y, z)) -> Path(Path(A, F(x), F(z)), Path.step(act(A, F, x, y, r), act(A, F, y, z, s)), Path.step(act(A, F, x, y, r), act(A, F, y, z, s))) {\n  \
              thenHere(A, F(x), F(y), F(z), act(A, F, x, y, r), act(A, F, y, z, s))\n}\n\ndef \
              junctionVariables(A : Type, x : A, y : A, z : A, r : Path(A, x, y), s : Path(A, y, \
-             z)) -> Path(Path(A, x, z), r then s, r then s) {\n  thenHere(A, x, y, z, r, \
+             z)) -> Path(Path(A, x, z), Path.step(r, s), Path.step(r, s)) {\n  thenHere(A, x, y, z, r, \
              s)\n}\n\ndef junctionOneCall(A : Type, F : A => A, x : A, y : A, z : A, r : Path(A, \
-             x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, F, x, y, r) then s, \
-             act(A, F, x, y, r) then s) {\n  thenHere(A, F(x), F(y), z, act(A, F, x, y, r), \
+             x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), Path.step(act(A, F, x, y, r), s), \
+             Path.step(act(A, F, x, y, r), s)) {\n  thenHere(A, F(x), F(y), z, act(A, F, x, y, r), \
              s)\n}\n",
         ),
         &mut arena,
@@ -3028,30 +3092,29 @@ fn a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073()
     let module = lowered(
         SourceText::from(
             "def act(A : Type, F : A => A, x : A, y : A, p : Path(A, x, y)) -> Path(A, F(x), \
-             F(y)) {\n  cong(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
-             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), p then q, p then q) {\n  \
-             here(p then q)\n}\n\ndef composedAtLambda(A : Type, F : A => A, x : A, y : A, z : \
-             A, r : Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fun \
-             (q : A) { F(q) } : A => A), x, y, r) then s, act(A, (fun (q : A) { F(q) } : A => \
-             A), x, y, r) then s) {\n  here(act(A, (fun (q : A) { F(q) } : A => A), x, y, r) \
-             then s)\n}\n\ndef passedAtLambda(A : Type, F : A => A, x : A, y : A, z : A, r : \
-             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fun (q : A) \
-             { F(q) } : A => A), x, y, r) then s, act(A, (fun (q : A) { F(q) } : A => A), x, y, \
-             r) then s) {\n  thenHere(A, F(x), F(y), z, act(A, (fun (q : A) { F(q) } : A => A), \
+             F(y)) {\n  Path.ap(F, p)\n}\n\ndef thenHere(A : Type, x : A, y : A, z : A, p : \
+             Path(A, x, y), q : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(p, q), Path.step(p, q)) {\n  \
+             Path.here(Path.step(p, q))\n}\n\ndef composedAtLambda(A : Type, F : A => A, x : A, y : A, z : \
+             A, r : Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), Path.step(act(A, (fun \
+             (q : A) { F(q) } : A => A), x, y, r), s), Path.step(act(A, (fun (q : A) { F(q) } : A => \
+             A), x, y, r), s)) {\n  Path.here(Path.step(act(A, (fun (q : A) { F(q) } : A => A), x, y, r), s))\n}\n\ndef passedAtLambda(A : Type, F : A => A, x : A, y : A, z : A, r : \
+             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), Path.step(act(A, (fun (q : A) \
+             { F(q) } : A => A), x, y, r), s), Path.step(act(A, (fun (q : A) { F(q) } : A => A), x, y, \
+             r), s)) {\n  thenHere(A, F(x), F(y), z, act(A, (fun (q : A) { F(q) } : A => A), \
              x, y, r), s)\n}\n\ndef passedRedex(A : Type, F : A => A, x : A, y : A, z : A, r : \
-             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), act(A, (fun (q : A) \
-             { F(q) } : A => A), x, y, r) then s, act(A, (fun (q : A) { F(q) } : A => A), x, y, \
-             r) then s) {\n  thenHere(A, (fun (q : A) { F(q) } : A => A)(x), F(y), z, act(A, (fun \
+             Path(A, x, y), s : Path(A, F(y), z)) -> Path(Path(A, F(x), z), Path.step(act(A, (fun (q : A) \
+             { F(q) } : A => A), x, y, r), s), Path.step(act(A, (fun (q : A) { F(q) } : A => A), x, y, \
+             r), s)) {\n  thenHere(A, (fun (q : A) { F(q) } : A => A)(x), F(y), z, act(A, (fun \
              (q : A) { F(q) } : A => A), x, y, r), s)\n}\n\ndef across(A : Type, B : Type, F : \
-             A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {\n  cong(F, \
+             A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {\n  Path.ap(F, \
              p)\n}\n\ndef passedComposite(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp \
              : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z), k : Path(A, \
-             x, z), s : Path(Path(A, x, z), fp then g, k)) -> Path(Path(Path(A, x, z), fm then \
-             g, k), across(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { q then g } : \
-             Path(A, x, y) => Path(A, x, z)), fm, fp, fa) then s, across(Path(A, x, y), Path(A, \
-             x, z), (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)), fm, \
-             fp, fa) then s) {\n  thenHere(Path(A, x, z), fm then g, fp then g, k, \
-             across(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { q then g } : Path(A, \
+             x, z), s : Path(Path(A, x, z), Path.step(fp, g), k)) -> Path(Path(Path(A, x, z), Path.step(fm, \
+             g), k), Path.step(across(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { Path.step(q, g) } : \
+             Path(A, x, y) => Path(A, x, z)), fm, fp, fa), s), Path.step(across(Path(A, x, y), Path(A, \
+             x, z), (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)), fm, \
+             fp, fa), s)) {\n  thenHere(Path(A, x, z), Path.step(fm, g), Path.step(fp, g), k, \
+             across(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, \
              x, y) => Path(A, x, z)), fm, fp, fa), s)\n}\n",
         ),
         &mut arena,
@@ -3087,22 +3150,22 @@ fn transports_whose_motive_starts_differ_by_a_reduction_convert_4179()
         SourceText::from(
             "def same(A : Type, a : A) -> A {\n  a\n}\n\ndef fromUnit(A : Type, x : A, y : A, z \
              : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, x, z), s : Path(Path(A, x, \
-             z), f then g, h)) -> Path(Path(A, x, z), (f then g) then here(z), h) {\n  s\n}\n\ndef \
+             z), Path.step(f, g), h)) -> Path(Path(A, x, z), Path.step(Path.step(f, g), Path.here(z)), h) {\n  s\n}\n\ndef \
              thenStart(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z), h : \
-             Path(A, x, z), k : Path(A, x, z), s : Path(Path(A, x, z), f then g, h), r : \
-             Path(Path(A, x, z), h, k)) -> Path(Path(Path(A, x, z), f then g, k), fromUnit(A, x, \
-             y, z, f, g, h, s) then r, s then r) {\n  here(s then r)\n}\n\ndef unfoldStart(A : \
+             Path(A, x, z), k : Path(A, x, z), s : Path(Path(A, x, z), Path.step(f, g), h), r : \
+             Path(Path(A, x, z), h, k)) -> Path(Path(Path(A, x, z), Path.step(f, g), k), Path.step(fromUnit(A, x, \
+             y, z, f, g, h, s), r), Path.step(s, r)) {\n  Path.here(Path.step(s, r))\n}\n\ndef unfoldStart(A : \
              Type, x : A, y : A, k : A, s : Path(A, x, y), r : Path(A, y, k)) -> Path(Path(A, x, \
-             k), transport(fun (c) { Path(A, same(A, x), c) }, r, s), transport(fun (c) { Path(A, x, c) }, r, \
-             s)) {\n  here(transport(fun (c) { Path(A, x, c) }, r, s))\n}\n\ndef hereStart(A : Type, x : \
+             k), Path.walk(fun (c) { Path(A, same(A, x), c) }, r, s), Path.walk(fun (c) { Path(A, x, c) }, r, \
+             s)) {\n  Path.here(Path.walk(fun (c) { Path(A, x, c) }, r, s))\n}\n\ndef hereStart(A : Type, x : \
              A, y : A, k : A, s : Path(A, x, y), r : Path(A, y, k)) -> Path(Path(A, x, k), \
-             transport(fun (c) { Path(A, transport(fun (d) { A }, here(x), x), c) }, r, s), transport(fun (c) { \
-             Path(A, x, c) }, r, s)) {\n  here(transport(fun (c) { Path(A, x, c) }, r, s))\n}\n\ndef \
+             Path.walk(fun (c) { Path(A, Path.walk(fun (d) { A }, Path.here(x), x), c) }, r, s), Path.walk(fun (c) { \
+             Path(A, x, c) }, r, s)) {\n  Path.here(Path.walk(fun (c) { Path(A, x, c) }, r, s))\n}\n\ndef \
              unitStart(A : Type, x : A, y : A, z : A, k : Path(A, x, z), f : Path(A, x, y), g : \
-             Path(A, y, z), s : Path(Path(A, x, z), f then g, k), m : Path(A, x, z), r : \
-             Path(Path(A, x, z), k, m)) -> Path(Path(Path(A, x, z), f then g, m), transport(fun (c) { \
-             Path(Path(A, x, z), (f then g) then here(z), c) }, r, s), transport(fun (c) { Path(Path(A, \
-             x, z), f then g, c) }, r, s)) {\n  here(transport(fun (c) { Path(Path(A, x, z), f then g, \
+             Path(A, y, z), s : Path(Path(A, x, z), Path.step(f, g), k), m : Path(A, x, z), r : \
+             Path(Path(A, x, z), k, m)) -> Path(Path(Path(A, x, z), Path.step(f, g), m), Path.walk(fun (c) { \
+             Path(Path(A, x, z), Path.step(Path.step(f, g), Path.here(z)), c) }, r, s), Path.walk(fun (c) { Path(Path(A, \
+             x, z), Path.step(f, g), c) }, r, s)) {\n  Path.here(Path.walk(fun (c) { Path(Path(A, x, z), Path.step(f, g), \
              c) }, r, s))\n}\n",
         ),
         &mut arena,
@@ -3148,7 +3211,7 @@ fn a_composite_lowers_to_its_cells_and_their_fold()
         SourceText::from(concat!(
             "def composed(A : Type, x : A, y : A, z : A, w : A, p : Path(A, x, y), q : Path(A, y, z), r : Path(A, z, w)) -> Path(A, x, w) {\n  compose[5, 7](chain(3), (p, q, r))\n}\n",
             "def single(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(A, x, y) {\n  compose[0, 0](chain(1), (p))\n}\n",
-            "def decided(A : Type, x : A) -> Path(Path(A, x, x), compose[5, 7](chain(3), (here(x), here(x), here(x))), here(x)) {\n  here(here(x))\n}\n",
+            "def decided(A : Type, x : A) -> Path(Path(A, x, x), compose[5, 7](chain(3), (Path.here(x), Path.here(x), Path.here(x))), Path.here(x)) {\n  Path.here(Path.here(x))\n}\n",
         )),
         &mut arena,
     );
@@ -3266,9 +3329,9 @@ fn a_level_two_pasting_reads_its_columns()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  compose[4, 9](chain(2, (1, 0)), (fa, g))\n}\n",
+            "def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {\n  compose[4, 9](chain(2, (1, 0)), (fa, g))\n}\n",
             "def stacked(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Path(Path(A, x, y), g, h)) -> Path(Path(A, x, y), f, h) {\n  compose[4, 9](chain(1, (2)), (a, b))\n}\n",
-            "def miscounted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  compose[4, 9](chain(2, (1, 0, 0)), (fa, g))\n}\n",
+            "def miscounted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {\n  compose[4, 9](chain(2, (1, 0, 0)), (fa, g))\n}\n",
         )),
         &mut arena,
     );
@@ -3310,7 +3373,7 @@ fn a_level_two_pasting_reads_its_columns()
     let mut kept = CoreArena::new();
     let checked = lowered(
         SourceText::from(concat!(
-            "def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  compose[4, 9](chain(2, (1, 0)), (fa, g))\n}\n",
+            "def whiskered(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {\n  compose[4, 9](chain(2, (1, 0)), (fa, g))\n}\n",
             "def stacked(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Path(Path(A, x, y), g, h)) -> Path(Path(A, x, y), f, h) {\n  compose[4, 9](chain(1, (2)), (a, b))\n}\n",
         )),
         &mut kept,
@@ -3324,10 +3387,10 @@ fn a_fill_lowers_to_its_generator_and_cells()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
-            "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), f then g, f then g) {\n  thunk { fun (f) { thunk { fun (g) { here(composite(A, x, y, z, f, g)) } } } }\n}\n",
-            "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), fm then g, fp then g) {\n  transport(fun (a) { Path(Path(A, x, z), fm then g, a then g) }, fa, here(fm then g))\n}\n",
-            "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(Path(A, x, z), fm then g, fp then g), here(fm then g) then rightWhisker(A, x, y, z, fm, fp, fa, g), rightWhisker(A, x, y, z, fm, fp, fa, g) then here(fp then g)) {\n  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))\n}\n",
+            "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  Path.step(f, g)\n}\n",
+            "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)) {\n  thunk { fun (f) { thunk { fun (g) { Path.here(composite(A, x, y, z, f, g)) } } } }\n}\n",
+            "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {\n  Path.walk(fun (a) { Path(Path(A, x, z), Path.step(fm, g), Path.step(a, g)) }, fa, Path.here(Path.step(fm, g)))\n}\n",
+            "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)), Path.step(Path.here(Path.step(fm, g)), rightWhisker(A, x, y, z, fm, fp, fa, g)), Path.step(rightWhisker(A, x, y, z, fm, fp, fa, g), Path.here(Path.step(fp, g)))) {\n  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))\n}\n",
         )),
         &mut arena,
     );
@@ -3391,11 +3454,11 @@ fn two_sites_of_one_fill_convert_at_the_same_entries_4180()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  f then g\n}\n",
+            "def composite(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(A, x, z) {\n  Path.step(f, g)\n}\n",
             "def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {\n  thunk { fun (f) { thunk { fun (g) { composite(A, x, y, z, f, g) } } } }\n}\n",
-            "def cellsTwo(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), f then g, p then q) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
-            "def cellsAgain(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), f then g, p then q) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
-            "def sitesConvert(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(Path(A, x, z), f then g, p then q), cellsTwo(A, x, y, z, f, p, a, g, q, b), cellsAgain(A, x, y, z, f, p, a, g, q, b)) {\n  here(cellsTwo(A, x, y, z, f, p, a, g, q, b))\n}\n",
+            "def cellsTwo(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), Path.step(f, g), Path.step(p, q)) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
+            "def cellsAgain(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(A, x, z), Path.step(f, g), Path.step(p, q)) {\n  fill[5, 7](chain(2), composedCells(A, x, y, z), (a, b))\n}\n",
+            "def sitesConvert(A : Type, x : A, y : A, z : A, f : Path(A, x, y), p : Path(A, x, y), a : Path(Path(A, x, y), f, p), g : Path(A, y, z), q : Path(A, y, z), b : Path(Path(A, y, z), g, q)) -> Path(Path(Path(A, x, z), Path.step(f, g), Path.step(p, q)), cellsTwo(A, x, y, z, f, p, a, g, q, b), cellsAgain(A, x, y, z, f, p, a, g, q, b)) {\n  Path.here(cellsTwo(A, x, y, z, f, p, a, g, q, b))\n}\n",
         )),
         &mut arena,
     );

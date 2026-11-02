@@ -20,7 +20,7 @@ def backwards() -> Integer {
         (() => Integer) at inner => (() => Integer) at outer,
         thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } },
         thunk { fun (x) { let y : (() => Integer) at inner = pass(x); pure y } }
-      ) = here(thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } });
+      ) = Path.here(thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } });
       force k
     } with {
       pure(y) => pure y,
@@ -44,7 +44,7 @@ def unequal() -> Integer {
         (() => Integer) at outer => (() => Integer) at inner,
         thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } },
         thunk { fun (x) { let z : (() => Integer) at inner = x; touch(z) } }
-      ) = here(thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } });
+      ) = Path.here(thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } });
       force k
     } with {
       pure(y) => pure y,
