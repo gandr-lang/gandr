@@ -18,7 +18,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
-**How.** Each node is dispatched on the named kind its mold resolves to (`Pbg::named_kind`); a collection pass pairs signatures with definitions, and two sweeps over the level-order tree, neither recursive and both under one `LoweringBudget`, plan every node and then mint it. The crate rustdoc's _The grammar names every form_ and _Two sweeps, no recursion_ hold the mechanism.
+**How.** Each node is dispatched on the named kind its mold resolves to (`Pbg::named_kind`); a collection pass pairs signatures with definitions, and two sweeps over the tree laid out by form, neither recursive and both under one `LoweringBudget`, plan every node and then mint it. The crate rustdoc's _The grammar names every form_ and _Two sweeps, no recursion_ hold the mechanism.
 
 ## Provided features
 

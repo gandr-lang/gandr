@@ -98,11 +98,12 @@
 //!
 //! # Two sweeps, no recursion
 //!
-//! The tree is laid out in level order, so ascending position order visits
-//! every parent before its children and descending order visits every child
-//! before its parent. Lowering classifies on the way down and mints on the way
-//! up, each as a plain loop over one source's positions: no descent, no
-//! explicit frame stack, and no depth a real module can overflow.
+//! The tree is laid out by form, each form's descendants in level order, so
+//! ascending position order visits every parent before its children and
+//! descending order visits every child before its parent. Lowering classifies
+//! on the way down and mints on the way up, each as a plain loop over one
+//! source's positions: no descent, no explicit frame stack, and no depth a
+//! real module can overflow.
 //!
 //! # A unit is lowered a source at a time
 //!

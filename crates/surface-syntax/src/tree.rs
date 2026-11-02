@@ -1,7 +1,7 @@
 //! The flat node arena: [`SyntaxTree`], the [`Node`] it holds, and the
 //! [`NodeIndex`] that addresses one.
 //!
-//! # Children are an index range, so the layout is level-order
+//! # Children are an index range, so the layout is level order by form
 //!
 //! A node names its children as a contiguous range of arena positions rather
 //! than as a list of ids stored somewhere else. That costs two fields per node
@@ -13,6 +13,13 @@
 //! children a contiguous range: the second child's subtree sits between the
 //! first child and the second. Laying the tree out in level order does, and it
 //! comes with the invariant in the next paragraph for free.
+//!
+//! The root's children are laid out side by side after the root, and then each
+//! child's descendants follow in level order, one child after another. A
+//! top-level form's descendants are then one contiguous range
+//! ([`SyntaxTree::descendants`]), which a stage keyed by form reads without a
+//! walk. Whole-tree level order would spread a form's nodes over the arena, one
+//! run per depth.
 //!
 //! # Parent before child, and the invariant that follows
 //!
@@ -52,19 +59,10 @@
 //! join has one root per tree joined ([`SyntaxTree::roots`]). Every position of
 //! the first tree names the same node in the join, so what was read of the
 //! first tree by position stays true of the join. Each root's nodes keep their
-//! level order, so an ascending scan still visits every parent before its
-//! children. The join's forms are the two trees' forms in order, and its digest
-//! is the one a parse of the whole text gives when its forms are those.
-//!
-//! # Level-order layout
-//!
-//! A node names its children as a contiguous range of strictly higher arena
-//! positions: two fields per node and no second vector. A post-order arena,
-//! which a bottom-up builder produces naturally, cannot give a node's children
-//! a contiguous range, because the second child's subtree sits between the
-//! first child and the second; level order can. The root is position zero,
-//! every child sits above its parent, so an ascending scan visits parents first
-//! and an index comparison decides ancestry direction.
+//! layout, so an ascending scan still visits every parent before its children
+//! and each form's descendants stay one range. The join's forms are the two
+//! trees' forms in order, and its digest is the one a parse of the whole text
+//! gives when its forms are those.
 
 use alloc::vec::Vec;
 
@@ -310,7 +308,7 @@ impl Node
 /// A forward walk over a contiguous range of arena positions.
 ///
 /// One type serves both walks the arena offers — a node's children and a whole
-/// tree — because in a level-order arena both are ranges.
+/// tree — because in this arena's layout both are ranges.
 ///
 /// # Specification
 /// - ensures: the walk yields a contiguous ascending range and remains
@@ -374,8 +372,8 @@ impl Iterator for NodeIndices
     ///   per call, and nothing once the end is reached; the walk stays
     ///   exhausted afterwards.
     /// - provides: the forward order every walk over the arena sees, which in a
-    ///   level-order layout is source order among siblings and
-    ///   parent-before-child over a whole tree.
+    ///   layout by form is source order among siblings and parent-before-child
+    ///   over a whole tree.
     /// - fails: never — exhaustion is the iterator's own absence, not a
     ///   failure.
     /// - panics: none. The advance saturates, so a range ending at `usize::MAX`
@@ -435,15 +433,18 @@ impl ExactSizeIterator for NodeIndices
 {
 }
 
-/// A concrete syntax tree: its source, its grammar, and its nodes in level
-/// order.
+/// A concrete syntax tree: its source, its grammar, and its nodes laid out by
+/// form.
 ///
-/// A parse's root is at position zero; a join's second root follows the first
-/// tree's nodes.
+/// A parse's root is at position zero, its children follow side by side, and
+/// then each child's descendants follow in level order, one child after
+/// another, so a top-level form's descendants are one contiguous range. A
+/// join's second root follows the first tree's nodes.
 ///
 /// # Specification
 /// - ensures: every stored child range is contiguous and strictly above its
-///   parent; source and grammar describe the same immutable layout.
+///   parent; each top-level form's descendants are one contiguous range; source
+///   and grammar describe the same immutable layout.
 /// - executable: none — this type has no entry or return boundary; the
 ///   construction and observation methods state its executable obligations.
 ///
@@ -463,8 +464,9 @@ pub struct SyntaxTree<'source>
     /// The grammar whose mold table every [`MoldId`](crate::MoldId) in this
     /// tree indexes.
     grammar: GrammarFingerprint,
-    /// The nodes, each root's in level order — parents before children,
-    /// siblings adjacent — and the roots' runs in source order.
+    /// The nodes, each root's laid out by form — parents before children,
+    /// siblings adjacent, each form's descendants together — and the roots'
+    /// runs in source order.
     nodes: Vec<Node>,
     /// The positions of the roots, in source order.
     roots: Vec<NodeIndex>,
@@ -476,10 +478,11 @@ pub struct SyntaxTree<'source>
 impl<'source> SyntaxTree<'source>
 {
     /// The tree over `source` under `grammar` holding `nodes` already laid out
-    /// in level order.
+    /// by form.
     ///
     /// # Specification
-    /// - requires: `nodes` is empty or a level-order layout — the root first,
+    /// - requires: `nodes` is empty or a layout by form — the root first, then
+    ///   its children, then each child's descendants as one contiguous range,
     ///   every node's children occupying the contiguous range its `first_child`
     ///   and `child_count` name, and every such range strictly above the node's
     ///   own position; every span in `nodes` was validated against `source`.
@@ -680,6 +683,47 @@ impl<'source> SyntaxTree<'source>
         self.index.forms.as_slice()
     }
 
+    /// The positions of the descendants of the top-level form at `form`, one
+    /// contiguous range the layout gives them, and nothing for a position no
+    /// top-level form stands at.
+    ///
+    /// # Specification
+    /// - requires: nothing — a position this tree does not hold is admissible
+    ///   input.
+    /// - ensures: for a top-level form, every node reachable from it but
+    ///   itself, each once, in ascending order, and no other; nothing
+    ///   otherwise.
+    /// - provides: a form's nodes as one range, which a stage keyed by form
+    ///   reads without walking the tree.
+    /// - fails: yields nothing for a position that is no top-level form.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each form of the corpus's sources reaches exactly its
+    ///   range, and the forms' ranges with the root and its children cover the
+    ///   layout once.
+    /// - witness: `build::tests::each_form_s_descendants_are_one_range`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.as_ref().is_some() == self.index.forms.binary_search(&form).is_ok()
+        && ret.as_ref().is_none_or(|walk| walk.next <= walk.end && walk.end <= self.nodes.len()))]
+    pub fn descendants(
+        &self,
+        form: NodeIndex,
+    ) -> Option<NodeIndices>
+    {
+        let (slot, rank) = self.index.ranks.get(form.0).copied().flatten()?;
+        if rank != FormRank::default() {
+            return None;
+        }
+        let &(start, end) = self.index.ranges.get(slot.0)?;
+
+        Some(NodeIndices {
+            next: start.0,
+            end: end.0,
+        })
+    }
+
     /// The cross-tree key of the node at `position`: its top-level form's
     /// digest and its preorder rank among that form's significant nodes.
     ///
@@ -742,13 +786,12 @@ impl<'source> SyntaxTree<'source>
         self.grammar
     }
 
-    /// The position of the first root, which the level-order layout fixes at
-    /// zero.
+    /// The position of the first root, which the layout fixes at zero.
     ///
     /// # Specification
     /// - requires: nothing; the tree need not hold any node.
-    /// - ensures: position zero, whatever the tree holds — the level-order
-    ///   layout fixes the first root there rather than storing it.
+    /// - ensures: position zero, whatever the tree holds — the layout fixes the
+    ///   first root there rather than storing it.
     /// - provides: the entry point of every walk of a parse. An empty tree
     ///   answers with a position it does not hold, which [`SyntaxTree::node`]
     ///   resolves to nothing; the alternative would be an absence every caller
@@ -829,13 +872,13 @@ impl<'source> SyntaxTree<'source>
         self.nodes.get(position.0)
     }
 
-    /// Every position in the tree, in level order.
+    /// Every position in the tree, in its layout's order.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: every position the tree holds, once, in ascending order,
-    ///   which under the level-order layout visits every parent before any of
-    ///   its children.
+    ///   which under the layout by form visits every parent before any of its
+    ///   children.
     /// - provides: the stackless whole-tree walk the layout is chosen for.
     /// - fails: never.
     /// - panics: none.
@@ -863,7 +906,7 @@ impl<'source> SyntaxTree<'source>
     /// - requires: nothing — a position this tree does not hold is admissible
     ///   input.
     /// - ensures: the children's positions in the order the node carries them,
-    ///   each strictly above `position` under the level-order layout; the empty
+    ///   each strictly above `position` under the layout by form; the empty
     ///   walk for a leaf and for a position the tree does not hold, which is
     ///   the fail-closed reading.
     /// - provides: the edge relation every walk over the tree follows.
@@ -974,7 +1017,8 @@ struct FormSlot(usize);
 /// What a tree knows of its top-level forms.
 ///
 /// # Specification
-/// - ensures: one digest per form, index for index; one rank entry per node.
+/// - ensures: one digest and one range per form, index for index; one rank
+///   entry per node.
 /// - executable: none — [`index_forms`] states the shape it builds.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct FormIndex
@@ -984,6 +1028,10 @@ struct FormIndex
     forms: Vec<NodeIndex>,
     /// Each form's digest, index for index with `forms`.
     digests: Vec<NodeDigest>,
+    /// Each form's descendants, index for index with `forms`: the one
+    /// contiguous range of positions the layout gives them, from its first
+    /// position to the position past its last.
+    ranges: Vec<(NodeIndex, NodeIndex)>,
     /// Per position, the slot of the form holding the node and its rank
     /// there; nothing for the root and for layout, documentation and what
     /// they hold.
@@ -992,19 +1040,21 @@ struct FormIndex
     digest: Option<NodeDigest>,
 }
 
-/// The top-level forms of a level-order `nodes` over `source`, their digests,
-/// each node's form and preorder rank among that form's significant nodes, and
-/// the whole tree's digest.
+/// The top-level forms of `nodes` laid out by form over `source`, their
+/// digests, each node's form and preorder rank among that form's significant
+/// nodes, and the whole tree's digest.
 ///
 /// # Specification
-/// - requires: `nodes` is empty or a level-order layout whose spans were
-///   validated against `source`, as [`SyntaxTree::from_layout`] asks.
+/// - requires: `nodes` is empty or a layout by form whose spans were validated
+///   against `source`, as [`SyntaxTree::from_layout`] asks.
 /// - ensures: the forms are the root's significant children in order, each with
 ///   the digest of its preorder serialization — every significant node
 ///   reachable from the form through significant nodes, each as its label, its
 ///   significant child count and, when its label carries text, its text; such a
 ///   node holds its form's slot and preorder rank, the form's root first, and
-///   every other position holds nothing. The tree's digest is the root's label,
+///   every other position holds nothing. Each form's range runs from its first
+///   child to the first child of the next top-level child that has one, the
+///   last form's to the layout's end. The tree's digest is the root's label,
 ///   text and form count with the forms' digests in order, and is absent
 ///   exactly when `nodes` is empty.
 /// - fails: never.
@@ -1018,8 +1068,10 @@ struct FormIndex
 /// - hypothesis: L3 — as [`SyntaxTree::key`] and [`SyntaxTree::digest`].
 /// - witness: `build::tests::keys_rank_a_forms_nodes_in_preorder`
 /// - witness: `build::tests::two_builds_of_one_source_agree_digest_by_digest`
+/// - witness: `build::tests::each_form_s_descendants_are_one_range`
 #[spec(ensures: |ret| ret.ranks.len() == nodes.len()
     && ret.digests.len() == ret.forms.len()
+    && ret.ranges.len() == ret.forms.len()
     && ret.digest.is_some() != nodes.is_empty()
     && ret.forms.iter().enumerate().all(|(slot, &form)| {
         ret.ranks.get(form.0).copied().flatten() == Some((FormSlot(slot), FormRank::default()))
@@ -1048,12 +1100,34 @@ fn index_forms(
     let mut preimage = Preimage::default();
     let mut pending: Vec<usize> = Vec::new();
     let first = root.first_child.0;
-    for position in first .. first.saturating_add(root.child_count.0) {
+    let tops = first .. first.saturating_add(root.child_count.0);
+    // Each top-level child's descendants run from its first child to the
+    // first child of the next top-level child that has one, the last to the
+    // end of the layout: one pass from the last child back.
+    let mut ranges = alloc::vec![(NodeIndex(0), NodeIndex(0)); tops.len()];
+    let mut next = nodes.len();
+    for (at, position) in tops.clone().enumerate().rev() {
+        let start = match nodes.get(position) {
+            Some(node) if node.child_count.0 > 0 => node.first_child.0,
+            Some(_) | None => next,
+        };
+        if let Some(range) = ranges.get_mut(at) {
+            *range = (NodeIndex(start), NodeIndex(next.max(start)));
+        }
+        next = start;
+    }
+    for (at, position) in tops.enumerate() {
         if !significant(position) {
             continue;
         }
         let slot = FormSlot(index.forms.len());
         index.forms.push(NodeIndex(position));
+        index.ranges.push(
+            ranges
+                .get(at)
+                .copied()
+                .unwrap_or((NodeIndex(next), NodeIndex(next))),
+        );
         preimage.open_form();
         let mut rank = 0_u32;
         pending.push(position);
@@ -1097,11 +1171,11 @@ fn index_forms(
 /// # Specification
 /// - requires: `nodes` is `before`'s tree's nodes then `after`'s, moved up by
 ///   `moved`, the position past `before`'s tree's last node.
-/// - ensures: `before`'s forms, digests and ranks, then `after`'s, each form
-///   and each rank's slot moved past `before`'s; the digest folds the first
-///   node's label and text, the form count and every form's digest in order, as
-///   [`index_forms`] folds a parse's, and is absent exactly when `nodes` is
-///   empty.
+/// - ensures: `before`'s forms, digests, ranges and ranks, then `after`'s, each
+///   form, each range and each rank's slot moved past `before`'s; the digest
+///   folds the first node's label and text, the form count and every form's
+///   digest in order, as [`index_forms`] folds a parse's, and is absent exactly
+///   when `nodes` is empty.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1131,6 +1205,14 @@ fn joined_index(
     let mut digests = Vec::with_capacity(forms.len());
     digests.extend_from_slice(&before.digests);
     digests.extend_from_slice(&after.digests);
+    let mut ranges = Vec::with_capacity(forms.len());
+    ranges.extend_from_slice(&before.ranges);
+    ranges.extend(after.ranges.iter().map(|&(start, end)| {
+        (
+            NodeIndex(start.0.saturating_add(moved.0)),
+            NodeIndex(end.0.saturating_add(moved.0)),
+        )
+    }));
     let mut ranks = Vec::with_capacity(before.ranks.len().saturating_add(after.ranks.len()));
     ranks.extend_from_slice(&before.ranks);
     ranks.extend(
@@ -1158,6 +1240,7 @@ fn joined_index(
     FormIndex {
         forms,
         digests,
+        ranges,
         ranks,
         digest,
     }

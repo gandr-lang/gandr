@@ -163,8 +163,37 @@ impl Target
                 node.span() == repair.span && matches!(node.label(), NodeLabel::Tile(_))
             })
         };
+        // A node's span covers its children's, so the tile's parent is a root,
+        // or a top-level form covering the repair or one of its descendants,
+        // which the layout keeps as one range.
+        let covers = |position: NodeIndex| {
+            tree.node(position).is_some_and(|node| {
+                node.span().start() <= repair.span.start() && repair.span.end() <= node.span().end()
+            })
+        };
+        let forms = tree.forms();
+        let first = forms.partition_point(|&form| {
+            tree.node(form)
+                .is_some_and(|node| node.span().end() < repair.span.start())
+        });
+        let holders = forms
+            .get(first ..)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .take_while(|&form| {
+                tree.node(form)
+                    .is_some_and(|node| node.span().start() <= repair.span.end())
+            })
+            .filter(|&form| covers(form))
+            .flat_map(|form| {
+                core::iter::once(form).chain(tree.descendants(form).into_iter().flatten())
+            });
         let form = tree
-            .positions()
+            .roots()
+            .iter()
+            .copied()
+            .chain(holders)
             .find(|&position| tree.children(position).any(|child| spans(&child)))?;
         let children: Vec<NodeIndex> = tree.children(form).collect();
         let index = children.iter().position(spans)?;

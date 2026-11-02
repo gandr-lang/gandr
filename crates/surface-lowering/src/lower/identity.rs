@@ -3594,7 +3594,7 @@ impl<'source> Lowerer<'_, 'source>
                     .map(Typed::node),
             );
         }
-        // Source order, not the tree's level order: a parameter's type sits
+        // Source order, not the tree's position order: a parameter's type sits
         // deeper than the result written after it, so a later index, yet an
         // operation inside that result reads it.
         types.sort_unstable_by_key(|&node| {
