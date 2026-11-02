@@ -2262,7 +2262,9 @@ enum HeldReading
     /// endpoint the call's body returns.
     Call,
     /// Any other operand, a bind or a transport: a definition heading it
-    /// unfolds, and an endpoint it returns leaves the operand as it was.
+    /// unfolds. An endpoint it returns runs as a call when a call is all it
+    /// is, as the evaluator's append runs an operand that evaluates to a held
+    /// call. Any other endpoint it returns leaves the operand as it was.
     Operand,
     /// The computation of an endpoint a call returned: a definition heading
     /// it holds, as the evaluator holds the calls an endpoint's value holds.
@@ -2333,8 +2335,9 @@ enum RunStep
 {
     /// It returned this value, which is no returned endpoint.
     Returns(ValueId),
-    /// It returned an endpoint, and the run reads on into this computation.
-    Reads(ComputationId),
+    /// It returned an endpoint, and the run reads on into this computation as
+    /// the reading names.
+    Reads(ComputationId, HeldReading),
     /// This definition heads it, and the run unfolds it.
     Unfolds(ConstantIndex),
     /// It stuck at a head the run does not unfold.
@@ -8232,14 +8235,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     self.rebuild(&mut cells, focus, &mut frames)
                 };
                 let reduct = match self.run_step(read, run.reading) {
-                    RunStep::Reads(computation) => {
+                    RunStep::Reads(computation, reading) => {
                         focus = Closure::closed(computation);
                         frames.clear();
                         progress = Progress::Reduced;
-                        runs.push(Run::Held(HeldRun {
-                            reading: HeldReading::Returned,
-                            ..run
-                        }));
+                        runs.push(Run::Held(HeldRun { reading, ..run }));
                         continue 'endpoints;
                     },
                     RunStep::Unfolds(constant) => {
@@ -9022,9 +9022,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// what the run meets, and records no decision for it: the dialogue under
     /// a stuck transport names no unfolding. An endpoint a call's run returns
     /// is evaluated, its computation run and every call there held: the
-    /// level-two whisker's `⟨tr(…, here(…))⟩` runs on to `here(…)`. An
-    /// endpoint the run of a bind or a transport returns is left unread, and
-    /// so is the operand. A run that sticks at a head no definition unfolds,
+    /// level-two whisker's `⟨tr(…, here(…))⟩` runs on to `here(…)`. A call
+    /// the run of a bind or a transport returns runs on as a call: the
+    /// evaluator evaluates the operand to that held call, and its append runs
+    /// it. Any other endpoint such a run returns is left unread, and so is the
+    /// operand. A run that sticks at a head no definition unfolds,
     /// or at a call an endpoint holds, leaves the operand as it was, and the
     /// transport stands on its held path: `H(b) then ⟨ap(G, here(b))⟩` on
     /// `ap`, and `assoc(f, g, h) then ⟨whiskerRight(…)⟩` on `whiskerRight`,
@@ -9035,10 +9037,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Returns(v)` when `read` is `return v` and `v` is no returned
-    ///   endpoint; `Reads(c)` when `read` is `return ⟨c⟩` and `reading` is no
-    ///   operand; `Unfolds(k)` when `reading` is a call or an operand, the
-    ///   definition `k` heads `read`, and a constructor opens its gate if `k`
-    ///   is a recursive definition; `Sticks` otherwise.
+    ///   endpoint; `Reads(c, Returned)` when `read` is `return ⟨c⟩` and
+    ///   `reading` is no operand; `Reads(c, Call)` when `read` is `return ⟨c⟩`,
+    ///   `reading` is an operand and `c` is a call; `Unfolds(k)` when `reading`
+    ///   is a call or an operand, the definition `k` heads `read`, and a
+    ///   constructor opens its gate if `k` is a recursive definition; `Sticks`
+    ///   otherwise.
     /// - provides: the replay's reading of the evaluator's held-operand run.
     /// - fails: never.
     /// - panics: none.
@@ -9053,13 +9057,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   checker's run reached reflexivity; its calls unfolded, the operand
     ///   runs past what the checker held. An endpoint a bind's run returns,
     ///   read on, closes `coneSuspended3` at reflexivities a step before the
-    ///   unfolding the checker records.
+    ///   unfolding the checker records. A call the run of a transport returns,
+    ///   left held, keeps the middle call of `(p₁ then p₂) then p₃` that the
+    ///   checker's append runs, and the replay refuses `ComparedShared`.
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
+    /// - witness: `replay::tests::an_operand_s_run_runs_the_call_it_returns_4412`
     #[spec(ensures: |ret| match ret {
         RunStep::Returns(read) => self.arena.value(read).is_some(),
-        RunStep::Reads(read) => self.arena.computation(read).is_some(),
+        RunStep::Reads(read, next) => self.arena.computation(read).is_some() && next != HeldReading::Operand,
         RunStep::Unfolds(_) | RunStep::Sticks => true,
     })]
     fn run_step(
@@ -9070,10 +9077,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     {
         if let Some(&Computation::Return(returned)) = self.arena.computation(read) {
             if let Some(&Value::Returned(computation)) = self.arena.value(returned) {
-                if reading == HeldReading::Operand {
-                    return RunStep::Sticks;
-                }
-                return RunStep::Reads(computation);
+                return match reading {
+                    HeldReading::Operand if self.held_reading(computation) == HeldReading::Call => {
+                        RunStep::Reads(computation, HeldReading::Call)
+                    },
+                    HeldReading::Operand => RunStep::Sticks,
+                    HeldReading::Call | HeldReading::Returned => {
+                        RunStep::Reads(computation, HeldReading::Returned)
+                    },
+                };
             }
             return RunStep::Returns(returned);
         }
