@@ -158,6 +158,8 @@ pub use crate::connection::LEGACY;
 pub use crate::connection::MODERN;
 pub use crate::connection::Refusal;
 #[cfg(unix)]
+pub use crate::face::Relayed;
+#[cfg(unix)]
 pub use crate::face::relay;
 #[cfg(unix)]
 pub use crate::face::serve;

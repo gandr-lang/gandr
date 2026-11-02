@@ -1660,6 +1660,7 @@ dependencies = [
  "gandr-surface-lsp",
  "quenchant-anodized",
  "quenchant-shape",
+ "serde",
  "serde_json",
 ]
 

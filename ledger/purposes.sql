@@ -2983,7 +2983,8 @@ INSERT INTO purpose VALUES('surface-mcp','connection::Connection','struct','Hold
 INSERT INTO purpose VALUES('surface-mcp','connection::LEGACY','constant','Names the handshake-based revisions an `initialize` may name, so a legacy client''s version is answered.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','connection::MODERN','constant','Names the protocol revision that carries its version in every request, so a modern client''s version is answered.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','connection::Refusal','enum','Names why a message is refused, so the refusal''s kind is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-mcp','face::relay','function','Carries a client''s standard streams to the hub, so `gandr mcp` reaches the hub as `gandr lsp` does.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','face::Relayed','enum','Names how a relayed model session ended, so `gandr mcp` either exits or hands the session to the selected build.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','face::relay','function','Carries a client''s standard streams to the hub a line at a time, so `gandr mcp` reaches the hub as `gandr lsp` does and follows a toolchain switch.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','face::serve','function','Serves the Model Context Protocol on a connection''s buffered stream, so the hub''s line face answers a model''s messages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','tools::ToolRefusal','struct','Names why a tool call produced no result, so the refusal''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::Closing','struct','One way to close an open form: the steps from its frontier to a tile that ends the form, in source order.',NULL,'fits','sound',NULL);

@@ -2006,7 +2006,7 @@ fn main() -> ExitCode
         #[cfg(unix)]
         Some(Command::Mcp { socket, linger_ms }) => {
             return mcp(
-                socket,
+                socket.as_deref(),
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
             );
@@ -2382,22 +2382,123 @@ fn handed_over() -> std::io::Result<Handover>
     Ok(handover)
 }
 
+/// The client input a face's leg reads: the bytes the last image carried over,
+/// then standard input.
+#[cfg(unix)]
+type Resumed = std::io::Chain<std::io::Cursor<Vec<u8>>, std::fs::File>;
+
+/// Whether a face follows the selection, and from which image.
+#[cfg(unix)]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Following(Maybe<toolchain::Image, ()>);
+
+#[cfg(unix)]
+impl Following
+{
+    /// The selected `gandr` when it is another image than the one followed
+    /// from.
+    ///
+    /// # Specification
+    /// trivial.
+    fn moved(self) -> Maybe<PathBuf, toolchain::unmoved::Absent>
+    {
+        match self.0 {
+            Maybe::Present(image) => toolchain::moved(image),
+            Maybe::Absent(()) => Maybe::Absent(toolchain::unmoved::Absent::Unfollowed),
+        }
+    }
+}
+
+/// How one leg of a face's session ended.
+#[cfg(unix)]
+enum Leg
+{
+    /// The session ended, with this exit code.
+    Ended(ExitCode),
+    /// The face's relay asks to move with this handover.
+    Switched(Handover),
+}
+
+/// Carry a face's session on the standard streams to the hub at `socket`,
+/// starting one lingering `linger` and configured with `spelling` when none
+/// answers, each leg as `leg` relays it, and follow the selection across
+/// builds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each leg runs against the hub [`reach_hub`] reaches, opened by
+///   the handover [`handed_over`] reads, and the session ends with the exit
+///   code a leg ends with. With no `socket` named, a leg ending
+///   [`Leg::Switched`] while the selection names another image switches: the
+///   handover goes to a file beside the hub's socket, and the selected
+///   toolchain runs in this process's place with the same arguments and
+///   [`toolchain::HANDOVER`] naming the file. A selection back on the running
+///   image by then resumes the session on this build's hub. A hub never
+///   reached, a handover unread or an exec failed is noted on standard error
+///   and exits `2`.
+/// - provides: both faces' sessions across builds.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+/// - executable: none — success may replace the process.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a session of either face across a switch of the default
+///   goes on in the next build.
+/// - witness: `tests::cli::a_language_server_follows_a_toolchain_switch`
+/// - witness: `tests::cli::a_model_session_follows_a_toolchain_switch`
+#[cfg(unix)]
+fn followed<Relay>(
+    socket: Option<&Path>,
+    (linger, spelling): (Duration, Spelling),
+    mut leg: Relay,
+) -> ExitCode
+where
+    Relay: FnMut(Resumed, std::os::unix::net::UnixStream, &Handover, Following) -> Leg,
+{
+    use std::io::Read as _;
+    use std::os::fd::AsFd as _;
+
+    // An image that cannot be read never moves: the session stays where it
+    // started.
+    let following = Following(match toolchain::Image::running() {
+        Ok(image) if socket.is_none() => Maybe::Present(image),
+        Ok(_) | Err(_) => Maybe::Absent(()),
+    });
+    let mut handover = match handed_over() {
+        Ok(handover) => handover,
+        Err(error) => return hub_fault(&error),
+    };
+    loop {
+        let reached =
+            reach_hub(socket.map(Path::to_path_buf), linger, spelling).and_then(|stream| {
+                let standard = std::fs::File::from(std::io::stdin().as_fd().try_clone_to_owned()?);
+                Ok((stream, standard))
+            });
+        let (stream, standard) = match reached {
+            Ok(reached) => reached,
+            Err(error) => return hub_fault(&error),
+        };
+        let input = std::io::Cursor::new(handover.carried().0.clone()).chain(standard);
+        let next = match leg(input, stream, &handover, following) {
+            Leg::Ended(code) => return code,
+            Leg::Switched(next) => next,
+        };
+        if let Maybe::Present(path) = following.moved() {
+            return switched(&next, path);
+        }
+        handover = next;
+    }
+}
+
 /// Carry the language-server session on the standard streams to the hub at
 /// `socket`, starting one lingering `linger` and configured with `spelling`
 /// when none answers, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the session runs against the hub [`reach_hub`] reaches as
-///   `gandr_surface_lsp::relay` carries it, opened by the handover
-///   [`handed_over`] reads, and ends as [`ended`] states. With no `socket`
-///   named, a frame from the client finding the selection on another image
-///   switches: the handover goes to a file beside the hub's socket, and the
-///   selected toolchain runs in this process's place with the same arguments
-///   and [`toolchain::HANDOVER`] naming the file. A selection back on the
-///   running image by then resumes the session on this build's hub. A hub never
-///   reached, a handover unread or an exec failed is noted on standard error
-///   and exits `2`.
+/// - ensures: the session runs as [`followed`] carries it, each leg as
+///   `gandr_surface_lsp::relay` relays it, and ends as [`ended`] states.
 /// - provides: the editor's entry point on Unix.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -2416,57 +2517,21 @@ fn relayed(
     spelling: Spelling,
 ) -> ExitCode
 {
-    use std::io::Read as _;
-    use std::os::fd::AsFd as _;
-
-    // An image that cannot be read never moves: the session stays where it
-    // started.
-    let running = match toolchain::Image::running() {
-        Ok(image) if socket.is_none() => Maybe::Present(image),
-        Ok(_) | Err(_) => Maybe::Absent(()),
-    };
-    let mut handover = match handed_over() {
-        Ok(handover) => handover,
-        Err(error) => return hub_fault(&error),
-    };
-    loop {
-        let reached =
-            reach_hub(socket.map(Path::to_path_buf), linger, spelling).and_then(|stream| {
-                let standard = std::fs::File::from(std::io::stdin().as_fd().try_clone_to_owned()?);
-                Ok((stream, standard))
-            });
-        let (stream, standard) = match reached {
-            Ok(reached) => reached,
-            Err(error) => return hub_fault(&error),
-        };
-        let input = std::io::Cursor::new(handover.carried().0.clone()).chain(standard);
-        let moved = move || {
-            if let Maybe::Present(image) = running {
-                matches!(toolchain::moved(image), Maybe::Present(_))
-            }
-            else {
-                false
-            }
-        };
-        let relayed = gandr_surface_lsp::relay(
+    followed(
+        socket,
+        (linger, spelling),
+        |input, stream, handover, following| match gandr_surface_lsp::relay(
             input,
             &mut std::io::stdout().lock(),
             stream,
             handover.replay(),
-            moved,
-        );
-        let next = match relayed {
-            Ok(Relayed::Ended(served)) => return ended(Ok(served)),
-            Ok(Relayed::Switched(next)) => next,
-            Err(fault) => return ended(Err(fault)),
-        };
-        if let Maybe::Present(image) = running
-            && let Maybe::Present(path) = toolchain::moved(image)
-        {
-            return switched(&next, path);
-        }
-        handover = next;
-    }
+            move || matches!(following.moved(), Maybe::Present(_)),
+        ) {
+            Ok(Relayed::Ended(served)) => Leg::Ended(ended(Ok(served))),
+            Ok(Relayed::Switched(next)) => Leg::Switched(next),
+            Err(fault) => Leg::Ended(ended(Err(fault))),
+        },
+    )
 }
 
 /// Hand `handover` to the toolchain at `path` and run it in this process's
@@ -2511,33 +2576,43 @@ fn switched(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the session runs against the hub [`reach_hub`] reaches as
-///   `gandr_surface_mcp::relay` carries it and exits `0` once the hub has
-///   answered all of standard input; a hub never reached or a failed stream is
-///   noted on standard error and exits `2`.
+/// - ensures: the session runs as [`followed`] carries it, each leg as
+///   `gandr_surface_mcp::relay` relays it, and exits `0` once the hub has
+///   answered all of standard input; a failed stream is noted on standard error
+///   and exits `2`.
 /// - provides: `gandr mcp`, a model's entry point.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a model session reads the diagnostics an editor's session
-///   published through the same hub.
+///   published through the same hub; a session across a switch of the default
+///   is answered by the next build.
 /// - witness: `tests::cli::mcp_reads_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_model_session_follows_a_toolchain_switch`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn mcp(
-    socket: Option<PathBuf>,
+    socket: Option<&Path>,
     linger: Duration,
     spelling: Spelling,
 ) -> ExitCode
 {
-    let carried = reach_hub(socket, linger, spelling).and_then(|stream| {
-        gandr_surface_mcp::relay(std::io::stdin(), &mut std::io::stdout().lock(), stream)
-    });
-    match carried {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => hub_fault(&error),
-    }
+    followed(
+        socket,
+        (linger, spelling),
+        |input, stream, handover, following| match gandr_surface_mcp::relay(
+            input,
+            &mut std::io::stdout().lock(),
+            stream,
+            handover.replay(),
+            move || matches!(following.moved(), Maybe::Present(_)),
+        ) {
+            Ok(gandr_surface_mcp::Relayed::Ended) => Leg::Ended(ExitCode::SUCCESS),
+            Ok(gandr_surface_mcp::Relayed::Switched(next)) => Leg::Switched(next),
+            Err(error) => Leg::Ended(hub_fault(&error)),
+        },
+    )
 }
 
 /// Attach to the render bus of the hub at `socket`, starting one lingering
