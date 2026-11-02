@@ -11,7 +11,8 @@
 // unitor go by based path induction on their last path, the telescope
 // form of `transport`. The right unitor holds by conversion, because a
 // composite with a reflexivity on the right reduces to its left operand.
-// The whiskers are `ap` of a composition with a fixed path.
+// The whiskers are the level-two composites over the 2-chain, one column
+// holding the 2-cell, which `fill` lifts a side of its square by.
 //
 // `apComp` is `ap`'s functoriality, and `natural` is a homotopy's
 // naturality along a path. Both go by based path induction on the path.
@@ -33,7 +34,7 @@ pub def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> P
   cong(F, p)
 }
 
-/// The left whisker: a path composed before a path of paths, by the action of composing with it.
+/// The left whisker: a path composed before a path of paths, the level-two composite whose second column holds the 2-cell.
 pub def whiskerLeft(
   A : Type,
   x : A,
@@ -44,17 +45,10 @@ pub def whiskerLeft(
   g2 : Path(A, y, z),
   b : Path(Path(A, y, z), g1, g2)
 ) -> Path(Path(A, x, z), f then g1, f then g2) {
-  ap(
-    Path(A, y, z),
-    Path(A, x, z),
-    (fn (q : Path(A, y, z)) { f then q } : Path(A, y, z) => Path(A, x, z)),
-    g1,
-    g2,
-    b
-  )
+  compose[4, 9](chain(2, (0, 1)), (f, b))
 }
 
-/// The right whisker: a path composed after a path of paths, by the action of composing with it.
+/// The right whisker: a path composed after a path of paths, the level-two composite whose first column holds the 2-cell.
 pub def whiskerRight(
   A : Type,
   x : A,
@@ -65,14 +59,7 @@ pub def whiskerRight(
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  ap(
-    Path(A, x, y),
-    Path(A, x, z),
-    (fn (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-    f1,
-    f2,
-    a
-  )
+  compose[4, 9](chain(2, (1, 0)), (a, g))
 }
 
 /// A dependent function's action on a path: its value at the start carried along the path meets its value at the end.

@@ -198,35 +198,7 @@ pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path(A, x, y))
   }
 }
 
-/// The right whisker of `fa` by `g`, the transport along `fa` that `fill` lifts a column's first cell by.
-def liftRight(
-  A : Type,
-  x : A,
-  y : A,
-  z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z)
-) -> Path(Path(A, x, z), fm then g, fp then g) {
-  transport(\c. Path(Path(A, x, z), fm then g, c then g), fa, here(fm then g))
-}
-
-/// The left whisker of `ga` by `f`, the transport along `ga` that `fill` lifts a column's second cell by.
-def liftLeft(
-  A : Type,
-  x : A,
-  y : A,
-  z : A,
-  f : Path(A, x, y),
-  gm : Path(A, y, z),
-  gp : Path(A, y, z),
-  ga : Path(Path(A, y, z), gm, gp)
-) -> Path(Path(A, x, z), f then gm, f then gp) {
-  transport(\c. Path(Path(A, x, z), f then gm, f then c), ga, here(f then gm))
-}
-
-/// The horizontal composite of `fa` and `ga`, the lift of a composite of two cells that `fill` writes.
+/// The horizontal composite of `fa` and `ga`, the right whisker then the left, the lift of a composite of two cells that `fill` writes.
 pub def liftHorizontal(
   A : Type,
   x : A,
@@ -239,7 +211,7 @@ pub def liftHorizontal(
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp)
 ) -> Path(Path(A, x, z), fm then gm, fp then gp) {
-  liftRight(A, x, y, z, fm, fp, fa, gm) then liftLeft(A, x, y, z, fp, gm, gp, ga)
+  whiskerRight(A, x, y, z, fm, fp, fa, gm) then whiskerLeft(A, x, y, z, fp, gm, gp, ga)
 }
 
 /// Two 3-cylinders side by side compose to a 3-cylinder by the level-two `fill`: Example 1.4 at the composite at `n = 2`, its points fixed.
