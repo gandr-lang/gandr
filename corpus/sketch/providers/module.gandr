@@ -1,0 +1,24 @@
+/// A module of declarations provided whole, by a declaration macro.
+///
+/// A package's attributes, derivations and outputs belong together. One
+/// attribute provides them as a module, so a program imports them as it
+/// imports any module.
+///
+/// `@[provide(provider(…))] module M;` runs the provider as a declaration
+/// macro. The module body is the provider's answer, and the declaration has no
+/// body of its own.
+///
+/// - see: #4717 — the type providers sketch, its rulings in the issue body
+/// - see: corpus/sketch/providers/nix.gandr — a provided type and value
+
+// The Nix provider.
+import std.provide.nix;
+
+/// Every declaration `hello` exposes at a pinned revision.
+@[provide(nix.package("hello", revision = "3ec636362e18"))]
+module Hello;
+
+/// The package's description, from the provided module.
+def describe() -> String {
+  Hello.meta.description
+}
