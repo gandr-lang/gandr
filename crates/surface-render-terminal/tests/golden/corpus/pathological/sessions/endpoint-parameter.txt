@@ -1,15 +1,49 @@
 error[LinearResidue]: the endpoint is not closed before the body of the function that takes it ends
-   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:14:11
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:18:11
    │
-14 │   def leaky(seat : end) -> Unit {
+18 │   def leaky(seat : end) -> Unit {
    │   │         ┯━━━
    │   │         │
    │   │         an endpoint left unconsumed: found `end`
    │ ┌─┘         the endpoint was taken as this parameter
    │ │
-15 │ │   unit
-16 │ │ }
+19 │ │   unit
+20 │ │ }
    │ └─┘ checked against `end => Unit`; while checking the body of this thunk
    │
    ├ note: `leaky` is refused with LinearResidue, as its expectation states
    ╰ help: end the endpoint's protocol before the body of the function that takes it ends
+
+error[UsedAfterClose]: the endpoint is used after `close`
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:35:48
+   │
+34 │ ┌ def reused() -> Unit {
+35 │ │   let desk = fork (seat : end) { finish(seat); close(seat) };
+   │ │   ┬──                            ┬───────────  ━━━━━━━━━━━ an endpoint already closed
+   │ │   │                              │
+   │ │   │                              checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the child this forks
+36 │ │   close(desk)
+37 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `reused` is refused with UsedAfterClose, as its expectation states
+
+error[EndpointAsValue]: an endpoint can be used only by a session action
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:42:54
+   │
+41 │ ┌ def miscounted() -> Unit {
+42 │ │   let desk = fork (seat : end) { let total = counted(seat); close(seat) };
+   │ │   ┬──                            ┬──         ┬───────┯━━━─
+   │ │   │                              │           │       │
+   │ │   │                              │           │       an endpoint read as a value
+   │ │   │                              │           synthesised; while checking the argument of this application
+   │ │   │                              checked against `-F Unit`; while synthesising the computation this runs where a value is read
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the child this forks
+43 │ │   close(desk)
+44 │ │ }
+   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `miscounted` is refused with EndpointAsValue, as its expectation states

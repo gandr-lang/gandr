@@ -76,12 +76,14 @@
 //!
 //! # Where an endpoint may not stand
 //!
-//! An endpoint lives only in the linear zone a fork or a receive opened. A
-//! declaration whose type is a session type is refused as
+//! An endpoint lives only in the linear zone a fork, a receive or a placement
+//! opened. A declaration whose type is a session type is refused as
 //! [`LinearityDefect::Unrestricted`] at its signature: a top-level name is
 //! unrestricted, so its endpoint could be used any number of times. An
-//! endpoint read anywhere but as the subject of an action or as a payload
-//! sent whole is [`LinearityDefect::AsValue`].
+//! endpoint read anywhere but as the subject of an action, as a payload sent
+//! whole or as an argument at a session type is [`LinearityDefect::AsValue`].
+//! A send and a call spend the endpoint they hand on, so an action on it
+//! afterwards is one after close.
 //!
 //! The kernel has no channels; readmission erases the discipline and the
 //! kernel replays what a session computes. A session type crosses as the

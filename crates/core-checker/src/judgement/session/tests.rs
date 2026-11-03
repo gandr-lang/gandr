@@ -1921,6 +1921,99 @@ fn a_placed_endpoint_is_spent_by_its_body_1862()
     );
 }
 
+/// A fork's child that hands its end to a function at `end`: the call spends
+/// the end, so the child checks; a close after the call is refused as after
+/// close; and an end handed to a function at the unit stays an endpoint read
+/// as a value.
+#[test]
+fn an_endpoint_moved_into_a_call_leaves_its_caller_4501()
+{
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let runs_unit = arena.value_type_thunk(returns_unit);
+    // finish = \seat. place seat { close(seat) } : U(end -> F 1)
+    let takes_an_end = arena.comp_type_arrow(ended, returns_unit);
+    let finish_type = arena.value_type_thunk(takes_an_end);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let closed = Program::new(&mut arena).close();
+    let placed = arena.computation_session(SessionAction::Place {
+        payload: parameter,
+        body: closed,
+    });
+    let finish_body = arena.computation_lambda(placed);
+    let finish = arena.value_thunk(finish_body);
+    // ignored = \nothing. return () : U(1 -> F 1)
+    let takes_unit = arena.comp_type_arrow(unit, returns_unit);
+    let ignored_type = arena.value_type_thunk(takes_unit);
+    let nothing = arena.value_unit();
+    let returned = arena.computation_return(nothing);
+    let ignored_body = arena.computation_lambda(returned);
+    let ignored = arena.value_thunk(ignored_body);
+    // `let d = fork (seat : end) { callee(seat) ; after }; close(d)`
+    let caller = |arena: &mut CoreArena, callee: usize, after: Option<ComputationId>| {
+        let head = arena.value_constant(ConstantIndex::from(callee));
+        let forced = arena.computation_force(head);
+        let seat = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        let call = arena.computation_application(forced, seat);
+        let child = after.map_or(call, |after| arena.computation_bind(call, after));
+        let parent = Program::new(arena).close();
+        let forked = fork(arena, ended, child, parent);
+        arena.value_thunk(forked)
+    };
+    let handed = caller(&mut arena, 0, None);
+    let closed_after = Program::new(&mut arena).close();
+    let reused = caller(&mut arena, 0, Some(closed_after));
+    let unspent = Program::new(&mut arena).close();
+    let miscounted = caller(&mut arena, 1, Some(unspent));
+    let declarations: Vec<_> = [
+        (finish_type, finish),
+        (ignored_type, ignored),
+        (runs_unit, handed),
+        (runs_unit, reused),
+        (runs_unit, miscounted),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, (declared, defined))| {
+        Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+            OriginToken::from(position),
+        )
+    })
+    .collect();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.get(2), Some(Verdict::Checked { .. })),
+        "an end handed to a function at `end` is spent by the call: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(3),
+            Some(Verdict::Refused(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                defect: LinearityDefect::Closed { .. },
+            })) if *at == closed_after
+        ),
+        "a close after the call acts on an end the caller no longer holds: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(4),
+            Some(Verdict::Refused(CheckRefusal::Linearity {
+                defect: LinearityDefect::AsValue { .. },
+                ..
+            }))
+        ),
+        "an end handed where the unit stands is read as a value: {verdicts:?}"
+    );
+}
+
 /// A received value crosses read from an assumption of its type, and an
 /// offer as a case on an assumed choice among its arms: the kernel defines an
 /// exchange returning the string it received and the whole seat exchange,

@@ -5,4 +5,4 @@ error[OutOfFragment.Endpoint]: a session action acts on an endpoint: an end a `f
   │         ━━━━━━ not an endpoint a fork, a receive or a parameter binds
   │
   ├ note: `parameter_as_endpoint` is refused with OutOfFragment.Endpoint, as its expectation states
-  ╰ note: tracked by #4501 <https://github.com/gandr-lang/gandr/issues/4501>
+  ╰ note: tracked by #4689 <https://github.com/gandr-lang/gandr/issues/4689>
