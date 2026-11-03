@@ -1748,7 +1748,8 @@ source "$claims/deps.bash"
 repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
 issued=$(gh api "repos/$repo/issues/$issue" --jq '{number, title, labels: [.labels[].name], body: (.body // "")}')
 body=$(jq -r .body <<< "$issued")
-findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" -f "$claims/unit.jq" <<< "$body")
+cutoff=$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")
+findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" -f "$claims/unit.jq" <<< "$body")
 if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
   terms=$(jq -n --argjson issued "$issued" --argjson terms "$(yq -o json '.term' "$root/.config/references/terms.toml")" \
     '{title: $issued.title, body: $issued.body, terms: $terms}' | jq -r -L "$claims" -f "$claims/terms.jq")
@@ -1962,7 +1963,7 @@ while :; do
     --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson landings "$landings" --argjson live "$live" \
     --argjson lanes "$lanes" --argjson branches "$branches" \
     '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live, lanes: $lanes, branches: $branches}' \
-    | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
+    | jq -r -L "$claims" --argjson concerns "$concerns" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/next.jq")
   unread=$(jq -R -r --argjson live "$live" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[.] == null)' <<< "$lines")
   [[ -n $unread ]] || break
   for number in $unread; do
@@ -2292,7 +2293,8 @@ if labelled kind:defect && ! labelled collector && ! labelled status:unsectioned
 fi
 if [[ $unit == true || $defect == true ]]; then
   concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
-  findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" -f "$claims/unit.jq" "$body")
+  findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" \
+    --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/unit.jq" "$body")
   if [[ -n $findings ]]; then
     if [[ $unit == true ]]; then
       printf 'issue:file: the body is a unit (it has `## Sources`) and lacks what a unit issue carries (units.md § units-issue):\n' >&2
@@ -3294,7 +3296,7 @@ findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$i
   | jq -r -L "$claims" -f "$claims/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
-  | jq -r -L "$claims" --argjson concerns "$(jq -c .ids <<< "$concerns")" -f "$claims/signed.jq")
+  | jq -r -L "$claims" --argjson concerns "$(jq -c .ids <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$claims/../references/window.toml")" -f "$claims/signed.jq")
 if [[ -n $signed ]]; then findings=${findings:+$findings$'\n'}$signed; fi
 # A design page an issue builds on is absorbed in the same pair, or the body
 # says why it stays design (#3161, `absorbing.jq`).

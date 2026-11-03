@@ -65,7 +65,8 @@ body:
       label: Sources
       description: >-
         One row per source. The role is primary (read whole, or the cited sections), secondary, oracle (the other system a shallow embedding is compared with, which then needs an `## Embedding owes` section), or not read.
-        Include the vault's two listings.
+        Include the vault's two listings. A paper dated before the citation window's cutoff (`.config/references/window.toml`) names the newer
+        work superseding it in What it gives, `superseded by `<key>``, or opens it `exemplar: <why no newer work states what the unit builds>`.
       value: |
         | Source | Role | What it gives |
         | ------ | ---- | ------------- |
