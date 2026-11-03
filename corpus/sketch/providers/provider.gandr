@@ -1,0 +1,30 @@
+/// Two providers written as macros, their effects in their rows.
+///
+/// A provider reads the outside world: it runs a program, or it reaches a
+/// service. Its row states which, and its capabilities arrive as parameters.
+///
+/// A provider is a definition over `[Elab]` and the effects it performs. A
+/// capability is a parameter, never ambient. `gandr provide` runs it under
+/// the package's grants and records what it exercised in the snapshot.
+///
+/// - see: #4717 — the type providers sketch, its rulings in the issue body
+/// - see: corpus/sketch/providers/package.gandr — the grants these providers run under
+
+// The quotation a macro answers, and the elaborator's effect.
+import std.elab (Elab, Quote);
+// The process and network effects and their capabilities.
+import std.io (Process, Net, Io, Command, Host);
+
+/// The Nix attribute provider: it runs `nix eval` and reads the JSON into a
+/// record type.
+pub def attribute(name : String, revision : String, nix : Cap { run(Command("nix")) }) -> [Elab, Process] Quote(Type) {
+  let json = nix.run(["eval", "--json", "nixpkgs/" ++ revision ++ "#" ++ name]);
+  Quote.recordType(Json.parse(json))
+}
+
+/// The AWS provider: it reaches a service's API schema and computes the
+/// types of every operation.
+pub def service(name : String, version : String, aws : Cap { reach(Host("*.amazonaws.com")) }) -> [Elab, Net, Io] Quote(Module) {
+  let schema = aws.get("https://" ++ name ++ ".amazonaws.com/schema/" ++ version);
+  Quote.module(Smithy.types(schema))
+}

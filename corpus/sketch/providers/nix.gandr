@@ -1,0 +1,34 @@
+/// A Nix attribute and derivation, read by a provider instead of by hand.
+///
+/// The model corpus writes out what `nix eval` answers, field by field. A
+/// provider computes the same type and value from the query alone.
+///
+/// `~nix.attribute(…)` and `~nix.derivation(…)` are macro splices. A check
+/// reads the committed snapshot and the lock, never the outside world. The
+/// answer is ordinary gandr, checked as if the author wrote it.
+///
+/// - see: #4717 — the type providers sketch, its rulings in the issue body
+/// - see: corpus/model/package/nix-attribute.gandr — the same answer written by hand
+
+// The Nix provider: attributes, derivations and packages.
+import std.provide.nix;
+
+/// `hello`'s attribute at a pinned revision, whose type the provider answers.
+type Hello = ~nix.attribute("hello", revision = "3ec636362e18");
+
+/// `hello`'s derivation, a provided value.
+def helloDerivation = ~nix.derivation("hello", revision = "3ec636362e18");
+
+/// The attribute at whatever revision the lock resolved, the pin left to the
+/// lock.
+type HelloLatest = ~nix.attribute("hello");
+
+/// Whether `hello` builds on a system, read off its provided platforms.
+def buildsOn(system : String) -> Bool {
+  contains(Hello.meta.platforms, system)
+}
+
+/// The store path of `hello`'s default output, from the provided derivation.
+def outPath() -> String {
+  helloDerivation.outputs.out.path
+}

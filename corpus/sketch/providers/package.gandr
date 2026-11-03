@@ -1,0 +1,30 @@
+/// A package manifest that grants its providers what they may run and reach.
+///
+/// A provider may run any program or reach any host, so a reviewer reads what
+/// each one may do. The manifest states it, and review reads it as any source.
+///
+/// The package's `providers` grant each provider its capabilities: `nix` may
+/// run `nix` and read `nixpkgs`, and `aws` may reach `*.amazonaws.com`. `gandr
+/// provide` runs each provider under its grant. The lock records each query,
+/// its resolution and the snapshot's hash.
+///
+/// - see: #4717 — the type providers sketch, its rulings in the issue body
+/// - see: corpus/model/projects/tools/package.gandr — a package manifest today
+
+// The manifest theories.
+import std.build (Gandr);
+// The capabilities a grant names.
+import std.io (Command, Host, Path);
+
+/// The package, which grants each provider its capabilities.
+pub module Package : Model(Gandr.Package) where {
+  /// The name the manifest records.
+  def name = "deploy";
+  /// The language version.
+  def gandr = "0.1";
+  /// What each provider may run, read and reach.
+  def providers = #{
+    .nix = #{ .run = [Command("nix")], .read = [Path("nixpkgs")] },
+    .aws = #{ .reach = [Host("*.amazonaws.com")] }
+  };
+}
