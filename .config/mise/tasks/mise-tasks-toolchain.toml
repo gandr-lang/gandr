@@ -135,12 +135,16 @@ target/release/gandr toolchain link dev target/release
 # (#4380). The builds live under `$XDG_DATA_HOME/gandr/builds/<commit>/`, the
 # current one and the one before it, linked as `previous` for a rollback; a
 # build a process still runs stays until the next deploy (`prune.jq`). A
-# checkout off `main` or dirty is never touched, and it and a failed build
-# are paged once per commit (`.config/follow/follow.bash`). `--once` reads
-# once and exits. `--install` runs the follower as a host service from this
-# checkout, as `stall:watch --install` does (`.config/service/`), and
-# `--remove` stops and deletes it. The checkout, the interval and the page
-# command are configuration, never the tree's.
+# checkout off `main` or dirty is never touched, and it, a failed fetch and a
+# failed build are paged once per commit (`.config/follow/follow.bash`). After
+# each fast-forward it syncs the checkout's code index, where one exists, so
+# `wt:warm` copies a current index into every new worktree; a failed sync is
+# paged and holds back no deploy (#4866). `--once` reads once and exits.
+# `--install` runs the follower as a host service from this checkout, as
+# `stall:watch --install` does (`.config/service/`), carrying git's
+# configuration from the installing shell, and `--remove` stops and deletes
+# it. The checkout, the interval and the page command are configuration,
+# never the tree's.
 ["toolchain:follow"]
 description = "Build and deploy main as the default toolchain whenever main moves; --install runs it as a service"
 quiet = true
