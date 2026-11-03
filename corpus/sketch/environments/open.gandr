@@ -1,0 +1,32 @@
+/// `open e;` scopes the rest of a block to an environment's bindings.
+///
+/// A function that reads many fields of one configuration repeats its name at
+/// each read. One `open` names each field directly.
+///
+/// `open e;` takes any expression whose type is a model, and it scopes the rest
+/// of the enclosing block. A literal opens too, and so does a reader's output
+/// when it is a module. The form adds no trailing keyword.
+///
+/// - see: #4567 — the first-class environments sketch, its rulings in the issue body
+/// - see: corpus/sketch/environments/merge.gandr — the configurations this file opens
+
+// The build configurations.
+import "./merge.gandr";
+
+/// The command line a build runs, which reads its fields from the configuration.
+def commandLine(c : Model(#{ jobs : Nat; profile : Profile; triple : Triple })) -> List(String) {
+  open c;
+  ["build", "--jobs", show(jobs), "--profile", show(profile), "--target", show(triple)]
+}
+
+/// The area of a rectangle given as an environment literal.
+def area() -> Nat {
+  open #{ .width = 3, .height = 4 };
+  width * height
+}
+
+/// Converts feet to metres by a table that a reader yields as a module.
+def metres(feet : Rational) -> Rational {
+  open #units{ foot = 0.3048 m };
+  feet * foot
+}

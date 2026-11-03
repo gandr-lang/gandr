@@ -1,0 +1,35 @@
+/// `~env` reads the scope as data, for a tactic or a macro to take.
+///
+/// A tactic that closes a goal by a hypothesis must see the hypotheses and
+/// nothing else. The scope it runs in holds far more.
+///
+/// `~env` is the whole scope as an environment, and `~env(only x, y)` restricts
+/// it by the modifier language. A macro reads scope, as `~typeof` reads a
+/// type, so the query needs no keyword. An ascription, `~env : Model(#{ … })`,
+/// is the width coercion.
+///
+/// - see: #4567 — the first-class environments sketch, its rulings in the issue body
+/// - see: #4571 — sketch 13, macros, which read `~env`
+
+// The tactic monad and its goal.
+import std.tactic (Tactic, Goal, exact, fail);
+
+/// Closes the goal with the first hypothesis whose type matches it.
+def assumption(hyps : Model(#{ .. })) -> [Tactic] Unit {
+  let goal = Goal.current();
+  match find(hyps, fun (h) { h.type == goal.type }) {
+    Some(h) => exact(h.term),
+    None => fail("no hypothesis matches the goal")
+  }
+}
+
+/// A lemma that `assumption` closes, given only its hypotheses.
+def swap(p : A, q : B) -> (B, A) {
+  (~assumption(~env(only q)), ~assumption(~env(only p)))
+}
+
+/// The scope narrowed by ascription to the two bindings a check reads.
+def bounds(lo : Nat, hi : Nat, step : Nat) -> Bool {
+  let e = ~env : Model(#{ lo : Nat; hi : Nat });
+  e.lo <= e.hi
+}

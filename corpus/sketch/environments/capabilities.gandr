@@ -1,0 +1,33 @@
+/// A host passes a capability environment as a parameter, with no sandbox form.
+///
+/// A plugin should reach only the files and the log its host grants. Typing
+/// already excludes ambient authority, so a grant is a parameter.
+///
+/// A capability is a parameter, never a value in scope. The host passes an
+/// environment of capabilities, and the plugin opens it. A binding of grade
+/// one leaves an environment by move, never by copy.
+///
+/// - see: #4567 — the first-class environments sketch, its rulings in the issue body
+/// - see: corpus/sketch/environments/open.gandr — `open e;` on a configuration
+
+/// What a plugin may touch: one directory to read and one log to write.
+pub def Grants : Type = Model(#{ fs : Cap { read }; log : Sink });
+
+/// A plugin that reads its configuration and logs what it read.
+def plugin(grants : Grants) -> [Io] Unit {
+  open grants;
+  log.emit(fs.read("config.toml"))
+}
+
+/// The host grants the plugin one directory and its log, and keeps the rest.
+def host(root : Cap { read, write }, log : Sink) -> [Io] Unit {
+  let grants : Grants = #{ .fs = root.attenuate({ read }), .log = log };
+  plugin(grants)
+}
+
+/// A one-shot token leaves its environment by move: the second use is
+/// refused, since the first moved it out.
+def redeem(wallet : Model(#{ token : +U[1] Token; owner : Name })) -> [Io] Receipt {
+  open wallet;
+  spend(token)
+}

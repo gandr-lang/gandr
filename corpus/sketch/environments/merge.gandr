@@ -1,0 +1,39 @@
+/// Environments as modules: their type a model of a signature, their merge a
+/// module extension.
+///
+/// A build configuration grows in layers, the defaults first and each override
+/// after. Each layer is a set of named bindings, and later layers may depend on
+/// earlier ones.
+///
+/// An environment's type is `Model(#{ x : A; y : B(x) })`, dependent left to
+/// right. `#{ ..e₁, ..e₂ }` extends `e₁` by `e₂`, and the checker refuses it
+/// unless their labels are apart. `#{ ..e₁ \ e₂, ..e₂ }` shadows, and
+/// `#{ .x = 1, ..r }` updates one binding.
+///
+/// - see: #4567 — the first-class environments sketch, its rulings in the issue body
+/// - see: crates/surface-engine/src/namespace.rs — the modifier language the query reuses
+
+/// The defaults every build starts from.
+def defaults : Model(#{ jobs : Nat; profile : Profile }) = #{ .jobs = 4, .profile = Profile.debug };
+
+/// The target a build is for, which the checker types under the defaults it extends.
+def target : Model(#{ triple : Triple; features : Features(triple) }) = #{
+  .triple = Triple.host(),
+  .features = Features.default(Triple.host())
+};
+
+/// The two layers merged: their labels are apart, so the merge checks.
+def config : Model(#{ jobs : Nat; profile : Profile; triple : Triple; features : Features(triple) }) = #{
+  ..defaults,
+  ..target
+};
+
+/// An override that shadows the defaults' `profile` with a release build.
+def release : Model(#{ profile : Profile }) = #{ .profile = Profile.release };
+
+/// The release configuration: the defaults without the bindings `release`
+/// shadows, then `release`.
+def releaseConfig : Model(#{ jobs : Nat; profile : Profile }) = #{ ..defaults \ release, ..release };
+
+/// An update of one binding, in place of a whole layer.
+def serial : Model(#{ jobs : Nat; profile : Profile }) = #{ .jobs = 1, ..defaults };
