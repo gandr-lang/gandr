@@ -17,7 +17,7 @@
 //!
 //! # Named-kind inventory
 //!
-//! `TREE_SITTER_NAMED_KINDS` lists, ascending, the 124 named node kinds of the
+//! `TREE_SITTER_NAMED_KINDS` lists, ascending, the 122 named node kinds of the
 //! surface's tree-sitter grammar; `PBG_ONLY_KINDS` lists the kinds only this
 //! grammar has, disjoint from them. `named_kind_parity` classifies every listed
 //! kind: `source_file` is the file root, realised by the item forms; the

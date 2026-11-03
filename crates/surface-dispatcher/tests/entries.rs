@@ -122,7 +122,6 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression match", Standing::Owed(0)),
     ("Expression character", Standing::Owed(0)),
     ("Expression close", Standing::Owed(0)),
-    ("Expression co", Standing::Owed(0)),
     ("Expression constructor", Standing::Owed(0)),
     ("Expression continue", Standing::Owed(0)),
     ("Expression drop", Standing::Owed(0)),

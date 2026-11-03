@@ -59,14 +59,15 @@ use gandr_theory_graphs::WalkChainLength;
 /// statement leaving for `let x at w = v ;` (#4483), then by an effect's
 /// lowercase home: a row entry, a `handle` head and an `offers` entry each
 /// read a theory path or a type, `std.io.Console.Eff`, and an offer's label
-/// is an operand.
-const BUILT_IN_FINGERPRINT: u64 = 0x2ad5_39c3_d415_e4d1;
+/// is an operand, then by the `co` bundle leaving for the lazy record
+/// `&{ .l => c }` (#4488).
+const BUILT_IN_FINGERPRINT: u64 = 0xf4fb_f35f_a745_356e;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2930);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2921);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -93,7 +94,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("++", 1),
     ("+=", 15),
     ("+U", 1),
-    (",", 275),
+    (",", 273),
     ("-", 5),
     ("-->", 31),
     ("-=", 15),
@@ -113,7 +114,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 131),
+    ("=", 129),
     ("==", 1),
     ("==>", 27),
     ("=>", 45),
@@ -156,7 +157,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("break", 2),
     ("character", 1),
     ("close", 1),
-    ("co", 1),
     ("codata", 1),
     ("command_substitution_start", 1),
     ("constructor", 6),
@@ -193,7 +193,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 381),
+    ("identifier", 379),
     ("if", 15),
     ("import", 16),
     ("in", 1),
@@ -261,11 +261,11 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("while", 1),
     ("with", 15),
     ("world", 1),
-    ("{", 62),
+    ("{", 61),
     ("|", 9),
     ("|&", 1),
     ("||", 1),
-    ("}", 79),
+    ("}", 78),
     ("~", 1),
     ("~>", 3),
     ("ω", 17),
