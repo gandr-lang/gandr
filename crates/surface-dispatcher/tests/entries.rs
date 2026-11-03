@@ -71,7 +71,9 @@ const EXIT: &str = "an exit keyword ends the computation its operand gives: the 
 
 /// Every kind of node the corpus writes, by sort and naming label, with
 /// where it stands. An owed count only shrinks: lower it with the change
-/// that gives the nodes their entries.
+/// that gives the nodes their entries. A kind the grammar no longer holds
+/// leaves the table, as the infix `then`, the `as` pattern and the `\` type
+/// operator did (#4691): the corpus writing one again fails it unclassified.
 const KINDS: &[(&str, Standing)] = &[
     ("Expression !=", Standing::Owed(0)),
     ("Expression \"", Standing::Owed(0)),
@@ -156,7 +158,6 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression run", Standing::Owed(0)),
     ("Expression select", Standing::Owed(0)),
     ("Expression send", Standing::Owed(0)),
-    ("Expression then", Standing::Owed(0)),
     ("Expression thunk", Standing::Owed(0)),
     ("Expression true", Standing::Owed(0)),
     (
@@ -177,7 +178,6 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern +", Standing::Owed(0)),
     ("Pattern [", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
-    ("Pattern as", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
     ("Pattern false", Standing::Owed(0)),
     ("Pattern identifier", Standing::Owed(0)),
@@ -214,7 +214,6 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type Unit", Standing::Owed(0)),
     ("Type Void", Standing::Owed(0)),
     ("Type [", Standing::Owed(0)),
-    ("Type \\", Standing::Owed(0)),
     (
         "Type at",
         Standing::Design("a scoped capability: the capability it scopes answers, at its scope"),
@@ -1151,6 +1150,38 @@ fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
             "`{text}` stands {placed:?}: {gated:?}"
         );
     }
+}
+
+/// Every kind the table names is a form the grammar holds: a row for a form
+/// the grammar no longer has, as the infix `then` after #4681, leaves the
+/// table with it (#4691). A pull request's sample meets only some kinds, and
+/// the census fails a kind the corpus no longer writes only over the corpus
+/// whole, so this reads the grammar instead.
+#[test]
+fn every_kind_the_table_names_is_a_form_the_grammar_holds_4691()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let count = u32::try_from(grammar.mold_count().0).expect("the molds count in a `u32`");
+    let held: BTreeSet<String> = (0_u32 .. count)
+        .filter_map(|raw| grammar.mold(MoldId::from(raw)).ok())
+        .map(|def| format!("{:?} {}", def.sort, def.label))
+        .collect();
+    let stale: Vec<&str> = KINDS
+        .iter()
+        .map(|&(key, _)| key)
+        .filter(|key| {
+            let form = key
+                .strip_suffix(" group")
+                .or_else(|| key.strip_suffix(" application"))
+                .unwrap_or(key);
+            !held.contains(form)
+        })
+        .collect();
+    assert_eq!(
+        stale,
+        Vec::<&str>::new(),
+        "each kind the table names is a form the grammar holds"
+    );
 }
 
 /// The entry sweep: the gate over the corpus's sources.
