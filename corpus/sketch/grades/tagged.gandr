@@ -1,0 +1,30 @@
+/// A tagged grade names its algebra, so `Count.3` is counting's three wherever
+/// it stands.
+///
+/// A numeral at a grade position reads in the algebra of what it grades, or
+/// in the algebra a slot names. Where neither decides, the writer tags it.
+///
+/// A `def` that binds a grade grades nothing yet, so its numeral carries the
+/// tag. Every use of the name then reads in that algebra.
+///
+/// - see: #4563 — the grade-algebra sketch, its rulings in the issue body
+/// - see: #4582 — a tagged literal
+/// - see: library/std/src/grade.gandr — `Count` and `Usage`
+
+// The two algebras the tags name.
+import std.grade (Usage, Count);
+
+/// The probes a deployment allows each host, counted.
+def retries = Count.3;
+
+/// Probes a host as often as the deployment allows. The arms of an `if` add
+/// their uses, so the longest path makes three calls.
+def probe(ping : +U[retries] (String -> Bool), host : String) : Bool = if ping(host) { true } else if ping(host) { true } else { ping(host) }
+
+/// Probes two hosts, each as often as the deployment allows. The sum reads in
+/// `Count`, since `retries` does.
+def rollout(ping : +U[retries + retries] (String -> Bool)) : Bool = probe(ping, "east") && probe(ping, "west")
+
+/// Takes a function used once. `Usage.Once` names the grade a bare `1` reads
+/// as where `Usage` grades the position.
+def once(f : +U[Usage.Once] (Unit -> Unit)) : Unit = f(unit)

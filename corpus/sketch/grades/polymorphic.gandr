@@ -1,0 +1,43 @@
+/// A combinator takes its grade algebra as an implicit and states its grades
+/// over that algebra.
+///
+/// Today a combinator that runs a function some number of times cannot say
+/// so in its type. Here it takes the algebra as a model slot, as Granule
+/// quantifies grades over a semiring.
+///
+/// No grade is a subtype of another. A count meets a usage through
+/// `collapse`, and the checker finds that map as it finds any implicit.
+///
+/// - see: #4563 — the grade-algebra sketch, its rulings in the issue body
+/// - see: #3287 — grade algebras as models of one theory
+/// - see: library/std/src/grade.gandr — `Grade`, `Hom` and `collapse`
+
+// The grade theory, counting, and the map from counting to usage.
+import std.grade (Grade, Count, usage, count, Hom, collapse);
+
+/// Runs `step` twice, the second time on what the first gives. The grade
+/// `r + r` counts both runs in whatever algebra grades `step`.
+def twice[g : Model(Grade), r : g.G, A : Type](step : +U[r + r] (A -> A), x : A) : A =
+  step(step(x))
+
+/// Runs `step` twice on each half of a pair. The numeral `2` reads in the
+/// algebra the slot names, as its `one + one`.
+def bothTwice[g : Model(Grade), r : g.G, A : Type](step : +U[2 * (r + r)] (A -> A), pair : (A, A)) : (A, A) = {
+  let (a, b) = pair;
+  (twice(step, a), twice(step, b))
+}
+
+/// Writes its line once. Nothing names the grade's algebra, so `1` reads in
+/// `Usage` and means once.
+def logOnce(sink : +U[1] (String -> Unit), line : String) : Unit = sink(line)
+
+/// Hands a counting sink to a logger that `Usage` grades. Three uses in
+/// `Count` collapse to many, which covers the three calls through the map.
+def audited[h : Hom(count, usage)](sink : +U[Count.3] (String -> Unit)) : Unit = {
+  logOnce(sink, "opened");
+  logOnce(sink, "read");
+  logOnce(sink, "closed")
+}
+
+/// Names the map, as a call may name any implicit.
+def auditedNamed(sink : +U[Count.3] (String -> Unit)) : Unit = audited[.h = collapse](sink)
