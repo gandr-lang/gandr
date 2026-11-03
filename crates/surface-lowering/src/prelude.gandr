@@ -124,3 +124,11 @@ pub theory FromNat where {
   sort Carrier : Type;
   oper fromNat : (n : Integer) --> Carrier;
 }
+
+/// A carrier a negative literal reads into: `-n` checked where `Carrier` is
+/// expected is `fromNeg` of the magnitude `n`, at the operand type `fromNat`
+/// takes.
+pub theory FromNeg where {
+  sort Carrier : Type;
+  oper fromNeg : (n : Integer) --> Carrier;
+}

@@ -152,7 +152,6 @@ corpus/ledger/features/invertible-cells.gandr Tense c6b0c35263ef02df
 corpus/ledger/features/invertible-cells.gandr Tense fb8c562e8c86aeab
 corpus/ledger/features/literal-reading.gandr Passive 08cd3f7f00e2ca0b
 corpus/ledger/features/literal-reading.gandr Passive bbfdd5bc62209d6e
-corpus/ledger/features/literal-reading.gandr Passive d20ac27a6b3959f8
 corpus/ledger/features/literal-reading.gandr Tense 32f956e02835abc3
 corpus/ledger/features/literal-reading.gandr Tense b0f058faf0207434
 corpus/ledger/features/module-sealing.gandr Passive 981a51d8d182023d
@@ -1219,7 +1218,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InertRead.
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceAmbiguous.txt Procedure 51e14b31a2f70bd6
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceUnanswered.txt Procedure 0a09f4e667677f07
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LevelMismatch.txt Procedure 4243b91b89fd9499
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LiteralAmbiguous.txt Procedure acc9566fda12a574
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LiteralAmbiguous.txt Procedure a2744a838ce0cf74
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopNotRespected.txt Procedure 5acc3f19f3b29f8d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopUndecided.txt Procedure 3c428e27119f4b66
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MarkUnfounded.txt Procedure b924bafc122697e0

@@ -814,8 +814,8 @@ pub enum RefusalName
     /// A term standing at a capability type that is no capability
     /// hypothesis.
     CapabilityForged,
-    /// A natural literal standing at a type two models of `FromNat` read it
-    /// into.
+    /// An integer literal standing at a type two models of `FromNat` or
+    /// `FromNeg` read it into.
     LiteralAmbiguous,
     /// A capability standing where one granting more is expected.
     CapabilityAmplified,

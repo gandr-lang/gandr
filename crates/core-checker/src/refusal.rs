@@ -1355,9 +1355,9 @@ pub enum CheckRefusal
         /// The capability type it stands at.
         expected: ValueTypeId,
     },
-    /// A natural literal stands at a type two models of the prelude's
-    /// `FromNat` read it into: the literal names neither, and no order between
-    /// models picks one.
+    /// An integer literal stands at a type two models of the prelude's
+    /// `FromNat`, or for a negative literal `FromNeg`, read it into: the
+    /// literal names neither, and no order between models picks one.
     LiteralAmbiguous
     {
         /// The literal.

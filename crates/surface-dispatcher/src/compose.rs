@@ -2261,7 +2261,7 @@ struct Read
     /// The forgets the module declares.
     forgets: Vec<ConstantIndex>,
     /// The literal readers the module lends.
-    readers: Vec<ConstantIndex>,
+    readers: Vec<gandr_core_term::LiteralReader>,
     /// The grant the judgement holds.
     grant: HostGrant,
     /// The declarations of the closure it continues, when it continues one.

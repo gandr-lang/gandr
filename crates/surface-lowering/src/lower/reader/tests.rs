@@ -1,4 +1,7 @@
+use alloc::vec::Vec;
+
 use gandr_core_term::CoreArena;
+use gandr_core_term::LiteralKind;
 use gandr_surface_syntax::SourceText;
 
 use crate::lower::native::tests::preluded;
@@ -59,5 +62,31 @@ module BoolFromNat : Model(FromNat) with sort Carrier = Bool where {
         module.readers(),
         &[],
         "a model of a source's own `FromNat` lends no reader"
+    );
+}
+
+#[test]
+fn a_model_of_from_neg_lends_a_negative_reader_4732()
+{
+    // A model of the prelude's `FromNeg` lends its `fromNeg` as a negative
+    // reader, beside the natural reader a model of `FromNat` lends.
+    let source = "\
+data Parity : Type where { | Even : Parity | Odd : Parity }
+module ParityFromNat : Model(FromNat) with sort Carrier = Parity where {
+  def fromNat(n : Integer) -> Parity { Even }
+}
+module ParityFromNeg : Model(FromNeg) with sort Carrier = Parity where {
+  def fromNeg(n : Integer) -> Parity { Odd }
+}
+";
+    let (text, unit) = crate::prelude::lay(SourceText::from(source), &Unit::single()).unwrap();
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let kinds: Vec<LiteralKind> = module.readers().iter().map(|reader| reader.reads).collect();
+    assert_eq!(
+        kinds,
+        [LiteralKind::Natural, LiteralKind::Negative],
+        "each model lends its member, read as its theory's literal: {:?}",
+        module.readers()
     );
 }

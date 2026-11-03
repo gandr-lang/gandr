@@ -982,8 +982,8 @@ pub enum Refusal
         /// The capability type it was checked at.
         expected: TypeContent,
     },
-    /// A natural literal stood at a type two models of `FromNat` read it
-    /// into.
+    /// An integer literal stood at a type two models of `FromNat` or
+    /// `FromNeg` read it into.
     LiteralAmbiguous
     {
         /// The literal.
