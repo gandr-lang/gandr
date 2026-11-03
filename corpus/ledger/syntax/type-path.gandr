@@ -1,7 +1,7 @@
-/// `type_path`: a type named through a module.
+/// `type_path`: a type named through a module, applied when it is a family.
 module Counter where {
-  type T = Integer;
+  type Pair(a : Type) = #{a, a};
 }
 @[ checks ]
-def counter : Counter.T ;
-def counter = 0 ;
+def twin : Counter.Pair(Integer) ;
+def twin = #{1, 2} ;

@@ -12644,7 +12644,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
-                self.module_type(site, &path, member)
+                self.module_type(site, &path, member, None)
             },
             PathResolution::Complete(Recognized::ModuleComponent) => {
                 let Some(&exported) = self.exported.get(&path)
@@ -13496,7 +13496,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   family, as [`Self::module_family`] reads it. The chain is walked by an
     ///   explicit loop, and its links are left unread. A one-link path whose
     ///   head is the alias of a path import reads the type the imported source
-    ///   declares under the member, as a static application of it.
+    ///   declares under the member, as a static application of it. A path that
+    ///   writes an argument list after its type name, `M.F(Integer)`, applies
+    ///   the member to it: a type family expands over the arguments and a data
+    ///   family stands at them (#3051).
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -13507,7 +13510,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   ending at a value component or a module, and outside value-type
     ///   position; the forward-member refusal for a type component declared at
     ///   or after the referring declaration, so a type always lowers before its
-    ///   readers.
+    ///   readers; the arity refusal, naming the count written, for an argument
+    ///   list a member does not take.
     /// - panics: none.
     ///
     /// # Errors
@@ -13518,18 +13522,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   body type member, to a nested module's type, to an absent member, to a
     ///   value component and from an unbound head, each asserted as the exact
     ///   type or refusal; a path past a parameter's type, refused at that link;
-    ///   a model binder's sort, read as its carrier.
+    ///   a model binder's sort, read as its carrier; a module's family applied
+    ///   through its name, read as its expansion, and refused at another count.
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `tests::modules::an_unbound_type_path_is_refused_by_name`
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..)))
                 )
         },
     )]
@@ -13537,6 +13543,47 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &mut self,
         site: Site,
         pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let start = self.operands.len();
+        let read = path_arguments(site, &pieces.pieces, site.at.span, &mut self.operands)
+            .and_then(|applied| self.applied_path(site, pieces, applied));
+        if read.is_err() {
+            self.operands.truncate(start);
+        }
+        read
+    }
+
+    /// Classify the qualified type reference `M.T` at `site`, applied to the
+    /// arguments `applied` holds in the operand store when it writes them,
+    /// `M.F(A)`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type path; `pieces` is its reading; `applied` is
+    ///   the stretch of its argument list when it writes one.
+    /// - ensures: as [`Self::type_path`], each reading of an unapplied path the
+    ///   same; an applied path ending at a type family a module exports expands
+    ///   it over the arguments, as [`Self::expansion`] reads it, and one ending
+    ///   at a data family a module exports, or at the type an import's alias
+    ///   names, stands applied to them.
+    /// - fails: as [`Self::type_path`]; the arity refusal for an applied path
+    ///   ending at anything but a family or an imported type.
+    /// - panics: none.
+    /// - executable: none — [`Self::type_path`] states the plans.
+    ///
+    /// # Errors
+    /// The path's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::type_path`]; `M.F(Integer)` expands to the
+    ///   family's type, `M.Box(Integer)` stands as the data family, and
+    ///   `M.T(Integer)` over an unparameterised member is refused by its arity.
+    /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+    fn applied_path(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+        applied: Option<Stretch>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         // Each link is the module a name is selected from and the name, from
@@ -13570,19 +13617,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start: self.operands.len(),
                 end: self.operands.len(),
             };
-            return self.static_application(site, resolved, none);
+            return self.static_application(site, resolved, applied.unwrap_or(none));
         }
         let head = self.path_head(site, target, &mut links)?;
         if let Some(&(_, first)) = links.last()
             && self.parameter_type(site, head, first, functor::Deeper(links.len() > 1_usize))?
                 == functor::Read::Planned
         {
-            return Ok(());
+            return unapplied(site, applied);
         }
         if let &[(_, member)] = links.as_slice()
             && self.carrier(site, head, member)? == arity::Planned(true)
         {
-            return Ok(());
+            return unapplied(site, applied);
         }
         let path = self.path_named(head, &links);
         self.collected.reach_declaring(
@@ -13592,7 +13639,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.see_module(site, self.name_at(head));
         match self.recognition.resolve_path(&path) {
             PathResolution::Complete(Recognized::ModuleType) => {
-                self.module_type(site, &path, member)
+                self.module_type(site, &path, member, applied)
             },
             PathResolution::UnknownMember { depth, .. } => {
                 let Some(&(prefix, selected)) = links
@@ -13614,40 +13661,49 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 arity: HeadArity::Nullary,
             }),
             PathResolution::Complete(Recognized::ModuleComponent) => {
-                self.module_family(site, &path, head, member)
+                self.module_family(site, &path, (head, member), applied)
             },
             PathResolution::Complete(_) => Err(site.out(FragmentBoundary::WrongSort)),
         }
     }
 
     /// Read the module's type component at `path`, the one `member` names, as
-    /// its stated type.
+    /// its stated type, applied to the arguments `applied` holds when the path
+    /// writes them.
     ///
     /// # Specification
-    /// - requires: `path` resolves to a module's type component.
+    /// - requires: `path` resolves to a module's type component; `applied` is a
+    ///   stretch of the operand store when present.
     /// - ensures: the stated type, read at `site`'s own reading, when the
     ///   component is declared strictly before the declaration `site` belongs
-    ///   to.
+    ///   to; applied, a type family's expansion over the arguments, as
+    ///   [`Self::expansion`] reads it.
     /// - provides: a type path's reading, in a type and where a value is read.
     /// - fails: yields the unadmitted refusal for a component the exports do
     ///   not hold, and [`LoweringRefusal::ForwardMemberReference`] for one
-    ///   declared at or after the referring declaration.
+    ///   declared at or after the referring declaration; the arity refusal for
+    ///   arguments after a component that is no type family, and the family's
+    ///   own refusals.
     /// - panics: none.
     /// - executable: none — the plan is the stated type's, which
-    ///   [`Self::stated_type`] makes and its own predicate checks.
+    ///   [`Self::stated_type`] makes, or the expansion's, and each one's own
+    ///   predicate checks it.
     ///
     /// # Errors
     /// The component's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a qualified type in a type and as an argument lower
-    ///   to the code the type's unqualified alias lowers to.
+    ///   to the code the type's unqualified alias lowers to; a module's family
+    ///   applied through its name expands as it does applied bare.
     /// - witness: `lower::tests::a_qualified_type_argument_is_the_code_its_alias_is_1126`
+    /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     fn module_type(
         &mut self,
         site: Site,
         path: &NamePath,
         member: Placed,
+        applied: Option<Stretch>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let Some(&stated) = self.exported_types.get(path)
@@ -13664,17 +13720,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 declared: held.named.span,
             });
         }
-        self.stated_type(site, stated)
+        match (applied, stated.meaning) {
+            (None, _) => self.stated_type(site, stated),
+            (Some(applied), TypeMeaning::Family(family)) => {
+                let _first = self
+                    .expansions
+                    .insert(site.at.node, (site.at.span, site.reading.frame()));
+                self.expansion(site, family, stated.held, applied)
+            },
+            (
+                Some(_),
+                TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
+            ) => unapplied(site, applied),
+        }
     }
 
-    /// Read the module component at `path`, the one `member` names under the
-    /// head `head`, as the data family it declares.
+    /// Read the module component at `path`, the one the link's `member` names
+    /// under its `head`, as the data family it declares, applied to the
+    /// arguments `applied` holds when the path writes them.
     ///
     /// # Specification
-    /// - requires: `path` resolves to a module's value component.
-    /// - ensures: the family over no argument, as [`Self::family`] reads it,
-    ///   when the component is a data family declared strictly before the
-    ///   declaration `site` belongs to.
+    /// - requires: `path` resolves to a module's value component; `applied` is
+    ///   a stretch of the operand store when present.
+    /// - ensures: the family over the arguments, none when the path writes
+    ///   none, as [`Self::family`] reads it, when the component is a data
+    ///   family declared strictly before the declaration `site` belongs to.
     /// - provides: a type path's reading of a family a module body declares.
     /// - fails: the wrong-sort refusal for a component that is no data family;
     ///   [`LoweringRefusal::ForwardMemberReference`] for one declared at or
@@ -13689,14 +13759,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `M.Box` in a declared type and in a parameter's type
-    ///   lowers to the family a top-level `Box` lowers to.
+    ///   lowers to the family a top-level `Box` lowers to, and `M.Box(Integer)`
+    ///   to the family at `Integer`.
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     fn module_family(
         &mut self,
         site: Site,
         path: &NamePath,
-        head: Placed,
-        member: Placed,
+        (head, member): (Placed, Placed),
+        applied: Option<Stretch>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let Some(&exported) = self.exported.get(path)
@@ -13730,7 +13802,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start: self.operands.len(),
             end: self.operands.len(),
         };
-        self.family(site, constant, arity, none)
+        self.family(site, constant, arity, applied.unwrap_or(none))
     }
 
     /// The target and the selected type name of one link of a type path, and
@@ -13846,8 +13918,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   on the way adds its links, the innermost last.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance; the unadmitted projection refusal for a chain ending at
-    ///   another form, and for an application of a functor once
-    ///   [`Self::refuse_applied`] reads it; a malformed link's refusal.
+    ///   another form, for a link that writes an argument list, and for an
+    ///   application of a functor once [`Self::refuse_applied`] reads it; a
+    ///   malformed link's refusal.
     /// - panics: none.
     /// - executable: none — the head is read off the syntax tree, which a
     ///   predicate could check only by repeating the walk.
@@ -13885,6 +13958,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     read_pieces(self.pbg, self.tree, target.node, &mut chain)?;
                     if let Maybe::Present(repaired) = chain.repair {
                         return Err(repaired.refusal(site.name));
+                    }
+                    // A link applied to arguments, `M.F(A).G`, selects out of
+                    // an application, which no module is.
+                    if chain.pieces.iter().any(|piece| {
+                        matches!(*piece, Piece::Tile {
+                            label: TileName::PAREN_OPEN,
+                            ..
+                        })
+                    }) {
+                        return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                     }
                     let (inner, nested, selected) =
                         Self::type_link(site, &chain.pieces, target.span)?;
@@ -23019,6 +23102,83 @@ fn arguments<'source>(
         TileName::PAREN_OPEN,
         TileName::PAREN_CLOSE,
     )
+}
+
+/// The argument list a qualified type writes after its member, `(Integer)` in
+/// `M.F(Integer)`, read into `written`, when it writes one (#3051).
+///
+/// # Specification
+/// - requires: `pieces` is the reading of a type path covering `span`.
+/// - ensures: the stretch of `written` the list's arguments fill, in written
+///   order, for a path whose pieces hold a `(`; none, `written` unchanged, for
+///   one that holds none.
+/// - fails: as [`arguments`].
+/// - panics: none.
+/// - executable: none — the list's reading is [`arguments`]'s, whose own
+///   predicate states it.
+///
+/// # Errors
+/// The list's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `M.F(Integer)` reads one argument, `M.T` none.
+/// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+fn path_arguments<'source>(
+    site: Site,
+    pieces: &[Piece],
+    span: ByteSpan,
+    written: &mut Vec<NodeIndex>,
+) -> Result<Option<Stretch>, LoweringRefusal<'source>>
+{
+    let mut cursor = Cursor::new(pieces, span);
+    loop {
+        match cursor.peek() {
+            Maybe::Present(Piece::Tile {
+                label: TileName::PAREN_OPEN,
+                ..
+            }) => {
+                let start = written.len();
+                arguments(site, &mut cursor, written)?;
+                return Ok(Some(Stretch {
+                    start,
+                    end: written.len(),
+                }));
+            },
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {
+                let _skipped = cursor.read();
+            },
+            Maybe::Absent(_) => return Ok(None),
+        }
+    }
+}
+
+/// Refuse the argument list `applied` a qualified type writes after a member
+/// that takes none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success for no list.
+/// - fails: the arity boundary at `site`, naming the count written, for a list.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::OutOfFragment`] with the arity boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `M.T(Integer)` over an unparameterised member is refused
+///   by its count.
+/// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+#[spec(ensures: |ret| ret.is_ok() == applied.is_none())]
+fn unapplied<'source>(
+    site: Site,
+    applied: Option<Stretch>,
+) -> Result<(), LoweringRefusal<'source>>
+{
+    applied.map_or(Ok(()), |written| {
+        Err(site.out(FragmentBoundary::Arity(OperandCount::from(
+            written.end.saturating_sub(written.start),
+        ))))
+    })
 }
 
 /// Read the argument list of a call that takes exactly `N` arguments.

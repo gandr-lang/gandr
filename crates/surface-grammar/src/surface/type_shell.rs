@@ -479,6 +479,12 @@ fn add_type_rules(
     // itself and read the bare spelling as a path payload, a second parse of
     // the same text. The lowering refuses an operand that is not a module
     // name or a path.
+    //
+    // An argument list after the type name applies the member, a module's
+    // family reached through its name, `M.F(Integer)`, as a bare family's
+    // `F(Integer)` is applied (#3051). The list ends the link, so it applies
+    // the last name alone; a later `.` selects from an application, which
+    // the lowering refuses.
     rules.push(rule(
         RuleName("type_path"),
         ty,
@@ -491,6 +497,11 @@ fn add_type_rules(
                 tile(TileLabel(".")),
             ])),
             tile(TileLabel("type_identifier")),
+            Regex::optional(Regex::seq([
+                tile(TileLabel("(")),
+                comma1(Regex::sort(ty)),
+                tile(TileLabel(")")),
+            ])),
         ]),
     ));
     // A type at a stage, `Nat[i]`, or below one, `Nat[<i]`: the stage a
