@@ -139,7 +139,8 @@ pub enum AskedRuns
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one variant for a computation written after a bare `run`, and one
-///   for a call at an application's head, written parenthesised after `run`.
+///   for a call or a selection at an application's head, written parenthesised
+///   after `run`.
 /// - provides: the fix a face proposes, which the parser reads back as the run
 ///   it means.
 /// - fails: never.
@@ -156,7 +157,8 @@ pub enum RunSpelling
     /// `run c`: the computation stands anywhere but an application's head.
     #[default]
     Bare,
-    /// `(run c)`: the computation is a call at an application's head.
+    /// `(run c)`: the computation is a call or a selection at an application's
+    /// head.
     Parenthesised,
 }
 
