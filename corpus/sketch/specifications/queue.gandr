@@ -1,0 +1,81 @@
+/// A bounded queue over a heap, with a specification in each operation's head.
+///
+/// A queue's callers rely on its invariant and on what each operation does
+/// to its size. The checker checks both once the head states them.
+///
+/// Each head carries one `#spec{ … }` block. `requires` and `ensures r` hold
+/// bar blocks whose items conjoin. `old(e)` reads `e` at the entry state, as
+/// the state theory of `std.spec` exports it. `decreases` names the measure
+/// each recursive call makes smaller.
+///
+/// - see: #4564 — the specifications sketch, its rulings in the issue body
+/// - see: corpus/model/specification/state-wp.gandr — the state theory's weakest preconditions
+
+// The specification theory, its state observation and `old`.
+import std.spec (Spec, old);
+// The heap the queue lives in.
+import std.mem (Heap, Ref);
+
+/// A queue of `a` in a ring buffer of fixed capacity.
+pub data Queue(a : Type) : Type where {
+  /// The buffer, the index of the front and the number of elements held.
+  | Ring : (cells : Ref(Array(Maybe(a))), front : Nat, count : Nat) --> Queue(a)
+}
+
+/// Whether a queue's count fits its buffer and its front lies inside it.
+pub def valid[a : Type](q : Queue(a)) -> [State(Heap)] Bool {
+  let n = capacity(q);
+  q.count <= n && q.front < n
+}
+
+/// Removes the front element, if there is one.
+pub def pop[a : Type](q : Queue(a)) -> [State(Heap)] Maybe(a) #spec{
+  requires { valid(q) }
+  ensures r {
+    | valid(q)
+    | size(q) <= old(size(q))
+    | size(q) == old(size(q)) - 1 || r == none
+  }
+} {
+  if q.count == 0 {
+    none
+  } else {
+    let x = read(q.cells, q.front);
+    q.front := (q.front + 1) % capacity(q);
+    q.count := q.count - 1;
+    x
+  }
+}
+
+/// Adds an element at the back, refusing it when the queue is full.
+pub def push[a : Type](q : Queue(a), x : a) -> [State(Heap)] Bool #spec{
+  requires { valid(q) }
+  ensures accepted {
+    | valid(q)
+    | accepted == (old(size(q)) < capacity(q))
+    | size(q) == old(size(q)) + (if accepted { 1 } else { 0 })
+  }
+} {
+  if q.count == capacity(q) {
+    false
+  } else {
+    write(q.cells, (q.front + q.count) % capacity(q), some(x));
+    q.count := q.count + 1;
+    true
+  }
+}
+
+/// Empties a queue one element at a time and answers how many it removed.
+pub def rec drain[a : Type](q : Queue(a)) -> [State(Heap)] Nat #spec{
+  requires { valid(q) }
+  ensures removed {
+    | size(q) == 0
+    | removed == old(size(q))
+  }
+  decreases size(q)
+} {
+  match pop(q) {
+    None => 0,
+    Some(_) => drain(q) + 1
+  }
+}

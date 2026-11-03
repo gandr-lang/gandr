@@ -1,0 +1,49 @@
+/// Proofs attached to what they prove, with `with`, and ghost bindings.
+///
+/// The normaliser closes most verification conditions. Where it leaves one,
+/// the author proves it beside the clause it answers.
+///
+/// `with { … }` after an item proves that item, and after a clause proves all
+/// its items. `with lemma` passes a lemma stated elsewhere by its name.
+/// `ghost n = e` binds a logical value the clauses read, erased from the
+/// program, under any theory.
+///
+/// - see: #4564 — the specifications sketch, its rulings in the issue body
+/// - see: corpus/model/specification/specification-monad.gandr — the ordered theory a clause is a term of
+
+// The specification theory.
+import std.spec (Spec);
+// The lemmas on sums the proofs below use.
+import std.math.nat (sumAppend, sumNonNegative);
+
+/// The sum of a list, by a loop that keeps a running total.
+pub def total(xs : List(Nat)) -> Nat #spec{
+  ensures s {
+    | s == sum(xs) with {
+        sumAppend(take(length(xs), xs), Nil)
+      }
+    | s >= 0 with sumNonNegative(xs)
+  }
+} {
+  fold(xs, 0, fun (acc, x) { acc + x })
+}
+
+/// Sorts a list and keeps its length and elements, which one lemma proves.
+pub def sortKeeps(xs : List(Integer)) -> List(Integer) #spec{
+  ensures ys {
+    | length(ys) == length(xs)
+    | permutation(ys, xs)
+  } with mergeSortPermutes(xs)
+} {
+  mergeSort(xs)
+}
+
+/// The first failure of a validation, under the theory of exceptions, which
+/// has no entry state, so a ghost binding names the input's length.
+pub def firstInvalid(rows : List(Row)) -> [Raise(Invalid)] Unit #spec{
+  ghost n = length(rows)
+  requires { n > 0 }
+  ensures _ { n == length(rows) }
+} {
+  forEach(rows, fun (row) { if !valid(row) { raise(Invalid(row)) } })
+}

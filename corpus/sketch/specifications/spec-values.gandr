@@ -1,0 +1,55 @@
+/// A specification as a value: the type of the computations that meet it.
+///
+/// An interface states what its implementations must do once. Every
+/// implementation then meets the same specification, and a caller reads only
+/// the specification.
+///
+/// `#spec{ … }` with no body after it is a value of `Spec(E, A)`. A
+/// definition whose type is that value is a computation meeting it. The
+/// result binder may be a pattern, `ensures (x, rest) { … }`.
+///
+/// - see: #4564 — the specifications sketch, its rulings in the issue body
+/// - see: corpus/sketch/specifications/queue.gandr — the same clauses in a definition's head
+
+// The specification theory, its state observation and `old`.
+import std.spec (Spec, old);
+// The heap a store lives in.
+import std.mem (Heap);
+
+/// What a key-value store's lookup must do: leave the store as it found it
+/// and answer the bound value.
+pub def lookupSpec[k : Type, v : Type](s : Store(k, v), key : k) -> Spec(State(Heap), Maybe(v)) {
+  #spec{
+    requires { wellFormed(s) }
+    ensures r {
+      | contents(s) == old(contents(s))
+      | r == find(old(contents(s)), key)
+    }
+  }
+}
+
+/// What splitting the first element off a nonempty list must do, its result
+/// named by a pattern.
+pub def unconsSpec[a : Type](xs : List(a)) -> Spec(Pure, (a, List(a))) {
+  #spec{
+    requires { length(xs) > 0 }
+    ensures (x, rest) {
+      | Cons(x, rest) == xs
+      | length(rest) == length(xs) - 1
+    }
+  }
+}
+
+/// A lookup in a hash table, which meets the store's specification.
+pub def tableLookup[k : Type, v : Type](t : Table(k, v), key : k) -> lookupSpec(t.store, key) {
+  let slot = probe(t, hash(key));
+  match slot {
+    Empty => none,
+    Full(stored, value) => if stored == key { some(value) } else { tableLookupFrom(t, key, slot) }
+  }
+}
+
+/// A lookup in an association list, which meets the same specification.
+pub def listLookup[k : Type, v : Type](l : Assoc(k, v), key : k) -> lookupSpec(l.store, key) {
+  find(read(l.pairs), key)
+}
