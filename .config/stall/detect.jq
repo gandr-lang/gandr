@@ -41,8 +41,8 @@
 #                  (#2885): the seat's watch that files it died with its
 #                  session. Its fix is `mise run refactor:file <n>`; a merged
 #                  pull request is never stalled, only paged.
-#   seat-idle      a lane that holds a seat, with no open pull request whose
-#                  branch names it and no `status:claimed` issue it holds, for
+#   seat-idle      a lane that holds a seat, with no open pull request of its
+#                  lane (below) and no `status:claimed` issue it holds, for
 #                  `idle` minutes since the detector first saw it so (#3822):
 #                  a restored seat's watchers died with its old process, and
 #                  nothing claims for it. A lane holds the claims whose marker
@@ -53,14 +53,16 @@
 #                  stalled or paged again. With a programme focus set and no
 #                  open member unowned (#3959), the line names the focus: no
 #                  claim serves the lane, so the coordinator assigns it.
-# A pull request's lane is the longest lane of `areas` its branch is, or opens
-# with before a `-` (#4058): `triage-2783-stack-prefix` the triage lane's,
-# `triage-2-2784-stall` the triage-2 lane's. A branch naming no lane of
-# `areas` is its first word's. `stall:watch` pages each new finding to its
-# lane's seat and to the coordinator at once (#2972). A lane outside `lanes`,
-# when given, is one no seat holds: its finding is unplaced, and `stall:watch`
-# files it as an issue. A `seat-idle` lane is a seat's by its reading, so
-# always placed.
+# A pull request's lane is the lane its first closing issue's claim marker
+# names (#4524): the lane that claimed the unit holds what lands it, whatever
+# the branch is called. With no claimed closing issue, it is the longest lane
+# of `areas` its branch is, or opens with before a `-` (#4058):
+# `triage-2783-stack-prefix` the triage lane's, `triage-2-2784-stall` the
+# triage-2 lane's. A branch naming no lane of `areas` is its first word's.
+# `stall:watch` pages each new finding to its lane's seat and to the
+# coordinator at once (#2972). A lane outside `lanes`, when given, is one no
+# seat holds: its finding is unplaced, and `stall:watch` files it as an issue.
+# A `seat-idle` lane is a seat's by its reading, so always placed.
 #
 # A finding standing `escalate` minutes after it was first paged stalls its
 # pull request: `stall:watch` writes the `stall` comment and adds the
@@ -121,11 +123,14 @@
 | ($in.stalled // {}) as $stalled
 | $in.thresholds as $t
 | def minutes: . / 60 | floor;
-  # The longest lane of `areas` the branch is, or opens with before a `-`,
-  # as `claims.sh` reads a merged branch's (#4058); else its first word.
+  # The lane the first claimed closing issue names (#4524); else the longest
+  # lane of `areas` the branch is, or opens with before a `-`, as `claims.sh`
+  # reads a merged branch's (#4058); else its first word.
   def lane: .head as $head
-    | ([($in.areas // {}) | keys[] | select(. as $lane | $head == $lane or ($head | startswith($lane + "-")))]
-       | max_by(length)) // ($head | split("-")[0]);
+    | (.claims // [])[0]
+      // ([($in.areas // {}) | keys[] | select(. as $lane | $head == $lane or ($head | startswith($lane + "-")))]
+          | max_by(length))
+      // ($head | split("-")[0]);
   def placed: lane as $lane | $in.lanes == null or ($in.lanes | index($lane)) != null;
   def reading: . as $pr
     | [$in.required[] as $name
@@ -152,9 +157,9 @@
   # the trunk: a queue that never merges into the trunk.
   def off_trunk: . as $pr
     | $pr.queue != null and $pr.queue != $in.trunk and all($in.prs[]; .head != $pr.queue);
-  # The lanes that hold a seat and nothing in hand: no open pull request on
-  # a branch of the lane, and no claimed issue it holds, by the claim's marker
-  # or, with none, by one of its areas.
+  # The lanes that hold a seat and nothing in hand: no open pull request of
+  # the lane, by its closing issue's claim or its branch, and no claimed issue
+  # it holds, by the claim's marker or, with none, by one of its areas.
   [($in.seats // [])[] | . as $lane
     | (($in.areas // {})[$lane] // empty | map("area:" + .)) as $labels
     | select(any($in.prs[]; lane == $lane) | not)

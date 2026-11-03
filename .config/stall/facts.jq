@@ -18,6 +18,9 @@
 #             (#4643): GitHub queues a stack's member in the trunk's queue
 #             whatever its base;
 #   removals  each time it left the merge queue unmerged: `{at, reason}`;
+#   claims    the lanes its closing issues' claim markers name, in GitHub's
+#             order (`markers.jq`'s `claim_lane`), none for an issue with no
+#             marker (#4524);
 #   checks    each check run and status on its head: `{name, verdict,
 #             conclusion, started, completed}`, the verdict `pass`, `fail` or
 #             `pending` read as `.config/pr-stack/required.jq` reads one, the
@@ -55,6 +58,7 @@ def verdict:
   queued: .isInMergeQueue,
   queue: (.mergeQueueEntry.mergeQueue.resourcePath // null | if . == null then null else sub("^.*/queue/"; "") end),
   removals: [.timelineItems.nodes[] | select(.createdAt != null) | {at: (.createdAt | epoch), reason}],
+  claims: [(.closingIssuesReferences.nodes // [])[] | .body | claim_lane | select(. != null)],
   checks: [(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[] | {
     name: (.name // .context),
     verdict: verdict,
