@@ -338,6 +338,7 @@ fn tier_stop(
                 | ConsumerNode::ListFold { .. }
                 | ConsumerNode::Covariable(_)
                 | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::MuTildeAll { .. }
                 | ConsumerNode::Destructor { .. }
                 | ConsumerNode::Top),
             )
@@ -479,6 +480,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::DanglingTerm
         | EvalFault::Domain(_)
         | EvalFault::BoundNonReturner
+        | EvalFault::BoundArity
         | EvalFault::ReturnedNonReturner
         | EvalFault::RecordUpdate
         | EvalFault::AppliedNonOperator

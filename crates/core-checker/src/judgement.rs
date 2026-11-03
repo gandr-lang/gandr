@@ -472,6 +472,7 @@ use gandr_core_term::hole::matched_function;
 use gandr_core_term::hole::matched_list;
 use gandr_core_term::hole::matched_product;
 use gandr_core_term::hole::matched_returner;
+use gandr_core_term::hole::matched_returns;
 use gandr_core_term::hole::matched_stack;
 use gandr_core_term::hole::matched_static_pi;
 use gandr_core_term::hole::matched_sum;
@@ -488,6 +489,7 @@ use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
 use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_comp_type;
+use gandr_core_term::substitute_environment_value_type;
 use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -2282,6 +2284,35 @@ enum Frame
         /// The bound returner's type, in the ambient context.
         bound: CompTypeId,
     },
+    /// A bind of several values waits on the type its bound computation
+    /// synthesises, which must be a returner of that many values; it then
+    /// opens one binder per value, the first outermost, and judges its body
+    /// in the bind's own direction.
+    BindAllBound
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The bound computation.
+        bound: ComputationId,
+        /// How many values it binds.
+        arity: gandr_core_term::ComponentCount,
+        /// The body still to judge.
+        body: ComputationId,
+        /// The bind's own direction, which the body takes.
+        direction: Direction<CompTypeId>,
+    },
+    /// A bind of several values waits on its body's judgement, then closes the
+    /// binders it opened and hands the body's result on, a synthesised type
+    /// lowered out of all of them.
+    BindAllBody
+    {
+        /// The bind.
+        at: ComputationId,
+        /// How many binders it opened.
+        arity: gandr_core_term::ComponentCount,
+        /// The bound returner's type, in the ambient context.
+        bound: CompTypeId,
+    },
     /// A synthesising value in checking position waits on its synthesised type,
     /// which then crosses the value bridge.
     ValueBridge
@@ -2319,6 +2350,16 @@ enum Frame
     /// A dependent arrow or a dependent pair waits on the formation under its
     /// binder, then closes the binder it opened.
     FormBinder,
+    /// A returner of several values waits on its result at `index`; it then
+    /// opens that result's binder, closed by a [`Self::FormBinder`] after the
+    /// results past it form, and forms the next result under it.
+    FormReturns
+    {
+        /// The returner.
+        at: CompTypeId,
+        /// The result just formed.
+        index: usize,
+    },
     /// A lift waits on its type's formation; its target must then lie above
     /// the type's level.
     FormLift(ValueTypeId),
@@ -2395,6 +2436,14 @@ enum Frame
     /// it is checked against, or synthesised for the pure returner the return
     /// then synthesises.
     ReturnValue,
+    /// A return of several values waits on each value's synthesised type, the
+    /// result-stack suffix from `base`, then synthesises the pure returner of
+    /// them all, each result read under the binders of those before it.
+    ReturnValues
+    {
+        /// The result-stack suffix owned by this return.
+        base: usize,
+    },
     /// An injection waits on its payload's check against its summand.
     InjectionPayload,
     /// A splice's tactic's answer is checked against the splice's goal; the
@@ -2684,8 +2733,10 @@ impl Frame
             Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
             Self::FixpointArgument { .. } => FrameRole::FixpointArgument,
             Self::LambdaBody => FrameRole::LambdaBody,
-            Self::BindBound { .. } | Self::BindChecked { .. } => FrameRole::BindBound,
-            Self::BindBody { .. } => FrameRole::BindBody,
+            Self::BindBound { .. } | Self::BindChecked { .. } | Self::BindAllBound { .. } => {
+                FrameRole::BindBound
+            },
+            Self::BindBody { .. } | Self::BindAllBody { .. } => FrameRole::BindBody,
             Self::ValueBridge { .. } => FrameRole::ValueBridge,
             Self::CompBridge { .. } => FrameRole::CompBridge,
             Self::Quote(_) => FrameRole::Quote,
@@ -2694,10 +2745,13 @@ impl Frame
                 under: TypeNode::Computation(_),
                 ..
             } => FrameRole::FormPi,
+            // A returner of several values forms over a telescope, as a
+            // dependent pair does.
             Self::FormUnder {
                 under: TypeNode::Value(_),
                 ..
-            } => FrameRole::FormSigma,
+            }
+            | Self::FormReturns { .. } => FrameRole::FormSigma,
             Self::FormBinder => FrameRole::FormBinder,
             Self::FormLift(_) => FrameRole::FormLift,
             Self::FormElement(_) => FrameRole::FormElement,
@@ -2710,7 +2764,7 @@ impl Frame
             Self::Unknowing(_) => FrameRole::Unknowing,
             Self::ThunkBody => FrameRole::ThunkBody,
             Self::LetThunk { .. } => FrameRole::LetThunk,
-            Self::ReturnValue => FrameRole::ReturnValue,
+            Self::ReturnValue | Self::ReturnValues { .. } => FrameRole::ReturnValue,
             Self::InjectionPayload => FrameRole::InjectionPayload,
             Self::Spliced { .. } => FrameRole::Spliced,
             Self::SessionSend { .. } => FrameRole::SessionSend,
@@ -2764,7 +2818,7 @@ impl Frame
     /// - hypothesis: L3 — a refusal under a bind attributes its one hypothesis
     ///   to the bind body; a miscount drops or misplaces it.
     /// - witness: `judgement::tests::a_refusal_under_a_bind_keeps_its_hypothesis`
-    #[spec(ensures: |ret| usize::from(ret) <= 2 || matches!(self, Self::SplitBody { .. }))]
+    #[spec(ensures: |ret| usize::from(ret) <= 2 || matches!(self, Self::SplitBody { .. } | Self::BindAllBody { .. }))]
     fn opens(self) -> BinderDepth
     {
         BinderDepth::from(match self {
@@ -2778,7 +2832,7 @@ impl Frame
             | Self::ScopeSubject { .. }
             | Self::LetaBody { .. } => 1_usize,
             Self::HandlerClause { .. } | Self::ListCaseCons => 2_usize,
-            Self::SplitBody { arity, .. } => usize::from(arity),
+            Self::SplitBody { arity, .. } | Self::BindAllBody { arity, .. } => usize::from(arity),
             Self::NativeNext(_)
             | Self::NativeYield(_)
             | Self::NativeCollect
@@ -2847,12 +2901,14 @@ impl Frame
             | Self::ApplicationArgument { .. }
             | Self::FixpointArgument { .. }
             | Self::BindBound { .. }
+            | Self::BindAllBound { .. }
             | Self::BindChecked { .. }
             | Self::ValueBridge { .. }
             | Self::CompBridge { .. }
             | Self::Quote(_)
             | Self::FormNext(_)
             | Self::FormUnder { .. }
+            | Self::FormReturns { .. }
             | Self::FormLift(_)
             | Self::FormElement(_)
             | Self::FormStaticPi(_)
@@ -2865,6 +2921,7 @@ impl Frame
             | Self::ThunkBody
             | Self::LetThunk { .. }
             | Self::ReturnValue
+            | Self::ReturnValues { .. }
             | Self::InjectionPayload
             | Self::Spliced { .. }
             | Self::SessionSend { .. }
@@ -3332,12 +3389,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::BindBound { .. }
                 | Frame::BindChecked { .. }
                 | Frame::BindBody { .. }
+                | Frame::BindAllBound { .. }
+                | Frame::BindAllBody { .. }
                 | Frame::ValueBridge { .. }
                 | Frame::CompBridge { .. }
                 | Frame::Quote(_)
                 | Frame::FormNext(_)
                 | Frame::FormUnder { .. }
                 | Frame::FormBinder
+                | Frame::FormReturns { .. }
                 | Frame::FormLift(_)
                 | Frame::FormElement(_)
                 | Frame::FormStaticPi(_)
@@ -3349,6 +3409,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Unknowing(_)
                 | Frame::ThunkBody
                 | Frame::ReturnValue
+                | Frame::ReturnValues { .. }
                 | Frame::InjectionPayload
                 | Frame::Spliced { .. }
                 | Frame::SessionSend { .. }
@@ -3598,7 +3659,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         let head = self.context.whnf_comp_type(answer)?;
         let effects = match comp_type_view(self.context.arena(), head)? {
-            CompTypeView::Returner { effects, .. } => effects.clone(),
+            CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. } => {
+                effects.clone()
+            },
             CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
             CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
@@ -3898,7 +3961,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
         let head = self.context.whnf_comp_type(answer)?;
         let ambient = match comp_type_view(self.context.arena(), head)? {
-            CompTypeView::Returner { effects, .. } => effects.clone(),
+            CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. } => {
+                effects.clone()
+            },
             CompTypeView::Unknown => gandr_core_term::effect::EffectRow::EMPTY,
             CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
@@ -6102,7 +6167,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   a computation nested there waits a second frame, the run's; an
     ///   ascription forms its stated type, checks its body against it and
     ///   synthesises it; a hole and a mark have the unknown computation type,
-    ///   minted, and ascend.
+    ///   minted, and ascend. A return of several values awaits each value's
+    ///   type in turn, the first's goal next, and one of no values has the pure
+    ///   returner of none at once; a bind of several values awaits its bound
+    ///   computation's type.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a fixpoint;
     ///   [`CheckRefusal::OutOfFragment`] for a case.
     ///
@@ -6111,6 +6179,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   types while introductions and case expose exact refusals; L1 free
     ///   pools compare the faces, separating wrong child goals and frames.
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_return_of_several_values_synthesises_their_telescope`
+    /// - witness: `judgement::tests::a_bind_of_several_values_binds_them_in_order`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_in_both_checkers`
@@ -6122,7 +6192,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 || (self.frames.len().checked_sub(before) == Some(2)
                     && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { .. })))
                 || (self.frames.len().checked_sub(before) == Some(3)
-                    && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { read: Read::Let, .. } | Frame::LetThunk { .. })))))
+                    && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::Ran { read: Read::Let, .. } | Frame::LetThunk { .. })))
+                || matches!(self.frames.get(before).map(|waiting| waiting.frame), Some(Frame::ReturnValues { .. }))))
             || (matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))) && self.frames.len() == before),
     )]
     fn synthesise_comp(
@@ -6366,10 +6437,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            Computation::ReturnAll(ref values) if values.is_empty() => {
+                let none = self
+                    .context
+                    .arena_mut()
+                    .comp_type_returns_with_effects(&[], gandr_core_term::effect::EffectRow::EMPTY);
+                Ok(Step::Ascend(Produced::CompType(none)))
+            },
+            Computation::ReturnAll(_) => {
+                let Some(&Computation::ReturnAll(ref values)) =
+                    self.context.arena().computation(term)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let owner = self.owner;
+                self.frames.push(Waiting {
+                    frame: Frame::ReturnValues {
+                        base: self.native_types.len(),
+                    },
+                    owner,
+                });
+                for &value in values.iter().rev() {
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeCollect,
+                        owner,
+                    });
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(Goal::Value {
+                            term: value,
+                            direction: Direction::Synthesise,
+                        }),
+                        owner,
+                    });
+                }
+                let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                self.resume(first.frame, Produced::Checked)
+            },
             Computation::Fixpoint { .. } => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Fixpoint(term),
             }),
             Computation::Bind(bound, body) => self.bind(term, bound, body, Direction::Synthesise),
+            Computation::BindAll { bound, arity, body } => {
+                self.bind_all(term, (bound, arity, body), Direction::Synthesise)
+            },
             Computation::Case { .. } | Computation::ListCase { .. } => {
                 Err(CheckRefusal::NotSynthesisable {
                     form: CheckingForm::Case(term),
@@ -6418,13 +6528,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   function type at its weak head, and its body checks against the
     ///   codomain — an arrow's shifted past the binder, a dependent arrow's as
     ///   it stands; a return's value checks against the result it matches as a
-    ///   returner; a bind awaits its bound computation's synthesised type, then
-    ///   checks its body against `expected` shifted past its binder; a lazy
-    ///   product of `n` components matches `expected` as a lazy product of `n`
-    ///   and leaves one goal per component, each checked against its own; a
-    ///   hole and a mark check against any type at once; a fixpoint opens a
-    ///   binder of `U expected` and checks its body against `expected` shifted
-    ///   past it, a partial one only at a type stating that it may diverge
+    ///   returner; a return of several values matches `expected` as a returner
+    ///   of that many and leaves one goal per value, each checked against its
+    ///   result with the values before it in place of the binders it stands
+    ///   under, a return of none checking at once; a bind awaits its bound
+    ///   computation's synthesised type, then checks its body against
+    ///   `expected` shifted past its binders; a lazy product of `n` components
+    ///   matches `expected` as a lazy product of `n` and leaves one goal per
+    ///   component, each checked against its own; a hole and a mark check
+    ///   against any type at once; a fixpoint opens a binder of `U expected`
+    ///   and checks its body against `expected` shifted past it, a partial one
+    ///   only at a type stating that it may diverge
     ///   ([`crate::divergence::require`]), except that a structural one opens
     ///   its stage ([`crate::recursion::open_fixpoint`]): the self binder takes
     ///   the recursed-on parameter below the stage and the body takes it at the
@@ -6453,6 +6567,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   or another, including dependent binders; exact acceptance or refusal
     ///   separates wrong child directions and expected-type dispatch.
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
     /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
@@ -6464,7 +6579,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
             || (matches!(ret, Ok(Step::Ascend(Produced::Checked))) && self.frames.len() == before
-                && matches!(self.context.arena().computation(term), Some(Computation::Hole(_) | Computation::Mark { .. })))
+                && (matches!(self.context.arena().computation(term), Some(Computation::Hole(_) | Computation::Mark { .. }))
+                    || matches!(self.context.arena().computation(term), Some(Computation::ReturnAll(values)) if values.is_empty())))
             || (matches!(ret, Ok(Step::Ascend(Produced::Checked)))
                 && matches!(self.context.arena().computation(term), Some(Computation::With(components)) if before.checked_add(components.len()) == Some(self.frames.len()))),
     )]
@@ -6551,6 +6667,42 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term: value,
                     direction: Direction::Check(result),
                 }))
+            },
+            Computation::ReturnAll(ref values) => {
+                let count = values.len();
+                let results = self.returns_expected(term, expected, count)?;
+                let Some(&Computation::ReturnAll(ref values)) =
+                    self.context.arena().computation(term)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let values = values.to_vec();
+                // Each value checks at its result with the values before it,
+                // innermost first, in place of the binders the result stands
+                // under.
+                let mut goals = Vec::with_capacity(count);
+                let mut before: Vec<ValueId> = Vec::with_capacity(count);
+                for (&value, &result) in values.iter().zip(&results) {
+                    let result = substitute_environment_value_type(
+                        self.context.arena_mut(),
+                        result,
+                        &before,
+                    );
+                    goals.push(Goal::Value {
+                        term: value,
+                        direction: Direction::Check(result),
+                    });
+                    before.insert(0, value);
+                }
+                let Some((&first, rest)) = goals.split_first()
+                else {
+                    return Ok(Step::Ascend(Produced::Checked));
+                };
+                self.wait(Frame::ReturnValue);
+                for &goal in rest.iter().rev() {
+                    self.wait(Frame::Next(goal));
+                }
+                Ok(Step::Descend(first))
             },
             Computation::Fixpoint { body, evidence } => {
                 let position = evidence.descent();
@@ -6650,6 +6802,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Computation::Bind(bound, body) => {
                 self.bind(term, bound, body, Direction::Check(expected))
+            },
+            Computation::BindAll { bound, arity, body } => {
+                self.bind_all(term, (bound, arity, body), Direction::Check(expected))
             },
             Computation::Split { scrutinee, .. } => {
                 self.wait(Frame::SplitScrutinee {
@@ -6969,6 +7124,149 @@ impl<'context, 'arena> Machine<'context, 'arena>
         self.context.binders().open(Zone::Intuitionistic, result);
         self.context.open_copy(at);
         self.wait(Frame::BindBody { at, bound: read });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction,
+        }))
+    }
+
+    /// Await the type of a bind of several values' bound computation.
+    ///
+    /// # Specification
+    /// - requires: `bound`, `arity` and `body` are the parts of the bind of
+    ///   several values `at`.
+    /// - ensures: the bound computation's synthesis is the next goal, with the
+    ///   bind's frame awaiting its type and holding the direction the body is
+    ///   judged in.
+    /// - provides: the one rule both computation faces share for a bind of
+    ///   several values.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bound_all`].
+    /// - witness: `judgement::tests::a_bind_of_several_values_binds_them_in_order`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| self.frames.len() == before.saturating_add(1)
+            && matches!(self.frames.last().map(|waiting| waiting.frame), Some(Frame::BindAllBound { .. }))
+            && ret == Ok(Step::Descend(Goal::Computation { term: parts.0, direction: Direction::Synthesise })),
+    )]
+    fn bind_all(
+        &mut self,
+        at: ComputationId,
+        parts: (
+            ComputationId,
+            gandr_core_term::ComponentCount,
+            ComputationId,
+        ),
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let (bound, arity, body) = parts;
+        self.wait(Frame::BindAllBound {
+            at,
+            bound,
+            arity,
+            body,
+            direction,
+        });
+        Ok(Step::Descend(Goal::Computation {
+            term: bound,
+            direction: Direction::Synthesise,
+        }))
+    }
+
+    /// Open the binders of the bind of several values `at` at the returner
+    /// `synthesised` its bound computation has, and judge its body in
+    /// `direction`.
+    ///
+    /// # Specification
+    /// - requires: `bound`, `arity` and `body` are the parts of the bind `at`,
+    ///   and `synthesised` is the type `bound` synthesised.
+    /// - ensures: `synthesised` read as a returner of `arity` values; a checked
+    ///   bind's effects accumulated and bridged into the expected type, which
+    ///   the body then checks against shifted past the binders; one binder per
+    ///   value opened, the first outermost, each at its result as the telescope
+    ///   states it; the body's judgement is the next goal.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `bound` for a type that is
+    ///   no returner of `arity` values; the accumulation's and the bridge's
+    ///   refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The bind's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bind of two values synthesising its body's type,
+    ///   one checked against it, one whose bound computation returns one value
+    ///   and one whose body's type mentions a binder separate the matching, the
+    ///   binder order, the shift and the lowering.
+    /// - witness: `judgement::tests::a_bind_of_several_values_binds_them_in_order`
+    /// - witness: `judgement::tests::a_bind_of_several_values_refuses_another_arity`
+    #[spec(
+        captures: before = usize::from(self.context.depth(Zone::Intuitionistic)),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { term, .. })) if term == parts.2)
+            && usize::from(self.context.depth(Zone::Intuitionistic)) == before.saturating_add(usize::from(parts.1))),
+    )]
+    fn bound_all(
+        &mut self,
+        at: ComputationId,
+        parts: (
+            ComputationId,
+            gandr_core_term::ComponentCount,
+            ComputationId,
+        ),
+        direction: Direction<CompTypeId>,
+        synthesised: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let (bound, arity, body) = parts;
+        let read = crate::codata::read(self.context, synthesised)?;
+        let results = match matched_returns(self.context.arena_mut(), read, usize::from(arity)) {
+            Maybe::Present(results) => results,
+            Maybe::Absent(absent) => {
+                return Err(unmatched(
+                    absent,
+                    TypeNode::Computation(read),
+                    CheckRefusal::ShapeMismatch {
+                        at: TermNode::Computation(bound),
+                        wanted: ExpectedShape::Returner,
+                        found: TypeNode::Computation(synthesised),
+                    },
+                ));
+            },
+        };
+        let binders = u32::try_from(usize::from(arity))
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        let direction = match direction {
+            Direction::Synthesise => Direction::Synthesise,
+            Direction::Check(expected) => {
+                let accumulated = self.accumulate_effects(at, read, expected)?;
+                if accumulated != expected {
+                    comp_bridge(
+                        self.context,
+                        at,
+                        accumulated,
+                        expected,
+                        &mut self.conversions,
+                    )?;
+                }
+                let arena = self.context.arena_mut();
+                Direction::Check(
+                    shift_comp_type(arena, expected, Binders::from(binders)).settle(arena),
+                )
+            },
+        };
+        // Each result already stands under the binders of those before it.
+        for result in results {
+            self.context.binders().open(Zone::Intuitionistic, result);
+        }
+        self.wait(Frame::BindAllBody {
+            at,
+            arity,
+            bound: read,
+        });
         Ok(Step::Descend(Goal::Computation {
             term: body,
             direction,
@@ -7506,7 +7804,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(CompTypeView::Pi { domain: held_domain, codomain: held_codomain }) => domain == held_domain && codomain == held_codomain,
                 | Ok(CompTypeView::Arrow { domain: held, .. }) => domain == held,
                 | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
-                | Ok(CompTypeView::Returner { .. } | CompTypeView::With(..)) | Err(_) => false,
+                | Ok(CompTypeView::Returner { .. } | CompTypeView::Returns { .. } | CompTypeView::With(..)) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(expected),
@@ -7571,7 +7869,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             && match comp_type_view(self.context.arena(), expected) {
                 | Ok(CompTypeView::Returner { result: held, .. }) => result == held,
                 | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
-                | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. } | CompTypeView::With(..)) | Err(_) => false,
+                | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. } | CompTypeView::With(..) | CompTypeView::Returns { .. }) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Returner && found == TypeNode::Computation(expected),
@@ -7586,6 +7884,56 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let head = crate::codata::read(self.context, expected)?;
         match matched_returner(self.context.arena_mut(), head) {
             Maybe::Present(result) => Ok(result),
+            Maybe::Absent(absent) => Err(unmatched(
+                absent,
+                TypeNode::Computation(head),
+                CheckRefusal::ShapeMismatch {
+                    at: TermNode::Computation(at),
+                    wanted: ExpectedShape::Returner,
+                    found: TypeNode::Computation(expected),
+                },
+            )),
+        }
+    }
+
+    /// The results a return of several values checks its values against: the
+    /// ones the expected type matches as a returner of `arity` values at its
+    /// weak head.
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: the results of `expected` when it is a returner of `arity`
+    ///   values at its weak head, each under the binders of those before it;
+    ///   `arity` unknown value types, minted, when it is the unknown type.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a returner,
+    ///   for any other former or another number of values; the unfolding's
+    ///   refusal.
+    /// - panics: none.
+    ///
+    /// # Judgement
+    /// - expected: `expected`
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a return of two values against a returner of two, of
+    ///   three and of one value separates the matched results from the shape
+    ///   failure.
+    /// - witness: `judgement::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref results) => results.len() == arity,
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
+            && wanted == ExpectedShape::Returner && found == TypeNode::Computation(expected),
+        | Err(_) => true,
+    })]
+    fn returns_expected(
+        &mut self,
+        at: ComputationId,
+        expected: CompTypeId,
+        arity: usize,
+    ) -> Result<Vec<ValueTypeId>, CheckRefusal>
+    {
+        let head = crate::codata::read(self.context, expected)?;
+        match matched_returns(self.context.arena_mut(), head, arity) {
+            Maybe::Present(results) => Ok(results),
             Maybe::Absent(absent) => Err(unmatched(
                 absent,
                 TypeNode::Computation(head),
@@ -7916,6 +8264,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(result))))
             },
+            // The effects stand in the ambient context; each result stands
+            // under the binders of those before it.
+            CompTypeView::Returns { results, effects } => {
+                let owner = self.owner;
+                self.frames.extend(effects.types().rev().map(|ty| Waiting {
+                    frame: Frame::FormNext(TypeNode::Value(ty)),
+                    owner,
+                }));
+                let Some(&first) = results.first()
+                else {
+                    return Ok(Step::Ascend(Produced::Checked));
+                };
+                self.wait(Frame::FormReturns { at, index: 0 });
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
+            },
             CompTypeView::Arrow { domain, codomain } => {
                 self.wait(Frame::FormNext(TypeNode::Computation(codomain)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
@@ -7996,7 +8359,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - ensures: a pure bound, and one whose type is unknown because a total
     ///   run marked it, leave the continuation unchanged; otherwise both
-    ///   demands remain in the returner, with one definition per name.
+    ///   demands remain in the continuation's returner, of one value or of
+    ///   several, with one definition per name.
     /// - fails: a non-returner cannot carry a nonempty row; conflicting
     ///   definitions are refused rather than overwritten.
     ///
@@ -8007,6 +8371,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::bind_unions_effect_rows`
     /// - witness: `judgement::tests::check_mode_bind_subsumes_the_accumulated_row`
     /// - witness: `judgement::elaboration::tests::a_marked_bound_leaves_its_continuation_judged`
+    /// - witness: `judgement::tests::a_bind_of_several_values_binds_them_in_order`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -8015,9 +8380,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         )
     )]
     #[spec(ensures: |ret| ret.is_err() || match comp_type_view(self.context.arena(), bound) {
-        Ok(CompTypeView::Returner { effects, .. }) if effects.purity() == gandr_core_term::effect::Purity::Pure => ret == Ok(continued),
+        Ok(CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. }) if effects.purity() == gandr_core_term::effect::Purity::Pure => ret == Ok(continued),
         Ok(CompTypeView::Unknown) => ret == Ok(continued),
-        Ok(CompTypeView::Returner { effects, .. }) => ret.is_ok_and(|actual| matches!(comp_type_view(self.context.arena(), actual), Ok(CompTypeView::Returner { effects: actual, .. }) if effects.is_subset(actual, self.context.arena()) == gandr_core_term::row::RowInclusion::Included)),
+        Ok(CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. }) => ret.is_ok_and(|actual| matches!(comp_type_view(self.context.arena(), actual), Ok(CompTypeView::Returner { effects: actual, .. } | CompTypeView::Returns { effects: actual, .. }) if effects.is_subset(actual, self.context.arena()) == gandr_core_term::row::RowInclusion::Included)),
         _ => false,
     })]
     fn accumulate_effects(
@@ -8031,7 +8396,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         if matches!(view, CompTypeView::Unknown) {
             return Ok(continued);
         }
-        let CompTypeView::Returner { effects, .. } = view
+        let (CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. }) = view
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
@@ -8040,26 +8405,42 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
         let demanded = effects.clone();
         let head = self.context.whnf_comp_type(continued)?;
-        let CompTypeView::Returner { result, effects } =
-            comp_type_view(self.context.arena(), head)?
-        else {
-            return Err(CheckRefusal::ShapeMismatch {
+        let conflict = |_conflict| CheckRefusal::EffectSignatureConflict {
+            at,
+            first: bound,
+            second: continued,
+        };
+        match comp_type_view(self.context.arena(), head)? {
+            CompTypeView::Returner { result, effects } => {
+                let combined = demanded
+                    .union(effects, self.context.arena())
+                    .map_err(conflict)?;
+                Ok(self
+                    .context
+                    .arena_mut()
+                    .comp_type_returner_with_effects(result, combined))
+            },
+            CompTypeView::Returns { results, effects } => {
+                let combined = demanded
+                    .union(effects, self.context.arena())
+                    .map_err(conflict)?;
+                let results = results.to_vec();
+                Ok(self
+                    .context
+                    .arena_mut()
+                    .comp_type_returns_with_effects(&results, combined))
+            },
+            CompTypeView::With(..)
+            | CompTypeView::Arrow { .. }
+            | CompTypeView::Pi { .. }
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. }
+            | CompTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
                 at: TermNode::Computation(at),
                 wanted: ExpectedShape::Returner,
                 found: TypeNode::Computation(continued),
-            });
-        };
-        let combined = demanded
-            .union(effects, self.context.arena())
-            .map_err(|_conflict| CheckRefusal::EffectSignatureConflict {
-                at,
-                first: bound,
-                second: continued,
-            })?;
-        Ok(self
-            .context
-            .arena_mut()
-            .comp_type_returner_with_effects(result, combined))
+            }),
+        }
     }
 
     /// The universe a quote of the formed type `quoted` has: its family's sort
@@ -8304,6 +8685,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     (code, target.clone(), GroundSort::Computation)
                 },
                 CompTypeView::Returner { .. }
+                | CompTypeView::Returns { .. }
                 | CompTypeView::With(..)
                 | CompTypeView::Arrow { .. }
                 | CompTypeView::Pi { .. }
@@ -8816,6 +9198,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.native_types.truncate(base);
                 Ok(Step::Ascend(Produced::ValueType(product.into())))
             },
+            (Frame::ReturnValues { base }, Produced::Checked) => {
+                // Each value's type stands in the ambient context, so the
+                // telescope reads it past the binders of the values before it.
+                let arena = self.context.arena_mut();
+                let synthesised = self
+                    .native_types
+                    .get(base ..)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let mut results = Vec::with_capacity(synthesised.len());
+                for (before, &ty) in synthesised.iter().enumerate() {
+                    let binders = u32::try_from(before)
+                        .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+                    results.push(shift_value_type(arena, ty, Binders::from(binders)).settle(arena));
+                }
+                self.native_types.truncate(base);
+                let returns = arena.comp_type_returns_with_effects(
+                    &results,
+                    gandr_core_term::effect::EffectRow::EMPTY,
+                );
+                Ok(Step::Ascend(Produced::CompType(returns)))
+            },
             (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
                 let datatype = self.context.settle_value_type(datatype);
                 self.native_case(term, datatype)
@@ -9308,6 +9711,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         gandr_core_term::effect::Purity::Pure,
                     ),
                     CompTypeView::With(..)
+                    | CompTypeView::Returns { .. }
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
                     | CompTypeView::Element { .. }
@@ -9397,6 +9801,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         Ok(Step::Ascend(Produced::ValueType(unknown.into())))
                     },
                     CompTypeView::Returner { .. }
+                    | CompTypeView::Returns { .. }
                     | CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
@@ -9875,7 +10280,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let classifier = self.context.settle_value_type(classifier);
                 self.split(at, scrutinee, classifier, direction)
             },
-            (Frame::SplitBody { arity, .. }, Produced::Checked) => {
+            (
+                Frame::SplitBody { arity, .. } | Frame::BindAllBody { arity, .. },
+                Produced::Checked,
+            ) => {
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
                 }
@@ -10158,6 +10566,34 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let lowered = self.accumulate_effects(at, bound, lowered)?;
                 Ok(Step::Ascend(Produced::CompType(lowered)))
             },
+            (
+                Frame::BindAllBound {
+                    at,
+                    bound,
+                    arity,
+                    body,
+                    direction,
+                },
+                Produced::CompType(synthesised),
+            ) => self.bound_all(at, (bound, arity, body), direction, synthesised),
+            (Frame::BindAllBody { at, arity, bound }, Produced::CompType(synthesised)) => {
+                // Every binder stays open until the type has left them all, so a
+                // refusal attributes each to this frame.
+                let mut lowered = synthesised;
+                for _ in 0_usize .. usize::from(arity) {
+                    let Maybe::Present(outer) =
+                        strengthen_comp_type(self.context.arena_mut(), lowered)
+                    else {
+                        return Err(CheckRefusal::DependentBind { at, synthesised });
+                    };
+                    lowered = outer.settle(self.context.arena_mut());
+                }
+                for _ in 0_usize .. usize::from(arity) {
+                    self.close()?;
+                }
+                let lowered = self.accumulate_effects(at, bound, lowered)?;
+                Ok(Step::Ascend(Produced::CompType(lowered)))
+            },
             (Frame::ValueBridge { at, expected }, Produced::ValueType(synthesised)) => {
                 value_bridge(
                     self.context,
@@ -10187,6 +10623,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.binders().open(Zone::Intuitionistic, domain);
                 self.wait(Frame::FormBinder);
                 Ok(Step::Descend(Goal::Form(under)))
+            },
+            (Frame::FormReturns { at, index }, Produced::Checked) => {
+                let CompTypeView::Returns { results, .. } =
+                    comp_type_view(self.context.arena(), at)?
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let formed = *results.get(index).ok_or(CheckRefusal::MachineInvariant)?;
+                let following = index.saturating_add(1);
+                let Some(&next) = results.get(following)
+                else {
+                    return Ok(Step::Ascend(Produced::Checked));
+                };
+                self.context.binders().open(Zone::Intuitionistic, formed);
+                self.wait(Frame::FormBinder);
+                self.wait(Frame::FormReturns {
+                    at,
+                    index: following,
+                });
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(next))))
             },
             (Frame::FormLift(at), Produced::Checked) => {
                 self.raises(at)?;
@@ -10401,6 +10857,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::LetThunk { .. }
                 | Frame::NestedCall { .. }
                 | Frame::BindBound { .. }
+                | Frame::BindAllBound { .. }
                 | Frame::Project { .. }
                 | Frame::HandlerSubject { .. }
                 | Frame::StackNext { .. }
@@ -10444,6 +10901,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Quote(_)
                 | Frame::FormNext(_)
                 | Frame::FormUnder { .. }
+                | Frame::FormReturns { .. }
                 | Frame::FormLift(_)
                 | Frame::FormStaticPi(_)
                 | Frame::RunProtocol
@@ -10483,10 +10941,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeForget(_)
                 | Frame::SigmaSplitScrutinee(_)
                 | Frame::SigmaSplitMotive { .. }
-                | Frame::NativeProjection(_),
+                | Frame::NativeProjection(_)
+                | Frame::ReturnValues { .. },
                 _,
             )
-            | (Frame::BindBody { .. } | Frame::SplitBody { .. }, Produced::ValueType(_))
+            | (
+                Frame::BindBody { .. } | Frame::BindAllBody { .. } | Frame::SplitBody { .. },
+                Produced::ValueType(_),
+            )
             | (Frame::ReturnValue, Produced::CompType(_)) => Err(CheckRefusal::MachineInvariant),
         }
     }

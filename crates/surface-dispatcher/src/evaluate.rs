@@ -3604,6 +3604,12 @@ fn references(
                 Some(&Computation::Bind(bound, rest)) => {
                     pending.extend([Node::Computation(bound), Node::Computation(rest)]);
                 },
+                Some(&Computation::BindAll { bound, body, .. }) => {
+                    pending.extend([Node::Computation(bound), Node::Computation(body)]);
+                },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    pending.extend(values.iter().map(|&value| Node::Value(value)));
+                },
                 Some(&Computation::Case {
                     scrutinee,
                     ref branches,
@@ -4792,7 +4798,9 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                         continue;
                     };
                     match *node {
-                        ConsumerNode::MuTilde { body } => pending.push(Node::Command(body)),
+                        ConsumerNode::MuTilde { body } | ConsumerNode::MuTildeAll { body, .. } => {
+                            pending.push(Node::Command(body));
+                        },
                         ConsumerNode::Destructor {
                             ref producers,
                             consumers: ref fields,
@@ -4827,6 +4835,14 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     } = *node
                     {
                         pending.extend([Node::Producer(producer), Node::Consumer(consumer)]);
+                    }
+                    else if let CommandNode::Deliver {
+                        ref producers,
+                        consumer,
+                    } = *node
+                    {
+                        pending.extend(producers.iter().copied().map(Node::Producer));
+                        pending.push(Node::Consumer(consumer));
                     }
                     commands.push(node.clone());
                 },

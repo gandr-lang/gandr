@@ -564,6 +564,17 @@ pub fn level_of(
                     }
                     tasks.push(Task::Enter(TypeNode::Value(result)));
                 },
+                CompTypeView::Returns { results, effects } => {
+                    levels.push(Level::zero());
+                    for operation_type in effects.types() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Value(operation_type)));
+                    }
+                    for &result in results.iter().rev() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Value(result)));
+                    }
+                },
                 CompTypeView::Arrow { domain, codomain }
                 | CompTypeView::Pi { domain, codomain } => {
                     tasks.push(Task::Join);

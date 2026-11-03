@@ -3400,6 +3400,61 @@ fn a_returned_field_or_scrutinee_runs_first_2140()
     );
 }
 
+/// #4853: a return of two values reaches a binder of two in written order,
+/// first value outermost, whether the values are plain or one holds a
+/// returned value `⟨c⟩`, which runs first and keeps its place. Each binds the
+/// pair swapped, so a value delivered to the other's binder, or a transport
+/// run after its neighbour's place was taken, answers wrongly.
+#[test]
+fn a_many_value_return_delivers_its_values_in_order_4853()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let seven = integer(&mut core, Digits("7"));
+    let unit = core.value_unit();
+    let identity = decoded(&mut core);
+    let path = univalence(&mut core);
+    let moved = core.computation_path_transport(identity, path, five);
+    let held = core.value_returned(moved);
+    let carried = core.value_tuple(&[five, unit]);
+    // Under the bind of two, the first value is 1 and the second 0.
+    let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let second = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let swapped = core.value_tuple(&[second, first]);
+    let answer = core.computation_return(swapped);
+    let two = gandr_core_term::ComponentCount::from(2_usize);
+
+    // `(a, b) ← return 5, 7; return (b, a)`.
+    let sent = core.computation_return_all(&[five, seven]);
+    let program = core.computation_bind_all(sent, two, answer);
+    let image = core.value_tuple(&[seven, five]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "plain values reach their binders in written order"
+    );
+
+    // `(a, b) ← return ⟨transport⟩, 7; return (b, a)`.
+    let sent = core.computation_return_all(&[held, seven]);
+    let program = core.computation_bind_all(sent, two, answer);
+    let image = core.value_tuple(&[seven, carried]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "a first value holding a transport runs it and keeps its place"
+    );
+
+    // `(a, b) ← return 7, ⟨transport⟩; return (b, a)`.
+    let sent = core.computation_return_all(&[seven, held]);
+    let program = core.computation_bind_all(sent, two, answer);
+    let image = core.value_tuple(&[carried, seven]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "a second value holding a transport runs it and keeps its place"
+    );
+}
+
 /// A transport whose motive has a part no row reads does not focus: the
 /// refusal names the transport and that part's head, and the arena returns
 /// to its mark. A dependent function, a path over an element carrier and a

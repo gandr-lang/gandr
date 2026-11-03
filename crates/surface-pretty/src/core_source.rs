@@ -1968,6 +1968,15 @@ impl<'arena> CoreSource<'arena>
             )]
             CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
             CompType::With(ref components) => Former::With(Arity::from(components.len())),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a returner of several results, which the surface grammar has no \
+                              syntax for"
+                )
+            )]
+            CompType::Returns { .. } => Former::Unreadable(Unreadable::SeveralResults),
             CompType::Returner {
                 result,
                 ref effects,
@@ -2124,6 +2133,17 @@ impl<'arena> CoreSource<'arena>
             Computation::Return(returned) => Former::Return(value(returned)),
             Computation::Abandon(stack) => Former::Abandon(value(stack)),
             Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a return or a bind of several values, which the surface grammar has \
+                              no syntax for"
+                )
+            )]
+            Computation::ReturnAll(_) | Computation::BindAll { .. } => {
+                Former::Unreadable(Unreadable::SeveralResults)
+            },
             Computation::Ascribe { body, ty } => Former::Ascription {
                 body: computation(body),
                 ty: CoreNode::CompType(ty),
@@ -2758,7 +2778,9 @@ impl Source for CoreSource<'_>
                 | Computation::Abandon(_)
                 | Computation::Reset(_)
                 | Computation::Shift(_)
-                | Computation::Project(..) => None,
+                | Computation::Project(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. } => None,
             },
             CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
                 CompType::Codata { ref arguments, .. } => {
@@ -2769,6 +2791,7 @@ impl Source for CoreSource<'_>
                     .map(|&component| CoreNode::CompType(component)),
                 CompType::Unknown
                 | CompType::Returner { .. }
+                | CompType::Returns { .. }
                 | CompType::Arrow { .. }
                 | CompType::Pi { .. }
                 | CompType::Element { .. } => None,
@@ -2952,6 +2975,8 @@ impl Source for CoreSource<'_>
                 | Computation::Application(..)
                 | Computation::Return(_)
                 | Computation::Bind(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. }
                 | Computation::Force(_)
                 | Computation::Decompose(_)
                 | Computation::Case { .. }
@@ -2981,6 +3006,7 @@ impl Source for CoreSource<'_>
                 CompType::Unknown
                 | CompType::Codata { .. }
                 | CompType::Returner { .. }
+                | CompType::Returns { .. }
                 | CompType::Arrow { .. }
                 | CompType::Pi { .. }
                 | CompType::Element { .. } => None,

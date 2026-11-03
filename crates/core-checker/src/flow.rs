@@ -1270,6 +1270,15 @@ pub fn covariant(
                 CompType::Returner { result, .. } => {
                     work.push((Position::ValueType(result), polarity, depth));
                 },
+                // Each result stands under the binders of the results before it.
+                CompType::Returns { ref results, .. } => {
+                    for (offset, &result) in results.iter().enumerate() {
+                        let at = depth
+                            .checked_add(offset)
+                            .ok_or(CheckRefusal::MachineInvariant)?;
+                        work.push((Position::ValueType(result), polarity, at));
+                    }
+                },
                 CompType::Arrow { domain, codomain } => {
                     work.push((Position::ValueType(domain), flipped, depth));
                     work.push((Position::CompType(codomain), polarity, depth));

@@ -143,7 +143,8 @@ pub struct Unfolded(pub u64);
                     Computation::Perform { ref signature, .. } => 2_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
                     Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
                     Computation::Exercise { ref signature, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
-                    Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) | Computation::Ascribe { .. } => 3,
+                    Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) | Computation::BindAll { .. } | Computation::Ascribe { .. } => 3,
+                    Computation::ReturnAll(ref values) => 1_u64.saturating_add(u64::try_from(values.len()).unwrap_or(u64::MAX)),
                     Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Decompose(_) | Computation::Mark { .. } => 2,
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
@@ -173,6 +174,7 @@ pub struct Unfolded(pub u64);
                 let Some(node) = erased.comp_type(id) else { return false; };
                 match *node {
                     CompType::Returner { ref effects, .. } => 2_u64.checked_add(u64::try_from(effects.types().count()).expect("walkable row arity fits the counter")).expect("walkable row arity fits the counter"),
+                    CompType::Returns { ref results, ref effects } => 1_u64.saturating_add(u64::try_from(results.len().saturating_add(effects.types().count())).unwrap_or(u64::MAX)),
                     CompType::Element { .. } => 2,
                     CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => 3,
                     CompType::Unknown => 1,
@@ -496,9 +498,12 @@ pub fn unfolded(
                     | Computation::Decompose(value) => {
                         pending.push(CoreNode::Value(value));
                     },
-                    Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. } => {
                         pending.push(CoreNode::Computation(bound));
                         pending.push(CoreNode::Computation(body));
+                    },
+                    Computation::ReturnAll(ref values) => {
+                        pending.extend(values.iter().copied().map(CoreNode::Value));
                     },
                     Computation::Case {
                         scrutinee,
@@ -619,6 +624,13 @@ pub fn unfolded(
                         ref effects,
                     } => {
                         pending.push(CoreNode::ValueType(result));
+                        pending.extend(effects.types().map(CoreNode::ValueType));
+                    },
+                    CompType::Returns {
+                        ref results,
+                        ref effects,
+                    } => {
+                        pending.extend(results.iter().copied().map(CoreNode::ValueType));
                         pending.extend(effects.types().map(CoreNode::ValueType));
                     },
                     CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {

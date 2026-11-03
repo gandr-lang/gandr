@@ -1644,9 +1644,14 @@ pub(super) fn commute(
                             steps.push(Step::Open(branch, ends, depth));
                         }
                     },
-                    Some(&Computation::Split {
-                        arity, body: under, ..
-                    }) => {
+                    Some(
+                        &(Computation::Split {
+                            arity, body: under, ..
+                        }
+                        | Computation::BindAll {
+                            arity, body: under, ..
+                        }),
+                    ) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper_by(arity)));
                     },
@@ -2131,10 +2136,10 @@ fn eliminated(node: Option<&Computation>) -> Option<ValueId>
 /// Rebuild `node` over its children's commuted forms, the last of `results`.
 ///
 /// # Specification
-/// - requires: `node` is a bind, a case, a data case, a split, a lambda, an
-///   offer, a fork, a hold or a loop's fixpoint whose every commuted child — a
-///   fork's parent alone, a hold's scope alone — stands on top of `results`, in
-///   order.
+/// - requires: `node` is a bind, a many-value bind, a case, a data case, a
+///   split, a lambda, an offer, a fork, a hold or a loop's fixpoint whose every
+///   commuted child — a fork's parent alone, a hold's scope alone — stands on
+///   top of `results`, in order.
 /// - ensures: those results popped; `node` itself when each is the child it
 ///   stands for; else a node of the same former over them, recorded at `node`'s
 ///   origin, or `fallback`, and its match record, a loop's fixpoint keeping its
@@ -2167,6 +2172,7 @@ fn rebuild(
         Computation::Session(SessionAction::Offer { ref arms, .. }) => arms.len(),
         Computation::ListCase { .. } => 2_usize,
         Computation::Bind(..)
+        | Computation::BindAll { .. }
         | Computation::Split { .. }
         | Computation::Lambda(_)
         | Computation::Session(
@@ -2186,6 +2192,7 @@ fn rebuild(
         | Computation::Fixpoint { .. }
         | Computation::Application(..)
         | Computation::Return(_)
+        | Computation::ReturnAll(_)
         | Computation::Ascribe { .. }
         | Computation::Force(_)
         | Computation::Decompose(_)
@@ -2212,6 +2219,9 @@ fn rebuild(
     let rebuilt = match (held, commuted.as_slice()) {
         (Computation::Bind(bound, rest), &[commuted]) if commuted != rest => {
             sink.arena.computation_bind(bound, commuted)
+        },
+        (Computation::BindAll { bound, arity, body }, &[commuted]) if commuted != body => {
+            sink.arena.computation_bind_all(bound, arity, commuted)
         },
         (Computation::Lambda(under), &[commuted]) if commuted != under => {
             sink.arena.computation_lambda(commuted)

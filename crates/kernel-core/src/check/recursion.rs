@@ -247,6 +247,7 @@ pub(super) fn open_fixpoint(
             Some(&CompType::Pi { domain, codomain }) => (domain, codomain, Dependence::Dependent),
             Some(
                 &(CompType::Returner(_)
+                | CompType::Returns(_)
                 | CompType::With(..)
                 | CompType::Element { .. }
                 | CompType::Codata { .. }),
@@ -352,6 +353,7 @@ fn result_at(
             Some(&CompType::Returner(result)) => break result,
             Some(
                 &(CompType::Pi { .. }
+                | CompType::Returns(_)
                 | CompType::With(..)
                 | CompType::Element { .. }
                 | CompType::Codata { .. }),
@@ -418,6 +420,7 @@ pub(super) fn motive_at(
             Some(&CompType::Returner(result)) => break result,
             Some(
                 &(CompType::Pi { .. }
+                | CompType::Returns(_)
                 | CompType::With(..)
                 | CompType::Element { .. }
                 | CompType::Codata { .. }),
@@ -503,6 +506,7 @@ pub(super) fn returns_recursed_on(
             },
             Some(
                 &(CompType::Pi { .. }
+                | CompType::Returns(_)
                 | CompType::With(..)
                 | CompType::Element { .. }
                 | CompType::Codata { .. }),
@@ -664,6 +668,11 @@ pub(super) fn placed<Each>(
                 each(Part::Computation(codomain));
             },
             Some(&CompType::Returner(result)) => each(Part::Value(result)),
+            Some(&CompType::Returns(ref results)) => {
+                for &result in results {
+                    each(Part::Value(result));
+                }
+            },
             Some(&CompType::With(ref components)) => {
                 for &component in components {
                     each(Part::Computation(component));
@@ -808,6 +817,13 @@ pub(super) fn rebuild(
             Some(CompType::Returner(_)) => {
                 let result = value_part(child(0)?)?;
                 Ok(Part::Computation(arena.comp_type_returner(result)))
+            },
+            Some(CompType::Returns(_)) => {
+                let results = children
+                    .iter()
+                    .map(|&result| value_part(result))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Part::Computation(arena.comp_type_returns(&results)))
             },
             Some(CompType::With(_)) => {
                 let parts = children

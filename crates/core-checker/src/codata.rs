@@ -275,6 +275,7 @@ fn observation(
                 break;
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
             | CompTypeView::Codata { .. }
@@ -418,6 +419,7 @@ pub(crate) fn argument(
             .copied()
             .ok_or(CheckRefusal::MachineInvariant),
         CompTypeView::Returner { .. }
+        | CompTypeView::Returns { .. }
         | CompTypeView::With(..)
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }

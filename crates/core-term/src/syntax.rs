@@ -858,6 +858,22 @@ pub enum Computation
     Return(ValueId),
     /// A sequencing bind `x ← M; N`, binding the value `M` returns into `N`.
     Bind(ComputationId, ComputationId),
+    /// A return of several values at once, introducing [`CompType::Returns`]:
+    /// each value checked at its result type with the values before it
+    /// substituted. One value is never held here, it is [`Self::Return`].
+    ReturnAll(alloc::boxed::Box<[ValueId]>),
+    /// A bind of every value a many-value returner returns into the body, the
+    /// first value outermost. A bind of one value is never held here, it is
+    /// [`Self::Bind`].
+    BindAll
+    {
+        /// The computation whose values are bound.
+        bound: ComputationId,
+        /// How many values it returns, each bound in the body.
+        arity: ComponentCount,
+        /// The body, under one intuitionistic binder per value.
+        body: ComputationId,
+    },
     /// An ascription `(M : C)`: the computation `M` checked against the
     /// stated type `C`, which the ascription synthesises. It is the
     /// bidirectional switch, standing a checking form where a type is
@@ -1302,6 +1318,17 @@ pub enum CompType
     {
         /// The returned value type.
         result: ValueTypeId,
+        /// The closed set of interfaces this computation may perform.
+        effects: crate::effect::EffectRow,
+    },
+    /// The many-value returner `F^effects (x₀ : A₀, …)`: each result type
+    /// stands under the binders of the results before it. One result is never
+    /// held here, it is [`Self::Returner`]; none is the returner of nothing,
+    /// apart from the unit.
+    Returns
+    {
+        /// The result types, each under the binders of those before it.
+        results: alloc::boxed::Box<[ValueTypeId]>,
         /// The closed set of interfaces this computation may perform.
         effects: crate::effect::EffectRow,
     },
@@ -3738,9 +3765,9 @@ fn value_formers(
 ///   hand on: a data case's branch count, arities and equations, a projection's
 ///   label, component or field, an operation and its interface's shape, a
 ///   handler's or scope's clause operations, a split's arity and motive kind, a
-///   width, a primitive and its arity, a fixpoint's evidence, a hole, a mark,
-///   and a session action's, memory form's or world form's shape.
-///   [`CertificateEquality::Different`] otherwise.
+///   many-value bind's arity, a width, a primitive and its arity, a fixpoint's
+///   evidence, a hole, a mark, and a session action's, memory form's or world
+///   form's shape. [`CertificateEquality::Different`] otherwise.
 /// - panics: none.
 /// - executable: none — this is the structural comparison's former rule.
 ///
@@ -3896,6 +3923,12 @@ fn computation_formers(
         (&Computation::World(ref left), &Computation::World(ref right)) => {
             left.shape() == right.shape()
         },
+        (&Computation::ReturnAll(ref left), &Computation::ReturnAll(ref right)) => {
+            left.len() == right.len()
+        },
+        (&Computation::BindAll { arity: left, .. }, &Computation::BindAll { arity: right, .. }) => {
+            left == right
+        },
         (
             &(Computation::Lambda(_)
             | Computation::Shift(_)
@@ -4041,9 +4074,9 @@ fn value_type_formers(
 /// # Specification
 /// - ensures: [`CertificateEquality::Equal`] for two computation types of one
 ///   former that agree in each payload [`crate::children::of_comp_type`] does
-///   not hand on: a width, a returner's row shape, an element's target, and a
-///   codata type's declaration and arity. [`CertificateEquality::Different`]
-///   otherwise.
+///   not hand on: a width, a returner's row shape, a many-value returner's
+///   width and row shape, an element's target, and a codata type's declaration
+///   and arity. [`CertificateEquality::Different`] otherwise.
 /// - panics: none.
 /// - executable: none — this is the structural comparison's former rule.
 ///
@@ -4067,6 +4100,19 @@ fn comp_type_formers(
                 effects: ref right, ..
             },
         ) => rows_agree(left, right) == CertificateEquality::Equal,
+        (
+            &CompType::Returns {
+                results: ref left_results,
+                effects: ref left,
+            },
+            &CompType::Returns {
+                results: ref right_results,
+                effects: ref right,
+            },
+        ) => {
+            left_results.len() == right_results.len()
+                && rows_agree(left, right) == CertificateEquality::Equal
+        },
         (
             &CompType::Element {
                 target: ref left, ..

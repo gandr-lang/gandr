@@ -246,6 +246,7 @@ pub fn clause(
                 match *core.comp_type(body).ok_or(IdentityFault::DanglingTerm)? {
                     CompType::Arrow { .. } => Clause::Function,
                     CompType::Returner { .. }
+                    | CompType::Returns { .. }
                     | CompType::Pi { .. }
                     | CompType::With(..)
                     | CompType::Codata { .. }
@@ -442,6 +443,7 @@ pub fn fibre(
                     codomain,
                 },
                 CompType::Returner { .. }
+                | CompType::Returns { .. }
                 | CompType::Pi { .. }
                 | CompType::Element { .. }
                 | CompType::Unknown

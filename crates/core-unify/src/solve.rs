@@ -1098,6 +1098,7 @@ const fn comp_type_head(comp_type: &CompType) -> TypeHead<'_>
         CompType::Element { code, ref target } => TypeHead::Code(code, target),
         CompType::Unknown => TypeHead::Gradual,
         CompType::Returner { .. }
+        | CompType::Returns { .. }
         | CompType::Arrow { .. }
         | CompType::Pi { .. }
         | CompType::With(_)
@@ -1380,10 +1381,11 @@ fn rigid_value_types(
 }
 
 /// Decide two computation types, as [`value_types`] decides value types: two
-/// returners by their results and by [`rows`] over their rows, a dependent
-/// function's codomain under one more binder, a function against a dependent
-/// function waiting, since conversion may relate a dependent one whose
-/// codomain ignores its binder to a plain one.
+/// returners by their results and by [`rows`] over their rows, two many-value
+/// returners of one width alike, each result under those before it, a
+/// dependent function's codomain under one more binder, a function against a
+/// dependent function waiting, since conversion may relate a dependent one
+/// whose codomain ignores its binder to a plain one.
 ///
 /// # Specification
 /// trivial.
@@ -1439,6 +1441,43 @@ fn comp_types(
                     Side::ValueType(one_result),
                     Side::ValueType(other_result),
                 ));
+                rows(
+                    arena,
+                    metas,
+                    scope,
+                    (&one_effects, &other_effects),
+                    (left, right),
+                    work,
+                )?;
+                return Ok(Action::Done);
+            }
+            if let (
+                &CompType::Returns {
+                    results: ref one_results,
+                    effects: ref one_effects,
+                },
+                &CompType::Returns {
+                    results: ref other_results,
+                    effects: ref other_effects,
+                },
+            ) = (first, second)
+            {
+                if one_results.len() != other_results.len() {
+                    return Err(Stop::Refuted(Refutation::Clash { left, right }));
+                }
+                let (one_effects, other_effects) = (one_effects.clone(), other_effects.clone());
+                for (before, (&a, &b)) in one_results
+                    .iter()
+                    .zip(other_results.iter())
+                    .enumerate()
+                    .rev()
+                {
+                    work.push(Equation::new(
+                        scope.deeper_by(gandr_core_term::ComponentCount::from(before)),
+                        Side::ValueType(a),
+                        Side::ValueType(b),
+                    ));
+                }
                 rows(
                     arena,
                     metas,

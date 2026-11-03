@@ -306,6 +306,15 @@ pub enum CompTypeView<'arena>
         /// The operations permitted while producing it.
         effects: &'arena gandr_core_term::effect::EffectRow,
     },
+    /// The returner `F (x₀ : A₀, …)` of several values, a telescope: each
+    /// result stands under the binders of the results before it.
+    Returns
+    {
+        /// The values returned, in order.
+        results: &'arena [ValueTypeId],
+        /// The operations permitted while producing them.
+        effects: &'arena gandr_core_term::effect::EffectRow,
+    },
     /// The non-dependent arrow `A → C`: its codomain stands in the ambient
     /// context.
     Arrow
@@ -533,10 +542,10 @@ pub fn value_type_view(
 ///
 /// # Specification
 /// - requires: nothing — a dangling id is admissible input and refused.
-/// - ensures: the node's view for every computation former: a returner, an
-///   arrow, a dependent arrow and a decode; the children are the node's own.
-///   The unknown type, and a decode whose code is a hole or a mark, view as
-///   [`CompTypeView::Unknown`].
+/// - ensures: the node's view for every computation former: a returner of one
+///   value or of several, an arrow, a dependent arrow and a decode; the
+///   children are the node's own. The unknown type, and a decode whose code is
+///   a hole or a mark, view as [`CompTypeView::Unknown`].
 /// - provides: the one decision of which computation types the judgement and
 ///   the bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -557,6 +566,7 @@ pub fn value_type_view(
 #[spec(ensures: |ret| match (arena.comp_type(comp_type), ret) {
     | (Some(&CompType::With(ref held)), Ok(CompTypeView::With(found))) => **held == *found,
     | (Some(&CompType::Returner { result: inner, ref effects }), Ok(CompTypeView::Returner { result: held, effects: row })) => inner == held && effects == row,
+    | (Some(&CompType::Returns { ref results, ref effects }), Ok(CompTypeView::Returns { results: held, effects: row })) => **results == *held && effects == row,
     | (Some(&CompType::Arrow { domain, codomain }), Ok(CompTypeView::Arrow { domain: found_domain, codomain: found_codomain }))
     | (Some(&CompType::Pi { domain, codomain }), Ok(CompTypeView::Pi { domain: found_domain, codomain: found_codomain })) => domain == found_domain && codomain == found_codomain,
     | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target
@@ -582,6 +592,10 @@ pub fn comp_type_view(
             result,
             ref effects,
         } => Ok(CompTypeView::Returner { result, effects }),
+        CompType::Returns {
+            ref results,
+            ref effects,
+        } => Ok(CompTypeView::Returns { results, effects }),
         CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
         CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
         CompType::Element { code, ref target } => match comp_type_knowledge(arena, comp_type) {

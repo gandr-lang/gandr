@@ -639,6 +639,16 @@ pub enum ConsumerNode
         /// The command, binding one producer variable.
         body: CommandId,
     },
+    /// A binder of several values `μ̃(x₁ … xₙ). s`: the receiving half of a
+    /// many-value return, which [`CommandNode::Deliver`] sends to. The first
+    /// value is bound outermost.
+    MuTildeAll
+    {
+        /// How many producer variables the body binds.
+        arity: ProducerArity,
+        /// The command, binding them.
+        body: CommandId,
+    },
     /// A destructor frame `D(p̄; c̄)`.
     Destructor
     {
@@ -855,6 +865,16 @@ pub enum CommandNode
         /// The producer sent.
         producer: ProducerId,
         /// The consumer it is sent to.
+        consumer: ConsumerId,
+    },
+    /// A delivery `⟨p₁ … pₙ | c⟩` of several values to one consumer: the
+    /// sending half of a many-value return. A binder of as many values
+    /// receives them, or a covariable bound to one does.
+    Deliver
+    {
+        /// The values sent, first to last.
+        producers: Box<[ProducerId]>,
+        /// The consumer they are sent to.
         consumer: ConsumerId,
     },
     /// A memory form `𝓜` with its continuation. A hold runs its body with
@@ -1865,7 +1885,7 @@ impl CommandArena
                 && self.command_count() == entry.commands
                 && self.consumer(id).is_some_and(|node| match *node {
                     | ConsumerNode::Covariable(_) | ConsumerNode::Top => true,
-                    | ConsumerNode::MuTilde { body } => self.command(body).is_some(),
+                    | ConsumerNode::MuTilde { body } | ConsumerNode::MuTildeAll { body, .. } => self.command(body).is_some(),
                     | ConsumerNode::Destructor { ref producers, ref consumers, .. } =>
                         producers.iter().all(|child| self.producer(*child).is_some())
                             && consumers.iter().all(|child| self.consumer(*child).is_some()),
@@ -2156,13 +2176,14 @@ where
 /// answers.
 ///
 /// # Specification
-/// - ensures: a `μ̃`'s body under one producer binder; a frame's producer
-///   arguments then its consumer arguments; a match's arms in order, each under
-///   its head's producer and consumer arities; a nominal match's branches then
-///   its continuation; a selection's continuation; a fold's empty branch under
-///   one covariable, its cell branch under two producer binders and one
-///   covariable, then its continuation; nothing for a covariable or `★`.
-///   `each`'s first refusal is answered and no later child visited.
+/// - ensures: a `μ̃`'s body under one producer binder, and a binder of several
+///   values' body under as many; a frame's producer arguments then its consumer
+///   arguments; a match's arms in order, each under its head's producer and
+///   consumer arities; a nominal match's branches then its continuation; a
+///   selection's continuation; a fold's empty branch under one covariable, its
+///   cell branch under two producer binders and one covariable, then its
+///   continuation; nothing for a covariable or `★`. `each`'s first refusal is
+///   answered and no later child visited.
 /// - panics: none.
 /// - intension: allocates nothing.
 /// - executable: none — the listing is the statement; the witnesses observe it
@@ -2192,6 +2213,12 @@ where
             each(
                 NodeAddress::Command(body),
                 Opens::binding(ProducerArity::ONE, ConsumerArity::ZERO),
+            )?;
+        },
+        ConsumerNode::MuTildeAll { arity, body } => {
+            each(
+                NodeAddress::Command(body),
+                Opens::binding(arity, ConsumerArity::ZERO),
             )?;
         },
         ConsumerNode::Destructor {
@@ -2248,12 +2275,12 @@ where
 ///   covariable, its continuation; a resume's stack, its body under one
 ///   covariable, its continuation; a reset's body under one covariable, its
 ///   continuation; a shift's body under one producer binder and one covariable,
-///   its continuation; a cut's producer and consumer; a memory form's values,
-///   its bodies each under the linear binders the form opens over it and one
-///   covariable, its continuation; a session action's payload, its bodies each
-///   under the linear binders the action opens over it and one covariable, its
-///   continuation. `each`'s first refusal is answered and no later child
-///   visited.
+///   its continuation; a cut's producer and consumer; a delivery's producers
+///   then its consumer; a memory form's values, its bodies each under the
+///   linear binders the form opens over it and one covariable, its
+///   continuation; a session action's payload, its bodies each under the linear
+///   binders the action opens over it and one covariable, its continuation.
+///   `each`'s first refusal is answered and no later child visited.
 /// - panics: none.
 /// - intension: allocates nothing.
 /// - executable: none — the listing is the statement; the witnesses observe it
@@ -2351,6 +2378,10 @@ where
             each(NodeAddress::Producer(producer), at)?;
             each(NodeAddress::Consumer(consumer), at)?;
         },
+        CommandNode::Deliver {
+            ref producers,
+            consumer,
+        } => fields(producers, core::slice::from_ref(&consumer), &mut each)?,
         CommandNode::Memory {
             ref form,
             continuation,
@@ -2463,6 +2494,7 @@ pub fn consumer_named(node: &ConsumerNode) -> core::option::IntoIter<(Zone, DeBr
             Some((Zone::Intuitionistic, DeBruijnIndex::from(u32::from(index))))
         },
         ConsumerNode::MuTilde { .. }
+        | ConsumerNode::MuTildeAll { .. }
         | ConsumerNode::Destructor { .. }
         | ConsumerNode::Case { .. }
         | ConsumerNode::DataCase { .. }
@@ -2498,6 +2530,7 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. }
+        | CommandNode::Deliver { .. }
         | CommandNode::World { .. } => None,
         CommandNode::Session { ref action, .. } => match action.endpoint() {
             quenchant_shape::shape::Maybe::Present(endpoint) => Some((Zone::Linear, endpoint)),
@@ -2522,6 +2555,7 @@ pub fn consumer_annotations(
         } => Some([element, result]),
         ConsumerNode::Covariable(_)
         | ConsumerNode::MuTilde { .. }
+        | ConsumerNode::MuTildeAll { .. }
         | ConsumerNode::Destructor { .. }
         | ConsumerNode::Case { .. }
         | ConsumerNode::DataCase { .. }
@@ -2552,6 +2586,7 @@ pub fn command_annotations(
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. }
+        | CommandNode::Deliver { .. }
         | CommandNode::Memory { .. }
         | CommandNode::World { .. } => (None, None),
     };

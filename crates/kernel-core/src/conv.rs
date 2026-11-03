@@ -1225,6 +1225,18 @@ fn converge(
                     (&CompType::Returner(one), &CompType::Returner(other)) => {
                         stack.push(ConversionGoal::ValueType(one, other));
                     },
+                    // Two returners of several results compare result for
+                    // result, each under as many binders on both sides.
+                    (&CompType::Returns(ref one), &CompType::Returns(ref other)) => {
+                        if one.len() != other.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            one.iter()
+                                .zip(other.iter())
+                                .map(|(&one, &other)| ConversionGoal::ValueType(one, other)),
+                        );
+                    },
                     // Two arrows of one kind compare child for child: both
                     // codomains stand in one context.
                     (
@@ -1337,6 +1349,7 @@ fn converge(
                     },
                     (
                         &CompType::Returner(_)
+                        | &CompType::Returns(_)
                         | &CompType::Arrow { .. }
                         | &CompType::Pi { .. }
                         | &CompType::Element { .. }
@@ -1885,6 +1898,34 @@ fn converge(
                                 .map(|(&one, &other)| ConversionGoal::Computation(one, other)),
                         );
                     },
+                    (&Computation::ReturnAll(ref one), &Computation::ReturnAll(ref other)) => {
+                        if one.len() != other.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            one.iter()
+                                .zip(other.iter())
+                                .map(|(&one, &other)| ConversionGoal::Value(one, other)),
+                        );
+                    },
+                    (
+                        &Computation::BindAll {
+                            bound: one_bound,
+                            arity: one_arity,
+                            body: one_body,
+                        },
+                        &Computation::BindAll {
+                            bound: other_bound,
+                            arity: other_arity,
+                            body: other_body,
+                        },
+                    ) => {
+                        if one_arity != other_arity {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::Computation(one_bound, other_bound));
+                        stack.push(ConversionGoal::Computation(one_body, other_body));
+                    },
                     (
                         &Computation::Project(one_component, one),
                         &Computation::Project(other_component, other),
@@ -1932,7 +1973,9 @@ fn converge(
                         | &Computation::ListCase { .. }
                         | &Computation::Application(..)
                         | &Computation::Return(_)
+                        | &Computation::ReturnAll(_)
                         | &Computation::Bind(..)
+                        | &Computation::BindAll { .. }
                         | &Computation::With(..)
                         | &Computation::Project(..)
                         | &Computation::Force(_)

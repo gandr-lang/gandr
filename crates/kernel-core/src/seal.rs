@@ -356,6 +356,13 @@ fn enter(
                 CompType::Returner(result) => {
                     steps.push(Step::Enter(Node::ValueType(result)));
                 },
+                CompType::Returns(ref results) => {
+                    steps.extend(
+                        results
+                            .iter()
+                            .map(|&result| Step::Enter(Node::ValueType(result))),
+                    );
+                },
                 CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                     steps.push(Step::Enter(Node::ValueType(domain)));
                     steps.push(Step::Enter(Node::CompType(codomain)));
@@ -599,6 +606,18 @@ fn exit_comp_type(
             }
             else {
                 arena.comp_type_returner(rebuilt)
+            }
+        },
+        CompType::Returns(results) => {
+            let rebuilt = results
+                .iter()
+                .map(|&result| done.value_type(result))
+                .collect::<Result<Vec<_>, _>>()?;
+            if *rebuilt == *results {
+                id
+            }
+            else {
+                arena.comp_type_returns(&rebuilt)
             }
         },
         CompType::Arrow { domain, codomain } => {

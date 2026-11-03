@@ -145,9 +145,13 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// a triple before the pair it rebuilds, so a token the triple took would
 /// write three fields into the pair's cell; a split whose scrutinee a thunk
 /// also holds, so a shared cell overwritten in place changes what the thunk
-/// answers; and a nominal branch answering a function past its constructor's
+/// answers; a nominal branch answering a function past its constructor's
 /// two fields, applied where the match stands, so a branch run in place that
-/// took the application's frame for a field answers the function unapplied.
+/// took the application's frame for a field answers the function unapplied;
+/// and two values returned and bound in place, across a call and into a
+/// perform's binder by a clause's resumption, each bound as a pair swapped,
+/// so a value delivered to another's binder or left at another word than
+/// its receiver reads answers wrongly.
 ///
 /// # Specification
 /// trivial.
@@ -846,6 +850,87 @@ pub fn named() -> Vec<Named>
     push(
         "x <- return C(1, 2); case x { C ⇒ fn a. fn b. return C(b, a) }",
         "⟨ctor[0](2, 1) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Integer(5));
+    let nine = integer(&mut core, Integer(9));
+    let argument = innermost(&mut core);
+    let sent = core.computation_return_all(&[argument, nine]);
+    let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = innermost(&mut core);
+    let swapped = core.value_tuple(&[second, first]);
+    let answered = core.computation_return(swapped);
+    let bound = core.computation_bind_all(sent, 2_usize.into(), answered);
+    let function = core.computation_lambda(bound);
+    let root = core.computation_application(function, five);
+    push(
+        "(fn x. (q, r) <- return x, 9; return (r, q)) 5",
+        "⟨pair(9, 5) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Integer(5));
+    let nine = integer(&mut core, Integer(9));
+    let argument = innermost(&mut core);
+    let sent = core.computation_return_all(&[argument, nine]);
+    let function = core.computation_lambda(sent);
+    let thunk = core.value_thunk(function);
+    let made = core.computation_return(thunk);
+    let called = innermost(&mut core);
+    let forced = core.computation_force(called);
+    let applied = core.computation_application(forced, five);
+    let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = innermost(&mut core);
+    let swapped = core.value_tuple(&[second, first]);
+    let answered = core.computation_return(swapped);
+    let bound = core.computation_bind_all(applied, 2_usize.into(), answered);
+    let root = core.computation_bind(made, bound);
+    push(
+        "f <- return thunk { fn x. return x, 9 }; (q, r) <- force f 5; return (r, q)",
+        "⟨pair(9, 5) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Integer(5));
+    let nine = integer(&mut core, Integer(9));
+    let payload = core.value_type_base(BaseType::Integer);
+    let signature = EffectSig::new(EffectName::from("E"), [EffectOp {
+        name: OperationName::from("op"),
+        payload,
+        reply: payload,
+    }])
+    .expect("one operation");
+    let performed = core.computation_perform(signature.clone(), OperationName::from("op"), five);
+    let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = innermost(&mut core);
+    let swapped = core.value_tuple(&[second, first]);
+    let answered = core.computation_return(swapped);
+    let subject = core.computation_bind_all(performed, 2_usize.into(), answered);
+    let kept = innermost(&mut core);
+    let on_return = core.computation_return(kept);
+    let fed = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let feed = core.computation_return_all(&[fed, nine]);
+    let stack = innermost(&mut core);
+    let clause = core.computation_resume(stack, feed);
+    let root = core.computation_handle(
+        signature,
+        subject,
+        on_return,
+        Arc::from([EffectClause {
+            operation: OperationName::from("op"),
+            body: clause,
+        }]),
+    );
+    push(
+        "handle { (a, b) <- op 5; return (b, a) } with { return x ⇒ return x; op p k ⇒ resume k { return p, 9 } }",
+        "⟨pair(9, 5) |+ ★⟩",
         core,
         root,
     );

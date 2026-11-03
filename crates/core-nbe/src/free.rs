@@ -1266,6 +1266,15 @@ Err(_) => false,
                             ],
                         }
                     },
+                    Computation::ReturnAll(ref values) => {
+                        extra = ExtraChildren::Values(values.iter());
+                        [None, None, None, None, None]
+                    },
+                    Computation::BindAll { bound, arity, body } => two(
+                        computation(bound),
+                        computation(body),
+                        Lowering(u32::try_from(usize::from(arity)).unwrap_or(u32::MAX)),
+                    ),
                     Computation::With(ref components) => {
                         extra = ExtraChildren::Computations(components.iter());
                         [None, None, None, None, None]
@@ -1563,6 +1572,14 @@ Err(_) => false,
                     } => {
                         effects = Some(row);
                         one(Reached::ValueType(result), Lowering::NONE)
+                    },
+                    CompType::Returns {
+                        ref results,
+                        effects: ref row,
+                    } => {
+                        effects = Some(row);
+                        extra = ExtraChildren::Types(results.iter());
+                        [None, None, None, None, None]
                     },
                     CompType::Arrow { domain, codomain } => two(
                         Reached::ValueType(domain),

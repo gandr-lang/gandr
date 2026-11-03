@@ -126,6 +126,8 @@ pub enum CompTypeHead
 {
     /// A returner.
     Returner,
+    /// A returner of several results.
+    Returns,
     /// A non-dependent function type.
     Arrow,
     /// A dependent function type.
@@ -152,6 +154,7 @@ impl CompTypeHead
     {
         match *comp_type {
             CompType::Returner(_) => Self::Returner,
+            CompType::Returns(_) => Self::Returns,
             CompType::Arrow { .. } => Self::Arrow,
             CompType::Pi { .. } => Self::Pi,
             CompType::Element { .. } => Self::Element,

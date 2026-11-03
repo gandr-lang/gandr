@@ -1419,6 +1419,35 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             (
+                DomainComp::ReturnAll {
+                    values: left_values,
+                    ..
+                },
+                DomainComp::ReturnAll {
+                    values: right_values,
+                    ..
+                },
+            ) => {
+                let left_values = self
+                    .domain
+                    .fields(left_values)
+                    .map_err(ConversionFault::Domain)?;
+                let right_values = self
+                    .domain
+                    .fields(right_values)
+                    .map_err(ConversionFault::Domain)?;
+                if left_values.len() != right_values.len() {
+                    return Ok(Local::Disagree);
+                }
+                self.goals.extend(
+                    left_values
+                        .iter()
+                        .zip(right_values)
+                        .map(|(&one, &other)| Goal::Values(one, other, context)),
+                );
+                Ok(Local::Agree)
+            },
+            (
                 DomainComp::Neutral {
                     neutral: left_neutral,
                     ..
@@ -1474,23 +1503,37 @@ impl<'run> Walk<'run>
             },
             (
                 DomainComp::Neutral { neutral, .. },
-                DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
+                DomainComp::Return { .. }
+                | DomainComp::ReturnAll { .. }
+                | DomainComp::Fixpoint { .. },
             )
             | (
-                DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
+                DomainComp::Return { .. }
+                | DomainComp::ReturnAll { .. }
+                | DomainComp::Fixpoint { .. },
                 DomainComp::Neutral { neutral, .. },
             ) => self.neutral_against_former(neutral),
             (
                 DomainComp::Lambda { .. },
-                DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
+                DomainComp::Return { .. }
+                | DomainComp::ReturnAll { .. }
+                | DomainComp::Fixpoint { .. },
             )
             | (
                 DomainComp::Return { .. },
-                DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. },
+                DomainComp::Lambda { .. }
+                | DomainComp::ReturnAll { .. }
+                | DomainComp::Fixpoint { .. },
+            )
+            | (
+                DomainComp::ReturnAll { .. },
+                DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
             )
             | (
                 DomainComp::Fixpoint { .. },
-                DomainComp::Lambda { .. } | DomainComp::Return { .. },
+                DomainComp::Lambda { .. }
+                | DomainComp::Return { .. }
+                | DomainComp::ReturnAll { .. },
             ) => Ok(Local::Disagree),
         }
     }
@@ -1761,6 +1804,15 @@ impl<'run> Walk<'run>
                 (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                     queued.push(Goal::Closures(left_body, right_body));
                 },
+                (
+                    Elimination::BindAll(left_body, left_arity),
+                    Elimination::BindAll(right_body, right_arity),
+                ) => {
+                    if left_arity != right_arity {
+                        return Ok(mismatch);
+                    }
+                    queued.push(Goal::Closures(left_body, right_body));
+                },
                 // Two stuck fixpoints convert when their fixpoints do and
                 // their leading arguments do, pairwise.
                 (
@@ -1849,6 +1901,7 @@ impl<'run> Walk<'run>
                     | Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)
+                    | Elimination::BindAll(..)
                     | Elimination::Case(_)
                     | Elimination::ListFold { .. }
                     | Elimination::ListCase { .. }

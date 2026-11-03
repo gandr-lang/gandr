@@ -1039,6 +1039,14 @@ fn binder_counts_saturate_at_the_representable_boundary()
         assert_eq!(u32::from(BinderDepth::past(depth)), successor);
         assert_eq!(usize::from(depth), machine);
     }
+    for (raw, binders, deeper) in [
+        (5_u32, 0_usize, 5_u32),
+        (5, 3, 8),
+        (u32::MAX.saturating_sub(2), 3, u32::MAX),
+        (0, usize::MAX, u32::MAX),
+    ] {
+        assert_eq!(u32::from(BinderDepth::from(raw).deeper_by(binders)), deeper);
+    }
 }
 
 #[test]

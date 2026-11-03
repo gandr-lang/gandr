@@ -98,7 +98,8 @@ Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Val
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::With(ref components) => components.len(),
-Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::ReturnAll(ref values) => values.len(),
+Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Transport(..) => 2,
 Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::Project(..) | Computation::Fixpoint { .. } => 1,
 }),
         AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
@@ -112,6 +113,7 @@ ValueType::Session { .. } | ValueType::FlowUniverse(..) | ValueType::Path { .. }
         AnyNode::CompType(id) => match arena.comp_type(id) {
             Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
             Some(&CompType::With(ref components)) => components.len(),
+            Some(&CompType::Returns(ref results)) => results.len(),
             Some(_) => 1, None => 0,
         },
     })]
@@ -207,7 +209,11 @@ fn children(
             Computation::Lambda(a) | Computation::Project(_, a) => vec![M(a)],
             Computation::Application(a, b) => vec![M(a), V(b)],
             Computation::Return(a) | Computation::Force(a) => vec![V(a)],
-            Computation::Bind(a, b) => vec![M(a), M(b)],
+            Computation::Bind(a, b)
+            | Computation::BindAll {
+                bound: a, body: b, ..
+            } => vec![M(a), M(b)],
+            Computation::ReturnAll(ref values) => values.iter().copied().map(V).collect(),
             Computation::With(ref components) => components.iter().copied().map(M).collect(),
             Computation::Case {
                 scrutinee,
@@ -246,6 +252,7 @@ fn children(
         },
         C(id) => match arena.comp_type(id).expect("fixture computation type") {
             &CompType::Returner(a) => vec![A(a)],
+            &CompType::Returns(ref results) => results.iter().copied().map(A).collect(),
             &CompType::Arrow {
                 domain: a,
                 codomain: b,
@@ -590,6 +597,18 @@ fn translate(
                     Computation::Bind(first, second) => {
                         core.computation_bind(computations[&first], computations[&second])
                     },
+                    Computation::BindAll { bound, arity, body } => core.computation_bind_all(
+                        computations[&bound],
+                        gandr_core_term::ComponentCount::from(usize::from(arity)),
+                        computations[&body],
+                    ),
+                    Computation::ReturnAll(ref returned) => {
+                        let returned = returned
+                            .iter()
+                            .map(|value| values[value])
+                            .collect::<Vec<_>>();
+                        core.computation_return_all(&returned)
+                    },
                     Computation::With(ref components) => {
                         branch_ids.clear();
                         branch_ids
@@ -673,6 +692,16 @@ fn translate(
             AnyNode::CompType(id) => {
                 let ty = match *arena.comp_type(id).expect("fixture computation type") {
                     CompType::Returner(result) => core.comp_type_returner(types[&result]),
+                    CompType::Returns(ref results) => {
+                        let results = results
+                            .iter()
+                            .map(|result| types[result])
+                            .collect::<Vec<_>>();
+                        core.comp_type_returns_with_effects(
+                            &results,
+                            gandr_core_term::effect::EffectRow::EMPTY,
+                        )
+                    },
                     CompType::Arrow { domain, codomain } => {
                         core.comp_type_arrow(types[&domain], comp_types[&codomain])
                     },

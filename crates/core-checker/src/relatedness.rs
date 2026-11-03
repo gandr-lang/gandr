@@ -201,6 +201,9 @@ pub fn require_unsealed(
             },
             Reached::Computation(ty) => match comp_type_view(context.arena(), ty)? {
                 CompTypeView::Returner { result, .. } => pending.push(Reached::Value(result)),
+                CompTypeView::Returns { results, .. } => {
+                    pending.extend(results.iter().map(|&result| Reached::Value(result)));
+                },
                 CompTypeView::Arrow { domain, codomain }
                 | CompTypeView::Pi { domain, codomain } => {
                     pending.extend([Reached::Value(domain), Reached::Computation(codomain)]);

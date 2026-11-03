@@ -842,6 +842,69 @@ fn distinct_children_survive_every_compound_former()
 }
 
 #[test]
+fn a_many_value_former_of_one_is_its_one_value_former()
+{
+    let mut arena = CoreArena::new();
+    let first = arena.value_unit();
+    let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(first);
+
+    let one = arena.computation_return_all(&[first]);
+    assert_eq!(
+        Some(&crate::Computation::Return(first)),
+        arena.computation(one)
+    );
+    for values in [&[][..], &[second, first][..]] {
+        let many = arena.computation_return_all(values);
+        assert_eq!(
+            Some(&crate::Computation::ReturnAll(values.into())),
+            arena.computation(many),
+            "no values and two values keep the many-value spelling, in order"
+        );
+    }
+
+    let bound = arena.computation_bind_all(returned, ComponentCount::from(1_usize), returned);
+    assert_eq!(
+        Some(&crate::Computation::Bind(returned, returned)),
+        arena.computation(bound)
+    );
+    for count in [0_usize, 2_usize] {
+        let arity = ComponentCount::from(count);
+        let bound = arena.computation_bind_all(returned, arity, one);
+        assert_eq!(
+            Some(&crate::Computation::BindAll {
+                bound: returned,
+                arity,
+                body: one,
+            }),
+            arena.computation(bound)
+        );
+    }
+
+    let unit = arena.value_type_unit();
+    let int = arena.value_type_base(BaseType::Integer);
+    let single = arena.comp_type_returns_with_effects(&[unit], crate::effect::EffectRow::EMPTY);
+    assert_eq!(
+        Some(&CompType::Returner {
+            result: unit,
+            effects: crate::effect::EffectRow::EMPTY,
+        }),
+        arena.comp_type(single)
+    );
+    for results in [&[][..], &[int, unit][..]] {
+        let several =
+            arena.comp_type_returns_with_effects(results, crate::effect::EffectRow::EMPTY);
+        assert_eq!(
+            Some(&CompType::Returns {
+                results: results.into(),
+                effects: crate::effect::EffectRow::EMPTY,
+            }),
+            arena.comp_type(several)
+        );
+    }
+}
+
+#[test]
 fn a_mark_keeps_its_index_and_its_body()
 {
     let mut arena = CoreArena::new();

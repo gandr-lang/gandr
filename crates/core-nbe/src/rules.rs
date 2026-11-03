@@ -475,6 +475,8 @@ enum EliminationShape<'core>
     Case(usize),
     /// A split binding this many components.
     Split(gandr_core_term::ComponentCount),
+    /// A bind of this many values.
+    BindAll(gandr_core_term::ComponentCount),
     /// An exact record label or tuple component.
     Projection(ProjectionKey<'core>),
     /// A stuck fixpoint holding this many leading arguments.
@@ -691,6 +693,7 @@ pub fn projection_key(
     Elimination::Split(closure) => ret == split_source(core,domain,closure).map(|(arity,_)| EliminationShape::Split(arity)),
     Elimination::Case(branches) => ret == domain.branches(branches).map(|held| EliminationShape::Case(held.len())).map_err(ConversionFault::Domain),
     Elimination::Fixpoint { leading, .. } => ret == domain.fields(leading).map(|held| EliminationShape::Fixpoint(held.len())).map_err(ConversionFault::Domain),
+    Elimination::BindAll(_, arity) => ret == Ok(EliminationShape::BindAll(arity)),
     Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::TelescopeTransport { .. } | Elimination::Apply(_) | Elimination::Force | Elimination::Bind(_) | Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::StaticApply(_) => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
 })]
 fn elimination_shape<'core>(
@@ -716,6 +719,7 @@ fn elimination_shape<'core>(
             .fields(leading)
             .map(|held| EliminationShape::Fixpoint(held.len()))
             .map_err(ConversionFault::Domain),
+        Elimination::BindAll(_, arity) => Ok(EliminationShape::BindAll(arity)),
         Elimination::Transport(_)
         | Elimination::ProductTransport(_)
         | Elimination::PathTransport { .. }
@@ -1006,9 +1010,9 @@ pub enum Spines
                 EliminationShape::DataCase(branches) => branches.saturating_add(1_usize),
                 EliminationShape::Projection(_) => 0_usize,
                 EliminationShape::Case(branches) => branches,
-                EliminationShape::Split(_) => 1_usize,
+                EliminationShape::Split(_) | EliminationShape::BindAll(_) => 1_usize,
                 EliminationShape::Fixpoint(leading) => leading.saturating_add(1_usize),
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint{ .. } => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } => 2_usize,Elimination::TelescopeTransport { .. } => 4_usize,Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Apply(_) | Elimination::Bind(_) | Elimination::BindAll(..) | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint{ .. } => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -1166,6 +1170,9 @@ fn eliminations_subgoals(
             (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
+            (Elimination::BindAll(left_body, arity), Elimination::BindAll(right_body, _)) => {
+                subgoals.push(Subgoal::OpenedUnder(left_body, right_body, arity));
+            },
             (Elimination::Split(left_split), Elimination::Split(right_split)) => {
                 subgoals.push(Subgoal::SplitBodies(left_split, right_split));
             },
@@ -1248,6 +1255,7 @@ fn eliminations_subgoals(
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
+                | Elimination::BindAll(..)
                 | Elimination::Case(_)
                 | Elimination::ListFold { .. }
                 | Elimination::ListCase { .. }
@@ -1738,7 +1746,7 @@ fn value_neutrality(
 #[spec(ensures: |ret| match comp {
     DomainComp::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
         .map(|read| Neutrality::Neutral(neutral, read)),
-    DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. } => ret == Ok(Neutrality::Former),
+    DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::ReturnAll { .. } | DomainComp::Fixpoint { .. } => ret == Ok(Neutrality::Former),
 })]
 fn comp_neutrality(
     domain: &DomainArena,
@@ -1752,9 +1760,10 @@ fn comp_neutrality(
             let read = head(domain, frozen, side, neutral)?;
             Neutrality::Neutral(neutral, read)
         },
-        DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. } => {
-            Neutrality::Former
-        },
+        DomainComp::Lambda { .. }
+        | DomainComp::Return { .. }
+        | DomainComp::ReturnAll { .. }
+        | DomainComp::Fixpoint { .. } => Neutrality::Former,
     })
 }
 
@@ -2391,9 +2400,10 @@ pub fn returned_return(
         DomainComp::Return { value, .. } => held_endpoint(domain, value)
             .map(Some)
             .map_err(ConversionFault::Domain),
-        DomainComp::Lambda { .. } | DomainComp::Neutral { .. } | DomainComp::Fixpoint { .. } => {
-            Ok(None)
-        },
+        DomainComp::Lambda { .. }
+        | DomainComp::ReturnAll { .. }
+        | DomainComp::Neutral { .. }
+        | DomainComp::Fixpoint { .. } => Ok(None),
     };
     Ok(match (held(one)?, held(other)?) {
         (Some(Some(call)), None) => Some((ConversionSide::Left, call)),
@@ -3254,6 +3264,7 @@ fn plan_comps(
         (
             DomainComp::Lambda { .. }
             | DomainComp::Return { .. }
+            | DomainComp::ReturnAll { .. }
             | DomainComp::Neutral { .. }
             | DomainComp::Fixpoint { .. },
             _,
@@ -3291,6 +3302,35 @@ fn plan_comps(
                 value: right_value, ..
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_value, right_value)])),
+        (
+            DomainComp::ReturnAll {
+                values: left_values,
+                ..
+            },
+            DomainComp::ReturnAll {
+                values: right_values,
+                ..
+            },
+        ) => {
+            let left_values = domain
+                .fields(left_values)
+                .map_err(ConversionFault::Domain)?;
+            let right_values = domain
+                .fields(right_values)
+                .map_err(ConversionFault::Domain)?;
+            if left_values.len() == right_values.len() {
+                Plan::Decompose(
+                    left_values
+                        .iter()
+                        .zip(right_values)
+                        .map(|(&one, &other)| Subgoal::Values(one, other))
+                        .collect(),
+                )
+            }
+            else {
+                Plan::Leaf(Settled::NotConvertible)
+            }
+        },
         // Congruence only: two fixpoints compare by their bodies under one
         // self variable, whatever claims they carry, then by the leading
         // arguments each holds, pairwise; a different count is apart.
@@ -3359,6 +3399,7 @@ fn plan_comps(
         (
             DomainComp::Lambda { .. }
             | DomainComp::Return { .. }
+            | DomainComp::ReturnAll { .. }
             | DomainComp::Neutral { .. }
             | DomainComp::Fixpoint { .. },
             _,

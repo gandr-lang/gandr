@@ -792,6 +792,53 @@ pub fn matched_returner(
     }
 }
 
+/// Match a computation type against the returner of `arity` values:
+/// `C ▸ F (x₀ : A₀, …)`.
+///
+/// # Specification
+/// - requires: `subject` is read at its weak head.
+/// - ensures: the results of a returner of exactly `arity` values, first to
+///   last, each under the binders of the results before it; `arity` freshly
+///   minted unknown value types when `subject` is unknown, since the unknown
+///   mentions no binder.
+/// - provides: what a return of several values checks its values against and
+///   what a bind of several values binds.
+/// - fails: [`matching::Absent::Mismatched`] for another known former or a
+///   returner of another number of values, [`matching::Absent::Dangling`] for
+///   an id naming no node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_returner`], over the returner of several
+///   values; a returner of another arity is a mismatch.
+/// - witness: `hole::tests::a_returner_of_several_values_matches_only_at_its_arity`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(ref results) => results.len() == arity && results.iter().all(|&result| arena.value_type(result).is_some()),
+    | Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn matched_returns(
+    arena: &mut CoreArena,
+    subject: CompTypeId,
+    arity: usize,
+) -> Maybe<alloc::vec::Vec<ValueTypeId>, matching::Absent>
+{
+    if comp_type_knowledge(arena, subject) == Knowledge::Unknown {
+        return Maybe::Present(
+            core::iter::repeat_with(|| arena.value_type_unknown())
+                .take(arity)
+                .collect(),
+        );
+    }
+    match arena.comp_type(subject) {
+        Some(&CompType::Returns { ref results, .. }) if results.len() == arity => {
+            Maybe::Present(results.to_vec())
+        },
+        Some(_) => mismatched(),
+        None => dangling(),
+    }
+}
+
 /// Match a computation type against the function formers: `C ▸ A → C'`.
 ///
 /// # Specification

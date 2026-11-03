@@ -171,6 +171,8 @@ pub enum GuardTag
     ValueNeutral,
     /// A returner.
     Return,
+    /// A returner of several values.
+    ReturnAll,
     /// A neutral standing in a computation position.
     CompNeutral,
     /// A bound-variable head.

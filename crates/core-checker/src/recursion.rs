@@ -225,6 +225,7 @@ pub fn open_fixpoint(
             CompTypeView::Pi { domain, codomain } => (domain, codomain, Dependence::Dependent),
             CompTypeView::Unknown => return Ok(Maybe::Absent(Unstaged::Unknown)),
             CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
             | CompTypeView::Codata { .. } => {
@@ -325,6 +326,7 @@ fn result_at(
             },
             CompTypeView::Returner { result, effects } => break (result, effects.clone()),
             CompTypeView::Pi { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::Unknown
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
@@ -409,6 +411,7 @@ pub fn returns_recursed_on(
                 );
             },
             CompTypeView::Pi { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::Unknown
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
@@ -461,6 +464,7 @@ pub fn motive_at(
             CompTypeView::Arrow { codomain, .. } => cursor = codomain,
             CompTypeView::Returner { result, .. } => break result,
             CompTypeView::Pi { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::Unknown
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
@@ -750,6 +754,7 @@ pub fn stage_branch(
             Some(&CompType::Pi { domain, codomain }) => (domain, codomain, Dependence::Dependent),
             Some(
                 &(CompType::Returner { .. }
+                | CompType::Returns { .. }
                 | CompType::With(..)
                 | CompType::Element { .. }
                 | CompType::Codata { .. }

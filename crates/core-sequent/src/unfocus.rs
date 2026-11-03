@@ -543,6 +543,8 @@ enum Task
     Fixpoint(gandr_kernel_term::FixpointEvidence),
     /// Pop one value and build its return.
     Return,
+    /// Pop this many values and build their many-value return.
+    ReturnAll(NodeCount),
     /// Pop one value and build its force.
     Force,
     /// Pop one computation and build its lambda.
@@ -552,6 +554,9 @@ enum Task
     Application,
     /// Pop a body and a head computation and build the bind.
     Bind,
+    /// Pop a body and a head computation and build the bind of this many
+    /// values.
+    BindAll(gandr_core_term::ComponentCount),
     /// Pop this many branches, one per summand, and the scrutinee and build
     /// the case.
     Case(NodeCount),
@@ -701,7 +706,7 @@ impl Unfocusing<'_>
                 CommandNode::Handle { ref clauses, .. } => self.computations.len() >= clauses.len().saturating_add(2),
                 CommandNode::Resume { .. } => !self.values.is_empty() && !self.computations.is_empty(),
                 CommandNode::Reset { .. } | CommandNode::Shift { .. } => !self.computations.is_empty(),
-                CommandNode::Cut { .. } => true,
+                CommandNode::Cut { .. } | CommandNode::Deliver { .. } => true,
                 CommandNode::Memory { ref form, .. } => self.values.len() >= form.values().count()
                     && self.computations.len() >= form.computations().count(),
                 CommandNode::World { ref form, .. } => self.values.len() >= form.values().count()
@@ -710,7 +715,8 @@ impl Unfocusing<'_>
                     && self.computations.len() >= action.computations().count(),
             }),
             | &Task::With(count) => self.computations.len() >= usize::from(count),
-            | &Task::Bind => self.computations.len() >= 2,
+            | &Task::Bind | &Task::BindAll(_) => self.computations.len() >= 2,
+            | &Task::ReturnAll(count) => self.values.len() >= usize::from(count),
             | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
             | &Task::Dialogue(ref turns) => self.values.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
@@ -948,6 +954,17 @@ impl Unfocusing<'_>
                 self.computations.push(returned);
                 Ok(())
             },
+            Task::ReturnAll(count) => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let values: Vec<ValueId> = self.values.drain(start ..).collect();
+                let returned = self.core.computation_return_all(&values);
+                self.computations.push(returned);
+                Ok(())
+            },
             Task::Force => {
                 let value = self.pop_value()?;
                 let forced = self.core.computation_force(value);
@@ -971,6 +988,13 @@ impl Unfocusing<'_>
                 let body = self.pop_computation()?;
                 let head = self.pop_computation()?;
                 let bound = self.core.computation_bind(head, body);
+                self.computations.push(bound);
+                Ok(())
+            },
+            Task::BindAll(arity) => {
+                let body = self.pop_computation()?;
+                let head = self.pop_computation()?;
+                let bound = self.core.computation_bind_all(head, arity, body);
                 self.computations.push(bound);
                 Ok(())
             },
@@ -1293,7 +1317,7 @@ impl Unfocusing<'_>
                 )?;
                 self.core.computation_session(action)
             },
-            CommandNode::Cut { .. } => {
+            CommandNode::Cut { .. } | CommandNode::Deliver { .. } => {
                 return Err(UnfocusRefusal::CommandOutsideTheImage(source));
             },
         };
@@ -1326,6 +1350,17 @@ impl Unfocusing<'_>
             .ok_or(UnfocusRefusal::DanglingCommand(source))?;
         match *node {
             CommandNode::Cut { .. } => self.tasks.push(Task::Command(source, depth)),
+            CommandNode::Deliver {
+                ref producers,
+                consumer,
+            } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks
+                    .push(Task::ReturnAll(NodeCount::from(producers.len())));
+                for &producer in producers.iter().rev() {
+                    self.tasks.push(Task::Value(producer, depth));
+                }
+            },
             CommandNode::Perform {
                 route,
                 payload,
@@ -1973,6 +2008,9 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Spine(then, depth));
                 self.tasks.push(Task::Select(selector.clone()));
             },
+            ConsumerNode::MuTildeAll { .. } => {
+                return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+            },
             ConsumerNode::Covariable(_)
             | ConsumerNode::Top
             | ConsumerNode::MuTilde { .. }
@@ -2189,6 +2227,17 @@ impl Unfocusing<'_>
             ConsumerNode::MuTilde { body } => {
                 self.tasks.push(Task::Bind);
                 self.tasks.push(Task::Command(body, depth.under_producer()));
+                Ok(())
+            },
+            ConsumerNode::MuTildeAll { arity, body } => {
+                self.tasks
+                    .push(Task::BindAll(gandr_core_term::ComponentCount::from(
+                        usize::from(arity),
+                    )));
+                self.tasks.push(Task::Command(
+                    body,
+                    depth.under_producers(NodeCount::from(usize::from(arity))),
+                ));
                 Ok(())
             },
             ConsumerNode::Destructor {

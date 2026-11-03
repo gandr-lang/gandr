@@ -1088,6 +1088,81 @@ fn a_row_meets_its_signatures_in_a_wider_row_by_name()
     );
 }
 
+/// Two returners of several values agree when their results agree pairwise,
+/// in order, and their rows agree: a twin converts, and a swap, another count
+/// or one returner set them apart. Under subtyping the row may widen, as a
+/// returner's row does.
+#[test]
+fn returners_of_several_values_agree_on_rows_and_results()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let signature = |name: &str| {
+        EffectSig::new(EffectName::from(name), alloc::vec![EffectOp {
+            name: OperationName::from("get"),
+            payload: unit,
+            reply: unit
+        }])
+        .unwrap()
+    };
+    let narrow = EffectRow::from_signatures([signature("B")]).unwrap();
+    let wide = EffectRow::from_signatures([signature("A"), signature("B")]).unwrap();
+    let found = arena.comp_type_returns_with_effects(&[unit, integer], EffectRow::EMPTY);
+    let twin = arena.comp_type_returns_with_effects(&[unit, integer], EffectRow::EMPTY);
+    let swapped = arena.comp_type_returns_with_effects(&[integer, unit], EffectRow::EMPTY);
+    let longer = arena.comp_type_returns_with_effects(&[unit, integer, unit], EffectRow::EMPTY);
+    let one = arena.comp_type_returner(unit);
+    let narrower = arena.comp_type_returns_with_effects(&[unit, integer], narrow);
+    let wider = arena.comp_type_returns_with_effects(&[unit, integer], wide);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (pairing, agreement, what) in [
+        (
+            Pairing::Comps(found.into(), twin.into()),
+            Agreement::Convertible,
+            "a returner of two converts with its twin",
+        ),
+        (
+            Pairing::Comps(found.into(), swapped.into()),
+            Agreement::Apart,
+            "results agree in order",
+        ),
+        (
+            Pairing::Comps(found.into(), longer.into()),
+            Agreement::Apart,
+            "a returner of two is apart from one of three",
+        ),
+        (
+            Pairing::Comps(found.into(), one.into()),
+            Agreement::Apart,
+            "a returner of two is apart from a returner of one",
+        ),
+        (
+            Pairing::SubComps(narrower.into(), wider.into()),
+            Agreement::Convertible,
+            "`{B}` widens to `{A, B}` under subtyping",
+        ),
+        (
+            Pairing::SubComps(wider.into(), narrower.into()),
+            Agreement::Apart,
+            "`{A, B}` has a signature `{B}` lacks",
+        ),
+        (
+            Pairing::Comps(narrower.into(), wider.into()),
+            Agreement::Apart,
+            "outside subtyping the rows agree exactly",
+        ),
+    ] {
+        assert_eq!(convert(&mut context, pairing), Ok(agreement), "{what}");
+    }
+}
+
 /// Outside subtyping two capabilities agree only when each authority grants
 /// within the other and the grade and region match: a capability converts
 /// with its twin, and a wider or narrower authority, another grade or

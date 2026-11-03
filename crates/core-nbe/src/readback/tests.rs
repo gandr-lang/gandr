@@ -1635,6 +1635,118 @@ fn a_stuck_bind_and_case_read_back_their_branches()
 }
 
 #[test]
+fn a_return_of_several_values_reads_back_in_order()
+{
+    use gandr_core_term::ComponentCount;
+    let (chain, environment) = nothing_unfolds();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+
+    // `return () to x. return (inl x, x)`: the values are substituted, so
+    // readback rebuilds them from the domain, first to last.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let produced = core.computation_return(unit);
+    let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+    let injected = core.value_injection(Side::Left.into(), occurrence);
+    let returned = core.computation_return_all(&[injected, occurrence]);
+    let sequenced = core.computation_bind(produced, returned);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), sequenced)
+        .expect("a bind over a returner runs its continuation");
+    let read = readback_computation(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::ZeroUnfold,
+        ample(),
+        evaluated,
+    )
+    .expect("a return of several values reads back");
+    let Some(&[first, second]) = core.computation(read).and_then(|read| {
+        if let Computation::ReturnAll(ref values) = *read {
+            Some(&**values)
+        }
+        else {
+            None
+        }
+    })
+    else {
+        panic!("the weak head reads back as a return of two values");
+    };
+    assert!(
+        matches!(
+            core.value(first),
+            Some(&Value::Injection(summand, _)) if summand == Side::Left.into()
+        ),
+        "the injection stays first"
+    );
+    assert_eq!(
+        Some(&Value::unit()),
+        core.value(second),
+        "and the unit second"
+    );
+
+    // `force c to (a, b). return (b, a)` over an opaque `c` reads back as
+    // the stuck bind of two, its two binders indices again.
+    let mut core = CoreArena::new();
+    let opaque = core.value_constant(ConstantIndex::from(0_usize));
+    let forced = core.computation_force(opaque);
+    let last = core.value_variable(Zone::Intuitionistic, innermost());
+    let earlier = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let swapped = core.value_tuple(&[last, earlier]);
+    let body = core.computation_return(swapped);
+    let two = ComponentCount::from(2_usize);
+    let sequenced = core.computation_bind_all(forced, two, body);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), sequenced)
+        .expect("a bind over a stuck computation gets stuck");
+    let read = readback_computation(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::ZeroUnfold,
+        ample(),
+        evaluated,
+    )
+    .expect("a stuck bind of two reads back");
+    let Some(&Computation::BindAll {
+        bound,
+        arity,
+        body: read_body,
+    }) = core.computation(read)
+    else {
+        panic!("the outermost elimination is the bind of two");
+    };
+    assert_eq!(two, arity, "the bind keeps how many values it binds");
+    assert!(matches!(
+        core.computation(bound),
+        Some(&Computation::Force(_))
+    ));
+    let Some(&Computation::Return(pair)) = core.computation(read_body)
+    else {
+        panic!("the body is a returner");
+    };
+    let Some(&[was_last, was_earlier]) = core.value(pair).and_then(Value::components)
+    else {
+        panic!("the body returns a pair");
+    };
+    assert_eq!(
+        [
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: innermost(),
+            }),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(1_u32),
+            }),
+        ],
+        [core.value(was_last), core.value(was_earlier)],
+        "both binders were opened and closed again as the indices written"
+    );
+}
+
+#[test]
 fn a_spine_that_misses_its_polarity_is_refused()
 {
     let mut core = CoreArena::new();

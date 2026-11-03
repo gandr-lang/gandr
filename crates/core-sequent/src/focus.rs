@@ -1045,6 +1045,14 @@ enum Task
         /// The consumer.
         consumer: ConsumerId,
     },
+    /// Pop `count` producers and mint their delivery to `consumer`.
+    Deliver
+    {
+        /// How many values are delivered.
+        count: ProducerArity,
+        /// The consumer.
+        consumer: ConsumerId,
+    },
     /// Pop the argument's producer, mint `apply(argument; continuation)`, and
     /// translate `head` under it.
     Apply
@@ -1065,6 +1073,15 @@ enum Task
     {
         /// The bound computation.
         head: ComputationId,
+    },
+    /// Pop the bind's body, mint `μ̃(x₁ … xₙ). body`, and translate `head`
+    /// under it.
+    BindAll
+    {
+        /// The bound computation.
+        head: ComputationId,
+        /// How many values it returns.
+        arity: ProducerArity,
     },
     /// Pop the scrutinee's producer and the arms' commands, one per summand,
     /// and mint the cut of the scrutinee against the match.
@@ -1262,13 +1279,14 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(ref components) => self.commands.len() >= components.len(),
-                Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
+                Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons => self.producers.len() >= 2,
             | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
             | &Task::Decompose { .. } | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
-            | &Task::Thunk | &Task::Capture | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
+            | &Task::Deliver { count, .. } => self.producers.len() >= usize::from(count),
+            | &Task::Thunk | &Task::Capture | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::BindAll { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
             | &Task::RunCase(ref arms) => !self.producers.is_empty() && self.commands.len() >= arms.len(),
@@ -1329,6 +1347,21 @@ impl<'run> Focusing<'run>
                     producer,
                     continuation,
                 )
+            },
+            Task::Deliver { count, consumer } => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let producers = self.producers.drain(start ..).collect();
+                let command = self.arena.mint_command(crate::il::CommandNode::Deliver {
+                    producers,
+                    consumer,
+                })?;
+                self.provenance.record(command, FocusOrigin::Return);
+                self.commands.push(command);
+                Ok(())
             },
             Task::Value(value) => self.value(value),
             Task::Computation {
@@ -1508,6 +1541,17 @@ impl<'run> Focusing<'run>
                         self.share_or_name(FocusOrigin::Bind, binder)?
                     },
                 };
+                self.tasks.push(Task::Computation {
+                    computation: head,
+                    continuation,
+                });
+                Ok(())
+            },
+            Task::BindAll { head, arity } => {
+                let body = self.pop_command()?;
+                let continuation = self
+                    .arena
+                    .mint_consumer(ConsumerNode::MuTildeAll { arity, body })?;
                 self.tasks.push(Task::Computation {
                     computation: head,
                     continuation,
@@ -1818,7 +1862,9 @@ impl<'run> Focusing<'run>
                     | Computation::Fixpoint { .. }
                     | Computation::Application(..)
                     | Computation::Return(_)
+                    | Computation::ReturnAll(_)
                     | Computation::Bind(..)
+                    | Computation::BindAll { .. }
                     | Computation::Ascribe { .. }
                     | Computation::Force(_)
                     | Computation::Case { .. }
@@ -1956,7 +2002,9 @@ impl<'run> Focusing<'run>
             | Computation::Fixpoint { .. }
             | Computation::Application(..)
             | Computation::Return(_)
+            | Computation::ReturnAll(_)
             | Computation::Bind(..)
+            | Computation::BindAll { .. }
             | Computation::Ascribe { .. }
             | Computation::Force(_)
             | Computation::Case { .. }
@@ -2770,6 +2818,7 @@ impl<'run> Focusing<'run>
             // A value holding a returned value runs it first and returns what
             // it builds; any other is cut against the continuation.
             Computation::Return(value) => self.returning(value, continuation)?,
+            Computation::ReturnAll(ref values) => self.returning_all(values, continuation),
             Computation::Force(value) => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
@@ -2814,6 +2863,17 @@ impl<'run> Focusing<'run>
             Computation::Bind(head, body) => {
                 let inner = self.share_or_name(FocusOrigin::Bind, continuation)?;
                 self.tasks.push(Task::Bind { head });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: inner,
+                });
+            },
+            Computation::BindAll { bound, arity, body } => {
+                let inner = self.share_or_name(FocusOrigin::Bind, continuation)?;
+                self.tasks.push(Task::BindAll {
+                    head: bound,
+                    arity: ProducerArity::from(usize::from(arity)),
+                });
                 self.tasks.push(Task::Computation {
                     computation: body,
                     continuation: inner,
@@ -2936,6 +2996,7 @@ impl<'run> Focusing<'run>
             ConsumerNode::Covariable(_) | ConsumerNode::Top => return Ok(continuation),
             ConsumerNode::Destructor { tag, .. } => tag.polarity(),
             ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. }
             | ConsumerNode::Select { .. }
@@ -3239,6 +3300,56 @@ impl<'run> Focusing<'run>
             parts.reverse();
         }
         Ok(())
+    }
+
+    /// Schedule the return of several values to `continuation`: their
+    /// delivery `⟨𝓥⟦v₁⟧ … 𝓥⟦vₙ⟧ | continuation⟩` when none holds a returned
+    /// value; otherwise [`Combinator::Deliver`] applied to each value's part
+    /// `thunk(𝓡⟦vᵢ⟧)`, which runs them in written order and delivers what
+    /// they return.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the depth the values stand at.
+    /// - ensures: the tasks leaving the one command that delivers the values to
+    ///   `continuation` are scheduled, the first value's translated first.
+    /// - provides: `return (v₁ … vₙ)`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a return of two values, one of them a returned
+    ///   transport, runs to the values the bind spelling binds, in written
+    ///   order.
+    /// - witness: `tests::run::a_many_value_return_delivers_its_values_in_order_4853`
+    #[spec(captures: work = self.tasks.len(), ensures: self.tasks.len() > work)]
+    fn returning_all(
+        &mut self,
+        values: &[ValueId],
+        continuation: ConsumerId,
+    )
+    {
+        let count = ProducerArity::from(values.len());
+        let mut plain = true;
+        for &value in values {
+            plain &= self.holds_returned(value) == Holding::Plain;
+        }
+        if plain {
+            self.tasks.push(Task::Deliver {
+                count,
+                consumer: continuation,
+            });
+            for &value in values.iter().rev() {
+                self.tasks.push(Task::Value(value));
+            }
+        }
+        else {
+            self.tasks.push(Task::Combinator {
+                combinator: Combinator::Deliver { fields: count },
+                continuation,
+            });
+            for &value in values.iter().rev() {
+                self.tasks.push(Task::Suspend(value));
+            }
+        }
     }
 
     /// Schedule the producer a cut puts against its consumer: for a value

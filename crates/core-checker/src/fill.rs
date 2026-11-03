@@ -947,6 +947,7 @@ fn curried(
                 (domain, lifted.settle(arena))
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
             | CompTypeView::Codata { .. }
@@ -963,6 +964,7 @@ fn curried(
                 result
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }

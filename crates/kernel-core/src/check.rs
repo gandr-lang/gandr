@@ -322,6 +322,7 @@ use crate::replay::read_decode;
 use crate::replay::read_endpoints;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
+use crate::rewrite::shift_value;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_comp_type;
 use crate::rewrite::substitute_comp_type_at_call;
@@ -505,7 +506,7 @@ fn comp_shape_mismatch(
 /// - witness: `tests::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
 /// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
 /// - witness: `tests::codata::a_stream_is_admitted_and_observed`
-#[spec(ensures: |ret| ret.is_none_or(|returner| matches!(arena.comp_type(returner), Some(&CompType::Returner(_)))))]
+#[spec(ensures: |ret| ret.is_none_or(|returner| matches!(arena.comp_type(returner), Some(&(CompType::Returner(_) | CompType::Returns(_))))))]
 fn returner_ending(
     arena: &TermArena,
     expected: CompTypeId,
@@ -514,7 +515,7 @@ fn returner_ending(
     let mut pending = Vec::from([expected]);
     while let Some(shape) = pending.pop() {
         match arena.comp_type(shape) {
-            Some(&CompType::Returner(_)) => return Some(shape),
+            Some(&(CompType::Returner(_) | CompType::Returns(_))) => return Some(shape),
             Some(&(CompType::Arrow { codomain, .. } | CompType::Pi { codomain, .. })) => {
                 pending.push(codomain);
             },
@@ -1552,6 +1553,10 @@ enum TypeLevelFrame
     /// The first factor's level is in the register; take the second factor
     /// next, **under the first factor's binder** — a dependent pair.
     MaxSecondValueUnder(ValueTypeId, ValueTypeId),
+    /// A result's level of the returner of several results is in the register;
+    /// take the result at the position next, under the binder of the result
+    /// before it and those already open.
+    MaxNextResult(CompTypeId, usize),
     /// A formation binder closes: pop the innermost context slot.
     ScopeExit,
     /// Restore the surrounding telescope after closed session payload
@@ -1916,6 +1921,19 @@ where
                 TypeLevelGoal::Comp(id) => {
                     let comp_type = arena.comp_type(id).ok_or(KernelError::ArenaFault)?;
                     match *comp_type {
+                        // A returner of several results forms at the join of
+                        // their levels, each result under the binders of the
+                        // results before it; with none, at level zero.
+                        CompType::Returns(ref results) => match results.first() {
+                            Some(&first) => {
+                                if results.len() > 1 {
+                                    frames.push(TypeLevelFrame::MaxNextResult(id, 1));
+                                }
+                                goal = TypeLevelGoal::Value(first);
+                                continue 'expand;
+                            },
+                            None => Level::zero(),
+                        },
                         CompType::Returner(result) => {
                             goal = TypeLevelGoal::Value(result);
                             continue 'expand;
@@ -2027,6 +2045,29 @@ where
                     frames.push(TypeLevelFrame::ScopeExit);
                     context.push(domain);
                     goal = TypeLevelGoal::Comp(second);
+                    continue 'expand;
+                },
+                TypeLevelFrame::MaxNextResult(returner, position) => {
+                    let Some(&CompType::Returns(ref results)) = arena.comp_type(returner)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (Some(&before), Some(&next)) =
+                        (results.get(position.wrapping_sub(1)), results.get(position))
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let more = position.saturating_add(1) < results.len();
+                    frames.push(TypeLevelFrame::MaxWith(produced));
+                    frames.push(TypeLevelFrame::ScopeExit);
+                    if more {
+                        frames.push(TypeLevelFrame::MaxNextResult(
+                            returner,
+                            position.saturating_add(1),
+                        ));
+                    }
+                    context.push(before);
+                    goal = TypeLevelGoal::Value(next);
                     continue 'expand;
                 },
                 TypeLevelFrame::MaxSecondValueUnder(first, second) => {
@@ -2642,6 +2683,17 @@ enum Frame
     SynthForce,
     /// A returner synthesis: the value is synthesized.
     SynthReturn,
+    /// A synthesis of a return of several values: the value in the register is
+    /// synthesized; the rest are held, in reverse order, with the types
+    /// synthesized so far.
+    SynthReturnAll
+    {
+        /// The values still to synthesize, the next one last.
+        remaining: Vec<ValueId>,
+        /// The value types synthesized so far, in order, each in the ambient
+        /// context.
+        types: Vec<ValueTypeId>,
+    },
     /// A lazy pairing synthesis: the component in the register is
     /// synthesized; the rest are held, in reverse order, with the types
     /// synthesized so far.
@@ -2659,6 +2711,11 @@ enum Frame
     /// is held, and the body's type, strengthened past the bind's binder,
     /// becomes the bind's.
     SynthBind(ComputationId),
+    /// A synthesis of a bind of several values: the bound computation is
+    /// synthesized; the body source is held with the count of values it
+    /// binds, and the body's type, strengthened past every binder, becomes
+    /// the bind's.
+    SynthBindAll(ComputationId, gandr_kernel_term::ResultCount),
     /// A case synthesis: the scrutinee is synthesized; the branch sources are
     /// held, in summand order.
     SynthCaseScrutinee(alloc::boxed::Box<[ComputationId]>),
@@ -2679,6 +2736,10 @@ enum Frame
     /// A bind check: the bound computation synthesized; the body source and the
     /// expected type are held.
     CheckBind(ComputationId, CompTypeId),
+    /// A check of a bind of several values: the bound computation
+    /// synthesized; the body source, the count of values it binds and the
+    /// expected type are held.
+    CheckBindAll(ComputationId, gandr_kernel_term::ResultCount, CompTypeId),
     /// A case check: the scrutinee synthesized; the branch sources and expected
     /// type are held.
     CheckCaseScrutinee
@@ -2953,6 +3014,53 @@ fn weakened(
         BinderDepth::NONE,
         BinderDepth::from(1_u32),
     )
+}
+
+/// The goals checking each of `values` against its result in `results`, a
+/// telescope, the first goal last.
+///
+/// # Specification
+/// - requires: `results` and `values` have one length, which fits `u32`; each
+///   result is written under the binders of the results before it, and the
+///   values in the ambient context.
+/// - ensures: one value check per value, in reverse order. Each checks at its
+///   result with every earlier binder replaced by the earlier value, the
+///   innermost first, each value carried past the binders still outside it.
+/// - provides: the check of a return of several values.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a second result naming the first checks its value at the
+///   first value, and refuses a value of the first result's unread type.
+/// - witness: `check::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
+#[spec(ensures: |ret| ret.len() == values.len())]
+fn returned_goals(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    results: &[ValueTypeId],
+    values: &[ValueId],
+) -> Vec<Goal>
+{
+    let (table, rewrites) = session.rewrite_parts();
+    let mut goals = Vec::with_capacity(values.len());
+    for (position, (&result, &value)) in results.iter().zip(values).enumerate().rev() {
+        let mut instantiated = result;
+        for (earlier, &replacement) in values.iter().enumerate().take(position).rev() {
+            let outside = BinderDepth::from(u32::try_from(earlier).unwrap_or(u32::MAX));
+            let replacement = shift_value(
+                arena,
+                table,
+                rewrites,
+                replacement,
+                BinderDepth::NONE,
+                outside,
+            );
+            instantiated = substitute_value_type(arena, table, rewrites, instantiated, replacement);
+        }
+        goals.push(Goal::CheckValue(value, instantiated));
+    }
+    goals
 }
 
 /// `subject`, synthesized under one binder, read outside it.
@@ -4349,6 +4457,26 @@ where
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
                     },
+                    // A return of several values synthesizes the telescope of
+                    // their types, each carried past the results before it.
+                    Computation::ReturnAll(ref values) => {
+                        let mut remaining = values.iter().rev().copied().collect::<Vec<_>>();
+                        let arity = remaining.len();
+                        if let Some(first) = remaining.pop() {
+                            frames.push(Frame::SynthReturnAll {
+                                remaining,
+                                types: Vec::with_capacity(arity),
+                            });
+                            goal = Goal::SynthValue(first);
+                            continue 'expand;
+                        }
+                        Produced::CompType(arena.comp_type_returns(&[]))
+                    },
+                    Computation::BindAll { bound, arity, body } => {
+                        frames.push(Frame::SynthBindAll(body, arity));
+                        goal = Goal::SynthComp(bound);
+                        continue 'expand;
+                    },
                     // A pairing synthesizes when every component does, as a
                     // tuple does; a component that only checks makes the
                     // pairing checking-only too. The empty pairing
@@ -4513,6 +4641,42 @@ where
                     },
                     Computation::Bind(bound, body) => {
                         frames.push(Frame::CheckBind(body, expected));
+                        goal = Goal::SynthComp(bound);
+                        continue 'expand;
+                    },
+                    // A return of several values checks against a returner of
+                    // as many results, each value against its result read at
+                    // the values before it.
+                    Computation::ReturnAll(_) => {
+                        let shape = codata::read(arena, session, judgement, expected)?;
+                        let (results, values) =
+                            match (arena.comp_type(shape), read_computation(arena, id)?) {
+                                (
+                                    Some(&CompType::Returns(ref results)),
+                                    &Computation::ReturnAll(ref values),
+                                ) if results.len() == values.len()
+                                    && u32::try_from(values.len()).is_ok() =>
+                                {
+                                    (results.clone(), values.clone())
+                                },
+                                _ => {
+                                    return Err(comp_shape_mismatch(
+                                        arena,
+                                        ExpectedComputationShape::Returner,
+                                        expected,
+                                    ));
+                                },
+                            };
+                        let mut goals = returned_goals(arena, session, &results, &values);
+                        if let Some(next) = goals.pop() {
+                            frames.push(Frame::Pending(goals, Produced::Checked));
+                            goal = next;
+                            continue 'expand;
+                        }
+                        Produced::Checked
+                    },
+                    Computation::BindAll { bound, arity, body } => {
+                        frames.push(Frame::CheckBindAll(body, arity, expected));
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
                     },
@@ -6107,6 +6271,32 @@ where
                     let result_type = produced.value_type()?;
                     produced = Produced::CompType(arena.comp_type_returner(result_type));
                 },
+                Frame::SynthReturnAll {
+                    mut remaining,
+                    mut types,
+                } => {
+                    types.push(produced.value_type()?);
+                    if let Some(next) = remaining.pop() {
+                        frames.push(Frame::SynthReturnAll { remaining, types });
+                        goal = Goal::SynthValue(next);
+                        continue 'expand;
+                    }
+                    // Each type was synthesized in the ambient context, and
+                    // its result stands under the results before it.
+                    let (table, rewrites) = session.rewrite_parts();
+                    for (position, result) in types.iter_mut().enumerate() {
+                        let before = BinderDepth::from(u32::try_from(position).unwrap_or(u32::MAX));
+                        *result = shift_value_type(
+                            arena,
+                            table,
+                            rewrites,
+                            *result,
+                            BinderDepth::NONE,
+                            before,
+                        );
+                    }
+                    produced = Produced::CompType(arena.comp_type_returns(&types));
+                },
                 Frame::SynthWith {
                     mut remaining,
                     mut types,
@@ -6149,6 +6339,32 @@ where
                             context.push(result);
                             frames.push(Frame::Strengthen);
                             frames.push(Frame::ScopeExit);
+                            goal = Goal::SynthComp(body);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Returner,
+                                bound_type,
+                            ));
+                        },
+                    }
+                },
+                // A bind of several values opens its bound's results in order,
+                // each in the context the results before it extend.
+                Frame::SynthBindAll(body, arity) => {
+                    let bound_type = produced.comp_type()?;
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    match arena.comp_type(bound_shape) {
+                        Some(&CompType::Returns(ref results))
+                            if results.len() == usize::from(arity) =>
+                        {
+                            context.extend(results.iter().copied());
+                            for _ in 0 .. results.len() {
+                                frames.push(Frame::Strengthen);
+                                frames.push(Frame::ScopeExit);
+                            }
                             goal = Goal::SynthComp(body);
                             continue 'expand;
                         },
@@ -6259,6 +6475,43 @@ where
                             ));
                         },
                     }
+                },
+                Frame::CheckBindAll(body, arity, expected) => {
+                    let bound_type = produced.comp_type()?;
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    let opened = match arena.comp_type(bound_shape) {
+                        Some(&CompType::Returns(ref results))
+                            if results.len() == usize::from(arity) =>
+                        {
+                            u32::try_from(results.len())
+                                .ok()
+                                .map(|binders| (binders, results.clone()))
+                        },
+                        _ => None,
+                    };
+                    let Some((binders, results)) = opened
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Returner,
+                            bound_type,
+                        ));
+                    };
+                    let (table, rewrites) = session.rewrite_parts();
+                    let scoped = shift_comp_type(
+                        arena,
+                        table,
+                        rewrites,
+                        expected,
+                        BinderDepth::NONE,
+                        BinderDepth::from(binders),
+                    );
+                    context.extend(results.iter().copied());
+                    for _ in 0 .. results.len() {
+                        frames.push(Frame::ScopeExit);
+                    }
+                    goal = Goal::CheckComp(body, scoped);
+                    continue 'expand;
                 },
                 // Each branch checks, under its summand's binder, against the
                 // expected type read from under that binder. A case of no
@@ -7584,6 +7837,101 @@ mod tests
             arena.computation_list_fold(unit_type, list_type, cons, on_nil, wrong_branch);
         let wrong = arena.value_thunk(wrong_fold);
         assert!(super::check_closed_value(&mut arena, wrong, suspended).is_err());
+    }
+
+    /// The telescope `(c : Type, x : El c)`: its second result reads the first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn code_and_element(arena: &mut TermArena) -> CompTypeId
+    {
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(code, Level::zero());
+        arena.comp_type_returns(&[universe, element])
+    }
+
+    #[test]
+    fn a_return_of_several_values_checks_each_at_its_instantiated_result()
+    {
+        let mut arena = TermArena::new();
+        let telescope = code_and_element(&mut arena);
+        let suspended = arena.value_type_thunk(telescope);
+        let unit_type = arena.value_type_unit();
+        let empty_type = arena.value_type_empty();
+        let unit_code = arena.value_quote(unit_type);
+        let empty_code = arena.value_quote(empty_type);
+        let unit = arena.value_unit();
+        let nil = arena.value_list_nil();
+        let returned = |arena: &mut TermArena, values: &[ValueId]| {
+            let body = arena.computation_return_all(values);
+            arena.value_thunk(body)
+        };
+        let admitted = returned(&mut arena, &[unit_code, unit]);
+        assert_eq!(
+            super::check_closed_value(&mut arena, admitted, suspended),
+            Ok(()),
+            "the unit checks at the element type of the unit's code"
+        );
+        for (refused, why) in [
+            (
+                [empty_code, unit].as_slice(),
+                "the second value checks at the first value's type",
+            ),
+            (
+                [unit_code, nil].as_slice(),
+                "the second value checks at its instantiated result",
+            ),
+            (
+                [unit_code, unit, unit].as_slice(),
+                "a return of three is no returner of two",
+            ),
+        ] {
+            let refused = returned(&mut arena, refused);
+            assert!(
+                super::check_closed_value(&mut arena, refused, suspended).is_err(),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bind_of_several_values_binds_them_in_order()
+    {
+        let mut arena = TermArena::new();
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let returner = arena.comp_type_returner(universe);
+        let suspended = arena.value_type_thunk(returner);
+        let unit_type = arena.value_type_unit();
+        let unit_code = arena.value_quote(unit_type);
+        let unit = arena.value_unit();
+        let bound = arena.computation_return_all(&[unit_code, unit]);
+        let bind = |arena: &mut TermArena, arity: usize, index: u32| {
+            let read = arena.value_variable(DeBruijnIndex::from(index));
+            let body = arena.computation_return(read);
+            let bind = arena.computation_bind_all(
+                bound,
+                gandr_kernel_term::ResultCount::from(arity),
+                body,
+            );
+            arena.value_thunk(bind)
+        };
+        let first = bind(&mut arena, 2, 1);
+        assert_eq!(
+            super::check_closed_value(&mut arena, first, suspended),
+            Ok(()),
+            "the outer binder is the first value, the code"
+        );
+        let second = bind(&mut arena, 2, 0);
+        assert!(
+            super::check_closed_value(&mut arena, second, suspended).is_err(),
+            "the inner binder is the second value, the unit, which is no code"
+        );
+        let another = bind(&mut arena, 3, 2);
+        assert!(
+            super::check_closed_value(&mut arena, another, suspended).is_err(),
+            "a bind of three refuses a return of two"
+        );
     }
 
     #[test]

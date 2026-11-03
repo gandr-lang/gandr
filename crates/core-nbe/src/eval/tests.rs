@@ -2807,6 +2807,171 @@ fn a_split_binds_each_component_in_order()
 }
 
 #[test]
+fn a_bind_of_several_values_passes_them_on_in_order()
+{
+    use gandr_core_term::ComponentCount;
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let left = core.value_injection(Side::Left.into(), unit);
+    let returned = core.computation_return_all(&[unit, left]);
+    let last = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let swapped = core.value_tuple(&[last, first]);
+    let body = core.computation_return(swapped);
+    let two = ComponentCount::from(2_usize);
+    let looping = core.computation_fixpoint(returned, gandr_kernel_term::FixpointEvidence::Partial);
+    let (chain, environment) = nothing_unfolds();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+
+    let alone = eval_computation(&core, &mut domain, definitions, ample(), returned).unwrap();
+    assert!(
+        matches!(
+            domain.computation(alone),
+            Some(&DomainComp::ReturnAll { face: CompTermFace::Source(source), .. }) if source == returned
+        ),
+        "a return of two closed values keeps its source face"
+    );
+    for head in [returned, looping] {
+        let bound = core.computation_bind_all(head, two, body);
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), bound).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+        else {
+            panic!("the body returns");
+        };
+        let read = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            value,
+        )
+        .unwrap();
+        let Some(&[was_last, was_first]) = core.value(read).and_then(Value::components)
+        else {
+            panic!("the body's pair reads back");
+        };
+        assert!(
+            matches!(
+                core.value(was_last),
+                Some(&Value::Injection(summand, _)) if summand == Side::Left.into()
+            ),
+            "the innermost binder holds the last value"
+        );
+        assert!(
+            core.value(was_first)
+                .and_then(Value::components)
+                .is_some_and(<[_]>::is_empty),
+            "the outermost binder holds the first value"
+        );
+    }
+
+    let one = core.computation_return(unit);
+    let lambda = core.computation_lambda(one);
+    for (head, arity, fault) in [
+        (
+            returned,
+            ComponentCount::from(3_usize),
+            EvalFault::BoundArity,
+        ),
+        (one, two, EvalFault::BoundArity),
+        (lambda, two, EvalFault::BoundNonReturner),
+    ] {
+        let bound = core.computation_bind_all(head, arity, body);
+        assert_eq!(
+            eval_computation(&core, &mut domain, definitions, ample(), bound),
+            Err(fault)
+        );
+    }
+}
+
+#[test]
+fn a_bind_of_several_values_on_a_neutral_grows_its_spine()
+{
+    use gandr_core_term::ComponentCount;
+    let mut core = CoreArena::new();
+    let function = ConstantIndex::from(0_usize);
+    let unit = core.value_unit();
+    let left = core.value_injection(Side::Left.into(), unit);
+    let returned = core.computation_return_all(&[unit, left]);
+    let function_body = core.value_thunk(returned);
+    let reference = core.value_constant(function);
+    let forced = core.computation_force(reference);
+    let last = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let swapped = core.value_tuple(&[last, first]);
+    let body = core.computation_return(swapped);
+    let two = ComponentCount::from(2_usize);
+    let bound = core.computation_bind_all(forced, two, body);
+
+    let mut chain = DefinitionChain::new();
+    assert!(
+        chain
+            .define(
+                function,
+                GlobalIndex::from(0_u32),
+                Transparency::Manifest,
+                &[]
+            )
+            .is_ok()
+    );
+    let Ok(chain) = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(function_body));
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), bound)
+        .expect("a bind over an unforced constant gets stuck");
+    let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(evaluated)
+    else {
+        panic!("the constant is not unfolded by evaluation, so the bind is stuck");
+    };
+    let spine = Vec::from(
+        domain
+            .neutral(neutral)
+            .expect("the neutral resolves")
+            .spine(),
+    );
+    assert!(
+        matches!(
+            spine.as_slice(),
+            [Elimination::Force, Elimination::BindAll(_, arity)] if *arity == two
+        ),
+        "the stuck bind keeps how many values it binds"
+    );
+
+    let head = eval_value(&core, &mut domain, definitions, ample(), function_body)
+        .expect("a definition body evaluates");
+    let mut reapplied = Evaluation::eliminate(definitions, head, &spine);
+    let (progress, _spent) = reapplied
+        .resume(&core, &mut domain, ample())
+        .expect("every elimination fits the unfolded head");
+    let Progress::Finished(Glued::Computation(answer)) = progress
+    else {
+        panic!("an ample slice reaches the weak head, a computation");
+    };
+    let Some(&DomainComp::Return { value, .. }) = domain.computation(answer)
+    else {
+        panic!("the re-applied bind runs its body");
+    };
+    let Some(&DomainValue::Tuple { fields, .. }) = domain.value(value)
+    else {
+        panic!("the body returns a pair");
+    };
+    let components = domain.fields(fields).expect("the pair resolves");
+    assert!(
+        matches!(
+            components
+                .first()
+                .and_then(|&was_last| domain.value(was_last)),
+            Some(DomainValue::Injection { .. })
+        ),
+        "the re-applied bind binds the head's values in order"
+    );
+}
+
+#[test]
 fn native_cases_reapply_when_head_unfolds()
 {
     use alloc::collections::BTreeMap;

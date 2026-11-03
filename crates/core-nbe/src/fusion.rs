@@ -233,7 +233,8 @@ pub fn fused(
         .iter()
         .filter_map(|elimination| match *elimination {
             Elimination::Bind(continuation) => Some(continuation),
-            Elimination::DataCase(_)
+            Elimination::BindAll(..)
+            | Elimination::DataCase(_)
             | Elimination::Split(_)
             | Elimination::Projection(_)
             | Elimination::Transport(_)

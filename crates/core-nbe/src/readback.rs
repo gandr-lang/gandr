@@ -774,6 +774,10 @@ enum Task
     StaticApply,
     /// Assemble a bind over the two computation terms.
     Bind,
+    /// Assemble a return of this many value terms, the last on top.
+    ReturnAll(usize),
+    /// Assemble a bind of this many values over the two computation terms.
+    BindAll(gandr_core_term::ComponentCount),
     /// Assemble a sum elimination over the value term and the two branches.
     Case(usize),
     /// Assemble a split over the value term and the body binding this many
@@ -2250,6 +2254,11 @@ fn run(
             && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::ReturnAll(count) => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(count) == Some(machine.values.len())
+            && entry_comps.checked_add(1_usize) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
         | Task::Apply => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
@@ -2262,6 +2271,11 @@ fn run(
             && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::BindAll(_) => machine.tasks.len() == entry_tasks
+            && machine.values.len() == entry_values
+            && entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
         | Task::Case(count) => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(count).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
@@ -2352,7 +2366,7 @@ fn run(
         | Task::Returner { source } => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
-            && core.comp_type(source).is_some_and(|node| match *node { CompType::Returner { ref effects, .. } => entry_value_types.checked_sub(1_usize.saturating_add(effects.types().count())) == Some(machine.value_types.len()), CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => false })
+            && core.comp_type(source).is_some_and(|node| match *node { CompType::Returner { ref effects, .. } => entry_value_types.checked_sub(1_usize.saturating_add(effects.types().count())) == Some(machine.value_types.len()), CompType::Returns { ref results, ref effects } => entry_value_types.checked_sub(results.len().saturating_add(effects.types().count())) == Some(machine.value_types.len()), CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => false })
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
@@ -2950,6 +2964,16 @@ fn step(
             machine.comps.push(core.computation_return(produced));
             Ok(())
         },
+        Task::ReturnAll(count) => {
+            let start = machine
+                .values
+                .len()
+                .checked_sub(count)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let produced: Vec<ValueId> = machine.values.drain(start ..).collect();
+            machine.comps.push(core.computation_return_all(&produced));
+            Ok(())
+        },
         Task::Spine(spine) => step_spine(core, domain, machine, spine),
         Task::Force => {
             let forced = machine.pop_value()?;
@@ -2976,6 +3000,14 @@ fn step(
             let body = machine.pop_comp()?;
             let bound = machine.pop_comp()?;
             machine.comps.push(core.computation_bind(bound, body));
+            Ok(())
+        },
+        Task::BindAll(arity) => {
+            let body = machine.pop_comp()?;
+            let bound = machine.pop_comp()?;
+            machine
+                .comps
+                .push(core.computation_bind_all(bound, arity, body));
             Ok(())
         },
         Task::Split(arity) => {
@@ -3101,18 +3133,45 @@ fn step(
             let source = core
                 .comp_type(source)
                 .ok_or(ReadbackFault::MachineInvariant)?;
-            let CompType::Returner { ref effects, .. } = *source
-            else {
-                return Err(ReadbackFault::MachineInvariant);
+            let (effects, results) = match *source {
+                CompType::Returner { ref effects, .. } => (
+                    effects.try_map_types(gandr_core_term::effect::TypeOrder::Reverse, |_| {
+                        machine.pop_value_type()
+                    })?,
+                    None,
+                ),
+                CompType::Returns {
+                    ref results,
+                    ref effects,
+                } => (
+                    effects.try_map_types(gandr_core_term::effect::TypeOrder::Reverse, |_| {
+                        machine.pop_value_type()
+                    })?,
+                    Some(results.len()),
+                ),
+                CompType::Arrow { .. }
+                | CompType::Pi { .. }
+                | CompType::Element { .. }
+                | CompType::Unknown
+                | CompType::With(..)
+                | CompType::Codata { .. } => return Err(ReadbackFault::MachineInvariant),
             };
-            let effects = effects
-                .try_map_types(gandr_core_term::effect::TypeOrder::Reverse, |_| {
-                    machine.pop_value_type()
-                })?;
-            let result = machine.pop_value_type()?;
-            machine
-                .comp_types
-                .push(core.comp_type_returner_with_effects(result, effects));
+            let built = match results {
+                None => {
+                    let result = machine.pop_value_type()?;
+                    core.comp_type_returner_with_effects(result, effects)
+                },
+                Some(count) => {
+                    let start = machine
+                        .value_types
+                        .len()
+                        .checked_sub(count)
+                        .ok_or(ReadbackFault::MachineInvariant)?;
+                    let results: Vec<_> = machine.value_types.drain(start ..).collect();
+                    core.comp_type_returns_with_effects(&results, effects)
+                },
+            };
+            machine.comp_types.push(built);
             Ok(())
         },
         Task::CapabilityType { source } => {
@@ -3712,6 +3771,9 @@ fn step_quoted_value_type(
         | Some(&CompType::Returner { result, ref effects }) => new_tasks.first() == Some(&Task::Returner { source: quoted })
             && new_tasks.len() == effects.types().count().saturating_add(2)
             && new_tasks.iter().skip(1).zip(effects.types().rev().chain(core::iter::once(result))).all(|(task, child)| matches!(task, Task::QuotedValueType { quoted, frame: child_frame, binders: child_binders } if *quoted == child && *child_frame == frame && *child_binders == binders)),
+        | Some(&CompType::Returns { ref results, ref effects }) => new_tasks.first() == Some(&Task::Returner { source: quoted })
+            && new_tasks.len() == effects.types().count().saturating_add(results.len()).saturating_add(1)
+            && new_tasks.iter().skip(1).zip(effects.types().rev().chain(results.iter().rev().copied())).all(|(task, child)| matches!(task, Task::QuotedValueType { quoted, frame: child_frame, binders: child_binders } if *quoted == child && *child_frame == frame && *child_binders == binders)),
         | Some(&CompType::Arrow { domain: from, codomain }) => matches!(new_tasks, [Task::Arrow, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedValueType { quoted: first, frame: first_frame, binders: first_binders }] if *first == from && *first_frame == frame && *first_binders == binders && *second == codomain && *second_frame == frame && *second_binders == binders),
         | Some(&CompType::Element { code, ref target }) => matches!(new_tasks, [Task::CompElement { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
         | Some(&CompType::Pi { domain: from, codomain }) => matches!(new_tasks, [Task::Pi, Task::QuotedCompType { quoted: second, frame: inside, binders: deeper }, Task::QuotedValueType { quoted: first, frame: first_frame, binders: first_binders }] if *first == from && *first_frame == frame && *first_binders == binders && *second == codomain && Some(*deeper) == binders.opened(Zone::Intuitionistic) && inside.0 == entry_frames && machine.frames.len() == entry_frames.saturating_add(1_usize)
@@ -3774,6 +3836,23 @@ fn step_quoted_comp_type(
                 frame,
                 binders,
             });
+        },
+        CompType::Returns { results, effects } => {
+            machine.tasks.push(Task::Returner { source: quoted });
+            machine
+                .tasks
+                .extend(effects.types().rev().map(|quoted| Task::QuotedValueType {
+                    quoted,
+                    frame,
+                    binders,
+                }));
+            machine
+                .tasks
+                .extend(results.iter().rev().map(|&quoted| Task::QuotedValueType {
+                    quoted,
+                    frame,
+                    binders,
+                }));
         },
         CompType::Arrow {
             domain: from,
@@ -4337,6 +4416,17 @@ fn step_comp(
             machine.tasks.push(Task::Value { value, binders });
             Ok(())
         },
+        DomainComp::ReturnAll { values, .. } => {
+            let values = domain
+                .fields(values)
+                .map_err(ReadbackFault::Domain)?
+                .to_vec();
+            machine.tasks.push(Task::ReturnAll(values.len()));
+            for &value in values.iter().rev() {
+                machine.tasks.push(Task::Value { value, binders });
+            }
+            Ok(())
+        },
         DomainComp::Neutral { neutral, .. } => step_neutral(
             core,
             domain,
@@ -4570,6 +4660,7 @@ fn step_neutral(
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
+                        | Elimination::BindAll(..)
                         | Elimination::ListFold { .. }
                         | Elimination::ListCase { .. }
                         | Elimination::Case { .. }
@@ -5098,6 +5189,17 @@ fn step_spine(
             let (whnf, deeper) = opened;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Bind);
+            machine.tasks.push(Task::Comp {
+                comp: whnf,
+                binders: deeper,
+            });
+            Ok(())
+        },
+        Elimination::BindAll(body, arity) => {
+            expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
+            let (whnf, deeper) = open_many(core, domain, machine, body, binders, arity)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::BindAll(arity));
             machine.tasks.push(Task::Comp {
                 comp: whnf,
                 binders: deeper,

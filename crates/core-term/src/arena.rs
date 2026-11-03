@@ -415,6 +415,8 @@ impl CoreArena
                 | Computation::Application(..)
                 | Computation::Return(_)
                 | Computation::Bind(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. }
                 | Computation::Ascribe { .. }
                 | Computation::Force(_)
                 | Computation::Case { .. }
@@ -1628,6 +1630,76 @@ impl CoreArena
         self.alloc_computation(Computation::Bind(bound, body))
     }
 
+    /// Mint a return of `values` at once: the return of the one value when
+    /// there is one, the many-value return otherwise.
+    ///
+    /// # Specification
+    /// - requires: every value names a value node already allocated in this
+    ///   arena.
+    /// - ensures: appends [`Computation::Return`] of the value when `values`
+    ///   holds one, and [`Computation::ReturnAll`] of `values` in order
+    ///   otherwise, and returns a fresh computation id.
+    /// - provides: the only way to mint a many-value return, which keeps one
+    ///   value's return in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no values, one and two mint the empty many-value
+    ///   return, the return and the many-value return in order.
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(ensures: |ret| match *values {
+        | [value] => self.computation(ret) == Some(&Computation::Return(value)),
+        | _ => matches!(self.computation(ret), Some(Computation::ReturnAll(minted)) if **minted == *values),
+    })]
+    #[inline]
+    pub fn computation_return_all(
+        &mut self,
+        values: &[ValueId],
+    ) -> ComputationId
+    {
+        match *values {
+            [value] => self.computation_return(value),
+            _ => self.alloc_computation(Computation::ReturnAll(values.into())),
+        }
+    }
+
+    /// Mint a bind of the `arity` values `bound` returns into `body`: the bind
+    /// of the one value when `arity` is one, the many-value bind otherwise.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` name computation nodes already allocated
+    ///   in this arena.
+    /// - ensures: appends [`Computation::Bind`] when `arity` is one, and
+    ///   [`Computation::BindAll`] otherwise, and returns a fresh id strictly
+    ///   above both children.
+    /// - provides: the only way to mint a many-value bind, which keeps one
+    ///   value's bind in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(ensures: |ret| if usize::from(arity) == 1 {
+        self.computation(ret) == Some(&Computation::Bind(bound, body))
+    } else {
+        self.computation(ret) == Some(&Computation::BindAll { bound, arity, body })
+    })]
+    #[inline]
+    pub fn computation_bind_all(
+        &mut self,
+        bound: ComputationId,
+        arity: ComponentCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        if usize::from(arity) == 1 {
+            self.computation_bind(bound, body)
+        }
+        else {
+            self.alloc_computation(Computation::BindAll { bound, arity, body })
+        }
+    }
+
     /// Mint an ascription of the computation `body` to the type `ty`.
     ///
     /// # Specification
@@ -2253,6 +2325,44 @@ impl CoreArena
     {
         let effects = self.settled_row(effects);
         self.alloc_comp_type(CompType::Returner { result, effects })
+    }
+
+    /// Mint the returner of `results` with the row of effect interfaces it may
+    /// perform: the returner of the one result when there is one, the
+    /// many-value returner otherwise.
+    ///
+    /// # Specification
+    /// - requires: every result and every operation type belong to this arena;
+    ///   each result stands under the binders of the results before it.
+    /// - ensures: appends [`CompType::Returner`] of the one result, or
+    ///   [`CompType::Returns`] of `results` in order, at the row
+    ///   [`Self::settled_row`] reads, and returns a fresh id.
+    /// - provides: the only way to mint a many-value returner, which keeps one
+    ///   result's returner in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(ensures: |ret| match *results {
+        | [result] => matches!(self.comp_type(ret), Some(&CompType::Returner { result: minted, .. }) if minted == result),
+        | _ => matches!(self.comp_type(ret), Some(CompType::Returns { results: minted, .. }) if **minted == *results),
+    })]
+    #[inline]
+    pub fn comp_type_returns_with_effects(
+        &mut self,
+        results: &[ValueTypeId],
+        effects: crate::effect::EffectRow,
+    ) -> CompTypeId
+    {
+        if let [result] = *results {
+            return self.comp_type_returner_with_effects(result, effects);
+        }
+        let effects = self.settled_row(effects);
+        self.alloc_comp_type(CompType::Returns {
+            results: results.into(),
+            effects,
+        })
     }
 
     /// Mint an arrow type over an already-allocated domain and codomain.

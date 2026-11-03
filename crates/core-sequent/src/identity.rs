@@ -219,6 +219,15 @@ pub enum Combinator
         /// How many fields it has.
         fields: ProducerArity,
     },
+    /// `thunk(λp₁. … λpₙ. x₁ ← force p₁; … xₙ ← force pₙ; return (x₁ …
+    /// xₙ))`: a return of several values some of which hold a returned
+    /// value, each passed suspended and run in written order before they are
+    /// delivered.
+    Deliver
+    {
+        /// How many values it delivers.
+        fields: ProducerArity,
+    },
 }
 
 impl Combinator
@@ -228,9 +237,9 @@ impl Combinator
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `0` for the identity, which is a part itself; `1` for the
-    ///   inverse, applied to its record; a built former's field count; `2` for
-    ///   every other combinator, applied to two parts or to an image and a
-    ///   moved value.
+    ///   inverse, applied to its record; a built former's or a delivery's field
+    ///   count; `2` for every other combinator, applied to two parts or to an
+    ///   image and a moved value.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -243,7 +252,7 @@ impl Combinator
     #[spec(ensures: |ret| usize::from(ret) == match self {
         Self::Identity => 0_usize,
         Self::Inverse => 1_usize,
-        Self::Build { fields, .. } => usize::from(fields),
+        Self::Build { fields, .. } | Self::Deliver { fields } => usize::from(fields),
         Self::Compose | Self::Wrap | Self::Pair | Self::Ride(_) | Self::Both(_) | Self::Forward | Self::Transport(_) | Self::TransportFrom { .. } | Self::RunArgument => 2_usize,
     })]
     #[must_use]
@@ -252,7 +261,7 @@ impl Combinator
         match self {
             Self::Identity => ProducerArity::from(0_usize),
             Self::Inverse => ProducerArity::from(1_usize),
-            Self::Build { fields, .. } => fields,
+            Self::Build { fields, .. } | Self::Deliver { fields } => fields,
             Self::Compose
             | Self::Wrap
             | Self::Pair
@@ -1162,6 +1171,25 @@ pub fn build(
                 .collect();
             let built = rebuilt(core, former, bound, scratch)?;
             let mut body = scratch.computation_return(built);
+            for _part in 0 .. count {
+                let part = variable(scratch, DeBruijnIndex::from(last));
+                let forced = scratch.computation_force(part);
+                body = scratch.computation_bind(forced, body);
+            }
+            Ok(closed(scratch, body, Binders::from(count)))
+        },
+        Combinator::Deliver { fields } => {
+            let count = u32::try_from(usize::from(fields))
+                .map_err(|_overflow| FocusRefusal::TranslationInvariant)?;
+            // As a build's: under all `n` binds the `i`-th part's value is
+            // `n - 1 - i`, and every bind's part stands `n - 1` out.
+            let last = count
+                .checked_sub(1)
+                .ok_or(FocusRefusal::TranslationInvariant)?;
+            let bound: Vec<ValueId> = (0 .. count)
+                .map(|field| variable(scratch, DeBruijnIndex::from(last.saturating_sub(field))))
+                .collect();
+            let mut body = scratch.computation_return_all(&bound);
             for _part in 0 .. count {
                 let part = variable(scratch, DeBruijnIndex::from(last));
                 let forced = scratch.computation_force(part);

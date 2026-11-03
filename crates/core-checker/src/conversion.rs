@@ -1037,6 +1037,7 @@ fn decimal_reader(
                     gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, argument),
                 ),
                 CompTypeView::Returner { .. }
+                | CompTypeView::Returns { .. }
                 | CompTypeView::Element { .. }
                 | CompTypeView::With(..)
                 | CompTypeView::Codata { .. }
@@ -1215,6 +1216,7 @@ fn kept_reader(
                 )
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::Element { .. }
             | CompTypeView::With(..)
             | CompTypeView::Codata { .. }
@@ -2328,67 +2330,55 @@ fn convert(
                             effects: second,
                         },
                     ) => {
-                        // A row open through a metavariable meets the other
-                        // by the row equation, whichever way the conversion
-                        // runs; rigid rows are compared instance by
-                        // instance, a closed row included in an open one and
-                        // an open row only in one open through the same tail.
                         let (first, second) = (first.clone(), second.clone());
-                        match context.unify_rows((&first, &second))? {
-                            crate::elaboration::Unified::Agreed => {
+                        match compared_rows(context, (&first, &second), subtyping, &mut pending)? {
+                            Rows::Unified => {
                                 pending.push(values(left, right));
                                 continue;
                             },
-                            crate::elaboration::Unified::Refuted => {
-                                return Ok(Agreement::Apart);
-                            },
-                            crate::elaboration::Unified::Rigid => {},
-                        }
-                        let mut same_shape = (subtyping
-                            || first.signatures().len() == second.signatures().len())
-                            && match (first.tail(), second.tail()) {
-                                (None, None) => true,
-                                (None, Some(_)) => subtyping,
-                                (Some(_), None) => false,
-                                (Some(found), Some(wanted)) => {
-                                    pending.push(Pairing::Values(
-                                        Relocated::from(found),
-                                        Relocated::from(wanted),
-                                    ));
-                                    true
-                                },
-                            };
-                        for (label, signature) in first.instances() {
-                            let Some(candidate) = second.get(label).filter(|candidate| {
-                                candidate.name() == signature.name()
-                                    && candidate.operations().len() == signature.operations().len()
-                            })
-                            else {
-                                same_shape = false;
-                                break;
-                            };
-                            for (a, b) in signature.operations().zip(candidate.operations()) {
-                                if a.name != b.name {
-                                    same_shape = false;
-                                    break;
+                            Rows::Refuted => return Ok(Agreement::Apart),
+                            Rows::Compared(same_shape) => {
+                                if same_shape {
+                                    pending.push(values(left, right));
                                 }
-                                pending.push(Pairing::Values(
-                                    Relocated::from(a.payload),
-                                    Relocated::from(b.payload),
-                                ));
-                                pending.push(Pairing::Values(
-                                    Relocated::from(a.reply),
-                                    Relocated::from(b.reply),
-                                ));
-                            }
-                            if !same_shape {
-                                break;
-                            }
+                                same_shape
+                            },
                         }
-                        if same_shape {
-                            pending.push(values(left, right));
+                    },
+                    (
+                        CompTypeView::Returns {
+                            results: left,
+                            effects: first,
+                        },
+                        CompTypeView::Returns {
+                            results: right,
+                            effects: second,
+                        },
+                    ) => {
+                        if left.len() != right.len() {
+                            return Ok(Agreement::Apart);
                         }
-                        same_shape
+                        // Each pair stands under the same binders on both
+                        // sides, those of the results before it.
+                        let results: Vec<Pairing> = left
+                            .iter()
+                            .zip(right)
+                            .map(|(&found, &wanted)| values(found, wanted))
+                            .collect();
+                        let (first, second) = (first.clone(), second.clone());
+                        match compared_rows(context, (&first, &second), subtyping, &mut pending)? {
+                            Rows::Unified => {
+                                pending.extend(results);
+                                continue;
+                            },
+                            Rows::Refuted => return Ok(Agreement::Apart),
+                            Rows::Compared(same_shape) => {
+                                if same_shape {
+                                    pending.extend(results);
+                                }
+                                same_shape
+                            },
+                        }
                     },
                     (
                         CompTypeView::Arrow {
@@ -2487,6 +2477,7 @@ fn convert(
                     },
                     (
                         CompTypeView::Returner { .. }
+                        | CompTypeView::Returns { .. }
                         | CompTypeView::With(..)
                         | CompTypeView::Arrow { .. }
                         | CompTypeView::Pi { .. }
@@ -2786,6 +2777,104 @@ fn convert(
     Ok(Agreement::Convertible)
 }
 
+/// What comparing two returners' effect rows decides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rows
+{
+    /// The row equation holds, through a metavariable on either side.
+    Unified,
+    /// The row equation fails.
+    Refuted,
+    /// Both rows are rigid; `true` when they have one shape, their
+    /// operations' payloads and replies and their tails then queued.
+    Compared(bool),
+}
+
+/// Compare the effect rows of two returners, of one value or of several.
+///
+/// A row open through a metavariable meets the other by the row equation,
+/// whichever way the conversion runs. Rigid rows are compared instance by
+/// instance, a closed row included in an open one and an open row only in
+/// one open through the same tail.
+///
+/// # Specification
+/// - requires: `first` is the found row and `second` the wanted one.
+/// - ensures: [`Rows::Unified`] or [`Rows::Refuted`] when the row equation
+///   decides, queueing nothing; otherwise [`Rows::Compared`] holding whether
+///   the rows match instance by instance under `subtyping`, every operation's
+///   payload and reply pair and the tails' pair queued on `pending` as met.
+/// - provides: the one row comparison every returner shares.
+/// - fails: the row equation's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// The row equation's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a row meets its signatures in a wider row by name, and
+///   two returners of several values convert exactly when their rows and their
+///   results do.
+/// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
+/// - witness: `conversion::tests::returners_of_several_values_agree_on_rows_and_results`
+#[spec(captures: before = pending.len(), ensures: |ret| !matches!(ret, Ok(Rows::Unified | Rows::Refuted)) || pending.len() == before)]
+fn compared_rows(
+    context: &mut CheckingContext<'_>,
+    (first, second): (
+        &gandr_core_term::effect::EffectRow,
+        &gandr_core_term::effect::EffectRow,
+    ),
+    subtyping: bool,
+    pending: &mut Vec<Pairing>,
+) -> Result<Rows, CheckRefusal>
+{
+    match context.unify_rows((first, second))? {
+        crate::elaboration::Unified::Agreed => return Ok(Rows::Unified),
+        crate::elaboration::Unified::Refuted => return Ok(Rows::Refuted),
+        crate::elaboration::Unified::Rigid => {},
+    }
+    let mut same_shape = (subtyping || first.signatures().len() == second.signatures().len())
+        && match (first.tail(), second.tail()) {
+            (None, None) => true,
+            (None, Some(_)) => subtyping,
+            (Some(_), None) => false,
+            (Some(found), Some(wanted)) => {
+                pending.push(Pairing::Values(
+                    Relocated::from(found),
+                    Relocated::from(wanted),
+                ));
+                true
+            },
+        };
+    for (label, signature) in first.instances() {
+        let Some(candidate) = second.get(label).filter(|candidate| {
+            candidate.name() == signature.name()
+                && candidate.operations().len() == signature.operations().len()
+        })
+        else {
+            same_shape = false;
+            break;
+        };
+        for (a, b) in signature.operations().zip(candidate.operations()) {
+            if a.name != b.name {
+                same_shape = false;
+                break;
+            }
+            pending.push(Pairing::Values(
+                Relocated::from(a.payload),
+                Relocated::from(b.payload),
+            ));
+            pending.push(Pairing::Values(
+                Relocated::from(a.reply),
+                Relocated::from(b.reply),
+            ));
+        }
+        if !same_shape {
+            break;
+        }
+    }
+    Ok(Rows::Compared(same_shape))
+}
+
 /// Whether the atoms [`gandr_core_term::effect::EffectRow::atoms_apart`] found
 /// apart agree: each pair it found apart as syntax posed to the solver at its
 /// weak heads.
@@ -2943,6 +3032,7 @@ fn comp_head(
         },
         CompTypeView::With(..)
         | CompTypeView::Returner { .. }
+        | CompTypeView::Returns { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
         | CompTypeView::Codata { .. }
@@ -3258,6 +3348,43 @@ fn relocated_comps(
                 }
             },
             (
+                CompTypeView::Returns {
+                    results: left_results,
+                    effects: left_effects,
+                },
+                CompTypeView::Returns {
+                    results: right_results,
+                    effects: right_effects,
+                },
+            ) if left_effects.purity() == gandr_core_term::effect::Purity::Pure
+                && left_results.len() == right_results.len() =>
+            {
+                if variance == Variance::Subtyping
+                    || right_effects.purity() == gandr_core_term::effect::Purity::Pure
+                {
+                    let pairs: Vec<(ValueTypeId, ValueTypeId)> = left_results
+                        .iter()
+                        .copied()
+                        .zip(right_results.iter().copied())
+                        .collect();
+                    // Each result stands under the binders of the results before it.
+                    for (before, (left_result, right_result)) in pairs.into_iter().enumerate() {
+                        let under = Binders::from(
+                            u32::try_from(before)
+                                .map_err(|_overflow| CheckRefusal::MachineInvariant)?,
+                        );
+                        pending.push(variance.values(
+                            arena.place_value_type(left_result, at_left.under(under)),
+                            arena.place_value_type(right_result, at_right.under(under)),
+                        ));
+                    }
+                    Read::Pushed
+                }
+                else {
+                    Read::Apart
+                }
+            },
+            (
                 CompTypeView::Arrow {
                     domain: left_domain,
                     codomain: left_codomain,
@@ -3339,6 +3466,7 @@ fn relocated_comps(
             },
             (
                 CompTypeView::Returner { .. }
+                | CompTypeView::Returns { .. }
                 | CompTypeView::With(..)
                 | CompTypeView::Arrow { .. }
                 | CompTypeView::Pi { .. },

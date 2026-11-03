@@ -1072,6 +1072,9 @@ impl ModuleReport
                 },
                 Node::Computation(id) => match arena.comp_type(id) {
                     Some(&CompType::Returner { result, .. }) => pending.push(Node::Value(result)),
+                    Some(&CompType::Returns { ref results, .. }) => {
+                        pending.extend(results.iter().copied().map(Node::Value));
+                    },
                     Some(
                         &(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain }),
                     ) => {

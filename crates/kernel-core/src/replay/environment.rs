@@ -517,6 +517,14 @@ impl Environments
                 frame.with(body),
                 BinderDepth::NONE.deeper(),
             )),
+            Frame::BindAll(arity, body) => Frame::BindAll(
+                arity,
+                self.unload_computation(
+                    (arena, table, memo),
+                    frame.with(body),
+                    BinderDepth::NONE.deeper_by(usize::from(arity)),
+                ),
+            ),
             Frame::Project(component) => Frame::Project(component),
         }
     }

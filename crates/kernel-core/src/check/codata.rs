@@ -219,6 +219,7 @@ pub(super) fn guarded(
                 };
             },
             CompType::Returner(_)
+            | CompType::Returns(_)
             | CompType::Element { .. }
             | CompType::With(..)
             | CompType::Codata { .. } => {

@@ -1917,6 +1917,203 @@ fn a_bind_of_a_non_returner_is_a_shape_mismatch()
     );
 }
 
+/// A return of several values synthesises the returner of their types, in
+/// order and pure.
+#[test]
+fn a_return_of_several_values_synthesises_their_telescope()
+{
+    use gandr_core_term::effect::EffectRow;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let zero = arena.value_literal(integer_literal());
+    let text = arena.value_literal(text_literal());
+    let returned = arena.computation_return_all(&[zero, text]);
+    let expected = arena.comp_type_returns_with_effects(&[integer, string], EffectRow::EMPTY);
+    let swapped = arena.comp_type_returns_with_effects(&[string, integer], EffectRow::EMPTY);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let found = synthesise_comp(&mut context, returned)
+        .map(|found| found.produced().id())
+        .unwrap();
+    let mut tally = ConversionCount::default();
+    assert_eq!(
+        comp_bridge(&mut context, returned, found, expected, &mut tally),
+        Ok(()),
+        "the return of an integer and a string returns both, in order"
+    );
+    assert!(
+        comp_bridge(&mut context, returned, found, swapped, &mut tally).is_err(),
+        "the order of the values is the order of the results"
+    );
+}
+
+/// A return of several values checks each value at its result, every earlier
+/// result's binder read as the earlier value; a returner of another count is
+/// a shape mismatch at the return.
+#[test]
+fn a_return_of_several_values_checks_each_at_its_instantiated_result()
+{
+    use gandr_core_term::effect::EffectRow;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let unit_type = arena.value_type_unit();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(code, Level::zero());
+    // `(A : Type, x : El A)`: the second result reads the first.
+    let telescope = arena.comp_type_returns_with_effects(&[small, decoded], EffectRow::EMPTY);
+    let three =
+        arena.comp_type_returns_with_effects(&[small, decoded, unit_type], EffectRow::EMPTY);
+    let one = arena.comp_type_returner(small);
+    let integer_code = arena.value_quote(integer);
+    let string_code = arena.value_quote(string);
+    let zero = arena.value_literal(integer_literal());
+    let admitted = arena.computation_return_all(&[integer_code, zero]);
+    let misread = arena.computation_return_all(&[string_code, zero]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let telescope = form_comp_type(&mut context, telescope).unwrap();
+    let three = form_comp_type(&mut context, three).unwrap();
+    let one = form_comp_type(&mut context, one).unwrap();
+    assert!(
+        check_comp(&mut context, admitted, telescope).is_ok(),
+        "an integer checks at the decoding of the integer's code"
+    );
+    assert!(
+        matches!(
+            check_comp(&mut context, misread, telescope),
+            Err(CheckRefusal::TypeMismatch(_))
+        ),
+        "an integer is refused at the decoding of the string's code"
+    );
+    for other in [three, one] {
+        assert_eq!(
+            check_comp(&mut context, admitted, other).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(admitted),
+                wanted: ExpectedShape::Returner,
+                found: TypeNode::Computation(other.id()),
+            }),
+            "a return of two is no returner of another count"
+        );
+    }
+}
+
+/// A bind of several values opens one binder per value, the first outermost,
+/// each at its result; the bind synthesises its body's type outside them, and
+/// checks its body against the expected type past them.
+#[test]
+fn a_bind_of_several_values_binds_them_in_order()
+{
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::effect::EffectRow;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let returns_two = arena.comp_type_returns_with_effects(&[integer, string], EffectRow::EMPTY);
+    let returns_integer = arena.comp_type_returner(integer);
+    let returns_string = arena.comp_type_returner(string);
+    let produces = arena.value_type_thunk(returns_two);
+    let produce = arena.value_constant(ConstantIndex::from(0_usize));
+    let bound = arena.computation_force(produce);
+    let two = ComponentCount::from(2_usize);
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_outer = arena.computation_return(outer);
+    let returns_inner = arena.computation_return(inner);
+    let first = arena.computation_bind_all(bound, two, returns_outer);
+    let second = arena.computation_bind_all(bound, two, returns_inner);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[produces]);
+    let mut tally = ConversionCount::default();
+    for (bind, returned) in [(first, returns_integer), (second, returns_string)] {
+        let found = synthesise_comp(&mut context, bind)
+            .map(|found| found.produced().id())
+            .unwrap();
+        assert_eq!(
+            comp_bridge(&mut context, bind, found, returned, &mut tally),
+            Ok(()),
+            "{bind:?} returns the value its binder names"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "{bind:?} closes every binder it opened"
+        );
+    }
+    let expected = form_comp_type(&mut context, returns_integer).unwrap();
+    assert!(
+        check_comp(&mut context, first, expected).is_ok(),
+        "the outer binder is the first value, an integer"
+    );
+    assert_eq!(
+        check_comp(&mut context, second, expected).map(|evidence| evidence.conversions()),
+        Err(CheckRefusal::TypeMismatch(Mismatch::Value {
+            at: inner,
+            synthesised: string,
+            expected: integer,
+        })),
+        "the inner binder is the second value, a string"
+    );
+    assert_eq!(
+        context.binders().depth(Zone::Intuitionistic),
+        BinderDepth::from(0_usize),
+        "a refused bind leaves the context as found"
+    );
+}
+
+/// A bind of several values whose bound computation returns another number
+/// of values is a shape mismatch at the bound computation, in both modes.
+#[test]
+fn a_bind_of_several_values_refuses_another_arity()
+{
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::effect::EffectRow;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let returns_two = arena.comp_type_returns_with_effects(&[integer, string], EffectRow::EMPTY);
+    let returns_integer = arena.comp_type_returner(integer);
+    let produces_two = arena.value_type_thunk(returns_two);
+    let produces_one = arena.value_type_thunk(returns_integer);
+    let two_values = arena.value_constant(ConstantIndex::from(0_usize));
+    let one_value = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced_two = arena.computation_force(two_values);
+    let forced_one = arena.computation_force(one_value);
+    let zero = arena.value_literal(integer_literal());
+    let body = arena.computation_return(zero);
+    let three = arena.computation_bind_all(forced_two, ComponentCount::from(3_usize), body);
+    let two = arena.computation_bind_all(forced_one, ComponentCount::from(2_usize), body);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[produces_two, produces_one]);
+    let expected = form_comp_type(&mut context, returns_integer).unwrap();
+    for (bind, bound, synthesised) in [
+        (three, forced_two, returns_two),
+        (two, forced_one, returns_integer),
+    ] {
+        let refusal = CheckRefusal::ShapeMismatch {
+            at: TermNode::Computation(bound),
+            wanted: ExpectedShape::Returner,
+            found: TypeNode::Computation(synthesised),
+        };
+        assert_eq!(
+            synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
+            Err(refusal),
+            "{bind:?} binds another number of values than its bound computation returns"
+        );
+        assert_eq!(
+            check_comp(&mut context, bind, expected).map(|evidence| evidence.conversions()),
+            Err(refusal),
+            "the refusal is the bound computation's, whatever the bind is checked against"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "a refused bind opened no binder"
+        );
+    }
+}
+
 /// An unannotated `let` returns what it binds. A nested computation that
 /// returns runs, its name bound to what it returns. Any other computation is
 /// suspended, its name bound to its thunk. The thunk the elaboration leaves
@@ -4347,6 +4544,7 @@ proptest! {
                 | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Abandon(_)
                 | Computation::Exercise { .. } | Computation::Scope { .. }
                 | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
+                | Computation::ReturnAll(_) | Computation::BindAll { .. }
                 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => {
                     prop_assert!(false, "the recipe mints no former outside the fragment, no hole and no mark");
                 },

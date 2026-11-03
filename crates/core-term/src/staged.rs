@@ -116,6 +116,11 @@ pub fn placed<Each>(
                 each(Part::Computation(codomain));
             },
             Some(&CompType::Returner { result, .. }) => each(Part::Value(result)),
+            Some(&CompType::Returns { ref results, .. }) => {
+                for &result in results {
+                    each(Part::Value(result));
+                }
+            },
             Some(&CompType::With(ref components)) => {
                 for &component in components {
                     each(Part::Computation(component));
@@ -240,6 +245,15 @@ pub fn rebuild(
                 let result = value_part(children.first())?;
                 Some(Part::Computation(
                     arena.comp_type_returner_with_effects(result, effects),
+                ))
+            },
+            Some(CompType::Returns { effects, .. }) => {
+                let results: Option<Vec<ValueTypeId>> = children
+                    .iter()
+                    .map(|child| value_part(Some(child)))
+                    .collect();
+                Some(Part::Computation(
+                    arena.comp_type_returns_with_effects(&results?, effects),
                 ))
             },
             Some(CompType::With(_)) => {

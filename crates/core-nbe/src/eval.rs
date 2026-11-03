@@ -424,6 +424,8 @@ pub enum EvalFault
     AppliedNonFunction,
     /// A bind met a bound computation that was neither a returner nor stuck.
     BoundNonReturner,
+    /// A bind met a returner of another number of values than it binds.
+    BoundArity,
     /// A case met a scrutinee that was neither an injection nor stuck.
     CasedNonInjection,
     /// A fold met neither a native list nor a neutral list.
@@ -1569,6 +1571,13 @@ enum Task
         /// The source node.
         term: ComputationId,
     },
+    /// Assemble a returner of several values from the values their own tasks
+    /// produced, the last on top.
+    ReturnAll
+    {
+        /// The source node.
+        term: ComputationId,
+    },
     /// Run the thunk the value on the stack holds, or get stuck on it.
     Force,
     /// Return the causal web of the dialogue on the stack.
@@ -1586,6 +1595,20 @@ enum Task
         /// The environment the continuation is read in.
         env: EnvId,
     },
+    /// Sequence into a body binding several values once the bound
+    /// computation has a weak head.
+    BindAll
+    {
+        /// The continuation's source node.
+        body: ComputationId,
+        /// How many values it binds.
+        arity: gandr_core_term::ComponentCount,
+        /// The environment the continuation is read in.
+        env: EnvId,
+    },
+    /// Sequence into an already-captured continuation binding this many
+    /// values: how an unfolding re-applies a stuck bind of several values.
+    BindAllClosure(CompClosureId, gandr_core_term::ComponentCount),
     /// Choose a branch once the scrutinee has a value.
     Case
     {
@@ -3072,6 +3095,7 @@ impl<'run> Evaluation<'run>
                     },
                     Elimination::Force => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::Force)) },
                     Elimination::Bind(body) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::BindClosure(held)) if *held == body) },
+                    Elimination::BindAll(body, arity) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::BindAllClosure(held, count)) if *held == body && *count == arity) },
                     Elimination::ListFold { element, result, on_nil, on_cons } => {
                         answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::ListFold { element: e, result: r, on_nil: n, on_cons: c }) if (*e,*r,*n,*c) == (element,result,on_nil,on_cons))
@@ -3520,8 +3544,8 @@ fn run(
     ensures: |ret| machine.fuel == entry_fuel && ret != Err(EvalFault::OutOfFuel)
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) | Task::Recorded(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
-            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
+            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::BindAll { .. } | Task::Case { .. }
+            | Task::BindClosure(_) | Task::BindAllClosure(..) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
             | Task::PathTransport(_) | Task::OperandTransport { .. } | Task::Ride(_) | Task::OperandRide { .. } | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Decompose => machine.values.len() == entry_values.saturating_sub(1_usize)
                 && ((machine.tasks.len() == entry_tasks
@@ -3672,6 +3696,11 @@ fn run(
                 && machine.comps.len() == entry_comps.saturating_add(1_usize)
                 && matches!(machine.comps.last().and_then(|comp| domain.computation(*comp)),
                     Some(DomainComp::Return { value, .. }) if Some(*value) == entry_value),
+            Task::ReturnAll { .. } => machine.tasks.len() == entry_tasks
+                && machine.values.len() <= entry_values
+                && machine.comps.len() == entry_comps.saturating_add(1_usize)
+                && matches!(machine.comps.last().and_then(|comp| domain.computation(*comp)),
+                    Some(DomainComp::ReturnAll { values, .. }) if domain.fields(*values).is_ok_and(|held| machine.values.len().checked_add(held.len()) == Some(entry_values))),
             Task::Supply(value) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(1_usize) && machine.values.last() == Some(&value),
             Task::Reflexive => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
@@ -4404,11 +4433,15 @@ fn step(
             machine.comps.push(domain.comp_return(produced, face));
             Ok(())
         },
+        Task::ReturnAll { term } => step_return_all(core, domain, machine, term),
         Task::Force => step_force(domain, machine),
         Task::Decompose => step_decompose(core, domain, machine),
         Task::Apply => step_apply(core, domain, machine),
         Task::StaticApply => step_static_apply(core, domain, machine),
         Task::Bind { body, env } => step_bind(core, domain, machine, body, env),
+        Task::BindAll { body, arity, env } => {
+            step_bind_all(core, domain, machine, (body, arity), env)
+        },
         Task::Case { term, env } => step_case(core, domain, machine, term, env),
         Task::Supply(value) => {
             machine.values.push(value);
@@ -4422,6 +4455,9 @@ fn step(
             Ok(())
         },
         Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
+        Task::BindAllClosure(body, arity) => {
+            step_bind_all_closure(core, domain, machine, body, arity)
+        },
         Task::CaseBranches(branches) => step_case_branches(domain, machine, branches),
         Task::Remember(pending) => machine.remember(pending),
         Task::FixpointClosure { recursive, leading } => {
@@ -5119,6 +5155,13 @@ fn step_comp(
             machine.tasks.push(Task::Value { term: value, env });
             Ok(())
         },
+        Computation::ReturnAll(ref values) => {
+            machine.tasks.push(Task::ReturnAll { term });
+            for &value in values.iter().rev() {
+                machine.tasks.push(Task::Value { term: value, env });
+            }
+            Ok(())
+        },
         Computation::Application(head, argument) => {
             machine.tasks.push(Task::Apply);
             machine.tasks.push(Task::Comp { term: head, env });
@@ -5135,6 +5178,11 @@ fn step_comp(
         },
         Computation::Bind(bound, body) => {
             machine.tasks.push(Task::Bind { body, env });
+            machine.tasks.push(Task::Comp { term: bound, env });
+            Ok(())
+        },
+        Computation::BindAll { bound, arity, body } => {
+            machine.tasks.push(Task::BindAll { body, arity, env });
             machine.tasks.push(Task::Comp { term: bound, env });
             Ok(())
         },
@@ -5416,7 +5464,9 @@ fn step_apply(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
-        DomainComp::Return { .. } => Err(EvalFault::AppliedNonFunction),
+        DomainComp::Return { .. } | DomainComp::ReturnAll { .. } => {
+            Err(EvalFault::AppliedNonFunction)
+        },
         // The `<` gate at the staged position: an argument before it is taken
         // as a leading one; at it, a canonical argument unfolds the fixpoint
         // once and the applications follow, and a stuck one carries the
@@ -5794,6 +5844,7 @@ fn step_bind(
             Ok(())
         },
         DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        DomainComp::ReturnAll { .. } => Err(EvalFault::BoundArity),
         // The `>` gate: the observation stays, and the fixpoint beneath it
         // unfolds once. A fixpoint holding leading arguments still waits for
         // its staged one: a function, which no bind observes.
@@ -6012,6 +6063,7 @@ fn step_bind_closure(
             }
         },
         DomainComp::Lambda { .. } => return Err(EvalFault::BoundNonReturner),
+        DomainComp::ReturnAll { .. } => return Err(EvalFault::BoundArity),
         DomainComp::Fixpoint {
             recursive, leading, ..
         } => {
@@ -6032,6 +6084,203 @@ fn step_bind_closure(
     let term = closure.body();
     let mut extended = closure.environment().clone();
     extended.extend(Zone::Intuitionistic, value);
+    let env = machine.hold_env(extended);
+    machine.tasks.push(Task::Body { body: term, env });
+    Ok(())
+}
+
+/// Assemble a returner of several values once each value has its own result,
+/// the last on top of the value stack.
+///
+/// # Specification
+/// - requires: as many value results on the stack as the source returns.
+/// - ensures: the values are taken off in order, first to last, and one
+///   returner over them is pushed; it keeps the source face exactly when every
+///   value denotes its source child.
+/// - fails: [`EvalFault::DanglingTerm`] when `term` is no return of several
+///   values; [`EvalFault::MachineInvariant`] when too few values stand.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a return of two values binds them in written order and
+///   reads back as itself unreduced; a swapped pair or a face kept over a
+///   substituted value changes the observation.
+/// - witness: `eval::tests::a_bind_of_several_values_passes_them_on_in_order`
+fn step_return_all(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ComputationId,
+) -> Result<(), EvalFault>
+{
+    let Some(&Computation::ReturnAll(ref sources)) = core.computation(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let start = machine
+        .values
+        .len()
+        .checked_sub(sources.len())
+        .ok_or(EvalFault::MachineInvariant)?;
+    let produced: Vec<DomainValueId> = machine.values.drain(start ..).collect();
+    let kept = produced
+        .iter()
+        .zip(sources.iter())
+        .fold(SourceKept::Kept, |kept, (&value, &source)| {
+            kept.and(denotes(domain, value, source))
+        });
+    let face = composite_comp_face(kept, term);
+    machine.comps.push(domain.comp_return_all(&produced, face));
+    Ok(())
+}
+
+/// Sequence into a body binding several values once the bound computation
+/// has a weak head.
+///
+/// # Specification
+/// - requires: one computation result on the stack; `env` names an environment
+///   this machine holds.
+/// - ensures: a returner of as many values pushes the body's task with them
+///   bound, the first outermost; a neutral grows its spine by one bind of that
+///   many, capturing the body as a closure; a fixpoint unfolds once beneath the
+///   same bind.
+/// - provides: [`step_bind`] for a bind of several values.
+/// - fails: [`EvalFault::BoundArity`] for a returner of another number of
+///   values; [`EvalFault::BoundNonReturner`] for a lambda.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the five-way match, separated by
+///   binding a returner of two values, a neutral, a returner of one value and a
+///   fixpoint.
+/// - witness: `eval::tests::a_bind_of_several_values_passes_them_on_in_order`
+/// - witness: `eval::tests::a_bind_of_several_values_on_a_neutral_grows_its_spine`
+fn step_bind_all(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    (body, arity): (ComputationId, gandr_core_term::ComponentCount),
+    env: EnvId,
+) -> Result<(), EvalFault>
+{
+    let bound = machine.pop_comp()?;
+    let Some(node) = domain.computation(bound)
+    else {
+        return Err(EvalFault::Domain(DomainFault::Dangling));
+    };
+    match *node {
+        DomainComp::ReturnAll { values, .. } => {
+            let values = domain.fields(values).map_err(EvalFault::Domain)?.to_vec();
+            if values.len() != usize::from(arity) {
+                return Err(EvalFault::BoundArity);
+            }
+            let mut env = env;
+            for value in values {
+                env = machine.extended(env, Zone::Intuitionistic, value)?;
+            }
+            machine.tasks.push(Task::Comp { term: body, env });
+            Ok(())
+        },
+        DomainComp::Neutral { neutral, .. } => {
+            let captured = machine.capture(env)?;
+            let closure = domain.comp_closure_node(body, captured);
+            let grown = extend_spine(domain, neutral, Elimination::BindAll(closure, arity))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        DomainComp::Return { .. } => Err(EvalFault::BoundArity),
+        DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        DomainComp::Fixpoint {
+            recursive, leading, ..
+        } => {
+            if !domain
+                .fields(leading)
+                .map_err(EvalFault::Domain)?
+                .is_empty()
+            {
+                return Err(EvalFault::BoundNonReturner);
+            }
+            machine.tasks.push(Task::BindAll { body, arity, env });
+            unfold(core, domain, machine, recursive)
+        },
+    }
+}
+
+/// Sequence into an already-captured continuation binding several values once
+/// the bound computation has a weak head.
+///
+/// # Specification
+/// - requires: nothing; an absent computation operand is admissible and
+///   refused.
+/// - ensures: a returner of as many values pushes the continuation's body with
+///   them bound in its own environment, the first outermost; a neutral grows
+///   its spine by the same bind, the closure reused; a fixpoint unfolds once
+///   beneath the same bind.
+/// - provides: [`step_bind_all`] for a continuation a spine already captured,
+///   which is how an unfolding re-applies a stuck bind of several values.
+/// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
+///   [`EvalFault::BoundArity`] for a returner of another number of values,
+///   [`EvalFault::BoundNonReturner`] for a lambda, and [`EvalFault::Domain`]
+///   when a needed node does not resolve.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stuck bind of several values re-applied once its head
+///   unfolds binds what the head returns, in order.
+/// - witness: `eval::tests::a_bind_of_several_values_on_a_neutral_grows_its_spine`
+fn step_bind_all_closure(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    body: CompClosureId,
+    arity: gandr_core_term::ComponentCount,
+) -> Result<(), EvalFault>
+{
+    let bound = machine.pop_comp()?;
+    let Some(node) = domain.computation(bound)
+    else {
+        return Err(EvalFault::Domain(DomainFault::Dangling));
+    };
+    let values = match *node {
+        DomainComp::ReturnAll { values, .. } => {
+            domain.fields(values).map_err(EvalFault::Domain)?.to_vec()
+        },
+        DomainComp::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::BindAll(body, arity))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            return Ok(());
+        },
+        DomainComp::Return { .. } => return Err(EvalFault::BoundArity),
+        DomainComp::Lambda { .. } => return Err(EvalFault::BoundNonReturner),
+        DomainComp::Fixpoint {
+            recursive, leading, ..
+        } => {
+            if !domain
+                .fields(leading)
+                .map_err(EvalFault::Domain)?
+                .is_empty()
+            {
+                return Err(EvalFault::BoundNonReturner);
+            }
+            machine.tasks.push(Task::BindAllClosure(body, arity));
+            return unfold(core, domain, machine, recursive);
+        },
+    };
+    if values.len() != usize::from(arity) {
+        return Err(EvalFault::BoundArity);
+    }
+    let closure = domain
+        .comp_closure(body)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let term = closure.body();
+    let mut extended = closure.environment().clone();
+    for value in values {
+        extended.extend(Zone::Intuitionistic, value);
+    }
     let env = machine.hold_env(extended);
     machine.tasks.push(Task::Body { body: term, env });
     Ok(())
@@ -6875,6 +7124,7 @@ fn composite_legs(
         Elimination::PathTransport { motive, value } => (motive, Leg::First(value)),
         Elimination::OperandTransport { motive, path } => (motive, Leg::Second(path)),
         Elimination::Bind(_)
+        | Elimination::BindAll(..)
         | Elimination::DataCase(_)
         | Elimination::Split(_)
         | Elimination::Projection(_)
@@ -8538,6 +8788,10 @@ fn push_eliminations(
                 answer = Answer::Computation;
                 machine.tasks.push(Task::BindClosure(body));
             },
+            Elimination::BindAll(body, arity) => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::BindAllClosure(body, arity));
+            },
             Elimination::Case(branches) => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::CaseBranches(branches));
@@ -9053,7 +9307,8 @@ fn read_through(
             .skip(from.0)
             .find_map(|(position, elimination)| match *elimination {
                 Elimination::Bind(continuation) => Some((SpinePosition(position), continuation)),
-                Elimination::DataCase(_)
+                Elimination::BindAll(..)
+                | Elimination::DataCase(_)
                 | Elimination::Split(_)
                 | Elimination::Projection(_)
                 | Elimination::Transport(_)
@@ -9139,7 +9394,7 @@ fn read_through(
 #[spec(ensures: |ret| match domain.computation(computation) {
     | Some(&DomainComp::Return { value, .. }) => ret == Ok(value),
     | Some(&DomainComp::Neutral { .. }) => ret.is_ok(),
-    | Some(&(DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. })) => ret == Err(EvalFault::ReturnedNonReturner),
+    | Some(&(DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. } | DomainComp::ReturnAll { .. })) => ret == Err(EvalFault::ReturnedNonReturner),
     | None => ret == Err(EvalFault::Domain(DomainFault::Dangling)),
 })]
 pub fn returned_value(
@@ -9164,7 +9419,7 @@ pub fn returned_value(
                 .value_neutral(stuck, TermFace::Reduced)
                 .map_err(EvalFault::Domain)
         },
-        DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. } => {
+        DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. } | DomainComp::ReturnAll { .. } => {
             Err(EvalFault::ReturnedNonReturner)
         },
     }
