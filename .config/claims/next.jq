@@ -1,12 +1,14 @@
 # The claim order (#2533, `tracker.md` § tracker-claims): the next item a
 # seat on a lane claims, as one `number<TAB>bucket<TAB>title` line, or none,
-# after one `collector: #n (k open rows)` line for each collector in the
-# lane's areas that is no defect and holds an open row (#3111, #3326), one
-# `blocked: #n` line for each issue ranked ahead of it that waits on an open
-# issue, one `observation due: #n — <command>` line when the pick is a defect
-# (#3758), one `sections due: #n — <finding>` line for each section the pick
-# lacks (#3134), and one `restate: `<axis>`: <question>` line for each of the
-# pick's readings still the migration's `unstated` placeholder (#2955).
+# after one `unattributed: #n <title>` line for each claim in the lane's
+# areas that names no lane (#4504), one `collector: #n (k open rows)` line
+# for each collector in the lane's areas that is no defect and holds an open
+# row (#3111, #3326), one `blocked: #n` line for each issue ranked ahead of
+# it that waits on an open issue, one `observation due: #n — <command>` line
+# when the pick is a defect (#3758), one `sections due: #n — <finding>` line
+# for each section the pick lacks (#3134), and one `restate: `<axis>`:
+# <question>` line for each of the pick's readings still the migration's
+# `unstated` placeholder (#2955).
 #
 # Input:
 #   areas    the lane's area labels, `area:<name>`, in the lane's order
@@ -90,14 +92,16 @@
 # With no marker, the lane whose branch on origin works the issue holds it
 # (#3951): `<lane>-<n>-<slug>` or `<lane>-<seat>-<n>-<slug>`, the lane the
 # longest `lanes` key the branch opens with, the newest head first when two
-# lanes' branches work it. With neither, the issue's areas place it, as a
-# stall reading places it. A lane holding a claimed issue that no open pull
-# request names (`names`, as the lifecycle reads it) claims nothing: the
-# answer is one `held: #n <title>` line per such issue and no pick, and
-# `claim:release` is the way out. An issue a lane released, or a merge on its
-# branch advanced, in the last 2 hours comes first for that lane, ahead of
-# every bucket, the latest release first, and no other lane claims it in
-# those 2 hours: the continuation stays with the lane that holds its context.
+# lanes' branches work it. With neither, the claim names no lane (#4504): no
+# lane holds it, and each lane over one of its areas prints one
+# `unattributed: #n <title>` line for it before its answer. A lane holding a
+# claimed issue that no open pull request names (`names`, as the lifecycle
+# reads it) claims nothing: the answer is one `held: #n <title>` line per
+# such issue and no pick, and `claim:release` is the way out. An issue a lane
+# released, or a merge on its branch advanced, in the last 2 hours comes
+# first for that lane, ahead of every bucket, the latest release first, and
+# no other lane claims it in those 2 hours: the continuation stays with the
+# lane that holds its context.
 #
 # A focus narrows the order to the programme's work (#3959): the answer opens
 # with `focus: #<epic> …`, and the order offers nothing outside the focus, a
@@ -153,11 +157,11 @@ def works($n; $lanes):
 def worked_by($branches; $lanes):
   .number as $n | [$branches[] | select(.head | works($n; $lanes))] | max_by(.at) // null
   | if . == null then null else .head | branch_lane($lanes) end;
-# Whether lane `$lane`, over `$areas`, holds this claimed issue: the lane its
-# marker names, else the lane whose branch works it, else its areas (#3951).
-def held_by($lane; $areas; $branches; $lanes):
-  ((.body | claim_lane) // worked_by($branches; $lanes)) as $placed
-  | if $placed != null then $placed == $lane else within($areas) end;
+# The lane that holds this claimed issue: the lane its marker names, else the
+# lane whose branch works it (#3951), else null. A claim with neither names no
+# lane, and no lane's areas take it (#4504).
+def placed($branches; $lanes):
+  ((.body | claim_lane) // worked_by($branches; $lanes)) as $placed | $placed;
 
 # A collector's open rows (#3111), as `collector_rows` reads them.
 def open_rows: .body // "" | collector_rows | length;
@@ -212,9 +216,13 @@ def observation($refusals):
     | [($focus.epics | index($m.epic))] + focus_path(.number; $m.parent // .parent);
   def fixed: [., if has("kind:defect") then "defect" else "refactor" end];
   (if $focus == null then empty else "focus: \($focus.epics | map("#\(.)") | join(" "))" end),
+  (if $lane == null then empty
+   else .issues[] | select(has("status:claimed") and placed($branches; $lanes) == null and within($areas))
+     | "unattributed: #\(.number) \(.title)"
+   end),
   (.
 | (if $lane == null then []
-   else [.issues[] | select(has("status:claimed") and held_by($lane; $areas; $branches; $lanes))
+   else [.issues[] | select(has("status:claimed") and placed($branches; $lanes) == $lane)
      | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
    end) as $held
 | if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else
