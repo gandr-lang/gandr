@@ -416,7 +416,7 @@ fn lowered(
                 ),
                 FragmentBoundary::Endpoint => f.write_str(
                     "a session action acts on an endpoint: an end a `fork` binds, an endpoint a \
-                     `recv` binds, or a parameter written at a session type",
+                     `recv` binds, or a parameter at a session type, written or named",
                 ),
                 FragmentBoundary::NonContractive => f.write_str(
                     "this recursive session type recurses before any action; put a send, a \

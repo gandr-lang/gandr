@@ -10444,7 +10444,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             };
-            let mut endpoint = false;
+            let mut endpoint = session::Stands::Other;
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     // A receiver's mode word, which the collection read.
@@ -10458,9 +10458,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         deduced = Some(self.mode_variable(site, mode)?);
                         declared = typed;
                     }
-                    // A parameter at a session type is an endpoint its body
-                    // places.
-                    endpoint = matches!(self.form_at(declared)?, Some((_, Former::SessionType)));
+                    // A parameter at a session type, written or named, is an
+                    // endpoint its body places.
+                    endpoint = self.stands(declared, frame)?;
                     self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
                 },
@@ -10480,7 +10480,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 declared,
                 component: None,
             };
-            if endpoint {
+            if endpoint == session::Stands::Session {
                 endpoints.push(parameter);
             }
             self.parameters.push(parameter);
@@ -13432,15 +13432,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // the outermost; a link through a nested module, `Sealed.inner.T`, is
         // two, the module selected from the operand and the type from it.
         let mut links: Vec<(Placed, Placed)> = Vec::new();
-        let link = |links: &mut Vec<(Placed, Placed)>, target, nested, selected| match nested {
-            Maybe::Present(module) => {
-                links.push((module, selected));
-                links.push((target, module));
-            },
-            Maybe::Absent(_) => links.push((target, selected)),
-        };
-        let (mut target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
-        link(&mut links, target, nested, member);
+        let (target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
+        Self::linked(&mut links, target, nested, member);
         let headed = match self.tree.node(target.node) {
             Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
                 former: Former::TypeHead,
@@ -13466,43 +13459,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             return self.static_application(site, resolved, none);
         }
-        let mut chain = Pieces::new();
-        let head = loop {
-            self.fuel.spend()?;
-            let Some(node) = self.tree.node(target.node)
-            else {
-                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
-            };
-            match shape_of(self.pbg, node)? {
-                Shape::Form {
-                    former: Former::TypePath,
-                    ..
-                } => {
-                    read_pieces(self.pbg, self.tree, target.node, &mut chain)?;
-                    if let Maybe::Present(repaired) = chain.repair {
-                        return Err(repaired.refusal(site.name));
-                    }
-                    let (inner, nested, selected) =
-                        Self::type_link(site, &chain.pieces, target.span)?;
-                    link(&mut links, inner, nested, selected);
-                    target = inner;
-                },
-                Shape::Form {
-                    former: Former::TypeHead,
-                    ..
-                } => break target,
-                Shape::Form {
-                    former: Former::TypeApplication,
-                    ..
-                } => {
-                    self.refuse_applied(target, &mut chain)?;
-                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
-                },
-                Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
-                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
-                },
-            }
-        };
+        let head = self.path_head(site, target, &mut links)?;
         if let Some(&(_, first)) = links.last()
             && self.parameter_type(site, head, first, functor::Deeper(links.len() > 1_usize))?
                 == functor::Read::Planned
@@ -13514,12 +13471,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return Ok(());
         }
-        let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
-        segments.push(Segment::from(self.text_at(head).as_ref()));
-        for &(_prefix, selected) in links.iter().rev() {
-            segments.push(Segment::from(self.text_at(selected).as_ref()));
-        }
-        let path = NamePath::from(segments);
+        let path = self.path_named(head, &links);
         self.collected.reach_declaring(
             self.collected.unit.source_at(site.at.span.start()),
             self.name_at(head),
@@ -13746,6 +13698,120 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         Ok((target, nested, selected))
+    }
+
+    /// Push onto `links` the link from `target` to `selected`, through the
+    /// nested module `nested` when the link names one: the module selected
+    /// from the operand, then the type from the module.
+    ///
+    /// # Specification
+    /// trivial.
+    fn linked(
+        links: &mut Vec<(Placed, Placed)>,
+        target: Placed,
+        nested: Maybe<Placed, cursor::Absent>,
+        selected: Placed,
+    )
+    {
+        match nested {
+            Maybe::Present(module) => {
+                links.push((module, selected));
+                links.push((target, module));
+            },
+            Maybe::Absent(_) => links.push((target, selected)),
+        }
+    }
+
+    /// The head of the chain of type paths whose innermost operand is
+    /// `target`, each link it walks pushed onto `links`, from the outermost.
+    ///
+    /// # Specification
+    /// - requires: `target` is the operand of a type path at `site`, and
+    ///   `links` holds that path's own links.
+    /// - ensures: the bare type name the chain bottoms out at; each type path
+    ///   on the way adds its links, the innermost last.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance; the unadmitted projection refusal for a chain ending at
+    ///   another form, and for an application of a functor once
+    ///   [`Self::refuse_applied`] reads it; a malformed link's refusal.
+    /// - panics: none.
+    /// - executable: none — the head is read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
+    ///
+    /// # Errors
+    /// The chain's refusal.
+    ///
+    /// # Termination
+    /// Each turn spends one unit of the allowance and steps to the operand of
+    /// the type path it read, strictly deeper in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::type_path`].
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `lower::session::tests::a_parameter_at_a_named_session_type_is_placed`
+    fn path_head(
+        &mut self,
+        site: Site,
+        mut target: Placed,
+        links: &mut Vec<(Placed, Placed)>,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let mut chain = Pieces::new();
+        loop {
+            self.fuel.spend()?;
+            let Some(node) = self.tree.node(target.node)
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
+            };
+            match shape_of(self.pbg, node)? {
+                Shape::Form {
+                    former: Former::TypePath,
+                    ..
+                } => {
+                    read_pieces(self.pbg, self.tree, target.node, &mut chain)?;
+                    if let Maybe::Present(repaired) = chain.repair {
+                        return Err(repaired.refusal(site.name));
+                    }
+                    let (inner, nested, selected) =
+                        Self::type_link(site, &chain.pieces, target.span)?;
+                    Self::linked(links, inner, nested, selected);
+                    target = inner;
+                },
+                Shape::Form {
+                    former: Former::TypeHead,
+                    ..
+                } => return Ok(target),
+                Shape::Form {
+                    former: Former::TypeApplication,
+                    ..
+                } => {
+                    self.refuse_applied(target, &mut chain)?;
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
+                },
+                Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
+                },
+            }
+        }
+    }
+
+    /// The name path the head `head` and the links `links` spell, from the
+    /// head, as [`Self::path_head`] collects them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn path_named(
+        &self,
+        head: Placed,
+        links: &[(Placed, Placed)],
+    ) -> NamePath
+    {
+        let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
+        segments.push(Segment::from(self.text_at(head).as_ref()));
+        for &(_prefix, selected) in links.iter().rev() {
+            segments.push(Segment::from(self.text_at(selected).as_ref()));
+        }
+        NamePath::from(segments)
     }
 
     /// Classify a universe, `Type[s, l]`.

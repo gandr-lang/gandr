@@ -50,13 +50,16 @@
 //!   scope for endpoints, which duplicates shadowing and lookup.
 //! - Reversal: a core context whose zones share one index space.
 //!
-//! A function's parameter whose declared type is written as a session type,
-//! `def finish(seat : end)`, is placed at its body's entry: the core's
-//! placement moves the intuitionistic parameter into one linear binder of the
-//! same name, which shadows it, so the body acts on the endpoint and the
-//! checker refuses the body's end with the endpoint unspent. A parameter at a
-//! type that only names a session type, and a clause tail's parameter, stay
-//! unplaced.
+//! A function's parameter whose declared type is a session type, `def
+//! finish(seat : end)`, is placed at its body's entry: the core's placement
+//! moves the intuitionistic parameter into one linear binder of the same
+//! name, which shadows it, so the body acts on the endpoint and the checker
+//! refuses the body's end with the endpoint unspent. The type counts as a
+//! session type when it is written as one, or when it names one: a top-level
+//! type declaration, a module's manifest type component or a path to one,
+//! each read through to the type its definition writes. A parameter at a
+//! sealed or abstract type, at an application, and a clause tail's parameter
+//! stay unplaced.
 //!
 //! - Alternatives: a linear λ, a core former the kernel would readmit for what
 //!   the placement already states.
@@ -152,6 +155,9 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::module::TypeMeaning;
+use crate::namespace::PathResolution;
+use crate::namespace::Recognized;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
@@ -164,6 +170,34 @@ mod tests;
 /// An offer's arm labels, each with the bytes its pattern is written at, in
 /// source order (#298).
 pub(super) type ArmLabels = Vec<(ByteSpan, FieldLabel)>;
+
+/// What a parameter's type stands for, as [`Lowerer::stands`] reads it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum Stands
+{
+    /// A session type, so the parameter is an endpoint its body places.
+    Session,
+    /// Another type, or one whose definition its reader does not see.
+    Other,
+}
+
+/// The node of the type a stated type's reference reads when the reader sees
+/// its definition: a manifest component's and an instance's written type.
+///
+/// # Specification
+/// trivial.
+const fn written(meaning: TypeMeaning) -> Option<NodeIndex>
+{
+    match meaning {
+        TypeMeaning::Manifest(defined) | TypeMeaning::Instantiated { defined, .. } => {
+            Some(defined.node)
+        },
+        TypeMeaning::Sealed | TypeMeaning::Family(_) => None,
+    }
+}
 
 /// One step of the walk down a protocol: read the form at `at` as the state
 /// `state`, or leave the innermost `mu` binder.
@@ -962,6 +996,169 @@ impl<'source> Lowerer<'_, 'source>
                 name: spelled,
             }),
         }
+    }
+
+    /// What the type `declared` a parameter is written at stands for, read
+    /// under `frame`: the type itself through its parentheses, and a name or a
+    /// path through to the type its definition writes, again while that is a
+    /// name.
+    ///
+    /// # Specification
+    /// - requires: `declared` is the type a parameter declares, its reading
+    ///   under `frame`.
+    /// - ensures: [`Stands::Session`] when the chain ends at a written session
+    ///   type; [`Stands::Other`] when it ends at another form, at a sealed, an
+    ///   abstract or a family component, at a name no declaration answers, or
+    ///   past as many names as the collection holds slots.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance; a name's and a path's own refusals, as the type's reading
+    ///   refuses them.
+    /// - panics: none.
+    /// - executable: none — the answer is read off the syntax and the
+    ///   collection's tables, which a predicate could check only by repeating
+    ///   the walk.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Termination
+    /// Each turn reads one name through to the node its definition writes,
+    /// and the turns number at most one past the collection's slots, each of
+    /// which defines one name.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter at a top-level name, at a module's path
+    ///   and at a name for that name is placed; one at a sealed component and
+    ///   one at a name for `Integer` stay unplaced.
+    /// - witness: `lower::session::tests::a_parameter_at_a_named_session_type_is_placed`
+    pub(super) fn stands(
+        &mut self,
+        declared: Placed,
+        frame: Frame,
+    ) -> Result<Stands, LoweringRefusal<'source>>
+    {
+        let mut at = declared.node;
+        for _name in 0 ..= self.collected.slots.len() {
+            let Maybe::Present(unwrapped) = self.unwrapped(at)?
+            else {
+                return Ok(Stands::Other);
+            };
+            let Some(tree) = self.tree.node(unwrapped.node)
+            else {
+                return Ok(Stands::Other);
+            };
+            let placed = Placed::of(unwrapped.node, tree);
+            let Some((name, former)) = self.form_at(placed)?
+            else {
+                return Ok(Stands::Other);
+            };
+            let site = Site {
+                at: placed,
+                name,
+                reading: Reading::ValueType(frame),
+            };
+            let defined = if former == Former::SessionType {
+                return Ok(Stands::Session);
+            }
+            else if former == Former::TypeHead {
+                self.head_defines(site)?
+            }
+            else if former == Former::TypePath {
+                self.path_defines(site)?
+            }
+            else {
+                None
+            };
+            let Some(next) = defined
+            else {
+                return Ok(Stands::Other);
+            };
+            at = next;
+        }
+        Ok(Stands::Other)
+    }
+
+    /// The node of the type the bare type name at `site` stands for: a type
+    /// component or member in scope, read as [`Self::stated_named`] finds it,
+    /// or a top-level declaration, read as [`Self::resolve_name`] finds it.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type head.
+    /// - ensures: the written type of a manifest or an instantiated component,
+    ///   and the body a top-level declaration writes; nothing for a sealed or a
+    ///   family component, a binder, or a name nothing answers.
+    /// - fails: as [`Self::stated_named`] and [`Self::resolve_name`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::stands`].
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::stands`].
+    /// - witness: `lower::session::tests::a_parameter_at_a_named_session_type_is_placed`
+    fn head_defines(
+        &mut self,
+        site: Site,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let name = self.name_at(site.at);
+        if let Maybe::Present(stated) = self.stated_named(site, name)? {
+            return Ok(written(stated.meaning));
+        }
+        let frame = site.reading.frame();
+        if let Maybe::Present(Resolved::Declaration { constant, .. }) =
+            self.resolve_name(site, frame, name)?
+            && let Maybe::Present(body) = self.definition_written(constant)
+        {
+            return Ok(Some(body));
+        }
+        Ok(None)
+    }
+
+    /// The node of the type the type path at `site` stands for: the type
+    /// component a module exports under it, read as [`Self::module_type`]
+    /// reads it.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type path.
+    /// - ensures: the written type of the manifest or instantiated component
+    ///   the path's module exports; nothing for any other path.
+    /// - fails: as [`Self::type_link`] and [`Self::path_head`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::stands`].
+    ///
+    /// # Errors
+    /// The path's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::stands`].
+    /// - witness: `lower::session::tests::a_parameter_at_a_named_session_type_is_placed`
+    fn path_defines(
+        &mut self,
+        site: Site,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, site.at.node, &mut pieces)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(repaired.refusal(site.name));
+        }
+        let mut links: Vec<(Placed, Placed)> = Vec::new();
+        let (target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
+        Self::linked(&mut links, target, nested, member);
+        let head = self.path_head(site, target, &mut links)?;
+        let path = self.path_named(head, &links);
+        self.collected.reach_declaring(
+            self.collected.unit.source_at(site.at.span.start()),
+            self.name_at(head),
+        );
+        if self.recognition.resolve_path(&path) == PathResolution::Complete(Recognized::ModuleType)
+            && let Some(stated) = self.exported_types.get(&path)
+        {
+            return Ok(written(stated.meaning));
+        }
+        Ok(None)
     }
 
     /// Place each parameter of `endpoints` in a linear binder of its name over

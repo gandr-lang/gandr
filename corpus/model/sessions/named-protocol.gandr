@@ -1,0 +1,52 @@
+// A parameter whose type names a session type is an endpoint, as one written
+// at the session type is.
+//
+// A program names its protocol once and spells it by that name at each end.
+// The name may be a top-level type, a module's manifest component or a name
+// for either.
+//
+// The lowering reads each name through to the type its definition writes,
+// and places the parameter when that type is a session type.
+//
+// - see: #4703
+
+/// A module that names the desk's protocol as a manifest component.
+module Desk where {
+  /// The desk's side: it receives one number and closes.
+  type Ask = ?Integer. end;
+}
+
+/// The seat's side of a one-number report, named at the top level.
+type Tell = !Integer. end;
+/// A second name for the seat's side, which reads through to `Tell`.
+type Report = Tell;
+
+/// A desk that hears one number on the endpoint a module's protocol names.
+def hearsOne(operator : Desk.Ask) -> Integer {
+  let heard = recv(operator);
+  close(operator);
+  pure heard
+}
+
+/// A seat that tells one number on the endpoint a name for a name types.
+def tellsOne(seat : Report) -> Unit {
+  send(seat, 2);
+  close(seat)
+}
+
+/// A fork at the module's protocol, whose child hears one number.
+@[ runs("unit") ]
+def forkedAtModule() -> Unit {
+  let seat = fork (operator : Desk.Ask) { let heard = hearsOne(operator); pure unit };
+  send(seat, 1);
+  close(seat)
+}
+
+/// A fork at the top-level protocol, whose child tells its parent one number.
+@[ runs("2") ]
+def forkedAtName() -> Integer {
+  let desk = fork (seat : Tell) { tellsOne(seat) };
+  let heard = recv(desk);
+  close(desk);
+  pure heard
+}
