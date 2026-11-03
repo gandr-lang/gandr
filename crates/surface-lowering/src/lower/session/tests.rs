@@ -718,6 +718,52 @@ fn a_parameter_at_a_session_type_is_placed_1862()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A parameter at a name for a session type is placed as one written at the
+/// session type is: a top-level declaration, a name for that name and a path
+/// to a module's manifest component. A sealed component and a name for
+/// `Integer` stay unplaced.
+#[test]
+fn a_parameter_at_a_named_session_type_is_placed()
+{
+    let source = SourceText::from(
+        "module Base where { type Ask = ?Integer >> end ; }\n\
+         module Gate :> #{ type T } where { type T = end ; }\n\
+         type Local = !Integer >> end ;\n\
+         type Again = Local ;\n\
+         type Count = Integer ;\n\
+         def asked(seat : Base.Ask) -> -F Unit { let n = recv(seat) ; close(seat) }\n\
+         def sent(seat : Local) -> -F Unit { send(seat, 1) ; close(seat) }\n\
+         def again(seat : Again) -> -F Unit { send(seat, 2) ; close(seat) }\n\
+         def counted(n : Count) -> -F Integer { pure n }\n\
+         def sealed(seat : Gate.T) -> -F Unit { close(seat) }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, expected) in [
+        ("asked", &["place", "recv @0", "close @1"][..]),
+        ("sent", &["place", "send @0", "close @0"][..]),
+        ("again", &["place", "send @0", "close @0"][..]),
+        ("counted", &[][..]),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            actions(&arena, tail),
+            expected,
+            "`{name}`: the body stands under a placement exactly when its type names a session type"
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("sealed")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Endpoint,
+                ..
+            }
+        ),
+        "a sealed component's definition is not read, so its parameter is no endpoint"
+    );
+}
+
 #[test]
 fn an_offer_arm_is_one_label()
 {

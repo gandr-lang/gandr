@@ -10721,7 +10721,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// trivial.
-    fn definition_written(
+    pub(super) fn definition_written(
         &self,
         constant: ConstantIndex,
     ) -> Maybe<NodeIndex, unfolding::Absent>
