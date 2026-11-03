@@ -8079,9 +8079,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 environment,
                             }) if usize::from(arity) == values.len() => {
                                 frames.pop();
-                                let values = values.clone();
                                 let mut extended = environment;
-                                for &value in &values {
+                                for &value in values {
                                     extended = cells.push(self.arena, extended, focus.with(value));
                                 }
                                 focus = Closure {

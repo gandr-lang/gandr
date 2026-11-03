@@ -208,14 +208,17 @@ impl BinderDepth
     /// - hypothesis: L3 — zero binders, an ordinary count and a count past the
     ///   ceiling separate omission, wrapping and premature saturation.
     /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
-    #[spec(ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(u64::try_from(binders).unwrap_or(u64::MAX)).min(u64::from(u32::MAX)))]
+    #[spec(ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(u64::try_from(usize::from(binders)).unwrap_or(u64::MAX)).min(u64::from(u32::MAX)))]
     #[inline]
     pub(crate) fn deeper_by(
         self,
-        binders: usize,
+        binders: gandr_kernel_term::ResultCount,
     ) -> Self
     {
-        Self(u32::try_from(binders).map_or(u32::MAX, |binders| self.0.saturating_add(binders)))
+        Self(
+            u32::try_from(usize::from(binders))
+                .map_or(u32::MAX, |binders| self.0.saturating_add(binders)),
+        )
     }
 
     /// The amount that raises an index past a telescope of `slots` binders.
@@ -2589,7 +2592,7 @@ fn push_rewrite_children(
             Some(&Computation::BindAll { bound, arity, body }) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::Computation(body),
-                    depth.deeper_by(usize::from(arity)),
+                    depth.deeper_by(arity),
                     rewrite,
                 ));
                 tasks.push(RewriteTask::Open(
@@ -2735,7 +2738,11 @@ fn push_rewrite_children(
             // Each result stands under the binders of the results before it.
             Some(&CompType::Returns(ref results)) => {
                 tasks.extend(results.iter().enumerate().rev().map(|(before, id)| {
-                    RewriteTask::Open(AnyNode::ValueType(*id), depth.deeper_by(before), rewrite)
+                    RewriteTask::Open(
+                        AnyNode::ValueType(*id),
+                        depth.deeper_by(gandr_kernel_term::ResultCount::from(before)),
+                        rewrite,
+                    )
                 }));
             },
             Some(&CompType::Arrow { domain, codomain }) => {

@@ -4291,11 +4291,11 @@ fn primary_expressions(
     // one tail. The concrete language is unchanged; the folded kinds are
     // recorded as adaptations for the parity inventory.
     //
-    // A labelled group of outputs, `( .l = E, … )`, takes a `(` of its own,
-    // decided by the very next tile, as the labelled telescope `*{ .l = E }`
-    // does: a `(` admitting both a hole and a `.` after it would read the
-    // projection dot of `(p.x, p.y)` as a label's. It is placed last, so a
-    // `(` with no tile after it yet closes as the unit `( )`.
+    // A labelled group of outputs, `( .l = E, … )`, has its own `(`. The next
+    // tile selects it, as the next tile selects the labelled telescope
+    // `#{ .l = E }`. A `(` that takes a hole and a `.` after it reads the
+    // projection dot in `(p.x, p.y)` as a label. This alternative is last.
+    // Thus a `(` with no next tile closes as the unit `( )`.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),

@@ -340,25 +340,26 @@ fn a_known_type_matches_only_its_own_former()
 fn a_returner_of_several_values_matches_only_at_its_arity()
 {
     let mut arena = CoreArena::new();
+    let count = crate::syntax::ComponentCount::from;
     let atom = arena.value_type_base(BaseType::Integer);
     let text = arena.value_type_base(BaseType::String);
     let pair = arena.comp_type_returns_with_effects(&[atom, text], crate::effect::EffectRow::EMPTY);
     let none = arena.comp_type_returns_with_effects(&[], crate::effect::EffectRow::EMPTY);
     let returner = arena.comp_type_returner(atom);
     assert_eq!(
-        matched_returns(&mut arena, pair, 2),
+        matched_returns(&mut arena, pair, count(2)),
         Maybe::Present(alloc::vec::Vec::from([atom, text])),
         "a returner of two values matches at two, its results in order"
     );
     assert_eq!(
-        matched_returns(&mut arena, none, 0),
+        matched_returns(&mut arena, none, count(0)),
         Maybe::Present(alloc::vec::Vec::new())
     );
     let mismatched = Maybe::Absent(matching::Absent::Mismatched);
-    assert_eq!(matched_returns(&mut arena, pair, 3), mismatched);
-    assert_eq!(matched_returns(&mut arena, none, 2), mismatched);
+    assert_eq!(matched_returns(&mut arena, pair, count(3)), mismatched);
+    assert_eq!(matched_returns(&mut arena, none, count(2)), mismatched);
     assert_eq!(
-        matched_returns(&mut arena, returner, 2),
+        matched_returns(&mut arena, returner, count(2)),
         mismatched,
         "a returner of one value is no returner of two"
     );
@@ -367,7 +368,7 @@ fn a_returner_of_several_values_matches_only_at_its_arity()
         Maybe::Absent(matching::Absent::Mismatched)
     );
     let unknown = arena.comp_type_unknown();
-    let Maybe::Present(results) = matched_returns(&mut arena, unknown, 2)
+    let Maybe::Present(results) = matched_returns(&mut arena, unknown, count(2))
     else {
         panic!("the unknown type matches a returner of any arity");
     };
@@ -379,7 +380,7 @@ fn a_returner_of_several_values_matches_only_at_its_arity()
     );
     assert_eq!(results.len(), 2);
     assert_eq!(
-        matched_returns(&mut CoreArena::new(), pair, 2),
+        matched_returns(&mut CoreArena::new(), pair, count(2)),
         Maybe::Absent(matching::Absent::Dangling)
     );
 }

@@ -7223,7 +7223,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let (bound, arity, body) = parts;
         let read = crate::codata::read(self.context, synthesised)?;
-        let results = match matched_returns(self.context.arena_mut(), read, usize::from(arity)) {
+        let results = match matched_returns(self.context.arena_mut(), read, arity) {
             Maybe::Present(results) => results,
             Maybe::Absent(absent) => {
                 return Err(unmatched(
@@ -7932,7 +7932,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Vec<ValueTypeId>, CheckRefusal>
     {
         let head = crate::codata::read(self.context, expected)?;
-        match matched_returns(self.context.arena_mut(), head, arity) {
+        match matched_returns(self.context.arena_mut(), head, ComponentCount::from(arity)) {
             Maybe::Present(results) => Ok(results),
             Maybe::Absent(absent) => Err(unmatched(
                 absent,

@@ -11444,8 +11444,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 return Ok(inner);
             }
-            // Labels name a call's outputs; a record value is matched by
-            // `*{ … }`.
+            // Labels name the outputs of a call. A `#{ … }` pattern matches a
+            // record value.
             if labelled != 0 {
                 return Err(pattern.out(FragmentBoundary::WrongSort));
             }

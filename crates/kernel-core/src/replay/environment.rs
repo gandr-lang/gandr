@@ -522,7 +522,7 @@ impl Environments
                 self.unload_computation(
                     (arena, table, memo),
                     frame.with(body),
-                    BinderDepth::NONE.deeper_by(usize::from(arity)),
+                    BinderDepth::NONE.deeper_by(arity),
                 ),
             ),
             Frame::Project(component) => Frame::Project(component),

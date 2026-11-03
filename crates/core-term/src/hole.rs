@@ -91,6 +91,7 @@ use crate::arena::CoreArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::syntax::CompType;
+use crate::syntax::ComponentCount;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
 
@@ -813,16 +814,17 @@ pub fn matched_returner(
 ///   values; a returner of another arity is a mismatch.
 /// - witness: `hole::tests::a_returner_of_several_values_matches_only_at_its_arity`
 #[spec(ensures: |ret| match ret {
-    | Maybe::Present(ref results) => results.len() == arity && results.iter().all(|&result| arena.value_type(result).is_some()),
+    | Maybe::Present(ref results) => results.len() == usize::from(arity) && results.iter().all(|&result| arena.value_type(result).is_some()),
     | Maybe::Absent(_) => true,
 })]
 #[inline]
 pub fn matched_returns(
     arena: &mut CoreArena,
     subject: CompTypeId,
-    arity: usize,
+    arity: ComponentCount,
 ) -> Maybe<alloc::vec::Vec<ValueTypeId>, matching::Absent>
 {
+    let arity = usize::from(arity);
     if comp_type_knowledge(arena, subject) == Knowledge::Unknown {
         return Maybe::Present(
             core::iter::repeat_with(|| arena.value_type_unknown())

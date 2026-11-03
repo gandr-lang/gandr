@@ -820,9 +820,9 @@ impl Token
 /// `=`, and no slot takes `=` after an operator, so nothing written
 /// re-munches.
 ///
-/// **`|>` plugs a call's outputs into a function's inputs.** It extends the
-/// live single tile `|`, which closes a row's tail or a pattern's
-/// alternative, and neither takes `>` next, so nothing written re-munches.
+/// **`|>` plugs the outputs of a call into the inputs of a function.** It
+/// extends the single tile `|`. A row tail and a pattern alternative use `|`.
+/// No slot takes `>` after `|`. Thus no written source munches again.
 const MULTI_PUNCT: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>", "==",
     "!=", "<=", ">=", "++", "&&", "||", "|&", "|>", "<>", "<&", ">&", ">>", "@[", "@![", ":>",
