@@ -1,10 +1,14 @@
 // A parameter at a session type is spent by its body, as an end a fork binds
-// is.
+// is. A call that moves an endpoint into such a parameter spends it at the
+// caller.
 //
 // An endpoint left open at the body's end breaks the protocol its type
-// states.
+// states. An action on an endpoint after a call took it acts on what the
+// caller no longer holds.
 //
-// The checker refuses it at the placement as `LinearResidue`.
+// The checker refuses the first at the placement as `LinearResidue`, and the
+// second at the action as `UsedAfterClose`. An endpoint handed to a parameter
+// that is not a session type stays an endpoint read as a value.
 //
 // - see: corpus/model/sessions/endpoint-parameter.gandr
 
@@ -13,4 +17,28 @@
 @[ refuses("LinearResidue") ]
 def leaky(seat : end) -> Unit {
   unit
+}
+
+/// A parameter at `end` that closes it.
+def finish(seat : end) -> Unit {
+  close(seat)
+}
+
+/// A parameter at a number, which an endpoint never is.
+def counted(amount : Integer) -> Integer {
+  amount
+}
+
+/// A fork's child that closes its end once `finish` holds it.
+@[ refuses("UsedAfterClose") ]
+def reused() -> Unit {
+  let desk = fork (seat : end) { finish(seat); close(seat) };
+  close(desk)
+}
+
+/// A fork's child that hands its end where a number stands.
+@[ refuses("EndpointAsValue") ]
+def miscounted() -> Unit {
+  let desk = fork (seat : end) { let total = counted(seat); close(seat) };
+  close(desk)
 }

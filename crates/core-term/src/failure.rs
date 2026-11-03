@@ -72,8 +72,9 @@ impl TrackingIssue
     /// A thunk type's grade.
     pub const THUNK_GRADE: Self = Self(1112);
     /// A session action naming as its endpoint a form no fork, receive or
-    /// placement binds, such as an endpoint a call passes on.
-    pub const DELEGATION: Self = Self(4501);
+    /// placement binds, such as an endpoint nested in a record, a sum or a
+    /// tuple.
+    pub const DELEGATION: Self = Self(4689);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
     /// An extern block, binding a library's functions: native interop's

@@ -1455,48 +1455,10 @@ impl Machine<'_, '_>
         }
         let next = self.context.arena_mut().value_type_session(next);
         let expected = self.here(ty, slot.depth)?;
-        if self.returned_buffer(at, payload, expected)? == HandedOn::Buffer {
-            return self.sent(endpoint, next);
-        }
-        if let Value::Variable {
-            zone: Zone::Linear,
-            index,
-        } = *self.value(payload)?
+        if self.returned_buffer(at, payload, expected)? == HandedOn::Buffer
+            || self.handed_endpoint(payload, expected)? == HandedOn::Endpoint
         {
-            let sent = self.resided(node, index)?;
-            if let Resident::Endpoint(delegated) = sent.resident {
-                if sent.use_state == LinearUse::Consumed {
-                    return Err(CheckRefusal::Linearity {
-                        at: node,
-                        defect: LinearityDefect::Closed {
-                            endpoint: delegated,
-                        },
-                    });
-                }
-                let found = self.here(sent.state, sent.depth)?;
-                crate::conversion::value_bridge(
-                    self.context,
-                    payload,
-                    found,
-                    expected,
-                    &mut self.conversions,
-                )?;
-                // The payload is judged here, not by a descent, so its typing
-                // is kept as a checked value's would be.
-                if self.context.recording() == Recording::On {
-                    self.context.keep_typing(Typing {
-                        term: TermNode::Value(payload),
-                        ty: TypeNode::Value(expected),
-                        depth: self.context.depth(Zone::Intuitionistic),
-                    });
-                }
-                let _delegated = self
-                    .context
-                    .binders()
-                    .occurrence(Zone::Linear, index)
-                    .map_err(|_fault| CheckRefusal::MachineInvariant)?;
-                return self.sent(endpoint, next);
-            }
+            return self.sent(endpoint, next);
         }
         self.context.record_payload(at, expected);
         self.wait(Frame::SessionSend { at, endpoint, next });
@@ -1592,6 +1554,126 @@ impl Machine<'_, '_>
             });
         }
         Ok(HandedOn::Other)
+    }
+
+    /// Hand on the endpoint `payload` names whole, where a send delegates it
+    /// or a call moves it into a parameter of `expected`.
+    ///
+    /// # Specification
+    /// - requires: `expected` is read where the hand-on stands.
+    /// - ensures: [`HandedOn::Endpoint`] when the payload is a linear variable
+    ///   naming an endpoint, whose slot, converted to `expected`, is then
+    ///   consumed and its typing kept; [`HandedOn::Other`], the slot untouched,
+    ///   for any other payload.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Closed`]
+    ///   for an endpoint already consumed; the value bridge's refusal when the
+    ///   endpoint's session type is not `expected`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a delegated endpoint leaves its sender, and an
+    ///   endpoint moved into a call leaves its caller; an action after either
+    ///   is refused as after close.
+    /// - witness: `judgement::session::tests::a_delegated_endpoint_leaves_its_sender`
+    /// - witness: `judgement::session::tests::a_closed_endpoint_is_not_delegated`
+    /// - witness: `judgement::session::tests::an_endpoint_moved_into_a_call_leaves_its_caller_4501`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    fn handed_endpoint(
+        &mut self,
+        payload: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(payload));
+        let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let handed = self.resided(node, index)?;
+        let Resident::Endpoint(endpoint) = handed.resident
+        else {
+            return Ok(HandedOn::Other);
+        };
+        if handed.use_state == LinearUse::Consumed {
+            return Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::Closed { endpoint },
+            });
+        }
+        let found = self.here(handed.state, handed.depth)?;
+        crate::conversion::value_bridge(
+            self.context,
+            payload,
+            found,
+            expected,
+            &mut self.conversions,
+        )?;
+        // The payload is judged here, not by a descent, so its typing is kept
+        // as a checked value's would be.
+        if self.context.recording() == Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(payload),
+                ty: TypeNode::Value(expected),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        let _handed = self
+            .context
+            .binders()
+            .occurrence(Zone::Linear, index)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        Ok(HandedOn::Endpoint)
+    }
+
+    /// Move the endpoint `argument` names into a call whose parameter stands
+    /// at `domain`, when `domain` is a session type at its weak head.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the call's domain, read where the call stands.
+    /// - ensures: [`HandedOn::Endpoint`] when `domain` is a session type at its
+    ///   weak head and the argument a linear variable naming an endpoint, which
+    ///   [`Self::handed_endpoint`] spends; [`HandedOn::Other`], nothing
+    ///   changed, otherwise, so the argument's check refuses an endpoint read
+    ///   as a value.
+    /// - fails: as [`Self::handed_endpoint`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork's child that hands its end to a function at
+    ///   `end` checks, an action on the end after the call is refused as after
+    ///   close, and an end handed at `Integer` stays refused as read as a
+    ///   value.
+    /// - witness: `judgement::session::tests::an_endpoint_moved_into_a_call_leaves_its_caller_4501`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    pub(super) fn moved_endpoint(
+        &mut self,
+        argument: ValueId,
+        domain: ValueTypeId,
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(domain)?;
+        if !matches!(
+            value_type_view(self.context.arena(), head)?,
+            ValueTypeView::Session(_)
+        ) {
+            return Ok(HandedOn::Other);
+        }
+        self.handed_endpoint(argument, domain)
     }
 
     /// Finish a send whose payload checked: advance the endpoint.
@@ -3414,6 +3496,9 @@ pub(super) enum HandedOn
 {
     /// A live buffer, whose slot the hand-off spent.
     Buffer,
+    /// A live endpoint, whose slot the hand-off spent: delegated by a send or
+    /// moved into a call.
+    Endpoint,
     /// Anything else, which the hand-off checks as a value.
     Other,
 }

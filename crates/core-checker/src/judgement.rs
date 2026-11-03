@@ -9992,6 +9992,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     domain,
                     codomain,
                 });
+                // An endpoint at a parameter of a session type moves into the
+                // call whole, as a send delegates one: its slot is spent here.
+                if self.moved_endpoint(argument, domain)? == session::HandedOn::Endpoint {
+                    return Ok(Step::Ascend(Produced::Checked));
+                }
                 Ok(Step::Descend(Goal::Value {
                     term: argument,
                     direction: Direction::Check(domain),
