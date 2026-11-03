@@ -1,0 +1,45 @@
+/// A codec pairs a gandr type with a format's documents by a round trip.
+///
+/// A provider reads the outside world into gandr values, and a render writes
+/// them out. One codec states both directions, so a value read back from
+/// what it wrote is the value again.
+///
+/// `Codec(F, T)` holds `encode` and `decode`, and its law states the round
+/// trip. A provider is a codec's `decode` run on what it read. A render is
+/// its `encode`, printed by the format.
+///
+/// - see: #4719 — the render sketch, its rulings in the issue body
+/// - see: #4717 — the providers sketch, whose reads a codec decodes
+
+// The format and codec theories.
+import std.codec (Format, Codec);
+// TOML's document type and its printer.
+import std.codec.toml (Toml, Table, Value);
+
+/// A semantic version, as a manifest records it.
+pub type Version = #{ major : Nat, minor : Nat, patch : Nat };
+
+/// The codec between a version and a TOML string, `"1.4.2"`.
+pub def versionToml : Codec(Toml, Version) = #{
+  encode = fun (v) { Value.string(show(v.major) ++ "." ++ show(v.minor) ++ "." ++ show(v.patch)) },
+  decode = fun (doc) {
+    match doc {
+      Value.string(s) => match split(s, ".") {
+        [a, b, c] => zip3(parseNat(a), parseNat(b), parseNat(c)).map(fun ((x, y, z)) { #{ major = x, minor = y, patch = z } }),
+        _ => none
+      },
+      _ => none
+    }
+  },
+  roundTrip = fun (v) { refl }
+};
+
+/// Decoding what `encode` writes gives the version back.
+pub def versionRoundTrip(v : Version) -> versionToml.decode(versionToml.encode(v)) == some(v) {
+  versionToml.roundTrip(v)
+}
+
+/// The text `gandr.toml` holds for a version, printed by TOML's printer.
+pub def versionLine(v : Version) -> String {
+  Toml.print(Table.of([("version", versionToml.encode(v))]))
+}

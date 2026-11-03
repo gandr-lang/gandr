@@ -1,0 +1,52 @@
+/// One encoder per format, written once over a type's description.
+///
+/// A codec per type repeats the type's shape and drifts from it. A type's
+/// levitated description is data, so one function over descriptions encodes
+/// every type that has one.
+///
+/// `encode(D, x)` folds over `D`, a field to a key and a constructor to a
+/// tag. `@[derive(Json)]` applies the generic codec to the type it marks,
+/// and the checker checks what it derives as if written.
+///
+/// - see: #4719 — the render sketch, its rulings in the issue body
+/// - see: #4571 — the user notations sketch, whose `@[derive(…)]` this applies
+/// - see: `../../model/desc/derive-eq-serialize.gandr` — a description the route reads
+
+// Descriptions, their fixed points and their fields.
+import std.desc (Desc, Mu, Field);
+// The codec theory.
+import std.codec (Codec);
+// JSON's document type.
+import std.codec.json (Json);
+
+/// The JSON encoder for any type with a description, a field's label its key.
+pub def encodeJson(D : Desc, x : Mu(D)) -> Json {
+  match D.view(x) {
+    Desc.Record(fields) => Json.object(fields.map(fun (f : Field) { (f.label, encodeJson(f.desc, f.value)) })),
+    Desc.Tag(name, payload) => Json.object([("tag", Json.string(name)), ("value", encodeJson(payload.desc, payload.value))]),
+    Desc.Atom(a) => a.json
+  }
+}
+
+/// The generic codec for `D`, its decoder the encoder's inverse.
+pub def jsonCodec(D : Desc) -> Codec(Json, Mu(D)) {
+  #{
+    encode = fun (x) { encodeJson(D, x) },
+    decode = fun (doc) { decodeJson(D, doc) },
+    roundTrip = fun (x) { decodeEncodeJson(D, x) }
+  }
+}
+
+/// A service's health, which the derived codec encodes to JSON.
+@[derive(Json)]
+pub data Health : Type where {
+  /// The service answers.
+  | Up : (latency : Nat) --> Health
+  /// The service is down, with the reason the probe gives.
+  | Down : (reason : String) --> Health
+}
+
+/// The report a health endpoint answers with.
+pub def report(h : Health) -> Json {
+  Health.json.encode(h)
+}

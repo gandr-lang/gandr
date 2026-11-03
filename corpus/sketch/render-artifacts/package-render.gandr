@@ -1,0 +1,54 @@
+/// A package's manifest rendered from its model by a metaprogram in the
+/// library.
+///
+/// Today Rust writes each package's `gandr.toml`. A render in `std.build`
+/// moves that machinery into the library, where a reader checks it as gandr.
+///
+/// `@[render(std.build.manifest)]` names the render. `manifest` reads the
+/// module as a value, its signature a theory and its definitions a model, and
+/// returns a TOML document. The checker writes the file beside the source,
+/// committed, and refuses a drift.
+///
+/// - see: #4719 — the render sketch, its rulings in the issue body
+/// - see: #4725 — the first unit, which ports the render into `std.build`
+/// - see: #4730 — the probe on reflecting a module as a value
+/// - see: `../../../library/std/src/package.gandr` — the model this restates
+
+// The manifest theories.
+import std.build (Gandr);
+// A module reflected as a value.
+import std.elab (Elab, Module);
+// TOML's document type.
+import std.codec.toml (Toml, Table, Value);
+
+/// The manifest a package's model renders to, each inert field a key of the
+/// `[package]` table.
+pub def manifest(m : Module(Gandr.Package)) -> [Elab] Toml {
+  let fields = m.definitions.map(fun (d) { (d.name, Value.string(d.value)) });
+  Toml.document([("package", Table.of(fields))])
+}
+
+/// `std`, its manifest rendered by `manifest` into `package.gandr.toml`.
+@[render(std.build.manifest)]
+pub module Package : Model(Gandr.Package) where {
+  /// The package's name, `std`.
+  def name = "std";
+  /// The version `std` releases at.
+  def version = "0.1.0";
+  /// The authors of `std`.
+  def authors = "The gandr authors";
+  /// The licence `std` carries, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the documentation of `std` stands at.
+  def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std";
+  /// The address a resolver may fetch `std` from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version `std` targets.
+  def gandr = ">= 0.0";
+  /// The features `std` asks the toolchain for.
+  def features = "";
+  /// The systems `std` builds on.
+  def systems = "";
+  /// The spelling `std` asks for.
+  def spelling = "";
+}
