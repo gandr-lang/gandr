@@ -75,6 +75,17 @@
 //! - Several slots travel as a tuple: `λ p. split p (s₁, …, sₙ)`, each held
 //!   again in turn.
 //!
+//! An endpoint bound around a `loop` or a `while` and named inside it is
+//! threaded the same way, placed again where a slot is held again:
+//!
+//! ```text
+//! (fix k. λ e. place e { b }) c
+//! ```
+//!
+//! The first pass takes the endpoint at the state it stands in where the
+//! loop starts, the loop head's state, and a pass's end hands it on, so it
+//! must stand at that state again (#4502).
+//!
 //! What follows the loop runs at its `break`s, inside the passes, so it is
 //! read under the slots held again and sees what the last pass left there.
 //! A loop threads only as a statement or the last computation of a block
@@ -93,6 +104,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_computation_traced;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_surface_syntax::NodeIndex;
@@ -134,6 +146,20 @@ use crate::resolve::binder_site;
 
 #[cfg(test)]
 mod tests;
+
+/// What a loop threads through its passes: a held slot, held again in each
+/// pass, or an endpoint, placed again in each pass.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Carry
+{
+    /// A held slot.
+    Held,
+    /// An endpoint.
+    Endpoint,
+}
 
 /// The name a loop's own binder carries: no identifier spells it, so no
 /// written name resolves to it.
@@ -453,11 +479,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   under `frame`; `after` is the frame what follows it reads under when
     ///   it threads nothing.
     /// - ensures: for a `loop` or a `while` in a block whose ends continue no
-    ///   other's, each held slot an identifier of the block from the loop on
-    ///   resolves to at `frame`, once, is recorded for the loop with its linear
-    ///   index there and its name, outermost first, and `after` is extended by
-    ///   one linear binder per slot under the slot's name, each recorded as
-    ///   held; anything else threads nothing and answers `after`.
+    ///   other's, each held slot or endpoint an identifier of the block from
+    ///   the loop on resolves to at `frame`, once, is recorded for the loop
+    ///   with its linear index there, its name and whether it is held,
+    ///   outermost first, and `after` is extended by one linear binder per slot
+    ///   under the slot's name, a held slot's recorded as held; anything else
+    ///   threads nothing and answers `after`.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] from a name's walk.
     /// - panics: none.
     ///
@@ -467,8 +494,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a `while` naming one slot in its condition and its
     ///   body threads it, one naming two threads both, a slot named only after
-    ///   the loop is threaded, and one naming none threads nothing.
+    ///   the loop is threaded, and one naming none threads nothing; a `loop`
+    ///   naming an endpoint threads it.
     /// - witness: `lower::loops::tests::a_loop_threads_the_slots_it_names_through_its_passes`
+    /// - witness: `lower::loops::tests::a_loop_threads_the_endpoint_it_names_4502`
     #[spec(ensures: |ret| match ret {
         | Ok(rest) => rest == after || self.threading.contains_key(&written),
         | Err(LoweringRefusal::BudgetExceeded { .. }) => true,
@@ -496,16 +525,16 @@ impl<'source> Lowerer<'_, 'source>
         });
         if !looping
             || self.joined.contains(&site.at.node)
-            || !self
-                .scope
-                .chain(frame)
-                .any(|binder| self.held.contains(&binder))
+            || !self.scope.chain(frame).any(|binder| {
+                self.held.contains(&binder) || self.scope.zone(binder) == Zone::Linear
+            })
         {
             return Ok(after);
         }
         // Keyed outermost first: distinct slots on one chain stand at distinct
         // linear indices.
-        let mut slots: BTreeMap<Reverse<DeBruijnIndex>, SurfaceName<'source>> = BTreeMap::new();
+        let mut slots: BTreeMap<Reverse<DeBruijnIndex>, (SurfaceName<'source>, Carry)> =
+            BTreeMap::new();
         let mut pending = Vec::from([site.at.node]);
         while let Some(position) = pending.pop() {
             let Some(node) = self.tree.node(position)
@@ -523,27 +552,36 @@ impl<'source> Lowerer<'_, 'source>
             }
             let name = self.name_at(Placed::of(position, node));
             if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)?
-                && self.held.contains(&bound.binder)
+                && bound.zone == Zone::Linear
+                && !self.capabilities.contains(&bound.binder)
             {
-                let _first = slots.entry(Reverse(bound.index)).or_insert(name);
+                let carry = if self.held.contains(&bound.binder) {
+                    Carry::Held
+                }
+                else {
+                    Carry::Endpoint
+                };
+                let _first = slots.entry(Reverse(bound.index)).or_insert((name, carry));
             }
         }
         if slots.is_empty() {
             return Ok(after);
         }
         let mut rest = after;
-        for &name in slots.values() {
+        for &(name, carry) in slots.values() {
             let again =
                 self.scope
                     .extend_linear(rest, name, Maybe::Absent(binder_site::Absent::Unwritten));
-            let _held = self.held.insert(again);
+            if carry == Carry::Held {
+                let _held = self.held.insert(again);
+            }
             rest = Frame::Inner(again);
         }
         let _first = self.threading.insert(
             written,
             slots
                 .into_iter()
-                .map(|(Reverse(index), name)| (index, name))
+                .map(|(Reverse(index), (name, carry))| (index, name, carry))
                 .collect(),
         );
 
@@ -557,9 +595,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `own` is the loop's own binder.
     /// - ensures: for a loop [`Self::threads`] recorded, the pass's argument —
     ///   one binder, or one for the tuple and one per slot it splits into —
-    ///   then each slot held again under its own name, recorded as held and as
-    ///   the loop's, with the linear indices the slots have where the loop
-    ///   stands, outermost first; `own` and nothing otherwise.
+    ///   then each slot bound again under its own name, a held slot recorded as
+    ///   held, each recorded as the loop's, with the linear indices and kinds
+    ///   the slots have where the loop stands, outermost first; `own` and
+    ///   nothing otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -571,7 +610,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         own: ScopeId,
-    ) -> (Frame, Vec<DeBruijnIndex>)
+    ) -> (Frame, Vec<(DeBruijnIndex, Carry)>)
     {
         let Some(slots) = self.threading.remove(&site.at.node)
         else {
@@ -590,11 +629,13 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut reheld = Vec::with_capacity(slots.len());
         let mut carries = Vec::with_capacity(slots.len());
-        for (index, name) in slots {
+        for (index, name, carry) in slots {
             let again = self.scope.extend_linear(pass, name, unwritten());
-            let _held = self.held.insert(again);
+            if carry == Carry::Held {
+                let _held = self.held.insert(again);
+            }
             reheld.push(again);
-            carries.push(index);
+            carries.push((index, carry));
             pass = Frame::Inner(again);
         }
         let _first = self.reheld.insert(own, reheld);
@@ -621,7 +662,7 @@ impl<'source> Lowerer<'_, 'source>
     fn carry(
         &mut self,
         body: Block,
-        carries: Vec<DeBruijnIndex>,
+        carries: Vec<(DeBruijnIndex, Carry)>,
     )
     {
         if !carries.is_empty() {
@@ -1209,7 +1250,8 @@ impl<'source> Lowerer<'_, 'source>
     /// `body`: `fix k. under` when the loop threads no slot; when it threads
     /// one, `(fix k. λ s. var c = s; under) c`, and when it threads several,
     /// `(fix k. λ p. split p (s₁, …, sₙ); var c₁ = s₁; …; var cₙ = sₙ;
-    /// under) (c₁, …, cₙ)`.
+    /// under) (c₁, …, cₙ)`. An endpoint is placed again, `place e { … }`,
+    /// where a slot is held again.
     ///
     /// # Specification
     /// - requires: `under` is minted under the frames [`Self::passes`] built
@@ -1253,6 +1295,19 @@ impl<'source> Lowerer<'_, 'source>
                 DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
             );
             sink.origins.record_value(content, inserted);
+            let carry = carries
+                .get(component)
+                .map_or(Carry::Held, |&(_, carry)| carry);
+            if carry == Carry::Endpoint {
+                held = sink.arena.computation_session(SessionAction::Place {
+                    payload: content,
+                    body: held,
+                });
+                sink.origins.record_computation(held, inserted);
+                sink.origins.record_binder(held, inserted);
+                let _first = sink.reholds.insert(held);
+                continue;
+            }
             held = sink.arena.computation_memory(MemoryForm::Hold {
                 value: content,
                 body: held,
@@ -1278,7 +1333,7 @@ impl<'source> Lowerer<'_, 'source>
             .computation_fixpoint(each, FixpointEvidence::Partial);
         sink.origins.record_computation(id, origin);
         let _first = sink.loops.insert(id);
-        let first = slots(carries.iter().copied(), sink, inserted);
+        let first = slots(carries.iter().map(|&(index, _)| index), sink, inserted);
         sink.arena.computation_application(id, first)
     }
 

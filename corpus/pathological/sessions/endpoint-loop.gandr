@@ -1,0 +1,35 @@
+// A loop hands its endpoint on at its head's state, and spends it to leave.
+//
+// A pass that runs again before it finishes a turn of the protocol hands the
+// next pass an endpoint at another state. An arm that leaves the loop with the
+// endpoint open leaves it otherwise than an arm that runs again.
+//
+// The checker refuses the first at the `continue` as `TypeMismatch` against
+// the head's state, and the second at the `offer` as `ArmsDisagree`.
+//
+// - see: corpus/model/sessions/endpoint-loop.gandr
+
+/// A desk that runs its next pass before it receives the report.
+@[ refuses("TypeMismatch") ]
+def hasty(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> [Div] Unit {
+  loop {
+    offer(operator) {
+      report => { continue },
+      retire => { let last = recv(operator); close(operator); break }
+    }
+  }
+}
+
+/// A desk that leaves the loop with the endpoint open.
+@[ refuses("ArmsDisagree") ]
+def abandoned(operator : mu open. &{
+  report : ?Integer. open,
+  retire : ?Integer. end
+}) -> [Div] Unit {
+  loop {
+    offer(operator) {
+      report => { let next = recv(operator); continue },
+      retire => { let last = recv(operator); break }
+    }
+  }
+}

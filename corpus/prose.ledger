@@ -1498,6 +1498,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/regions/named.tx
 crates/surface-render-terminal/tests/golden/corpus/pathological/self-reference/written-while-kept.txt Procedure 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/dialogue-web.txt Procedure 37ac15076bb61227
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/dialogue-web.txt Procedure 95cf34107ba31997
+crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-loop.txt Procedure df9e846f2d91b11c
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-parameter.txt Procedure 1d1fb70664e31997
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-parameter.txt Procedure a74054817f24d047
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/fragment.txt Procedure 4538ce87b3a6c1e1

@@ -1,0 +1,40 @@
+// A loop drives an endpoint through a recursive protocol, one pass per turn
+// of the protocol.
+//
+// A loop's passes are the passes of one fixpoint, and an endpoint bound
+// outside it would be captured by every pass. The loop threads the endpoint
+// instead, as it threads a held slot.
+//
+// The lowering hands the endpoint to the loop's first pass and places it again
+// in each pass. The first pass takes it at the state the loop starts in, the
+// loop head's state, and `continue` hands it on at that state again. The loop
+// owes `Div` as every loop does.
+//
+// - see: #4502
+// - see: #4705 — not implemented: a loop that acts on its endpoint every pass
+//   owing no `Div`
+// - see: #4687 — not implemented: running a placed endpoint
+
+/// A desk following a seat's reports until it retires: each report is one
+/// pass, and the retirement closes the endpoint and leaves the loop.
+def follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> [Div] Unit {
+  loop {
+    offer(operator) {
+      report => { let next = recv(operator); continue },
+      retire => { let last = recv(operator); close(operator); break }
+    }
+  }
+}
+
+/// A desk counting a seat's reports in a held slot until it retires: the loop
+/// threads the count beside the endpoint.
+def tally(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> [Div] Integer {
+  var seen = 0;
+  loop {
+    offer(operator) {
+      report => { let next = recv(operator); access seen as v { resume(v, v + 1) }; continue },
+      retire => { let last = recv(operator); close(operator); break }
+    }
+  };
+  pure seen
+}

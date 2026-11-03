@@ -1506,22 +1506,23 @@ pub(super) fn mark_copies(
 ///   synthesise is bound; any other end `e` by `x ← e; N'`. A local end is a
 ///   node the walk through binds' rests, case branches, a data case's field
 ///   functions, a split's body, an offer's arms, a fork's parent, a receive's
-///   body, a hold's scope and a loop's fixpoint reaches that is none of those
-///   and no exit; an exit resets the rests it continues to none, so it stays
-///   where it stands. An offer's arm binds nothing, and a fork's parent, a
-///   receive's body and a hold's scope one linear binder, so the rest reaches
-///   them at the intuitionistic depth it reaches the form, and the last three
-///   one linear binder deeper: a rest continued there reads its own slots past
-///   the slot the form opens. A loop's re-hold, in `sink.reholds`, stands for
-///   the slot it holds again, so its scope opens no linear binder and a rest
-///   continued there reads the re-held slot. A loop's fixpoint is walked with
-///   no rest of its own, its `break`s continuing the rest its position
-///   continues, so a `break` is that rest's local end and every other end in
-///   the loop's body stays. The rest is copied once per depth it is carried to.
-///   Every rebuilt node takes its original's origin and match record, a rebuilt
-///   loop stays one and a rebuilt re-hold stays one, every bind of a rest its
-///   statement's origin, and every copied node its source's; `body` itself when
-///   nothing was distributed in it.
+///   body, a placement's body, a hold's scope and a loop's fixpoint reaches
+///   that is none of those and no exit; an exit resets the rests it continues
+///   to none, so it stays where it stands. An offer's arm binds nothing, and a
+///   fork's parent, a receive's body, a placement's body and a hold's scope one
+///   linear binder, so the rest reaches them at the intuitionistic depth it
+///   reaches the form, and the last four one linear binder deeper: a rest
+///   continued there reads its own slots past the slot the form opens. A loop's
+///   re-hold or re-placement, in `sink.reholds`, stands for the slot it binds
+///   again, so its scope opens no linear binder and a rest continued there
+///   reads the slot bound again. A loop's fixpoint is walked with no rest of
+///   its own, its `break`s continuing the rest its position continues, so a
+///   `break` is that rest's local end and every other end in the loop's body
+///   stays. The rest is copied once per depth it is carried to. Every rebuilt
+///   node takes its original's origin, match record, binder name and action
+///   labels, a rebuilt loop stays one and a rebuilt re-hold stays one, every
+///   bind of a rest its statement's origin, and every copied node its source's;
+///   `body` itself when nothing was distributed in it.
 /// - provides: the mint half of early exits: every exit focuses as the cut of
 ///   its value against the body's own return continuation.
 /// - fails: never.
@@ -1543,6 +1544,7 @@ pub(super) fn mark_copies(
 /// - witness: `lower::exits::tests::a_bound_match_continues_its_block_through_a_split_arm`
 /// - witness: `lower::session::tests::an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms`
 /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
+/// - witness: `lower::loops::tests::a_loop_threads_the_endpoint_it_names_4502`
 #[spec(ensures: |ret| sink.arena.computation(ret).is_some() || ret == body)]
 pub(super) fn commute(
     sink: &mut Sink<'_>,
@@ -1657,16 +1659,17 @@ pub(super) fn commute(
                             steps.push(Step::Open(arm, ends, depth));
                         }
                     },
-                    // A fork's parent, a receive's body and a hold's scope are
-                    // the tail, under a linear binder, so no intuitionistic one
-                    // deeper, and one linear one. A loop's re-hold stands in
-                    // for the slot it holds again: what a `break` continues
-                    // under it reads it in that slot's place, so it counts
-                    // none.
+                    // A fork's parent, a receive's body, a placement's body and
+                    // a hold's scope are the tail, under a linear binder, so no
+                    // intuitionistic one deeper, and one linear one. A loop's
+                    // re-hold or re-placement stands in for the slot it binds
+                    // again: what a `break` continues under it reads it in that
+                    // slot's place, so it counts none.
                     Some(
                         &Computation::Session(
                             SessionAction::Fork { parent: scope, .. }
-                            | SessionAction::Receive { body: scope, .. },
+                            | SessionAction::Receive { body: scope, .. }
+                            | SessionAction::Place { body: scope, .. },
                         )
                         | &Computation::Memory(MemoryForm::Hold { body: scope, .. }),
                     ) => {
@@ -2165,7 +2168,11 @@ fn rebuild(
         Computation::Bind(..)
         | Computation::Split { .. }
         | Computation::Lambda(_)
-        | Computation::Session(SessionAction::Fork { .. } | SessionAction::Receive { .. })
+        | Computation::Session(
+            SessionAction::Fork { .. }
+            | SessionAction::Receive { .. }
+            | SessionAction::Place { .. },
+        )
         | Computation::Memory(MemoryForm::Hold { .. })
         | Computation::World(WorldForm::Leta { .. }) => 1_usize,
         Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
@@ -2279,6 +2286,18 @@ fn rebuild(
                 body: commuted,
             })
         },
+        (Computation::Session(SessionAction::Place { payload, body }), &[commuted])
+            if commuted != body =>
+        {
+            let placed = sink.arena.computation_session(SessionAction::Place {
+                payload,
+                body: commuted,
+            });
+            if sink.reholds.contains(&node) {
+                let _first = sink.reholds.insert(placed);
+            }
+            placed
+        },
         (Computation::Memory(MemoryForm::Hold { value, body, grade }), &[commuted])
             if commuted != body =>
         {
@@ -2320,6 +2339,10 @@ fn rebuild(
     if let Maybe::Present(family) = sink.origins.elimination(node) {
         sink.origins.record_elimination(rebuilt, family);
     }
+    if let Maybe::Present(name) = sink.origins.binder(node) {
+        sink.origins.place_binder(rebuilt, name);
+    }
+    sink.origins.relabel_action(node, rebuilt);
 
     rebuilt
 }

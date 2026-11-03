@@ -2065,6 +2065,120 @@ fn a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704()
     );
 }
 
+/// A loop over an endpoint and a call handed a tuple with an endpoint among
+/// its slots: a fixpoint applied to a fork's end takes the end at its state and
+/// spends it, so the child checks; an end closed before the loop is refused
+/// where the loop is handed it; and a tuple of the end and a held slot handed
+/// to a function at their product spends the end.
+#[test]
+fn a_loop_takes_the_endpoint_it_is_applied_to_4502()
+{
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_kernel_term::FixpointEvidence;
+
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let runs_unit = arena.value_type_thunk(returns_unit);
+    // `let d = fork (c : end) { [close(c);] (fix k. \seat. place seat {
+    // close(seat) }) c }; close(d)`
+    let looped = |arena: &mut CoreArena, closed_first: bool| {
+        let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let closed = Program::new(arena).close();
+        let placed = arena.computation_session(SessionAction::Place {
+            payload: parameter,
+            body: closed,
+        });
+        let pass = arena.computation_lambda(placed);
+        let fixpoint = arena.computation_fixpoint(pass, FixpointEvidence::Partial);
+        let seat = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        let applied = arena.computation_application(fixpoint, seat);
+        let child = if closed_first {
+            let before = Program::new(arena).close();
+            arena.computation_bind(before, applied)
+        }
+        else {
+            applied
+        };
+        let parent = Program::new(arena).close();
+        let forked = fork(arena, ended, child, parent);
+        (arena.value_thunk(forked), seat)
+    };
+    let (threaded, _) = looped(&mut arena, false);
+    let (spent, handed) = looped(&mut arena, true);
+    // finish = \slots. split slots (seat, _); place seat { close(seat) }
+    let slots = arena.value_type_product(&[ended, unit]);
+    let takes_slots = arena.comp_type_arrow(slots, returns_unit);
+    let finish_type = arena.value_type_thunk(takes_slots);
+    let slots_parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let closed = Program::new(&mut arena).close();
+    let placed = arena.computation_session(SessionAction::Place {
+        payload: first,
+        body: closed,
+    });
+    let split = arena.computation_split(slots_parameter, ComponentCount::from(2_usize), placed);
+    let finish_body = arena.computation_lambda(split);
+    let finish = arena.value_thunk(finish_body);
+    // `let d = fork (c : end) { hold () as h { finish((c, h)) } }; close(d)`
+    let head = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(head);
+    let seat = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+    let held = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let both = arena.value_tuple(&[seat, held]);
+    let call = arena.computation_application(forced, both);
+    let nothing = arena.value_unit();
+    let holding = arena.computation_memory(MemoryForm::Hold {
+        value: nothing,
+        body: call,
+        grade: HoldGrade::Many,
+    });
+    let parent = Program::new(&mut arena).close();
+    let forked = fork(&mut arena, ended, holding, parent);
+    let tupled = arena.value_thunk(forked);
+    let declarations: Vec<_> = [
+        (finish_type, finish),
+        (runs_unit, threaded),
+        (runs_unit, spent),
+        (runs_unit, tupled),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, (declared, defined))| {
+        Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+            OriginToken::from(position),
+        )
+    })
+    .collect();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.get(1), Some(Verdict::Checked { .. })),
+        "a loop applied to an end takes it at its state and spends it: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(2),
+            Some(Verdict::Refused(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Value(at)),
+                defect: LinearityDefect::Closed { .. },
+            })) if *at == handed
+        ),
+        "a loop applied to an end closed before it is refused where it is handed: {verdicts:?}"
+    );
+    assert!(
+        matches!(verdicts.get(3), Some(Verdict::Checked { .. })),
+        "a tuple of an end and a held slot hands the end on: {verdicts:?}"
+    );
+}
+
 /// A received value crosses read from an assumption of its type, and an
 /// offer as a case on an assumed choice among its arms: the kernel defines an
 /// exchange returning the string it received and the whole seat exchange,
