@@ -231,8 +231,8 @@ use crate::run::Kept;
 /// A command the lowering does not lay out.
 ///
 /// One ill-formed — children that contradict their head, a node or a binder
-/// missing — one past a width the layout holds, or a buffer's placement,
-/// which focusing never yields. A run of a command that reaches one declines.
+/// missing — or one past a width the layout holds. A run of a command that
+/// reaches one declines.
 ///
 /// # Specification
 /// trivial.
@@ -256,8 +256,6 @@ pub enum Form
     /// A node the lowering reaches that the ownership reading places nowhere,
     /// or that two parents drop differently.
     Unowned,
-    /// A buffer's placement, which focusing never yields and no run places.
-    Placement,
 }
 
 impl core::fmt::Display for Form
@@ -280,7 +278,6 @@ impl core::fmt::Display for Form
             Self::Dangling => "a node the arena does not hold",
             Self::Unbound => "a variable bound by nothing in the command",
             Self::Unowned => "a node the ownership reading does not place",
-            Self::Placement => "a buffer's placement, which no run places",
         })
     }
 }
@@ -3144,25 +3141,29 @@ impl Lowering<'_>
     /// receive's frame binds the payload's cell and runs the body; an offer's
     /// continues at the arm its peer selected. A fork's child is a closure
     /// over its captures, entered by the scheduler with its end's cell, and
-    /// the parent runs on with its own. A body's covariable falls through to
-    /// the loaded continuation, the body's return when that is where the
-    /// continuation delivers, as a hold's does.
+    /// the parent runs on with its own. A placement holds its payload in a
+    /// fresh cell, as a hold does, bound in one linear slot its body runs
+    /// under: a call passes an endpoint or a buffer as the value its cell
+    /// holds first. A body's covariable falls through to the loaded
+    /// continuation, the body's return when that is where the continuation
+    /// delivers, as a hold's does.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Form::Placement`] for a buffer's placement; as [`Self::step`]
-    /// otherwise.
+    /// As [`Self::step`].
     ///
     /// # Adequacy
     /// - hypothesis: L2 — two forks exchanging a payload and a choice answer
     ///   alike on every run and on both tiers, a child its parent never
-    ///   receives from still runs to its end, and a run whose tasks all wait is
-    ///   stuck at their actions; a frame pushed at the wrong point, or a child
-    ///   entered without its end, changes an answer.
+    ///   receives from still runs to its end, a run whose tasks all wait is
+    ///   stuck at their actions, and an end handed on as a value and placed
+    ///   still acts; a frame pushed at the wrong point, a child entered without
+    ///   its end, or a placement binding the value bare changes an answer.
     /// - witness: `tests::sessions::forked_tasks_exchange_alike_on_both_tiers`
     /// - witness: `tests::sessions::a_run_whose_tasks_all_wait_is_stuck_at_their_actions`
+    /// - witness: `tests::sessions::a_placed_endpoint_acts_as_the_end_it_holds_4687`
     fn session(
         &mut self,
         id: CommandId,
@@ -3269,7 +3270,18 @@ impl Lowering<'_>
                 self.tasks.push(Task::Forked(child, scope));
                 self.tasks.push(Task::Load(continuation, scope));
             },
-            SessionAction::Place { .. } => return Err(Form::Placement),
+            SessionAction::Place { payload, body } => {
+                let call = self.call(&Callee::Hold, Immediate::from(1_u32))?;
+                let (held, cell) = self.bind(scope, Binding::Linear);
+                let (inner, _) = self.bind(held, falls);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks
+                    .push(Task::Emit(StencilId::Bind, cell.operand(), Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(payload, scope));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
         }
         Ok(())
     }
@@ -5008,9 +5020,8 @@ fn fused(lowered: Lowered) -> Lowered
 ///   both tiers against stated answers.
 ///
 /// # Errors
-/// The [`Form`] of the first ill-formed or oversized node, [`Form::Unowned`]
-/// for a node the ownership reading does not place, or [`Form::Placement`]
-/// for a buffer's placement.
+/// The [`Form`] of the first ill-formed or oversized node, or [`Form::Unowned`]
+/// for a node the ownership reading does not place.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the named programs halt on both tiers with equal answers:

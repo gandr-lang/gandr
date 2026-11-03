@@ -8,11 +8,13 @@
 // The lowering wraps the body in the placement. The checker opens the
 // parameter as an endpoint at its session type, and the readmission erases
 // the placement to its body. A call spends the caller's endpoint whole, as a
-// send delegates one, and the callee holds it from then on.
+// send delegates one, and the callee holds it from then on. On the machine
+// the placement holds the passed end in a fresh cell, as a receive holds its
+// payload. The callee's actions then reach the caller's channel.
 //
 // - see: #1862
 // - see: #4501
-// - see: #4687 — not implemented: running a placed endpoint
+// - see: #4687
 
 /// A parameter at `end` that its body closes.
 def finish(seat : end) -> Unit {
@@ -34,7 +36,28 @@ def report(note : String, seat : !String. end) -> Unit {
 }
 
 /// A fork's child that hands its end to `finish`, which closes it.
+@[ runs("unit") ]
 def handed() -> Unit {
   let desk = fork (seat : end) { finish(seat) };
   close(desk)
+}
+
+/// The parent hands its end to `answer`, which receives what the child sent.
+@[ runs("7") ]
+def asked() -> Integer {
+  let desk = fork (seat : !Integer. end) {
+    send(seat, 7);
+    close(seat)
+  };
+  answer(desk)
+}
+
+/// The parent hands its end to `report` beside a note, which the child takes.
+@[ runs("unit") ]
+def reported() -> Unit {
+  let desk = fork (seat : ?String. end) {
+    let note = recv(seat);
+    close(seat)
+  };
+  report("done", desk)
 }
