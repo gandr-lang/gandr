@@ -1824,6 +1824,30 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/hand-off.json)
 (( failed == 0 )) || exit 1
+# Both readers of a defect's case read every case file kind (#4863): for each
+# case in `.config/claims/case-files.json` a scratch repository adds the case's
+# file, `observed.bash` prints the case's block and `regressions.bash` the
+# case's paths.
+printf 'Closes #7.\n' > "$scratch/case-files.md"
+index=0
+while IFS= read -r case; do
+  index=$(( index + 1 ))
+  repo="$scratch/case-files-$index"
+  file=$(jq -r .file <<< "$case")
+  git init --quiet --initial-branch=main "$repo"
+  git -C "$repo" config commit.gpgsign false
+  git -C "$repo" commit --quiet --no-verify --allow-empty -m base
+  mkdir -p "$repo/$(dirname "$file")"
+  jq -j .text <<< "$case" > "$repo/$file"
+  git -C "$repo" add .config && git -C "$repo" commit --quiet --no-verify -m head
+  observed=$(cd "$repo" && "$root/.config/claims/observed.bash" HEAD~1 "$scratch/case-files.md" true 2> "$scratch/err") || true
+  paths=$(cd "$repo" && "$root/.config/claims/regressions.bash" HEAD~1 2>> "$scratch/err" | jq -c '[.[].path]') || true
+  if [[ $observed != "$(jq -r .observed <<< "$case")" || $paths != "$(jq -c .regressions <<< "$case")" ]]; then
+    printf 'case-files case FAILED: %s\n  observed:\n%s\n  regressions: %s\n%s\n' "$(jq -r .name <<< "$case")" "$observed" "$paths" "$(cat "$scratch/err")" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/case-files.json)
+(( failed == 0 )) || exit 1
 terms=$(yq -o json '.term' .config/references/terms.toml)
 map=$(jq -r '.[] | (.name // "?") as $name
   | if (.name | type) != "string" or (.match | type) != "string" or (.owns | type) != "array" or (.owns | length) == 0 or (.reason | type) != "string"

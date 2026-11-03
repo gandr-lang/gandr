@@ -1,0 +1,23 @@
+[
+  {
+    "name": "#4863: a `fail \"#7: …\"` line a change adds to a `.config` cases.bash witnesses #7 and reaches `regression`",
+    "file": ".config/probe/probe-cases.bash",
+    "text": "fail \"#7: the probe holds\"\n",
+    "regressions": [".config/probe/probe-cases.bash"],
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `.config/probe/probe-cases.bash` records `#7: the probe holds`, the change touching no Rust.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#4863: a JSON case a change adds under `.config` witnesses #7 and reaches `regression`, as before",
+    "file": ".config/probe/probe.json",
+    "text": "[{\"name\": \"#7: the probe holds\"}]\n",
+    "regressions": [".config/probe/probe.json"],
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `.config/probe/probe.json` records `#7: the probe holds`, the change touching no Rust.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#4863: a cases.bash line naming no issue witnesses nothing and reaches no `regression`",
+    "file": ".config/probe/probe-cases.bash",
+    "text": "fail \"the probe holds\"\n",
+    "regressions": [],
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+  }
+]

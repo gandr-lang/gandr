@@ -3293,12 +3293,8 @@ concerns=$(jq -n --argjson ids "${ids:-[]}" --argjson had "${had:-[]}" --argjson
   '{ids: [$ids[].id], base: [$had[].id], sites: $sites}')
 added=$(git diff --no-renames --name-only --diff-filter=A "$from" HEAD -- ':(glob)crates/*/src/**/*.rs' | jq -R . | jq -s .)
 # The lines the change adds where a defect's regression is named (#2524,
-# #3538), those that can name an issue alone, to keep the argument small.
-regressions=$(git diff -U0 --no-renames --no-color "$from" HEAD -- ':(glob)corpus/**/*.gandr' ':(glob)**/*.rs' ':(glob).config/**/*.json' ':(glob)contrib/**/*.ts' \
-  | jq -Rs '[foreach (split("\n")[]) as $line ({path: null};
-      if ($line | startswith("+++ ")) then {path: ($line | sub("^\\+\\+\\+ (b/)?"; ""))}
-      else {path, text: (if ($line | startswith("+")) then $line[1:] else null end)} end;
-      select(.text != null and (.text | test("[#_][0-9]"))))]')
+# #3538), every file kind `opening.jq`'s `regression` reads (#4863).
+regressions=$("$claims/regressions.bash" "$from")
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
