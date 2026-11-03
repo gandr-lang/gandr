@@ -10,7 +10,7 @@
 # Input: the body, a string. Output: `{body, labels}`, or null.
 
 def fields:
-  ["Kind", "Area", "Brief", "Sources", "Readings", "Concerns", "Ledger", "The shape", "Try first",
+  ["Kind", "Area", "Brief", "Sources", "Readings", "Concerns", "Ledger", "Surface", "The shape", "Try first",
    "Not in this slice", "After"];
 
 split("\n") | map(sub("\r$"; ""))

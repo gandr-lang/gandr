@@ -2690,5 +2690,57 @@
       ]
     },
     "output": "observation due: #42 — mise run debug:test <package> <test>\n42\tdefect\tsurface: an unworked defect"
+  },
+  {
+    "name": "#4637: a planned feature in `area:surface` signed before the `## Surface` rule is claimed with no section due",
+    "input": {
+      "areas": ["area:surface"],
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:surface"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:surface", "shape:signed"],
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ],
+      "order": {
+        "100": [30]
+      }
+    },
+    "output": "30\tplanned\tissue 30"
+  },
+  {
+    "name": "#4637: an unsigned planned feature in `area:surface` is claimed with `## Surface` due",
+    "input": {
+      "areas": ["area:surface"],
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:surface"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:surface"],
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n"
+        }
+      ],
+      "order": {
+        "100": [30]
+      }
+    },
+    "output": "sections due: #30 — `## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)\n30\tplanned\tissue 30"
   }
 ]

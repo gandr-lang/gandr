@@ -118,5 +118,69 @@
     "name": "#4181: a unit filed before the eighth reading is refused for its missing `nominal` rows, the reading quoting the axis's question",
     "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
     "output": "`## Readings` has no row for `nominal`; the axis asks what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization\n`## Concerns` has no row for `nominal`"
+  },
+  {
+    "name": "#4637: a feature in `area:surface` without `## Surface` is refused, naming the two answer forms",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:surface"]
+    },
+    "output": "`## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)"
+  },
+  {
+    "name": "#4637: a feature in `area:theory` whose `## Surface` names no tier is refused, quoting its line",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Surface\n\na notation, probably\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:theory"]
+    },
+    "output": "`## Surface` opens `a notation, probably`, not `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)"
+  },
+  {
+    "name": "#4637: a tier with the reason the tier below does not read well enough is admitted",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Surface\n\ntier 2 — a combinator chain hides the layout a reader states in one block\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:surface"]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4637: `none` with its reason is admitted for a feature with no surface",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Surface\n\nnone — the feature changes the checker and adds no spelling\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:surface"]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4637: a tier past 4 is refused",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Surface\n\ntier 5 — a new keyword\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:surface"]
+    },
+    "output": "`## Surface` opens `tier 5 — a new keyword`, not `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)"
+  },
+  {
+    "name": "#4637: a feature in another area carries no `## Surface`",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4637: a defect in `area:surface` carries no `## Surface`",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:defect", "area:surface"]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4637: a feature the coordinator signed before the rule is not judged for `## Surface` again, so it stays claimable",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "labels": ["kind:feature", "area:surface", "shape:signed"]
+    },
+    "output": ""
   }
 ]
