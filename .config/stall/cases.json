@@ -98,7 +98,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}],\"foreign\":[]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
+    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
   },
   {
     "name": "a green mergeable root out of the queue past the threshold is root-unqueued (#2785)",
@@ -2250,25 +2250,25 @@
     "output": "STALL detector-down: no reading recorded; run `mise run stall:watch --install` on the triage lane's host"
   },
   {
-    "name": "a pull request whose commits hold another unit's names it foreign, with the pull request working that unit; its own and an unnamed commit are not (#4638)",
+    "name": "#4675: #4669, carrying #4666's commit that main holds and that names #4643, reads no unit its commits name, so no stall pages it (#4673)",
     "program": "facts.jq",
     "input": {
       "pullRequests": {
         "nodes": [
           {
-            "number": 4541,
+            "number": 4669,
             "isDraft": false,
             "author": {
               "__typename": "User",
               "login": "agent-shade"
             },
-            "headRefName": "refactor-lowering-keys-4372",
+            "headRefName": "surface-4642-restack-past-red",
             "baseRefName": "main",
-            "headRefOid": "f909202f0",
+            "headRefOid": "d470fa2c1",
             "createdAt": "2026-11-02T22:00:00Z",
             "mergeable": "MERGEABLE",
-            "isInMergeQueue": false,
-            "body": "Closes #4372\n\n## Observation",
+            "isInMergeQueue": true,
+            "body": "Closes #4642\n\n## Observation",
             "timelineItems": {
               "nodes": []
             },
@@ -2279,200 +2279,39 @@
               "nodes": [
                 {
                   "commit": {
-                    "oid": "f909202f0",
-                    "messageHeadline": "refactor(surface): key node tables by layout block (#4372)",
-                    "messageBody": "A node position is its layout block.\n\nAssisted-by: LLM"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "number": 4547,
-            "isDraft": false,
-            "author": {
-              "__typename": "User",
-              "login": "agent-shade"
-            },
-            "headRefName": "toolchain-4508-static-fun",
-            "baseRefName": "triage-4542-focus",
-            "headRefOid": "9122e195f",
-            "createdAt": "2026-11-02T22:00:00Z",
-            "mergeable": "MERGEABLE",
-            "isInMergeQueue": false,
-            "body": "Closes #4508\n\n## Observation",
-            "timelineItems": {
-              "nodes": []
-            },
-            "commits": {
-              "nodes": []
-            },
-            "own": {
-              "nodes": [
-                {
-                  "commit": {
-                    "oid": "5c79abb95",
-                    "messageHeadline": "refactor(surface): key node tables by layout block (#4372)",
-                    "messageBody": "A node position is its layout block.\n\nAssisted-by: LLM"
+                    "oid": "29ae27b7e",
+                    "messageHeadline": "fix(workflow): queued-off-trunk reads the queue a pull request is in",
+                    "messageBody": "A stack member's queue.\n\nCloses #4643\n\nAssisted-by: LLM"
                   }
                 },
                 {
                   "commit": {
-                    "oid": "9122e195f",
-                    "messageHeadline": "feat(surface): the static abstraction folds into fun",
-                    "messageBody": "`fun (X) { T }` is the static lambda.\n\nCloses #4508\n\nAssisted-by: LLM"
+                    "oid": "d470fa2c1",
+                    "messageHeadline": "fix(workflow): pr:watch restacks past a red member below it",
+                    "messageBody": "A red member.\n\nCloses #4642\n\nAssisted-by: LLM"
                   }
                 }
               ]
-            }
-          },
-          {
-            "number": 4557,
-            "isDraft": false,
-            "author": {
-              "__typename": "User",
-              "login": "agent-shade"
             },
-            "headRefName": "triage-4298-module-data",
-            "baseRefName": "toolchain-4508-static-fun",
-            "headRefOid": "71fc698b1",
-            "createdAt": "2026-11-02T22:00:00Z",
-            "mergeable": "MERGEABLE",
-            "isInMergeQueue": false,
-            "body": "Closes #4298\n\n## Observation",
-            "timelineItems": {
-              "nodes": []
-            },
-            "commits": {
-              "nodes": []
-            },
-            "own": {
-              "nodes": [
-                {
-                  "commit": {
-                    "oid": "71fc698b1",
-                    "messageHeadline": "feat(surface): a data declaration is a module member",
-                    "messageBody": "A module body admits a data declaration.\n\nCloses #4298\n\nAssisted-by: LLM"
-                  }
-                },
-                {
-                  "commit": {
-                    "oid": "8059504bf",
-                    "messageHeadline": "feat(workflow): refuse a citation older than the window",
-                    "messageBody": "check:references refuses an old work.\n\nAssisted-by: LLM"
-                  }
-                }
-              ]
+            "mergeQueueEntry": {
+              "mergeQueue": {
+                "resourcePath": "/gandr-lang/gandr/queue/main"
+              }
             }
           }
         ]
       },
       "merged": {
-        "nodes": []
+        "nodes": [
+          {
+            "number": 4666,
+            "headRefName": "triage-4643-off-trunk",
+            "mergedAt": "2026-11-03T02:06:46Z",
+            "body": "Closes #4643\n\n## Refactoring\n\nno\n"
+          }
+        ]
       }
     },
-    "output": "{\"prs\":[{\"number\":4541,\"draft\":false,\"bot\":false,\"head\":\"refactor-lowering-keys-4372\",\"base\":\"main\",\"oid\":\"f909202f0\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[]},{\"number\":4547,\"draft\":false,\"bot\":false,\"head\":\"toolchain-4508-static-fun\",\"base\":\"triage-4542-focus\",\"oid\":\"9122e195f\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[{\"oid\":\"5c79abb95\",\"subject\":\"refactor(surface): key node tables by layout block (#4372)\",\"units\":[4372],\"pulls\":[4541]}]},{\"number\":4557,\"draft\":false,\"bot\":false,\"head\":\"triage-4298-module-data\",\"base\":\"toolchain-4508-static-fun\",\"oid\":\"71fc698b1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
-  },
-  {
-    "name": "a pull request carrying another unit's commit is foreign-commit at once, naming the commit, its unit and that unit's pull request (#4638)",
-    "program": "detect.jq",
-    "input": {
-      "now": 100000,
-      "trunk": "main",
-      "required": ["test"],
-      "thresholds": {
-        "root_unqueued": 20,
-        "ejections": 2,
-        "ejection_window": 360,
-        "depth": 6,
-        "red": 60,
-        "conflicting": 10,
-        "base_blocked": 10,
-        "escalate": 10,
-        "repage": 10
-      },
-      "lanes": ["triage", "toolchain", "refactor"],
-      "areas": {
-        "triage": ["workflow"],
-        "toolchain": ["workflow"],
-        "refactor": ["surface"]
-      },
-      "prs": [
-        {
-          "number": 4541,
-          "draft": false,
-          "bot": false,
-          "head": "refactor-lowering-keys-4372",
-          "base": "main",
-          "oid": "f909202f0",
-          "created": 1793656800,
-          "mergeable": "MERGEABLE",
-          "queued": false,
-          "removals": [],
-          "checks": [
-            {
-              "name": "test",
-              "verdict": "pending",
-              "conclusion": null,
-              "started": null,
-              "completed": null
-            }
-          ],
-          "foreign": []
-        },
-        {
-          "number": 4547,
-          "draft": false,
-          "bot": false,
-          "head": "toolchain-4508-static-fun",
-          "base": "main",
-          "oid": "9122e195f",
-          "created": 1793656800,
-          "mergeable": "MERGEABLE",
-          "queued": false,
-          "removals": [],
-          "checks": [
-            {
-              "name": "test",
-              "verdict": "pending",
-              "conclusion": null,
-              "started": null,
-              "completed": null
-            }
-          ],
-          "foreign": [
-            {
-              "oid": "5c79abb95",
-              "subject": "refactor(surface): key node tables by layout block (#4372)",
-              "units": [4372],
-              "pulls": [4541]
-            }
-          ]
-        },
-        {
-          "number": 4557,
-          "draft": false,
-          "bot": false,
-          "head": "triage-4298-module-data",
-          "base": "toolchain-4508-static-fun",
-          "oid": "71fc698b1",
-          "created": 1793656800,
-          "mergeable": "MERGEABLE",
-          "queued": false,
-          "removals": [],
-          "checks": [
-            {
-              "name": "test",
-              "verdict": "pending",
-              "conclusion": null,
-              "started": null,
-              "completed": null
-            }
-          ],
-          "foreign": []
-        }
-      ]
-    },
-    "output": "{\"findings\":[{\"kind\":\"foreign-commit\",\"number\":4547,\"lane\":\"toolchain\",\"placed\":true,\"age\":0,\"line\":\"STALL foreign-commit #4547 toolchain 0m: carries another unit's commit: `5c79abb95` names #4372 (#4541); drop each from the branch\"}],\"pages\":[{\"kind\":\"foreign-commit\",\"number\":4547,\"lane\":\"toolchain\",\"placed\":true,\"age\":0,\"line\":\"STALL foreign-commit #4547 toolchain 0m: carries another unit's commit: `5c79abb95` names #4372 (#4541); drop each from the branch\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"4547:foreign-commit:9122e195f\":100000},\"paged\":{\"4547:foreign-commit\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
+    "output": "{\"prs\":[{\"number\":4669,\"draft\":false,\"bot\":false,\"head\":\"surface-4642-restack-past-red\",\"base\":\"main\",\"oid\":\"d470fa2c1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[],\"checks\":[]}],\"merged\":[{\"number\":4666,\"head\":\"triage-4643-off-trunk\",\"merged\":1793671606,\"verdict\":\"no\",\"rows\":0}],\"filed\":[],\"claimed\":[]}"
   }
 ]

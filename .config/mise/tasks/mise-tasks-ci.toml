@@ -3358,16 +3358,6 @@ fi
 # flattened, fails the format gate in the queue and holds the stack above it.
 COMMITLINT_BIN=$(mise which commitlint) "$(git rev-parse --show-toplevel)/.config/commits/lint.bash" "$measured" HEAD --empty \
   || { echo "drop or amend each commit above, so every own commit keeps the commit rules, then run \`pr:open\` again" >&2; exit 2; }
-# Nor is any of them another unit's (#4638, `foreign.jq`): a commit naming a
-# unit names one the body works, or none. A copy of another pull request's
-# commit, left behind when that pull request restacked, would ride into every
-# merge group stacked above this one, and fail there with the copy.
-copies=$(foreign_commits "$measured" "$(jq -c 'map(.number)' <<< "$issues")")
-if [[ -n $copies ]]; then
-  printf '%s\n' "$copies" | sed 's/^/  /' >&2
-  echo "the commits above are other units', and the body works none of their issues; drop each from the branch (\`git rebase -i $measured\`), then run \`pr:open\` again" >&2
-  exit 2
-fi
 # Nor does it add a file named as residue (`.config/merge-residue/names`):
 # a merge driver's backup, or a tool's leftover such as `wt:warm`'s clone
 # probe (#3222), staged by a `git add -A`.
