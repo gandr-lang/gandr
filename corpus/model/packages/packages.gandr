@@ -36,8 +36,7 @@ module Texts : Model(Seeded) where {
 /// Opens a counter and reads its seed through its own reader.
 def consume(p : Model(Seeded)) -> Integer {
   module m = p;
-  let r = m.read;
-  r(m.seed)
+  m.read(m.seed)
 }
 
 /// Both counters read and summed.

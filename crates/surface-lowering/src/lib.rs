@@ -219,8 +219,9 @@
 //! bytes, and the checker decides it by three rules. *Direction*: against a
 //! thunk type it is suspended, against any other type it runs, and with no
 //! type expected it is refused by name (`NotSynthesisable`, the form
-//! `Nested`). A call at an application's head stands nested under the force
-//! the head takes, and the checker runs it when it returns a function (#3935).
+//! `Nested`). A call or a selection at an application's head stands nested
+//! under the force the head takes, and the checker runs it when it returns a
+//! function (#3935, #4818).
 //! *Order*: runs bind in written order around the innermost
 //! enclosing computation, never out of a `thunk` or a `match` arm. *Where*:
 //! the checker's elaboration, each minted bind carrying the nested call's

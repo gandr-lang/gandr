@@ -39,8 +39,7 @@ def leak() -> Integer {
 def mixed() -> Integer {
   module a = ints;
   module b = ints;
-  let r = a.read;
-  r(b.seed)
+  a.read(b.seed)
 }
 
 /// Binds a block whose type is the opened sort.

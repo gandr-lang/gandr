@@ -1584,6 +1584,47 @@ fn an_operation_is_selected_off_a_model_binder_2246()
     }
 }
 
+/// An operation selected off a model binder calls in place (#4818): `m.read(z)`
+/// reads as `let r = m.read ; r(z)` does, whether the type leaves the carrier
+/// a field or fixes it, and the operation reads only `m`'s carrier. A member
+/// that is no operation is called at no function.
+#[test]
+fn an_operation_selected_off_a_model_binder_calls_in_place_4818()
+{
+    let counter = "theory Counter where {\n  sort C : Type;\n  oper zero : C;\n  oper read : (c : C) \
+                   --> Integer;\n}\n";
+    let called = |model: &str, call: &str| {
+        let source =
+            format!("{counter}def call(m : {model}, n : {model}) -> -F Integer {{\n  {call}\n}}\n");
+        let mut lowered = lower(source.as_str());
+        let call = super::declaration(&lowered, "call", Role::Declared).constant();
+        verdicts(&mut lowered)
+            .into_iter()
+            .find(|&(constant, _)| constant == call)
+            .map(|(_, judgement)| judgement)
+    };
+    for (model, why) in [
+        ("Model(Counter)", "its carrier a field"),
+        ("Model(Counter) with sort C = Integer", "its carrier fixed"),
+    ] {
+        assert_eq!(
+            called(model, "m.read(m.zero)"),
+            Some(Judgement::Checked),
+            "`m`'s reader called at `m`'s zero, {why}"
+        );
+    }
+    assert_eq!(
+        called("Model(Counter)", "m.read(n.zero)"),
+        Some(Judgement::Mismatched),
+        "another counter's zero is no count of `m`"
+    );
+    assert_eq!(
+        called("Model(Counter)", "m.zero(m.zero)"),
+        Some(Judgement::Refused),
+        "a member that is no operation is called at no function"
+    );
+}
+
 /// A manifest sort names an unindexed sort of the theory, once: another name
 /// is no member of it, an indexed sort is no type to fix, a sort fixed twice
 /// is defined twice, and an operand that is no `sort x = A` fixes nothing.
