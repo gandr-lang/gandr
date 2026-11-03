@@ -2583,6 +2583,59 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
     );
 }
 
+/// A positional selection off a binder of the context the root stands under
+/// spells its field's label when the source states the binder's dependent
+/// record. With no type stated it spells its position, an approximate
+/// spelling that reads back to nothing (#4139).
+#[test]
+fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
+{
+    let names = [Name::from("t")];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    // `#{x : Integer, y : Integer, z : Path(Integer, x, y)}`.
+    let x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let y = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let between = core.value_type_path(integer, x, y);
+    let inner = core.value_type_sigma(integer, between);
+    let record = core.value_type_sigma(integer, inner);
+    // `r.x` and `r.y` off the context binder `r`, as the lowering lowers
+    // them: `r.0` and `(r.1).0`.
+    let select = |core: &mut CoreArena, path: &[usize]| {
+        let mut selected = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        for &component in path {
+            let projected = core.computation_tuple_projection(
+                selected,
+                gandr_kernel_term::Component::from(component),
+            );
+            selected = core.value_returned(projected);
+        }
+        selected
+    };
+    let (first, middle) = (select(&mut core, &[0]), select(&mut core, &[1, 0]));
+    let along = core.value_type_path(integer, first, middle);
+    let mut pairs = [(record, Name::from("x")), (inner, Name::from("y"))];
+    pairs.sort_by_key(|&(pair, _)| pair);
+    let seconds = [(inner, Name::from("z"))];
+    let context = [Some(Name::from("r"))];
+    let source = CoreSource::new(&core, &names)
+        .naming_pairs(&pairs, &seconds)
+        .within(&context);
+    let typed = [Some(CoreNode::ValueType(record))];
+    for (source, expected) in [
+        (
+            source.typing(&typed),
+            faithful(Written("Path(Integer, r.x, r.y)")),
+        ),
+        (source, approximate(Written("Path(Integer, r.0, (r.1).0)"))),
+    ] {
+        assert_eq!(
+            spelled(&source, Root::Type(CoreNode::ValueType(along))),
+            expected
+        );
+    }
+}
+
 /// A dependent record's second field the source records no label for is
 /// labelled by the first generated name no binder around it holds, never by
 /// what a binder inside the record left at the position past the record's

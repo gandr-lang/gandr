@@ -476,6 +476,8 @@ pub struct CoreSource<'arena>
     constructors: &'arena Constructors<'arena>,
     /// The names of the binders the root stands under, outermost first.
     context: &'arena [Option<Name<'arena>>],
+    /// The types the binders of `context` bind, outermost first.
+    context_types: &'arena [Option<CoreNode>],
     /// The binder of `context` that is a recursive definition's own, and the
     /// claim its calls write.
     recursive: Option<Recursive>,
@@ -560,6 +562,7 @@ impl<'arena> CoreSource<'arena>
             restoration: UNRESTORED,
             constructors: UNNAMED,
             context: &[],
+            context_types: &[],
             recursive: None,
             recursive_telescope: &[],
             regions: &[],
@@ -631,6 +634,24 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { context, ..self }
+    }
+
+    /// This source, the binders of its context binding the types `types`,
+    /// outermost first, at the positions [`Self::within`] names them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn typing(
+        self,
+        types: &'arena [Option<CoreNode>],
+    ) -> Self
+    {
+        Self {
+            context_types: types,
+            ..self
+        }
     }
 
     /// This source, the binder of its context at `recursive`'s position a
@@ -2998,6 +3019,16 @@ impl Source for CoreSource<'_>
     fn context(&self) -> &[Option<Name<'_>>]
     {
         self.context
+    }
+
+    /// The types the binders the root stands under bind.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn context_types(&self) -> &[Option<CoreNode>]
+    {
+        self.context_types
     }
 
     /// The recursive definition's own binder in the context, and its claim.

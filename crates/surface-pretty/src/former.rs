@@ -1631,6 +1631,34 @@ pub trait Source
         &[]
     }
 
+    /// The types the binders of [`Self::context`] bind, outermost first; an
+    /// entry the source knows no type for is none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an entry, where present, at the position of the binder of
+    ///   [`Self::context`] it types, so a positional selection off that binder
+    ///   reads the record its type states. The default is no type for any
+    ///   binder.
+    /// - provides: the record a selection off a context binder is written by
+    ///   the labels of.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a selection off a context binder over a dependent
+    ///   record spells its label, and the same binder untyped spells its
+    ///   position.
+    /// - witness: `tests::goldens::a_selection_off_a_context_binder_s_record_spells_its_label_4139`
+    #[inline]
+    fn context_types(&self) -> &[Option<Self::Node>]
+    {
+        &[]
+    }
+
     /// The binder of [`Self::context`] that is a recursive definition's own,
     /// at the position [`Recursive::uniform`] names, and the claim each of
     /// its occurrences writes; none when no binder is.

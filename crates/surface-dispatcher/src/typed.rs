@@ -3950,6 +3950,11 @@ impl TypeTable
             .iter()
             .map(|name| name.as_deref().map(Name::from))
             .collect();
+        let types: Vec<Option<CoreNode>> = context
+            .types
+            .iter()
+            .map(|&ty| ty.map(CoreNode::ValueType))
+            .collect();
         let regions: Vec<Option<Name<'_>>> = context
             .regions
             .iter()
@@ -4067,6 +4072,7 @@ impl TypeTable
             .naming_implicits(&implicits)
             .flattening(&flattened)
             .within(&binders)
+            .typing(&types)
             .scoped(&regions);
         // A recursive definition's own binder writes its claim, `f[<](…)`; a
         // type at a node records no telescope, so its calls write every
@@ -9102,6 +9108,47 @@ mod tests
                         && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
                 "the parameter's own site spells its record as written, reads back and \
                  reprints as itself: {own:?}"
+            );
+        }
+    }
+
+    /// #4139: a selection off a dependent record that a binder of the
+    /// context holds prints by its field's label at the selection's own
+    /// site, `r.x` and `r.y`, never by its position. Each spelling reads back
+    /// to its certificate and reprints as itself.
+    #[test]
+    fn a_selection_off_a_context_binder_s_record_reads_back_4139()
+    {
+        let source = SourceText::from(
+            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path(A, x, y), g : \
+             Path(A, y, z)}) => Path(A, r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path(A, x, \
+             y)}) => Path(Path(A, r.x, r.y), r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<super::ReadBack> =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        let positional: Vec<&super::ReadBack> = reads
+            .iter()
+            .filter(|back| back.spelled.contains("r.0") || back.spelled.contains("(r.1)"))
+            .collect();
+        assert!(
+            positional.is_empty(),
+            "no site spells a selection by its position: {positional:?}"
+        );
+        for selected in [
+            "Path(A, r.x, r.y)",
+            "#{z : A, f : Path(A, r.x, r.y), g : Path(A, r.y, z)}",
+        ] {
+            let spelling: Vec<&super::ReadBack> = reads
+                .iter()
+                .filter(|back| back.spelled == selected)
+                .collect();
+            assert!(
+                !spelling.is_empty()
+                    && spelling.iter().all(|back| back.trip == RoundTrip::Equal
+                        && matches!(back.reprinted, Maybe::Present(ref again) if *again == back.spelled)),
+                "`{selected}` spells at a selection's site, reads back and reprints as itself: \
+                 {spelling:?}"
             );
         }
     }

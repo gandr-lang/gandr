@@ -2415,7 +2415,7 @@ fn record_labels<S>(
 where
     S: Source + ?Sized,
 {
-    let mut link = if let Former::Pi { domain, .. } = source.read(opener) {
+    let record = if let Former::Pi { domain, .. } = source.read(opener) {
         domain
     }
     else if let Former::Sigma { first, .. } = source.read(opener) {
@@ -2424,6 +2424,35 @@ where
     else {
         return None;
     };
+    labels_of(source, record)
+}
+
+/// The labels of the dependent record type `record`, in field order.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: one label per field, when `record` is a chain of dependent pairs
+///   or products each naming its first field ([`record_link`]) and ending at a
+///   link that names its last; none otherwise.
+/// - provides: the record a positional selection off a binder of that type
+///   reads, an open binder's or a context binder's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`record_labels`], and a context binder over a record
+///   keeps its labels as an open one does.
+/// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+/// - witness: `tests::goldens::a_selection_off_a_context_binder_s_record_spells_its_label_4139`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|labels| labels.len() >= 2_usize))]
+fn labels_of<S>(
+    source: &S,
+    record: S::Node,
+) -> Option<Vec<BinderName>>
+where
+    S: Source + ?Sized,
+{
+    let mut link = record;
     let mut labels = Vec::new();
     loop {
         let next = if let Former::Sigma { second, .. } = source.read(link) {
@@ -6415,16 +6444,18 @@ impl Walk<'_, '_>
     }
 
     /// The binder and the label a positional selection `node` reads by, when
-    /// it selects one field of a dependent record an open binder holds:
-    /// `((r.1).1).0` reads the third field, `z` of `#{x, y, z, f, g}`.
+    /// it selects one field of a dependent record an open binder or a binder
+    /// of the context holds: `((r.1).1).0` reads the third field, `z` of
+    /// `#{x, y, z, f, g}`.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
     /// - ensures: the variable's node and the field's label when `node`
     ///   projects an open binder that keeps a record's labels and no argument
-    ///   stands for, along `.1` to a field before the last and then `.0`, or
-    ///   along `.1` to the last; none for any other projection, a link of the
-    ///   record among them.
+    ///   stands for, or a context binder whose type [`Source::context_types`]
+    ///   states as a dependent record, along `.1` to a field before the last
+    ///   and then `.0`, or along `.1` to the last; none for any other
+    ///   projection, a link of the record among them.
     /// - provides: the label a selection off a dependent record is written by,
     ///   which the surface reads back where a position would not.
     /// - fails: never.
@@ -6432,8 +6463,10 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a selection of the first, a middle and the last field
-    ///   each spell by their label.
+    ///   each spell by their label, off an open binder and off a typed context
+    ///   binder; an untyped context binder keeps the position.
     /// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+    /// - witness: `tests::goldens::a_selection_off_a_context_binder_s_record_spells_its_label_4139`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|selected| matches!(source.read(node), Former::TupleProjection(..)) && !selected.1.is_empty()))]
     fn selected<S>(
         &self,
@@ -6458,11 +6491,21 @@ impl Walk<'_, '_>
                 return None;
             }
         };
-        let position = self.opened_at(zone, index)?;
-        if self.substituted.contains_key(&position) {
-            return None;
+        let owned;
+        let labels = if let Some(position) = self.opened_at(zone, index) {
+            if self.substituted.contains_key(&position) {
+                return None;
+            }
+            self.records.get(&position)?
         }
-        let labels = self.records.get(&position)?;
+        else {
+            // A binder of the context the root stands under: its record is
+            // the type the source states for it.
+            let position = self.context_position(zone, index)?;
+            let record = source.context_types().get(position.0).copied().flatten()?;
+            owned = labels_of(source, record)?;
+            &owned
+        };
         let last = labels.len().checked_sub(1_usize)?;
         let (&outer, inner) = components.split_first()?;
         if inner.iter().any(|&component| component != 1_usize) {
