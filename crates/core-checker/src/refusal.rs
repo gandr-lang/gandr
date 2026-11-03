@@ -204,6 +204,9 @@ pub enum CheckingForm
     Scope(ComputationId),
     /// A recorded run is checked against the run type naming its protocol.
     Run(ValueId),
+    /// A decimal literal is checked against the type it reads at: the float
+    /// it rounds to at `f64`, a reader's carrier elsewhere (#4807).
+    Decimal(ValueId),
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
@@ -1359,9 +1362,10 @@ pub enum CheckRefusal
         /// The capability type it stands at.
         expected: ValueTypeId,
     },
-    /// An integer literal stands at a type two models of the prelude's
-    /// `FromNat`, or for a negative literal `FromNeg`, read it into: the
-    /// literal names neither, and no order between models picks one.
+    /// A numeric literal stands at a type two models of the prelude's
+    /// `FromNat`, or for a negative literal `FromNeg`, or for a decimal
+    /// `FromDecimal`, read it into: the literal names neither, and no order
+    /// between models picks one.
     LiteralAmbiguous
     {
         /// The literal.

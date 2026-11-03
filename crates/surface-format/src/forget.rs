@@ -26,6 +26,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::Forgetting;
 use gandr_surface_pretty::Name;
+use quenchant_shape::shape::Maybe;
 
 /// The forgetting maps among the checker's `crossings` that the explicit
 /// form writes, ascending by the value crossed.
@@ -67,7 +68,11 @@ pub fn forgettings<'module>(
         .collect();
     let mut found = Vec::new();
     for (&value, crossing) in crossings {
-        let Some(&forgetting) = minted.get(&crossing.by)
+        let Maybe::Present(by) = crossing.by
+        else {
+            continue;
+        };
+        let Some(&forgetting) = minted.get(&by)
         else {
             continue;
         };

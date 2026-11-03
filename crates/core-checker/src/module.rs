@@ -1609,7 +1609,12 @@ fn decide(
             let crossings = context.take_crossings();
             let updates = context.take_updates();
             // A value the bridge carried by a reduct runs the reduct at it, a
-            // run the nested elaboration binds before its region.
+            // run the nested elaboration binds before its region; a decimal at
+            // `f64` stands as its float, which no run carries, so the body is
+            // elaborated where any crossing stands a value.
+            let stood = crossings
+                .values()
+                .any(|crossing| matches!(crossing.by, Maybe::Absent(())));
             let (solved, crossed, decisions, minted) = if first.is_ok() && !crossings.is_empty() {
                 crate::nested::cross(context.arena_mut(), solved, &crossings, &decisions)
             }
@@ -1617,7 +1622,7 @@ fn decide(
                 (solved, Vec::new(), decisions, BTreeMap::new())
             };
             let judged = match first {
-                Ok(_) if !decisions.is_empty() || !updates.is_empty() => {
+                Ok(_) if !decisions.is_empty() || !updates.is_empty() || stood => {
                     match crate::nested::elaborate(context.arena_mut(), solved, &decisions) {
                         Ok((elaborated, done)) => {
                             // An update stands as its record once every run

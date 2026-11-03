@@ -2797,7 +2797,7 @@ fn a_crossing_runs_its_reduct_at_exactly_the_named_values()
     let subject = arena.value_thunk(returned);
     let reduct = ConstantIndex::from(7_usize);
     let crossings = BTreeMap::from([(crossed, Crossing {
-        by: reduct,
+        by: Maybe::Present(reduct),
         carriers: Vec::new(),
         operand: crate::CrossedOperand::Itself,
     })]);
@@ -3018,7 +3018,7 @@ fn a_crossing_applies_its_carriers_before_the_value()
     let subject = arena.value_thunk(returned);
     let forget = ConstantIndex::from(3_usize);
     let crossings = BTreeMap::from([(crossed, Crossing {
-        by: forget,
+        by: Maybe::Present(forget),
         carriers: Vec::from([carrier]),
         operand: crate::CrossedOperand::Itself,
     })]);
@@ -3065,7 +3065,7 @@ fn a_standing_operand_takes_the_crossed_value_s_place_4732()
     let subject = arena.value_thunk(returned);
     let reader = ConstantIndex::from(4_usize);
     let crossings = BTreeMap::from([(crossed, Crossing {
-        by: reader,
+        by: Maybe::Present(reader),
         carriers: Vec::new(),
         operand: crate::CrossedOperand::Standing(standing),
     })]);
@@ -3089,6 +3089,35 @@ fn a_standing_operand_takes_the_crossed_value_s_place_4732()
         panic!("the head of the application forces the reader");
     };
     assert_eq!(arena.value(map), Some(&Value::Constant(reader)));
+}
+
+/// A decimal checked at `f64` stands as its float: a crossing with no map
+/// stands the value as its operand, with no run around it (#4807).
+#[test]
+fn an_unmapped_crossing_stands_the_value_as_its_operand_4807()
+{
+    let mut arena = CoreArena::new();
+    let crossed = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let standing = variable(&mut arena, DeBruijnIndex::from(1_u32));
+    let returned = arena.computation_return(crossed);
+    let subject = arena.value_thunk(returned);
+    let crossings = BTreeMap::from([(crossed, Crossing {
+        by: Maybe::Absent(()),
+        carriers: Vec::new(),
+        operand: crate::CrossedOperand::Standing(standing),
+    })]);
+    let (mut carried, mut runs) = (Vec::new(), Vec::new());
+    let rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
+    assert!(runs.is_empty(), "no run is minted: {runs:?}");
+    let Some(&Value::Thunk(body)) = arena.value(rebuilt)
+    else {
+        panic!("the thunk is rebuilt");
+    };
+    assert_eq!(
+        arena.computation(body),
+        Some(&Computation::Return(standing)),
+        "the operand stands where the crossed value stood"
+    );
 }
 
 /// Apply the constant `callee`, forced, to `argument`.

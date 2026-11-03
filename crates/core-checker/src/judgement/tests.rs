@@ -99,6 +99,7 @@ fn every_value_former_is_answered_in_both_modes()
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let string = arena.value_type_base(BaseType::String);
+    let float = arena.value_type_base(BaseType::Float64);
     let unit_type = arena.value_type_unit();
     let sum = arena.value_type_sum(&[unit_type, unit_type]);
     let returns_integer = arena.comp_type_returner(integer);
@@ -153,9 +154,11 @@ fn every_value_former_is_answered_in_both_modes()
         ),
         (
             numeric,
-            Err(unadmitted_value(numeric, UnadmittedFormer::NumericLiteral)),
-            integer,
-            Err(unadmitted_value(numeric, UnadmittedFormer::NumericLiteral)),
+            Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Decimal(numeric),
+            }),
+            float,
+            crossed_once,
         ),
         (
             thunk,
@@ -4239,6 +4242,21 @@ proptest! {
                 ),
                 | Value::Tuple(ref components) if !components.is_empty() => {
                     prop_assert!(false, "the recipe mints no pair");
+                },
+                | Value::Literal(gandr_kernel_term::Literal::Numeric(_)) => {
+                    prop_assert_eq!(
+                        synthesised,
+                        Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Decimal(term) }),
+                        "a decimal does not synthesise"
+                    );
+                    let mut tally = ConversionCount::default();
+                    let bridged = crate::conversion::decimal_bridge(&mut context, term, expected_value.id(), &mut tally)
+                        .map(|()| tally);
+                    prop_assert_eq!(
+                        checked.map(|evidence| evidence.conversions()),
+                        bridged,
+                        "a decimal checks exactly as it crosses the decimal bridge"
+                    );
                 },
                 | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) => {
                     let bridged = synthesised.and_then(|found| {

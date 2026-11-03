@@ -2973,6 +2973,7 @@ fn every_refusal() -> Vec<Refusal>
             Form::Offer(at),
             Form::Scope(at),
             Form::Run(at),
+            Form::Decimal(at),
         ]
         .map(|form| Refusal::NotSynthesisable { form }),
     );

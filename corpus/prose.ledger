@@ -1212,7 +1212,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InertRead.
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceAmbiguous.txt Procedure 51e14b31a2f70bd6
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceUnanswered.txt Procedure 0a09f4e667677f07
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LevelMismatch.txt Procedure 4243b91b89fd9499
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LiteralAmbiguous.txt Procedure a2744a838ce0cf74
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LiteralAmbiguous.txt Procedure 13ee76cefc8c0f1b
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopNotRespected.txt Procedure 5acc3f19f3b29f8d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopUndecided.txt Procedure 3c428e27119f4b66
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MarkUnfounded.txt Procedure b924bafc122697e0
@@ -1336,7 +1336,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-t
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/missing-payload.txt Procedure b0bae31b8e56887c
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/unknown-attribute.txt Procedure 545a6d0bc1a68b22
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/empty-block.txt Procedure 92d9a49f2738c191
-crates/surface-render-terminal/tests/golden/corpus/pathological/basics/fractions.txt Procedure 9518eeb94cf5c1bd
+crates/surface-render-terminal/tests/golden/corpus/pathological/basics/fractions.txt Procedure 8ac57a199cd61581
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/kernel-admission-boundary.txt Procedure 1dbe5724dc7f0628
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/unannotated-list.txt Procedure 3fc9c8584c2656b7
 crates/surface-render-terminal/tests/golden/corpus/pathological/builtins/list-patterns.txt Procedure 8d19cbccfa867da0

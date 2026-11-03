@@ -991,7 +991,8 @@ fn checked(
                 | CheckingForm::Thunk(at)
                 | CheckingForm::StaticLambda(at)
                 | CheckingForm::Nested(at)
-                | CheckingForm::Run(at),
+                | CheckingForm::Run(at)
+                | CheckingForm::Decimal(at),
         }
         | CheckRefusal::PathCode(at)
         | CheckRefusal::UnknownConstant { at, .. }
@@ -1548,6 +1549,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Offer(_) => "an offer",
                     | CheckingForm::Scope(_) => "a capability scope",
                     | CheckingForm::Run(_) => "a recorded run",
+                    | CheckingForm::Decimal(_) => "a decimal literal",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(
@@ -1847,8 +1849,8 @@ impl fmt::Display for Checked
                  is none",
             ),
             | CheckRefusal::LiteralAmbiguous { .. } => f.write_str(
-                "two models of `FromNat` or `FromNeg` read a literal into this type, and the \
-                 literal names neither",
+                "two models of `FromNat`, `FromNeg` or `FromDecimal` read a literal into this \
+                 type, and the literal names neither",
             ),
             | CheckRefusal::CapabilityAmplified(_) => f.write_str(
                 "this capability grants less than the capability it is checked against",
@@ -3752,7 +3754,8 @@ mod tests
                                 | CheckingForm::Thunk(_)
                                 | CheckingForm::StaticLambda(_)
                                 | CheckingForm::Nested(_)
-                                | CheckingForm::Run(_),
+                                | CheckingForm::Run(_)
+                                | CheckingForm::Decimal(_),
                         }
                         | CheckRefusal::MachineInvariant => spans[0_usize],
                         CheckRefusal::EffectSignatureConflict { .. }
@@ -4334,6 +4337,7 @@ mod tests
             CheckingForm::Offer(computation),
             CheckingForm::Scope(computation),
             CheckingForm::Run(value),
+            CheckingForm::Decimal(value),
         ]
         .into_iter()
         .map(|form| title(CheckRefusal::NotSynthesisable { form }))

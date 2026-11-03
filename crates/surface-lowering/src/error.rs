@@ -294,9 +294,8 @@ pub enum FragmentBoundary
     /// answered and its path's type is not read off a word or an operation
     /// over one, `cong` so standing at a map that is no function definition
     /// with a closed written result that lowers, `then` where no written flow
-    /// type is either, a transport or ride whose motive is no static
-    /// abstraction, or a number with a fraction or an exponent written with
-    /// neither the `f64` suffix nor an annotation.
+    /// type is either, or a transport or ride whose motive is no static
+    /// abstraction.
     Unannotated,
     /// The form is a recursive call passing, where one of the definition's
     /// unchanging parameters stands, something other than that parameter: the

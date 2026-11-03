@@ -132,3 +132,12 @@ pub theory FromNeg where {
   sort Carrier : Type;
   oper fromNeg : (n : Integer) --> Carrier;
 }
+
+/// A carrier a decimal literal reads into: a decimal checked where `Carrier`
+/// is expected is `fromDecimal` of its exact digits `mantissa` and its
+/// `exponent`, the value `mantissa × 10^exponent`, as Lean's `OfScientific`.
+/// A decimal at `f64` reads as the float it rounds to, through no model.
+pub theory FromDecimal where {
+  sort Carrier : Type;
+  oper fromDecimal : (mantissa : Integer, exponent : Integer) --> Carrier;
+}
