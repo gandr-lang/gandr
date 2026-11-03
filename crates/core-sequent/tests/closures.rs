@@ -16,16 +16,22 @@ use gandr_core_sequent::check_command;
 use gandr_core_sequent::convert_all;
 use gandr_core_sequent::enter_all;
 use gandr_core_sequent::focus_computation;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Zone;
+use gandr_kernel_term::DeBruijnIndex;
 use proptest::prelude::*;
 
 use crate::compare::Agreement;
 use crate::differential::agreement;
+use crate::differential::fired;
 use crate::differential::run_on_tiers;
 use crate::differential::settled;
 use crate::generate::Generated;
 use crate::generate::GeneratedRoot;
+use crate::generate::Integer;
 use crate::generate::applied_binds;
 use crate::generate::computations;
+use crate::generate::integer;
 
 /// The command a sweep answered for a command.
 ///
@@ -89,13 +95,14 @@ proptest! {
     /// Every generated program, and every generated application of a bind
     /// whose body is a function, converted or not, with every closure redex
     /// entered, runs to what it runs to as written, once both readings are
-    /// normalised.
+    /// normalised and every application of a bind is fired at a distance, as
+    /// the closure's β fires it.
     #[test]
     fn an_entered_closure_answers_as_the_cut_did(generated in prop_oneof![computations(), applied_binds()])
     {
         let mut arena = CommandArena::new();
         let command = focused(&mut arena, &generated)?;
-        let written = settled(&run_on_tiers(&arena, command));
+        let written = fired(&run_on_tiers(&arena, command));
         let converted = command_of(
             convert_all(&mut arena, NodeAddress::Command(command))
                 .map_err(|refusal| TestCaseError::fail(alloc::format!("conversion refused: {refusal:?}")))?,
@@ -106,8 +113,54 @@ proptest! {
                     .map_err(|refusal| TestCaseError::fail(alloc::format!("entering refused: {refusal:?}")))?,
             )?;
             prop_assert!(check_command(&arena, entered).is_ok(), "an entered program is ill formed");
-            let ran = settled(&run_on_tiers(&arena, entered));
+            let ran = fired(&run_on_tiers(&arena, entered));
             prop_assert_eq!(Agreement::Same, agreement(&written, &ran), "entered, the program read back {:?} against {:?}", ran, written);
         }
     }
+}
+
+/// A function applied through a bind whose head is a case on the variable
+/// around it enters at a distance, `λy. (x ← case y of …; λa. return a) 7`
+/// as `λy. x ← case y of …; return 7`. The written run keeps the
+/// application outside the stuck bind, so the two readings differ once
+/// normalised, and agree once each application of a bind fires at a
+/// distance.
+#[test]
+fn an_application_of_a_stuck_bind_fires_at_a_distance_4264()
+{
+    let mut core = CoreArena::new();
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let one = integer(&mut core, Integer(1_i32));
+    let two = integer(&mut core, Integer(2_i32));
+    let left = core.computation_return(one);
+    let right = core.computation_return(two);
+    let cased = core.computation_case(scrutinee, &[left, right]);
+    let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(argument);
+    let function = core.computation_lambda(returned);
+    let bound = core.computation_bind(cased, function);
+    let seven = integer(&mut core, Integer(7_i32));
+    let applied = core.computation_application(bound, seven);
+    let root = core.computation_lambda(applied);
+    let generated = Generated {
+        core,
+        root: GeneratedRoot::Computation(root),
+    };
+    let mut arena = CommandArena::new();
+    let command = focused(&mut arena, &generated).expect("the program focuses");
+    let entered =
+        command_of(enter_all(&mut arena, NodeAddress::Command(command)).expect("the redex enters"))
+            .expect("entering answers a command");
+    let written = run_on_tiers(&arena, command);
+    let ran = run_on_tiers(&arena, entered);
+    assert_eq!(
+        agreement(&settled(&written), &settled(&ran)),
+        Agreement::Differ,
+        "normalised, the written reading keeps the application outside the stuck bind"
+    );
+    assert_eq!(
+        agreement(&fired(&written), &fired(&ran)),
+        Agreement::Same,
+        "fired at a distance, the written reading is the entered one"
+    );
 }
