@@ -1,0 +1,44 @@
+/// Obligations a solver discharges, each proof one tactic: `with ~smt`.
+///
+/// A size bound on a queue or an overflow check is tedious by hand and
+/// routine for a solver. The proof stays beside the clause it answers.
+///
+/// `with ~smt` asks the `Model(Smt)` in scope. `with ~smt(checkedZ3)` names
+/// the model, and `with ~smt(budget = 10 s)` bounds the query. An
+/// inconclusive answer leaves the obligation open, and the recipe decides
+/// whether a build takes it.
+///
+/// - see: #4566 — the oracles sketch, its rulings in the issue body
+/// - see: corpus/sketch/specifications/proofs.gandr — `with` proofs by hand and by lemma
+
+// The specification theory and `old`.
+import std.spec (Spec, old);
+// The solver theory and its checked model.
+import "./solver.gandr";
+
+/// Removes the front element. The solver in scope proves its size bound.
+pub def pop[a : Type](q : Queue(a)) -> [State(Heap)] Maybe(a) #spec{
+  ensures r { | size(q) <= old(size(q)) with ~smt }
+} {
+  dequeue(q)
+}
+
+/// The midpoint of two indices. A named model proves its overflow check
+/// under a bound.
+pub def midpoint(lo : u32, hi : u32) -> u32 #spec{
+  requires { lo <= hi }
+  ensures m {
+    | lo <= m
+    | m <= hi
+  } with ~smt(checkedZ3, budget = 10 s)
+} {
+  lo + (hi - lo) / 2
+}
+
+/// A schedule's slots never overlap, a fact the solver finds in the slot
+/// arithmetic.
+pub def disjoint(s : Schedule) -> Bool #spec{
+  ensures ok { | ok == noOverlap(s.slots) with ~smt(budget = 2 s) }
+} {
+  all(pairs(s.slots), fun ((x, y)) { x.end <= y.start || y.end <= x.start })
+}

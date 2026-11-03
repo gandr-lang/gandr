@@ -1,0 +1,35 @@
+/// A cover read as an oracle: a view whose match asks which member holds.
+///
+/// A match through a cover view must learn which arm a value takes. Ahman and
+/// Bauer read that question as an oracle query, so a view needs no new form.
+///
+/// `Sign` covers the integers by three apart summands. Its evidence decides
+/// the cover, and a match through it asks that decision once per value. The
+/// view comes from sketch 3, and the query from this sketch.
+///
+/// - see: #4566 — the oracles sketch, its rulings in the issue body
+/// - see: corpus/sketch/views-and-layouts/parity.gandr — a view whose evidence is a cover
+
+/// The negative integers, zero and the positive integers cover the integers,
+/// and the comparison with zero decides which one holds.
+def signCover() -> Cover(Integer, [negative, zero, positive]) {
+  Cover.decide(fun (n) { compare(n, 0) })
+}
+
+/// An integer read by its sign.
+view Sign : Integer
+  | neg(magnitude : Nat)
+  | nil
+  | pos(magnitude : Nat)
+  with signCover
+
+/// The sign of a product, from the signs of its factors.
+def productSign(a : Integer, b : Integer) -> Integer {
+  match (a, b) with (Sign, Sign) {
+    (nil, _) => 0,
+    (_, nil) => 0,
+    (neg(_), neg(_)) => 1,
+    (pos(_), pos(_)) => 1,
+    _ => -1
+  }
+}

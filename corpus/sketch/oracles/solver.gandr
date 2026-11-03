@@ -1,0 +1,58 @@
+/// An SMT solver as an oracle: a theory, a model an extern supplies, and a
+/// checked model.
+///
+/// A solver answers what the normaliser cannot decide. The checker must never
+/// trust that answer, so the program states where the answer comes from and
+/// how the kernel checks it.
+///
+/// `Smt` is a container: a query and the answer family over it. Its laws are
+/// the sheaf equations, read as paths. An extern supplies `z3` as a model, and
+/// `Checked` wraps it so each answer carries a certificate for the kernel.
+///
+/// - see: #4566 — the oracles sketch, its rulings in the issue body
+/// - see: corpus/model/effects/domhringr.gandr — `Judge`, an outside oracle as a theory with no laws
+
+// The outcome type, `Checked` and the replay of a certificate.
+import std.oracle (Outcome, Checked, Certificate);
+
+/// The solver's interface: a query and the answer it may give.
+pub theory Smt where {
+  /// A question the solver takes.
+  sort Query : Type;
+  /// What a question admits as its answer.
+  sort Answer : (q : Query) -> Type;
+  /// Asks one question.
+  oper ask : (q : Query) --> Answer(q);
+}
+
+/// The sheaf equations, which the oracle theory states as its laws.
+pub theory SmtSheaf where {
+  /// A question the solver takes.
+  sort Query : Type+;
+  /// What a question admits as its answer.
+  sort Answer : (q : Query) -> Type+;
+  /// What runs after an answer.
+  sort C : Type;
+  /// Asks one question, then runs what follows on its answer.
+  oper ask : (q : Query, k : pi+ (a : Answer(q)). C) --> C;
+  /// A second ask of one question reads the first answer.
+  rule answered : ask(q, bind a. ask(q, bind b. k(a, b))) <=> ask(q, bind a. k(a, a));
+  /// Two questions commute.
+  rule reorder : ask(p, bind a. ask(q, bind b. k(a, b))) <=> ask(q, bind b. ask(p, bind a. k(a, b)));
+}
+
+/// The solver binary, its authority in the process row of whoever runs it.
+extern Process from "bin:z3" {
+  /// z3 as a model of the solver theory, its answers unchecked.
+  def z3 : Model(Smt);
+}
+
+/// z3 with checked answers: the kernel replays each certificate, or the model
+/// refuses.
+pub def checkedZ3 : Model(Smt) = Checked(z3, replay = Smt.replay);
+
+/// Whether a formula is satisfiable, asked of the model in scope, its
+/// answer one of four outcomes.
+pub def satisfiable[s : Model(Smt)](f : Formula) -> [Smt] Outcome(Sat(f)) {
+  s.ask(Query.sat(f))
+}

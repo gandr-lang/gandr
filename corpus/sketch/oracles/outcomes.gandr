@@ -1,0 +1,37 @@
+/// A batch checker that reports each solver outcome where it applies.
+///
+/// A solver's answer is evidence, a counterexample, a refusal or nothing
+/// conclusive. A tool that runs many queries must report all four, as the
+/// editor does at each `with`.
+///
+/// `Outcome` is a data type of `std.oracle`, so a program matches on it like
+/// any other. The checker replays the evidence. It refuses a counterexample
+/// or a refusal, and it leaves an inconclusive answer open.
+///
+/// - see: #4566 — the oracles sketch, its rulings in the issue body
+/// - see: corpus/sketch/oracles/solver.gandr — the solver theory and its checked model
+
+// The outcome type.
+import std.oracle (Outcome);
+// The solver theory and its checked model.
+import "./solver.gandr";
+// The console the report goes to.
+import std.io (print);
+
+/// One line of the report for one obligation's outcome.
+def line(name : String, o : Outcome(Goal)) -> String {
+  match o {
+    evidence(cert) => name ++ ": discharged by " ++ cert.solver,
+    counterexample(m) => name ++ ": fails at " ++ show(m),
+    refused(reason) => name ++ ": the solver refused it, " ++ reason,
+    inconclusive => name ++ ": open"
+  }
+}
+
+/// Asks the checked solver about every goal and prints one line for each.
+def report(goals : List((String, Goal))) -> [Smt, Console] Unit {
+  forEach(goals, fun ((name, g)) {
+    let o = checkedZ3.ask(Query.valid(g));
+    print(line(name, o))
+  })
+}
