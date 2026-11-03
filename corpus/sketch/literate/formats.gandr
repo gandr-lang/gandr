@@ -1,0 +1,34 @@
+/// Names that carry their typeset form, and markup in a format's own syntax.
+///
+/// A paper about a program sets `oplus` as a symbol and `alpha` as a Greek
+/// letter. lhs2TeX states this in a directive per file. An attribute states it
+/// once, on the declaration, and every importer inherits it.
+///
+/// `@[format(…)]` names a declaration's form in each target. The checker's
+/// semantic tokens give the highlighting, so nobody styles a name by hand.
+/// `#latex{ … }`, `#typst{ … }` and `#md{ … }` read a target's own markup.
+///
+/// - see: #4723 — the literate gandr sketch, its rulings in the issue body
+/// - see: corpus/sketch/literate/monoid.gandr.md — a literate Markdown host
+
+// The document formats, their markup types and their readers.
+import std.doc (Latex, Typst, Markdown);
+
+/// The angle of a rotation, set as a Greek letter.
+@[format(latex = "\\alpha", typst = "alpha", md = "α")]
+pub def alpha : Integer = 90;
+
+/// Composition of two functions, set as a ring.
+@[format(latex = "\\circ", typst = "compose", md = "∘")]
+pub def compose[a : Type, b : Type, c : Type](g : b => c, f : a => b) -> (a => c) {
+  fun (x) { g(f(x)) }
+}
+
+/// A caption for a figure, in LaTeX's own markup.
+pub def caption : Latex = #latex{ The rotation by $\alpha$ composes with itself. };
+
+/// The same caption, in Typst's markup.
+pub def captionTypst : Typst = #typst{ The rotation by $alpha$ composes with itself. };
+
+/// The same caption, in Markdown.
+pub def captionMarkdown : Markdown = #md{ The rotation by *α* composes with itself. };

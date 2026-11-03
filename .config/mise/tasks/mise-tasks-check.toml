@@ -722,8 +722,10 @@ run = "typos"
 # README, its generated syntax ledger and its bootstrap census (#2896) are on
 # it, a library's README (its module map, `library/std/README.md`), the pull
 # request template, which GitHub reads as markdown, and the filers' issue
-# templates (#3112), which `issue:file` posts as markdown. The unit issue
-# template is a form, `.github/ISSUE_TEMPLATE/unit.yml` (#3113). The
+# templates (#3112), which `issue:file` posts as markdown. A literate sketch
+# host, `corpus/sketch/*/*.gandr.md` (#4723), is a program in markdown, not
+# documentation. The unit issue template is a form,
+# `.github/ISSUE_TEMPLATE/unit.yml` (#3113). The
 # second holds every tracked markdown file to its budget in `sizelint.toml`;
 # treefmt's sizelint pass leaves markdown to this gate. The syntax ledger is
 # exempt: it is generated, one row per grammar rule, and
@@ -743,6 +745,7 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)ledger/syntax.md' \
   ':(exclude,glob)ledger/census.md' \
   ':(exclude,glob).config/issues/templates/*.md' \
+  ':(exclude,glob)corpus/sketch/*/*.gandr.md' \
   ':(exclude,glob).github/pull_request_template.md')
 if [ -n "$outside" ]; then
   printf '%s\n' "$outside" >&2
