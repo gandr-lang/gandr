@@ -13,11 +13,13 @@
 //! name — what each rule's term was checked against, the binders each rule
 //! opened, the hypotheses in scope — through `gandr-surface-pretty` on a
 //! [`SPELLING_WIDTH`]-column page, constants by their paths from the top
-//! level, and carries the spellings beside the origin table. A type the
-//! printer cannot lay out on one line is left unspelled, since it stands in a
-//! one-line label. A module that refuses nothing spells nothing. A document
-//! judged after its import closure spells its own refusals and failures and
-//! keeps the closure's spellings ([`TypeSpellings::after`]).
+//! level as the source holding the refused declaration reads them, whatever
+//! source the unit lays last, and carries the spellings beside the origin
+//! table. A type the printer cannot lay out on one line is left unspelled,
+//! since it stands in a one-line label. A module that refuses nothing spells
+//! nothing. A document judged after its import closure spells its own
+//! refusals and failures and keeps the closure's spellings
+//! ([`TypeSpellings::after`]).
 //!
 //! The alternatives were keeping the arena in the composition, which costs a
 //! copy of the whole arena per revision or makes the admission borrow what a
@@ -288,9 +290,11 @@ impl TypeSpellings
     ///   through [`present_type_line`] in its sugared form, once in each
     ///   spelling, constants by their paths from the top level, so a member of
     ///   a module, a sealed abstract type among them, reads as it is written
-    ///   outside it; a dependent arrow's binder is named as the source writes
-    ///   it, where it captures nothing; a type a failure names is spelled under
-    ///   the hypotheses it stands under, each by the name
+    ///   outside it, each read as [`constant_names`] reads it for the source
+    ///   holding the declaration whose refusal or failure names the type; a
+    ///   dependent arrow's binder is named as the source writes it, where it
+    ///   captures nothing; a type a failure names is spelled under the
+    ///   hypotheses it stands under, each by the name
     ///   [`crate::frame::contexts`] gives it, and in the regions it stands in,
     ///   each by its scope's capability or its hold's slot as written, and at
     ///   its definition's region binders, each by its name in the telescope, a
@@ -310,12 +314,15 @@ impl TypeSpellings
     ///   type is spelled by its module's path; a mismatch between types over
     ///   two parameters spells each by its name, and a hypothesis's type the
     ///   parameters before it; a type kept at a scope or a hold names it, and
-    ///   one kept at a definition's region binder names the binder.
+    ///   one kept at a definition's region binder names the binder; an
+    ///   importer's refusal spells a declaration after the importer's alias
+    ///   beside a later source that opens the same module.
     /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
     /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
     /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
     /// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
     /// - witness: `tests::diagnostics::a_mismatch_between_two_region_binders_names_both_2138`
+    /// - witness: `tests::diagnostics::a_refusal_is_spelled_as_its_own_source_reads_it_4813`
     #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
@@ -456,8 +463,28 @@ fn spell<'failure>(
     // Each failure's definition's region binders, by ordinal, named as its
     // telescope writes them.
     let mut bindings: Vec<Vec<Option<Name<'_>>>> = Vec::new();
-    let mut named: Vec<(TypeNode, Scoped)> = Vec::new();
+    // Each type named, with the source that reads it: the one holding the
+    // declaration whose refusal or failure names it.
+    let mut named: Vec<(TypeNode, Scoped, SourceIndex)> = Vec::new();
+    let unit = module.unit();
+    let holders: BTreeMap<ConstantIndex, SourceIndex> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.constant(),
+                unit.source_at(declaration.span().start()),
+            )
+        })
+        .collect();
+    let reader_of = |constant: ConstantIndex| {
+        holders
+            .get(&constant)
+            .copied()
+            .unwrap_or_else(|| unit.last())
+    };
     for (&constant, failure) in failures {
+        let reader = reader_of(constant);
         bindings.push(
             module
                 .region_names(constant)
@@ -482,7 +509,7 @@ fn spell<'failure>(
                 regions: around.len(),
             };
             if let Maybe::Present(expected) = obligation.expected() {
-                named.push((expected, standing));
+                named.push((expected, standing, reader));
             }
             if matches!(
                 obligation.role(),
@@ -495,10 +522,14 @@ fn spell<'failure>(
             }
             let binders = opened(obligation, origins, text);
             for (name, &ty) in binders.into_iter().zip(obligation.binders()) {
-                named.push((TypeNode::Value(ty), Scoped {
-                    depth: names.len(),
-                    ..standing
-                }));
+                named.push((
+                    TypeNode::Value(ty),
+                    Scoped {
+                        depth: names.len(),
+                        ..standing
+                    },
+                    reader,
+                ));
                 names.push(match name {
                     Maybe::Present(name) => Some(name),
                     Maybe::Absent(_) => None,
@@ -509,7 +540,7 @@ fn spell<'failure>(
             // The obligations do not account for every hypothesis, so
             // no name is known to stand at its position.
             names.clear();
-            for &mut (_, ref mut scoped) in named.get_mut(first ..).into_iter().flatten() {
+            for &mut (_, ref mut scoped, _) in named.get_mut(first ..).into_iter().flatten() {
                 scoped.depth = 0;
             }
         }
@@ -535,22 +566,30 @@ fn spell<'failure>(
                         .map(|live| TypeNode::Value(live.state)),
                 )
                 .map(|node| {
-                    (node, Scoped {
-                        scope,
-                        depth: full,
-                        regions: enclosed,
-                    })
+                    (
+                        node,
+                        Scoped {
+                            scope,
+                            depth: full,
+                            regions: enclosed,
+                        },
+                        reader,
+                    )
                 }),
         );
         // A region's depth counts from the outermost, so a hypothesis spelled
         // under every region the failure stands in names the ones it was
         // formed in as they were.
         named.extend(failure.hypotheses().iter().enumerate().map(|(at, &ty)| {
-            (TypeNode::Value(ty), Scoped {
-                scope,
-                depth: at.min(full),
-                regions: enclosed,
-            })
+            (
+                TypeNode::Value(ty),
+                Scoped {
+                    scope,
+                    depth: at.min(full),
+                    regions: enclosed,
+                },
+                reader,
+            )
         }));
         scopes.push(names);
         regions.push(around);
@@ -559,22 +598,37 @@ fn spell<'failure>(
         declarations
             .iter()
             .filter_map(|declaration| match declaration.produced().refusal() {
-                Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
+                Maybe::Present(Refusal::Checking(refusal)) => {
+                    Some((refusal.compared(), reader_of(declaration.constant())))
+                },
                 Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => {
                     None
                 },
             })
-            .flat_map(|compared| [compared.expected, compared.found])
-            .filter_map(|side| match side {
-                Maybe::Present(node) => Some((node, Scoped::CLOSED)),
+            .flat_map(|(compared, reader)| {
+                [compared.expected, compared.found].map(|side| (side, reader))
+            })
+            .filter_map(|(side, reader)| match side {
+                Maybe::Present(node) => Some((node, Scoped::CLOSED, reader)),
                 Maybe::Absent(_) => None,
             }),
     );
     if named.is_empty() {
         return TypeSpellings::default();
     }
-    let paths = constant_names(module, module.unit().last());
-    let names: Vec<Name<'_>> = paths.iter().map(|path| Name::from(path.as_str())).collect();
+    // A reader names each constant as its imports bind it, so each source
+    // that reads a named type takes its own names.
+    let mut readers: Vec<SourceIndex> = named.iter().map(|&(_, _, reader)| reader).collect();
+    readers.sort_unstable();
+    readers.dedup();
+    let paths: Vec<Vec<String>> = readers
+        .iter()
+        .map(|&reader| constant_names(module, reader))
+        .collect();
+    let names: Vec<Vec<Name<'_>>> = paths
+        .iter()
+        .map(|paths| paths.iter().map(|path| Name::from(path.as_str())).collect())
+        .collect();
     let families = Families::of(module);
     let constructors = families.naming();
     let contexts = printed_names(&scopes);
@@ -640,15 +694,20 @@ fn spell<'failure>(
     models.sort_by_key(|&(modelled, _)| modelled);
     let implicits = telescopes(module);
     let slots = model_slots(module);
-    let source = CoreSource::new(arena, &names)
-        .naming(&constructors)
-        .naming_arrows(&arrows)
-        .naming_pairs(&pairs, &seconds)
-        .naming_entries(&sum_labels, &with_labels)
-        .relating(&relations)
-        .modeling(&models)
-        .naming_implicits(&implicits)
-        .flattening(&slots);
+    let sources: Vec<CoreSource<'_>> = names
+        .iter()
+        .map(|names| {
+            CoreSource::new(arena, names)
+                .naming(&constructors)
+                .naming_arrows(&arrows)
+                .naming_pairs(&pairs, &seconds)
+                .naming_entries(&sum_labels, &with_labels)
+                .relating(&relations)
+                .modeling(&models)
+                .naming_implicits(&implicits)
+                .flattening(&slots)
+        })
+        .collect();
     for (
         node,
         Scoped {
@@ -656,11 +715,19 @@ fn spell<'failure>(
             depth,
             regions: within,
         },
+        reader,
     ) in named
     {
         if !seen.insert(node) {
             continue;
         }
+        let Some(source) = readers
+            .binary_search(&reader)
+            .ok()
+            .and_then(|at| sources.get(at))
+        else {
+            continue;
+        };
         let root = match node {
             TypeNode::Value(id) => CoreNode::ValueType(id),
             TypeNode::Computation(id) => CoreNode::CompType(id),
