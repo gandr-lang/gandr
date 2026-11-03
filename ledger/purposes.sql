@@ -364,6 +364,7 @@ INSERT INTO purpose VALUES('core-incremental','typing::EndpointSite','struct','N
 INSERT INTO purpose VALUES('core-incremental','typing::Form','enum','Names a checking-only form met where a type had to be synthesised, with its site.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Linearity','enum','Names how an endpoint escaped its one linear use, projected to item sites and type tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Located','enum','Names how a located judgement broke, projected: types as their tables, worlds and positions as references.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','typing::Mismatched','struct','Names a type mismatch, projected: the term''s site and both types as their tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Place','enum','Names the world a located refusal names, projected: the host''s, or a declared world''s reference.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Refusal','enum','Names why a declaration was refused, projected to item sites, type tables and references.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Site','enum','Names where in its item a refusal stood, the node''s table index or its unreached absence.',NULL,'fits','sound',NULL);

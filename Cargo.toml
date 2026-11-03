@@ -1480,7 +1480,9 @@ default-features = false
 features = ["alloc"]
 
 # Rust source parsed into items with their attributes: the specification-cost
-# ranking maps every `#[spec]` attribute to the lines it spans. The ecosystem
+# ranking maps every `#[spec]` attribute to the lines it spans, and the
+# incremental store's build script reads the checker's refusals to write their
+# mirror. The ecosystem
 # standard, at major 3, which the derive macros already link. Defaults off:
 # `derive`, `printing`, `clone-impls` and `proc-macro` serve macro authors;
 # the ranking reads spans straight off the attribute's tokens. Chosen over
@@ -1491,6 +1493,7 @@ features = ["alloc"]
 # - full: items, impls and traits beyond the derive-input subset
 # - parsing: `parse_file`
 # consumers:
+# - core-incremental (build script)
 # - workflow-spec-cost
 [workspace.dependencies.syn]
 version = "3.0.4"
@@ -1521,14 +1524,16 @@ features = ["rt", "sync", "time"]
 
 # TOML, read into a table: the test-timing report reads the priority
 # overrides of `.config/nextest.toml`, the driver the user's configuration
-# file, the hotpath judge a benchmark's regression policy, and the prose
-# check its glossary. `display` and `std` stay off: none writes TOML through
+# file, the hotpath judge a benchmark's regression policy, the prose check its
+# glossary, and the incremental store's build script its refusal mirror's
+# table. `display` and `std` stay off: none writes TOML through
 # the crate.
 # features:
 # - parse: the parser
 # - serde: `from_str` into a `Table`, the one entry point that reads a whole
 #   document
 # consumers:
+# - core-incremental (build script)
 # - surface-driver
 # - workflow-hotpath-guard
 # - workflow-prose

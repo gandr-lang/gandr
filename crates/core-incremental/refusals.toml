@@ -1,0 +1,140 @@
+# The checker's refusals as the store keeps them.
+#
+# The build script reads `CheckRefusal` from `crates/core-checker/src/refusal.rs`
+# and writes the store's `Refusal`, its projection and its codec arms from it
+# and from this table. A refusal the checker adds needs one row here: its wire
+# tag. The script refuses a refusal without a row, a row without a refusal, a
+# tag two rows share and a field a row names that the refusal lacks.
+#
+# A row's keys:
+# - `tag`: the byte that opens the refusal's frame. A tag is never reused.
+# - `sites`: the fields whose type has two roles, read as the node's site
+#   rather than its content; a tuple field is named by its position.
+# - `elide`: the fields the store does not keep: a payload the checker built
+#   that no source site names, or an admission-order coordinate.
+# - `codec = "hand"`: the codec writes and reads the refusal by a hand-written
+#   arm, beside the generated ones.
+
+# Each checker payload type the store reads in item coordinates: the type the
+# store keeps, and the projection method that reads it. A type no row names is
+# kept as the checker states it. A row with `site` reads a field `sites` names
+# by that method, as a `Site`.
+[roles]
+ValueId = { stored = "Site", by = "value_site" }
+ComputationId = { stored = "Site", by = "computation_site" }
+ValueTypeId = { stored = "TypeContent", by = "value_type", site = "value_type_site" }
+CompTypeId = { stored = "TypeContent", by = "comp_type" }
+ConstantIndex = { stored = "Reference", by = "reference" }
+CoreNode = { stored = "Site", by = "core_site" }
+TermNode = { stored = "Site", by = "term_site" }
+TypeNode = { stored = "TypeContent", by = "type_node" }
+CheckingForm = { stored = "Form", by = "form" }
+Mismatch = { stored = "Mismatched", by = "mismatch" }
+Endpoint = { stored = "EndpointSite", by = "endpoint" }
+LinearityDefect = { stored = "Linearity", by = "linearity" }
+LocatedDefect = { stored = "Located", by = "located" }
+
+[refusals]
+NotADataType = { tag = 19 }
+DataKindNotUniverse = { tag = 20, sites = ["0"] }
+DataFieldLevel = { tag = 21, sites = ["field"] }
+RuleNotPresentable = { tag = 72, sites = ["kind"] }
+RuleNotRespected = { tag = 73, elide = ["left", "right"] }
+NotApart = { tag = 74 }
+LoopNotRespected = { tag = 75, elide = ["left", "right"] }
+LoopUndecided = { tag = 78 }
+AbstractKindNotUniverse = { tag = 48, sites = ["0"] }
+RepresentationAboveKind = { tag = 49, sites = ["representation"] }
+NotAnAbstractType = { tag = 50 }
+AtomTransport = { tag = 85 }
+BridgeAtSealedType = { tag = 96, sites = ["at"] }
+OutsideFold = { tag = 97 }
+SealSiteRepeated = { tag = 51 }
+DataArgumentArity = { tag = 22, sites = ["0"] }
+UnknownConstructor = { tag = 23 }
+ConstructorArity = { tag = 24 }
+NonExhaustiveDataCase = { tag = 25 }
+UndecidedCoverage = { tag = 80 }
+AbsentRecordField = { tag = 26 }
+AbsentTupleComponent = { tag = 39 }
+MissingRecordField = { tag = 27 }
+UnknownOperation = { tag = 35 }
+HandlerCoverage = { tag = 36 }
+HandlerUnlawful = { tag = 91, elide = ["left", "right"] }
+ShiftWithoutReset = { tag = 37 }
+DependentStack = { tag = 38 }
+PathCode = { tag = 18 }
+EndpointMismatch = { codec = "hand" }
+CompoundEndpoint = { tag = 42 }
+FunextUnsupported = { tag = 43 }
+PointwiseDistinct = { tag = 44 }
+EquivUnsupported = { tag = 45 }
+UncertifiedStratum = { tag = 46 }
+RoundTripDistinct = { tag = 47 }
+NotOver = { tag = 52 }
+UaUncertified = { tag = 53 }
+UaInequivalent = { tag = 54 }
+ComposeUncertified = { tag = 99 }
+ComposeNotAShape = { tag = 100 }
+ComposeDoesNotFill = { tag = 101 }
+FillUncertified = { tag = 102 }
+NoFiller = { tag = 103 }
+GeneratorFamilyUnsupported = { tag = 104 }
+TypeMismatch = { tag = 0 }
+EffectSignatureConflict = { tag = 34 }
+ShapeMismatch = { tag = 1 }
+NotSynthesisable = { tag = 2 }
+UnknownConstant = { tag = 3 }
+OutOfFragment = { tag = 4 }
+UnboundIndex = { tag = 5 }
+BudgetExceeded = { tag = 6 }
+DanglingNode = { tag = 7 }
+AdmissionOrder = { tag = 8, elide = ["constant", "admitted"] }
+MachineInvariant = { tag = 9 }
+SortMismatch = { tag = 10 }
+LevelMismatch = { tag = 11 }
+DependentBind = { tag = 12 }
+Undecided = { tag = 13 }
+FamilyArity = { tag = 14 }
+FamilyArgumentClassifier = { tag = 15 }
+StaticLambdaArgument = { tag = 16 }
+StaticClassifierExpected = { tag = 17, sites = ["at"] }
+NegativeOccurrence = { tag = 28 }
+NestedOccurrence = { tag = 29 }
+IndexOccurrence = { tag = 30 }
+NonUniformOccurrence = { tag = 31 }
+CrossBlockReference = { tag = 32 }
+StageNotBelow = { tag = 77 }
+StagesDisagree = { tag = 83 }
+StageNotCarried = { tag = 98 }
+SessionMismatch = { tag = 56 }
+Linearity = { tag = 57 }
+Access = { tag = 76 }
+Codata = { tag = 82 }
+Located = { tag = 79 }
+UnenclosedRun = { tag = 55 }
+ImplicitUnsolved = { tag = 86 }
+ModelUnanswered = { tag = 89, elide = ["forced"] }
+ModelAmbiguous = { tag = 90 }
+TacticRefused = { tag = 93 }
+CapabilityForged = { tag = 58 }
+LiteralAmbiguous = { tag = 106 }
+CapabilityAmplified = { tag = 59 }
+CapabilityOutsideAuthority = { tag = 60 }
+CapabilityEscaped = { tag = 61 }
+CapabilityConsumable = { tag = 62, sites = ["0"] }
+CapabilityUngranted = { tag = 63, sites = ["declared"], elide = ["constant"] }
+FootprintsOverlap = { tag = 94 }
+SessionNotEquivalent = { tag = 64 }
+SessionNotSubtype = { tag = 65 }
+SessionCodeExpected = { tag = 66 }
+OpenSessionPayload = { tag = 84, sites = ["at"] }
+UnassertedLaw = { tag = 92, sites = ["at"] }
+UndischargedLaw = { tag = 105, sites = ["at"] }
+NonCovariantMotive = { tag = 67 }
+RideUnsupported = { tag = 68 }
+RunNotAdmitted = { tag = 69 }
+DialogueUnmatched = { tag = 87 }
+DialogueInverted = { tag = 88 }
+ForwardUnsupported = { tag = 70 }
+Boundary = { tag = 71 }

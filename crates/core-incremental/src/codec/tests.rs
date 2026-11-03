@@ -862,11 +862,11 @@ fn control_nodes_persist_names_frames_and_branch_order()
             at,
             expected: typed.clone(),
         },
-        super::Refusal::CapabilityAmplified {
+        super::Refusal::CapabilityAmplified(crate::typing::Mismatched {
             at,
             synthesised: typed.clone(),
             expected: typed.clone(),
-        },
+        }),
         super::Refusal::CapabilityOutsideAuthority {
             at,
             capability: typed.clone(),
@@ -879,7 +879,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
         },
         super::Refusal::CapabilityEscaped { at, found: typed },
         super::Refusal::CapabilityConsumable(at),
-        super::Refusal::CapabilityUngranted(at),
+        super::Refusal::CapabilityUngranted { declared: at },
         super::Refusal::NotSynthesisable {
             form: super::Form::Scope(at),
         },
@@ -1752,11 +1752,11 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
 {
     let unresolved = |sort| crate::fixture::type_content(&[ContentNode::Unresolved(sort)]);
     let mismatch = |synthesised, expected| {
-        Typing::Refused(Refusal::TypeMismatch {
+        Typing::Refused(Refusal::TypeMismatch(crate::typing::Mismatched {
             at: Site::Unreached,
             synthesised,
             expected,
-        })
+        }))
     };
     let encode = |nodes: Vec<ContentNode>, answer, typing| {
         let content = crate::fixture::item_content(
@@ -1974,19 +1974,19 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
         (
             unit(),
             Answer::Untyped,
-            Typing::Refused(Refusal::TypeMismatch {
+            Typing::Refused(Refusal::TypeMismatch(crate::typing::Mismatched {
                 at,
                 synthesised: crate::fixture::type_content(&[ContentNode::Universe {
                     sort: super::TypeSort::Ground(super::GroundSort::Value),
                     level: level.clone(),
                 }]),
                 expected: valid_type(),
-            }),
+            })),
         ),
         (
             unit(),
             Answer::Untyped,
-            Typing::Refused(Refusal::TypeMismatch {
+            Typing::Refused(Refusal::TypeMismatch(crate::typing::Mismatched {
                 at,
                 synthesised: valid_type(),
                 expected: crate::fixture::type_content(&[
@@ -1996,7 +1996,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
                     },
                     ContentNode::Tuple(Vec::new()),
                 ]),
-            }),
+            })),
         ),
     ];
     for (nodes, answer, typing) in cases {
@@ -2051,10 +2051,12 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
     let valid = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let at = Site::Unreached;
     let mismatches: [Mismatch; 4] = [
-        |synthesised, expected| Refusal::TypeMismatch {
-            at: Site::Unreached,
-            synthesised,
-            expected,
+        |synthesised, expected| {
+            Refusal::TypeMismatch(crate::typing::Mismatched {
+                at: Site::Unreached,
+                synthesised,
+                expected,
+            })
         },
         |synthesised, expected| Refusal::SortMismatch {
             at: Site::Unreached,
@@ -2778,11 +2780,11 @@ fn every_refusal() -> Vec<Refusal>
             SealingSite::from(1_usize),
             ComponentOrdinal::from(2_usize),
         )),
-        Refusal::TypeMismatch {
+        Refusal::TypeMismatch(crate::typing::Mismatched {
             at,
             synthesised: ty(),
             expected: ty(),
-        },
+        }),
         Refusal::ShapeMismatch {
             at,
             wanted: super::SHAPES[2],
@@ -2799,7 +2801,7 @@ fn every_refusal() -> Vec<Refusal>
         Refusal::BudgetExceeded {
             budget: CheckBudget::from(9_usize),
         },
-        Refusal::DanglingNode { at },
+        Refusal::DanglingNode { node: at },
         Refusal::AdmissionOrder,
         Refusal::MachineInvariant,
         Refusal::SortMismatch {
@@ -2851,14 +2853,14 @@ fn every_refusal() -> Vec<Refusal>
             at,
             classifier: ty(),
         },
-        Refusal::PointwiseDistinct(at),
+        Refusal::PointwiseDistinct { at },
         Refusal::EquivUnsupported {
             at,
             classifier: ty(),
         },
         Refusal::UncertifiedStratum { at, code: ty() },
         Refusal::OutsideFold { at, code: ty() },
-        Refusal::RoundTripDistinct(at),
+        Refusal::RoundTripDistinct { at },
         Refusal::NotOver {
             at,
             synthesised: ty(),
@@ -2909,34 +2911,34 @@ fn every_refusal() -> Vec<Refusal>
         },
         Refusal::CapabilityForged { at, expected: ty() },
         Refusal::LiteralAmbiguous { at, expected: ty() },
-        Refusal::CapabilityAmplified {
+        Refusal::CapabilityAmplified(crate::typing::Mismatched {
             at,
             synthesised: ty(),
             expected: ty(),
-        },
+        }),
         Refusal::CapabilityOutsideAuthority {
             at,
             capability: ty(),
         },
         Refusal::CapabilityEscaped { at, found: ty() },
         Refusal::CapabilityConsumable(at),
-        Refusal::CapabilityUngranted(at),
+        Refusal::CapabilityUngranted { declared: at },
         Refusal::FootprintsOverlap {
             at,
             child: ty(),
             parent: ty(),
             shared: ty(),
         },
-        Refusal::SessionNotEquivalent(at),
-        Refusal::SessionNotSubtype(at),
-        Refusal::SessionCodeExpected(at),
-        Refusal::OpenSessionPayload(at),
-        Refusal::UnassertedLaw(at),
-        Refusal::UndischargedLaw(at),
-        Refusal::NonCovariantMotive(at),
-        Refusal::RideUnsupported(at),
-        Refusal::ForwardUnsupported(at),
-        Refusal::Boundary(at),
+        Refusal::SessionNotEquivalent { at },
+        Refusal::SessionNotSubtype { at },
+        Refusal::SessionCodeExpected { at },
+        Refusal::OpenSessionPayload { at },
+        Refusal::UnassertedLaw { at },
+        Refusal::UndischargedLaw { at },
+        Refusal::NonCovariantMotive { at },
+        Refusal::RideUnsupported { at },
+        Refusal::ForwardUnsupported { at },
+        Refusal::Boundary { at },
         Refusal::EffectSignatureConflict {
             at,
             first: ty(),

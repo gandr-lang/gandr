@@ -1181,6 +1181,8 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
+ "syn 3.0.9",
+ "toml",
 ]
 
 [[package]]

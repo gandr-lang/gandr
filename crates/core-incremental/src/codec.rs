@@ -56,7 +56,6 @@ use gandr_core_checker::StaticArity;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::body;
-use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::ProtocolDefect;
@@ -139,6 +138,7 @@ use crate::typing::EndpointSite;
 use crate::typing::Form;
 use crate::typing::Linearity;
 use crate::typing::Located;
+use crate::typing::Mismatched;
 use crate::typing::Place;
 use crate::typing::Refusal;
 use crate::typing::Site;
@@ -1415,24 +1415,6 @@ fn read_side(reader: &mut Reader<'_>) -> Result<Endpoint, CodecError>
         1 => Ok(Endpoint::Right),
         _ => Err(CodecError::Corrupt),
     }
-}
-
-/// Read a log position written as one word.
-///
-/// # Specification
-/// - fails: [`CodecError::Corrupt`] for a word past `u32`.
-/// - panics: none.
-/// - executable: none — a parse whose failure is the word's width.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a dialogue's refusals round-trip with the log positions
-///   they name.
-/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
-fn read_step(reader: &mut Reader<'_>) -> Result<RunStep, CodecError>
-{
-    Ok(RunStep::from(
-        u32::try_from(reader.word()?.0).map_err(|_cause| CodecError::Corrupt)?,
-    ))
 }
 
 /// Write one piece of a web: its kind's tag, then an event's endpoint and
@@ -6915,6 +6897,589 @@ fn read_survivors(reader: &mut Reader<'_>)
     Ok(survivors.beyond_named(gandr_core_term::model::Beyond::from(beyond)))
 }
 
+/// A payload of a stored refusal, written and read on its own: the arms the
+/// build script generates write a refusal's tag and then each of its fields
+/// through this trait, in declaration order.
+///
+/// # Specification
+/// - ensures: a field's write is followed by its read of the same bytes, which
+///   returns the field written.
+/// - executable: none — the trait's methods state their own clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every refusal round-trips, each payload type at least
+///   once.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+trait Field: Sized
+{
+    /// Write the field.
+    ///
+    /// # Specification
+    /// - ensures: the field's bytes, which [`Self::read`] reads back.
+    /// - fails: [`CodecError::Unrepresentable`] for a count past the wire, or
+    ///   [`CodecError::Unsupported`] for a type naming an unresolved node.
+    /// - panics: none.
+    /// - executable: none — the bytes go to the writer's sink.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Field`].
+    /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+    fn write<Out>(
+        &self,
+        writer: &mut Writer<'_, Out>,
+    ) -> Result<(), CodecError>
+    where
+        Out: Sink;
+
+    /// Read the field.
+    ///
+    /// # Specification
+    /// - ensures: the field [`Self::write`] wrote to the bytes read.
+    /// - fails: [`CodecError::Corrupt`] or [`CodecError::NonCanonical`] for
+    ///   bytes no write produces; the reader's own failures.
+    /// - panics: none.
+    /// - executable: none — the bytes read are consumed from the reader.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Field`].
+    /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+    fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>;
+}
+
+/// Fields with a writer and a reader of their own, the writer taking the
+/// field by value or by reference.
+macro_rules! delegated {
+    ($($ty:ty => $write:ident($how:tt), $read:ident;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field by its own writer.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    delegated!(@call $write, writer, self, $how)
+                }
+
+                /// Read the field by its own reader.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    $read(reader)
+                }
+            }
+        )*
+    };
+    (@call $write:ident, $writer:ident, $field:ident, value) => {
+        $write($writer, *$field)
+    };
+    (@call $write:ident, $writer:ident, $field:ident, reference) => {
+        $write($writer, $field)
+    };
+}
+
+delegated! {
+    Site => write_site(value), read_site;
+    TypeContent => write_type(reference), read_type;
+    Reference => write_reference(reference), read_reference;
+    EndpointSite => write_endpoint(value), read_endpoint;
+    Linearity => write_linearity(reference), read_linearity;
+    Located => write_located(reference), read_located;
+    OccurrenceSite => write_occurrence_site(value), read_occurrence_site;
+    Stage => write_stage(value), read_stage;
+    Standing => write_standing(value), read_standing;
+    gandr_kernel_term::Apartness => write_apartness(value), read_apartness;
+    gandr_core_checker::ua::StratumDefect => write_stratum_defect(value), read_stratum_defect;
+    gandr_core_checker::ua::UaDefect => write_ua_defect(value), read_ua_defect;
+    gandr_core_term::compose::Pasting => write_pasting(value), read_pasting;
+    gandr_theory_sites::Unfilled => write_unfilled(value), read_unfilled;
+    gandr_core_term::model::Survivors => write_survivors(value), read_survivors;
+}
+
+/// Fields written as one entry of a table in stable wire order.
+macro_rules! listed {
+    ($($ty:ty => $table:ident;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field's position in its table.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    write_listed(writer, &$table, self)
+                }
+
+                /// Read the entry at the position read.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    read_listed(reader, &$table)
+                }
+            }
+        )*
+    };
+}
+
+listed! {
+    ExpectedShape => SHAPES;
+    UnadmittedFormer => FORMERS;
+    gandr_core_checker::Unsolved => UNSOLVED;
+    gandr_core_checker::TacticFault => TACTIC_FAULTS;
+}
+
+/// Fields written as a count.
+macro_rules! counted {
+    ($($ty:ty;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field as a count.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    writer.count(Count(usize::from(*self)))
+                }
+
+                /// Read a count as the field.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    Ok(Self::from(reader.count()?.0))
+                }
+            }
+        )*
+    };
+}
+
+counted! {
+    gandr_kernel_term::RuleIndex;
+    gandr_kernel_term::CellIndex;
+    gandr_core_term::ConstructorTag;
+    gandr_kernel_term::StageBinder;
+    BinderDepth;
+    CheckBudget;
+}
+
+/// Fields written as a 32-bit word.
+macro_rules! narrow {
+    ($($ty:ty;)*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field as a word.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    writer.word(Word(u64::from(u32::from(*self))));
+                    Ok(())
+                }
+
+                /// Read a word as the field, refusing one past 32 bits.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    read_narrow(reader)
+                }
+            }
+        )*
+    };
+}
+
+narrow! {
+    StaticArity;
+    ArgumentPosition;
+    DeBruijnIndex;
+    RunStep;
+}
+
+/// Fields written as one tag of a fixed list, refused past it as the error
+/// each names.
+macro_rules! tagged {
+    ($($ty:ty [$refused:ident] { $($variant:ident = $tag:literal),* $(,)? })*) => {
+        $(
+            impl Field for $ty
+            {
+                /// Write the field's tag.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn write<Out>(
+                    &self,
+                    writer: &mut Writer<'_, Out>,
+                ) -> Result<(), CodecError>
+                where
+                    Out: Sink,
+                {
+                    writer.tag(Tag(match *self {
+                        $(<$ty>::$variant => $tag,)*
+                    }));
+                    Ok(())
+                }
+
+                /// Read the field its tag names.
+                ///
+                /// # Specification
+                /// trivial.
+                #[inline]
+                fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
+                {
+                    match reader.tag()?.0 {
+                        $($tag => Ok(<$ty>::$variant),)*
+                        _ => Err(CodecError::$refused),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+tagged! {
+    gandr_core_checker::LoopRespect [Corrupt] { Apart = 0, NotPresentedSet = 1 }
+    gandr_core_checker::fill::UnsupportedFamily [Corrupt] { Flow = 0, Bridge = 1 }
+    gandr_core_checker::RunSource [Corrupt] { Written = 0, Crossing = 1 }
+    Zone [Corrupt] { Intuitionistic = 0, Linear = 1 }
+    gandr_core_checker::codata::CodataFault [NonCanonical] {
+        Undeclared = 0,
+        KindNotUniverse = 1,
+        WithoutObservations = 2,
+        Occurrence = 3,
+        ObservationLevel = 4,
+        Arity = 5,
+    }
+}
+
+/// Writes and reads a field by the two closures its `impl` states, beside
+/// the documentation each method carries.
+macro_rules! field {
+    ($ty:ty, | $field:ident, $writer:ident | $write:block, | $reader:ident | $read:block) => {
+        impl Field for $ty
+        {
+            /// Write the field's parts.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn write<Out>(
+                &self,
+                $writer: &mut Writer<'_, Out>,
+            ) -> Result<(), CodecError>
+            where
+                Out: Sink,
+            {
+                let $field = self;
+                $write
+            }
+
+            /// Read the field's parts.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn read($reader: &mut Reader<'_>) -> Result<Self, CodecError>
+            {
+                $read
+            }
+        }
+    };
+}
+
+field!(
+    gandr_kernel_term::RuleRefusal,
+    |refusal, writer| {
+        writer.count(Count(usize::from(refusal.rule)))?;
+        write_listed(writer, &RULE_FAULTS, &refusal.fault)
+    },
+    |reader| {
+        let rule = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
+        let fault = read_listed(reader, &RULE_FAULTS)?;
+        Ok(gandr_kernel_term::RuleRefusal { rule, fault })
+    }
+);
+
+field!(
+    gandr_core_term::compose::Seam,
+    |seam, writer| {
+        writer.count(Count(match *seam {
+            gandr_core_term::compose::Seam::Outer => 0,
+            gandr_core_term::compose::Seam::Column(before) => usize::from(before).saturating_add(1),
+        }))
+    },
+    |reader| {
+        Ok(match reader.count()?.0.checked_sub(1) {
+            None => gandr_core_term::compose::Seam::Outer,
+            Some(before) => gandr_core_term::compose::Seam::Column(
+                gandr_core_term::compose::Column::try_from(before)
+                    .map_err(|_wide| CodecError::Corrupt)?,
+            ),
+        })
+    }
+);
+
+field!(
+    gandr_core_term::ua::Stratum,
+    |stratum, writer| {
+        writer.count(Count(usize::from(stratum.degree)))?;
+        writer.count(Count(usize::from(stratum.bound)))
+    },
+    |reader| {
+        Ok(gandr_core_term::ua::Stratum {
+            degree: gandr_theory_sites::Degree::from(reader.count()?.0),
+            bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
+        })
+    }
+);
+
+field!(
+    gandr_core_checker::SealSite,
+    |site, writer| {
+        writer.count(Count(usize::from(site.sealing())))?;
+        writer.count(Count(usize::from(site.component())))
+    },
+    |reader| {
+        let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
+        let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
+        Ok(gandr_core_checker::SealSite::new(sealing, component))
+    }
+);
+
+field!(
+    gandr_core_term::tactic::Tactic,
+    |tactic, writer| {
+        writer.tag(Tag(u8::from(*tactic)));
+        Ok(())
+    },
+    |reader| {
+        gandr_core_term::tactic::Tactic::try_from(reader.tag()?.0)
+            .map_err(|_too_many| CodecError::Corrupt)
+    }
+);
+
+field!(
+    ProtocolDefect,
+    |defect, writer| {
+        match *defect {
+            ProtocolDefect::Action { expected, observed } => {
+                writer.tag(Tag(0));
+                write_listed(writer, &ACTIONS, &expected)?;
+                write_listed(writer, &ACTIONS, &observed)?;
+            },
+            ProtocolDefect::Label => writer.tag(Tag(1)),
+            ProtocolDefect::Arms => writer.tag(Tag(2)),
+        }
+        Ok(())
+    },
+    |reader| {
+        match reader.tag()?.0 {
+            0 => Ok(ProtocolDefect::Action {
+                expected: read_listed(reader, &ACTIONS)?,
+                observed: read_listed(reader, &ACTIONS)?,
+            }),
+            1 => Ok(ProtocolDefect::Label),
+            2 => Ok(ProtocolDefect::Arms),
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+);
+
+field!(
+    RunFault,
+    |fault, writer| {
+        let (kind, step) = match *fault {
+            RunFault::WrongDirection(step) => (0, step),
+            RunFault::WrongLabel(step) => (1, step),
+            RunFault::ResumeAfterEnd(step) => (2, step),
+            RunFault::Incomplete(step) => (3, step),
+            RunFault::OfferNarrowed => (4, RunStep::from(0_u32)),
+        };
+        writer.tag(Tag(kind));
+        writer.word(Word(u64::from(u32::from(step))));
+        Ok(())
+    },
+    |reader| {
+        let kind = reader.tag()?.0;
+        let step: RunStep = read_narrow(reader)?;
+        match kind {
+            0 => Ok(RunFault::WrongDirection(step)),
+            1 => Ok(RunFault::WrongLabel(step)),
+            2 => Ok(RunFault::ResumeAfterEnd(step)),
+            3 => Ok(RunFault::Incomplete(step)),
+            4 if u32::from(step) == 0 => Ok(RunFault::OfferNarrowed),
+            _ => Err(CodecError::NonCanonical),
+        }
+    }
+);
+
+field!(
+    AccessDefect,
+    |defect, writer| {
+        let (kind, by) = match *defect {
+            AccessDefect::NotHeld => (0, None),
+            AccessDefect::Lent => (1, None),
+            AccessDefect::HeldCaptured { by } => (2, Some(by)),
+            AccessDefect::Escaped { by } => (3, Some(by)),
+            AccessDefect::Unended => (4, None),
+            AccessDefect::Spent => (5, None),
+            AccessDefect::NotAView => (6, None),
+            AccessDefect::UnwindEffect => (7, None),
+            AccessDefect::ReadOnly => (8, None),
+            AccessDefect::Unindexed => (9, None),
+            AccessDefect::HeldShared => (10, None),
+            AccessDefect::HeldCopied => (11, None),
+            AccessDefect::Moved => (12, None),
+            AccessDefect::Kept => (13, None),
+            AccessDefect::KeptEscaped => (14, None),
+            AccessDefect::Consumed => (15, None),
+        };
+        writer.tag(Tag(kind));
+        if let Some(by) = by {
+            write_listed(writer, &CAPTURES, &by)?;
+        }
+        Ok(())
+    },
+    |reader| {
+        Ok(match reader.tag()?.0 {
+            0 => AccessDefect::NotHeld,
+            1 => AccessDefect::Lent,
+            2 => AccessDefect::HeldCaptured {
+                by: read_listed(reader, &CAPTURES)?,
+            },
+            3 => AccessDefect::Escaped {
+                by: read_listed(reader, &CAPTURES)?,
+            },
+            4 => AccessDefect::Unended,
+            5 => AccessDefect::Spent,
+            6 => AccessDefect::NotAView,
+            7 => AccessDefect::UnwindEffect,
+            8 => AccessDefect::ReadOnly,
+            9 => AccessDefect::Unindexed,
+            10 => AccessDefect::HeldShared,
+            11 => AccessDefect::HeldCopied,
+            12 => AccessDefect::Moved,
+            13 => AccessDefect::Kept,
+            14 => AccessDefect::KeptEscaped,
+            15 => AccessDefect::Consumed,
+            _ => return Err(CodecError::NonCanonical),
+        })
+    }
+);
+
+field!(
+    Mismatched,
+    |mismatched, writer| {
+        write_site(writer, mismatched.at)?;
+        write_type(writer, &mismatched.synthesised)?;
+        write_type(writer, &mismatched.expected)
+    },
+    |reader| {
+        Ok(Mismatched {
+            at: read_site(reader)?,
+            synthesised: read_type(reader)?,
+            expected: read_type(reader)?,
+        })
+    }
+);
+
+field!(
+    Form,
+    |form, writer| {
+        let (tag, site) = match *form {
+            Form::Thunk(site) => (0, Some(site)),
+            Form::Lambda(site) => (1, Some(site)),
+            Form::Hole => (3, None),
+            Form::StaticLambda(site) => (4, Some(site)),
+            Form::Injection(site) => (5, Some(site)),
+            Form::Case(site) => (6, Some(site)),
+            Form::Fixpoint(site) => (7, Some(site)),
+            Form::List(site) => (8, Some(site)),
+            Form::Reify(site) => (9, Some(site)),
+            Form::Handle(site) => (10, Some(site)),
+            Form::Reset(site) => (11, Some(site)),
+            Form::Shift(site) => (12, Some(site)),
+            Form::With(site) => (13, Some(site)),
+            Form::Nested(site) => (15, Some(site)),
+            Form::Offer(site) => (16, Some(site)),
+            Form::Scope(site) => (17, Some(site)),
+            Form::Run(site) => (18, Some(site)),
+            Form::Decimal(site) => (19, Some(site)),
+        };
+        writer.tag(Tag(tag));
+        site.map_or(Ok(()), |site| write_site(writer, site))
+    },
+    |reader| {
+        Ok(match reader.tag()?.0 {
+            0 => Form::Thunk(read_site(reader)?),
+            1 => Form::Lambda(read_site(reader)?),
+            3 => Form::Hole,
+            4 => Form::StaticLambda(read_site(reader)?),
+            5 => Form::Injection(read_site(reader)?),
+            6 => Form::Case(read_site(reader)?),
+            7 => Form::Fixpoint(read_site(reader)?),
+            8 => Form::List(read_site(reader)?),
+            9 => Form::Reify(read_site(reader)?),
+            10 => Form::Handle(read_site(reader)?),
+            11 => Form::Reset(read_site(reader)?),
+            12 => Form::Shift(read_site(reader)?),
+            13 => Form::With(read_site(reader)?),
+            15 => Form::Nested(read_site(reader)?),
+            16 => Form::Offer(read_site(reader)?),
+            17 => Form::Scope(read_site(reader)?),
+            18 => Form::Run(read_site(reader)?),
+            19 => Form::Decimal(read_site(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        })
+    }
+);
+
 /// Write a refusal.
 ///
 /// # Specification
@@ -6931,11 +7496,11 @@ fn read_survivors(reader: &mut Reader<'_>)
 #[spec(
     ensures: |ret| {
         let tables: [&[SupportedNode]; 2] = match *refusal {
-            | Refusal::TypeMismatch {
+            | Refusal::TypeMismatch(Mismatched {
                 ref synthesised,
                 ref expected,
                 ..
-            }
+            })
             | Refusal::SortMismatch {
                 ref synthesised,
                 ref expected,
@@ -6984,154 +7549,8 @@ fn write_refusal<Out>(
 where
     Out: Sink,
 {
-    match *refusal {
-        Refusal::NotADataType(ref reference) => {
-            writer.tag(Tag(19));
-            write_reference(writer, reference)?;
-        },
-        Refusal::DataKindNotUniverse(at) => {
-            writer.tag(Tag(20));
-            write_site(writer, at)?;
-        },
-        Refusal::DataFieldLevel { field, ref kind } => {
-            writer.tag(Tag(21));
-            write_site(writer, field)?;
-            write_type(writer, kind)?;
-        },
-        Refusal::RuleNotPresentable { kind, refusal } => {
-            writer.tag(Tag(72));
-            write_site(writer, kind)?;
-            writer.count(Count(usize::from(refusal.rule)))?;
-            write_listed(writer, &RULE_FAULTS, &refusal.fault)?;
-        },
-        Refusal::RuleNotRespected { at, rule } => {
-            writer.tag(Tag(73));
-            write_site(writer, at)?;
-            writer.count(Count(usize::from(rule)))?;
-        },
-        Refusal::NotApart { at, reason } => {
-            writer.tag(Tag(74));
-            write_site(writer, at)?;
-            write_apartness(writer, reason)?;
-        },
-        Refusal::LoopNotRespected { at, cell, reason } => {
-            writer.tag(Tag(75));
-            write_site(writer, at)?;
-            writer.count(Count(usize::from(cell)))?;
-            writer.tag(Tag(match reason {
-                gandr_core_checker::LoopRespect::Apart => 0,
-                gandr_core_checker::LoopRespect::NotPresentedSet => 1,
-            }));
-        },
-        Refusal::LoopUndecided { at, cell } => {
-            writer.tag(Tag(78));
-            write_site(writer, at)?;
-            writer.count(Count(usize::from(cell)))?;
-        },
-        Refusal::AbstractKindNotUniverse(at) => {
-            writer.tag(Tag(48));
-            write_site(writer, at)?;
-        },
-        Refusal::RepresentationAboveKind {
-            representation,
-            ref kind,
-        } => {
-            writer.tag(Tag(49));
-            write_site(writer, representation)?;
-            write_type(writer, kind)?;
-        },
-        Refusal::NotAnAbstractType(ref reference) => {
-            writer.tag(Tag(50));
-            write_reference(writer, reference)?;
-        },
-        Refusal::AtomTransport { at, ref atom } => {
-            writer.tag(Tag(85));
-            write_site(writer, at)?;
-            write_reference(writer, atom)?;
-        },
-        Refusal::BridgeAtSealedType { at, ref atom } => {
-            writer.tag(Tag(96));
-            write_site(writer, at)?;
-            write_reference(writer, atom)?;
-        },
-        Refusal::SealSiteRepeated(site) => {
-            writer.tag(Tag(51));
-            writer.count(Count(usize::from(site.sealing())))?;
-            writer.count(Count(usize::from(site.component())))?;
-        },
-        Refusal::DataArgumentArity(at) => {
-            writer.tag(Tag(22));
-            write_site(writer, at)?;
-        },
-        Refusal::UnknownConstructor { at, tag } => {
-            writer.tag(Tag(23));
-            write_site(writer, at)?;
-            writer.count(Count(usize::from(tag)))?;
-        },
-        Refusal::ConstructorArity(at) => {
-            writer.tag(Tag(24));
-            write_site(writer, at)?;
-        },
-        Refusal::NonExhaustiveDataCase(at) => {
-            writer.tag(Tag(25));
-            write_site(writer, at)?;
-        },
-        Refusal::UndecidedCoverage(at) => {
-            writer.tag(Tag(80));
-            write_site(writer, at)?;
-        },
-        Refusal::AbsentRecordField(at) => {
-            writer.tag(Tag(26));
-            write_site(writer, at)?;
-        },
-        Refusal::AbsentTupleComponent(at) => {
-            writer.tag(Tag(39));
-            write_site(writer, at)?;
-        },
-        Refusal::MissingRecordField { at, ref expected } => {
-            writer.tag(Tag(27));
-            write_site(writer, at)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::EffectSignatureConflict {
-            at,
-            ref first,
-            ref second,
-        } => {
-            writer.tag(Tag(34));
-            write_site(writer, at)?;
-            write_type(writer, first)?;
-            write_type(writer, second)?;
-        },
-        Refusal::UnknownOperation { at } => {
-            writer.tag(Tag(35));
-            write_site(writer, at)?;
-        },
-        Refusal::HandlerCoverage { at } => {
-            writer.tag(Tag(36));
-            write_site(writer, at)?;
-        },
-        Refusal::HandlerUnlawful { at, rule } => {
-            writer.tag(Tag(91));
-            write_site(writer, at)?;
-            writer.count(Count(usize::from(rule)))?;
-        },
-        Refusal::ShiftWithoutReset { at } => {
-            writer.tag(Tag(37));
-            write_site(writer, at)?;
-        },
-        Refusal::DependentStack {
-            at,
-            ref synthesised,
-        } => {
-            writer.tag(Tag(38));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-        },
-        Refusal::PathCode(site) => {
-            writer.tag(Tag(18));
-            write_site(writer, site)?;
-        },
+    refusal_write!(writer, refusal, {
+        // The tag names the miss, so the arm is written by hand.
         Refusal::EndpointMismatch {
             at,
             left,
@@ -7146,551 +7565,7 @@ where
             write_site(writer, left)?;
             write_site(writer, right)?;
         },
-        Refusal::CompoundEndpoint {
-            at,
-            ref synthesised,
-        } => {
-            writer.tag(Tag(42));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-        },
-        Refusal::FunextUnsupported { at, ref classifier } => {
-            writer.tag(Tag(43));
-            write_site(writer, at)?;
-            write_type(writer, classifier)?;
-        },
-        Refusal::PointwiseDistinct(site) => {
-            writer.tag(Tag(44));
-            write_site(writer, site)?;
-        },
-        Refusal::EquivUnsupported { at, ref classifier } => {
-            writer.tag(Tag(45));
-            write_site(writer, at)?;
-            write_type(writer, classifier)?;
-        },
-        Refusal::UncertifiedStratum { at, ref code } => {
-            writer.tag(Tag(46));
-            write_site(writer, at)?;
-            write_type(writer, code)?;
-        },
-        Refusal::OutsideFold { at, ref code } => {
-            writer.tag(Tag(97));
-            write_site(writer, at)?;
-            write_type(writer, code)?;
-        },
-        Refusal::RoundTripDistinct(site) => {
-            writer.tag(Tag(47));
-            write_site(writer, site)?;
-        },
-        Refusal::NotOver {
-            at,
-            ref synthesised,
-            ref expected,
-        } => {
-            writer.tag(Tag(52));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::UaUncertified { at, stratum } => {
-            writer.tag(Tag(53));
-            write_site(writer, at)?;
-            write_stratum_defect(writer, stratum)?;
-        },
-        Refusal::UaInequivalent { at, defect } => {
-            writer.tag(Tag(54));
-            write_site(writer, at)?;
-            write_ua_defect(writer, defect)?;
-        },
-        Refusal::ComposeUncertified { at, stratum } => {
-            writer.tag(Tag(99));
-            write_site(writer, at)?;
-            write_stratum_defect(writer, stratum)?;
-        },
-        Refusal::ComposeNotAShape { at, pasting } => {
-            writer.tag(Tag(100));
-            write_site(writer, at)?;
-            write_pasting(writer, pasting)?;
-        },
-        Refusal::ComposeDoesNotFill { at, seam, defect } => {
-            writer.tag(Tag(101));
-            write_site(writer, at)?;
-            writer.count(Count(match seam {
-                gandr_core_term::compose::Seam::Outer => 0,
-                gandr_core_term::compose::Seam::Column(before) => {
-                    usize::from(before).saturating_add(1)
-                },
-            }))?;
-            write_unfilled(writer, defect)?;
-        },
-        Refusal::FillUncertified { at, stratum } => {
-            writer.tag(Tag(102));
-            write_site(writer, at)?;
-            write_stratum_defect(writer, stratum)?;
-        },
-        Refusal::NoFiller {
-            at,
-            left,
-            right,
-            stratum,
-        } => {
-            writer.tag(Tag(103));
-            write_site(writer, at)?;
-            write_site(writer, left)?;
-            write_site(writer, right)?;
-            writer.count(Count(usize::from(stratum.degree)))?;
-            writer.count(Count(usize::from(stratum.bound)))?;
-        },
-        Refusal::GeneratorFamilyUnsupported { at, cell, family } => {
-            writer.tag(Tag(104));
-            write_site(writer, at)?;
-            write_site(writer, cell)?;
-            writer.tag(Tag(match family {
-                gandr_core_checker::fill::UnsupportedFamily::Flow => 0,
-                gandr_core_checker::fill::UnsupportedFamily::Bridge => 1,
-            }));
-        },
-        Refusal::UnenclosedRun { at, source } => {
-            writer.tag(Tag(55));
-            write_site(writer, at)?;
-            writer.tag(Tag(match source {
-                gandr_core_checker::RunSource::Written => 0,
-                gandr_core_checker::RunSource::Crossing => 1,
-            }));
-        },
-        Refusal::ImplicitUnsolved { at, reason } => {
-            writer.tag(Tag(86));
-            write_site(writer, at)?;
-            write_listed(writer, &UNSOLVED, &reason)?;
-        },
-        Refusal::ModelUnanswered { at } => {
-            writer.tag(Tag(89));
-            write_site(writer, at)?;
-        },
-        Refusal::ModelAmbiguous { at, survivors } => {
-            writer.tag(Tag(90));
-            write_site(writer, at)?;
-            write_survivors(writer, survivors)?;
-        },
-        Refusal::TacticRefused { at, tactic, fault } => {
-            writer.tag(Tag(93));
-            write_site(writer, at)?;
-            writer.tag(Tag(u8::from(tactic)));
-            write_listed(writer, &TACTIC_FAULTS, &fault)?;
-        },
-        Refusal::TypeMismatch {
-            at,
-            ref synthesised,
-            ref expected,
-        } => {
-            writer.tag(Tag(0));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::ShapeMismatch {
-            at,
-            wanted,
-            ref found,
-        } => {
-            writer.tag(Tag(1));
-            write_site(writer, at)?;
-            write_listed(writer, &SHAPES, &wanted)?;
-            write_type(writer, found)?;
-        },
-        Refusal::NotSynthesisable { form } => {
-            writer.tag(Tag(2));
-            match form {
-                Form::Reify(site) => {
-                    writer.tag(Tag(9));
-                    write_site(writer, site)?;
-                },
-                Form::Handle(site) => {
-                    writer.tag(Tag(10));
-                    write_site(writer, site)?;
-                },
-                Form::Reset(site) => {
-                    writer.tag(Tag(11));
-                    write_site(writer, site)?;
-                },
-                Form::Shift(site) => {
-                    writer.tag(Tag(12));
-                    write_site(writer, site)?;
-                },
-                Form::With(site) => {
-                    writer.tag(Tag(13));
-                    write_site(writer, site)?;
-                },
-                Form::List(site) => {
-                    writer.tag(Tag(8));
-                    write_site(writer, site)?;
-                },
-                Form::Injection(site) => {
-                    writer.tag(Tag(5));
-                    write_site(writer, site)?;
-                },
-                Form::Case(site) => {
-                    writer.tag(Tag(6));
-                    write_site(writer, site)?;
-                },
-                Form::Nested(site) => {
-                    writer.tag(Tag(15));
-                    write_site(writer, site)?;
-                },
-                Form::Thunk(site) => {
-                    writer.tag(Tag(0));
-                    write_site(writer, site)?;
-                },
-                Form::Lambda(site) => {
-                    writer.tag(Tag(1));
-                    write_site(writer, site)?;
-                },
-                Form::Hole => writer.tag(Tag(3)),
-                Form::StaticLambda(site) => {
-                    writer.tag(Tag(4));
-                    write_site(writer, site)?;
-                },
-                Form::Fixpoint(site) => {
-                    writer.tag(Tag(7));
-                    write_site(writer, site)?;
-                },
-                Form::Offer(site) => {
-                    writer.tag(Tag(16));
-                    write_site(writer, site)?;
-                },
-                Form::Scope(site) => {
-                    writer.tag(Tag(17));
-                    write_site(writer, site)?;
-                },
-                Form::Run(site) => {
-                    writer.tag(Tag(18));
-                    write_site(writer, site)?;
-                },
-                Form::Decimal(site) => {
-                    writer.tag(Tag(19));
-                    write_site(writer, site)?;
-                },
-            }
-        },
-        Refusal::UnknownConstant { at, ref constant } => {
-            writer.tag(Tag(3));
-            write_site(writer, at)?;
-            write_reference(writer, constant)?;
-        },
-        Refusal::OutOfFragment { at, former } => {
-            writer.tag(Tag(4));
-            write_site(writer, at)?;
-            write_listed(writer, &FORMERS, &former)?;
-        },
-        Refusal::UnboundIndex {
-            at,
-            zone,
-            index,
-            depth,
-        } => {
-            writer.tag(Tag(5));
-            write_site(writer, at)?;
-            writer.tag(match zone {
-                Zone::Intuitionistic => Tag(0),
-                Zone::Linear => Tag(1),
-            });
-            writer.word(Word(u64::from(u32::from(index))));
-            let depth = word_of(Count(usize::from(depth)))?;
-            writer.word(depth);
-        },
-        Refusal::BudgetExceeded { budget } => {
-            writer.tag(Tag(6));
-            let budget = word_of(Count(usize::from(budget)))?;
-            writer.word(budget);
-        },
-        Refusal::DanglingNode { at } => {
-            writer.tag(Tag(7));
-            write_site(writer, at)?;
-        },
-        Refusal::AdmissionOrder => writer.tag(Tag(8)),
-        Refusal::MachineInvariant => writer.tag(Tag(9)),
-        Refusal::SortMismatch {
-            at,
-            ref synthesised,
-            ref expected,
-        } => {
-            writer.tag(Tag(10));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::LevelMismatch {
-            at,
-            ref synthesised,
-            ref expected,
-        } => {
-            writer.tag(Tag(11));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::DependentBind {
-            at,
-            ref synthesised,
-        } => {
-            writer.tag(Tag(12));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-        },
-        Refusal::Undecided { at } => {
-            writer.tag(Tag(13));
-            write_site(writer, at)?;
-        },
-        Refusal::FamilyArity {
-            at,
-            expected,
-            actual,
-        } => {
-            writer.tag(Tag(14));
-            write_site(writer, at)?;
-            writer.word(Word(u64::from(u32::from(expected))));
-            writer.word(Word(u64::from(u32::from(actual))));
-        },
-        Refusal::FamilyArgumentClassifier {
-            at,
-            position,
-            ref synthesised,
-            ref expected,
-        } => {
-            writer.tag(Tag(15));
-            write_site(writer, at)?;
-            writer.word(Word(u64::from(u32::from(position))));
-            write_type(writer, synthesised)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::StaticLambdaArgument { at } => {
-            writer.tag(Tag(16));
-            write_site(writer, at)?;
-        },
-        Refusal::StaticClassifierExpected { at, ref found } => {
-            writer.tag(Tag(17));
-            write_site(writer, at)?;
-            write_type(writer, found)?;
-        },
-        Refusal::NegativeOccurrence(site) => {
-            writer.tag(Tag(28));
-            write_occurrence_site(writer, site)?;
-        },
-        Refusal::NestedOccurrence(site) => {
-            writer.tag(Tag(29));
-            write_occurrence_site(writer, site)?;
-        },
-        Refusal::IndexOccurrence(site) => {
-            writer.tag(Tag(30));
-            write_occurrence_site(writer, site)?;
-        },
-        Refusal::NonUniformOccurrence(site) => {
-            writer.tag(Tag(31));
-            write_occurrence_site(writer, site)?;
-        },
-        Refusal::CrossBlockReference { site, ref index } => {
-            writer.tag(Tag(32));
-            write_occurrence_site(writer, site)?;
-            write_reference(writer, index)?;
-        },
-        Refusal::StageNotBelow { at, found, bound } => {
-            writer.tag(Tag(77));
-            write_site(writer, at)?;
-            write_standing(writer, found)?;
-            write_stage(writer, bound)?;
-        },
-        Refusal::StagesDisagree { at, binder } => {
-            writer.tag(Tag(83));
-            write_site(writer, at)?;
-            writer.count(Count(usize::from(binder)))?;
-        },
-        Refusal::StageNotCarried { at } => {
-            writer.tag(Tag(98));
-            write_site(writer, at)?;
-        },
-        Refusal::SessionMismatch {
-            at,
-            endpoint,
-            ref state,
-            defect,
-        } => {
-            writer.tag(Tag(56));
-            write_site(writer, at)?;
-            write_endpoint(writer, endpoint)?;
-            write_type(writer, state)?;
-            match defect {
-                ProtocolDefect::Action { expected, observed } => {
-                    writer.tag(Tag(0));
-                    write_listed(writer, &ACTIONS, &expected)?;
-                    write_listed(writer, &ACTIONS, &observed)?;
-                },
-                ProtocolDefect::Label => writer.tag(Tag(1)),
-                ProtocolDefect::Arms => writer.tag(Tag(2)),
-            }
-        },
-        Refusal::Linearity { at, ref defect } => {
-            writer.tag(Tag(57));
-            write_site(writer, at)?;
-            write_linearity(writer, defect)?;
-        },
-        Refusal::CapabilityForged { at, ref expected } => {
-            writer.tag(Tag(58));
-            write_site(writer, at)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::LiteralAmbiguous { at, ref expected } => {
-            writer.tag(Tag(106));
-            write_site(writer, at)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::CapabilityAmplified {
-            at,
-            ref synthesised,
-            ref expected,
-        } => {
-            writer.tag(Tag(59));
-            write_site(writer, at)?;
-            write_type(writer, synthesised)?;
-            write_type(writer, expected)?;
-        },
-        Refusal::CapabilityOutsideAuthority { at, ref capability } => {
-            writer.tag(Tag(60));
-            write_site(writer, at)?;
-            write_type(writer, capability)?;
-        },
-        Refusal::CapabilityEscaped { at, ref found } => {
-            writer.tag(Tag(61));
-            write_site(writer, at)?;
-            write_type(writer, found)?;
-        },
-        Refusal::CapabilityConsumable(at) => {
-            writer.tag(Tag(62));
-            write_site(writer, at)?;
-        },
-        Refusal::CapabilityUngranted(declared) => {
-            writer.tag(Tag(63));
-            write_site(writer, declared)?;
-        },
-        Refusal::FootprintsOverlap {
-            at,
-            ref child,
-            ref parent,
-            ref shared,
-        } => {
-            writer.tag(Tag(94));
-            write_site(writer, at)?;
-            write_type(writer, child)?;
-            write_type(writer, parent)?;
-            write_type(writer, shared)?;
-        },
-        Refusal::SessionNotEquivalent(at) => {
-            writer.tag(Tag(64));
-            write_site(writer, at)?;
-        },
-        Refusal::SessionNotSubtype(at) => {
-            writer.tag(Tag(65));
-            write_site(writer, at)?;
-        },
-        Refusal::SessionCodeExpected(at) => {
-            writer.tag(Tag(66));
-            write_site(writer, at)?;
-        },
-        Refusal::OpenSessionPayload(at) => {
-            writer.tag(Tag(84));
-            write_site(writer, at)?;
-        },
-        Refusal::UnassertedLaw(at) => {
-            writer.tag(Tag(92));
-            write_site(writer, at)?;
-        },
-        Refusal::UndischargedLaw(at) => {
-            writer.tag(Tag(105));
-            write_site(writer, at)?;
-        },
-        Refusal::NonCovariantMotive(at) => {
-            writer.tag(Tag(67));
-            write_site(writer, at)?;
-        },
-        Refusal::RideUnsupported(at) => {
-            writer.tag(Tag(68));
-            write_site(writer, at)?;
-        },
-        Refusal::RunNotAdmitted { at, fault } => {
-            writer.tag(Tag(69));
-            write_site(writer, at)?;
-            let (kind, step) = match fault {
-                RunFault::WrongDirection(step) => (0, step),
-                RunFault::WrongLabel(step) => (1, step),
-                RunFault::ResumeAfterEnd(step) => (2, step),
-                RunFault::Incomplete(step) => (3, step),
-                RunFault::OfferNarrowed => (4, RunStep::from(0_u32)),
-            };
-            writer.tag(Tag(kind));
-            writer.word(Word(u64::from(u32::from(step))));
-        },
-        Refusal::DialogueUnmatched { at, step } => {
-            writer.tag(Tag(87));
-            write_site(writer, at)?;
-            writer.word(Word(u64::from(u32::from(step))));
-        },
-        Refusal::DialogueInverted { at, earlier, later } => {
-            writer.tag(Tag(88));
-            write_site(writer, at)?;
-            writer.word(Word(u64::from(u32::from(earlier))));
-            writer.word(Word(u64::from(u32::from(later))));
-        },
-        Refusal::ForwardUnsupported(at) => {
-            writer.tag(Tag(70));
-            write_site(writer, at)?;
-        },
-        Refusal::Boundary(at) => {
-            writer.tag(Tag(71));
-            write_site(writer, at)?;
-        },
-        Refusal::Access { at, defect } => {
-            writer.tag(Tag(76));
-            write_site(writer, at)?;
-            let (kind, by) = match defect {
-                AccessDefect::NotHeld => (0, None),
-                AccessDefect::Lent => (1, None),
-                AccessDefect::HeldCaptured { by } => (2, Some(by)),
-                AccessDefect::Escaped { by } => (3, Some(by)),
-                AccessDefect::Unended => (4, None),
-                AccessDefect::Spent => (5, None),
-                AccessDefect::NotAView => (6, None),
-                AccessDefect::UnwindEffect => (7, None),
-                AccessDefect::ReadOnly => (8, None),
-                AccessDefect::Unindexed => (9, None),
-                AccessDefect::HeldShared => (10, None),
-                AccessDefect::HeldCopied => (11, None),
-                AccessDefect::Moved => (12, None),
-                AccessDefect::Kept => (13, None),
-                AccessDefect::KeptEscaped => (14, None),
-                AccessDefect::Consumed => (15, None),
-            };
-            writer.tag(Tag(kind));
-            if let Some(by) = by {
-                write_listed(writer, &CAPTURES, &by)?;
-            }
-        },
-        Refusal::Codata { at, fault } => {
-            writer.tag(Tag(82));
-            write_site(writer, at)?;
-            writer.tag(Tag(match fault {
-                CodataFault::Undeclared => 0,
-                CodataFault::KindNotUniverse => 1,
-                CodataFault::WithoutObservations => 2,
-                CodataFault::Occurrence => 3,
-                CodataFault::ObservationLevel => 4,
-                CodataFault::Arity => 5,
-            }));
-        },
-        Refusal::Located { at, ref defect } => {
-            writer.tag(Tag(79));
-            write_site(writer, at)?;
-            write_located(writer, defect)?;
-        },
-    }
+    });
     Ok(())
 }
 
@@ -7778,227 +7653,7 @@ where
 fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 {
     let tag = reader.tag()?;
-    let refusal = match tag.0 {
-        19 => Refusal::NotADataType(read_reference(reader)?),
-        20 => Refusal::DataKindNotUniverse(read_site(reader)?),
-        21 => Refusal::DataFieldLevel {
-            field: read_site(reader)?,
-            kind: read_type(reader)?,
-        },
-        72 => {
-            let kind = read_site(reader)?;
-            let rule = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
-            let fault = read_listed(reader, &RULE_FAULTS)?;
-            Refusal::RuleNotPresentable {
-                kind,
-                refusal: gandr_kernel_term::RuleRefusal { rule, fault },
-            }
-        },
-        73 => Refusal::RuleNotRespected {
-            at: read_site(reader)?,
-            rule: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
-        },
-        74 => Refusal::NotApart {
-            at: read_site(reader)?,
-            reason: read_apartness(reader)?,
-        },
-        75 => Refusal::LoopNotRespected {
-            at: read_site(reader)?,
-            cell: gandr_kernel_term::CellIndex::from(reader.count()?.0),
-            reason: match reader.tag()?.0 {
-                0 => gandr_core_checker::LoopRespect::Apart,
-                1 => gandr_core_checker::LoopRespect::NotPresentedSet,
-                _ => return Err(CodecError::Corrupt),
-            },
-        },
-        78 => Refusal::LoopUndecided {
-            at: read_site(reader)?,
-            cell: gandr_kernel_term::CellIndex::from(reader.count()?.0),
-        },
-        22 => Refusal::DataArgumentArity(read_site(reader)?),
-        23 => Refusal::UnknownConstructor {
-            at: read_site(reader)?,
-            tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
-        },
-        24 => Refusal::ConstructorArity(read_site(reader)?),
-        25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
-        80 => Refusal::UndecidedCoverage(read_site(reader)?),
-        26 => Refusal::AbsentRecordField(read_site(reader)?),
-        39 => Refusal::AbsentTupleComponent(read_site(reader)?),
-        27 => Refusal::MissingRecordField {
-            at: read_site(reader)?,
-            expected: read_type(reader)?,
-        },
-        48 => Refusal::AbstractKindNotUniverse(read_site(reader)?),
-        49 => Refusal::RepresentationAboveKind {
-            representation: read_site(reader)?,
-            kind: read_type(reader)?,
-        },
-        50 => Refusal::NotAnAbstractType(read_reference(reader)?),
-        85 => Refusal::AtomTransport {
-            at: read_site(reader)?,
-            atom: read_reference(reader)?,
-        },
-        96 => Refusal::BridgeAtSealedType {
-            at: read_site(reader)?,
-            atom: read_reference(reader)?,
-        },
-        51 => {
-            let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
-            let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
-            Refusal::SealSiteRepeated(gandr_core_checker::SealSite::new(sealing, component))
-        },
-        0 => {
-            let at = read_site(reader)?;
-            let synthesised = read_type(reader)?;
-            let expected = read_type(reader)?;
-            Refusal::TypeMismatch {
-                at,
-                synthesised,
-                expected,
-            }
-        },
-        1 => {
-            let at = read_site(reader)?;
-            let wanted = read_listed(reader, &SHAPES)?;
-            let found = read_type(reader)?;
-            Refusal::ShapeMismatch { at, wanted, found }
-        },
-        2 => {
-            let form = reader.tag()?;
-            let form = match form.0 {
-                0 => {
-                    let site = read_site(reader)?;
-                    Form::Thunk(site)
-                },
-                1 => {
-                    let site = read_site(reader)?;
-                    Form::Lambda(site)
-                },
-                3 => Form::Hole,
-                4 => {
-                    let site = read_site(reader)?;
-                    Form::StaticLambda(site)
-                },
-                5 => Form::Injection(read_site(reader)?),
-                6 => Form::Case(read_site(reader)?),
-                7 => Form::Fixpoint(read_site(reader)?),
-                8 => Form::List(read_site(reader)?),
-                9 => Form::Reify(read_site(reader)?),
-                10 => Form::Handle(read_site(reader)?),
-                11 => Form::Reset(read_site(reader)?),
-                12 => Form::Shift(read_site(reader)?),
-                13 => Form::With(read_site(reader)?),
-                15 => Form::Nested(read_site(reader)?),
-                16 => Form::Offer(read_site(reader)?),
-                17 => Form::Scope(read_site(reader)?),
-                18 => Form::Run(read_site(reader)?),
-                19 => Form::Decimal(read_site(reader)?),
-                _ => return Err(CodecError::Corrupt),
-            };
-            Refusal::NotSynthesisable { form }
-        },
-        3 => {
-            let at = read_site(reader)?;
-            let constant = read_reference(reader)?;
-            Refusal::UnknownConstant { at, constant }
-        },
-        4 => {
-            let at = read_site(reader)?;
-            let former = read_listed(reader, &FORMERS)?;
-            Refusal::OutOfFragment { at, former }
-        },
-        5 => {
-            let at = read_site(reader)?;
-            let zone = reader.tag()?;
-            let zone = match zone.0 {
-                0 => Zone::Intuitionistic,
-                1 => Zone::Linear,
-                _ => return Err(CodecError::Corrupt),
-            };
-            let index = reader.word()?;
-            let index = u32::try_from(index.0).map_err(|_overflow| CodecError::Corrupt)?;
-            let depth = reader.count()?;
-            Refusal::UnboundIndex {
-                at,
-                zone,
-                index: DeBruijnIndex::from(index),
-                depth: BinderDepth::from(depth.0),
-            }
-        },
-        6 => {
-            let budget = reader.count()?;
-            Refusal::BudgetExceeded {
-                budget: CheckBudget::from(budget.0),
-            }
-        },
-        7 => {
-            let at = read_site(reader)?;
-            Refusal::DanglingNode { at }
-        },
-        8 => Refusal::AdmissionOrder,
-        9 => Refusal::MachineInvariant,
-        10 => {
-            let at = read_site(reader)?;
-            let synthesised = read_type(reader)?;
-            let expected = read_type(reader)?;
-            Refusal::SortMismatch {
-                at,
-                synthesised,
-                expected,
-            }
-        },
-        11 => {
-            let at = read_site(reader)?;
-            let synthesised = read_type(reader)?;
-            let expected = read_type(reader)?;
-            Refusal::LevelMismatch {
-                at,
-                synthesised,
-                expected,
-            }
-        },
-        12 => {
-            let at = read_site(reader)?;
-            let synthesised = read_type(reader)?;
-            Refusal::DependentBind { at, synthesised }
-        },
-        13 => {
-            let at = read_site(reader)?;
-            Refusal::Undecided { at }
-        },
-        14 => {
-            let at = read_site(reader)?;
-            let expected: StaticArity = read_narrow(reader)?;
-            let actual: StaticArity = read_narrow(reader)?;
-            Refusal::FamilyArity {
-                at,
-                expected,
-                actual,
-            }
-        },
-        15 => {
-            let at = read_site(reader)?;
-            let position: ArgumentPosition = read_narrow(reader)?;
-            let synthesised = read_type(reader)?;
-            let expected = read_type(reader)?;
-            Refusal::FamilyArgumentClassifier {
-                at,
-                position,
-                synthesised,
-                expected,
-            }
-        },
-        16 => {
-            let at = read_site(reader)?;
-            Refusal::StaticLambdaArgument { at }
-        },
-        17 => {
-            let at = read_site(reader)?;
-            let found = read_type(reader)?;
-            Refusal::StaticClassifierExpected { at, found }
-        },
-        18 => Refusal::PathCode(read_site(reader)?),
+    let refusal = refusal_read!(reader, tag.0, {
         40 => Refusal::EndpointMismatch {
             at: read_site(reader)?,
             left: read_site(reader)?,
@@ -8011,292 +7666,8 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             right: read_site(reader)?,
             miss: EndpointMiss::Budget,
         },
-        42 => Refusal::CompoundEndpoint {
-            at: read_site(reader)?,
-            synthesised: read_type(reader)?,
-        },
-        43 => Refusal::FunextUnsupported {
-            at: read_site(reader)?,
-            classifier: read_type(reader)?,
-        },
-        44 => Refusal::PointwiseDistinct(read_site(reader)?),
-        45 => Refusal::EquivUnsupported {
-            at: read_site(reader)?,
-            classifier: read_type(reader)?,
-        },
-        46 => Refusal::UncertifiedStratum {
-            at: read_site(reader)?,
-            code: read_type(reader)?,
-        },
-        97 => Refusal::OutsideFold {
-            at: read_site(reader)?,
-            code: read_type(reader)?,
-        },
-        47 => Refusal::RoundTripDistinct(read_site(reader)?),
-        52 => Refusal::NotOver {
-            at: read_site(reader)?,
-            synthesised: read_type(reader)?,
-            expected: read_type(reader)?,
-        },
-        53 => Refusal::UaUncertified {
-            at: read_site(reader)?,
-            stratum: read_stratum_defect(reader)?,
-        },
-        54 => Refusal::UaInequivalent {
-            at: read_site(reader)?,
-            defect: read_ua_defect(reader)?,
-        },
-        99 => Refusal::ComposeUncertified {
-            at: read_site(reader)?,
-            stratum: read_stratum_defect(reader)?,
-        },
-        100 => Refusal::ComposeNotAShape {
-            at: read_site(reader)?,
-            pasting: read_pasting(reader)?,
-        },
-        101 => Refusal::ComposeDoesNotFill {
-            at: read_site(reader)?,
-            seam: match reader.count()?.0.checked_sub(1) {
-                None => gandr_core_term::compose::Seam::Outer,
-                Some(before) => gandr_core_term::compose::Seam::Column(
-                    gandr_core_term::compose::Column::try_from(before)
-                        .map_err(|_wide| CodecError::Corrupt)?,
-                ),
-            },
-            defect: read_unfilled(reader)?,
-        },
-        102 => Refusal::FillUncertified {
-            at: read_site(reader)?,
-            stratum: read_stratum_defect(reader)?,
-        },
-        103 => Refusal::NoFiller {
-            at: read_site(reader)?,
-            left: read_site(reader)?,
-            right: read_site(reader)?,
-            stratum: gandr_core_term::ua::Stratum {
-                degree: gandr_theory_sites::Degree::from(reader.count()?.0),
-                bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
-            },
-        },
-        104 => Refusal::GeneratorFamilyUnsupported {
-            at: read_site(reader)?,
-            cell: read_site(reader)?,
-            family: match reader.tag()?.0 {
-                0 => gandr_core_checker::fill::UnsupportedFamily::Flow,
-                1 => gandr_core_checker::fill::UnsupportedFamily::Bridge,
-                _ => return Err(CodecError::Corrupt),
-            },
-        },
-        55 => Refusal::UnenclosedRun {
-            at: read_site(reader)?,
-            source: match reader.tag()?.0 {
-                0 => gandr_core_checker::RunSource::Written,
-                1 => gandr_core_checker::RunSource::Crossing,
-                _ => return Err(CodecError::Corrupt),
-            },
-        },
-        86 => Refusal::ImplicitUnsolved {
-            at: read_site(reader)?,
-            reason: read_listed(reader, &UNSOLVED)?,
-        },
-        89 => Refusal::ModelUnanswered {
-            at: read_site(reader)?,
-        },
-        90 => Refusal::ModelAmbiguous {
-            at: read_site(reader)?,
-            survivors: read_survivors(reader)?,
-        },
-        93 => Refusal::TacticRefused {
-            at: read_site(reader)?,
-            tactic: gandr_core_term::tactic::Tactic::try_from(reader.tag()?.0)
-                .map_err(|_too_many| CodecError::Corrupt)?,
-            fault: read_listed(reader, &TACTIC_FAULTS)?,
-        },
-        56 => {
-            let at = read_site(reader)?;
-            let endpoint = read_endpoint(reader)?;
-            let state = read_type(reader)?;
-            let defect = match reader.tag()?.0 {
-                0 => ProtocolDefect::Action {
-                    expected: read_listed(reader, &ACTIONS)?,
-                    observed: read_listed(reader, &ACTIONS)?,
-                },
-                1 => ProtocolDefect::Label,
-                2 => ProtocolDefect::Arms,
-                _ => return Err(CodecError::Corrupt),
-            };
-            Refusal::SessionMismatch {
-                at,
-                endpoint,
-                state,
-                defect,
-            }
-        },
-        57 => Refusal::Linearity {
-            at: read_site(reader)?,
-            defect: read_linearity(reader)?,
-        },
-        58 => Refusal::CapabilityForged {
-            at: read_site(reader)?,
-            expected: read_type(reader)?,
-        },
-        106 => Refusal::LiteralAmbiguous {
-            at: read_site(reader)?,
-            expected: read_type(reader)?,
-        },
-        59 => Refusal::CapabilityAmplified {
-            at: read_site(reader)?,
-            synthesised: read_type(reader)?,
-            expected: read_type(reader)?,
-        },
-        60 => Refusal::CapabilityOutsideAuthority {
-            at: read_site(reader)?,
-            capability: read_type(reader)?,
-        },
-        61 => Refusal::CapabilityEscaped {
-            at: read_site(reader)?,
-            found: read_type(reader)?,
-        },
-        62 => Refusal::CapabilityConsumable(read_site(reader)?),
-        63 => Refusal::CapabilityUngranted(read_site(reader)?),
-        94 => Refusal::FootprintsOverlap {
-            at: read_site(reader)?,
-            child: read_type(reader)?,
-            parent: read_type(reader)?,
-            shared: read_type(reader)?,
-        },
-        64 => Refusal::SessionNotEquivalent(read_site(reader)?),
-        65 => Refusal::SessionNotSubtype(read_site(reader)?),
-        66 => Refusal::SessionCodeExpected(read_site(reader)?),
-        84 => Refusal::OpenSessionPayload(read_site(reader)?),
-        92 => Refusal::UnassertedLaw(read_site(reader)?),
-        105 => Refusal::UndischargedLaw(read_site(reader)?),
-        67 => Refusal::NonCovariantMotive(read_site(reader)?),
-        68 => Refusal::RideUnsupported(read_site(reader)?),
-        70 => Refusal::ForwardUnsupported(read_site(reader)?),
-        71 => Refusal::Boundary(read_site(reader)?),
-        76 => {
-            let at = read_site(reader)?;
-            let defect = match reader.tag()?.0 {
-                0 => AccessDefect::NotHeld,
-                1 => AccessDefect::Lent,
-                2 => AccessDefect::HeldCaptured {
-                    by: read_listed(reader, &CAPTURES)?,
-                },
-                3 => AccessDefect::Escaped {
-                    by: read_listed(reader, &CAPTURES)?,
-                },
-                4 => AccessDefect::Unended,
-                5 => AccessDefect::Spent,
-                6 => AccessDefect::NotAView,
-                7 => AccessDefect::UnwindEffect,
-                8 => AccessDefect::ReadOnly,
-                9 => AccessDefect::Unindexed,
-                10 => AccessDefect::HeldShared,
-                11 => AccessDefect::HeldCopied,
-                12 => AccessDefect::Moved,
-                13 => AccessDefect::Kept,
-                14 => AccessDefect::KeptEscaped,
-                15 => AccessDefect::Consumed,
-                _ => return Err(CodecError::NonCanonical),
-            };
-            Refusal::Access { at, defect }
-        },
-        82 => {
-            let at = read_site(reader)?;
-            let fault = match reader.tag()?.0 {
-                0 => CodataFault::Undeclared,
-                1 => CodataFault::KindNotUniverse,
-                2 => CodataFault::WithoutObservations,
-                3 => CodataFault::Occurrence,
-                4 => CodataFault::ObservationLevel,
-                5 => CodataFault::Arity,
-                _ => return Err(CodecError::NonCanonical),
-            };
-            Refusal::Codata { at, fault }
-        },
-        79 => Refusal::Located {
-            at: read_site(reader)?,
-            defect: read_located(reader)?,
-        },
-        69 => {
-            let at = read_site(reader)?;
-            let kind = reader.tag()?.0;
-            let step = RunStep::from(
-                u32::try_from(reader.word()?.0).map_err(|_cause| CodecError::Corrupt)?,
-            );
-            let fault = match kind {
-                0 => RunFault::WrongDirection(step),
-                1 => RunFault::WrongLabel(step),
-                2 => RunFault::ResumeAfterEnd(step),
-                3 => RunFault::Incomplete(step),
-                4 if u32::from(step) == 0 => RunFault::OfferNarrowed,
-                _ => return Err(CodecError::NonCanonical),
-            };
-            Refusal::RunNotAdmitted { at, fault }
-        },
-        87 => {
-            let at = read_site(reader)?;
-            Refusal::DialogueUnmatched {
-                at,
-                step: read_step(reader)?,
-            }
-        },
-        88 => {
-            let at = read_site(reader)?;
-            let earlier = read_step(reader)?;
-            Refusal::DialogueInverted {
-                at,
-                earlier,
-                later: read_step(reader)?,
-            }
-        },
-        28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
-        29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
-        30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
-        31 => Refusal::NonUniformOccurrence(read_occurrence_site(reader)?),
-        32 => {
-            let site = read_occurrence_site(reader)?;
-            let index = read_reference(reader)?;
-            Refusal::CrossBlockReference { site, index }
-        },
-        77 => {
-            let at = read_site(reader)?;
-            let found = read_standing(reader)?;
-            let bound = read_stage(reader)?;
-            Refusal::StageNotBelow { at, found, bound }
-        },
-        83 => Refusal::StagesDisagree {
-            at: read_site(reader)?,
-            binder: gandr_kernel_term::StageBinder::from(reader.count()?.0),
-        },
-        98 => Refusal::StageNotCarried {
-            at: read_site(reader)?,
-        },
-        34 => Refusal::EffectSignatureConflict {
-            at: read_site(reader)?,
-            first: read_type(reader)?,
-            second: read_type(reader)?,
-        },
-        35 => Refusal::UnknownOperation {
-            at: read_site(reader)?,
-        },
-        36 => Refusal::HandlerCoverage {
-            at: read_site(reader)?,
-        },
-        91 => Refusal::HandlerUnlawful {
-            at: read_site(reader)?,
-            rule: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
-        },
-        37 => Refusal::ShiftWithoutReset {
-            at: read_site(reader)?,
-        },
-        38 => Refusal::DependentStack {
-            at: read_site(reader)?,
-            synthesised: read_type(reader)?,
-        },
         _ => return Err(CodecError::Corrupt),
-    };
+    });
     Ok(refusal)
 }
 
@@ -8327,11 +7698,11 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
                 | Typing::Refused(ref refusal) => match *refusal {
             Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} => [found.nodes(),&[]],
-                    | Refusal::TypeMismatch {
+                    | Refusal::TypeMismatch(Mismatched {
                         ref synthesised,
                         ref expected,
                         ..
-                    }
+                    })
                     | Refusal::SortMismatch {
                         ref synthesised,
                         ref expected,
@@ -8599,11 +7970,11 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
         let tables: [&[SupportedNode]; 2] = match *typing {
             | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
             | Typing::Refused(ref refusal) => match *refusal {
-            | Refusal::TypeMismatch {
+            | Refusal::TypeMismatch(Mismatched {
                     ref synthesised,
                     ref expected,
                     ..
-                }
+                })
                 | Refusal::SortMismatch {
                     ref synthesised,
                     ref expected,
@@ -8792,11 +8163,11 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
     let types = match *checkpoint.typing() {
         Typing::Synthesised { ref produced, .. } => [Some(produced), None],
         Typing::Refused(ref refusal) => match *refusal {
-            Refusal::TypeMismatch {
+            Refusal::TypeMismatch(Mismatched {
                 ref synthesised,
                 ref expected,
                 ..
-            }
+            })
             | Refusal::SortMismatch {
                 ref synthesised,
                 ref expected,
@@ -8873,11 +8244,11 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::EndpointMismatch { .. }
             | Refusal::CompoundEndpoint { .. }
             | Refusal::FunextUnsupported { .. }
-            | Refusal::PointwiseDistinct(_)
+            | Refusal::PointwiseDistinct { .. }
             | Refusal::EquivUnsupported { .. }
             | Refusal::UncertifiedStratum { .. }
             | Refusal::OutsideFold { .. }
-            | Refusal::RoundTripDistinct(_)
+            | Refusal::RoundTripDistinct { .. }
             | Refusal::NotOver { .. }
             | Refusal::UaUncertified { .. }
             | Refusal::UaInequivalent { .. }
@@ -8924,21 +8295,21 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::CapabilityOutsideAuthority { .. }
             | Refusal::CapabilityEscaped { .. }
             | Refusal::CapabilityConsumable(_)
-            | Refusal::CapabilityUngranted(_)
+            | Refusal::CapabilityUngranted { .. }
             | Refusal::FootprintsOverlap { .. }
-            | Refusal::SessionNotEquivalent(_)
-            | Refusal::SessionNotSubtype(_)
-            | Refusal::SessionCodeExpected(_)
-            | Refusal::OpenSessionPayload(_)
-            | Refusal::UnassertedLaw(_)
-            | Refusal::UndischargedLaw(_)
-            | Refusal::NonCovariantMotive(_)
-            | Refusal::RideUnsupported(_)
+            | Refusal::SessionNotEquivalent { .. }
+            | Refusal::SessionNotSubtype { .. }
+            | Refusal::SessionCodeExpected { .. }
+            | Refusal::OpenSessionPayload { .. }
+            | Refusal::UnassertedLaw { .. }
+            | Refusal::UndischargedLaw { .. }
+            | Refusal::NonCovariantMotive { .. }
+            | Refusal::RideUnsupported { .. }
             | Refusal::RunNotAdmitted { .. }
             | Refusal::DialogueUnmatched { .. }
             | Refusal::DialogueInverted { .. }
-            | Refusal::ForwardUnsupported(_)
-            | Refusal::Boundary(_)
+            | Refusal::ForwardUnsupported { .. }
+            | Refusal::Boundary { .. }
             | Refusal::Access { .. }
             | Refusal::Codata { .. }
             | Refusal::Located { .. } => [None, None],

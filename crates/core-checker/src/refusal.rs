@@ -1303,7 +1303,7 @@ pub enum CheckRefusal
     /// A computation written where a value is read and run there, with no
     /// computation enclosing it to run before: one in a definition's own
     /// value, or under static content. A crossing's call is refused at the
-    /// written value it carries (#4806).
+    /// written value it carries.
     UnenclosedRun
     {
         /// The nested computation or written run, or the value a crossing
