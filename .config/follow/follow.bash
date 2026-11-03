@@ -1,16 +1,18 @@
 # The toolchain follower (#4499), sourced by `toolchain:follow`. Each reading
 # fetches `origin main` into the main checkout, fast-forwards it, builds the
 # driver there and deploys the build as the default toolchain, so every relay
-# and every `gandr` the proxy runs follows `main`.
+# and every `gandr` the proxy runs follows `main`. It then syncs the
+# checkout's code index, which every new worktree copies (#4866).
 #
 # The configuration and the follower's memory live outside the tree, under
 # the XDG directories:
 #   $XDG_CONFIG_HOME/gandr/follow.json   `{checkout, interval, page}`: the
 #       main checkout it builds in, the seconds between readings, and the
 #       page command's argument vector before the line;
-#   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed, paged}`:
-#       the commit deployed, the one deployed before it, the last commit whose
-#       build failed, and the keys of the pages already sent.
+#   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed,
+#       indexed, paged}`: the commit deployed, the one deployed before it,
+#       the last commit whose build failed, the commit the code index was
+#       last synced to, and the keys of the pages already sent.
 # The builds live in `$XDG_DATA_HOME/gandr/builds/<commit>/gandr`. The
 # toolchain `main` names the deployed build and is the default, and the
 # toolchain `previous` names the build before it, for a rollback by
@@ -118,15 +120,36 @@ follow_deploy() {
   echo "toolchain:follow: deployed $head as the default toolchain main${previous:+, $previous as previous}"
 }
 
-# One reading in the checkout `$1`: fetch, fast-forward, build and deploy.
-# A checkout off `main`, dirty, or past `origin/main` is left as it is and
-# paged once per commit of `origin/main`. A failed build deploys nothing and
-# is paged once per commit.
+# Bring the main checkout's code index to `HEAD` `$1` where one exists
+# (#4866): `wt:warm` copies it into every new worktree, which then starts with
+# the index of the `main` it branched from. An index already at `$1` is left
+# alone. A failed sync is printed and paged once per commit, read again next
+# interval, and never holds back a deploy.
+follow_index() {
+  local head=$1 output
+  [[ -d .codegraph ]] || return 0
+  [[ "$head" != $(jq -r '.indexed // empty' <<< "$(follow_memory)") ]] || return 0
+  if ! output=$(mise exec -- codegraph sync 2>&1); then
+    echo "$output" >&2
+    follow_page "index:$head" "FOLLOW index-failed: the code index of $PWD does not sync to ${head:0:9}: $(awk 'NF {line = $0} END {print line}' <<< "$output")"
+    return 0
+  fi
+  follow_remember "$(jq -c --arg head "$head" '.indexed = $head' <<< "$(follow_memory)")"
+  echo "toolchain:follow: synced the code index to $head"
+}
+
+# One reading in the checkout `$1`: fetch, fast-forward, build, deploy and
+# sync the code index. A fetch that fails, or a checkout off `main`, dirty, or
+# past `origin/main`, is left as it is and paged once per commit of
+# `origin/main`, the one last fetched for a failed fetch (#4866). A failed
+# build deploys nothing and is paged once per commit.
 follow_once() {
-  local checkout=$1 upstream branch head memory
+  local checkout=$1 upstream branch head memory error
   cd "$checkout" || { follow_page "missing:$checkout" "FOLLOW checkout-missing: $checkout is no directory; nothing deployed"; return; }
-  if ! git fetch -q origin main; then
-    echo "toolchain:follow: the fetch failed; reading again next interval" >&2
+  if ! error=$(git fetch -q origin main 2>&1); then
+    echo "$error" >&2
+    upstream=$(git rev-parse -q --verify origin/main || echo none)
+    follow_page "fetch:$upstream" "FOLLOW fetch-failed: $checkout cannot fetch origin main: $(awk 'NF {print; exit}' <<< "$error"); nothing past ${upstream:0:9} is deployed"
     return
   fi
   upstream=$(git rev-parse origin/main)
@@ -145,14 +168,14 @@ follow_once() {
   fi
   head=$(git rev-parse HEAD)
   memory=$(follow_memory)
-  if [[ "$head" == $(jq -r '.deployed // empty' <<< "$memory") || "$head" == $(jq -r '.failed // empty' <<< "$memory") ]]; then
-    return
+  if [[ "$head" != $(jq -r '.deployed // empty' <<< "$memory") && "$head" != $(jq -r '.failed // empty' <<< "$memory") ]]; then
+    echo "toolchain:follow: building $head"
+    if cargo build --release --locked -p gandr-lang --bin gandr; then
+      follow_deploy "$head"
+    else
+      follow_remember "$(jq -c --arg head "$head" '.failed = $head' <<< "$(follow_memory)")"
+      follow_page "build:$head" "FOLLOW build-failed: main at ${head:0:9} does not build; the default stays $(jq -r '.deployed // "unchanged"' <<< "$memory" | cut -c1-9)"
+    fi
   fi
-  echo "toolchain:follow: building $head"
-  if ! cargo build --release --locked -p gandr-lang --bin gandr; then
-    follow_remember "$(jq -c --arg head "$head" '.failed = $head' <<< "$(follow_memory)")"
-    follow_page "build:$head" "FOLLOW build-failed: main at ${head:0:9} does not build; the default stays $(jq -r '.deployed // "unchanged"' <<< "$memory" | cut -c1-9)"
-    return
-  fi
-  follow_deploy "$head"
+  follow_index "$head"
 }
