@@ -5059,7 +5059,7 @@ fn the_environment_outranks_the_pin_and_the_pin_the_default()
 /// naming where the name came from, and so is a name that is not one.
 #[cfg(unix)]
 #[test]
-fn a_name_no_toolchain_answers_is_refused_by_its_source()
+fn a_name_no_toolchain_answers_is_refused_by_its_source_4745()
 {
     let scratch = Scratch::new(Path::new("toolchain-unknown"));
     let data = scratch.0.join("data");
@@ -5070,7 +5070,7 @@ fn a_name_no_toolchain_answers_is_refused_by_its_source()
         stderr(&refused),
         format!(
             "gandr: the pin {} names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n",
-            pin.display()
+            pin.canonicalize().expect("the pin resolves").display()
         )
     );
     let misnamed = proxied(
@@ -5216,14 +5216,21 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
         (Code(0_i32), String::from("ran old check\n"), String::new()),
         "outside the package no constraint holds"
     );
-    let pin = scratch.file(Path::new("package/gandr-toolchain"), Text::from("old\n"));
+    let pin = scratch
+        .file(Path::new("package/gandr-toolchain"), Text::from("old\n"))
+        .canonicalize()
+        .expect("the pin resolves");
+    let constrained = package
+        .join("gandr.toml")
+        .canonicalize()
+        .expect("the manifest resolves");
     let (pinned, _, refusal) = checked(&package);
     assert_eq!(pinned, Code(2_i32));
     assert!(
         refusal.starts_with(&format!(
             "gandr: the pin {} names the toolchain `old`, which leaves the constraint of {} unmet\n  ToolchainUnmet.gandr:",
             pin.display(),
-            package.join("gandr.toml").display()
+            constrained.display()
         )),
         "{refusal}"
     );
@@ -5234,7 +5241,7 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
     assert!(
         refusal.starts_with(&format!(
             "gandr: no installed toolchain meets the constraint of {}; the nearest, `old`, leaves it unmet\n  ToolchainUnmet.gandr:",
-            package.join("gandr.toml").display()
+            constrained.display()
         )),
         "{refusal}"
     );
