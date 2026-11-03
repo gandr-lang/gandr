@@ -25,4 +25,5 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` o
 104 │ ┃   }
     │ ┗━━━┛ not shown to satisfy a law of its theory
     │
-    ╰ note: `discarding` is refused with HandlerUnlawful, as its expectation states
+    ├ note: `discarding` is refused with HandlerUnlawful, as its expectation states
+    ╰ help: change the handler's clauses so that they satisfy the law

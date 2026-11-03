@@ -1568,14 +1568,14 @@ fn reported(step: Step<'_>) -> Step<'_>
 /// # Adequacy
 /// - hypothesis: L3 — a type mismatch and duplicate signature have exact
 ///   primary and causal locations, a refused declaration's message carries its
-///   label and note, and a refusal whose refused node stands in an import is
-///   published at its innermost context with the node at the import's file. L2
-///   — every corpus diagnostic agrees with its wire ranges, code, message and
-///   related labels, distinguishing omitted, misclassified or misprojected
+///   label, note and help, and a refusal whose refused node stands in an import
+///   is published at its innermost context with the node at the import's file.
+///   L2 — every corpus diagnostic agrees with its wire ranges, code, message
+///   and related labels, distinguishing omitted, misclassified or misprojected
 ///   fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
-/// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
+/// - witness: `recheck::tests::a_refusal_publishes_its_label_note_and_help`
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
@@ -2169,8 +2169,13 @@ mod tests
             Maybe::Absent(gandr_surface_diagnostics::context_locus::Absent::Unrecorded);
         let index = super::LineIndex::new(text.as_ref().into());
         let published = super::diagnostic(force, &index, &uri, Verbosity::User, None);
+        let lines: Vec<&str> = published.message.lines().collect();
+        let [ref lead @ .., help] = *lines.as_slice()
+        else {
+            panic!("a published refusal has lines");
+        };
         assert_eq!(
-            published.message.lines().collect::<Vec<_>>(),
+            lead,
             [
                 "expected a thunk type `+U C`",
                 "its type is not of the required shape: found `Integer`",
@@ -2179,6 +2184,7 @@ mod tests
             ],
             "a context with no bytes to relate is a `while` line of the message, after the label"
         );
+        assert!(help.starts_with("help: "), "the help closes the message");
         assert_eq!(
             published
                 .related_information
@@ -2294,7 +2300,7 @@ mod tests
     }
 
     #[test]
-    fn a_refusal_publishes_its_label_and_note()
+    fn a_refusal_publishes_its_label_note_and_help()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
         let text = "def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
@@ -2304,9 +2310,12 @@ mod tests
             panic!("one unresolved type head");
         };
         let lines: Vec<&str> = diagnostic.message.lines().collect();
-        let [message, label, note] = *lines.as_slice()
+        let [message, label, note, help] = *lines.as_slice()
         else {
-            panic!("a message, a label and a note: {:?}", diagnostic.message);
+            panic!(
+                "a message, a label, a note and a help: {:?}",
+                diagnostic.message
+            );
         };
         assert!(message.contains("`Vec`"), "the message names the head");
         assert!(
@@ -2320,6 +2329,10 @@ mod tests
         assert!(
             note.starts_with("note: ") && note.contains("`f`"),
             "the note names the declaration the terminal names"
+        );
+        assert!(
+            help.starts_with("help: ") && help.contains("`Vec`"),
+            "the help names the head the reader declares or imports"
         );
     }
 
@@ -2414,8 +2427,8 @@ mod tests
         };
         assert_eq!(
             user.message.lines().count(),
-            3_usize,
-            "message, label, note"
+            4_usize,
+            "message, label, note, help"
         );
         assert!(
             detailed.message.starts_with(&user.message)

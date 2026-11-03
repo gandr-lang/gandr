@@ -4,7 +4,8 @@ error[UnresolvedTypeHead]: no type named `Band` is written bare
 6 │ def early : Band;
   │             ━━━━ no type head of this name and arity
   │
-  ╰ note: `early` is refused with UnresolvedTypeHead, as its expectation states
+  ├ note: `early` is refused with UnresolvedTypeHead, as its expectation states
+  ╰ help: declare a type named `Band`, or import the module that exports it
 
 error[MissingRecordField]: the record is missing a field
    ╭▸ corpus/pathological/modules/top-level-type.gandr:14:22

@@ -4,7 +4,8 @@ error[NonExhaustiveMatch]: this match does not cover every value it can be given
 35 │   match i {}
    │   ━━━━━━━━━━ some value matches no arm
    │
-   ╰ note: `absurdFin` is refused with NonExhaustiveMatch, as its expectation states
+   ├ note: `absurdFin` is refused with NonExhaustiveMatch, as its expectation states
+   ╰ help: add an arm for the values that no arm matches, or a last arm that matches any value
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/dependent-bounds.gandr:52:64

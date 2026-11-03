@@ -68,7 +68,8 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 55 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `written` is refused with HeldKept, as its expectation states
+   ├ note: `written` is refused with HeldKept, as its expectation states
+   ╰ help: write the value only after the scope that keeps its shared view ends
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
    ╭▸ corpus/pathological/control/kept-view.gandr:64:29
@@ -138,7 +139,8 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 94 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `writtenInHold` is refused with HeldKept, as its expectation states
+   ├ note: `writtenInHold` is refused with HeldKept, as its expectation states
+   ╰ help: write the value only after the scope that keeps its shared view ends
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
     ╭▸ corpus/pathological/control/kept-view.gandr:102:27

@@ -10,7 +10,8 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 20 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
    │
-   ╰ note: `forgetful` is refused with HandlerUnlawful, as its expectation states
+   ├ note: `forgetful` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law
 
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
    ╭▸ corpus/pathological/effects/state-laws.gandr:28:3
@@ -24,4 +25,5 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 36 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
    │
-   ╰ note: `accumulating` is refused with HandlerUnlawful, as its expectation states
+   ├ note: `accumulating` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law

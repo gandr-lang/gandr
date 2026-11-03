@@ -7,4 +7,5 @@ error[NonExhaustiveMatch]: this match does not cover every value it can be given
 11 │ ┃   }
    │ ┗━━━┛ some value matches no arm
    │
-   ╰ note: `by_literal` is refused with NonExhaustiveMatch, as its expectation states
+   ├ note: `by_literal` is refused with NonExhaustiveMatch, as its expectation states
+   ╰ help: add an arm for the values that no arm matches, or a last arm that matches any value

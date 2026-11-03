@@ -10,4 +10,5 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
 21 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
    │
-   ╰ note: `forgetful` is refused with HandlerUnlawful, as its expectation states
+   ├ note: `forgetful` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law

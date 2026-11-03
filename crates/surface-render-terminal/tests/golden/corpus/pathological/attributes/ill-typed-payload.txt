@@ -4,4 +4,5 @@ error[IllTypedPayload]: the attribute `doc` takes a text payload, not an integer
 2 │ @[ doc(42) ]
   │        ━━ a payload of another schema
   │
-  ╰ note: `f` is refused with IllTypedPayload, as its expectation states
+  ├ note: `f` is refused with IllTypedPayload, as its expectation states
+  ╰ help: give `doc` a text payload

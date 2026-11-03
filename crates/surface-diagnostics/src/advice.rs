@@ -36,6 +36,7 @@ use alloc::string::String;
 
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
+use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::RunSource;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::ForkSide;
@@ -170,7 +171,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             "delete `{member}`: the model reads it as `{theory}.{member}`, which the derivation fills"
         ),
         // A head a `std` module homes names its listing, and a host interface
-        // the import of its module; any other is unworded.
+        // the import of its module; any other head is declared or imported.
         LoweringRefusal::UnresolvedTypeHead { name, .. } => match head_home(name) {
             Maybe::Present(home) => {
                 format!("write `import {home} ({name});`, the listing of `{name}` from its home")
@@ -179,9 +180,17 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
                 Maybe::Present(home) => {
                     format!("write `import {home};`, the import of `{name}`'s module")
                 },
-                Maybe::Absent(_) => return Maybe::Absent(help::Absent::Unworded),
+                Maybe::Absent(_) => {
+                    format!("declare a type named `{name}`, or import the module that exports it")
+                },
             },
         },
+        LoweringRefusal::IllTypedPayload { name, expected, .. } => {
+            format!("give `{name}` {expected}")
+        },
+        LoweringRefusal::NonExhaustiveMatch { .. } => String::from(
+            "add an arm for the values that no arm matches, or a last arm that matches any value",
+        ),
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -201,7 +210,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::DuplicateAttribute { .. }
         | LoweringRefusal::MissingPayload { .. }
         | LoweringRefusal::NonValuePayload { .. }
-        | LoweringRefusal::IllTypedPayload { .. }
         | LoweringRefusal::ForwardMemberReference { .. }
         | LoweringRefusal::PhaseDependence { .. }
         | LoweringRefusal::InertRead { .. }
@@ -228,7 +236,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::AmbiguousMethod { .. }
         | LoweringRefusal::ViewNotPlace { .. }
         | LoweringRefusal::ViewOfNoPlace { .. }
-        | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::MismatchedPattern { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::UnguardedCorecursion { .. }
@@ -564,6 +571,46 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "write the value in a function's body, `def name() -> T { … }`, where the reader's or \
              reduct's call that carries it to its type runs",
         ),
+        CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::EmptySum,
+            ..
+        } => String::from("delete the injection, because the empty sum has no summand to name"),
+        CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::Summand,
+            ..
+        } => String::from("name a summand that the sum declares"),
+        CheckRefusal::ShapeMismatch { .. } => String::from(
+            "change the term or the type it is checked against, so that the type has the required \
+             shape",
+        ),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::Closed { .. },
+            ..
+        } => String::from("move the action before the `close`, or delete it"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::BufferUnreturned { .. },
+            ..
+        } => String::from(
+            "hand the buffer back with a `send`, an operation or a resumption before the body ends",
+        ),
+        CheckRefusal::Access {
+            defect: AccessDefect::HeldCaptured { by },
+            ..
+        } => format!(
+            "use the held value outside {}, or declare its `var` inside it",
+            Captor(by)
+        ),
+        CheckRefusal::Access {
+            defect: AccessDefect::Kept,
+            ..
+        } => String::from("write the value only after the scope that keeps its shared view ends"),
+        CheckRefusal::HandlerUnlawful { .. } => {
+            String::from("change the handler's clauses so that they satisfy the law")
+        },
+        CheckRefusal::ModelUnanswered { .. } => String::from(
+            "declare a module that is a model of the theory at these types, or supply one by name \
+             in brackets",
+        ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::UnenclosedRun {
             source: RunSource::Written,
@@ -589,7 +636,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::MissingRecordField { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
-        | CheckRefusal::HandlerUnlawful { .. }
         | CheckRefusal::ShiftWithoutReset { .. }
         | CheckRefusal::DependentStack { .. }
         | CheckRefusal::PathCode(_)
@@ -607,7 +653,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::FillUncertified { .. }
         | CheckRefusal::GeneratorFamilyUnsupported { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
-        | CheckRefusal::ShapeMismatch { .. }
         | CheckRefusal::NotSynthesisable { .. }
         | CheckRefusal::UnknownConstant { .. }
         | CheckRefusal::OutOfFragment { .. }
@@ -635,7 +680,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Access { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
-        | CheckRefusal::ModelUnanswered { .. }
         | CheckRefusal::ModelAmbiguous { .. }
         | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::CapabilityForged { .. }
@@ -672,7 +716,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 36] = [
+    const WORDED: [&str; 46] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -710,6 +754,16 @@ mod tests
         "DerivedComponent",
         // Worded for a crossing's run, the one the vocabulary's refusal holds.
         "UnenclosedRun",
+        "UnresolvedTypeHead",
+        "UsedAfterClose",
+        "ModelUnanswered",
+        "NonExhaustiveMatch",
+        "ShapeMismatch",
+        "BufferUnreturned",
+        "HandlerUnlawful",
+        "HeldCaptured",
+        "HeldKept",
+        "IllTypedPayload",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

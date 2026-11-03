@@ -20,4 +20,5 @@ error[UsedAfterClose]: the endpoint is used after `close`
 24 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `bufferTouched` is refused with UsedAfterClose, as its expectation states
+   ├ note: `bufferTouched` is refused with UsedAfterClose, as its expectation states
+   ╰ help: move the action before the `close`, or delete it

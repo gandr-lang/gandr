@@ -7,4 +7,5 @@ error[ShapeMismatch]: expected an eager product `A * B`
 5 │ def single_is_not_its_member = (1,);
   │                                ━━━━ its type is not of the required shape: found `Integer`
   │
-  ╰ note: `single_is_not_its_member` is refused with ShapeMismatch, as its expectation states
+  ├ note: `single_is_not_its_member` is refused with ShapeMismatch, as its expectation states
+  ╰ help: change the term or the type it is checked against, so that the type has the required shape

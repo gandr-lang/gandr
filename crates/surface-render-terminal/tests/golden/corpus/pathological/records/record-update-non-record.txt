@@ -7,4 +7,5 @@ error[ShapeMismatch]: expected a record type
    │               │ its type is not of the required shape: found `Integer`
    │               synthesised; while synthesising the record this update writes into
    │
-   ╰ note: `updated` is refused with ShapeMismatch, as its expectation states
+   ├ note: `updated` is refused with ShapeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the type has the required shape

@@ -28,7 +28,8 @@ error[UsedAfterClose]: the endpoint is used after `close`
 39 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `reused` is refused with UsedAfterClose, as its expectation states
+   ├ note: `reused` is refused with UsedAfterClose, as its expectation states
+   ╰ help: move the action before the `close`, or delete it
 
 error[EndpointAsValue]: an endpoint can be used only by a session action
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:44:54

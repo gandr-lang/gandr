@@ -9,6 +9,7 @@ error[ShapeMismatch]: expected a thunk type `+U C`
   │         checked against `() => Integer`; while checking the body of this thunk
   │
   ├ note: `a` is expected to check, and this refusal leaves it unsettled
+  ├ help: change the term or the type it is checked against, so that the type has the required shape
   ├ class: malformed source
   ├ detail: the rule here requires a thunk type `+U C`
   ├ expression: `1`

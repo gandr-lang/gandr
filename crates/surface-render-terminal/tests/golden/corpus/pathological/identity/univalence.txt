@@ -65,7 +65,8 @@ error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
 51 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
-   ╰ note: `alongLiteral` is refused with ShapeMismatch, as its expectation states
+   ├ note: `alongLiteral` is refused with ShapeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the type has the required shape
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/univalence.gandr:62:3

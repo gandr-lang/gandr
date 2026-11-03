@@ -7,4 +7,5 @@ error[ShapeMismatch]: expected a thunk type `+U C`
   ├ note: while checking the body of this thunk
   ├ note: while comparing the type this synthesises with the one it is checked against
   ├ note: while forcing this
-  ╰ note: `a` is expected to check, and this refusal leaves it unsettled
+  ├ note: `a` is expected to check, and this refusal leaves it unsettled
+  ╰ help: change the term or the type it is checked against, so that the type has the required shape

@@ -12,4 +12,5 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 12 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `writtenWhileKept` is refused with HeldKept, as its expectation states
+   ├ note: `writtenWhileKept` is refused with HeldKept, as its expectation states
+   ╰ help: write the value only after the scope that keeps its shared view ends
