@@ -205,7 +205,7 @@ pub enum Linearity
         /// The endpoint.
         endpoint: EndpointSite,
     },
-    /// Two arms of an offer left the endpoint in different states.
+    /// Two arms of an offer or a case left the endpoint in different states.
     ArmsDisagree
     {
         /// The endpoint.

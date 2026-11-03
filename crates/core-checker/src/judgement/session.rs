@@ -270,17 +270,29 @@ pub(super) struct Scope
 pub(super) struct ZoneMark(usize);
 
 /// How a case's arms leave the linear zone: one after another while the run
-/// holds no value, or each from the zone the case found and joined after the
-/// last while it holds one.
+/// holds no value and no endpoint, or each from the zone the case found and
+/// joined after the last while it holds one.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Joining
 {
-    /// The run holds no value: each arm starts from the zone the one before
-    /// it left.
+    /// The run holds no value and no endpoint: each arm starts from the zone
+    /// the one before it left.
     Threaded,
-    /// The run holds a value: each arm starts from the zone at the mark, and
-    /// a held value one arm consumed counts as consumed after the case.
+    /// The run holds a value or an endpoint: each arm starts from the zone at
+    /// the mark, a held value one arm consumed counts as consumed after the
+    /// case, and every arm leaves each endpoint as the first arm left it.
     Joined(ZoneMark),
+}
+
+/// Which slots two arms' zones must agree on: every slot after an offer's
+/// arms, the endpoints alone after a case's, whose held values join.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Compared
+{
+    /// Every slot the run opened.
+    Every,
+    /// The endpoints the run opened.
+    Endpoints,
 }
 
 /// One linear slot, read: who bound it, its declared type, its remaining
@@ -716,12 +728,14 @@ impl Machine<'_, '_>
     /// handler, a capability scope or a shift, while the run holds one. A
     /// branch may read a held value: a read copies, and each branch lends it
     /// at most for its own extent. A case's arms are separate paths, so an arm
-    /// may consume a held value: each arm starts from the hold as the case
-    /// found it, and the case leaves it consumed when any arm consumed it. A
-    /// fold's step runs once per element and a lazy product's components in
-    /// any number, so neither consumes one. A capability scope's clause
-    /// receives the rest of its body as a continuation it may resume twice or
-    /// drop, so the body names only residents that owe nothing: a held value,
+    /// may consume a held value or act on an endpoint: each arm starts from
+    /// the hold and the endpoint as the case found them, the case leaves the
+    /// hold consumed when any arm consumed it, and every arm leaves the
+    /// endpoint as the first did. A fold's step runs once per element and a
+    /// lazy product's components in any number, so neither consumes one. A
+    /// capability scope's clause receives the rest of its body as a
+    /// continuation it may resume twice or drop, so the body names only
+    /// residents that owe nothing: a held value,
     /// whose slot stands outside the scope, a received value and a shared
     /// view, each of which a read copies. A thunk or a stack checked at a type
     /// kept in a region may name a shared view whose held slot outlives that
@@ -738,7 +752,7 @@ impl Machine<'_, '_>
     ///   keeps each shared view it names, and nothing else changes.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::Captured`] at the goal's term, with the first
-    ///   endpoint it names and what may run it, and
+    ///   endpoint it names and what may run it, a case's arms excepted, and
     ///   [`LinearityDefect::ContinuationCaptured`] for an owed continuation it
     ///   names; [`CheckRefusal::Access`] naming [`AccessDefect::Escaped`] for a
     ///   view no region keeps, [`AccessDefect::HeldCaptured`] for a held value
@@ -763,6 +777,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     /// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
     #[spec(
         captures: [
             holding = self.context.depth(Zone::Linear) > self.sessions.base,
@@ -961,6 +976,11 @@ impl Machine<'_, '_>
                 continue;
             }
             if scope && self.owing(named.resident)? == Owing::Nothing {
+                continue;
+            }
+            // A case's arms each act on the endpoint from where the case
+            // found it, and the join requires them to leave it alike.
+            if joins && matches!(named.resident, Resident::Endpoint(_)) {
                 continue;
             }
             captured(node, named.resident, by)?;
@@ -2462,7 +2482,7 @@ impl Machine<'_, '_>
             self.sessions.zones.push(left);
         }
         else {
-            self.agree(first, this, zones, &left)?;
+            self.agree(first, this, zones, &left, Compared::Every)?;
         }
         let next = position.next()?;
         if next.0 < count {
@@ -2480,12 +2500,12 @@ impl Machine<'_, '_>
     }
 
     /// Require the zone `left` the arm `other` left to agree with the one the
-    /// first arm `first` left.
+    /// first arm `first` left, on the slots `compared` names.
     ///
     /// # Specification
     /// - requires: the first arm's zone is kept above the offer's own.
-    /// - ensures: nothing changes when every slot has the same use in both and
-    ///   every available slot equivalent session types.
+    /// - ensures: nothing changes when every slot `compared` names has the same
+    ///   use in both and every such available slot equivalent session types.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::ArmsDisagree`] with the first slot that differs.
     /// - panics: none.
@@ -2495,9 +2515,10 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an arm consuming an outer endpoint the first arm left
-    ///   is refused.
+    ///   is refused, after an offer and after a case.
     /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
     /// - witness: `judgement::session::tests::offer_arms_leaving_an_endpoint_open_agree_on_its_state`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::ArmsDisagree { first: kept, other: differing, .. } }) => {
             refused == CoreNode::Term(TermNode::Computation(other)) && kept == first && differing == other
@@ -2510,6 +2531,7 @@ impl Machine<'_, '_>
         other: ComputationId,
         zones: ZoneMark,
         left: &LinearZone,
+        compared: Compared,
     ) -> Result<(), CheckRefusal>
     {
         let agreed = self
@@ -2531,6 +2553,13 @@ impl Machine<'_, '_>
         for (position, ((agreed_type, agreed_use), (left_type, left_use))) in
             slots.into_iter().enumerate()
         {
+            let opened = position
+                .checked_sub(base)
+                .and_then(|position| self.sessions.opened.get(position))
+                .map(|opened| opened.resident);
+            if compared == Compared::Endpoints && !matches!(opened, Some(Resident::Endpoint(_))) {
+                continue;
+            }
             let same = agreed_use == left_use
                 && (agreed_use == LinearUse::Consumed
                     || agreed_type == left_type
@@ -2539,11 +2568,7 @@ impl Machine<'_, '_>
             if same {
                 continue;
             }
-            let resident = position
-                .checked_sub(base)
-                .and_then(|position| self.sessions.opened.get(position))
-                .ok_or(CheckRefusal::MachineInvariant)?
-                .resident;
+            let resident = opened.ok_or(CheckRefusal::MachineInvariant)?;
             let at = CoreNode::Term(TermNode::Computation(other));
             return Err(match resident {
                 Resident::Endpoint(endpoint) => CheckRefusal::Linearity {
@@ -2589,14 +2614,14 @@ impl Machine<'_, '_>
         Ok(())
     }
 
-    /// Open the arms of a case: while the run holds a value or has placed a
-    /// buffer live, keep the zone as the case found it, for each arm to start
-    /// from.
+    /// Open the arms of a case: while the run holds a value, has placed a
+    /// buffer live or holds an endpoint, keep the zone as the case found it,
+    /// for each arm to start from.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Joining::Joined`] at the mark the found zone is kept at
-    ///   when a slot the run opened is held or a live buffer;
+    ///   when a slot the run opened is held, a live buffer or an endpoint;
     ///   [`Joining::Threaded`], nothing kept, otherwise.
     /// - panics: none.
     ///
@@ -2604,9 +2629,10 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — a case on a list or a sum whose arms consume a held
     ///   value one each checks, and a read after it of a value the first arm or
     ///   the second consumed is refused; a case whose arms each return a live
-    ///   buffer checks.
+    ///   buffer checks; a case whose arms each close an endpoint checks.
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
     #[spec(
         captures: kept = self.sessions.zones.len(),
         ensures: |ret| match ret {
@@ -2616,12 +2642,13 @@ impl Machine<'_, '_>
     )]
     pub(super) fn arms_opened(&mut self) -> Joining
     {
-        // A held value one arm may consume and another not, and a live buffer
-        // every arm returns or none does: each arm starts from it as found.
+        // A held value one arm may consume and another not, a live buffer
+        // every arm returns or none does, and an endpoint each arm spends as
+        // the others do: each arm starts from it as found.
         if !self.sessions.opened.iter().any(|opened| {
             matches!(
                 opened.resident,
-                Resident::Held { .. } | Resident::Buffer { .. }
+                Resident::Held { .. } | Resident::Buffer { .. } | Resident::Endpoint(_)
             )
         }) {
             return Joining::Threaded;
@@ -2634,13 +2661,15 @@ impl Machine<'_, '_>
 
     /// End the arm `arm` of the case whose zones stand at `zones` with another
     /// to come: fold the zone the arm left into the join, and give the next
-    /// arm each held slot and live buffer as the case found it and every other
-    /// slot as this arm left it.
+    /// arm each held slot, live buffer and endpoint as the case found it and
+    /// every other slot as this arm left it.
     ///
     /// # Specification
-    /// - requires: the arm `arm` of the case opened at `zones` checked.
-    /// - ensures: each held slot and live buffer is at the use the case found
-    ///   it at; the join is kept above the found zone.
+    /// - requires: the arm `arm` of the case opened at `zones` checked, after
+    ///   the arm `first` when it is another.
+    /// - ensures: each held slot, live buffer and endpoint is at the use and
+    ///   the session type the case found it at; the join is kept above the
+    ///   found zone.
     /// - fails: as [`Self::arm_folded`].
     /// - panics: none.
     ///
@@ -2651,14 +2680,16 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — as [`Self::arms_opened`].
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
     #[spec(ensures: |ret| ret.is_err() || zones.0.checked_add(2) == Some(self.sessions.zones.len()))]
     pub(super) fn arm_ended(
         &mut self,
         zones: ZoneMark,
+        first: ComputationId,
         arm: ComputationId,
     ) -> Result<(), CheckRefusal>
     {
-        let joined = self.arm_folded(zones, arm)?;
+        let joined = self.arm_folded(zones, first, arm)?;
         let found = self
             .sessions
             .zones
@@ -2666,17 +2697,25 @@ impl Machine<'_, '_>
             .ok_or(CheckRefusal::MachineInvariant)?;
         let base = usize::from(self.sessions.base);
         let opened = &self.sessions.opened;
-        let next = joined.taking(found, |position, _| {
+        let resident = |position: BinderDepth| {
             usize::from(position)
                 .checked_sub(base)
                 .and_then(|above| opened.get(above))
-                .is_some_and(|slot| {
-                    matches!(
-                        slot.resident,
-                        Resident::Held { .. } | Resident::Buffer { .. }
-                    )
-                })
-        });
+                .map(|slot| slot.resident)
+        };
+        // A held slot and a live buffer change by their use alone; an
+        // endpoint's session type advances too, so the next arm takes its
+        // whole slot as found.
+        let next = joined
+            .taking(found, |position, _| {
+                matches!(
+                    resident(position),
+                    Some(Resident::Held { .. } | Resident::Buffer { .. })
+                )
+            })
+            .adopting(found, |position| {
+                matches!(resident(position), Some(Resident::Endpoint(_)))
+            });
         self.context.binders().restore_linear(&next);
         Ok(())
     }
@@ -2686,7 +2725,8 @@ impl Machine<'_, '_>
     /// consumed it.
     ///
     /// # Specification
-    /// - requires: the last arm `arm` of the case opened at `zones` checked.
+    /// - requires: the last arm `arm` of the case opened at `zones` checked,
+    ///   after the arm `first` when it is another.
     /// - ensures: the zone is the join and the case's zones are dropped.
     /// - fails: as [`Self::arm_folded`].
     /// - panics: none.
@@ -2698,14 +2738,16 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — as [`Self::arms_opened`].
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
     #[spec(ensures: |ret| ret.is_err() || self.sessions.zones.len() == zones.0)]
     pub(super) fn arms_joined(
         &mut self,
         zones: ZoneMark,
+        first: ComputationId,
         arm: ComputationId,
     ) -> Result<(), CheckRefusal>
     {
-        let joined = self.arm_folded(zones, arm)?;
+        let joined = self.arm_folded(zones, first, arm)?;
         self.context.binders().restore_linear(&joined);
         self.sessions.zones.truncate(zones.0);
         Ok(())
@@ -2714,16 +2756,20 @@ impl Machine<'_, '_>
     /// The zone the arm `arm` just checked left, each held slot taken from the
     /// join of the arms before it where one of them consumed it, kept as the
     /// join above the zone the case found; each live buffer must be left as
-    /// the arms before it left it, returned by every arm or by none.
+    /// the arms before it left it, returned by every arm or by none, and each
+    /// endpoint as the arm `first` left it.
     ///
     /// # Specification
-    /// - requires: the arm `arm` of the case opened at `zones` checked.
+    /// - requires: the arm `arm` of the case opened at `zones` checked, after
+    ///   the arm `first` when it is another.
     /// - ensures: the join is kept one above `zones` and returned.
     /// - fails: [`CheckRefusal::Linearity`] naming
-    ///   [`LinearityDefect::BufferUnreturned`] at `arm` for the outermost live
-    ///   buffer `arm` returned where the arms before it kept it, or kept where
-    ///   they returned it; [`CheckRefusal::MachineInvariant`] when no zone is
-    ///   kept at `zones` or the arm left another depth.
+    ///   [`LinearityDefect::ArmsDisagree`] at `arm` for the first endpoint
+    ///   `arm` leaves at another use or another session type than `first` left
+    ///   it; [`LinearityDefect::BufferUnreturned`] at `arm` for the outermost
+    ///   live buffer `arm` returned where the arms before it kept it, or kept
+    ///   where they returned it; [`CheckRefusal::MachineInvariant`] when no
+    ///   zone is kept at `zones` or the arm left another depth.
     /// - panics: none.
     ///
     /// # Errors
@@ -2731,19 +2777,23 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::arms_opened`], and an arm keeping a buffer
-    ///   another returned is refused at that arm either way round.
+    ///   another returned is refused at that arm either way round, as is an arm
+    ///   leaving open an endpoint the first arm closed.
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     /// - witness: `judgement::session::tests::a_case_s_arms_each_return_the_placed_buffer_1792`
+    /// - witness: `judgement::session::tests::a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it`
     #[spec(ensures: |ret| match ret.as_ref() {
         | Ok(joined) => zones.0.checked_add(1).and_then(|join| self.sessions.zones.get(join)) == Some(joined),
-        | Err(&CheckRefusal::Linearity { at: refused, defect: LinearityDefect::BufferUnreturned { .. } }) => {
-            refused == CoreNode::Term(TermNode::Computation(arm))
-        },
+        | Err(&CheckRefusal::Linearity {
+            at: refused,
+            defect: LinearityDefect::BufferUnreturned { .. } | LinearityDefect::ArmsDisagree { .. },
+        }) => refused == CoreNode::Term(TermNode::Computation(arm)),
         | Err(_) => true,
     })]
     fn arm_folded(
         &mut self,
         zones: ZoneMark,
+        first: ComputationId,
         arm: ComputationId,
     ) -> Result<LinearZone, CheckRefusal>
     {
@@ -2759,6 +2809,11 @@ impl Machine<'_, '_>
             .ok_or(CheckRefusal::MachineInvariant)?;
         if found.depth() != left.depth() {
             return Err(CheckRefusal::MachineInvariant);
+        }
+        // Every arm but the first leaves each endpoint as the first did, so
+        // the endpoint's state after the case is one whichever arm ran.
+        if self.sessions.zones.get(join).is_some() {
+            self.agree(first, arm, zones, &left, Compared::Endpoints)?;
         }
         let base = usize::from(self.sessions.base);
         let opened = &self.sessions.opened;

@@ -1017,10 +1017,12 @@ impl Machine<'_, '_>
         }
         let constructors = former::signature(self.context, datatype)?;
         let owed = crate::loops::loops(self.context, datatype);
-        // While the run holds a value or has a buffer live each arm starts from
-        // the zone the case found; an arm with another after it ends by handing
-        // that zone on.
+        // While the run holds a value, has a buffer live or an endpoint open,
+        // each arm starts from the zone the case found; an arm with another
+        // after it ends by handing that zone on.
         let joining = self.arms_opened();
+        // The arm checked first, whose endpoints every later arm agrees with.
+        let mut first = term;
         if let super::session::Joining::Joined(zones) = joining {
             let Computation::DataCase { ref branches, .. } = *self.computation(term)?
             else {
@@ -1029,7 +1031,8 @@ impl Machine<'_, '_>
             // An empty case checks no arm, so no arm can disagree: the join
             // names the case itself.
             let arm = branches.last().copied().unwrap_or(term);
-            self.wait(Frame::ArmsJoined { zones, arm });
+            first = branches.first().copied().unwrap_or(term);
+            self.wait(Frame::ArmsJoined { zones, first, arm });
         }
         let mut followed = false;
         if count != constructors.constructors().len() {
@@ -1088,7 +1091,7 @@ impl Machine<'_, '_>
                 if let super::session::Joining::Joined(zones) = joining
                     && followed
                 {
-                    self.wait(Frame::ArmEnded { zones, arm });
+                    self.wait(Frame::ArmEnded { zones, first, arm });
                 }
                 self.wait(Frame::NativeNext(Goal::Computation {
                     term: arm,
@@ -1158,7 +1161,11 @@ impl Machine<'_, '_>
             if let super::session::Joining::Joined(zones) = joining
                 && followed
             {
-                self.wait(Frame::ArmEnded { zones, arm: branch });
+                self.wait(Frame::ArmEnded {
+                    zones,
+                    first,
+                    arm: branch,
+                });
             }
             // An arm whose index equation has a variable side is checked as
             // its refinement, which the bridge carries to the kernel.

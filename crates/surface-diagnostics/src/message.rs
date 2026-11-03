@@ -1304,7 +1304,7 @@ fn checked(
                 f.write_str("an endpoint can be used only by a session action")
             },
             LinearityDefect::ArmsDisagree { .. } => {
-                f.write_str("the arms of this `offer` leave the endpoints in different states")
+                f.write_str("the arms of this `offer` or case leave the endpoints in different states")
             },
             LinearityDefect::Unrestricted => f.write_str(
                 "a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`",

@@ -2168,23 +2168,27 @@ enum Frame
     },
     /// Await the cell branch's check, then close its two binders.
     ListCaseCons,
-    /// The arm `arm` of a case whose arms join a held value or a live buffer
-    /// has checked, with another to come: give the next arm the held slots
-    /// and live buffers as the case found them.
+    /// The arm `arm` of a case whose arms join a held value, a live buffer or
+    /// an endpoint has checked, with another to come: give the next arm the
+    /// held slots, live buffers and endpoints as the case found them.
     ArmEnded
     {
         /// Where the case's zones are kept.
         zones: session::ZoneMark,
+        /// The arm checked first, whose endpoints every later arm agrees with.
+        first: ComputationId,
         /// The arm that checked.
         arm: ComputationId,
     },
-    /// The last arm `arm` of a case whose arms join a held value or a live
-    /// buffer has checked: leave each held slot consumed when any arm consumed
-    /// it.
+    /// The last arm `arm` of a case whose arms join a held value, a live
+    /// buffer or an endpoint has checked: leave each held slot consumed when
+    /// any arm consumed it.
     ArmsJoined
     {
         /// Where the case's zones are kept.
         zones: session::ZoneMark,
+        /// The arm checked first, whose endpoints every later arm agrees with.
+        first: ComputationId,
         /// The arm that checked.
         arm: ComputationId,
     },
@@ -9751,8 +9755,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     // An empty case checks no arm, so no arm can disagree: the
                     // join names the case itself.
                     let arm = branches.last().copied().unwrap_or(at);
+                    let first = branches.first().copied().unwrap_or(at);
                     self.frames.push(Waiting {
-                        frame: Frame::ArmsJoined { zones, arm },
+                        frame: Frame::ArmsJoined { zones, first, arm },
                         owner,
                     });
                 }
@@ -9774,9 +9779,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     if let session::Joining::Joined(zones) = joining
                         && let Some(&arm) =
                             index.checked_sub(1).and_then(|before| branches.get(before))
+                        && let Some(&first) = branches.first()
                     {
                         self.frames.push(Waiting {
-                            frame: Frame::ArmEnded { zones, arm },
+                            frame: Frame::ArmEnded { zones, first, arm },
                             owner,
                         });
                     }
@@ -9861,6 +9867,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if let session::Joining::Joined(zones) = joining {
                     self.wait(Frame::ArmsJoined {
                         zones,
+                        first: on_nil,
                         arm: on_cons,
                     });
                 }
@@ -9871,7 +9878,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     expected,
                 });
                 if let session::Joining::Joined(zones) = joining {
-                    self.wait(Frame::ArmEnded { zones, arm: on_nil });
+                    self.wait(Frame::ArmEnded {
+                        zones,
+                        first: on_nil,
+                        arm: on_nil,
+                    });
                 }
                 Ok(Step::Descend(Goal::Computation {
                     term: on_nil,
@@ -9909,12 +9920,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.close()?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            (Frame::ArmEnded { zones, arm }, Produced::Checked) => {
-                self.arm_ended(zones, arm)?;
+            (Frame::ArmEnded { zones, first, arm }, Produced::Checked) => {
+                self.arm_ended(zones, first, arm)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
-            (Frame::ArmsJoined { zones, arm }, Produced::Checked) => {
-                self.arms_joined(zones, arm)?;
+            (Frame::ArmsJoined { zones, first, arm }, Produced::Checked) => {
+                self.arms_joined(zones, first, arm)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::Force { value }, Produced::ValueType(synthesised)) => {

@@ -313,6 +313,42 @@ fn a_snapshot_takes_the_uses_it_names_from_another_1488()
     );
 }
 
+/// A snapshot adopts another's whole slot where it names one, the type an
+/// advance rebound included, and keeps its own elsewhere and past the other's
+/// depth.
+#[test]
+fn a_snapshot_adopts_the_slots_it_names_from_another()
+{
+    let (_arena, declared, other) = two_types();
+    let mut context = Context::new();
+    context.open(Zone::Linear, declared);
+    context.open(Zone::Linear, declared);
+    let found = context.linear_zone();
+    assert_eq!(
+        Ok(declared),
+        context.advance(DeBruijnIndex::from(1_u32), other)
+    );
+    assert_eq!(
+        Ok(declared),
+        context.occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
+    );
+    context.open(Zone::Linear, other);
+    let left = context.linear_zone();
+    let outermost = BinderDepth::from(0_usize);
+    let adopted = left.adopting(&found, |position| position == outermost);
+    assert_eq!(
+        [
+            (declared, LinearUse::Available),
+            (declared, LinearUse::Consumed),
+            (other, LinearUse::Available),
+        ],
+        *adopted.slots().collect::<alloc::vec::Vec<_>>(),
+        "the outermost slot takes the found type and use; the others keep their own"
+    );
+    let kept = left.adopting(&found, |_| false);
+    assert_eq!(left, kept, "a slot passed over is its own");
+}
+
 #[test]
 fn truncating_drops_unspent_slots_without_refusal()
 {

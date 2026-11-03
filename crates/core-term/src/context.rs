@@ -219,6 +219,51 @@ impl LinearZone
                 .collect(),
         )
     }
+
+    /// This snapshot with each slot `take` accepts replaced by `other`'s slot
+    /// there, its declared type, use and world: `take` reads the slot's
+    /// position, the slots outside it counted. Every other slot, and every
+    /// slot past `other`'s depth, stays as it is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as many slots as `self`, each `other`'s at a position `other`
+    ///   holds and `take` accepts, and `self`'s otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot adopted after it advanced and was consumed, a
+    ///   slot passed over and a slot past the other snapshot's depth, each read
+    ///   by its declared type and its use.
+    /// - witness: `context::tests::a_snapshot_adopts_the_slots_it_names_from_another`
+    #[spec(ensures: |ret| ret.0.len() == self.0.len()
+        && ret.0.iter().zip(&self.0).enumerate().all(|(position, (adopted, own))| {
+            match other.0.get(position) {
+                | Some(theirs) if take(BinderDepth(position)) => adopted == theirs,
+                | Some(_) | None => adopted == own,
+            }
+        }))]
+    #[inline]
+    #[must_use]
+    pub fn adopting<Take>(
+        &self,
+        other: &Self,
+        take: Take,
+    ) -> Self
+    where
+        Take: Fn(BinderDepth) -> bool,
+    {
+        Self(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(position, &own)| match other.0.get(position) {
+                    Some(&theirs) if take(BinderDepth(position)) => theirs,
+                    Some(_) | None => own,
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Why a context operation was refused.

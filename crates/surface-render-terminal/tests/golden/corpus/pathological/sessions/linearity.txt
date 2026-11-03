@@ -125,7 +125,7 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
    │
    ╰ note: `seat_returned` is refused with EndpointAsValue, as its expectation states
 
-error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different states
+error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in different states
    ╭▸ corpus/pathological/sessions/linearity.gandr:63:50
    │
 61 │ ┌ def seat_arms_leave_it_apart() -> Unit {
@@ -148,10 +148,35 @@ error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different s
    │
    ╰ note: `seat_arms_leave_it_apart` is refused with ArmsDisagree, as its expectation states
 
-error[UnrestrictedEndpoint]: a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`
-   ╭▸ corpus/pathological/sessions/linearity.gandr:70:23
+error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in different states
+   ╭▸ corpus/pathological/sessions/linearity.gandr:74:37
    │
-70 │ def session_receive : ?Integer. end;
+72 │   def seat_branches_leave_it_apart(early : Bool) -> Unit {
+   │   │                                ───── checked against `Bool -> -F Unit`; while checking the body of this function; binds early : Bool
+   │ ┌─┘
+   │ │
+73 │ │   let desk = fork (seat : end) {
+   │ │   ┬──
+   │ │   │
+   │ │   the endpoint was opened by this fork
+   │ │   checked against `-F Unit`; while checking the child this forks
+74 │ │     if early { close(seat) } else { pure unit }
+   │ │     ┬──────────┬────────────────────┯━━━━━━━━──
+   │ │     │          │                    │
+   │ │     │          │                    an arm that leaves the endpoints otherwise
+   │ │     │          the arm it disagrees with
+   │ │     checked against `-F Unit`; while checking the branches of this case
+75 │ │   };
+76 │ │   close(desk)
+77 │ │ }
+   │ └─┘ checked against `Bool => Unit`; while checking the body of this thunk
+   │
+   ╰ note: `seat_branches_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+
+error[UnrestrictedEndpoint]: a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`
+   ╭▸ corpus/pathological/sessions/linearity.gandr:80:23
+   │
+80 │ def session_receive : ?Integer. end;
    │                       ━━━━━━━━━━━━━ an endpoint outside a fork or a receive
    │
    ╰ note: `session_receive` is refused with UnrestrictedEndpoint, as its expectation states

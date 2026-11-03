@@ -147,7 +147,7 @@ pub enum Label
     /// The parameter whose endpoint a session refusal names, placed at its
     /// function's body.
     Placed,
-    /// The first arm of an offer, which a later arm disagrees with.
+    /// The first arm of an offer or a case, which a later arm disagrees with.
     FirstArm,
     /// The earlier rule of a pair that rewrites one term apart, or whose
     /// joining the coincidence check's budget left undecided.
@@ -1676,7 +1676,7 @@ impl fmt::Display for Checked
                     f.write_str("the endpoint is read as a value outside a session action")
                 },
                 | LinearityDefect::ArmsDisagree { .. } => {
-                    f.write_str("the arms of the offer leave the endpoints in different states")
+                    f.write_str("the arms of the offer or case leave the endpoints in different states")
                 },
                 | LinearityDefect::Unrestricted => f.write_str(
                     "the declaration's type is a session type: an endpoint exists only inside a fork",

@@ -66,5 +66,15 @@ def seat_arms_leave_it_apart() -> Unit {
   close(desk)
 }
 
+/// A case runs one arm, and the endpoint after it stands where every arm
+/// leaves it. Here one branch closes the seat and the other leaves it open.
+@[ refuses("ArmsDisagree") ]
+def seat_branches_leave_it_apart(early : Bool) -> Unit {
+  let desk = fork (seat : end) {
+    if early { close(seat) } else { pure unit }
+  };
+  close(desk)
+}
+
 @[ refuses("UnrestrictedEndpoint") ]
 def session_receive : ?Integer. end;

@@ -1158,7 +1158,7 @@ pub enum RefusalName
     CapturedEndpoint,
     /// An endpoint read as a value outside an action.
     EndpointAsValue,
-    /// Two arms of an offer leaving an endpoint in different states.
+    /// Two arms of an offer or a case leaving an endpoint in different states.
     ArmsDisagree,
     /// A declaration whose type is a session type.
     UnrestrictedEndpoint,
