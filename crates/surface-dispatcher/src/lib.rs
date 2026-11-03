@@ -104,8 +104,8 @@
 //! `tests::corpus::the_strict_root_checks_owing_nothing`,
 //! `tests::corpus::the_fixture_root_settles_every_fixture`,
 //! `tests::corpus::the_two_roots_exercise_every_row`,
-//! `tests::corpus::a_run_lowers_each_source_once`; the identity subject's base
-//! is lowered once in its importers' component:
+//! `tests::corpus::the_std_root_adds_one_lowering_per_module`; the identity
+//! subject's base is lowered once in its importers' component:
 //! `tests::corpus::the_identity_base_is_lowered_once_for_its_importers`; every
 //! run outcome they state, and the focusing of every declaration they accept:
 //! `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`,

@@ -96,7 +96,7 @@ fn fixture_root() -> PathBuf
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the library is the one the gate runs.
-/// - witness: `tests::corpus::a_run_lowers_each_source_once`
+/// - witness: `tests::corpus::the_std_root_adds_one_lowering_per_module`
 #[spec(ensures: |ref ret| ret.is_absolute()
         && ret.parent().is_some_and(|library| library.ends_with("library")))]
 fn std_root() -> PathBuf
@@ -109,8 +109,8 @@ fn std_root() -> PathBuf
 /// # Specification
 /// - requires: `path` names a finite corpus walk with no source or engine
 ///   fault; fixtures may still be unsettled or pending.
-/// - ensures: the visit's report has no faulted paths and records one lowering
-///   per source read, preserving unsettled results for callers.
+/// - ensures: the visit's report has no faulted paths and records at least one
+///   lowering per source read, preserving unsettled results for callers.
 /// - fails: does not convert a fault into an empty or settled report.
 /// - panics: if a step faults.
 ///
@@ -120,9 +120,9 @@ fn std_root() -> PathBuf
 ///   lowering/read relation rather than pinning a corpus size.
 /// - witness: `tests::corpus::the_strict_root_checks_owing_nothing`
 /// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
-/// - witness: `tests::corpus::a_run_lowers_each_source_once`
+/// - witness: `tests::corpus::the_std_root_adds_one_lowering_per_module`
 #[spec(ensures: |ref ret| usize::from(ret.sources().faulted()) == 0_usize
-        && usize::from(ret.lowerings()) == usize::from(ret.sources().read()))]
+        && usize::from(ret.lowerings()) >= usize::from(ret.sources().read()))]
 fn run(paths: Vec<PathBuf>) -> RunReport
 {
     let ControlFlow::Continue(report) = Walk::new(paths).visit(
@@ -222,14 +222,29 @@ fn the_two_roots_exercise_every_row()
     assert_eq!(exercised.missing(), Vec::new(), "every row is carried");
 }
 
+/// The `std` root given beside the corpus's two roots adds one lowering per
+/// module it holds: each module is lowered once for itself, and each importer
+/// lowers the modules it reaches, whichever roots the walk is given.
 #[test]
-fn a_run_lowers_each_source_once()
+fn the_std_root_adds_one_lowering_per_module()
 {
-    let report = run(vec![strict_root(), fixture_root(), std_root()]);
+    let without = run(vec![strict_root(), fixture_root()]);
+    let library = run(vec![std_root()]);
+    let with = run(vec![strict_root(), fixture_root(), std_root()]);
     assert_eq!(
-        usize::from(report.lowerings()),
-        usize::from(report.sources().read()),
-        "one lowering per source read"
+        usize::from(library.lowerings()),
+        usize::from(library.sources().read()),
+        "the library alone lowers each of its modules once"
+    );
+    assert_eq!(
+        usize::from(with.sources().read()),
+        usize::from(without.sources().read()).saturating_add(usize::from(library.sources().read())),
+        "the library's modules are read beside the corpus's sources"
+    );
+    assert_eq!(
+        usize::from(with.lowerings()),
+        usize::from(without.lowerings()).saturating_add(usize::from(library.lowerings())),
+        "each module adds its own lowering, and no importer joins another through it"
     );
 }
 

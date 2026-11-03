@@ -37,6 +37,17 @@
 //!   interfaces import had joined their importers into one component; laid
 //!   apart, the corpus walk peaks at 1.1 GB rather than 5.4 GB, in 3.7 s rather
 //!   than 6.2 s.
+//! - Change: a given standard library module joins only standard library
+//!   modules, and each importer lays it as it lays a module not given. A walk
+//!   given the `std` root had joined every importer of a `std` module into one
+//!   component; laid apart, the walk of the corpus and the library peaks at
+//!   1.35 GB rather than 5.6 GB. Each importer lowers the module again.
+//! - Alternative: the library lowered once as a closure every importer
+//!   continues, as every component continues the prelude. The kernel refuses
+//!   four of the library's declarations, so no readmission keeps a record of
+//!   the library to resume, and the walk took 10 s rather than 3.7 s.
+//! - Reversal: a readmission that records the declarations the kernel refuses,
+//!   which makes the closure the cheaper design.
 //!
 //! A source given alone — a document an editor holds, `gandr check` of one
 //! path — makes the component its import closure makes: [`lay_out`] lays that
@@ -962,6 +973,17 @@ impl Shadows for Unshadowed
 #[derive(Debug)]
 struct Laying(Vec<Position>);
 
+/// The components a graph's given sources stand in, and the one each given
+/// source is placed at.
+#[derive(Debug)]
+struct Layings
+{
+    /// Each component's sources.
+    layings: Vec<Laying>,
+    /// Each given source's component, by position in `layings`.
+    homes: BTreeMap<Position, usize>,
+}
+
 /// The import closure of the source at `path`, read as `text` under `root`,
 /// laid out after the prelude as one unit, every import read from its file.
 ///
@@ -1114,7 +1136,7 @@ pub fn lay_out_written(
         Some(read) if read.parse == Parse::Parsed && !read.edges.is_empty() => {},
         Some(_) | None => return Laid::alone(path, text, (named, read)),
     }
-    let mut layings = graph.layings(&[importer]);
+    let mut layings = graph.layings(&[importer]).layings;
     let Some(laying) = layings.pop()
     else {
         return Laid::alone(path, text, (named, read));
@@ -1219,21 +1241,23 @@ fn homed(
 ///   once, each import resolved as [`lay_out`] resolves it; two given sources
 ///   at one canonical path stand for one source. Two given sources share a
 ///   component exactly when one reaches the other through resolved imports, or
-///   through a chain of given sources so joined; a component holds every source
-///   its given sources reach, so a source reached and not given stands in each
-///   component that reaches it, and a source reached only through an import
-///   that does not resolve stands in no component. Each component is laid out
-///   as [`lay_out`] lays a closure out — the prelude first, then its sources in
-///   dependency order, one newline apart, each import's target recorded — the
-///   depth-first walk starting at its sources in the order they were given; a
-///   component of one source is that source laid after the prelude alone. Under
-///   [`Reading::Whole`] each importer's imports are those [`lay_out`] reads;
-///   under [`Reading::ImportForms`] they are those its import forms alone
-///   write, an importer whose forms write a path import taken to parse, which
-///   [`Component::confirms`] checks. A source at a path of `apart` is set
-///   apart: no import of it or by it joins a component, each import naming it
-///   is unresolved, and a given one is laid out alone, its own imports
-///   unresolved.
+///   through a chain of given sources so joined, but a given standard library
+///   module joins only standard library modules; a component holds every source
+///   its given sources reach, so a source reached and not given, or a given
+///   standard library module, stands in each component that reaches it, and a
+///   source reached only through an import that does not resolve stands in no
+///   component. Each given source is placed at its own component. Each
+///   component is laid out as [`lay_out`] lays a closure out — the prelude
+///   first, then its sources in dependency order, one newline apart, each
+///   import's target recorded — the depth-first walk starting at its sources in
+///   the order they were given; a component of one source is that source laid
+///   after the prelude alone. Under [`Reading::Whole`] each importer's imports
+///   are those [`lay_out`] reads; under [`Reading::ImportForms`] they are those
+///   its import forms alone write, an importer whose forms write a path import
+///   taken to parse, which [`Component::confirms`] checks. A source at a path
+///   of `apart` is set apart: no import of it or by it joins a component, each
+///   import naming it is unresolved, and a given one is laid out alone, its own
+///   imports unresolved.
 /// - provides: the units a walk lowers, each once.
 /// - fails: never.
 /// - panics: none.
@@ -1252,6 +1276,7 @@ fn homed(
 /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+/// - witness: `component::tests::importers_of_a_given_std_module_lay_it_apart_4856`
 #[spec(
     captures: [offered = given.len()],
     ensures: |ref ret| ret.placed.len() == offered
@@ -1283,7 +1308,7 @@ pub fn group(
             read.parse = Parse::Apart;
         }
     }
-    let layings = graph.layings(&positions);
+    let Layings { layings, homes } = graph.layings(&positions);
     graph.pending = vec![0_usize; graph.read.len()];
     for laying in &layings {
         for position in &laying.0 {
@@ -1292,9 +1317,10 @@ pub fn group(
             }
         }
     }
-    let mut where_laid: BTreeMap<Position, Placed> = BTreeMap::new();
+    // Where each source stands in each laying, by the laying's position.
+    let mut where_laid: BTreeMap<(usize, Position), Placed> = BTreeMap::new();
     let mut components = Vec::with_capacity(layings.len());
-    for laying in layings {
+    for (laying_at, laying) in layings.into_iter().enumerate() {
         let laid = match graph.lay(&laying) {
             Maybe::Present(component) => Vec::from([(component, laying)]),
             // Never for a laying the graph made; each source then stands
@@ -1307,7 +1333,7 @@ pub fn group(
         };
         for (component, laying) in laid {
             for (member, &position) in laying.0.iter().enumerate() {
-                let _placed = where_laid.insert(position, Placed {
+                let _placed = where_laid.insert((laying_at, position), Placed {
                     component: components.len(),
                     member,
                 });
@@ -1318,10 +1344,14 @@ pub fn group(
     let placed = positions
         .iter()
         .map(|position| {
-            where_laid.get(position).copied().unwrap_or(Placed {
-                component: 0_usize,
-                member: 0_usize,
-            })
+            homes
+                .get(position)
+                .and_then(|&home| where_laid.get(&(home, *position)))
+                .copied()
+                .unwrap_or(Placed {
+                    component: 0_usize,
+                    member: 0_usize,
+                })
         })
         .collect();
     Grouped {
@@ -1619,7 +1649,7 @@ impl Graph
     }
 
     /// The components the sources at `given` stand in, each its sources in
-    /// admission order.
+    /// admission order, and the component each given source stands at.
     ///
     /// # Specification
     /// - requires: every edge of the graph names a position it holds.
@@ -1627,13 +1657,17 @@ impl Graph
     ///   names a source that parses. A given source's closure is every source a
     ///   chain of usable edges reaches from it, itself among them. Two given
     ///   sources share a component when one's closure holds the other, or
-    ///   through a chain of such given sources; a component lays the closures
-    ///   of its given sources, each source once, so a source reached and not
-    ///   given stands in each component whose closures reach it. The components
-    ///   stand in the order of their first source in `given`; each holds its
-    ///   sources in the post-order of a depth-first walk over usable edges, in
-    ///   the order each source writes them, started at each of its sources by
-    ///   position: every source after each source it imports.
+    ///   through a chain of such given sources, but a given standard library
+    ///   module joins only standard library modules: its importers lay it as
+    ///   they lay a source not given. A component lays the closures of its
+    ///   given sources, each source once, so a source reached and not given, or
+    ///   a given standard library module, stands in each component whose
+    ///   closures reach it. The components stand in the order of their first
+    ///   source in `given`; each holds its sources in the post-order of a
+    ///   depth-first walk over usable edges, in the order each source writes
+    ///   them, started at each of its sources by position: every source after
+    ///   each source it imports. Each given source stands at the component its
+    ///   own closure joins.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one breadth-first walk per given source, linear in the
@@ -1642,15 +1676,18 @@ impl Graph
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a diamond and a source beside it, a cycle and a
-    ///   chain, and two given sources importing one source not given.
+    ///   chain, two given sources importing one source not given, and two given
+    ///   sources importing a given standard library module.
     /// - witness: `component::tests::a_component_lays_each_source_once`
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::importers_of_a_module_not_given_lay_it_apart_4854`
-    #[spec(ensures: |ref ret| ret.iter().all(|laying| !laying.0.is_empty()))]
+    /// - witness: `component::tests::importers_of_a_given_std_module_lay_it_apart_4856`
+    #[spec(ensures: |ref ret| ret.layings.iter().all(|laying| !laying.0.is_empty())
+        && given.iter().all(|start| ret.homes.get(start).is_some_and(|&laying| laying < ret.layings.len())))]
     fn layings(
         &self,
         given: &[Position],
-    ) -> Vec<Laying>
+    ) -> Layings
     {
         let usable = self.usable();
         let mut is_given = vec![false; self.read.len()];
@@ -1703,9 +1740,22 @@ impl Graph
             }
             walk
         };
+        // A given standard library module's walk joins only another such
+        // module's: each importer lays it as a source not given.
+        let standard: Vec<bool> = starts
+            .iter()
+            .map(|start| {
+                self.read
+                    .get(start.0)
+                    .is_some_and(|read| lock::standard_module(&read.path).is_some())
+            })
+            .collect();
+        let is_standard = |walk: usize| standard.get(walk).copied().unwrap_or(false);
         for (walk, closure) in closures.iter().enumerate() {
             for at in closure {
-                if let Some(&other) = walk_of.get(at) {
+                if let Some(&other) = walk_of.get(at)
+                    && (is_standard(walk) || !is_standard(other))
+                {
                     let (first, second) = (find(&mut leader, walk), find(&mut leader, other));
                     let (low, high) = (first.min(second), first.max(second));
                     if let Some(slot) = leader.get_mut(high) {
@@ -1738,11 +1788,21 @@ impl Graph
                 }
             }
         }
+        // Each given source stands at its own walk's component.
+        let homes: BTreeMap<Position, usize> = starts
+            .iter()
+            .enumerate()
+            .filter_map(|(walk, &start)| {
+                component_of
+                    .get(&find(&mut leader, walk))
+                    .map(|&component| (start, component))
+            })
+            .collect();
         // Each component's sources in dependency order; a source's visit is
         // the component's own, so a source two components hold is ordered in
         // each.
         let mut visits: Vec<(usize, Visit)> = vec![(usize::MAX, Visit::New); self.read.len()];
-        owned
+        let layings = owned
             .into_iter()
             .enumerate()
             .map(|(component, (_, mut members))| {
@@ -1782,7 +1842,8 @@ impl Graph
                 }
                 Laying(order)
             })
-            .collect()
+            .collect();
+        Layings { layings, homes }
     }
 
     /// Each source's usable edges' targets, in the order it writes them.
@@ -3632,6 +3693,62 @@ mod tests
             );
             let place = |component: usize, member: usize| Placed { component, member };
             assert_eq!(grouped.placed, [place(0, 1), place(1, 2), place(1, 1)]);
+        }
+    }
+
+    /// Two given sources importing a given standard library module stand in
+    /// two components, each laying the module before its importer, and the
+    /// module stands in a component of its own, where it is placed.
+    #[test]
+    fn importers_of_a_given_std_module_lay_it_apart_4856()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let module = std::fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/string.gandr"),
+        )
+        .expect("the standard library is checked out");
+        let written = std::fs::read_to_string(&module).expect("the module reads");
+        let left = "import std.string (concat) ;\ndef two : Integer ;\ndef two = 2 ;";
+        let right = "import std.string (concat) ;\ndef three : Integer ;\ndef three = 3 ;";
+        let tree = Scratch::new(Path::new("std-importers"), &[
+            (Path::new("left.gandr"), SourceText::from(left)),
+            (Path::new("right.gandr"), SourceText::from(right)),
+        ]);
+        for reading in [Reading::Whole, Reading::ImportForms] {
+            let grouped = group(
+                &grammar,
+                Vec::from([
+                    tree.given(Path::new("left.gandr")),
+                    tree.given(Path::new("right.gandr")),
+                    Given {
+                        path: module.clone(),
+                        root: SourceRoot::Strict,
+                        text: written.clone(),
+                    },
+                ]),
+                reading,
+                &BTreeSet::new(),
+            );
+            let texts: Vec<&str> = grouped
+                .components
+                .iter()
+                .map(|component| component.text.as_str())
+                .collect();
+            assert_eq!(
+                texts,
+                [
+                    format!("{}\n{written}\n{left}", prelude::TEXT).as_str(),
+                    format!("{}\n{written}\n{right}", prelude::TEXT).as_str(),
+                    format!("{}\n{written}", prelude::TEXT).as_str(),
+                ],
+                "{reading:?}: each importer lays the module and stands apart from the other"
+            );
+            let place = |component: usize, member: usize| Placed { component, member };
+            assert_eq!(
+                grouped.placed,
+                [place(0, 1), place(1, 1), place(2, 0)],
+                "{reading:?}: the module is placed at its own component"
+            );
         }
     }
 
