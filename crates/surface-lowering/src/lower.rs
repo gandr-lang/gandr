@@ -613,7 +613,6 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
-use crate::form::cursor;
 use crate::form::declined_feature;
 use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
@@ -13520,8 +13519,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         // Each link is the module a name is selected from and the name, from
-        // the outermost; a link through a nested module, `Sealed.inner.T`, is
-        // two, the module selected from the operand and the type from it.
+        // the outermost; a link through nested modules, `Sealed.inner.T` or
+        // `a.b.c.T`, is one per module and one for the type.
         let mut links: Vec<(Placed, Placed)> = Vec::new();
         let (target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
         Self::linked(&mut links, target, nested, member);
@@ -13533,12 +13532,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             None => false,
         };
         // The qualifier is the head alone, `g.Mood`, or the head and the
-        // module after it, `text.greet.Mood`, when an import binds that path.
-        let qualifier = match nested {
-            Maybe::Present(module) => ByteSpan::new(target.span.start(), module.span.end())
-                .ok()
-                .map(|span| Placed { span, ..target }),
-            Maybe::Absent(_) => Some(target),
+        // modules after it, `text.greet.Mood`, when an import binds that path.
+        let qualifier = match links.first() {
+            Some(&(module, _)) if !nested.is_empty() => {
+                ByteSpan::new(target.span.start(), module.span.end())
+                    .ok()
+                    .map(|span| Placed { span, ..target })
+            },
+            Some(_) | None => Some(target),
         };
         if headed
             && let Some(qualifier) = qualifier
@@ -13711,17 +13712,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.family(site, constant, arity, none)
     }
 
-    /// The target and the selected type name of one link of a type path,
-    /// read from its pieces.
+    /// The target and the selected type name of one link of a type path, and
+    /// the module names the link passes, read from its pieces.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of a type path covering `span`.
-    /// - ensures: the operand the type is selected from, the nested module the
-    ///   link names after its first dot when it names one, `inner` in
-    ///   `Sealed.inner.T`, and the type name tile after its last dot.
-    /// - provides: the one-link half of [`Self::type_path`].
+    /// - ensures: the operand the type is selected from; the pieces between the
+    ///   link's first dot and its type name, each module name it passes and the
+    ///   dot after it, `inner .` in `Sealed.inner.T` and `b . c .` in
+    ///   `a.b.c.T`, empty for a link that passes none; and the type name tile
+    ///   after its last dot.
+    /// - provides: the link half of [`Self::type_path`], one link through a
+    ///   module path of any length.
     /// - fails: yields the misplaced-tile refusal when the pieces are not an
-    ///   operand, a dot, an optional module name and a dot, and a type name.
+    ///   operand, a dot, module names each followed by a dot, and a type name.
     /// - panics: none.
     ///
     /// # Errors
@@ -13729,44 +13733,30 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a one-link and a two-link path preserve their targets
-    ///   and selected names, and a link through a nested module keeps the
-    ///   module.
+    ///   and selected names, a link through a nested module keeps the module,
+    ///   and a link through a module path of three names keeps each.
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `tests::modules::models::a_sealed_nested_model_s_sort_is_spelled_by_its_path_1311`
+    /// - witness: `tests::namespace::a_type_reads_through_a_module_path_of_any_length_2874`
     #[spec(
         ensures: |ret| {
-            ret.as_ref().map_or(true, |&(target, nested, selected)| {
+            ret.as_ref().map_or(true, |&(target, modules, selected)| {
                 pieces.first() == Some(&Piece::Operand(target))
                     && matches!(pieces.get(1), Some(&Piece::Tile { label: TileName::DOT, .. }))
-                    && match nested {
-                        Maybe::Present(module) => {
-                            pieces.get(2)
-                                == Some(&Piece::Tile {
-                                    label: TileName::TYPE_VARIABLE,
-                                    at: module,
-                                })
-                                && pieces.get(4)
-                                    == Some(&Piece::Tile {
-                                        label: TileName::TYPE_IDENTIFIER,
-                                        at: selected,
-                                    })
-                        },
-                        Maybe::Absent(_) => {
-                            pieces.get(2)
-                                == Some(&Piece::Tile {
-                                    label: TileName::TYPE_IDENTIFIER,
-                                    at: selected,
-                                })
-                        },
-                    }
+                    && modules.len() % 2 == 0
+                    && pieces.get(modules.len().saturating_add(2))
+                        == Some(&Piece::Tile {
+                            label: TileName::TYPE_IDENTIFIER,
+                            at: selected,
+                        })
             })
         },
     )]
-    fn type_link(
+    fn type_link<'pieces>(
         site: Site,
-        pieces: &[Piece],
+        pieces: &'pieces [Piece],
         span: ByteSpan,
-    ) -> Result<(Placed, Maybe<Placed, cursor::Absent>, Placed), LoweringRefusal<'source>>
+    ) -> Result<(Placed, &'pieces [Piece], Placed), LoweringRefusal<'source>>
     {
         let mut cursor = Cursor::new(pieces, span);
         let Maybe::Present(Piece::Operand(target)) = cursor.read()
@@ -13777,40 +13767,52 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let nested = cursor.tile(TileName::TYPE_VARIABLE);
-        if let Maybe::Present(_) = nested
-            && let Maybe::Absent(_) = cursor.tile(TileName::DOT)
-        {
-            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        let mut passed = 0_usize;
+        while let Maybe::Present(_module) = cursor.tile(TileName::TYPE_VARIABLE) {
+            let Maybe::Present(_dot) = cursor.tile(TileName::DOT)
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            passed = passed.saturating_add(2_usize);
         }
         let Maybe::Present(selected) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
+        let modules = pieces
+            .get(2_usize .. passed.saturating_add(2_usize))
+            .unwrap_or_default();
 
-        Ok((target, nested, selected))
+        Ok((target, modules, selected))
     }
 
-    /// Push onto `links` the link from `target` to `selected`, through the
-    /// nested module `nested` when the link names one: the module selected
-    /// from the operand, then the type from the module.
+    /// Push onto `links` the link from `target` to `selected` through the
+    /// module names `modules` passes, as [`Self::type_link`] reads them, from
+    /// the outermost: the type selected from the last module, then each module
+    /// from the one before it, the first from the operand.
     ///
     /// # Specification
     /// trivial.
     fn linked(
         links: &mut Vec<(Placed, Placed)>,
         target: Placed,
-        nested: Maybe<Placed, cursor::Absent>,
+        modules: &[Piece],
         selected: Placed,
     )
     {
-        match nested {
-            Maybe::Present(module) => {
-                links.push((module, selected));
-                links.push((target, module));
-            },
-            Maybe::Absent(_) => links.push((target, selected)),
+        let named = modules.iter().rev().filter_map(|piece| match *piece {
+            Piece::Tile {
+                label: TileName::TYPE_VARIABLE,
+                at,
+            } => Some(at),
+            Piece::Tile { .. } | Piece::Operand(_) => None,
+        });
+        let mut selected = selected;
+        for module in named {
+            links.push((module, selected));
+            selected = module;
         }
+        links.push((target, selected));
     }
 
     /// The head of the chain of type paths whose innermost operand is

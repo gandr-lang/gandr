@@ -1,0 +1,17 @@
+// The tone a greeting takes, in a module three names deep, `text.tone.kind`.
+//
+// A package names its modules by path, and the package source reads this
+// module's type through the whole path, as it reads its value.
+//
+// The file `text/tone/kind.gandr` under the package's root holds the module.
+//
+// - see: #2874
+
+/// The tone a greeting takes.
+pub data Tone : Type where {
+  /// A warm greeting.
+  | Warm : Tone
+}
+
+/// The tone the package greets in.
+pub def warm : Tone = Warm;
