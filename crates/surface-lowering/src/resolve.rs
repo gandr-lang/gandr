@@ -466,8 +466,9 @@ const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
 ];
 
 /// The unary type heads the ambient scope answers, with the spellings the
-/// surface writes them as. `List` is no row: its home is `std.list`, and
-/// [`HOMED_FORMERS`] answers it where a source imports it from there (#4520).
+/// surface writes them as. `List`, `Run`, `Prefix` and `Dialogue` are no rows:
+/// their homes are `std.list` and `std.session`, and [`HOMED_FORMERS`] answers
+/// each where a source imports it from there.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -482,16 +483,12 @@ const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
-const TYPE_FORMERS: [(&str, TypeFormer); 5_usize] = [
-    ("+U", TypeFormer::Thunk),
-    ("-F", TypeFormer::Returner),
-    ("Run", TypeFormer::Run),
-    ("Prefix", TypeFormer::Prefix),
-    ("Dialogue", TypeFormer::Dialogue),
-];
+const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
+    [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
 
 /// The unary type heads a `std` module homes, each by the module's path and
-/// the name a listed import of it binds: `import std.list (List);`.
+/// the name a listed import of it binds: `import std.list (List);` and
+/// `import std.session (Run, Prefix, Dialogue);`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -502,10 +499,16 @@ const TYPE_FORMERS: [(&str, TypeFormer); 5_usize] = [
 ///   items; the lookup predicate checks the corresponding table.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the one row answers at its home and nowhere else, and its
+/// - hypothesis: L3 — each row answers at its home and nowhere else, and its
 ///   name is absent from the ambient table.
 /// - witness: `resolve::tests::a_homed_former_answers_only_at_its_home_4520`
-const HOMED_FORMERS: [(&str, &str, TypeFormer); 1_usize] = [("std.list", "List", TypeFormer::List)];
+/// - witness: `resolve::tests::the_session_formers_answer_only_at_std_session_4521`
+const HOMED_FORMERS: [(&str, &str, TypeFormer); 4_usize] = [
+    ("std.list", "List", TypeFormer::List),
+    ("std.session", "Run", TypeFormer::Run),
+    ("std.session", "Prefix", TypeFormer::Prefix),
+    ("std.session", "Dialogue", TypeFormer::Dialogue),
+];
 
 /// The nullary type heads a `std` module homes, each by the module's path and
 /// the name a listed import of it binds: `import std.buffer (Buf, Web);`
@@ -700,8 +703,10 @@ pub fn homed_atom(
 }
 
 /// The `std` module that homes the type head spelled `name`, former or atom,
-/// which a listed import of that module binds: `std.list` for `List` (#4520),
-/// `std.buffer` for `Buf` and `Web` (#4522).
+/// which a listed import of that module binds.
+///
+/// `std.list` homes `List` (#4520), `std.session` homes `Run`, `Prefix` and
+/// `Dialogue` (#4521), and `std.buffer` homes `Buf` and `Web` (#4522).
 ///
 /// # Specification
 /// - requires: nothing — every identifier is admissible input.
@@ -2458,13 +2463,7 @@ mod tests
     #[test]
     fn every_unary_type_head_answers_its_former()
     {
-        let expected = [
-            ("+U", TypeFormer::Thunk),
-            ("-F", TypeFormer::Returner),
-            ("Run", TypeFormer::Run),
-            ("Prefix", TypeFormer::Prefix),
-            ("Dialogue", TypeFormer::Dialogue),
-        ];
+        let expected = [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
 
         for (spelling, former) in expected {
             assert_eq!(
@@ -2516,13 +2515,51 @@ mod tests
             Maybe::Present(SurfaceName::from("std.list")),
             "the list former's home is `std.list`"
         );
-        for name in ["-F", "Run", "Lists"] {
+        for name in ["-F", "+U", "Lists"] {
             assert_eq!(
                 head_home(SurfaceName::from(name)),
                 Maybe::Absent(type_head::Absent::Unregistered),
                 "an ambient former and a near spelling have no home"
             );
         }
+    }
+
+    /// #4521: `Run`, `Prefix` and `Dialogue` answer at `std.session` alone,
+    /// and the ambient scope answers none of them.
+    #[test]
+    fn the_session_formers_answer_only_at_std_session_4521()
+    {
+        for (name, former) in [
+            ("Run", TypeFormer::Run),
+            ("Prefix", TypeFormer::Prefix),
+            ("Dialogue", TypeFormer::Dialogue),
+        ] {
+            assert_eq!(
+                type_former(SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "the ambient scope no longer answers `{name}`"
+            );
+            assert_eq!(
+                homed_former(SurfaceName::from("std.session"), SurfaceName::from(name)),
+                Maybe::Present(former),
+                "a listing of `std.session` answers `{name}`"
+            );
+            assert_eq!(
+                homed_former(SurfaceName::from("std.list"), SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "`{name}` answers at its own home only"
+            );
+            assert_eq!(
+                head_home(SurfaceName::from(name)),
+                Maybe::Present(SurfaceName::from("std.session")),
+                "`{name}`'s home is `std.session`"
+            );
+        }
+        assert_eq!(
+            homed_former(SurfaceName::from("std.session"), SurfaceName::from("List")),
+            Maybe::Absent(type_head::Absent::Unregistered),
+            "`std.session` homes no list"
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: 87a09e9d7cc574c1022d9c7f6a53ec02b88bff1e60e34ae646587f3116050728
+# blake3: d8cf9f10f39965468134cef9d4ec3ed767a67621bd3ed15c1c1a091314c42218
 
 [package]
 name = "std"
@@ -22,6 +22,7 @@ modules = [
   "math.cylinder",
   "math.path",
   "secret",
+  "session",
   "string",
 ]
 

@@ -3,6 +3,9 @@
 // injection, so the quote is the one spelling of such a type as an argument,
 // as it is spelled bare in a signature (#839).
 
+// The native session formers.
+import std.session (Run);
+
 // The seat's protocol and its messages.
 import "./seat-base.gandr";
 

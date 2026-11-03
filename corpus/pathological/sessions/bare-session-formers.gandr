@@ -1,0 +1,33 @@
+// A session former written with no import of its home names no type.
+//
+// `Run`, `Prefix` and `Dialogue` live in `std.session`, and the ambient
+// scope answers them nowhere. A source that names one lists it, as it lists
+// any other module's name.
+//
+// The source writes each of the three without `import std.session (…);`,
+// and each type head is refused where it is written.
+//
+// - see: #4521
+
+/// A protocol that sends one string and ends.
+module Ask where {
+  /// The protocol sends one string and ends.
+  type Asking = !String. end;
+}
+
+/// A run of the protocol, the run type unimported.
+@[ refuses("UnresolvedTypeHead") ]
+def ran : Run(Ask.Asking) = recorded(sent("yes"), closed);
+
+/// A prefix of the protocol, the prefix type unimported.
+@[ refuses("UnresolvedTypeHead") ]
+def begun : Prefix(Ask.Asking) = recorded(sent("yes"));
+
+/// A dialogue over the protocol, the dialogue type unimported.
+@[ refuses("UnresolvedTypeHead") ]
+def talked : Dialogue(Ask.Asking) = dialogue(
+  left(sent("yes")),
+  right(received("yes")),
+  left(closed),
+  right(closed)
+);

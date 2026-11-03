@@ -8,6 +8,9 @@
 // rides forward to the new one; a run that takes the new choice is no run of
 // the old.
 
+// The native session formers.
+import std.session (Run) ;
+
 // The seat's protocol and its messages.
 import "../../model/sessions/seat-base.gandr" ;
 

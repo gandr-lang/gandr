@@ -1,6 +1,11 @@
 /// `decomposes`: states the causal web a dialogue's modular decomposition is
 /// expected to read back. The left endpoint's close waits on its send alone,
 /// so it sits beside the right endpoint's receipt and close.
+
+// The native session formers.
+import std.session (Dialogue) ;
+
+/// A protocol that sends one string and ends.
 module Ask where {
   type Asking = !String. end;
 }

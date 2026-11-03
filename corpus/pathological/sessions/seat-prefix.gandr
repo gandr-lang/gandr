@@ -2,6 +2,9 @@
 // run, and a move the protocol refuses is refused at a prefix as at a run
 // (#1861).
 
+// The native session formers.
+import std.session (Run, Prefix);
+
 /// The seat's protocol over plain strings: a dispatch received, then reports
 /// and the choice to continue or retire, or a handoff that ends it.
 module Seat where {

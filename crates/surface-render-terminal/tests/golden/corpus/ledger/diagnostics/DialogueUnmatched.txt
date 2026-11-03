@@ -1,13 +1,13 @@
 error[DialogueUnmatched]: this dialogue's message is not received as it was sent
-   ╭▸ corpus/ledger/diagnostics/DialogueUnmatched.gandr:9:16
+   ╭▸ corpus/ledger/diagnostics/DialogueUnmatched.gandr:14:16
    │
- 9 │   def misheard = dialogue(
+14 │   def misheard = dialogue(
    │ ┏━━━━━━━━━━━━━━━━┛
-10 │ ┃   left(sent("yes")),
-11 │ ┃   right(received("no")),
-12 │ ┃   left(closed),
-13 │ ┃   right(closed)
-14 │ ┃ ) ;
+15 │ ┃   left(sent("yes")),
+16 │ ┃   right(received("no")),
+17 │ ┃   left(closed),
+18 │ ┃   right(closed)
+19 │ ┃ ) ;
    │ ┗━┛ a move the other endpoint does not match
    │
    ╰ note: `misheard` is refused with DialogueUnmatched, as its expectation states

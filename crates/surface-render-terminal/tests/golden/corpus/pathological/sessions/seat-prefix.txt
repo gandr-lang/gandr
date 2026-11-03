@@ -1,28 +1,28 @@
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:16:37
+   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:19:37
    │
-16 │ def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress"));
+19 │ def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress"));
    │                                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a run that stops before the protocol ends
    │
    ├ note: `reporting` is refused with RunNotAdmitted, as its expectation states
    ╰ help: change the run so that each move is one that the protocol admits at that point
 
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:21:38
+   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:24:38
    │
-21 │ def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next));
+24 │ def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next));
    │                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move in the other direction
    │
    ├ note: `crossed` is refused with RunNotAdmitted, as its expectation states
    ╰ help: change the run so that each move is one that the protocol admits at that point
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:28:36
+   ╭▸ corpus/pathological/sessions/seat-prefix.gandr:31:36
    │
-24 │ def opened : Prefix(Seat.SeatEnd) = recorded(received("task"));
+27 │ def opened : Prefix(Seat.SeatEnd) = recorded(received("task"));
    │              ──────────────────── the type it synthesises
    ┆
-28 │ def promoted : Run(Seat.SeatEnd) = opened;
+31 │ def promoted : Run(Seat.SeatEnd) = opened;
    │                ┬────────────────   ━━━━━━ its type does not convert: expected `Run(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t, retire : end}})`
    │                │
    │                the type it is checked against

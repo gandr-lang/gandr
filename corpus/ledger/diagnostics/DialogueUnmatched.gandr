@@ -1,4 +1,9 @@
 /// `DialogueUnmatched`: a receipt in a dialogue that no send of the other endpoint matches.
+
+// The native session formers.
+import std.session (Dialogue) ;
+
+/// A protocol that sends one string and ends.
 module Ask where {
   type Asking = !String. end;
 }

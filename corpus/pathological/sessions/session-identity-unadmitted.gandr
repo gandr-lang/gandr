@@ -1,3 +1,16 @@
+// A run ridden along a flow whose target drops the move it took is refused.
+//
+// The run took `retire`, which the narrowed protocol no longer offers, so no
+// run of the target holds its moves.
+//
+// The ride moves the run by the simulation, and the monitor of the target
+// refuses it at the dropped offer.
+//
+// - see: `../../ledger/features/session-identity.gandr`
+
+// The native session formers.
+import std.session (Run);
+
 module Evolution where {
   type SeatEnd = ?String. mu turn. +{
     report : !String. &{next : turn, retire : end},
