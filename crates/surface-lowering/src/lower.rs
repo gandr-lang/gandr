@@ -12396,8 +12396,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   not, names a module an enclosing module declares reaches the member
     ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
     ///   as that member's constant as below; otherwise it is resolved through
-    ///   the outermost scope at the depth that binds it: a path ending at an
-    ///   exported value component stands as that member's constant when the
+    ///   the outermost scope, its head the module the path's source sees
+    ///   ([`Self::see_module`]), at the depth that binds it: a path ending at
+    ///   an exported value component stands as that member's constant when the
     ///   member is declared strictly before the declaration the path is written
     ///   in, its last segment kept as a written name resolved to that
     ///   declaration, and a path ending at a type component stands as its
@@ -12596,6 +12597,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.collected.unit.source_at(site.at.span.start()),
             self.name_at(head),
         );
+        self.see_module(site, self.name_at(head));
         match self.recognition.resolve_path(&path) {
             PathResolution::Complete(Recognized::BuiltinPrimitive { primitive, .. }) => {
                 self.plan(site, Plan::Primitive(primitive));
@@ -12650,6 +12652,69 @@ impl<'run, 'source> Lowerer<'run, 'source>
             PathResolution::Complete(_) | PathResolution::Ungoverned => {
                 Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)))
             },
+        }
+    }
+
+    /// Make the outermost scope answer `name` with the top-level module the
+    /// source holding `site` sees: the module it declares, else the one its
+    /// imports answer. A unit grafts every top-level module of its sources
+    /// into one scope, a later one over an earlier one of the same name, so a
+    /// source whose module another source's displaced reads it again here.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: when the source holding `site` declares a top-level module or
+    ///   instance named `name`, or its imports answer one unambiguously, and
+    ///   the outermost scope binds `name` to a module another source declares,
+    ///   the scope binds `name` to the seen module's namespace, as
+    ///   [`Self::declare_module`] declares it; the scope is unchanged
+    ///   otherwise, a builtin's binding among them.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the seen module is the answer of the same lookup
+    ///   the body makes, which no predicate on the scope reads again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source reading a module's value and type components
+    ///   through its import, in one unit beside a source declaring a module of
+    ///   the same name before it.
+    /// - witness: `tests::namespace::a_module_path_reads_the_module_its_source_sees_4797`
+    fn see_module(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    )
+    {
+        let source = self.collected.unit.source_at(site.at.span.start());
+        let structures = &self.collected.structures;
+        let module = |held: &&StructureIndex| {
+            structures.get(usize::from(**held)).is_some_and(|entry| {
+                matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
+            })
+        };
+        let seen = match self
+            .collected
+            .modules
+            .get(&(Container::TopLevel(source), name))
+            .filter(module)
+        {
+            Some(&own) => own,
+            None => match self.collected.imported_module(source, name) {
+                Ok(Maybe::Present((imported, _))) => imported,
+                Ok(Maybe::Absent(_)) | Err(_) => return,
+            },
+        };
+        let Some(named) = structures
+            .get(usize::from(seen))
+            .map(|entry| entry.named.span)
+        else {
+            return;
+        };
+        let path = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
+        if let Maybe::Present(RecognitionSite::Source(held)) = self.recognition.site(&path)
+            && held != named
+        {
+            self.declare_module(seen);
         }
     }
 
@@ -13459,6 +13524,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.collected.unit.source_at(site.at.span.start()),
             self.name_at(head),
         );
+        self.see_module(site, self.name_at(head));
         match self.recognition.resolve_path(&path) {
             PathResolution::Complete(Recognized::ModuleType) => {
                 self.module_type(site, &path, member)

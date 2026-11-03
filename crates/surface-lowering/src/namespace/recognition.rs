@@ -768,6 +768,20 @@ impl Recognition
         self.scope.resolve(path).map(|bound| &bound.data)
     }
 
+    /// Where the binding `path` resolves to in the outermost scope is
+    /// declared.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn site(
+        &self,
+        path: &NamePath,
+    ) -> Maybe<RecognitionSite, binding::Absent>
+    {
+        self.scope.resolve(path).map(|bound| bound.tag)
+    }
+
     /// What the whole dotted path `path` resolves to, walked prefix by
     /// prefix.
     ///

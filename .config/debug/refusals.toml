@@ -42,6 +42,13 @@ sites = [
   { file = "crates/core-checker/src/judgement/session.rs", pattern = '^\s*Err\(CheckRefusal::NotSynthesisable \{' },
 ]
 
+[refusal.UnknownMember]
+sites = [
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*(Err|return Err)\(LoweringRefusal::UnknownMember \{' },
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*None => LoweringRefusal::UnknownMember \{' },
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*let unknown = LoweringRefusal::UnknownMember \{' },
+]
+
 [refusal.OutOfFragment]
 sites = [
   { file = "crates/core-checker/src/bridge.rs", pattern = '(return Err\(|= |\|former\| |^\s*)Refusal::OutOfFragment \{' },
