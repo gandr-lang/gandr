@@ -4014,6 +4014,108 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Classify a plugging `left |> right`: every output of `left` into the
+    /// inputs of `right`, in order.
+    ///
+    /// # Specification
+    /// - requires: `site` is the plugging; `left` and `right` its operands.
+    /// - ensures: `left` read as a computation and `right` as a head under one
+    ///   binder per output `left` returns, the outputs of a call whose callee
+    ///   writes a group, as [`Self::called_outputs`] reads it, and one
+    ///   otherwise; planned as their [`Plan::Plugged`], with no product built.
+    /// - fails: the wrong-sort refusal where no computation is read; as
+    ///   [`Self::called_outputs`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The plugging's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of two outputs plugs both into a function of
+    ///   two inputs in order, and a call of one value plugs it into a function
+    ///   of one.
+    /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Plugged { .. })))]
+    pub(super) fn plug(
+        &mut self,
+        site: Site,
+        left: Placed,
+        right: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let arity = self
+            .called_outputs(frame, left, site.at.node)?
+            .map_or(1_usize, |outputs| outputs.len());
+        self.read(left.node, Reading::Computation(frame));
+        // The outputs bind no name the source writes.
+        let mut inner = frame;
+        for _ in 0 .. arity {
+            inner = Frame::Inner(self.scope.extend(
+                inner,
+                SurfaceName::from(""),
+                Maybe::Absent(binder_site::Absent::Unwritten),
+            ));
+        }
+        self.read(right.node, Reading::Head(inner));
+        self.plan(site, Plan::Plugged {
+            left: left.node,
+            right: right.node,
+            arity: gandr_core_term::ComponentCount::from(arity),
+        });
+
+        Ok(())
+    }
+
+    /// Mint a plugging: every output of the left bound, and the right applied
+    /// to them in order.
+    ///
+    /// # Specification
+    /// - requires: both sides are already minted or absent; the right was read
+    ///   under one binder per output.
+    /// - ensures: the bind of the left's `arity` outputs into the right applied
+    ///   to each, the first output first, every node with the written origin;
+    ///   nothing when a side did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::plug`].
+    /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_plugged(
+        &self,
+        (left, right, arity): (NodeIndex, NodeIndex, gandr_core_term::ComponentCount),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let bound = match self.computation_at(left) {
+            Maybe::Present(bound) => bound,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mut applied = match self.computation_at(right) {
+            Maybe::Present(applied) => applied,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        // The first output is the outermost binder.
+        for depth in (0 .. usize::from(arity)).rev() {
+            let Ok(depth) = u32::try_from(depth)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let output = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+            sink.origins.record_value(output, origin);
+            applied = sink.arena.computation_application(applied, output);
+            sink.origins.record_computation(applied, origin);
+        }
+        let id = sink.arena.computation_bind_all(bound, arity, applied);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
     /// Mint the selection of one output of a call: every output bound, the
     /// selected one returned.
     ///

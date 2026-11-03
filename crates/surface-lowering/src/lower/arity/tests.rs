@@ -209,6 +209,10 @@ fn shown(
                 Some(&Computation::Lambda(body)) => {
                     (String::from("lambda"), vec![Root::Computation(body)])
                 },
+                Some(&Computation::Application(function, argument)) => (String::from("app"), vec![
+                    Root::Computation(function),
+                    Root::Value(argument),
+                ]),
                 Some(&Computation::Bind(bound, body)) => (String::from("bind"), vec![
                     Root::Computation(bound),
                     Root::Computation(body),
@@ -1614,25 +1618,19 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
-    // order, an application named without its ids.
+    // order.
     let observed = |name: &str| -> Vec<String> {
         body(&arena, &module, name)
             .into_iter()
-            .filter_map(|token| {
-                if token.starts_with("Some(Application(") {
-                    Some(String::from("application"))
-                }
-                else {
-                    (token.starts_with("project") || token == "force").then_some(token)
-                }
-            })
+            .filter(|token| token.starts_with("project") || token == "force" || token == "app")
             .collect()
     };
 
     assert_eq!(
         observed("named"),
-        ["project1", "application"],
-        "the call runs to the codata value, projected at the label's place unforced"
+        ["project1", "app", "force"],
+        "the call runs to the codata value, projected at the label's place unforced; the force \
+         is the call's head"
     );
     assert_eq!(
         observed("counted"),
@@ -1641,7 +1639,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
     );
     assert_eq!(
         observed("recorded"),
-        ["project1", "application"],
+        ["project1", "app", "force"],
         "a lazy record a call returns is projected at its label's entry"
     );
     assert!(
@@ -1679,18 +1677,11 @@ fn a_chain_of_observations_projects_each_link_1106()
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
-    // order, an application named without its ids.
+    // order.
     let observed = |name: &str| -> Vec<String> {
         body(&arena, &module, name)
             .into_iter()
-            .filter_map(|token| {
-                if token.starts_with("Some(Application(") {
-                    Some(String::from("application"))
-                }
-                else {
-                    (token.starts_with("project") || token == "force").then_some(token)
-                }
-            })
+            .filter(|token| token.starts_with("project") || token == "force" || token == "app")
             .collect()
     };
 
@@ -1701,7 +1692,7 @@ fn a_chain_of_observations_projects_each_link_1106()
     );
     assert_eq!(
         observed("third"),
-        ["project0", "project1", "project1", "application"],
+        ["project0", "project1", "project1", "app", "force"],
         "the call runs once and each link projects what the one before it returns"
     );
     assert_eq!(
@@ -1984,6 +1975,47 @@ fn a_selected_output_binds_every_output_and_returns_one()
         rest.get(rest.len().saturating_sub(2_usize) ..),
         Some(&[String::from("return"), String::from("#0")][..]),
         "a selection through parentheses returns its output, {rest:?}"
+    );
+}
+
+#[test]
+fn a_plugging_passes_every_output_in_order()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         recombine(q : Integer, r : Integer) -> Integer { q }\ndef round(n : Integer) -> Integer \
+         { divmod(n, n) |> recombine }\ndef double(n : Integer) -> Integer { n }\ndef single(n : \
+         Integer) -> Integer { double(n) |> double }",
+        &mut arena,
+    );
+
+    let round = body(&arena, &module, "round");
+    assert_eq!(
+        round.get(.. 3_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "a plugging binds every output of the call, {round:?}"
+    );
+    assert_eq!(
+        round.get(round.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("#1"), String::from("#0")][..]),
+        "the first output is the first input, {round:?}"
+    );
+    let single = body(&arena, &module, "single");
+    assert!(
+        single.iter().all(|token| !token.starts_with("bindall")),
+        "a call of one value binds it alone, {single:?}"
+    );
+    assert_eq!(
+        single.last().map(String::as_str),
+        Some("#0"),
+        "the one value is the one input, {single:?}"
     );
 }
 

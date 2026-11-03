@@ -2734,6 +2734,17 @@ enum Plan
         /// The selected output's place among them.
         index: usize,
     },
+    /// A plugging `left |> right`: every output of `left` bound, and `right`
+    /// applied to them in order.
+    Plugged
+    {
+        /// The plugged computation.
+        left: NodeIndex,
+        /// The function its outputs are plugged into.
+        right: NodeIndex,
+        /// How many outputs `left` returns.
+        arity: gandr_core_term::ComponentCount,
+    },
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// The value at the first node, ascribed the value type at the second:
@@ -12734,7 +12745,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   float, `-0.5f64`, lowers back to that float; the infix `then` is the
     ///   composite of two paths, or of two flows where a flow is answered, as
     ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
-    ///   [`Self::cons`] plans it.
+    ///   [`Self::cons`] plans it; `left |> right` plugs every output of `left`
+    ///   into `right`, as [`Self::plug`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
     ///   [`Self::cons`] does.
@@ -12752,12 +12764,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
+    /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
     /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
     /// - witness: `lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
     /// - witness: `lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Plugged { .. } | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
     fn operator(
         &mut self,
         site: Site,
@@ -12775,6 +12788,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && label == TileName::CONS
         {
             return self.cons(site, letter, rest);
+        }
+        if let &[
+            Piece::Operand(left),
+            Piece::Tile { label, .. },
+            Piece::Operand(right),
+        ] = pieces.pieces.as_slice()
+            && label == TileName::PLUG
+        {
+            return self.plug(site, left, right);
         }
         // `-n` written on a natural literal is one negative literal: a value,
         // primitive at `Integer` and read through `FromNeg` at another type.
@@ -17874,6 +17896,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ports(..)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
+                | Plan::Plugged { .. }
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
@@ -18116,6 +18139,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::ReturnAll(members) => self.mint_return_all(members, sink, origin),
             Plan::SelectedOutput { call, arity, index } => {
                 self.mint_selected_output((call, arity, index), sink, origin)
+            },
+            Plan::Plugged { left, right, arity } => {
+                self.mint_plugged((left, right, arity), sink, origin)
             },
             Plan::List(elements) => self.mint_list(elements, sink, origin),
             Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
@@ -19350,6 +19376,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Tuple(_)
             | Plan::ReturnAll(_)
             | Plan::SelectedOutput { .. }
+            | Plan::Plugged { .. }
             | Plan::List(_)
             | Plan::Record(_)
             | Plan::RecordUpdate(..)
