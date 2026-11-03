@@ -546,6 +546,9 @@ pub enum Former<'source, Node>
     },
     /// The returner `-F A` of a value type.
     Returner(Node),
+    /// The returner `-F (A, B)` of several value types, none of which reads
+    /// the results before it: a function's group of outputs.
+    Returns(Arity),
     /// The returner `-F [I, …] A` of a value type whose computation may
     /// request the interfaces of its row, `-F [I, … | t] A` when the row is
     /// open through the row `t`; an entry over a theory writes the sorts it
@@ -1258,8 +1261,10 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
-    /// A return, a bind or a returner of several results: the core's
-    /// many-value formers, which the surface grammar has no syntax for.
+    /// A return or a bind of several values, or a returner of several results
+    /// one of which reads a result before it or whose computation requests an
+    /// interface: the core's many-value formers the surface does not yet
+    /// write.
     SeveralResults,
 }
 

@@ -1991,7 +1991,7 @@ fn a_return_of_several_values_checks_each_at_its_instantiated_result()
             check_comp(&mut context, admitted, other).map(|evidence| evidence.conversions()),
             Err(CheckRefusal::ShapeMismatch {
                 at: TermNode::Computation(admitted),
-                wanted: ExpectedShape::Returner,
+                wanted: ExpectedShape::Returns,
                 found: TypeNode::Computation(other.id()),
             }),
             "a return of two is no returner of another count"

@@ -1630,6 +1630,13 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     let universe = small_universe(&mut core);
     let string_code = core.value_quote(string);
     let directed = core.value_type_flow(universe, integer_code, string_code);
+    let two_results = core.comp_type_returns_with_effects(
+        &[integer, string],
+        gandr_core_term::effect::EffectRow::EMPTY,
+    );
+    let no_results =
+        core.comp_type_returns_with_effects(&[], gandr_core_term::effect::EffectRow::EMPTY);
+    let to_results = core.comp_type_arrow(integer, two_results);
     let mut relations = [
         (record, Relation::Isomorphism),
         (equivalence, Relation::Equivalence),
@@ -1705,6 +1712,12 @@ fn every_type_former_spells_as_the_grammar_writes_it()
             "-F Flow(List(Integer), small, 1)",
         ),
         (CoreNode::ValueType(prefix), "Prefix(small)"),
+        (CoreNode::CompType(two_results), "-F (Integer, String)"),
+        (CoreNode::CompType(no_results), "-F ()"),
+        (
+            CoreNode::CompType(to_results),
+            "Integer -> -F (Integer, String)",
+        ),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(root)),

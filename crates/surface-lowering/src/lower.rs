@@ -2702,6 +2702,13 @@ enum Plan
     /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
     /// store, and its codomain.
     DependentArrow(Stretch, NodeIndex),
+    /// A function's group of outputs read as its result, `(q : A, r : B)`:
+    /// the returner of the entries in the lowerer's parameter store, each
+    /// standing under the ones before it.
+    Returns(Stretch),
+    /// A tuple ending a body whose result is a group of outputs: the return
+    /// of the members in the lowerer's operand store, one per output.
+    ReturnAll(Stretch),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// The value at the first node, ascribed the value type at the second:
@@ -9680,19 +9687,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included.
+    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included, or,
+    /// ending a body whose result is a group of outputs, the return of one
+    /// value per output.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the `(` of a parenthesised expression
     ///   whose first member a comma follows.
-    /// - ensures: the tuple stands as a value, reads every member as a value
-    ///   under its own frame, and is planned over them as one tuple, as one `*`
-    ///   chain is one product. At a product it is written or answered at, as
+    /// - ensures: ending a body whose written result is a group of outputs, as
+    ///   [`Self::answered_outputs`] reads it, the tuple stands as a computation
+    ///   and is planned as the return of its members; otherwise it stands as a
+    ///   value and is planned over them as one tuple, as one `*` chain is one
+    ///   product. Either way every member is read as a value under its own
+    ///   frame. At a product it is written or answered at, as
     ///   [`Self::stated_value`] reads it, of as many positional components as
     ///   it has members, each member written as a constructor, a call, a list
     ///   or a parenthesised form takes the component at its place, as
     ///   [`Self::classify_member`] gives it.
-    /// - provides: the introduction of the eager product.
+    /// - provides: the introduction of the eager product, and the return of
+    ///   several values.
     /// - fails: yields the wrong-sort refusal where no value is read, and the
     ///   list's refusal for a member out of shape, both naming the tuple; the
     ///   walk's refusal reading the product.
@@ -9707,17 +9720,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a tuple of one, of two and of three, and a tuple
     ///   where a computation is read, each asserted as the exact core node read
-    ///   back out of the arena or the exact refusal; and tuples of a
-    ///   parameterised family's constructors under an annotation, at a body's
-    ///   tail and inside a list, each classified by its component.
+    ///   back out of the arena or the exact refusal; tuples of a parameterised
+    ///   family's constructors under an annotation, at a body's tail and inside
+    ///   a list, each classified by its component; and a tuple ending a body
+    ///   that returns two outputs.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Tuple(members)) if members.end.saturating_sub(members.start) >= 1_usize
+                    Some(&(Plan::Tuple(members) | Plan::ReturnAll(members))) if members.end.saturating_sub(members.start) >= 1_usize
                 )
         },
     )]
@@ -9731,7 +9746,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             name: FormName::TUPLE,
             ..site
         };
-        let frame = self.require(tuple, Produced::Value)?;
+        let outputs = self.answered_outputs(site);
+        let produced = match outputs {
+            Some(_) => Produced::Computation,
+            None => Produced::Value,
+        };
+        let frame = self.require(tuple, produced)?;
         let start = self.operands.len();
         if let Err(refusal) = arguments(tuple, &mut cursor, &mut self.operands) {
             self.operands.truncate(start);
@@ -9741,7 +9761,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.operands.len(),
         };
-        let (stated, answered) = self.stated_value(tuple)?;
+        let (stated, answered) = match outputs {
+            Some(_) => (None, None),
+            None => self.stated_value(tuple)?,
+        };
         if let Some(stated) = stated
             && let Maybe::Present(components) =
                 self.stated_entries(tuple, stated, Former::TelescopeType, arity::Thunked(false))?
@@ -9762,9 +9785,51 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
 
-        self.plan(site, Plan::Tuple(members));
+        self.plan(site, match outputs {
+            Some(_) => Plan::ReturnAll(members),
+            None => Plan::Tuple(members),
+        });
 
         Ok(())
+    }
+
+    /// The outputs of the result the body `site` ends answers, when that
+    /// result is written as a group of outputs.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the stretch of a [`Plan::Returns`] the written answer of a
+    ///   computation at `site` is planned as, through any grouping; nothing for
+    ///   a value, a form that ends no body, or another answer.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pair`].
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
+    fn answered_outputs(
+        &self,
+        site: Site,
+    ) -> Option<Stretch>
+    {
+        if !matches!(site.reading, Reading::Computation(_)) {
+            return None;
+        }
+        let answer = self
+            .answers
+            .get(&site.at.node)
+            .filter(|_| self.exits.contains(&site.at.node))?;
+        if !matches!(answer.over, native::Over::Written) {
+            return None;
+        }
+        let mut at = answer.node;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        match self.plans.get(at) {
+            Some(&Plan::Returns(outputs)) => Some(outputs),
+            _ => None,
+        }
     }
 
     /// Classify a list literal, `#[v1, …, vn]`, the empty `#[]` included.
@@ -15653,11 +15718,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `argument` is the one operand the former was written with.
     /// - ensures: the thunk former stands at value-type sort with its argument
     ///   read at computation-type sort, the returner former stands at
-    ///   computation-type sort with its argument read at value-type sort, the
-    ///   list former stands at value-type sort with its element type read at
-    ///   value-type sort, and the run former stands at value-type sort with its
-    ///   session code read as a value; the former decides both, so nothing is
-    ///   pushed down that has to be re-derived.
+    ///   computation-type sort with its argument read at value-type sort, or,
+    ///   for a group of outputs `-F (A, B)`, adopts the group read as a result,
+    ///   the list former stands at value-type sort with its element type read
+    ///   at value-type sort, and the run former stands at value-type sort with
+    ///   its session code read as a value; the former decides both, so nothing
+    ///   is pushed down that has to be re-derived.
     /// - provides: the one place a type former's sorts are decided.
     /// - fails: yields the wrong-sort refusal for a former whose produced sort
     ///   does not suit the position.
@@ -15669,10 +15735,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — thunk and returner read the argument in opposite
     ///   sorts; each then lowers to its own core bridge former, not the other
-    ///   one; a list reads its element type as a value type.
+    ///   one; a list reads its element type as a value type; the returner of a
+    ///   group is the group a result writes.
     /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -15683,6 +15751,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(site.reading.frame()),
                             | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => Reading::Value(site.reading.frame()),
                         })
+                || (former == TypeFormer::Returner
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if child == argument)
+                    && self.reading(argument) == Reading::Result(site.reading.frame()))
         },
     )]
     fn apply_former(
@@ -15701,6 +15772,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
+        // The returner of a group of outputs is the group a result writes,
+        // `-F (A, B)` as `-> (A, B)`.
+        if former == TypeFormer::Returner
+            && let Some(tree) = self.tree.node(argument)
+            && self.written_group(Placed::of(argument, tree), frame)?
+        {
+            self.read(argument, Reading::Result(frame));
+            self.plan(site, Plan::Transparent(argument));
+            return Ok(());
+        }
         let inner = match former {
             TypeFormer::Thunk => Reading::CompType(frame),
             TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
@@ -16341,22 +16422,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a parenthesised type, `(T)`, or, where a value is read, the
-    /// annotation `(v : T)` the type grammar molds as one.
+    /// Classify a parenthesised type, `(T)`, a function's group of outputs
+    /// where a result is read, or, where a value is read, the annotation `(v :
+    /// T)` the type grammar molds as one.
     ///
     /// # Specification
     /// - requires: `site` is a parenthesised type.
-    /// - ensures: the one operand is read at the form's own reading and
+    /// - ensures: where a result is read, a group of no entry, of several, or
+    ///   of one labelled entry is the outputs, as [`Self::output_group`] reads
+    ///   them; otherwise the one operand is read at the form's own reading and
     ///   adopted; where a value is read, a `:` after the operand makes the form
     ///   the annotation of that operand, read as [`Self::annotated`] reads the
     ///   expression grammar's, so a type-valued call's argument takes the
     ///   spelling a path's endpoint takes.
-    /// - provides: grouping in type position, and the annotated argument of a
-    ///   type-valued call.
-    /// - fails: yields the empty-list refusal for `()`, which is never the unit
-    ///   type, the hole's own refusal, a misplaced-tile fault at the first
-    ///   comma of a list, which only a value function space's domain reads, and
-    ///   at a `:` where no value is read, and the annotation's own refusals.
+    /// - provides: grouping in type position, a function's outputs, and the
+    ///   annotated argument of a type-valued call.
+    /// - fails: yields the empty-list refusal for `()` where no result is read,
+    ///   which is never the unit type, the hole's own refusal, a misplaced-tile
+    ///   fault at the first comma of a list, which only a value function
+    ///   space's domain and a result read, and at a `:` where no value is read,
+    ///   and the annotation's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -16365,17 +16450,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — parenthesized type operands keep the surrounding
     ///   reading and lower to the wrapped type rather than introducing a core
-    ///   constructor; empty parentheses are refused by name.
+    ///   constructor; empty parentheses are refused by name; a result's group
+    ///   of outputs lowers to the many-value returner.
     /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
                 || (matches!(site.reading, Reading::Value(_))
                     && matches!(self.plans.get(site.at.node), Some(&(Plan::Transparent(_) | Plan::Ascribed(..)))))
+                || (matches!(site.reading, Reading::Result(_))
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::Returns(_))))
         },
     )]
     fn parenthesized_type(
@@ -16385,6 +16474,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _open = cursor.tile(TileName::PAREN_OPEN);
+        // A group written as a function's result is its outputs, as the group
+        // before an arrow is its inputs: `-> (q : Nat, r : Nat)`, `-> ()`.
+        if let Reading::Result(frame) = site.reading
+            && self.output_group(site, frame)? == arity::Planned(true)
+        {
+            return Ok(());
+        }
         let run = cursor.operands();
         if let Run::Empty(_) = run {
             let unit = Site {
@@ -17578,7 +17674,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ports(..)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -17613,7 +17709,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
                 | Plan::FixedCarrier(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::Returns(_) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
@@ -17817,6 +17913,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
+            Plan::ReturnAll(members) => self.mint_return_all(members, sink, origin),
             Plan::List(elements) => self.mint_list(elements, sink, origin),
             Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
             Plan::RecordUpdate(base, ref fields) => {
@@ -17832,6 +17929,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::DependentArrow(entries, codomain) => {
                 self.mint_dependent_arrow(entries, codomain, sink, origin)
             },
+            Plan::Returns(entries) => self.mint_returns(entries, sink, origin),
             Plan::Transparent(child) => self.lowered_at(child),
             Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             Plan::Application(head, arguments) => {
@@ -18441,6 +18539,44 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Maybe::Present(sink.value(id, origin))
     }
 
+    /// Carry out a many-value return's plan: the return of its members, one
+    /// value per output.
+    ///
+    /// # Specification
+    /// - requires: every member is already minted or absent.
+    /// - ensures: the many-value return of the members in written order, with
+    ///   the written origin; nothing is minted when a member did not lower.
+    /// - provides: the return of several values.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per entry of the finite stretch `members`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pair`].
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    fn mint_return_all(
+        &self,
+        members: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, members);
+        let mut values = Vec::with_capacity(written.len());
+        for &member in written {
+            match self.value_at(member) {
+                Maybe::Present(value) => values.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.computation_return_all(&values);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
     /// Carry out a list literal's plan: its elements, as cons cells ending in
     /// the empty list.
     ///
@@ -19009,6 +19145,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Called(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
+            | Plan::ReturnAll(_)
             | Plan::List(_)
             | Plan::Record(_)
             | Plan::RecordUpdate(..)
@@ -19016,6 +19153,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::ValueFunction(..)
             | Plan::Telescope(..)
             | Plan::DependentArrow(..)
+            | Plan::Returns(_)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)

@@ -672,12 +672,21 @@ impl Source for ContentSource<'_>
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => {
                 Former::Unreadable(Unreadable::Lift)
             },
+            ContentNode::Returns {
+                ref results,
+                ref effects,
+            } if effects.purity() == gandr_core_term::effect::Purity::Pure
+                && !crate::walk::reads_earlier(self, results.iter().copied()) =>
+            {
+                Former::Returns(Arity::from(results.len()))
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "a return, a bind or a returner of several results, which the \
-                              surface grammar has no syntax for"
+                    reason = "a return or a bind of several values, or a returner of several \
+                              results one of which reads another or whose computation requests \
+                              an interface, which the surface grammar does not yet write"
                 )
             )]
             ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } => {
@@ -880,6 +889,9 @@ impl Source for ContentSource<'_>
             }
             | ContentNode::WithType(ref parts)
             | ContentNode::With(ref parts)
+            | ContentNode::Returns {
+                results: ref parts, ..
+            }
             | ContentNode::Data {
                 arguments: ref parts,
                 ..
@@ -1025,7 +1037,6 @@ impl Source for ContentSource<'_>
             | ContentNode::Abstract(_)
             | ContentNode::UnknownType
             | ContentNode::Returner { .. }
-            | ContentNode::Returns { .. }
             | ContentNode::BindAll(..)
             | ContentNode::ReturnAll(_)
             | ContentNode::Arrow { .. }

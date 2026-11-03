@@ -130,6 +130,13 @@ fn shown(
                 Some(&CompType::Returner { result, .. }) => {
                     (String::from("F"), vec![Root::ValueType(result)])
                 },
+                Some(&CompType::Returns { ref results, .. }) => (
+                    format!("F{}", results.len()),
+                    results
+                        .iter()
+                        .map(|&result| Root::ValueType(result))
+                        .collect(),
+                ),
                 Some(&CompType::Arrow { domain, codomain }) => (String::from("->"), vec![
                     Root::ValueType(domain),
                     Root::CompType(codomain),
@@ -192,6 +199,10 @@ fn shown(
                 Some(&Computation::Return(value)) => {
                     (String::from("return"), vec![Root::Value(value)])
                 },
+                Some(&Computation::ReturnAll(ref values)) => (
+                    format!("return{}", values.len()),
+                    values.iter().map(|&value| Root::Value(value)).collect(),
+                ),
                 Some(&Computation::Force(value)) => {
                     (String::from("force"), vec![Root::Value(value)])
                 },
@@ -1784,6 +1795,97 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         declared(&arena, &module, "ignored"),
         declared(&arena, &module, "tail"),
         "the type the function tail writing the same signature declares"
+    );
+}
+
+#[test]
+fn a_group_of_outputs_is_the_many_value_returner()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def named(m : Integer) -> (q : Integer, r : String) { return m }\ndef unnamed(m : \
+         Integer) -> (Integer, String) { return m }\ndef none(m : Integer) -> () { return m \
+         }\ndef one(m : Integer) -> (q : Integer) { return m }\ndef bare(m : Integer) -> Integer { \
+         return m }\ndef grouped(m : Integer) -> (Integer) { return m }\ndef dependent(m : \
+         Integer) -> (a : Type, x : a) { return m }\ndef explicit(m : Integer) -> -F (Integer, \
+         String) { return m }\ndef signed : +U (Integer -> -F (Integer, String)) ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["U", "->", "Integer", "F2", "Integer", "String"],
+        "two named outputs are the returner of both, in written order"
+    );
+    assert_eq!(
+        declared(&arena, &module, "unnamed"),
+        declared(&arena, &module, "named"),
+        "a name on an output changes nothing its type says"
+    );
+    assert_eq!(
+        declared(&arena, &module, "explicit"),
+        declared(&arena, &module, "unnamed"),
+        "the returner of a group is the group a result writes"
+    );
+    assert_eq!(
+        declared(&arena, &module, "signed"),
+        declared(&arena, &module, "unnamed"),
+        "the group a printer writes after an arrow reads back"
+    );
+    assert_eq!(
+        declared(&arena, &module, "none"),
+        ["U", "->", "Integer", "F0"],
+        "an empty group returns nothing, which is no unit"
+    );
+    assert_eq!(
+        declared(&arena, &module, "one"),
+        declared(&arena, &module, "bare"),
+        "one named output is the returner of its one type"
+    );
+    assert_eq!(
+        declared(&arena, &module, "grouped"),
+        declared(&arena, &module, "bare"),
+        "one unnamed entry is grouping, not a group of outputs"
+    );
+    let dependent = declared(&arena, &module, "dependent");
+    assert_eq!(
+        dependent.get(.. 4_usize),
+        Some(
+            &[
+                String::from("U"),
+                String::from("->"),
+                String::from("Integer"),
+                String::from("F2")
+            ][..]
+        ),
+        "a later output may name an earlier one, {dependent:?}"
+    );
+    let source = "def twice(m : Integer) -> (x : Integer, x : String) { return m }";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("x")),
+        "an output is named once"
+    );
+}
+
+#[test]
+fn a_tuple_ending_a_body_of_outputs_returns_each_member()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (n, m) }\ndef \
+         paired(m : Integer, n : Integer) -> Integer * Integer { (n, m) }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "swap"),
+        ["thunk", "lambda", "lambda", "return2", "#0", "#1"],
+        "a tuple ending a body of two outputs returns each member as one"
+    );
+    assert_eq!(
+        body(&arena, &module, "paired"),
+        ["thunk", "lambda", "lambda", "return", "tuple2", "#0", "#1"],
+        "a tuple ending a body of one product returns the one tuple"
     );
 }
 

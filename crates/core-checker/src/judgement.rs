@@ -7905,9 +7905,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: the results of `expected` when it is a returner of `arity`
     ///   values at its weak head, each under the binders of those before it;
     ///   `arity` unknown value types, minted, when it is the unknown type.
-    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a returner,
-    ///   for any other former or another number of values; the unfolding's
-    ///   refusal.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a returner of
+    ///   `arity` results, for any other former or another number of values; the
+    ///   unfolding's refusal.
     /// - panics: none.
     ///
     /// # Judgement
@@ -7921,7 +7921,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(ensures: |ret| match ret {
         | Ok(ref results) => results.len() == arity,
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
-            && wanted == ExpectedShape::Returner && found == TypeNode::Computation(expected),
+            && wanted == ExpectedShape::Returns && found == TypeNode::Computation(expected),
         | Err(_) => true,
     })]
     fn returns_expected(
@@ -7939,7 +7939,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 TypeNode::Computation(head),
                 CheckRefusal::ShapeMismatch {
                     at: TermNode::Computation(at),
-                    wanted: ExpectedShape::Returner,
+                    wanted: ExpectedShape::Returns,
                     found: TypeNode::Computation(expected),
                 },
             )),

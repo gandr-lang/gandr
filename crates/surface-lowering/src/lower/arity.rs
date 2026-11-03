@@ -655,6 +655,24 @@ fn path(observed: Observed) -> Vec<Side>
     sides
 }
 
+/// Whether the entries of a parenthesised type, as written, are a group of
+/// outputs rather than one type grouped: no entry, several, or one labelled.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: false exactly for one unlabelled entry.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::output_group`].
+/// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+#[spec(ensures: |ret| ret != matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..))))]
+fn groups(entries: &[Entry<'_>]) -> bool
+{
+    !matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..)))
+}
+
 impl<'source> Lowerer<'_, 'source>
 {
     /// The named kind and former of the form at `at`.
@@ -3624,6 +3642,119 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Whether `at` is written as a group of outputs, the operand of `-F (A,
+    /// B)`: a parenthesised type of no entry, several, or one labelled entry.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: whether `at` is a parenthesised type whose entries, as
+    ///   [`Self::domain_entries`] reads them under `frame`, are a group as
+    ///   [`groups`] reads them.
+    /// - fails: the list's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::domain_entries`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::output_group`].
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    pub(super) fn written_group(
+        &mut self,
+        at: Placed,
+        frame: Frame,
+    ) -> Result<bool, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(at)?, Some((_, Former::ParenthesizedType))) {
+            return Ok(false);
+        }
+        let entries = self.domain_entries(at, frame)?;
+
+        Ok(groups(&entries))
+    }
+
+    /// Classify a group written as a function's result: its outputs, `(q :
+    /// Nat, r : Nat)`, `(Nat, Nat)` or `()`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a parenthesised type read as a result under
+    ///   `frame`.
+    /// - ensures: planned when the group holds no entry, several, or one
+    ///   labelled entry: every entry binds a frame extending the one before it,
+    ///   an unnamed entry's under a name no source writes, and its type is read
+    ///   as a value type under the frames before it; nothing is planned for one
+    ///   unlabelled entry, which is grouping.
+    /// - fails: a duplicate definition for a name bound twice; the binder
+    ///   policy's refusal; a misplaced key; a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The group's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two named outputs, two unnamed, none, and one named
+    ///   output whose type a later one names.
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Returns(_))))]
+    pub(super) fn output_group(
+        &mut self,
+        site: Site,
+        frame: Frame,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let entries = self.domain_entries(site.at, frame)?;
+        if !groups(&entries) {
+            return Ok(Planned(false));
+        }
+        let _frame = self.require(site, Produced::CompType)?;
+        let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
+        let start = self.parameters.len();
+        let mut inner = frame;
+        for entry in &entries {
+            let declared = entry.held.at();
+            self.read(declared.node, Reading::ValueType(inner));
+            self.label_entry(entry, Reading::ValueType(inner));
+            let (binder, bound, written) = match entry.key {
+                Key::Label(bound, key) => {
+                    if let Some(&earlier) = seen.get(&bound) {
+                        return Err(LoweringRefusal::DuplicateDefinition {
+                            span: key.span,
+                            name: bound,
+                            first: earlier.span,
+                        });
+                    }
+                    let _first = seen.insert(bound, key);
+                    self.note_binder(key, bound)?;
+                    (key, bound, Maybe::Present(key.span))
+                },
+                Key::Positional | Key::Index(..) => (
+                    declared,
+                    SurfaceName::from(""),
+                    Maybe::Absent(binder_site::Absent::Unwritten),
+                ),
+            };
+            let extended = self
+                .scope
+                .extend_typed(inner, bound, declared.node, written);
+            self.parameters.push(Parameter {
+                binder: binder.node,
+                frame: extended,
+                declared: Maybe::Present(declared.node),
+                component: None,
+            });
+            inner = Frame::Inner(extended);
+        }
+        self.plan(
+            site,
+            Plan::Returns(Stretch {
+                start,
+                end: self.parameters.len(),
+            }),
+        );
+
+        Ok(Planned(true))
+    }
+
     /// The entries of the parenthesised domain list `domain` of a value
     /// function space under `frame`, as written.
     ///
@@ -4629,6 +4760,48 @@ impl<'source> Lowerer<'_, 'source>
         else {
             sink.arena.comp_type_arrow(domain, body)
         };
+        sink.origins.record_comp_type(id, origin);
+
+        Maybe::Present(Lowered::CompType(id))
+    }
+
+    /// Mint a function's group of outputs: the many-value returner of its
+    /// entries' types, each under the entries before it.
+    ///
+    /// # Specification
+    /// - requires: every entry's type is already minted or absent.
+    /// - ensures: the returner of the entries' types in order, the one result's
+    ///   returner for a group of one, with the written origin; nothing when a
+    ///   type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::output_group`].
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    pub(super) fn mint_returns(
+        &self,
+        entries: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.parameters, entries);
+        let mut results: Vec<ValueTypeId> = Vec::with_capacity(written.len());
+        for parameter in written {
+            let Maybe::Present(declared) = parameter.declared
+            else {
+                return Maybe::Absent(lowered::Absent::Unstated);
+            };
+            match self.value_type_at(declared) {
+                Maybe::Present(result) => results.push(result),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink
+            .arena
+            .comp_type_returns_with_effects(&results, gandr_core_term::effect::EffectRow::EMPTY);
         sink.origins.record_comp_type(id, origin);
 
         Maybe::Present(Lowered::CompType(id))

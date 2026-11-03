@@ -131,6 +131,9 @@ pub enum ExpectedShape
     Thunk,
     /// A returner `F A`: what a return is checked against.
     Returner,
+    /// A returner of as many results as a return of several values gives:
+    /// what such a return is checked against.
+    Returns,
     /// An arrow `A → C`: what a lambda is checked against and what the head of
     /// an application must synthesise.
     Arrow,

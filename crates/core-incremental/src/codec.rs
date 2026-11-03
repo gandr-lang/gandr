@@ -6358,7 +6358,7 @@ const FORMERS: [UnadmittedFormer; 24] = [
 
 /// The shapes a rule can require, in stable wire order: a shape joins at the
 /// end, so every tag written before it reads back the same.
-const SHAPES: [ExpectedShape; 19] = [
+const SHAPES: [ExpectedShape; 20] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -6378,6 +6378,7 @@ const SHAPES: [ExpectedShape; 19] = [
     ExpectedShape::Sigma,
     ExpectedShape::Summand,
     ExpectedShape::EmptySum,
+    ExpectedShape::Returns,
 ];
 
 /// The actions a session state admits, in stable wire order.
