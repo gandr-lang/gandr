@@ -122,6 +122,34 @@ trunk_lacked() {
     "$(git merge-base "origin/$1" "origin/$trunk")..$(git merge-base HEAD "origin/$trunk")"
 }
 
+# The commits of `$2` past `$1` whose change `$1` already holds (#4463), one
+# subject a line, oldest first: the commits a rebase of `$2` onto `$1` drops.
+# GitHub's own rebase (`update-branch`) replays each such commit as an empty
+# one, with GitHub as its committer and none of the trailers the push rule
+# requires, and every branch stacked above inherits it. The rebase runs
+# detached in a scratch worktree, unsigned, with no ref updated whatever
+# `rebase.updateRefs` says, and its result is discarded. Prints nothing when
+# it conflicts: GitHub refuses that rebase itself.
+upstream_replays() {
+  local onto head scratch kept
+  onto=$(git rev-parse "$1^{commit}")
+  head=$(git rev-parse "$2^{commit}")
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-replay-$$.XXXXXX")
+  git worktree add --quiet --detach "$scratch" "$head"
+  if git -C "$scratch" -c user.name=landing -c user.email=landing@invalid -c commit.gpgsign=false \
+    rebase --quiet --no-update-refs "$onto" > /dev/null 2>&1; then
+    kept=$(git -C "$scratch" log --reverse --format=%s "$onto..HEAD")
+    git log --reverse --format=%s "$onto..$head" | awk -v kept="$kept" '
+      BEGIN { count = split(kept, list, "\n"); for (i = 1; i <= count; i++) left[list[i]]++ }
+      left[$0] > 0 { left[$0]--; next }
+      { print }'
+  else
+    git -C "$scratch" rebase --abort 2> /dev/null || true
+  fi
+  git worktree remove --force "$scratch" 2> /dev/null || rm -rf "$scratch"
+  git worktree prune
+}
+
 # Stack the checked-out branch `$1` on the top `$2`, a reading of
 # `await_top` or `null`, and leave the top it stacked on in `stacked_top`
 # (#3654). With no top there is nothing to rebase. Otherwise the branch's own
