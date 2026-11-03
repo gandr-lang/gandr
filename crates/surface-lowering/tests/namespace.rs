@@ -5203,6 +5203,65 @@ fn each_import_a_name_is_read_through_is_reached()
     );
 }
 
+/// #4797: a source reads a module's value and type components through its
+/// import, though a source laid before it in the unit, which it does not
+/// import, declares a module of the same name with neither. A third source
+/// reads the module through the same import first, as a walk's component
+/// lays them.
+#[test]
+fn a_module_path_reads_the_module_its_source_sees_4797()
+{
+    let pbg = grammar();
+    let on = |sources: &[usize]| {
+        sources
+            .iter()
+            .map(|&source| ImportTarget::Source(SourceIndex::from(source)))
+            .collect::<Vec<_>>()
+    };
+    let (both, shared, base) = (on(&[0_usize, 1_usize]), on(&[0_usize]), on(&[1_usize]));
+    let (text, unit) = laid(&[
+        (SourceText::from("def shared : Integer = 0;\n"), &[]),
+        (
+            SourceText::from(
+                "pub module Seat where {\n  type Task = Integer;\n  def task : Integer = 1;\n}\n",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./shared.gandr\" ;\nimport \"./base.gandr\" ;\ndef first : Integer = \
+                 Seat.task ;\n",
+            ),
+            &both,
+        ),
+        (
+            SourceText::from(
+                "import \"./shared.gandr\" ;\nmodule Seat where {\n  def other : Integer = 2;\n}\n",
+            ),
+            &shared,
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndef read : Seat.Task ;\ndef read = Seat.task ;\n",
+            ),
+            &base,
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let refused: Vec<String> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
+        .map(|declaration| String::from(declaration.name().as_ref()))
+        .collect();
+    assert_eq!(
+        refused,
+        Vec::<String>::new(),
+        "`read` reads `Seat` through its import, past the later source's `Seat`"
+    );
+}
+
 /// The base the visibility witnesses import: each form exported by a `pub`
 /// mark on its signature, its definition, before or after its attributes, and
 /// each kept private by none.

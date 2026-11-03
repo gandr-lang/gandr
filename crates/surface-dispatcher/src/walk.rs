@@ -2990,6 +2990,55 @@ pub mod tests
         }
     }
 
+    /// A source reads a module through the source it imports, though another
+    /// source of its component declares a module of the same name: `user`
+    /// imports `base`, `other` declares its own `Seat`, and `mid` joins the
+    /// three into one component by importing `base` beside `other`'s import.
+    #[test]
+    fn a_module_resolves_through_the_importer_s_own_import()
+    {
+        let scratch = Scratch::new(Path::new("rival-module"));
+        let files = [
+            (
+                "fixture/base.gandr",
+                "pub module Seat where {\n  def task : Integer = 1;\n}\n",
+            ),
+            ("fixture/shared.gandr", "def shared : Integer = 0;\n"),
+            (
+                "fixture/mid.gandr",
+                "import \"./shared.gandr\";\nimport \"./base.gandr\";\n\ndef m : Integer = \
+                 Seat.task;\n",
+            ),
+            (
+                "fixture/other.gandr",
+                "import \"./shared.gandr\";\n\nmodule Seat where {\n  def other : Integer = 2;\n}\n",
+            ),
+            (
+                "fixture/user.gandr",
+                "import \"./base.gandr\";\n\ndef t : Integer = Seat.task;\n",
+            ),
+        ];
+        for (relative, text) in files {
+            scratch.file(Path::new(relative), SourceText::from(text));
+        }
+        let mut standings = Vec::new();
+        let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                if let Step::Source { path, standing, .. } = step {
+                    standings.push((path.file_name().map(std::ffi::OsStr::to_owned), standing));
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        assert!(
+            standings
+                .iter()
+                .all(|&(_, standing)| standing == Standing::Settled),
+            "each source settles, `user`'s `Seat` the one `base` declares: {standings:?}"
+        );
+    }
+
     /// #617: an import made its importer dearer to judge by a second parse of
     /// the importer — once alone to read its imports, again inside its
     /// component — which cost 23 M of a 7 KB importer's 152 M instructions
