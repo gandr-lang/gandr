@@ -1,0 +1,63 @@
+/// A model forgets a fixed sort, an existential is a model, and sealing differs.
+///
+/// A refined model passes where a reader expects a plain one, and the reader
+/// treats the sort as abstract. With no subtyping the crossing is a term, and
+/// the checker inserts it.
+///
+/// An ascription or an argument forgets the fixed sorts. The explicit printing
+/// is `forget(m) at Model(T)`, since the two types say which sorts go. An
+/// existential is a model of a signature whose sort stays abstract. Sealing
+/// mints one atom that every use shares.
+///
+/// - see: #4721 — the refined model type sketch, its rulings in the issue body
+/// - see: corpus/model/identity/model-counter-manifest-explicit.gandr — `forget[sort C = A]` today
+
+// `Counter` and its theory.
+import "counters.gandr";
+
+/// A counter of integers, its counts fixed.
+def ints : Model(Counter) with { sort C = Integer } = #{
+  .zero = 0,
+  .incr = fun (n) { n + 1 },
+  .read = fun (n) { n }
+};
+
+/// A reader that treats the counts as abstract.
+def readOnce(c : Model(Counter)) -> Integer {
+  c.read(c.incr(c.zero))
+}
+
+/// The argument forgets the fixed sort, and the checker inserts the map.
+def readInts() -> Integer {
+  readOnce(ints)
+}
+
+/// The map the checker inserts, printed.
+def readIntsExplicit() -> Integer {
+  readOnce(forget(ints) at Model(Counter))
+}
+
+/// An existential: a seed and a reading over a type nobody outside names.
+def opaqueSeed : Model(#{ type T; read : T -> Integer; seed : T }) = #{
+  .T = String,
+  .read = length,
+  .seed = "seed"
+};
+
+/// Opening the existential: its type is fresh at this opening.
+def seedLength() -> Integer {
+  module s = opaqueSeed;
+  s.read(s.seed)
+}
+
+/// Sealing mints one atom, so every use of `Tally.C` is one type.
+module Tally :> Counter where {
+  /// The counts, hidden behind the seal.
+  type C = Integer;
+  /// Zero.
+  def zero = 0;
+  /// One more.
+  def incr(n : Integer) -> Integer { n + 1 }
+  /// The count itself.
+  def read(n : Integer) -> Integer { n }
+}

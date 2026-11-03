@@ -1,0 +1,32 @@
+/// The inline refinement and its puns, beside the block.
+///
+/// A parameter list often fixes one sort, and a block spends three lines on
+/// it. The inline form keeps such a type on one line.
+///
+/// `Model(T)[.C = A]` fixes a sort inline. `Model(T)[.C]` and `with { sort C }`
+/// pun, fixing `C` to the `C` in scope, as records and implicit supply pun.
+///
+/// - see: #4721 — the refined model type sketch, its rulings in the issue body
+/// - see: corpus/sketch/model-refinement/counters.gandr — the theories and the block
+
+// `Counter` and `Pairing`.
+import "counters.gandr";
+
+/// The inline form: a counter of integers.
+def readZero(a : Model(Counter)[.C = Integer]) -> Integer {
+  a.read(a.zero)
+}
+
+/// The pun in the inline form: a counter whose counts are the `C` bound
+/// before it.
+def readAny[C : Type](a : Model(Counter)[.C], c : C) -> Integer {
+  a.read(c)
+}
+
+/// The pun in the block: both carriers are the ones bound before it.
+def swapCarriers[A : Type, B : Type](p : Model(Pairing) with {
+  | sort A
+  | sort B
+}) -> #{first : B, second : A} {
+  #{first = p.right, second = p.left}
+}
