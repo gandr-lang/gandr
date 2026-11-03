@@ -814,8 +814,10 @@ retarget_bottom() {
 # are waited on (`wait_required`), and a red one stops the landing, naming
 # it. A cancelled run the rollup reads, left by a restack's twin runs, is
 # re-run (`rerun_twins`), at most three times for a pull request. Returns 3
-# when the open members take no link above the queued ones: the stack is read
-# again once those merge.
+# when the open members take no link above the queued ones: GitHub refuses
+# one over a pull request queued on its own, and a single open member in no
+# server stack takes none, so the stack merge would not know `$3` (#4843).
+# The stack is read again once the queued ones merge.
 queue_stack() {
   local stack=$1 queued=$2 upto=$3 open landing number reruns watched
   open=$(jq -c --argjson queued "$queued" '[.[] | select(.number | IN($queued[]) | not)]' <<< "$stack")
@@ -828,7 +830,7 @@ queue_stack() {
     fi
   elif [[ "$queued" == '[]' ]]; then
     stack_link "$stack"
-  elif ! stack_link "$open" 2> /dev/null; then
+  elif ! stack_link "$open" 2> /dev/null || [[ $(stack_of "$upto") == null ]]; then
     echo "the open pull requests above the queued #$(jq -r '.[-1]' <<< "$queued") take no link; they land once it merges" >&2
     return 3
   fi

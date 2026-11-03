@@ -1,0 +1,36 @@
+[
+  {
+    "name": "#4843: one open pull request in no server stack, above another seat's pull request queued on its own, takes no link and waits for it, never asking the stack merge",
+    "stack": [
+      { "number": 4841, "head": "toolchain-4818-member-call" },
+      { "number": 4842, "head": "triage-4524-stall-lane" }
+    ],
+    "queued": [4841],
+    "upto": 4842,
+    "stacks": {},
+    "output": "status 3; gh: "
+  },
+  {
+    "name": "#4843: one open pull request already in the queued member's server stack is linked by the stack's number and merged up to it",
+    "stack": [
+      { "number": 1, "head": "lower" },
+      { "number": 2, "head": "upper" }
+    ],
+    "queued": [1],
+    "upto": 2,
+    "stacks": { "1": 9, "2": 9 },
+    "output": "status 0; gh: stack link 9 2 | stack merge 2 --yes --merge"
+  },
+  {
+    "name": "#4843: two open pull requests above a queued one are linked as a new stack and merged up to the top",
+    "stack": [
+      { "number": 1, "head": "lower" },
+      { "number": 2, "head": "middle" },
+      { "number": 3, "head": "upper" }
+    ],
+    "queued": [1],
+    "upto": 3,
+    "stacks": {},
+    "output": "status 0; gh: stack link 2 3 | stack merge 3 --yes --merge"
+  }
+]
