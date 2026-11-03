@@ -1,0 +1,20 @@
+[
+  {
+    "name": "#4642: the members above a red middle member leave its commits, onto the member below it; the stack is unstacked, the member above it retargeted, and the chain linked without it",
+    "red": "middle",
+    "upper": "apart",
+    "output": "moved: upper holds upper's own, lower's own; top holds top's own, upper's own, lower's own; red holds red's own, lower's own; gh: stack unstack 9 | pr edit 3 -R case/case --base lower; link: 1 3 4"
+  },
+  {
+    "name": "#4642: past a red bottom the members above it are replayed onto the trunk, and the member above it retargeted onto the trunk",
+    "red": "bottom",
+    "upper": "apart",
+    "output": "moved: upper holds upper's own; top holds top's own, upper's own; red holds red's own; gh: stack unstack 9 | pr edit 3 -R case/case --base main; link: 3 4"
+  },
+  {
+    "name": "#4642: a member above that builds on the red member's change conflicts; nothing moves, and the server stack is left as it was",
+    "red": "middle",
+    "upper": "builds",
+    "output": "refused: conflicts (r.txt); gh: ; link: "
+  }
+]

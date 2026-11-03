@@ -1411,9 +1411,14 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # or failed (#4124, #4164, `bound.jq`); a conflict with the lower's own
 # change is refused at once (#3654, `stack_on_top`). A branch stacked once,
 # over a lower restacked since, replays its own commit alone (#3877,
-# `stack_base`).
+# `stack_base`). `.config/pr-stack/past.bash` cuts a red member out of a
+# scratch repository's stack, once per case in `.config/pr-stack/past.json`:
+# the members above it replay their own commits onto the member below it, or
+# onto the trunk past a red bottom, and the server stack is unstacked,
+# retargeted and linked without it; a member building on its change stops
+# the cut with nothing moved (#4642, `restack_past`).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a change is measured from a fetched trunk, and a top behind the trunk arms pr:await, is stacked past or is refused"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a change is measured from a fetched trunk, and a top behind the trunk arms pr:await, is stacked past or is refused"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1427,10 +1432,11 @@ if [[ -n "$triggers" ]]; then
   failed=1
 fi
 .config/pr-stack/own-commits.bash || failed=1
+.config/pr-stack/past.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused"
 '''
 
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):

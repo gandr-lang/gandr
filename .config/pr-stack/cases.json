@@ -3130,6 +3130,83 @@
     "output": "{\"act\":\"stop\"}"
   },
   {
+    "name": "#4642: a red member below the watched one, whose paths no member above changes, is cut out; the chain keeps the members below and above it",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        { "number": 4547, "red": false, "queued": true, "paths": ["crates/a/src/lib.rs"] },
+        { "number": 4544, "red": true, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": false, "queued": false, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"past\",\"red\":4544,\"chain\":[4547,4606,4615]}"
+  },
+  {
+    "name": "#4642: a member above the red one that changes a path the red one changes stops the heal",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        {
+          "number": 4544,
+          "red": true,
+          "queued": false,
+          "paths": ["crates/b/src/lib.rs", "crates/b/tests/b.rs"]
+        },
+        { "number": 4606, "red": false, "queued": false, "paths": ["crates/b/tests/b.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a red member above the watched one stops the heal: the watched one lands below it",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4606,
+      "members": [
+        { "number": 4544, "red": false, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": false, "queued": false, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": true, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a second red member above the first stops the heal",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        { "number": 4544, "red": true, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": true, "queued": false, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a queued member above the red one makes the cut wait; a queued member below it does not",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        { "number": 4547, "red": false, "queued": true, "paths": ["crates/a/src/lib.rs"] },
+        { "number": 4544, "red": true, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": false, "queued": true, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"wait\",\"queued\":[4606]}"
+  },
+  {
     "name": "#2854: a DIRTY reading repeated at the same head is a conflict",
     "program": "dirty.jq",
     "input": {
