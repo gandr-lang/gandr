@@ -4187,7 +4187,7 @@ required=$(required_contexts)
 # (`restack_past`), and it waits alone for its seat.
 waited=
 heal() {
-  local stack member red queued members=() decision at=0 cut
+  local stack member red queued members=() decision at=0 cut=
   stack=$(server_stack "$number")
   queued=$(queued_of "$stack")
   # The branches each member's paths are read from.

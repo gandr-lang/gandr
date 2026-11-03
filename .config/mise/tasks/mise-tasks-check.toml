@@ -1459,8 +1459,11 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # onto the trunk past a red bottom, and the server stack is unstacked,
 # retargeted and linked without it; a member building on its change stops
 # the cut with nothing moved (#4642, `restack_past`).
+# `.config/pr-stack/heal.bash` runs `pr:watch`'s heal under `set -u`, once
+# per case in `.config/pr-stack/heal.json`: a restack that cuts no member and
+# one past a red member each report `pr-restacked` and return (#4766).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a change is measured from a fetched trunk, and a top behind the trunk arms pr:await, is stacked past or is refused"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a heal reports its restack, a change is measured from a fetched trunk, and a top behind the trunk arms pr:await, is stacked past or is refused"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1475,10 +1478,11 @@ if [[ -n "$triggers" ]]; then
 fi
 .config/pr-stack/own-commits.bash || failed=1
 .config/pr-stack/past.bash || failed=1
+.config/pr-stack/heal.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused"
 '''
 
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "a restack that cuts no member reports the stack and the watch carries on (#4766)",
+    "red": null,
+    "output": "status 0; restack #2 #3 #4; pr-restacked #3: #2 ← #3 ← #4"
+  },
+  {
+    "name": "a restack past a red member below the watched one names the member it cut",
+    "red": 2,
+    "output": "status 0; past #2; pr-restacked #3 past #2: #3 ← #4"
+  }
+]
