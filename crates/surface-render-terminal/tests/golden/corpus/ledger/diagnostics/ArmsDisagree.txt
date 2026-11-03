@@ -1,4 +1,4 @@
-error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different states
+error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in different states
   ╭▸ corpus/ledger/diagnostics/ArmsDisagree.gandr:5:50
   │
 3 │ ┌ def seat_arms_leave_it_apart() -> -F Unit {

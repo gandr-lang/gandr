@@ -25,7 +25,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ├ note: `hasty` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different states
+error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in different states
    ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:38:19
    │
 31 │      def abandoned(operator : mu open. &{

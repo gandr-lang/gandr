@@ -1143,7 +1143,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AbsentTupl
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AbstractKindNotUniverse.txt Procedure 85823dcc5b2a9f89
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AcrossHandler.txt Procedure 94a899404970f737
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AmbiguousMethod.txt Procedure d659af33b2f526da
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ArmsDisagree.txt Procedure df9e846f2d91b11c
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ArmsDisagree.txt Procedure 550f727cbcc0b237
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AtomTransport.txt Procedure 02a6dd8aa9cfc435
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BareFeedback.txt Procedure e784308710873fd7
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Boundary.txt Procedure 9126c3a296ea1610
@@ -1508,16 +1508,16 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/regions/named.tx
 crates/surface-render-terminal/tests/golden/corpus/pathological/self-reference/written-while-kept.txt Procedure 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/dialogue-web.txt Procedure 37ac15076bb61227
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/dialogue-web.txt Procedure 95cf34107ba31997
-crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-loop.txt Procedure df9e846f2d91b11c
+crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-loop.txt Procedure 550f727cbcc0b237
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-parameter.txt Procedure 1d1fb70664e31997
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/endpoint-parameter.txt Procedure a74054817f24d047
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/fragment.txt Procedure 4538ce87b3a6c1e1
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure 1d1fb70664e31997
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure 4b12fcb79c13a235
+crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure 550f727cbcc0b237
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure 6fc8e40493f1c535
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure a74054817f24d047
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure b23ad672f1cf33d9
-crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/linearity.txt Procedure df9e846f2d91b11c
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/payload-univalence.txt Procedure fcf8d1636cc8959b
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/protocol.txt Procedure 07a936b2e4591bf1
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/protocol.txt Procedure 216a37b730c200d2

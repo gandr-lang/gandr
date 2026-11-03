@@ -1227,6 +1227,127 @@ fn offer_arms_leaving_different_endpoints_are_refused()
     );
 }
 
+/// `x <- (return inl(()) : F (1 + 1)) ; case x { _ => left, _ => right }`.
+///
+/// # Specification
+/// trivial.
+fn either(
+    arena: &mut CoreArena,
+    left: ComputationId,
+    right: ComputationId,
+) -> ComputationId
+{
+    let unit_type = arena.value_type_unit();
+    let two = arena.value_type_sum(&[unit_type, unit_type]);
+    let twos = arena.comp_type_returner(two);
+    let unit = arena.value_unit();
+    let inl = arena.value_injection(gandr_core_term::Summand::from(0_usize), unit);
+    let returned = arena.computation_return(inl);
+    let ascribed = arena.computation_ascribe(returned, twos);
+    let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let case = arena.computation_case(x, &[left, right]);
+    arena.computation_bind(ascribed, case)
+}
+
+/// A case runs exactly one of its arms, so each arm acts on the endpoint
+/// from where the case found it, its session type included; an arm that
+/// leaves the endpoint otherwise than the first is refused.
+#[test]
+fn a_case_s_arms_each_spend_an_endpoint_from_where_the_case_found_it()
+{
+    let mut arena = CoreArena::new();
+    let protocol = end(&mut arena);
+    let string = arena.value_type_base(BaseType::String);
+    // !String. end
+    let sending = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[string],
+    );
+
+    let mut program = Program::new(&mut arena);
+    let (left, right) = (program.close(), program.close());
+    let closing = either(&mut arena, left, right);
+    let parent = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, closing, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Ok(()),
+        "each arm closes the endpoint the case found open"
+    );
+
+    let mut program = Program::new(&mut arena);
+    let closed = program.close();
+    let unit = arena.value_unit();
+    let left_open = arena.computation_return(unit);
+    let lopsided = either(&mut arena, closed, left_open);
+    let parent = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, lopsided, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(left_open)),
+            defect: LinearityDefect::ArmsDisagree {
+                endpoint: child(exchange),
+                first: closed,
+                other: left_open,
+            },
+        }),
+        "one arm closes the endpoint and the other leaves it open"
+    );
+
+    let send = |arena: &mut CoreArena, text| {
+        let mut program = Program::new(arena);
+        let payload = program.text(Spelled(text));
+        program.act(SessionAction::Send {
+            endpoint: DeBruijnIndex::from(0_u32),
+            payload,
+        })
+    };
+    let unit_type = arena.value_type_unit();
+    let units = arena.comp_type_returner(unit_type);
+    let (left, right) = (send(&mut arena, "left"), send(&mut arena, "right"));
+    let sent = either(&mut arena, left, right);
+    let sent = arena.computation_ascribe(sent, units);
+    let closed = Program::new(&mut arena).close();
+    let advanced = arena.computation_bind(sent, closed);
+    let parent = Program::new(&mut arena).receive(Program::close);
+    let exchange = fork(&mut arena, sending, advanced, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Ok(()),
+        "the second arm sends from the type the case found, not the one the first left"
+    );
+
+    let sent = send(&mut arena, "left");
+    let unit = arena.value_unit();
+    let unsent = arena.computation_return(unit);
+    let apart = either(&mut arena, sent, unsent);
+    let apart = arena.computation_ascribe(apart, units);
+    let closed = Program::new(&mut arena).close();
+    let after = arena.computation_bind(apart, closed);
+    let parent = Program::new(&mut arena).receive(Program::close);
+    let exchange = fork(&mut arena, sending, after, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(unsent)),
+            defect: LinearityDefect::ArmsDisagree {
+                endpoint: child(exchange),
+                first: sent,
+                other: unsent,
+            },
+        }),
+        "one arm advances the endpoint past the send and the other does not"
+    );
+}
+
 /// A selection names a label the protocol offers, and an offer answers
 /// exactly the labels the protocol offers: a label it lacks and arms that
 /// miss one are each refused by that defect on the acting end.
