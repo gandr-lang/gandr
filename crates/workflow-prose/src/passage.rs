@@ -79,6 +79,92 @@ pub struct Passage
     pub text: String,
 }
 
+/// Whether a corpus source opens on a comment run.
+///
+/// # Specification
+/// - provides: the head the shape rules read, or its absence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Opened
+{
+    /// The source opens on a comment run.
+    Run(Head),
+    /// The source does not open on a comment run.
+    Absent,
+}
+
+/// The opening comment run of a corpus source.
+///
+/// # Specification
+/// - provides: the paragraph count, the references paragraph and the line of
+///   the first prose paragraph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Head
+{
+    /// The line the run starts on.
+    pub line: Line,
+    /// The paragraphs of the run, a blank comment line splitting them.
+    pub paragraphs: usize,
+    /// Whether the references paragraph keeps its line form.
+    pub references: References,
+    /// The line of the first prose paragraph, when the run has one.
+    pub what: WhatLine,
+}
+
+/// Whether the references paragraph keeps its line form.
+///
+/// # Specification
+/// - provides: the verdict of the head's last paragraph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum References
+{
+    /// Every line opens with `- see:` or `- owes:`, or continues one.
+    Shaped,
+    /// A line opens with neither.
+    Broken,
+}
+
+/// The line of a head's first prose paragraph.
+///
+/// # Specification
+/// - provides: where the first-sentence rule reads, or that the run has no
+///   prose paragraph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WhatLine
+{
+    /// The paragraph starts on this line.
+    At(Line),
+    /// The run has no prose paragraph.
+    None,
+}
+
+/// One item comment of a corpus source, after the head.
+///
+/// # Specification
+/// - provides: the prose passages whose sentences the item rule counts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Item
+{
+    /// The line the run starts on.
+    pub line: Line,
+    /// The lines of its prose passages, in order.
+    pub prose: Vec<Line>,
+}
+
+/// The head and the item comments of one corpus source.
+///
+/// # Specification
+/// - provides: what the head and item rules read of one source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommentShape
+{
+    /// The file, relative to the repository root, `/`-separated.
+    pub path: String,
+    /// The opening comment run, when the source opens on one.
+    pub opened: Opened,
+    /// The `///` runs after the head.
+    pub items: Vec<Item>,
+}
+
 /// Collects one paragraph's lines into a passage once the paragraph ends.
 ///
 /// # Specification
@@ -231,6 +317,217 @@ pub fn comments(
     }
     paragraph.close();
     paragraph.passages
+}
+
+/// The opening of a references line citing a source.
+const SEE: &str = "- see:";
+
+/// The opening of a references line naming an issue that owes the rest.
+const OWES: &str = "- owes:";
+
+/// The kind of one comment line.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kind
+{
+    /// A `///` line.
+    Doc,
+    /// A `//!` line.
+    Inner,
+    /// A `//` line.
+    Line,
+}
+
+/// One run of comment lines of one kind.
+struct Run<'text>
+{
+    /// The kind.
+    kind: Kind,
+    /// The zero-based index of its first line.
+    first: usize,
+    /// Each line's number and text, the marker left out.
+    lines: Vec<(Line, &'text str)>,
+}
+
+/// The head and the item comments of `text`, read beside `passages`.
+///
+/// The head is the comment run that starts on the first non-empty line, a
+/// shebang left out. An item is a later `///` run. A prose passage is one
+/// `passages` already holds whose line falls in the run.
+///
+/// # Specification
+/// - requires: `passages` are [`comments`] of `text`.
+/// - ensures: the opening run's paragraph count, its references verdict and the
+///   line of its first prose paragraph, and each later `///` run's prose
+///   passage lines.
+/// - provides: the shape the head and item rules read.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the scan is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a head of four paragraphs, one of three, a references
+///   line that opens with neither marker, an item of two prose paragraphs and a
+///   later `//` run; another paragraph count or a dropped item changes the
+///   shape.
+/// - witness: `passage::tests::a_head_counts_its_paragraphs_and_an_item_keeps_its_prose`
+#[must_use]
+pub(crate) fn comment_shape(
+    path: Text<'_>,
+    text: Text<'_>,
+    passages: &[Passage],
+) -> CommentShape
+{
+    let runs = runs(text);
+    let opening = text
+        .0
+        .lines()
+        .position(|line| !line.trim().is_empty() && !line.starts_with("#!"));
+    let mut runs = runs.into_iter();
+    let opened = match runs.next() {
+        Some(run) if Some(run.first) == opening => Opened::Run(head_of(&run)),
+        Some(run) => {
+            return CommentShape {
+                path: path.0.to_owned(),
+                opened: Opened::Absent,
+                items: items(core::iter::once(run).chain(runs), passages),
+            };
+        },
+        None => Opened::Absent,
+    };
+    CommentShape {
+        path: path.0.to_owned(),
+        opened,
+        items: items(runs, passages),
+    }
+}
+
+/// The comment runs of `text`, in order.
+///
+/// # Specification
+/// trivial.
+fn runs(text: Text<'_>) -> Vec<Run<'_>>
+{
+    let mut found: Vec<Run<'_>> = Vec::new();
+    let mut open = false;
+    for (place, raw) in text.0.lines().enumerate() {
+        let trimmed = raw.trim_start();
+        let Some(rest) = trimmed.strip_prefix("//")
+        else {
+            open = false;
+            continue;
+        };
+        let (kind, rest) = match rest.strip_prefix('/') {
+            Some(doc) if !doc.starts_with('/') => (Kind::Doc, doc),
+            Some(_) => (Kind::Line, rest),
+            None => rest
+                .strip_prefix('!')
+                .map_or((Kind::Line, rest), |inner| (Kind::Inner, inner)),
+        };
+        let content = rest.strip_prefix(' ').unwrap_or(rest).trim_end();
+        let line = (Line(place.saturating_add(1)), content);
+        match found.last_mut() {
+            Some(run) if open && run.kind == kind => run.lines.push(line),
+            _ => found.push(Run {
+                kind,
+                first: place,
+                lines: vec![line],
+            }),
+        }
+        open = true;
+    }
+    found
+}
+
+/// The head facts of `run`.
+///
+/// # Specification
+/// trivial.
+fn head_of(run: &Run<'_>) -> Head
+{
+    let mut paragraphs: Vec<Vec<(Line, &str)>> = Vec::new();
+    let mut open = false;
+    for line in &run.lines {
+        if line.1.trim().is_empty() {
+            open = false;
+            continue;
+        }
+        match paragraphs.last_mut() {
+            Some(paragraph) if open => paragraph.push(*line),
+            _ => paragraphs.push(vec![*line]),
+        }
+        open = true;
+    }
+    let listed = paragraphs.last().is_some_and(|lines| {
+        lines
+            .first()
+            .is_some_and(|&(_, text)| text.starts_with(SEE) || text.starts_with(OWES))
+            && lines.iter().all(|&(_, text)| {
+                text.starts_with(SEE)
+                    || text.starts_with(OWES)
+                    || text.starts_with(' ')
+                    || text.starts_with('\t')
+            })
+    });
+    let split = if listed {
+        paragraphs.len().saturating_sub(1)
+    }
+    else {
+        paragraphs.len().min(3)
+    };
+    let (prose, references) = paragraphs.split_at(split);
+    let broken = references.iter().flatten().any(|&(_, text)| {
+        !(text.starts_with(SEE)
+            || text.starts_with(OWES)
+            || text.starts_with(' ')
+            || text.starts_with('\t'))
+    });
+    Head {
+        line: run.lines.first().map_or(Line(1), |&(line, _)| line),
+        paragraphs: paragraphs.len(),
+        references: if broken {
+            References::Broken
+        }
+        else {
+            References::Shaped
+        },
+        what: prose
+            .first()
+            .and_then(|lines| lines.first().map(|&(line, _)| WhatLine::At(line)))
+            .unwrap_or(WhatLine::None),
+    }
+}
+
+/// The item comments among `runs`, each naming the prose passages it holds.
+///
+/// # Specification
+/// trivial.
+fn items<'text, Runs>(
+    runs: Runs,
+    passages: &[Passage],
+) -> Vec<Item>
+where
+    Runs: IntoIterator<Item = Run<'text>>,
+{
+    let mut found = Vec::new();
+    for run in runs {
+        if run.kind != Kind::Doc {
+            continue;
+        }
+        let end = run.first.saturating_add(run.lines.len());
+        let prose = passages
+            .iter()
+            .filter(|passage| {
+                let index = passage.line.0.saturating_sub(1);
+                index >= run.first && index < end
+            })
+            .map(|passage| passage.line)
+            .collect();
+        found.push(Item {
+            line: run.lines.first().map_or(Line(1), |&(line, _)| line),
+            prose,
+        });
+    }
+    found
 }
 
 /// The prose paragraphs of a Markdown file.
@@ -695,6 +992,9 @@ pub struct Gathered
 {
     /// The comment and README passages, by path then line.
     pub passages: Vec<Passage>,
+    /// The head and item comments of each corpus source outside the features
+    /// ledger, in path order.
+    pub shapes: Vec<CommentShape>,
     /// The rendered diagnostics, by path.
     pub goldens: Vec<Golden>,
 }
@@ -730,9 +1030,14 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
 {
     let mut gathered = Gathered::default();
     for key in tracked(root)? {
-        gathered
-            .passages
-            .extend(comments(Text(&key), Text(&read(&root.join(&key))?)));
+        let text = read(&root.join(&key))?;
+        let passages = comments(Text(&key), Text(&text));
+        if key.starts_with("corpus/") && !key.starts_with("corpus/ledger/") {
+            gathered
+                .shapes
+                .push(comment_shape(Text(&key), Text(&text), &passages));
+        }
+        gathered.passages.extend(passages);
     }
     let mut readmes: Vec<_> = listed(&root.join("crates"))?
         .into_iter()
@@ -886,10 +1191,14 @@ mod tests
 {
     use super::Advice;
     use super::Line;
+    use super::Opened;
     use super::Placed;
+    use super::References;
     use super::Source;
     use super::Text;
+    use super::WhatLine;
     use super::body;
+    use super::comment_shape;
     use super::comments;
     use super::gather;
     use super::golden;
@@ -919,6 +1228,58 @@ mod tests
             )
         );
         assert_eq!(passages.first().map(|passage| passage.line), Some(Line(1)));
+    }
+
+    #[test]
+    fn a_head_counts_its_paragraphs_and_an_item_keeps_its_prose()
+    {
+        let shaped = "/// Pairs sum their halves.\n///\n/// The sum is the reading.\n///\n/// \
+                      The checker reduces both sides.\n///\n/// - see: #1 — x\n\ndef x = 1;\n/// \
+                      One item.\n///\n/// Two.\n// later\n";
+        let passages = comments(Text("corpus/a.gandr"), Text(shaped));
+        let shape = comment_shape(Text("corpus/a.gandr"), Text(shaped), &passages);
+        let Opened::Run(head) = shape.opened
+        else {
+            panic!("the source opens on a head");
+        };
+        assert_eq!(head.paragraphs, 4);
+        assert_eq!(head.references, References::Shaped);
+        assert_eq!(head.what, WhatLine::At(Line(1)));
+        assert_eq!(
+            shape
+                .items
+                .iter()
+                .map(|item| item
+                    .prose
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            [vec!["10".to_owned(), "12".to_owned()]]
+        );
+        let short = "/// Pairs sum.\n///\n/// Why.\n///\n/// How.\n";
+        let passages = comments(Text("corpus/a.gandr"), Text(short));
+        let shape = comment_shape(Text("corpus/a.gandr"), Text(short), &passages);
+        let Opened::Run(head) = shape.opened
+        else {
+            panic!("the short source opens on a head");
+        };
+        assert_eq!(head.paragraphs, 3);
+        let broken = "/// Pairs sum.\n///\n/// Why.\n///\n/// How.\n///\n/// Not implemented: #1\n";
+        let passages = comments(Text("corpus/a.gandr"), Text(broken));
+        let shape = comment_shape(Text("corpus/a.gandr"), Text(broken), &passages);
+        let Opened::Run(head) = shape.opened
+        else {
+            panic!("the broken source opens on a head");
+        };
+        assert_eq!(head.references, References::Broken);
+        let lines = "// Pairs sum.\n//\n// Why.\n//\n// How.\n//\n// - see: #1 — x\n\n// later\n";
+        let passages = comments(Text("corpus/a.gandr"), Text(lines));
+        let shape = comment_shape(Text("corpus/a.gandr"), Text(lines), &passages);
+        assert!(
+            matches!(shape.opened, Opened::Run(_)) && shape.items.is_empty(),
+            "a `//` head is judged and a later `//` run is no item"
+        );
     }
 
     #[test]
@@ -1054,6 +1415,7 @@ mod tests
         write("corpus/model/b.gandr", "/// Bee.\n");
         write("corpus/a.gandr", "/// Ay.\n");
         write("library/std/src/c.gandr", "// Sea.\n");
+        write("corpus/ledger/features/d.gandr", "/// Ledger.\n");
         write("corpus/notes.txt", "/// Not a source.\n");
         write("crates/x/README.md", "Ex.\n");
         write("crates/x/src/lib.rs", "/// Not read.\n");
@@ -1087,11 +1449,22 @@ mod tests
             read,
             [
                 "corpus/a.gandr:Ay.",
+                "corpus/ledger/features/d.gandr:Ledger.",
                 "corpus/model/b.gandr:Bee.",
                 "library/std/src/c.gandr:Sea.",
                 "crates/x/README.md:Ex."
             ],
             "every tracked source is read, and an untracked one is not"
+        );
+        let shaped: Vec<&str> = gathered
+            .shapes
+            .iter()
+            .map(|shape| shape.path.as_str())
+            .collect();
+        assert_eq!(
+            shaped,
+            ["corpus/a.gandr", "corpus/model/b.gandr"],
+            "the features ledger and a library source keep no head rule"
         );
         let goldens: Vec<&str> = gathered
             .goldens

@@ -13,10 +13,7 @@ use crate::comments::judge::Finding;
 const HEADER: Header<'static> = Header(
     "key kind. The key is path:name:digest, or path:block.member:digest for a block's member, \
      the digest the first sixteen hex digits of BLAKE3 over the item's text with whitespace \
-     collapsed and comments and the attribute block left out; path:<file> for a source's head \
-     comment; path:comment:digest for an item comment, the digest over its text. The kind is \
-     uncommented, or unshaped:<rule> for a comment outside the shape \
-     (crates/surface-corpus/README.md § Comments)",
+     collapsed and comments and the attribute block left out. The kind is uncommented.",
 );
 
 /// One way the findings and the ledger disagree.

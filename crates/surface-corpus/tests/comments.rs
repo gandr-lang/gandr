@@ -1,18 +1,17 @@
-//! The fixture comment gate: every source opens with a comment, and every
-//! item and every member of a block carries one immediately before it (an
-//! item before its attribute block). Every doc comment keeps the shape the
-//! package README states under § Comments (`prose.rs`). The committed ledger
-//! is the existing debt. A finding the ledger does not hold is new debt; a
-//! ledger line the corpus no longer owes is stale.
+//! The fixture comment gate. Every source opens with a comment. Every item
+//! and every member of a block carries one immediately before it. An item
+//! carries the comment before its attribute block. `check:prose` reads the
+//! shape of a doc comment. The committed ledger is the existing debt. A
+//! finding the ledger does not hold is new debt. A ledger line the corpus no
+//! longer owes is stale.
 //!
 //! Set `CORPUS_COMMENTS_WRITE_LEDGER=1` to replace the ledger with the
-//! current findings. That is how the ledger is rewritten; the check does not
+//! current findings. That is how the ledger is rewritten. The check does not
 //! write.
 
 mod error;
 mod judge;
 mod ledger;
-mod prose;
 mod scan;
 mod shape;
 

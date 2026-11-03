@@ -73,7 +73,13 @@ The test suite follows the same shape: one witness per behaviour, in the crate t
 
 ## Comments
 
-Write as ASD-STE100 writes — short sentences, one topic a paragraph, active voice, present tense — with the technical vocabulary unrestricted. A source opens on four paragraphs: what it states (the first sentence at most twenty words), why, how, and `- see: <token> — <what it settles>` references, the only place a path, `#n` or page stands. An item comment is one sentence, a second allowed. No sentence runs past twenty-five words or joins another by a semicolon, and a passive is one of `is refused`, `is admitted`, `is replayed`, `is checked`, `is normalised`. The heads of `model/higher-cells/ua-by-hand.gandr` and `model/desc/atom-occurrence.gandr` are worked examples, and [`prose`](tests/comments/prose.rs) states the check (#2918).
+Write as ASD-STE100 writes. Use short sentences, one topic a paragraph, the active voice and the present tense. Keep the technical vocabulary free.
+
+A source opens on four paragraphs. The first sentence of the first paragraph holds at most twenty words. The next two paragraphs say why and how. The fourth paragraph holds only `- see:` and `- owes:` lines.
+
+An item comment holds at most two sentences. No sentence holds more than twenty-five words. No semicolon joins two sentences. A passive is one of `is refused`, `is admitted`, `is replayed`, `is checked` and `is normalised`.
+
+`check:prose` reads these rules. Two sources under higher cells and desc show the shape.
 
 ## Where the detail lives
 

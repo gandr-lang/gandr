@@ -4404,13 +4404,19 @@ INSERT INTO purpose VALUES('workflow-prose','parse::Sentence','struct','One sent
 INSERT INTO purpose VALUES('workflow-prose','parse::Token','struct','One parsed word: its text, lemma, tags, dependency, head and offset.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','parse::parse','function','Each passage''s sentences, parsed by running the parse script under the given interpreter.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Advice','enum','What a rendered diagnostic tells its reader to do: a `help:` line, an issue that tracks it, or nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::CommentShape','struct','The head and the item comments of one corpus source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Gathered','struct','Everything the check reads: the comment and README passages, and the rendered diagnostics.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Golden','struct','One rendered diagnostic: its headline, whether a label places it, and its advice.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::Head','struct','The opening comment run of a corpus source.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::Item','struct','One item comment of a corpus source, after the head.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Line','struct','A one-based line number in a file.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::Opened','enum','Whether a corpus source opens on a comment run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Passage','struct','One paragraph to parse, with its file, line and source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Placed','enum','Whether a rendered diagnostic labels its span.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::References','enum','Whether the references paragraph keeps its line form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Source','enum','Which kind of text a passage comes from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Text','struct','Borrowed text: a file''s contents, a path or a word.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::WhatLine','enum','The line of a head''s first prose paragraph, or its absence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::body','function','The prose passages of a pull request''s or an issue''s body: its paragraphs and list items.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::comments','function','The `///` paragraphs of a corpus source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::gather','function','The passages and rendered diagnostics under a repository root.',NULL,'fits','sound',NULL);
@@ -4422,6 +4428,7 @@ INSERT INTO purpose VALUES('workflow-prose','rules::NotARule','enum','Why a word
 INSERT INTO purpose VALUES('workflow-prose','rules::Rule','enum','A rule a sentence or a rendered diagnostic is held to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','rules::procedure','function','The procedural finding of a rendered diagnostic, given its `help:` line''s parse.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','rules::sentences','function','The findings of one passage''s parsed sentences.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','rules::shaped','function','The head and item findings of the corpus shapes, read over the parsed passages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','error::CostError','enum','Names why a specification-cost ranking could not be produced, so the refusal''s cause is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::Charge','enum','Names what a sample''s stack was doing, so the charge''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','ledger::Frequency','struct','Names the sampling rate in samples per second, so the rate''s value is read.',NULL,'fits','sound',NULL);

@@ -276,9 +276,16 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
     let parsed = parse::parse(&cli.python, &script, &inputs)?;
     let mut parses = parsed.iter();
     let mut findings: Vec<Finding> = Vec::new();
+    let mut passage_parses = Vec::new();
     for (passage, sentences) in gathered.passages.iter().zip(parses.by_ref()) {
         findings.extend(rules::sentences(passage, sentences, &glossary));
+        passage_parses.push(sentences.as_slice());
     }
+    findings.extend(rules::shaped(
+        &gathered.shapes,
+        &gathered.passages,
+        &passage_parses,
+    ));
     for golden in &gathered.goldens {
         let help = match golden.advice {
             Advice::Help(_) => parses.next().map_or(&[][..], Vec::as_slice),
