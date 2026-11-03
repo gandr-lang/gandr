@@ -477,6 +477,78 @@ fn a_run_whose_tasks_all_wait_is_stuck_at_their_actions()
     }
 }
 
+/// A child that hands its end on as a value, then places it, sends `5` on the
+/// placed end and closes it; the root receives and answers what it took, on
+/// every tier. A placement that binds the value rather than a cell holding it
+/// leaves the send without its end, and the run stops.
+#[test]
+fn a_placed_endpoint_acts_as_the_end_it_holds_4687()
+{
+    let mut core = CoreArena::new();
+    let protocol = core.value_type_unit();
+    let five = integer(&mut core, Digits("5"));
+    let closed = core.computation_session(SessionAction::Close {
+        endpoint: end(Linear(0)),
+    });
+    let sent = then(
+        &mut core,
+        SessionAction::Send {
+            endpoint: end(Linear(0)),
+            payload: five,
+        },
+        closed,
+    );
+    let handed = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let placed = core.computation_session(SessionAction::Place {
+        payload: handed,
+        body: sent,
+    });
+    let seat = core.value_variable(Zone::Linear, end(Linear(0)));
+    let passed = core.computation_return(seat);
+    let child = core.computation_bind(passed, placed);
+    let taken = core.value_variable(Zone::Linear, end(Linear(0)));
+    let answered = core.computation_return(taken);
+    let rest = then(
+        &mut core,
+        SessionAction::Close {
+            endpoint: end(Linear(1)),
+        },
+        answered,
+    );
+    let parent = core.computation_session(SessionAction::Receive {
+        endpoint: end(Linear(0)),
+        body: rest,
+    });
+    let program = core.computation_session(SessionAction::Fork {
+        protocol,
+        child,
+        parent,
+    });
+    let (arena, root) = focused(&core, program);
+    for &tier in tiers() {
+        let mut store = Store::new();
+        let outcome = evaluate_on(
+            tier,
+            &arena,
+            &Definitions::new(),
+            root,
+            budget(),
+            RunInputs::new(&mut store),
+        );
+        let Ok(Outcome::Halted(answer)) = outcome
+        else {
+            panic!("the run halts on {tier:?}: {outcome:?}");
+        };
+        let read =
+            read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&core, read, five),
+            "the root answers what the placed end sent on {tier:?}"
+        );
+    }
+}
+
 /// The one-operation interface `Proc`, its `exit` taking and answering the
 /// unit.
 ///

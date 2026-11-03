@@ -387,8 +387,10 @@ fn a_hole_is_reached_and_a_mark_refused_by_name_1881()
     );
 }
 
+/// A placement focuses to the session action it is: its payload a producer,
+/// its body a command, the action at the placement's own continuation.
 #[test]
-fn a_placement_is_refused_by_name()
+fn a_placement_focuses_to_its_session_action_4687()
 {
     let mut core = CoreArena::new();
     let unit = core.value_unit();
@@ -399,13 +401,31 @@ fn a_placement_is_refused_by_name()
     });
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let mark = arena.watermark();
-    assert_eq!(
-        focus_computation(&core, placed, &mut arena, &mut provenance, &Writers::NONE),
-        Err(FocusRefusal::Placement(placed)),
-        "the placement is refused by name"
+    let focused = focus_computation(&core, placed, &mut arena, &mut provenance, &Writers::NONE)
+        .expect("a placement focuses");
+    let Some(&crate::il::CommandNode::Session {
+        action: gandr_core_term::session::SessionAction::Place { payload, body },
+        ..
+    }) = arena.command(focused)
+    else {
+        panic!(
+            "a placement focuses to a placement: {:?}",
+            arena.command(focused)
+        );
+    };
+    assert!(
+        matches!(
+            arena.producer(payload),
+            Some(&crate::il::ProducerNode::Constructor { tag: crate::il::ConstructorTag::Tuple(_), ref producers, .. })
+                if producers.is_empty()
+        ),
+        "the payload is the unit: {:?}",
+        arena.producer(payload)
     );
-    assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
+    assert!(
+        arena.command(body).is_some(),
+        "the body is a command of the arena"
+    );
 }
 
 /// A record focuses to the record head of its labels in the core's

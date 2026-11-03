@@ -514,9 +514,6 @@ pub enum FocusRefusal
     IncompleteValue(ValueId),
     /// A hole or a mark in computation position.
     IncompleteComputation(ComputationId),
-    /// A buffer's placement: the command IL places no buffer, so the session
-    /// action a completion's bind places its buffer by has no image in it.
-    Placement(ComputationId),
     /// A computation standing where a value is read, before the checker's
     /// elaboration replaced it: only an elaborated body has a command-IL
     /// image, as only one has a kernel image.
@@ -559,9 +556,6 @@ impl fmt::Display for FocusRefusal
             Self::Unelaborated(_) => f.write_str(
                 "a computation standing as a value before elaboration has no command-IL producer",
             ),
-            Self::Placement(_) => {
-                f.write_str("a buffer's placement has no image in the command IL")
-            },
         }
     }
 }
@@ -2340,7 +2334,6 @@ impl<'run> Focusing<'run>
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
     ///   [`FocusRefusal::IncompleteComputation`] for a mark,
-    ///   [`FocusRefusal::Placement`] for a buffer's placement,
     ///   [`FocusRefusal::ElementTransport`] for a transport whose motive has a
     ///   part no row reads, named by that part's head, and for a telescope
     ///   transport, or a refused mint.
@@ -2360,7 +2353,7 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
-    /// - witness: `focus::tests::a_placement_is_refused_by_name`
+    /// - witness: `focus::tests::a_placement_focuses_to_its_session_action_4687`
     /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
     /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
     /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
@@ -2369,7 +2362,6 @@ impl<'run> Focusing<'run>
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
-            | Some(&Computation::Session(gandr_core_term::session::SessionAction::Place { .. })) => ret == Err(FocusRefusal::Placement(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -2715,9 +2707,6 @@ impl<'run> Focusing<'run>
             },
             Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
-            },
-            Computation::Session(gandr_core_term::session::SessionAction::Place { .. }) => {
-                return Err(FocusRefusal::Placement(id));
             },
             Computation::Session(ref action) => {
                 self.tasks.push(Task::Control {
