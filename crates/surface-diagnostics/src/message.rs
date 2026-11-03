@@ -1471,10 +1471,13 @@ fn checked(
                 Captor(by)
             ),
             LocatedDefect::Elsewhere { .. } => {
-                f.write_str("this value lives at another world; open it there with `leta`")
+                f.write_str("this value lives at another world; open it there with `let x at w`")
             },
             LocatedDefect::HoldElsewhere { .. } => f.write_str(
                 "`hold` makes a handle at the world it runs at; migrate there to hold a value of that world",
+            ),
+            LocatedDefect::OpenedElsewhere { .. } => f.write_str(
+                "`let x at w` opens a handle at the world it stands at; write that world after `at`",
             ),
             LocatedDefect::Unlocated => f.write_str(
                 "this stands at the host's own world, where no handle is made or opened: state \
@@ -1496,7 +1499,7 @@ fn checked(
                 f.write_str("this entry is not one the host grants")
             },
             LocatedDefect::NotAHandle { .. } => {
-                f.write_str("`leta` opens a handle at a world, and this value is none")
+                f.write_str("`let x at w` opens a handle at a world, and this value is none")
             },
         },
         CheckRefusal::CapabilityForged { .. } => f.write_str(
@@ -2636,6 +2639,13 @@ pub mod tests
                 at: node,
                 defect: LocatedDefect::HoldElsewhere {
                     wanted: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::OpenedElsewhere {
+                    written: ConstantIndex::from(0_usize),
+                    handle: ConstantIndex::from(1_usize),
                 },
             },
             CheckRefusal::Located {

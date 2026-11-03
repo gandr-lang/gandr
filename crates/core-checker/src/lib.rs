@@ -289,8 +289,8 @@
 //! # Located judgements
 //!
 //! A world declaration names a place, and every judgement stands at one:
-//! `hold v` makes the handle `A at w` at the world it runs at, `leta x = v; t`
-//! opens one there with `x` usable at the handle's world alone, and
+//! `hold v` makes the handle `A at w` at the world it runs at,
+//! `let x at w = v; t` opens one at `w` with `x` usable at `w` alone, and
 //! `migrate [w] { t }` runs `t` at `w`, spending the consumable capability
 //! `cap_w` the declaration's entry holds in the linear zone. A migration's
 //! result comes back only when it crosses: mobile and open, decided on every

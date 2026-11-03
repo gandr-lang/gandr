@@ -116,7 +116,7 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
    │
    ╰ note: `graded` is refused with HeldCaptured, as its expectation states
 
-error[Elsewhere]: this value lives at another world; open it there with `leta`
+error[Elsewhere]: this value lives at another world; open it there with `let x at w`
     ╭▸ corpus/pathological/worlds/closure-axes.gandr:104:38
     │
 103 │   def located(n : Integer) -> () => Integer {

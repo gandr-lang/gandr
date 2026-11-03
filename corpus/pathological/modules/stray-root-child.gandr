@@ -8,7 +8,7 @@ def before : Integer = 1;
 /// A statement keyword outside any block: a block's statement, not a
 /// declaration (#1058).
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
-leta x = 1 ;
+release x ;
 
 /// An expression standing where a declaration belongs, refused at the top
 /// level (#1058, #2572).

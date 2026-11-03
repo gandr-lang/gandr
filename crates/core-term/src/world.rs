@@ -50,7 +50,7 @@
 //! |form|written|binds|
 //! |---|---|---|
 //! |[`WorldForm::Hold`]|`hold v`|nothing; returns `v` held at the current world|
-//! |[`WorldForm::Leta`]|`leta x = v ; t`|`x`, an intuitionistic hypothesis located at the handle's world, over `t`|
+//! |[`WorldForm::Leta`]|`let x at w = v ; t`|`x`, an intuitionistic hypothesis located at `w`, the world the handle stands at, over `t`|
 //! |[`WorldForm::Migrate`]|`migrate[w] { t }`|nothing; `t` runs at `w`|
 //!
 //! **Choice.** One computation former whose cases are the three forms, `hold`
@@ -276,7 +276,7 @@ pub enum WorldKind
 {
     /// `hold v`.
     Hold,
-    /// `leta x = v ; t`.
+    /// `let x at w = v ; t`.
     Leta,
     /// `migrate[w] { t }`.
     Migrate,
@@ -293,10 +293,12 @@ pub enum WorldForm<V = ValueId, C = ComputationId>
         /// The value held.
         value: V,
     },
-    /// `leta x = v ; t`: `body` runs with `x`, the value the handle `value`
-    /// holds, bound at the handle's world.
+    /// `let x at w = v ; t`: `body` runs with `x`, the value the handle
+    /// `value` holds, bound at `world`, which the handle must stand at.
     Leta
     {
+        /// The world the source writes the handle at.
+        world: World,
         /// The handle opened, read where the form stands.
         value: V,
         /// The scope of the opened value, under one intuitionistic binder.
@@ -397,7 +399,7 @@ impl<V: Copy, C: Copy> WorldForm<V, C>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two migrations to one world share a shape, two to
-    ///   different worlds do not.
+    ///   different worlds do not, and two openings at different worlds do not.
     /// - witness: `world::tests::forms_name_their_children_and_binders`
     #[spec(ensures: |ret| ret.kind() == self.kind())]
     #[inline]
@@ -432,12 +434,13 @@ impl<V: Copy, C: Copy> WorldForm<V, C>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `leta` mapped in reverse visits its body before its
-    ///   value and keeps each image at its own position; a migration keeps its
-    ///   world.
+    ///   value and keeps each image at its own position; a migration and a
+    ///   `leta` keep their world.
     /// - witness: `world::tests::forms_name_their_children_and_binders`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|mapped| match (self, mapped) {
-        | (&Self::Migrate { world: a, .. }, &WorldForm::Migrate { world: b, .. }) => a == b,
-        | (&Self::Hold { .. }, &WorldForm::Hold { .. }) | (&Self::Leta { .. }, &WorldForm::Leta { .. }) => true,
+        | (&Self::Migrate { world: a, .. }, &WorldForm::Migrate { world: b, .. })
+        | (&Self::Leta { world: a, .. }, &WorldForm::Leta { world: b, .. }) => a == b,
+        | (&Self::Hold { .. }, &WorldForm::Hold { .. }) => true,
         | _ => false,
     }))]
     #[inline]
@@ -457,12 +460,14 @@ impl<V: Copy, C: Copy> WorldForm<V, C>
                 value: value(state, held)?,
             },
             Self::Leta {
+                world,
                 value: opened,
                 body,
             } => match order {
                 ChildOrder::Forward => {
                     let opened = value(state, opened)?;
                     WorldForm::Leta {
+                        world,
                         value: opened,
                         body: computation(state, body)?,
                     }
@@ -470,6 +475,7 @@ impl<V: Copy, C: Copy> WorldForm<V, C>
                 ChildOrder::Reverse => {
                     let body = computation(state, body)?;
                     WorldForm::Leta {
+                        world,
                         value: value(state, opened)?,
                         body,
                     }

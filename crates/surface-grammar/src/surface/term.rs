@@ -2570,8 +2570,8 @@ fn param() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the seven statement alternatives, each carrying its own
-///   terminating semicolon.
+/// - ensures: the six statement alternatives, each carrying its own terminating
+///   semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2581,19 +2581,12 @@ fn param() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 7 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 6 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn statement_alt() -> Regex
 {
     alt([
         let_statement(),
         unpack_statement(),
-        seq([
-            t(TileLabel("leta")),
-            t(TileLabel("identifier")),
-            t(TileLabel("=")),
-            h(Sort::Expression),
-            t(TileLabel(";")),
-        ]),
         var_statement(),
         seq([h(Sort::Expression), t(TileLabel(";"))]),
         assignment_statement(),
@@ -4374,7 +4367,6 @@ fn primary_expressions(
     for statement in [
         "let_statement",
         "unpack_statement",
-        "leta_statement",
         "var_statement",
         "expression_statement",
         "assignment_statement",

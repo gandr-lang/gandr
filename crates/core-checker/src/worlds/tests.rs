@@ -744,11 +744,13 @@ fn a_located_hypothesis_is_usable_only_at_its_world()
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let read = arena.computation_return(bound);
     let read_here = arena.computation_world(WorldForm::Leta {
+        world: world(OPERATOR),
         value: bound,
         body: read,
     });
     let migration = migrate(&mut arena, SEAT, read);
     let read_there = arena.computation_world(WorldForm::Leta {
+        world: world(OPERATOR),
         value: bound,
         body: migration,
     });
@@ -780,6 +782,58 @@ fn a_located_hypothesis_is_usable_only_at_its_world()
     assert!(
         matches!(verdicts.get(4), Some(&Verdict::Checked { .. })),
         "an opening whose body synthesises gives its type past the opened value"
+    );
+}
+
+#[test]
+fn a_handle_opened_at_another_world_is_refused_4483()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let held = arena.computation_world(WorldForm::Hold { value: report });
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let read = arena.computation_return(bound);
+    let opened_elsewhere = arena.computation_world(WorldForm::Leta {
+        world: world(SEAT),
+        value: bound,
+        body: read,
+    });
+    let opened_nowhere = arena.computation_world(WorldForm::Leta {
+        world: world(At(2)),
+        value: bound,
+        body: read,
+    });
+    let elsewhere = arena.computation_bind(held, opened_elsewhere);
+    let nowhere = arena.computation_bind(held, opened_nowhere);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), string, elsewhere).entered(operating()),
+        entry_point(&mut arena, At(3), string, nowhere).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        verdicts.get(2),
+        Some(&located(
+            computation(opened_elsewhere),
+            LocatedDefect::OpenedElsewhere {
+                written: SEAT.constant(),
+                handle: OPERATOR.constant(),
+            }
+        )),
+        "a report held at the operator's world opens there, never at the seat's"
+    );
+    assert_eq!(
+        verdicts.get(3),
+        Some(&located(
+            computation(opened_nowhere),
+            LocatedDefect::UndeclaredWorld {
+                world: ConstantIndex::from(2_usize),
+            }
+        )),
+        "an opening writes a world a declaration declares"
     );
 }
 

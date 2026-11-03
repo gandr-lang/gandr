@@ -18,7 +18,7 @@
 //!
 //!              Γ ⊢_w v ⇒ A at w′    Γ, x :_w′ A ⊢_w t ⇒ C
 //!   Leta      ────────────────────────────────────────────────
-//!              Γ ⊢_w leta x = v ; t ⇒ C
+//!              Γ ⊢_w leta[w′] x = v ; t ⇒ C
 //!
 //!              Γ; Σ ⊢_w′ t ⇒ F A    A mobile and open    t pure
 //!   Migrate   ──────────────────────────────────────────────────
@@ -31,11 +31,11 @@
 //!
 //! The judgement's world is the register of the context's binders: every
 //! binder a rule opens is located at it, a `leta` opens its binder at the
-//! handle's world, and a migration moves the register for its body and puts
-//! it back once the body's result has crossed. A linear resident — an
-//! endpoint, a held value, a view, a capability — is located the same way,
-//! and an action, an access or an eliminator on one at another world is
-//! [`LocatedDefect::Elsewhere`], as is a variable.
+//! handle's world, which it writes, and a migration moves the register for
+//! its body and puts it back once the body's result has crossed. A linear
+//! resident — an endpoint, a held value, a view, a capability — is located
+//! the same way, and an action, an access or an eliminator on one at another
+//! world is [`LocatedDefect::Elsewhere`], as is a variable.
 //!
 //! # Two predicates decide a crossing
 //!
@@ -500,6 +500,14 @@ pub enum LocatedDefect
     {
         /// The world the handle was wanted at.
         wanted: World,
+    },
+    /// A `leta` writing another world than the one its handle stands at.
+    OpenedElsewhere
+    {
+        /// The world declaration the `leta` writes.
+        written: ConstantIndex,
+        /// The world declaration the handle stands at.
+        handle: ConstantIndex,
     },
     /// A hold or a `leta` at the host's world, which is no locus.
     Unlocated,

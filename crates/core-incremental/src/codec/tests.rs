@@ -1207,7 +1207,13 @@ fn located_refusals_round_trip_with_their_worlds()
             Located::Elsewhere {
                 bound: world.clone(),
             },
-            Located::HoldElsewhere { wanted: world },
+            Located::HoldElsewhere {
+                wanted: world.clone(),
+            },
+            Located::OpenedElsewhere {
+                written: world,
+                handle: Place::Declared(seat.clone()),
+            },
         ]);
     }
     defects.extend([

@@ -26,7 +26,11 @@ fn forms_name_their_children_and_binders()
     assert_eq!(hold.values().collect::<Vec<_>>(), [unit]);
     assert_eq!(hold.scoped().count(), 0, "a hold has no computation child");
 
-    let leta: WorldForm = WorldForm::Leta { value: unit, body };
+    let leta: WorldForm = WorldForm::Leta {
+        world: seat,
+        value: unit,
+        body,
+    };
     assert_eq!(leta.kind(), WorldKind::Leta);
     assert_eq!(
         leta.scoped().collect::<Vec<_>>(),
@@ -72,6 +76,16 @@ fn forms_name_their_children_and_binders()
         there.shape(),
         elsewhere.shape(),
         "two migrations share a shape only when they name one world"
+    );
+    let opened_elsewhere: WorldForm = WorldForm::Leta {
+        world: operator,
+        value: unit,
+        body,
+    };
+    assert_ne!(
+        leta.shape(),
+        opened_elsewhere.shape(),
+        "two openings share a shape only when they write one world"
     );
 
     let minted = arena.computation_world(leta);

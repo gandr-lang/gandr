@@ -981,6 +981,7 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
         ),
         (
             computation(arena.computation_world(WorldForm::Leta {
+                world: World::Host,
                 value: unit,
                 body: reads,
             })),

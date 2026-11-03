@@ -345,6 +345,14 @@ pub enum Located
         /// The world the handle was wanted at.
         wanted: Place,
     },
+    /// A `leta` writing another world than the one its handle stands at.
+    OpenedElsewhere
+    {
+        /// The world the `leta` writes.
+        written: Place,
+        /// The world the handle stands at.
+        handle: Place,
+    },
     /// A hold or a `leta` at the host's world.
     Unlocated,
     /// A world position no world declaration holds.
@@ -1467,6 +1475,10 @@ impl Projection<'_, '_, '_, '_>
             },
             LocatedDefect::HoldElsewhere { wanted } => Located::HoldElsewhere {
                 wanted: self.place(wanted),
+            },
+            LocatedDefect::OpenedElsewhere { written, handle } => Located::OpenedElsewhere {
+                written: self.place(gandr_core_term::world::World::Declared(written)),
+                handle: self.place(gandr_core_term::world::World::Declared(handle)),
             },
             LocatedDefect::Unlocated => Located::Unlocated,
             LocatedDefect::UndeclaredWorld { world } => Located::UndeclaredWorld {

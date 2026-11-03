@@ -2026,8 +2026,8 @@ impl<'arena> CoreSource<'arena>
         },
         | (Some(&Computation::World(ref form)), _) => match (form, ret) {
             | (&WorldForm::Hold { value }, Former::WorldHold(held)) => held == CoreNode::Value(value),
-            | (&WorldForm::Leta { value, body }, Former::Leta { value: opened, body: rest }) =>
-                opened == CoreNode::Value(value) && rest == CoreNode::Computation(body),
+            | (&WorldForm::Leta { world, value, body }, Former::Leta { world: named, value: opened, body: rest }) =>
+                opened == CoreNode::Value(value) && rest == CoreNode::Computation(body) && named == self.world_name(world),
             | (&WorldForm::Migrate { world, body }, Former::Migrate { world: named, body: run }) =>
                 run == CoreNode::Computation(body) && named == self.world_name(world),
             | _ => false,
@@ -2323,9 +2323,11 @@ impl<'arena> CoreSource<'arena>
             Computation::World(ref form) => match *form {
                 WorldForm::Hold { value: held } => Former::WorldHold(value(held)),
                 WorldForm::Leta {
+                    world,
                     value: opened,
                     body,
                 } => Former::Leta {
+                    world: self.world_name(world),
                     value: value(opened),
                     body: computation(body),
                 },

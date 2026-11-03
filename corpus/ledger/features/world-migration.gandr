@@ -1,8 +1,8 @@
 /// `world-migration` runs a migration's body at its world and brings its answer back.
 ///
-/// Implemented: `migrate [w] { t }` runs `t` on a thread and over a store of its own, closed over its captures; each capture crosses in by content and the answer crosses back, on both tiers; a thunk it answers runs at the caller, forced or applied there, and a field the caller projects from a record it answers reads as in place; `hold v` runs to `v`, and `leta` binds the content of the handle it opens.
+/// Implemented: `migrate [w] { t }` runs `t` on a thread and over a store of its own, closed over its captures; each capture crosses in by content and the answer crosses back, on both tiers; a thunk it answers runs at the caller, forced or applied there, and a field the caller projects from a record it answers reads as in place; `hold v` runs to `v`, and `let x at w = h` binds the content of the handle it opens.
 ///
-/// The first migration holds the work done at the seat and brings its handle back; `leta` opens it, and the second migration reads it at the seat, so it crosses in as that body's capture.
+/// The first migration holds the work done at the seat and brings its handle back; `let done at seat` opens it, and the second migration reads it at the seat, so it crosses in as that body's capture.
 /// The second body answers a record built only at the seat, which crosses back to the operator.
 ///
 /// - see: corpus/model/worlds/twice.gandr
@@ -17,6 +17,6 @@ import "../../model/worlds/seat-and-operator.gandr";
 @[ entry((operator, seat, seat)), runs("#{.done = 3, .left = 4}") ]
 def progress() -> #{done : Integer, left : Integer} {
   let held : Integer at seat = migrate [seat] { (hold 3) };
-  leta done = held;
+  let done at seat = held;
   migrate [seat] { pure #{done = done, left = 7 - done} }
 }

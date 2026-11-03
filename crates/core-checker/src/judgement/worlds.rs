@@ -267,7 +267,9 @@ impl Machine<'_, '_>
     ///   body at the world it names.
     /// - fails: [`LocatedDefect::Unlocated`] for a hold or a `leta` at the
     ///   host's world; [`LocatedDefect::HoldElsewhere`] for a hold checked
-    ///   against a handle at another world; as [`Self::migrate`].
+    ///   against a handle at another world; [`LocatedDefect::UndeclaredWorld`]
+    ///   for a `leta` writing a position no world declaration holds; as
+    ///   [`Self::migrate`].
     /// - panics: none.
     ///
     /// # Errors
@@ -322,10 +324,14 @@ impl Machine<'_, '_>
                     direction: Direction::Synthesise,
                 }))
             },
-            WorldForm::Leta { value, .. } => {
+            WorldForm::Leta { world, value, .. } => {
                 if register == World::Host {
                     return Err(located(node, LocatedDefect::Unlocated));
                 }
+                self.context
+                    .worlds()
+                    .named(world)
+                    .map_err(|defect| located(node, defect))?;
                 self.wait(Frame::LetaValue {
                     at: term,
                     direction,
@@ -366,14 +372,17 @@ impl Machine<'_, '_>
     }
 
     /// Continue a `leta` whose handle synthesised `handle`: open its binder
-    /// at the handle's world and judge the body in the `leta`'s direction.
+    /// at the world it writes and judge the body in the `leta`'s direction.
     ///
     /// # Specification
     /// - requires: `at` is a `leta` whose handle synthesised `handle`.
     /// - ensures: one intuitionistic binder more, at what the handle holds and
-    ///   located at its world — at the unknown type and the register for an
+    ///   located at the world the `leta` writes — at the unknown type for an
     ///   unknown handle; one `LetaBody` frame waits on the body.
     /// - fails: [`LocatedDefect::NotAHandle`] for a type of another former;
+    ///   [`LocatedDefect::Unlocated`] for a handle at the host's world, which
+    ///   no opening writes; [`LocatedDefect::OpenedElsewhere`] for a handle at
+    ///   another declared world than the one written;
     ///   [`CheckRefusal::Linearity`] for a handle holding a session type, which
     ///   an unrestricted binder cannot hold.
     /// - panics: none.
@@ -383,8 +392,10 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `leta` at the operator's world opens a report the
-    ///   operator may read and the seat may not.
+    ///   operator may read and the seat may not, and a `leta` writing the
+    ///   operator's world over the seat's handle is refused.
     /// - witness: `worlds::tests::a_located_hypothesis_is_usable_only_at_its_world`
+    /// - witness: `worlds::tests::a_handle_opened_at_another_world_is_refused_4483`
     #[spec(
         captures: before = self.context.depth(Zone::Intuitionistic),
         ensures: |ret| ret.is_err() || self.context.depth(Zone::Intuitionistic) > before,
@@ -396,14 +407,18 @@ impl Machine<'_, '_>
         handle: ValueTypeId,
     ) -> Result<Step, CheckRefusal>
     {
-        let WorldForm::Leta { body, .. } = self.world_form(at)?
+        let WorldForm::Leta {
+            world: written,
+            body,
+            ..
+        } = self.world_form(at)?
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
         let head = self.context.whnf_value_type(handle)?;
         let (inner, world) = match value_type_view(self.context.arena(), head)? {
             ValueTypeView::World(WorldType::At { inner, world }) => (inner, world),
-            ValueTypeView::Unknown => (head, self.context.binders().world()),
+            ValueTypeView::Unknown => (head, written),
             ValueTypeView::World(WorldType::Capability(_))
             | ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
@@ -445,6 +460,18 @@ impl Machine<'_, '_>
                 ));
             },
         };
+        if world != written {
+            let defect = match (written, world) {
+                (World::Declared(written), World::Declared(handle)) => {
+                    LocatedDefect::OpenedElsewhere { written, handle }
+                },
+                // reason: the opening's arm refused a written world that names
+                // no declaration; what is left is a handle at the host's world.
+                (World::Declared(_) | World::Host, World::Host)
+                | (World::Host, World::Declared(_)) => LocatedDefect::Unlocated,
+            };
+            return Err(located(CoreNode::Term(TermNode::Computation(at)), defect));
+        }
         crate::session::unrestricted(self.context, inner)?;
         let direction = match direction {
             Direction::Synthesise => Direction::Synthesise,

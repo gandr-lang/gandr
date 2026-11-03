@@ -34,6 +34,6 @@ world seat ;
 @[ refuses("Elsewhere") ]
 @[ entry(operator) ]
 def readHere(report : Seat.Report at seat) -> -F Seat.Report {
-  leta written = report;
+  let written at seat = report;
   pure written
 }

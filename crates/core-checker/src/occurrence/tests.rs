@@ -147,6 +147,7 @@ fn a_later_position_extends_the_block_through_every_former()
         arena.computation_telescope_transport(returns_later, nothing, nothing, nothing, nothing),
         arena.computation_world(WorldForm::Hold { value: later }),
         arena.computation_world(WorldForm::Leta {
+            world: World::Host,
             value: nothing,
             body: reads,
         }),

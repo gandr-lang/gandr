@@ -1,0 +1,14 @@
+error[OpenedElsewhere]: `let x at w` opens a handle at the world it stands at; write that world after `at`
+   ╭▸ corpus/ledger/diagnostics/OpenedElsewhere.gandr:38:3
+   │
+37 │   def openedHere(report : Seat.Report at seat) -> -F Seat.Report {
+   │   │              ────── checked against `Seat.Report at seat -> -F Seat.Report`; while checking the body of this function; binds report : Seat.Report at seat
+   │ ┌─┘
+   │ │
+38 │ │   let written at operator = report;
+   │ │   ━━━ a handle opened at another world than its own
+39 │ │   pure written
+40 │ │ }
+   │ └─┘ checked against `Seat.Report at seat => Seat.Report`; while checking the body of this thunk
+   │
+   ╰ note: `openedHere` is refused with OpenedElsewhere, as its expectation states

@@ -1599,6 +1599,7 @@ where
         Former::Leta {
             value: opened,
             body,
+            ..
         } => Vec::from([value(opened), Slot::of(body, admits, Binds::ONE)]),
         Former::Lazy(arity) => components(
             arity,
@@ -11624,10 +11625,13 @@ impl Walk<'_, '_>
                     writes(Production("hold_expression"), Binding::Atom),
                 )
             },
-            Former::Leta { .. } => {
+            Former::Leta { world, .. } => {
+                let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts
-                    .text("leta ")
+                    .text("let ")
                     .part(Part::Binder(0_usize))
+                    .text(" at ")
+                    .text(world)
                     .text(" = ")
                     .piece(Binding::Arrow)
                     .text(" ;")

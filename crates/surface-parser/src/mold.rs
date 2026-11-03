@@ -1010,18 +1010,18 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `where` is reserved: it ends a declaration's head, whose last slot is a
 /// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
-    "def", "run", "leta", "as", "extern", "type", "fun", "pure", "return", "become", "thunk",
-    "force", "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close", "select",
-    "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit", "mu", "end",
-    "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue", "with",
-    "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world",
-    "mobile", "inf", "pub", "flow", "where",
+    "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
+    "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
+    "fork", "acquire", "release", "migrate", "at", "true", "false", "unit", "mu", "end", "data",
+    "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import",
+    "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile",
+    "inf", "pub", "flow", "where",
 ];
 
 /// The keywords that open a block's statements: one that no open form
 /// continues ends the statement it stands in, and starts the next.
 const STATEMENT_LEADS: &[&str] = &[
-    "let", "run", "unpack", "leta", "hold", "var", "recv", "acquire", "release", "fork",
+    "let", "run", "unpack", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
@@ -5759,10 +5759,6 @@ mod tests
         assert_eq!(
             candidate_labels(Lexeme::LowerWord, TokenText::from("def")).as_slice(),
             [CandidateLabel::from("def")]
-        );
-        assert_eq!(
-            candidate_labels(Lexeme::LowerWord, TokenText::from("leta")).as_slice(),
-            [CandidateLabel::from("leta")]
         );
         assert_eq!(
             candidate_labels(Lexeme::LowerWord, TokenText::from("let")).as_slice(),

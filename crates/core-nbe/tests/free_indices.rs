@@ -1191,6 +1191,7 @@ fn computations() -> [Former; 27]
                 let worlds = [
                     a.computation_world(WorldForm::Hold { value: held }),
                     a.computation_world(WorldForm::Leta {
+                        world: World::Host,
                         value: opened,
                         body,
                     }),

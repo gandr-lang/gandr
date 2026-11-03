@@ -1,7 +1,7 @@
 /// `OutOfFragment.WrongSort.declaration`: a stray, a form at the root that is
 /// no declaration and no expression: here a block's statement.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
-leta x = 1 ;
+release x ;
 
 /// The definition after it.
 def n = 5;

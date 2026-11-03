@@ -1,4 +1,4 @@
-/// `NotAHandle`: a `leta` of a value whose type is no handle.
+/// `NotAHandle`: an opening `let x at w` of a value whose type is no handle.
 module Seat :> #{
   type Dispatch,
   mobile type Report,
@@ -34,6 +34,6 @@ world seat ;
 @[ refuses("NotAHandle") ]
 @[ entry(seat) ]
 def unhandled() -> -F Seat.Report {
-  leta written = Seat.progress;
+  let written at seat = Seat.progress;
   pure written
 }
