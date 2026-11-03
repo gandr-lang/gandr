@@ -14364,16 +14364,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let head = match cursor.peek() {
-            Maybe::Present(Piece::Tile { label, at })
-                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
-            {
-                let _head = cursor.tile(label);
-                at
-            },
-            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
-                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-            },
+        let Maybe::Present(head) = cursor.type_head()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let name = self.name_at(head);
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
@@ -14962,14 +14955,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let start = self.operands.len();
         let read = read_pieces(self.pbg, self.tree, at, &mut scratch);
         let mut cursor = Cursor::new(&scratch.pieces, site.at.span);
-        let head = match cursor.peek() {
-            Maybe::Present(Piece::Tile { label, at: head })
-                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
-            {
-                let _head = cursor.tile(label);
-                Some(head)
-            },
-            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => None,
+        let head = match cursor.type_head() {
+            Maybe::Present(head) => Some(head),
+            Maybe::Absent(_) => None,
         };
         let shaped = read.is_ok()
             && head.is_some_and(|head| self.name_at(head).as_ref() == STACK)

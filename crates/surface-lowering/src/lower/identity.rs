@@ -5418,17 +5418,8 @@ impl<'source> Lowerer<'_, 'source>
                 written
             }
             else {
-                let code = sink.arena.value_quote(written);
-                let substituted = gandr_core_term::substitute_environment(
-                    sink.arena,
-                    gandr_core_term::hole::TermId::Value(code),
-                    &environment,
-                );
-                let gandr_core_term::hole::TermId::Value(substituted) = substituted
-                else {
-                    return unread;
-                };
-                let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+                let Maybe::Present(ty) =
+                    super::native::substituted_type(written, &environment, sink.arena, None)
                 else {
                     return unread;
                 };

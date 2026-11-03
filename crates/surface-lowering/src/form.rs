@@ -1893,6 +1893,41 @@ impl Piece
             Self::Tile { at, .. } | Self::Operand(at) => at,
         }
     }
+
+    /// The tile, when this piece is a type's head: a type identifier or a
+    /// type variable.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tile exactly when the piece is an own tile labelled
+    ///   [`TileName::TYPE_IDENTIFIER`] or [`TileName::TYPE_VARIABLE`]; nothing
+    ///   for another tile and for an operand.
+    /// - provides: the one reading of a type's head every type form opens with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both spellings, a tile of another label and an
+    ///   operand separate the reading from its absence.
+    /// - witness: `form::tests::a_cursor_reads_a_type_head_of_either_spelling`
+    #[spec(ensures: |ret| ret == match self {
+        Self::Tile { label, at }
+            if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE => Some(at),
+        Self::Tile { .. } | Self::Operand(_) => None,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn type_head(self) -> Option<Placed>
+    {
+        match self {
+            Self::Tile { label, at }
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                Some(at)
+            },
+            Self::Tile { .. } | Self::Operand(_) => None,
+        }
+    }
 }
 
 /// A repair the parser made among a form's children, or inside the form
@@ -4063,6 +4098,51 @@ impl<'pieces> Cursor<'pieces>
         found
     }
 
+    /// Read the next piece when it is a type's head ([`Piece::type_head`]).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on a type's head, its tile, with the cursor moved past it;
+    ///   otherwise [`cursor::Absent::Elsewhere`] for another piece and
+    ///   [`cursor::Absent::Exhausted`] past the last, with the cursor unmoved.
+    /// - provides: the head every type application and type head form opens
+    ///   with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Piece::type_head`], each asserted with the
+    ///   cursor's position after it.
+    /// - witness: `form::tests::a_cursor_reads_a_type_head_of_either_spelling`
+    #[spec(
+        captures: before = self.rest,
+        ensures: |ret| match (before.split_first(), ret) {
+            | (Some((&piece, rest)), Maybe::Present(found)) => {
+                piece.type_head() == Some(found) && core::ptr::eq(&raw const *self.rest, &raw const *rest)
+            },
+            | (Some((&piece, _)), Maybe::Absent(cursor::Absent::Elsewhere)) => {
+                piece.type_head().is_none() && core::ptr::eq(&raw const *self.rest, &raw const *before)
+            },
+            | (None, Maybe::Absent(cursor::Absent::Exhausted)) => core::ptr::eq(&raw const *self.rest, &raw const *before),
+            | _ => false,
+        },
+    )]
+    #[inline]
+    pub fn type_head(&mut self) -> Maybe<Placed, cursor::Absent>
+    {
+        match self.peek() {
+            Maybe::Present(piece) => {
+                piece
+                    .type_head()
+                    .map_or(Maybe::Absent(cursor::Absent::Elsewhere), |head| {
+                        self.advance(head);
+                        Maybe::Present(head)
+                    })
+            },
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
     /// Read the next piece, whatever it is.
     ///
     /// # Specification
@@ -4669,6 +4749,73 @@ mod tests
             reading.here(),
             at(5_usize, 5_usize),
             "an exhausted cursor stands at the gap past the last piece"
+        );
+    }
+
+    #[test]
+    fn a_cursor_reads_a_type_head_of_either_spelling()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let placed = |node: usize, start: usize, end: usize| Placed {
+            node: crate::fixture::node(node),
+            span: at(start, end),
+        };
+        let named = placed(1_usize, 0_usize, 4_usize);
+        let variable = placed(2_usize, 5_usize, 6_usize);
+        let open = placed(3_usize, 6_usize, 7_usize);
+        let operand = placed(4_usize, 7_usize, 8_usize);
+        let pieces = [
+            Piece::Tile {
+                label: TileName::TYPE_IDENTIFIER,
+                at: named,
+            },
+            Piece::Tile {
+                label: TileName::TYPE_VARIABLE,
+                at: variable,
+            },
+            Piece::Tile {
+                label: TileName::BRACKET_OPEN,
+                at: open,
+            },
+            Piece::Operand(operand),
+        ];
+        assert_eq!(
+            pieces.map(Piece::type_head),
+            [Some(named), Some(variable), None, None],
+            "both spellings head a type, and another tile and an operand do not"
+        );
+        let mut reading = Cursor::new(&pieces, at(0_usize, 8_usize));
+        assert_eq!(
+            reading.type_head(),
+            Maybe::Present(named),
+            "a type identifier"
+        );
+        assert_eq!(
+            reading.type_head(),
+            Maybe::Present(variable),
+            "a type variable"
+        );
+        assert_eq!(
+            reading.type_head(),
+            Maybe::Absent(cursor::Absent::Elsewhere),
+            "a bracket heads no type"
+        );
+        assert_eq!(
+            reading.here(),
+            open.span,
+            "a miss leaves the cursor where it stood"
+        );
+        assert_eq!(reading.tile(TileName::BRACKET_OPEN), Maybe::Present(open));
+        assert_eq!(
+            reading.type_head(),
+            Maybe::Absent(cursor::Absent::Elsewhere),
+            "an operand heads no type"
+        );
+        let _operand = reading.operands();
+        assert_eq!(
+            reading.type_head(),
+            Maybe::Absent(cursor::Absent::Exhausted),
+            "nothing is left to read"
         );
     }
 
