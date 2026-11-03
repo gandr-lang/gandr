@@ -1,0 +1,44 @@
+/// A loop fills a length-indexed vector, and its state's index follows the
+/// counter.
+///
+/// Each `push` turns a `Vec(A, i)` into a `Vec(A, i + 1)`, so the vector's
+/// type changes every pass. The loop head carries that change, and no pass
+/// boxes the vector.
+///
+/// The checker compares the state's type on entry with its type after one pass
+/// and generalises the index that moves with the counter. Where it finds no
+/// relation, the head states the family with `over`.
+///
+/// - see: #4565 — the loops sketch, its rulings in the issue body
+/// - see: #4558 — the syntax inventory
+
+/// The first `n` values of `f`, in order. The checker infers the family
+/// `Vec(A, i)` over the counter, so `v` leaves the loop at `Vec(A, n)`.
+def tabulate[A : Type](n : Nat, f : Fin(n) -> A) -> Vec(A, n) {
+  let v = Vec.empty();
+  for i in 0 .. n {
+    v.push(f(i))
+  }
+  v
+}
+
+/// The same loop with its family written at the head. The head names the
+/// state's type at the start of every pass.
+def tabulateStated[A : Type](n : Nat, f : Fin(n) -> A) -> Vec(A, n) {
+  let v = Vec.empty();
+  for i in 0 .. n over (v : Vec(A, i)) {
+    v.push(f(i))
+  }
+  v
+}
+
+/// Each pass pushes a value and its image, so the length grows by two. The
+/// head states the family `Vec(A, 2 * i)`.
+def interleave[A : Type](n : Nat, xs : Vec(A, n), g : A -> A) -> Vec(A, 2 * n) {
+  let v = Vec.empty();
+  for i in 0 .. n over (v : Vec(A, 2 * i)) {
+    v.push(xs.#[i]);
+    v.push(g(xs.#[i]))
+  }
+  v
+}

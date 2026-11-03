@@ -1,0 +1,39 @@
+/// A loop drives a session endpoint, and the loop head's state is the
+/// protocol's recursion point.
+///
+/// Each path back to the head acts on the endpoint, so every pass advances the
+/// protocol. The loop is productive, and it owes no partiality.
+///
+/// The head names the endpoint at the protocol's recursion point. A pass takes
+/// it there, and `continue` hands it back there.
+///
+/// - see: #4565 — the loops sketch, its rulings in the issue body
+/// - see: #4502 — the endpoint loop the ruling takes
+
+/// A seat's reports until it retires: a report or a retirement, then the
+/// recursion point again.
+type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
+
+/// A desk follows a seat's reports until it retires. Each report is one pass,
+/// and the retirement closes the endpoint and leaves the loop.
+def follow(operator : Reports) -> Unit {
+  loop over (operator : Reports) {
+    offer(operator) {
+      report => { recv(operator) as next; continue },
+      retire => { recv(operator) as last; close(operator); break }
+    }
+  }
+}
+
+/// A desk counts the reports beside the endpoint. The head carries both the
+/// endpoint and the count.
+def tally(operator : Reports) -> Integer {
+  var seen = 0;
+  loop over (operator : Reports) {
+    offer(operator) {
+      report => { recv(operator) as next; seen += 1; continue },
+      retire => { recv(operator) as last; close(operator); break }
+    }
+  }
+  seen
+}
