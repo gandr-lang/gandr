@@ -1,0 +1,74 @@
+test: rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645
+package: gandr-surface-format
+command: mise run debug:test gandr-surface-format rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-format/eb757de410b65bdd/out/tests-eb757de410b65bdd"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-format/eb757de410b65bdd/out/tests-eb757de410b65bdd' (x86_64).
+(lldb) settings set -- target.run-args  "rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-eb757de410b65bdd`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000203ad08
+(lldb) run
+
+running 1 test
+test rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645 ... 
+thread 'rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645' (1624080) panicked at crates/surface-format/tests/rewrite.rs:683:5:
+assertion `left == right` failed: the quoted transport is the action again: def congInAType(
+  A : Type,
+  x : A,
+  y : A,
+  w : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  F : Path(A, x, y) => Path(A, x, w)
+) -> Path(
+  Path(Path(A, x, w), F(f1), F(f2)),
+  transport(fun (b) { type(Path(Path(A, x, w), F(f1), F(b))) }, a, here(F(f1))),
+  transport(fun (b) { type(Path(Path(A, x, w), F(f1), F(b))) }, a, here(F(f1)))
+) {
+  here(transport(fun (b) { type(Path(Path(A, x, w), F(f1), F(b))) }, a, here(F(f1))))
+}
+
+  left: (0, true)
+ right: (3, false)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1624077 launched: 'target/debug-trace/debug/build/gandr-surface-format/eb757de410b65bdd/out/tests-eb757de410b65bdd' (x86_64)
+Process 1624077 stopped
+* thread #2, name = 'rewrite::an_act', stop reason = breakpoint 1.1
+       frame #0: 0x000055555758ed08 tests-eb757de410b65bdd`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'rewrite::an_act', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555758ed08 tests-eb757de410b65bdd`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x00005555575ab185 tests-eb757de410b65bdd`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x000055555758e322 tests-eb757de410b65bdd`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x0000555557586e39 tests-eb757de410b65bdd`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x000055555758eeed tests-eb757de410b65bdd`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x00005555575c937c tests-eb757de410b65bdd`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x00005555575c9273 tests-eb757de410b65bdd`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x0000555555cf1f8d tests-eb757de410b65bdd`core::panicking::assert_failed::<(usize, bool), (usize, bool)>(kind=Eq, left=(0, true), right=(3, false), args=Some({template:{pointer:"*the quoted transport is the action again: \xc0"}, args:{pointer:{ty:Placeholder{value:{…}, formatter:{…}, _lifetime:{…}}}}})) at panicking.rs:407:5
+     frame #8: 0x0000555555ca42db tests-eb757de410b65bdd`tests::rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645 at rewrite.rs:683:5
+     frame #9: 0x0000555555c99b47 tests-eb757de410b65bdd`tests::rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645::{closure#0}((null)={}) at rewrite.rs:661:58
+     frame #10: 0x0000555555d02bc6 tests-eb757de410b65bdd`<tests::rewrite::an_action_under_a_quoted_motive_moves_both_ways_4645::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000555555d0ae3b tests-eb757de410b65bdd`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x0000555555d0ae39 tests-eb757de410b65bdd`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x0000555555d18385 tests-eb757de410b65bdd`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x0000555555d18380 tests-eb757de410b65bdd`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x0000555555d18380 tests-eb757de410b65bdd`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x0000555555d1836b tests-eb757de410b65bdd`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x0000555555d1836b tests-eb757de410b65bdd`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x0000555555d1836b tests-eb757de410b65bdd`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x0000555555d18356 tests-eb757de410b65bdd`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x0000555555d12d44 tests-eb757de410b65bdd`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x0000555555d12cc9 tests-eb757de410b65bdd`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x0000555555d1b4e2 tests-eb757de410b65bdd`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x0000555555d1b4d3 tests-eb757de410b65bdd`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit
