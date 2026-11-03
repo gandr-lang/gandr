@@ -53,5 +53,11 @@ quenchant-shape.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 
+# The build script reads the checker's refusals with `syn` and the mirror's
+# table with `toml`, and writes the store's refusal mirror from them.
+[build-dependencies]
+syn.workspace = true
+toml.workspace = true
+
 [lints]
 workspace = true

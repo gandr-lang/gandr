@@ -586,7 +586,7 @@ fn downstream_error_surfaces()
         matches!(
             step.resumed.typings().nth(1),
             Some(&Typing::Refused(
-                gandr_core_incremental::Refusal::TypeMismatch { .. }
+                gandr_core_incremental::Refusal::TypeMismatch(..)
             ))
         ),
         "the ascription fails once x is a string"
@@ -612,7 +612,7 @@ fn ascription_change_alone_invalidates_the_item()
         matches!(
             step.resumed.typings().next(),
             Some(&Typing::Refused(
-                gandr_core_incremental::Refusal::TypeMismatch { .. }
+                gandr_core_incremental::Refusal::TypeMismatch(..)
             ))
         ),
         "an integer does not satisfy String"

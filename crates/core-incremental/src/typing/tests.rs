@@ -214,11 +214,11 @@ fn each_refusal_projects_its_payload()
     );
     assert_eq!(
         typing,
-        Typing::Refused(Refusal::TypeMismatch {
+        Typing::Refused(Refusal::TypeMismatch(crate::typing::Mismatched {
             at: Site::Node(NodeIndex::from(1_usize)),
             synthesised: base(BaseType::String),
             expected: base(BaseType::Integer),
-        }),
+        })),
         "a mismatch names the body's root and both types"
     );
 
@@ -383,7 +383,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
                 synthesised: returner,
                 expected: integer_returner,
             }),
-            Refusal::TypeMismatch {
+            Refusal::TypeMismatch(crate::typing::Mismatched {
                 at: computation_site,
                 synthesised: returner_content(),
                 expected: crate::fixture::type_content(&[
@@ -393,17 +393,17 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
                     },
                     ContentNode::Base(BaseType::Integer),
                 ]),
-            },
+            }),
         ),
         (
             super::CheckRefusal::ShapeMismatch {
                 at: super::TermNode::Computation(returned),
-                wanted: super::ExpectedShape::Arrow,
+                wanted: gandr_core_checker::ExpectedShape::Arrow,
                 found: super::TypeNode::Computation(returner),
             },
             Refusal::ShapeMismatch {
                 at: computation_site,
-                wanted: super::ExpectedShape::Arrow,
+                wanted: gandr_core_checker::ExpectedShape::Arrow,
                 found: returner_content(),
             },
         ),
@@ -451,7 +451,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
                 node: super::CoreNode::Term(super::TermNode::Value(unreached)),
             },
             Refusal::DanglingNode {
-                at: Site::Unreached,
+                node: Site::Unreached,
             },
         ),
         (
@@ -495,25 +495,25 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
         (
             super::CheckRefusal::FamilyArity {
                 at: unit,
-                expected: super::StaticArity::from(2_u32),
-                actual: super::StaticArity::from(5_u32),
+                expected: gandr_core_checker::StaticArity::from(2_u32),
+                actual: gandr_core_checker::StaticArity::from(5_u32),
             },
             Refusal::FamilyArity {
                 at: value_site,
-                expected: super::StaticArity::from(2_u32),
-                actual: super::StaticArity::from(5_u32),
+                expected: gandr_core_checker::StaticArity::from(2_u32),
+                actual: gandr_core_checker::StaticArity::from(5_u32),
             },
         ),
         (
             super::CheckRefusal::FamilyArgumentClassifier {
                 at: unit,
-                position: super::ArgumentPosition::from(3_u32),
+                position: gandr_core_checker::ArgumentPosition::from(3_u32),
                 synthesised: unit_type,
                 expected: integer,
             },
             Refusal::FamilyArgumentClassifier {
                 at: value_site,
-                position: super::ArgumentPosition::from(3_u32),
+                position: gandr_core_checker::ArgumentPosition::from(3_u32),
                 synthesised: unit_content(),
                 expected: base(BaseType::Integer),
             },
