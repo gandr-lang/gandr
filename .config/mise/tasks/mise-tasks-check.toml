@@ -1619,10 +1619,13 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # `shape:signed`, or none (`signed.jq`, #3134). Each
 # case in `.config/claims/unit.json` holds an issue body and the lines
 # `unit:check` prints for it, or none (`unit.jq`, #2532); each in
-# `.config/claims/next.json` a lane's areas, the open issues and the claim
-# `claim:next` takes from them, or none, or the claim the lane holds (`next.jq`,
-# #2533, #3736, #3915), a case naming a lane reading its row of
-# `.config/issues/lanes.toml` as the table writes it (#4056); each in
+# `.config/claims/next.json` a lane's areas, the open issues, the picks read
+# again before the claim, and the claim `claim:next` takes from them, or none,
+# or the claim the lane holds (`next.jq`, #2533, #3736, #3915, #4660), a case
+# naming a lane reading its row of `.config/issues/lanes.toml` as the table
+# writes it (#4056); each in `.config/claims/claimed.json` a lane, a body and
+# the body `claim:next` writes before its claim, or whether the lane keeps the
+# claim after it (`claimed.jq`, #4660); each in
 # `.config/claims/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
 # prints for them, or none (`ledger.jq`, #2525); each in
@@ -1696,6 +1699,7 @@ cases opening opening.jq opening.json
 cases signed signed.jq signed.json
 cases unit unit.jq unit.json
 cases next next.jq next.json
+cases claimed claimed.jq claimed.json --mode c
 cases ledger ledger.jq ledger.json
 cases reserved reserved.jq reserved.json
 cases shown shown.jq shown.json
@@ -1828,7 +1832,7 @@ if [[ -n ${map//[[:space:]]/} ]]; then
   printf 'claims check FAILED: the term map is malformed:\n%s\n' "$map" >&2
   exit 1
 fi
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/swept.json) nights their recovery rows, $(jq length .config/claims/hand-off.json) transcripts their observed block, and the term map's $(jq length <<< "$terms") rows read whole"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/claimed.json) bodies their claim marker, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/swept.json) nights their recovery rows, $(jq length .config/claims/hand-off.json) transcripts their observed block, and the term map's $(jq length <<< "$terms") rows read whole"
 '''
 
 # The debugger tasks read an enum's variant and pick their lldb as recorded
