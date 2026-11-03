@@ -1,7 +1,7 @@
 error[RulesNonLinear]: this rule's left side names one variable twice: a rule matches each variable once, since copying a matched value needs a comonoid its sort may not have, so the rule is refused
-   ╭▸ corpus/pathological/desc/rules-nonlinear.gandr:11:3
+   ╭▸ corpus/pathological/desc/rules-nonlinear.gandr:13:3
    │
-11 │   rule idem : mul(x, x) ==> x;
+13 │   rule idem : mul(x, x) ==> x;
    │   ┯━━━━━━━━━━━━━━━━━━┬━━━━━━━
    │   │                  │
    │   │                  the variable matched again

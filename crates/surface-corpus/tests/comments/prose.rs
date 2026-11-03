@@ -5,10 +5,11 @@
 //! The head's paragraphs are what the source states, naming the item; why,
 //! the law, the twin or the gap it closes, in at most three sentences; how,
 //! what the checker, the kernel or the runtime does with it, in at most three
-//! sentences; and the references, `- see:` lines only. A feature not built
-//! yet is the references line `- see: #n — not implemented: <what>`, the
-//! spelling `check:ledger` reads in a partial row's exemplar beside
-//! `/// Not implemented:`.
+//! sentences; and the references, `- see:` and `- owes:` lines only. A
+//! feature not built yet is a `Not implemented: <what>` sentence without an
+//! issue number, and the references line `- owes: #n` naming the issue that
+//! builds it (#4900). `check:ledger` reads that line in a partial row's
+//! exemplar.
 //!
 //! The check reads the paragraph count, the first sentence's length, the
 //! reference tokens, the references lines, the sentence length and the
@@ -54,8 +55,12 @@ const SPAN: char = '\u{e000}';
 /// The sentences an item comment may hold.
 const ITEM_SENTENCES: usize = 2;
 
-/// The opening of a references line.
+/// The opening of a references line citing a source.
 const SEE: &str = "- see:";
+
+/// The opening of a references line naming the issue that owes what the
+/// source does not build yet.
+const OWES: &str = "- owes:";
 
 /// The opening of a comment line.
 const LINE: &str = "//";
@@ -74,7 +79,7 @@ pub enum Rule
     WhatLength,
     /// A reference token stands outside the references paragraph.
     ReferenceOutsideReferences,
-    /// A references line is not a `- see:` line.
+    /// A references line is neither a `- see:` nor a `- owes:` line.
     ReferenceLine,
     /// A head sentence runs past twenty-five words.
     SentenceLength,
@@ -116,7 +121,7 @@ impl Rule
             Self::ReferenceOutsideReferences => {
                 "a reference token stands outside the references paragraph"
             },
-            Self::ReferenceLine => "a references line does not open with `- see:`",
+            Self::ReferenceLine => "a references line opens with neither `- see:` nor `- owes:`",
             Self::SentenceLength => "a head sentence runs past twenty-five words",
             Self::Semicolon => "a semicolon stands in the head's prose",
             Self::ItemShape => {
@@ -133,10 +138,13 @@ impl Rule
 /// kind to a run. The head is the run the source opens on, of any kind;
 /// every later `///` run is an item comment. The head is four paragraphs,
 /// split at empty comment lines: what, why, how, and the references, each
-/// references line a `- see:` line (an indented line continues it). A head
-/// breaking a rule is `file:<file> unshaped:<rule>`, once per rule. An item
-/// comment breaking its rule is `file:comment:digest unshaped:ItemShape`,
-/// the digest over its text with whitespace collapsed.
+/// references line a `- see:` or a `- owes:` line (an indented line
+/// continues it). The references are the last paragraph when its lines are
+/// all references lines, whatever the count, and otherwise every paragraph
+/// past the third (#4900). A head breaking a rule is
+/// `file:<file> unshaped:<rule>`, once per rule. An item comment breaking its
+/// rule is `file:comment:digest unshaped:ItemShape`, the digest over its text
+/// with whitespace collapsed.
 ///
 /// A sentence ends at `.`, `?` or `!` before an end or a space and a capital,
 /// a digit or a backtick. A code span is one word and holds no sentence end,
@@ -153,10 +161,11 @@ impl Rule
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a head of four short paragraphs with `- see:` lines owes
-///   nothing, and each rule is broken alone by one changed head or item
-///   comment. A swapped rule, a miscounted paragraph or a split inside a code
-///   span changes the kinds the witnesses compare.
+/// - hypothesis: L3 — a head of four short paragraphs with `- see:` and `-
+///   owes:` lines owes nothing, and each rule is broken alone by one changed
+///   head or item comment, a short head ending on its references owing the
+///   paragraph count alone. A swapped rule, a miscounted paragraph or a split
+///   inside a code span changes the kinds the witnesses compare.
 /// - witness: `tests::comments::prose::tests::a_shaped_source_owes_nothing`
 /// - witness: `tests::comments::prose::tests::each_head_rule_is_named_alone`
 /// - witness: `tests::comments::prose::tests::an_item_comment_owes_two_short_sentences`
@@ -280,7 +289,23 @@ fn comment_runs(source: Text<'_>) -> Vec<Run>
 fn head_rules(head: &[String]) -> Vec<Rule>
 {
     let paragraphs = paragraphs(head);
-    let split = paragraphs.len().min(PROSE_PARAGRAPHS);
+    let listed = paragraphs.last().is_some_and(|lines| {
+        lines
+            .first()
+            .is_some_and(|line| line.starts_with(SEE) || line.starts_with(OWES))
+            && lines.iter().all(|line| {
+                line.starts_with(SEE)
+                    || line.starts_with(OWES)
+                    || line.starts_with(' ')
+                    || line.starts_with('\t')
+            })
+    });
+    let split = if listed {
+        paragraphs.len().saturating_sub(1)
+    }
+    else {
+        paragraphs.len().min(PROSE_PARAGRAPHS)
+    };
     let (prose, references) = paragraphs.split_at(split);
     let mut broken = Vec::new();
     if paragraphs.len() != HEAD_PARAGRAPHS {
@@ -302,11 +327,12 @@ fn head_rules(head: &[String]) -> Vec<Rule>
     {
         broken.push(Rule::ReferenceOutsideReferences);
     }
-    if references
-        .iter()
-        .flatten()
-        .any(|line| !(line.starts_with(SEE) || line.starts_with(' ') || line.starts_with('\t')))
-    {
+    if references.iter().flatten().any(|line| {
+        !(line.starts_with(SEE)
+            || line.starts_with(OWES)
+            || line.starts_with(' ')
+            || line.starts_with('\t'))
+    }) {
         broken.push(Rule::ReferenceLine);
     }
     if prose.iter().any(|lines| {
@@ -506,8 +532,8 @@ mod tests
     fn a_shaped_source_owes_nothing()
     {
         let source = head(Text(
-            "/// - see: #12 — not implemented: the pair\n/// - see: `pathological/a.gandr` — \
-             the negative\n///   twin, wrapped",
+            "/// - owes: #12\n/// - see: `pathological/a.gandr` — the negative\n///   twin, \
+             wrapped",
         ));
         assert_eq!(kinds(Text(&source)), Vec::<String>::new());
         let item = format!("{source}/// The pair. Its sum.\ndef y = 2;\n");
@@ -521,6 +547,10 @@ mod tests
             (
                 "/// Pairs sum their halves.\n///\n/// Why.\n///\n/// The checker reduces \
                  both.\n",
+                "HeadParagraphs",
+            ),
+            (
+                "/// Pairs sum their halves.\n///\n/// - see: #1 — x\n/// - owes: #2 — y\n",
                 "HeadParagraphs",
             ),
             (

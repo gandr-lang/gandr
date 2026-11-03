@@ -1,4 +1,4 @@
-// A presented type whose constructor holds a continuation (#2511). A field
+// A presented type whose constructor holds a continuation. A field
 // written `A => T` is the description code's function former, the
 // higher-order descriptions' `Π` over a type of arguments (Chapman, Dagand,
 // McBride and Morris, _The Gentle Art of Levitation_, ICFP 2010,
@@ -7,6 +7,8 @@
 // and store a state are state's free model, and put-put is the law of state
 // a store obeys (Plotkin and Power, _Notions of computation determine
 // monads_, 2002, doi:10.1007/3-540-45931-6_24).
+//
+// - see: #2511
 
 /// Programs over an integer state: a read hands the state to its
 /// continuation, and a store the next store overwrites is no store.

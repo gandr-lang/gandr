@@ -3,6 +3,9 @@
 // relation is no identity system (Univalent Foundations Program, _Homotopy
 // Type Theory_, 2013, §5.8, Theorem 5.8.2), so the atom's identity stays its
 // own and the relation's evidence is no path between its points.
+//
+// - see: #1784 — `lawlessOriginOther`
+// - see: #1959 — `unpairedContraction`, `UnpairedPoint`
 
 // The relation, its reflexivity and its transport law over the unit type.
 import "../../model/identity/atom-identity.gandr";
@@ -21,13 +24,13 @@ module Lawless :> #{ type T, origin : T, other : T } where {
 }
 
 /// The relation's evidence between two sealed points, refused: the interface
-/// names no transport law (#1784).
+/// names no transport law.
 @[ refuses("AtomTransport") ]
 def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit;
 
 /// The transport law at the paths of the unit type written as no pair,
 /// refused: an identity in the singleton's total space is a path in the
-/// unit type and one over it (#1959).
+/// unit type and one over it.
 @[ refuses("TypeMismatch") ]
 def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
   #{y : Unit, s : pathRelated(a, y)},
@@ -38,7 +41,7 @@ def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
 /// The unit type sealed, naming the refused law. The atom and its members
 /// check against their types; the kernel withholds them with the law, as it
 /// withholds every reader of a declaration that did not cross, rather than
-/// faulting the source (#1959).
+/// faulting the source.
 module UnpairedPoint :> #{ type T, origin : T, other : T } where {
   /// The sealed points, whose transport law is refused.
   @[ identity((pathRelated, pathReflexivity, unpairedContraction)) ]

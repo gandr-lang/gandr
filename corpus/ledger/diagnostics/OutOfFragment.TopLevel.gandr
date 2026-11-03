@@ -1,7 +1,9 @@
 /// `OutOfFragment.TopLevel`: an expression at a source's top level, where
 /// only declarations stand. A program runs the `main` it declares, so the
 /// expression is written in `main`'s body, or named by a definition; the
-/// last root expression is no exception (#2572).
+/// last root expression is no exception.
+///
+/// - see: #2572
 @[ refuses("OutOfFragment.TopLevel") ]
 1 + 2;
 

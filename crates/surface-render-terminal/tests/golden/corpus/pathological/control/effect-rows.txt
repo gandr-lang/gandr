@@ -1,7 +1,7 @@
 error[DuplicateDefinition]: `std.fs.Eff` is defined twice
-   ╭▸ corpus/pathological/control/effect-rows.gandr:15:37
+   ╭▸ corpus/pathological/control/effect-rows.gandr:17:37
    │
-15 │ def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
+17 │ def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
    │                         ┬─────────  ━━━━━━━━━━ written again here
    │                         │
    │                         first written here
@@ -10,17 +10,17 @@ error[DuplicateDefinition]: `std.fs.Eff` is defined twice
    ╰ help: give each definition of `std.fs.Eff` its own name, or delete one of them
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/control/effect-rows.gandr:21:3
+   ╭▸ corpus/pathological/control/effect-rows.gandr:23:3
    │
-20 │   def narrowedRow(c : Cap { read }) -> [Partial] Integer {
+22 │   def narrowedRow(c : Cap { read }) -> [Partial] Integer {
    │   │               ┬                    ───────────────── the type it is checked against
    │   │               │
    │ ┌─┘               checked against `Cap {read} -> -F [Partial] Integer`; while checking the body of this function; binds c : Cap {read}
    │ │
-21 │ │   let _ = peek(c);
+23 │ │   let _ = peek(c);
    │ │   ━━━ its type does not convert: expected `-F [Partial] Integer`, found `-F [Partial, std.fs.Eff] Integer`
-22 │ │   once(2)
-23 │ │ }
+24 │ │   once(2)
+25 │ │ }
    │ └─┘ checked against `+U (Cap {read} -> -F [Partial] Integer)`; while checking the body of this thunk
    │
    ├ note: `narrowedRow` is refused with TypeMismatch, as its expectation states

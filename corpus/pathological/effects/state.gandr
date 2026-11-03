@@ -1,4 +1,6 @@
 // The twin of `model/effects/state.gandr`: where the State laws are refused.
+//
+// - see: #1934 — `StateAllLaws`
 
 /// Once an operation returns the stored sort, a term of it can call an
 /// operation. Instantiating the continuation at the stored value is then no
@@ -28,7 +30,7 @@ theory StatePutKeepsFirst where {
 
 /// The four laws of global state. Get-put holds only where its continuation
 /// does not read the state it drops, a condition on its instance, and its
-/// overlap with put-get is not decided under that condition yet (#1934).
+/// overlap with put-get is not decided under that condition yet.
 @[ refuses("RulesOverlapCondition") ]
 theory StateAllLaws where {
   sort S : Type+;

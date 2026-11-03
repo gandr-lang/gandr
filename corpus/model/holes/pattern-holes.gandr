@@ -1,7 +1,9 @@
 // A pattern hole stands for an arm not yet written, at the top of a match or
 // inside a constructor's payload. A hole leaves which arm runs undecided, so
-// the checker refuses the match by name until coverage reads holes (#391).
+// the checker refuses the match by name until coverage reads holes.
 // `pathological/holes/` refuses each shape on its own.
+//
+// - see: #391 — `rank`, `weigh`
 
 /// Three colours.
 data Shade : Type where {
@@ -10,7 +12,7 @@ data Shade : Type where {
   | Navy : Shade
 }
 
-/// A hole between two arms (#391).
+/// A hole between two arms.
 @[ refuses("UndecidedCoverage") ]
 def rank(c : Shade) -> Integer {
   match c {
@@ -26,7 +28,7 @@ data Option : Type where {
   | Value : (x : Integer) --> Option
 }
 
-/// A hole inside a payload (#391).
+/// A hole inside a payload.
 @[ refuses("UndecidedCoverage") ]
 def weigh(m : Option) -> Integer {
   match m {

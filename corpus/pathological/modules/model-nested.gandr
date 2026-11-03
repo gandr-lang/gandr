@@ -1,8 +1,11 @@
 // The refusals beside `../../model/modules/model-nested.gandr`: a nested model
 // answered by a nested module with no ascription is refused at the outer
 // module's header, the attribute before the module stating its expectation
-// (#1274); a sealed nested model's point read at the carrier the seal hides is
-// a type mismatch (#1311).
+// ; a sealed nested model's point read at the carrier the seal hides is
+// a type mismatch.
+//
+// - see: #1274
+// - see: #1311
 
 // The theories of the nested answer and of the facts around it, and the sealed
 // model.

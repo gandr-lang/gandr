@@ -1,18 +1,18 @@
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
-   ╭▸ corpus/pathological/desc/function-field.gandr:13:3
+   ╭▸ corpus/pathological/desc/function-field.gandr:15:3
    │
-12 │    def rec stores(p : Program) -> Integer {
+14 │    def rec stores(p : Program) -> Integer {
    │    │              ─ checked against `Program -> -F Integer`; while checking the body of this function; binds p : Program
    │ ┌──┘
    │ │
-13 │ │┏   match p {
-14 │ │┃     Done(_x) => 0,
-15 │ │┃     Get(k) => {
-16 │ │┃       let q = k(0);
+15 │ │┏   match p {
+16 │ │┃     Done(_x) => 0,
+17 │ │┃     Get(k) => {
+18 │ │┃       let q = k(0);
    ┆ ┆┇
-23 │ │┃   }
+25 │ │┃   }
    │ │┗━━━┛ a case its datatype's rules do not admit
-24 │ │  }
+26 │ │  }
    │ └──┘ checked against `Program => Integer`; while checking the body of this function; binds stores : Program => Integer
    │
    ├ note: `stores` is refused with RuleNotRespected, as its expectation states

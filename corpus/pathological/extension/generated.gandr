@@ -3,10 +3,12 @@
 // rule rewrite one term to `zero()` and to a variable, no rule the path order
 // orients joins them, and the block's rules are refused by name. The
 // extension type of `../../model/extension/generated.gandr` reads `zero` at
-// the face of every cell (#641).
+// the face of every cell.
+//
+// - see: #641 — `Leaked`
 
 /// `outCellp(inCell(yq))` reads `zero` by the boundary and `yq` by the
-/// written rule (#641).
+/// written rule.
 @[ refuses("RulesUncompleted") ]
 theory Leaked where {
   boundary Two { p, q };

@@ -5,7 +5,9 @@
 // running it at the outer region and widening its answer is one function with
 // widening its argument and running it at the inner region. The path between
 // the two is checked by conversion. Stating it for every region-polymorphic
-// function, held abstractly, needs a value type quantifying a region, #2139.
+// function, held abstractly, needs a value type quantifying a region.
+//
+// - owes: #2139 — a value type quantifying a region
 
 // `pass`, which hands back the thunk it is lent.
 import "./passed.gandr";

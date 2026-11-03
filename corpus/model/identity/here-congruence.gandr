@@ -2,6 +2,10 @@
 // under judgmental equality): two reflexivities are one path when their
 // points convert, by unfolding or by a presented type's rule, at every level,
 // and a parameter is no reflexivity.
+//
+// - see: #1723 — `peak_is_here`
+// - see: #2378 — `held_sum`
+// - see: #2391 — `compared_alike`, `passed_on`
 
 // The integers, presented by their two cancellations.
 import "./circle-base.gandr";
@@ -33,8 +37,7 @@ def refl_peak_at(x : Int) -> Path(Int, S(P(S(x))), S(x)) {
   Path.here(S(P(S(x))))
 }
 
-/// Points a rule relates, one level up: the two reflexivities are one path
-/// (#1723).
+/// Points a rule relates, one level up: the two reflexivities are one path.
 def peak_is_here(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), refl_peak(x), refl_peak_at(x)) {
   Path.here(refl_peak(x))
 }
@@ -49,7 +52,7 @@ def apart(q : Path(Integer, 2, 2)) -> Path(Path(Integer, 2, 2), q, Path.here(2))
 def as_given(n : Integer) -> Integer { n }
 
 /// Points one unfolding apart over a native sum of parameters: the sum is
-/// held as its call, never run, and meets itself (#2378).
+/// held as its call, never run, and meets itself.
 def held_sum(x : Integer, y : Integer) -> Path(Integer, as_given(x + y), x + y) {
   Path.here(x + y)
 }
@@ -63,7 +66,7 @@ def exchanged_sum(x : Integer, y : Integer) -> Path(Integer, as_given(x + y), y 
 
 /// A comparison's model is resolved from its operands once the body is
 /// judged: the point compares alike, and meets both endpoints when each
-/// comparison reads the integers' equality (#2391).
+/// comparison reads the integers' equality.
 def compared_alike(x : Integer, y : Integer) -> Path(Bool, x == y, x == y) {
   Path.here(x == y)
 }
@@ -75,7 +78,7 @@ def compared_turned(x : Integer, y : Integer) -> Path(Bool, x == y, y == x) {
 }
 
 /// A path over a comparison, returned at a path type over comparisons of its
-/// own, converts once each comparison's model is resolved (#2391).
+/// own, converts once each comparison's model is resolved.
 def passed_on(x : Integer, y : Integer, p : Path(Bool, x == y, x == y)) -> Path(
   Bool,
   x == y,

@@ -14249,7 +14249,7 @@ mod tests
         };
         assert_eq!(
             opened(&mut server, "model/cancellation/answered.gandr"),
-            ["4-4:import `./cancel-base.gandr` is never used:[1]"],
+            ["6-6:import `./cancel-base.gandr` is never used:[1]"],
             "a scope reading only builtins reads nothing through its import, which fades whole"
         );
         assert_eq!(
@@ -14348,26 +14348,26 @@ mod tests
         };
         let (uri, text, judged) = opened(&mut server, "model/cancellation/answered.gandr");
         assert_eq!(
-            ask(&mut server, &uri, 4, &judged),
+            ask(&mut server, &uri, 6, &judged),
             [
                 serde_json::json!({"title": "Remove the unused import `./cancel-base.gandr`",
                 "kind": "quickfix", "diagnostics": hinted(&judged), "isPreferred": true,
-                "edit": {"changes": {&uri: [lines(4, 5)]}}})
+                "edit": {"changes": {&uri: [lines(6, 7)]}}})
             ],
             "the import alone on its line is removed with its line break"
         );
         assert_eq!(
-            ask(&mut server, &uri, 9, &judged),
+            ask(&mut server, &uri, 11, &judged),
             [Value::Null; 0],
             "a range elsewhere is offered no removal"
         );
         assert_eq!(
-            refusals(&mut server, &uri, without(&text, &[4_usize].into())),
+            refusals(&mut server, &uri, without(&text, &[6_usize].into())),
             0,
             "the scope checks without its import"
         );
         let (uri, text, judged) = opened(&mut server, "model/strings/methods.gandr");
-        let offered = ask(&mut server, &uri, 11, &judged);
+        let offered = ask(&mut server, &uri, 13, &judged);
         assert_eq!(
             offered
                 .iter()
@@ -14379,11 +14379,11 @@ mod tests
             [
                 (
                     Value::from("Remove the unused import `./nul-terminated.gandr`"),
-                    serde_json::json!([lines(11, 12)])
+                    serde_json::json!([lines(13, 14)])
                 ),
                 (
                     Value::from("Remove all unused imports"),
-                    serde_json::json!([lines(11, 12), lines(12, 13)])
+                    serde_json::json!([lines(13, 14), lines(14, 15)])
                 ),
             ],
             "the first import is offered its own removal, then both unused ones at once"
@@ -14392,7 +14392,7 @@ mod tests
             refusals(
                 &mut server,
                 &uri,
-                without(&text, &[11_usize, 12_usize].into())
+                without(&text, &[13_usize, 14_usize].into())
             ),
             0,
             "the methods check without both"

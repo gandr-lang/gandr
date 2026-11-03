@@ -1,7 +1,9 @@
-// #2687: a dotted name is read at a top-level `theory` or `module` alone.
+// A dotted name is read at a top-level `theory` or `module` alone.
 // Inside a module block a dotted module name is out of place and a theory is
 // no member. Each refusal is held at a member's slot, which no expectation can
 // state, so the source stands pending until a member carries one.
+//
+// - see: #2687
 
 /// A block holding a dotted module, refused at the dotted name.
 module Outer where {

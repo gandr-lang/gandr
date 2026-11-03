@@ -9,6 +9,9 @@
 // calls no operation, so put-get descends as Cooper's branch selection does.
 // Two of the laws in one theory overlap, and get-get overlaps itself through
 // its pattern; each pair joins in the second-order reading.
+//
+// - see: #2116 — `StatePutLaws`, `StateGetGet`
+// - see: #1934 — `StateLaws`
 
 /// The operations alone: reading the state of sort `S` into what runs after,
 /// and storing a value of it before what runs after. The module `State` holds
@@ -42,7 +45,7 @@ pub theory StatePutPut where {
 
 /// Put-get and put-put together. Put-put's continuation can be a `get`, so
 /// its inner `put` is a put-get redex; both reducts store the second value
-/// and continue at it (#2116).
+/// and continue at it.
 pub theory StatePutLaws where {
   sort S : Type+;
   sort C : Type;
@@ -54,7 +57,7 @@ pub theory StatePutLaws where {
 
 /// Reading twice is reading once at the same state. The inner `get` is an
 /// instance of the rule's own left side through its pattern, and both
-/// reducts read once and continue at that state three times (#2116). A
+/// reducts read once and continue at that state three times. A
 /// scope over this theory runs its subject normalised by the rule: `let a = /// st.get(); let b = st.get(); pure a + b` reads once, `let a = st.get();
 /// pure a + a` with `b` bound to `a` (`state-laws.gandr`'s `readTwice`).
 pub theory StateGetGet where {
@@ -68,7 +71,7 @@ pub theory StateGetGet where {
 /// is checked against (`../specification/state-wp.gandr`). A read of a read
 /// under a store is a redex of put-get and of get-get, and both reducts store
 /// the value and continue at it twice. Get-put beside them is refused in the
-/// twin (#1934).
+/// twin.
 pub theory StateLaws where {
   sort S : Type+;
   sort C : Type;

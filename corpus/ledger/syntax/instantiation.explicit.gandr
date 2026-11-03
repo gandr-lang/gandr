@@ -1,6 +1,8 @@
 /// `instantiation.explicit`: a resident naming an implicit, `.n = e`, `.n`, or
 /// a claim on the named stage, `.n <`. The checker does not reach a size
-/// supply yet; #1497 tracks it.
+/// supply yet.
+///
+/// - owes: #1497
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec sized(n : Integer) -> -F Integer {
   return sized[.size = 1](n)

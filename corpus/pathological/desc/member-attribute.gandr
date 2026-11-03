@@ -2,7 +2,9 @@
 // family and its other members keep checking, and the refused member is a
 // declaration of its own under the family's name. The attribute block written
 // before the member states that declaration's expectation, and the family's
-// own attribute states the family alone (#1462).
+// own attribute states the family alone.
+//
+// - see: #1462
 
 /// Naturals with a subtraction whose rule copies its argument.
 data NatSub : Type where {

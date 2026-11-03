@@ -1,6 +1,8 @@
 /// `bridge-types`: Bridge types by the identity recursion.
 /// Implemented: `Bridge(A, a, b)` relates two points of `A` at the fibre the bridge fold reads. The core checks it and the kernel replays it.
-/// Not implemented: the model laws of the fold; #3519 owes them.
+/// Not implemented: the model laws of the fold.
+///
+/// - owes: #3519
 
 // The native finite lists.
 import std.list (List);

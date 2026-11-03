@@ -3,10 +3,14 @@
 // shadow, which loses the binding; an instantiation at the wrong count; a rule
 // applying an operation the signature does not declare; and ζ beside a rule
 // rewriting its redex apart.
+//
+// - see: #1326 — `Beta`
+// - see: #1324 — `BetaShadow`, `LetTwice`
+// - see: #2375 — `Undeclared`
 
 /// β substitutes `lam`'s body, which stands under `lam` rather than as an
 /// argument of `app`: the order does not put `t(u)` below the redex, so the
-/// rule is not known to end (#1326).
+/// rule is not known to end.
 @[ refuses("RulesUnoriented") ]
 theory Beta where {
   sort Tm : Type+;
@@ -17,7 +21,7 @@ theory Beta where {
 
 /// β's first-order shadow passes `lam`'s body to `app`, whose port binds
 /// nothing: the binding is lost, and the description check refuses the rule
-/// by the variable's name (#1324).
+/// by the variable's name.
 @[ refuses("IllFormedDescription") ]
 theory BetaShadow where {
   sort Tm : Type+;
@@ -27,7 +31,7 @@ theory BetaShadow where {
 }
 
 /// An instantiation takes one argument per variable its port binds, and `t`
-/// binds one (#1324).
+/// binds one.
 @[ refuses("IllFormedDescription") ]
 theory LetTwice where {
   sort Tm : Type+;
@@ -37,7 +41,7 @@ theory LetTwice where {
 
 /// `putPut` applies `f`, which no operation declares, once on each side: the
 /// description check refuses the rule once, and its refusal is the theory's
-/// alone, with no overlap check run over the rule it refused (#2375).
+/// alone, with no overlap check run over the rule it refused.
 @[ refuses("IllFormedDescription") ]
 theory Undeclared where {
   sort S : Type+;

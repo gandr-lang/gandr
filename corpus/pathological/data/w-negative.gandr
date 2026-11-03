@@ -1,9 +1,12 @@
 // What a function-typed field refuses. A W-type's node may hold a function
 // into its own family, and one from it whose domain stands strictly below the
-// node (`./curry.gandr`, #517); a family to the left of the arrow where no
+// node (`./curry.gandr`); a family to the left of the arrow where no
 // stage reaches is a negative occurrence: applied to other arguments than its
 // parameters, or named through a definition of its block, which stands for
 // its body and so hides nothing. Shared with `../../model/data/w-tree.gandr`.
+//
+// - see: #517 — `Lop`
+// - see: #602 — `Hidden`
 
 /// The two branches of a binary node.
 data Two : Type where {
@@ -12,14 +15,14 @@ data Two : Type where {
 }
 
 /// A node consuming its family at another argument than its parameter:
-/// `Lop(Two)` stands left of the arrow where no stage reaches (#517).
+/// `Lop(Two)` stands left of the arrow where no stage reaches.
 @[ refuses("NegativeOccurrence") ]
 data Lop(a : Type) : Type where {
   | MkLop : (f : Lop(Two) => Two) --> Lop(a)
 }
 
 /// The same node with its domain written through a definition of its block
-/// (#602): the walk reads `hidden` through to `Hidden`, which stands left of
+/// : the walk reads `hidden` through to `Hidden`, which stands left of
 /// the arrow, and the block is refused whole.
 rec {
   /// A node consuming its own family through `hidden`.

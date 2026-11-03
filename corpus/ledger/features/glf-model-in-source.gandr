@@ -1,7 +1,9 @@
 /// `glf-model-in-source`: A model of a signature written in source; the shape parameter.
 /// Implemented: a first-order model of a signature written as a record type in source, its syntax model inhabiting it, and the finite shape a theory block's cells are over.
-/// Not implemented: the λ-calculus single-substitution model as a record, and its syntax model; #640 owes it.
-// A first-order model of `theory Nat` written in gandr source (#640). For a
+/// Not implemented: the λ-calculus single-substitution model as a record, and its syntax model.
+///
+/// - owes: #640
+// A first-order model of `theory Nat` written in gandr source. For a
 // first-order signature, Kaposi and Xie's first-order models (_Second-Order
 // Generalised Algebraic Theories_, FSCD 2024,
 // doi:10.4230/LIPIcs.FSCD.2024.10) are its algebras: a carrier for the sort

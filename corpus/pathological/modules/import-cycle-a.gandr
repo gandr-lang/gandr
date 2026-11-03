@@ -1,6 +1,8 @@
-// Two sources importing each other refuse every member of the cycle (#434):
+// Two sources importing each other refuse every member of the cycle:
 // neither can be checked before the other. `import-cycle-b.gandr` is the
 // other member.
+//
+// - see: #434
 
 // The other member, which imports this one.
 import "./import-cycle-b.gandr";

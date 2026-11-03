@@ -1,5 +1,7 @@
 // What a reduct refuses: a model stands only where a theory its own includes
 // is asked. `../../model/include/reduct.gandr` states the reducts.
+//
+// - see: #2136 — `noZero`
 
 // The semigroup, the monoid, the left zero and both extensions at once; the
 // manifest endomorphism monoid.
@@ -15,6 +17,6 @@ def absorbs(z : Model(LeftZero)) -> Integer {
 }
 
 /// The manifest monoid where a left zero is asked: the monoid includes no
-/// zero, so no map puts its carrier back and restricts to one (#2136).
+/// zero, so no map puts its carrier back and restricts to one.
 @[ refuses("TypeMismatch") ]
 def noZero() -> Integer { absorbs(endoManifest) }

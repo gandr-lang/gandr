@@ -3,9 +3,12 @@
 // binder writes, a call by the result its declaration writes, a recursive
 // call by its own function's result, and `Path.ap` over a parameter function by
 // that function's written result, which may read the parameters before it.
-// In a body and in a type alike, none of these needs a stated type (#423).
+// In a body and in a type alike, none of these needs a stated type.
 // The operations are the HoTT book's inverse and composite (Lemmas 2.1.1 and
 // 2.1.2) and `ap` (Lemma 2.2.1).
+//
+// - see: #423 — `stated`, `thrice`
+// - see: #546 — `mappedOver`, `mappedInto`
 
 // The circle and the free naturals.
 import "./circle-base.gandr";
@@ -21,7 +24,7 @@ def backThen(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   Path.step(Path.back(p), p)
 }
 
-/// A parameter composed in a type, and reflexivity at it (#423).
+/// A parameter composed in a type, and reflexivity at it.
 def stated(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   Path.step(p, loop),
@@ -40,7 +43,7 @@ def untwice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   Path.step(Path.back(walkTwice(p)), loop)
 }
 
-/// A call composed in a type (#423).
+/// A call composed in a type.
 def thrice(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   Path.step(walkTwice(p), p),
@@ -82,7 +85,7 @@ def mapped(f : Circle => Nat) -> Path(Nat, f(Base), f(Base)) {
 }
 
 /// `Path.ap` at a parameter map whose type reads an earlier parameter, the type
-/// it maps from: its result read where the operation stands (#546).
+/// it maps from: its result read where the operation stands.
 def mappedOver(b : Type, g : b => Nat, u : b, v : b, q : Path(b, u, v)) -> Path(
   Nat,
   g(v),
@@ -91,7 +94,7 @@ def mappedOver(b : Type, g : b => Nat, u : b, v : b, q : Path(b, u, v)) -> Path(
   Path.back(Path.ap(g, q))
 }
 
-/// The same map into a type it reads, in a type and in a body (#546).
+/// The same map into a type it reads, in a type and in a body.
 def mappedInto(a : Type, b : Type, g : b => a, u : b, v : b, q : Path(b, u, v)) -> Path(
   Path(a, g(u), g(v)),
   Path.ap(g, q),

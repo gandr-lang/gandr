@@ -1,7 +1,7 @@
 error[OutOfFragment.Unannotated]: the call expression needs a type annotation
-   ╭▸ corpus/pathological/data/answered-definition.gandr:11:55
+   ╭▸ corpus/pathological/data/answered-definition.gandr:13:55
    │
-11 │ def bound(T : Type -> Type[-]) -> T(Integer) { return Some(1) }
+13 │ def bound(T : Type -> Type[-]) -> T(Integer) { return Some(1) }
    │                                                       ━━━━━━━ needs a stated type
    │
    ╰ note: `bound` is refused with OutOfFragment.Unannotated, as its expectation states

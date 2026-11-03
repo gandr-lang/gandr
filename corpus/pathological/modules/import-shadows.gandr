@@ -1,7 +1,9 @@
-// A declaration an unqualified import already binds is refused (#434): the
+// A declaration an unqualified import already binds is refused: the
 // circle is `circle-base.gandr`'s, and a source importing it states it once
 // more. The importer's own `Circle` would hide the one every imported
 // declaration reads.
+//
+// - see: #434
 
 // The circle, unqualified.
 import "../../model/identity/circle-base.gandr";

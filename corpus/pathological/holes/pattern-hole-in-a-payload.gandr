@@ -1,5 +1,7 @@
 // A pattern hole inside a constructor's payload leaves which values of the
-// payload the arm covers undecided, and the checker refuses the match (#391).
+// payload the arm covers undecided, and the checker refuses the match.
+//
+// - see: #391 — `describe`
 
 /// An integer, or none.
 data Maybe : Type where {
@@ -7,7 +9,7 @@ data Maybe : Type where {
   | Just : (x : Integer) --> Maybe
 }
 
-/// The hole stands for `Just`'s payload (#391).
+/// The hole stands for `Just`'s payload.
 @[ refuses("UndecidedCoverage") ]
 def describe(m : Maybe) -> Integer {
   match m {

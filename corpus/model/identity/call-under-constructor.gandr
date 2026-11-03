@@ -1,8 +1,10 @@
 // A recursive path whose endpoint calls a definition under a constructor of
-// a presented type (#424): the kernel reads the endpoint by the type's rules,
+// a presented type: the kernel reads the endpoint by the type's rules,
 // which may rewrite the constructor away to the call beneath it, and reads a
 // transport the recursive path leaves standing as a neutral on that path.
 // The integers and their sum follow cubical Agda's `Cubical/Data/Int`.
+//
+// - see: #424 — `underSuccessor`
 
 // The integers, one successor more and one predecessor more.
 import "./circle-base.gandr";
@@ -10,7 +12,7 @@ import "./circle-base.gandr";
 import "./int-sum.gandr";
 
 /// At `P(x)` the endpoint `S(plus(Z, P(x)))` is `S(P(plus(Z, x)))`, which the
-/// first rule reads as the call `plus(Z, x)` itself (#424).
+/// first rule reads as the call `plus(Z, x)` itself.
 def rec underSuccessor(b : Int) -> Path(Int, S(plus(Z, b)), S(b)) {
   match b {
     Z => Path.here(S(Z)),

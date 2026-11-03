@@ -1,4 +1,4 @@
-// A functor over a theory's models (#1226): a parameter written `(S :
+// A functor over a theory's models: a parameter written `(S :
 // Model(T))` takes the signature the theory `T` derives, its sorts abstract
 // in the body and its operations values at the types the theory states, and
 // an application matches its argument against that signature by name, so a
@@ -7,6 +7,9 @@
 // Theories: Signatures and First-Order Semantics_, FSCD 2024,
 // doi:10.4230/LIPIcs.FSCD.2024.10), under which a module signature is a
 // theory and a parameterised module the static half of a functor.
+//
+// - see: #1226
+// - see: #1764 — `Reassociating`
 
 /// A magma: a carrier and a binary operation on it.
 theory Mag where {
@@ -56,7 +59,7 @@ theory Semi where {
 }
 
 /// A semigroup's law read at any of its models: the parameter states the law
-/// at its own multiplication, so the body can turn it round (#1764).
+/// at its own multiplication, so the body can turn it round.
 module Reassociating(S : Model(Semi)) where {
   /// Associativity, read right to left.
   def reassoc(x : S.M, y : S.M, z : S.M) -> Path(

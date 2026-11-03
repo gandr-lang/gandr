@@ -1,4 +1,6 @@
-// A tally of integers, in a source of its own (#739).
+// A tally of integers, in a source of its own.
+//
+// - see: #739
 import "./model-resolution-tally.gandr";
 
 /// Counting up by one.

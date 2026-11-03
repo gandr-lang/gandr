@@ -1,7 +1,10 @@
 // `std.session`: the home of the native session formers. `Run(S)` is the
-// value type of the complete recorded runs of the session code `S`,
-// `Prefix(S)` that of its recorded prefixes, and `Dialogue(S)` that of the
-// complete dialogues over it. A source names each by listing it, `import
-// std.session (Run, Prefix, Dialogue);` (#4521). The formers are native, so
-// no declaration here states them: the lowering answers each in a source
-// that lists it from this module, and nowhere else.
+// value type of the complete recorded runs of the session code `S`.
+// `Prefix(S)` is that of its recorded prefixes, and `Dialogue(S)` that of the
+// complete dialogues over it. A source names each by listing it,
+// `import std.session (Run, Prefix, Dialogue);`.
+//
+// The formers are native, so no declaration here states them. The lowering
+// answers each in a source that lists it from this module, and nowhere else.
+//
+// - see: #4521

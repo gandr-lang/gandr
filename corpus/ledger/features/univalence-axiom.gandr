@@ -1,6 +1,12 @@
 /// `univalence-axiom`: Univalence on a record's laws (ua).
 /// Implemented: `ua(e)` making a bi-invertible record a path between any two codes, transport along it by the record's maps in both checkers and on the machine, and transport back and along composites.
-/// Not implemented: `ua ∘ idtoequiv` and `idtoequiv ∘ ua`, owed until the theorem is proved; #520 owes it.
+/// Not implemented: `ua ∘ idtoequiv` and `idtoequiv ∘ ua`, owed until the theorem is proved.
+///
+/// - owes: #520
+/// - see: #650 — `oneBack`, `idtoequiv`
+/// - see: #695 — `idtoequiv`
+/// - see: #698 — `idtoequiv`
+/// - see: #1979 — `loopsAreTheirWinding`
 // Univalence over the user universe, after the HoTT book's § 2.10 and cubical
 // Agda's `Cubical/Foundations/Univalence.agda`. `ua(e)` makes the
 // bi-invertible map `e : A ≃ B` between two types of `Type` a path
@@ -33,7 +39,7 @@ def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
 }
 
 /// The transport back written out in a record's field converts, under the
-/// field's binder, with the same transport in the law's type (#650).
+/// field's binder, with the same transport in the law's type.
 @[ checks ]
 def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   g : b => a,
@@ -100,8 +106,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
 /// Transport along a path between types as the bi-invertible map: the book's
 /// `idtoeqv`, cubical's `pathToEquiv`. Both inverses are the transport
 /// written out, which converts under its field's binder with the named map
-/// its law is stated over (#650), and `univalence`'s laws replay over them
-/// (#695, #698).
+/// its law is stated over, and `univalence`'s laws replay over them.
 @[ checks ]
 def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
   (
@@ -141,7 +146,7 @@ def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding) ;
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
-/// equivalence's codomain off the path it makes (#1979).
+/// equivalence's codomain off the path it makes.
 @[ checks ]
 def loopsAreTheirWinding : Path(Type, Path(Circle, Base, Base), Int) = (ua(winding) : Path(
   Type,

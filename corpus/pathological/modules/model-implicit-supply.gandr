@@ -1,8 +1,10 @@
-// A model implicit (#739) is its components: it is supplied by a module's
+// A model implicit is its components: it is supplied by a module's
 // name or a model implicit's, and read as `s.x`. `corpus/model/modules/
 // model-implicit.gandr` supplies `Up`; here one name answers no module, one
 // module gives no reading, a value stands where a model is supplied, and a
 // model implicit is named alone.
+//
+// - see: #739
 
 /// A tally: a carrier, a zero, a step and a reading.
 theory Tally where {

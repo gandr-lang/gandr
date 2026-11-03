@@ -2,6 +2,8 @@
 // the sum by recursion on its second summand, zero a unit of it, a successor
 // or a predecessor brought out of its left, and the sum commuting.
 // `circle-group.gandr` reads these laws through the winding number.
+//
+// - see: #427 — `plusComm`
 
 // The integers, one successor more and one predecessor more.
 import "./circle-base.gandr";
@@ -52,7 +54,7 @@ pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
 /// each step the recursive call carried along `up` or `down` and then the
 /// summand brought out of the left. The arms compose to no conversion of the
 /// answer at `x`, yet `Int` is a set, so its rules are respected by their
-/// endpoints alone (#427).
+/// endpoints alone.
 pub def rec plusComm(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
   match b {
     Z => Path.back(plusZ(a)),

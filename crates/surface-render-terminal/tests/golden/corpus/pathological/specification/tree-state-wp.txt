@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:16:36
+   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:18:36
    │
-16 │ } = (incrTree, fun (s) { fun (h) { h } });
+18 │ } = (incrTree, fun (s) { fun (h) { h } });
    │                ┬─────────┬─────────┯────
    │                │         │         │
    │                │         │         its type does not convert: expected `wp(incrTree, isOne, s)`, found `isOne(unit, s)`
@@ -12,16 +12,16 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:28:30
+   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:30:30
    │
-24 │ ┌ def incrMissesTwo(
-25 │ │   post : (Unit, Integer) => Type,
+26 │ ┌ def incrMissesTwo(
+27 │ │   post : (Unit, Integer) => Type,
    │ │   ──── checked; while checking the body of this function; binds post : (Unit, Integer) => Type
-26 │ │   s : Integer,
+28 │ │   s : Integer,
    │ │   ─ checked against `(s : Integer) -> incrByTwoSpec(post, s) -> -F wp(incrTree, post, s)`; while checking the body of this function; binds s : Integer
-27 │ │   h : incrByTwoSpec(post, s)
+29 │ │   h : incrByTwoSpec(post, s)
    │ │   ─ checked against `incrByTwoSpec(post, s) -> -F wp(incrTree, post, s)`; while checking the body of this function; binds h : incrByTwoSpec(post, s)
-28 │ │ ) -> wp(incrTree, post, s) { h }
+30 │ │ ) -> wp(incrTree, post, s) { h }
    │ └──────────────────────────────┯─┘ checked against `(post : (Unit, Integer) => Type, s : Integer, incrByTwoSpec(post, s)) => wp(incrTree, post, s)`; while checking the body of this thunk
    │                                │
    │                                its type does not convert: expected `wp(incrTree, post, s)`, found `incrByTwoSpec(post, s)`

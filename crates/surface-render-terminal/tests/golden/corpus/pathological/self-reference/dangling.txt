@@ -1,34 +1,34 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/self-reference/dangling.gandr:16:12
+   ╭▸ corpus/pathological/self-reference/dangling.gandr:18:12
    │
-10 │ ┌   def dangling() -> Integer {
-11 │ │     var x = 5;
+12 │ ┌   def dangling() -> Integer {
+13 │ │     var x = 5;
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
-12 │ │     let r : Integer = handle c : std.process.Exit.Eff {
+14 │ │     let r : Integer = handle c : std.process.Exit.Eff {
    │ │┌────┬─────────────────┘
    │ ││    │
    │ ││    checked against `-F Integer`; while finishing the type of this
-13 │ ││      let k = access x as v {
+15 │ ││      let k = access x as v {
    │ ││┌─────┬───────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while synthesising the computation this binds
-14 │ │││       c.exit(1);
+16 │ │││       c.exit(1);
    │ │││       ───────── synthesised; while checking the body of this split; binds _ : Unit
-15 │ │││       resume(v, v + 7);
+17 │ │││       resume(v, v + 7);
    │ │││       ──────────────── synthesised; while checking the body of this split; binds _ : Unit
-16 │ │││       pure thunk { pure v }
+18 │ │││       pure thunk { pure v }
    │ │││       ┬────┯━━━━━━━━━━━━━━━
    │ │││       │    │
    │ │││       │    a view outliving its access
    │ │││       synthesised; while judging the value this returns
-17 │ │││     };
+19 │ │││     };
    │ ││└─────┘ synthesised; while checking the body of this access
    ┆ ┆┆
-21 │ ││      oper exit(code, k) => k(unit)
-22 │ ││    };
+23 │ ││      oper exit(code, k) => k(unit)
+24 │ ││    };
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-23 │ │     pure x
-24 │ │   }
+25 │ │     pure x
+26 │ │   }
    │ └───┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ├ note: `dangling` is refused with ViewEscaped, as its expectation states

@@ -779,7 +779,7 @@
       ],
       "regressions": []
     },
-    "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there, and without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add both, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there, and without a regression naming #2621: a corpus `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add both, then run `pr:open` again"
   },
   {
     "name": "#2524: a defect closed with an observation, its only test naming another issue, is refused naming the regression",
@@ -800,11 +800,11 @@
         },
         {
           "path": "corpus/fragment/exits.gandr",
-          "text": "/// #26210: the same, one digit on"
+          "text": "/// - see: #26210 — the same, one digit on"
         }
       ]
     },
-    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
     "name": "#2524: an observation and a `.config` case citing the issue opens",
@@ -875,10 +875,10 @@
         }
       ]
     },
-    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
-    "name": "#2524: a corpus `///` line citing the issue is a regression; an observation left as a comment is none",
+    "name": "#4900: a corpus `/// - see:` line citing the issue is a regression; an observation left as a comment is none",
     "input": {
       "branch": "surface-2621-probe",
       "body": "Closes #2621\n\n## Observation\n\n<!-- the instrument and the value -->\n\n## Refactoring\n\nno\n",
@@ -892,11 +892,36 @@
       "regressions": [
         {
           "path": "corpus/fragment/exits.gandr",
-          "text": "/// A collector is never claimed (#2621)."
+          "text": "/// - see: #2621 — a collector is never claimed"
         }
       ]
     },
     "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there; add it, then run `pr:open` again"
+  },
+  {
+    "name": "#4900: a corpus `///` prose line citing the issue is no regression, since the issue stands only in a `- see:` line",
+    "input": {
+      "branch": "surface-2621-probe",
+      "body": "Closes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": "corpus/fragment/exits.gandr",
+          "text": "/// A collector is never claimed (#2621)."
+        },
+        {
+          "path": "corpus/fragment/exits.gandr",
+          "text": "/// #2621: a collector is never claimed"
+        }
+      ]
+    },
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
     "name": "#2524: a defect only advanced, and a gap closed, ask for neither",
@@ -963,7 +988,7 @@
         }
       ]
     },
-    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
     "name": "#3538: a smoke's `//` line citing the issue is a regression, and so is a `node:test` name citing it",
@@ -1018,7 +1043,7 @@
         }
       ]
     },
-    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `/// - see: #2621` line, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
   },
   {
     "name": "#2527: a grammar change whose body has no `### Surface form` is refused, naming the subsection and both lines",
@@ -1114,6 +1139,7 @@
       ],
       "surface": [
         "crates/surface-grammar/tests/highlight/fixture/model/specification/tree-state-wp.roles",
+        "crates/surface-grammar/tests/highlight/fixture/model/include/monoid.hover",
         "crates/surface-grammar/tests/highlight/strict/values.roles",
         "crates/surface-grammar/tests/highlight/unexercised.roles",
         "crates/surface-parser/tests/recovery/fixture/model/specification/tree-state-wp.recovery",

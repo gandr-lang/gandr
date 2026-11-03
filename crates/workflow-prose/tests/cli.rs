@@ -14,9 +14,9 @@ const PAST: &str = r#"[[[["The","the","DET","DT","det",1,0],["kernel","kernel","
 /// The parse of the same passage in the present tense.
 const PRESENT: &str = r#"[[[["The","the","DET","DT","det",1,0],["kernel","kernel","NOUN","NN","nsubj",2,4],["reduces","reduce","VERB","VBZ","ROOT",2,11],["the","the","DET","DT","det",4,19],["term","term","NOUN","NN","dobj",2,23],[".",".","PUNCT",".","punct",2,27]]]]"#;
 
-/// A scratch root for the case `$name` holding one corpus source of the
-/// sentence `$sentence`, an empty glossary, the ledger `$ledger`, and the
-/// parse `$parse` for the fake to print.
+/// A scratch root for the case `$name`, a git work tree tracking one corpus
+/// source of the sentence `$sentence`, an empty glossary, the ledger
+/// `$ledger`, and the parse `$parse` for the fake to print.
 macro_rules! scratch {
     ($name:literal, $sentence:literal, $ledger:expr, $parse:expr) => {{
         let root =
@@ -35,6 +35,15 @@ macro_rules! scratch {
         std::fs::write(root.join("corpus/glossary.toml"), "[words]\n").unwrap();
         std::fs::write(root.join("corpus/prose.ledger"), $ledger).unwrap();
         std::fs::write(root.join("parse.json"), $parse).unwrap();
+        for arguments in [&["init", "--quiet"][..], &["add", "corpus/a.gandr"][..]] {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(arguments)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {arguments:?}");
+        }
         root
     }};
 }

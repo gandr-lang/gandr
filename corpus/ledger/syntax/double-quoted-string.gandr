@@ -1,4 +1,6 @@
 /// `double_quoted_string`: a double-quoted shell string.
-/// The checker does not reach this form yet; #1057 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1057
 @[ refuses("OutOfFragment.shell_block") ]
 def greeting = #!{ echo "hello world"; } ;

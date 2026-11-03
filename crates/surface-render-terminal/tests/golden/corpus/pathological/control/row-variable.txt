@@ -1,25 +1,25 @@
 error[ImplicitUnsolved]: the implicit `r` this call to `log` omits is determined by neither its arguments nor the type it is checked against
-   ╭▸ corpus/pathological/control/row-variable.gandr:23:40
+   ╭▸ corpus/pathological/control/row-variable.gandr:25:40
    │
-23 │ def unread() -> Unit { ignored(thunk { log("unread") }) }
+25 │ def unread() -> Unit { ignored(thunk { log("unread") }) }
    │                                        ━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unread` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `r` by name, as `log[r = …](…)`
 
 error[ImplicitUnsolved]: the solver cannot determine the implicit `r` this call to `log` omits: its row is compared with another open row, each holding an interface the other lacks
-   ╭▸ corpus/pathological/control/row-variable.gandr:30:34
+   ╭▸ corpus/pathological/control/row-variable.gandr:32:34
    │
-30 │   ignored(thunk { either(thunk { log("one") }, thunk { stall("other") }) })
+32 │   ignored(thunk { either(thunk { log("one") }, thunk { stall("other") }) })
    │                                  ━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `undecided` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `r` by name, as `log[r = …](…)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/control/row-variable.gandr:35:36
+   ╭▸ corpus/pathological/control/row-variable.gandr:37:36
    │
-35 │ def narrowed() -> [Partial] Unit { log("narrowed") }
+37 │ def narrowed() -> [Partial] Unit { log("narrowed") }
    │ ┬─────────────────┬────────────────┯━━━━━━━━━━━━━━──
    │ │                 │                │
    │ │                 │                its type does not convert: expected `-F [Partial] Unit`, found `-F [std.io.Console.Eff | ?] Unit`

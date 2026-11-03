@@ -1,7 +1,7 @@
 error[OutOfFragment.shell_block]: the shell block is not supported yet
-  ╭▸ corpus/pathological/shell/pipeline-unsupported.gandr:7:26
+  ╭▸ corpus/pathological/shell/pipeline-unsupported.gandr:9:26
   │
-7 │ def piped() -> -F Unit { #!{ printf 'x' | cat; } }
+9 │ def piped() -> -F Unit { #!{ printf 'x' | cat; } }
   │                          ━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
   │
   ├ note: `piped` is refused with OutOfFragment.shell_block, as its expectation states

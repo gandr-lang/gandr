@@ -1,6 +1,8 @@
 // A module's members see the names around it and each other, a nested
 // module's members are reached through its name, and the signature exports
 // only the members it states.
+//
+// - see: #1057 — `hidden_reply`
 
 /// A seed every member builds on.
 def seed = 40;
@@ -8,7 +10,7 @@ def seed = 40;
 /// The facts, with one nested module; the signature hides `hidden_reply`,
 /// `base` and `inner.hidden`.
 module Facts : #{ inner : #{answer : Integer}, total : Integer } where {
-  /// A shell command's reply; the lowering admits no shell block yet (#1057).
+  /// A shell command's reply; the lowering admits no shell block yet.
   @[ refuses("OutOfFragment.shell_block") ]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
   /// The seed and the reply's exit code. An operator is a computation, and a

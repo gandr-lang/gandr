@@ -1,7 +1,9 @@
 // A data family applied where a value is read is the family's type over its
 // arguments: passed for a type parameter, a function polymorphic in a type is
 // called at an applied type as at a bare one, and a definition of `Type`
-// names one (#2512).
+// names one.
+//
+// - see: #2512
 
 /// A parcel holding one value of any type.
 data Parcel(a : Type) : Type where {

@@ -1,4 +1,4 @@
-// A row may name an instance of an interface by a label (#2271): `say`
+// A row may name an instance of an interface by a label: `say`
 // performs `std.io.Console.Eff` through its instance `out`, apart from the
 // interface's default and from every other instance, so one row holds two
 // instances of one interface. The label is a parameter the function
@@ -9,6 +9,8 @@
 // Ostermann, "Effects as Capabilities: Effect Handlers and Lightweight
 // Effect Polymorphism", OOPSLA 2020). What refuses is in
 // `../../pathological/control/named-instances.gandr`.
+//
+// - see: #2271
 
 // The console's host interface.
 import std.io;

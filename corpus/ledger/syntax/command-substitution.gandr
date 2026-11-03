@@ -1,4 +1,6 @@
 /// `command_substitution`: a shell command substitution.
-/// The checker does not reach this form yet; #1057 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1057
 @[ refuses("OutOfFragment.shell_block") ]
 def today = #!{ echo $!{ date }; } ;

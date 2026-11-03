@@ -1,16 +1,20 @@
 // The string operations of the `string` namespace: containment, equality,
 // prefix and suffix, escaping and splitting. The native `string` namespace
 // holds `append`, `eq` and `lt` (`simple-builtins.gandr`), so the others name
-// no member of it; scanning and escaping are planned text primitives (#318).
+// no member of it; scanning and escaping are planned text primitives.
 // Equality is written `==`, which resolves the prelude's `Eq` model of
-// strings (#1832); their order is written `<`, through `Ord`
+// strings; their order is written `<`, through `Ord`
 // (`model-ord.gandr`).
+//
+// - see: #318
+// - see: #1832
+// - see: #2572
 
 /// A string, named.
 def slogan = "types are machines";
 
 /// A statement at the top level, where only declarations stand: it runs
-/// inside a declaration, `main` or another (#2572).
+/// inside a declaration, `main` or another.
 @[ refuses("OutOfFragment.TopLevel") ]
 string.contains(slogan, "machine");
 

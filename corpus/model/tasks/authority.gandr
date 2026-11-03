@@ -1,6 +1,8 @@
 // The host answers an operation made through a capability it holds for the
 // run exactly once, so an end stays open across it: a task exercises the
 // authority its parent hands it, and a parent acts while its task runs.
+//
+// - see: #1334 — `reader`
 
 // The task's protocol.
 import "./task-base.gandr";
@@ -10,7 +12,7 @@ import std.fs;
 import std.process;
 
 /// A task reading through its parent's capability and handing back what it
-/// read (#1334).
+/// read.
 def reader(c : Cap { read }) -> [std.fs.Eff] Unit {
   let found = fork (task : Task.Join) {
     let text = c.read(Task.notes);

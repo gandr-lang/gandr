@@ -2,7 +2,9 @@
 // omitting an instance passes the one instance of its interface in scope,
 // never a guess among several or a default; a row holds each label once;
 // an instance is apart from its interface's default; and a label names an
-// instance in scope or nothing (#2271).
+// instance in scope or nothing.
+//
+// - see: #2271
 
 // `say` prints through its instance `out`.
 import "../../model/control/named-instances.gandr";

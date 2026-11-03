@@ -1,4 +1,6 @@
 /// `subshell`: a shell subshell.
-/// The checker does not reach this form yet; #1057 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1057
 @[ refuses("OutOfFragment.shell_block") ]
 def greeted = #!{ [ echo hi ]; } ;

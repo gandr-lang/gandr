@@ -1,13 +1,15 @@
 // An unwind is a shielded section: it runs to completion under the empty row,
 // which carries no abandonment, so a cancellation written inside one is
 // refused, and no cancellation reaches a cancellation already running.
+//
+// - see: #1334 — `shielded`
 
 // The task's protocol.
 import "../../model/cancellation/cancel-base.gandr";
 // Early exit's host interface.
 import std.process;
 
-/// A scope whose exit clause abandons the rest from inside an unwind (#1334).
+/// A scope whose exit clause abandons the rest from inside an unwind.
 @[ refuses("UnwindEffect") ]
 def shielded() -> Unit {
   handle c : std.process.Exit.Eff {

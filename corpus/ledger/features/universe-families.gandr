@@ -1,6 +1,9 @@
 /// `universe-families`: Value and computation universe families.
 /// Implemented: two universe families indexed by polarity and level over one level algebra, with an erased static core beneath the surface.
-/// Not implemented: the rest of the classifier arc; #315 owes it.
+/// Not implemented: the rest of the classifier arc.
+///
+/// - owes: #315
+/// - see: #1080 — `sum`
 // Static β at one classifier, the type operators `Type -> Type`: an operator
 // applied in a signature reduces before the kernel reads the declaration, and
 // the run never sees it. `sum` takes a pair whose type is `apply(twice,
@@ -18,7 +21,7 @@ def twice : Type -> Type = fun (Y) { type(Y * Y) } ;
 
 /// The sum of a pair whose type is an operator applied twice over. Both
 /// binders are used: an unused one has no type entry under a static
-/// application (#1080).
+/// application.
 @[ checks ]
 def sum(p : apply(twice, Integer)) -> Integer {
   match p {

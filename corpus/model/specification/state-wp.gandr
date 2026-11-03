@@ -9,8 +9,10 @@
 // follows from the stored value. The scope is checked as a model of state's
 // laws, so the observation identifies what the laws identify, and is a monad
 // morphism from programs over state (§ 4.4 derives it from the state algebra
-// at the answer `S => Type`). The normaliser runs no scope yet (#2754), so a
+// at the answer `S => Type`). The normaliser runs no scope yet, so a
 // precondition is computed through the fold `tree-state-wp.gandr` writes.
+//
+// - see: #2754
 
 // `StateLaws`.
 import "../effects/state.gandr";

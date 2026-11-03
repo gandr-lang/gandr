@@ -1,7 +1,7 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/here-congruence.gandr:12:73
+   ╭▸ corpus/pathological/identity/here-congruence.gandr:14:73
    │
-12 │ def peak_apart(x : Int) -> Path(Path(Int, S(x), S(x)), Path.here(S(x)), Path.here(P(x))) {
+14 │ def peak_apart(x : Int) -> Path(Path(Int, S(x), S(x)), Path.here(S(x)), Path.here(P(x))) {
    │                ┬                          ┬───  ┬───                    ━━━━━━━━━━━━━━━ not both endpoints of the path
    │                │                          │     │
    │                │                          │     an endpoint the point does not convert to

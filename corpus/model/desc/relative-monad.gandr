@@ -8,6 +8,9 @@
 // the laws, the left unit is a second-order rule and the right unit
 // abstracts the variable the continuation binds; associativity overlaps
 // itself and both units, and every pair joins, so the three are one theory.
+//
+// - see: #2115 — `MonadRightUnit`
+// - see: #2116 — `RelativeMonad`
 
 // `Maybe`, the option monad's values.
 import "../data/data-maybe.gandr";
@@ -24,7 +27,7 @@ theory MonadLeftUnit where {
 
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
-/// it at its port of the sort `V` (#2115).
+/// it at its port of the sort `V`.
 theory MonadRightUnit where {
   sort V : Type+;
   sort C : Type;
@@ -36,7 +39,7 @@ theory MonadRightUnit where {
 /// The three laws together. Associativity's inner `ext(m, k)` is an instance
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
-/// unification, and its two reducts normalize to one term (#2116).
+/// unification, and its two reducts normalize to one term.
 pub theory RelativeMonad where {
   sort V : Type+;
   sort C : Type;

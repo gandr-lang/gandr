@@ -1,16 +1,16 @@
 error[IllFormedDescription]: a rule names the atom `d` under no abstraction of it, or where no port of its sort stands; an atom is named only inside `bind `d` . t`, at a port of the sort it abstracts
-   ╭▸ corpus/pathological/effects/domhringr.gandr:14:3
+   ╭▸ corpus/pathological/effects/domhringr.gandr:16:3
    │
-14 │   rule again : put(v, bind d. put(d, k)) <=> put(v, k);
+16 │   rule again : put(v, bind d. put(d, k)) <=> put(v, k);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `StoreDigestPut` is refused with IllFormedDescription, as its expectation states
    ╰ help: name the atom only inside `bind a . t`, at a port of the sort that it abstracts
 
 error[IllFormedDescription]: the operation `raise` has a port at `Nonsense`, which is neither a sort the signature declares nor a builtin type
-   ╭▸ corpus/pathological/effects/domhringr.gandr:24:33
+   ╭▸ corpus/pathological/effects/domhringr.gandr:26:33
    │
-24 │   oper raise : (r : Reason) --> Nonsense;
+26 │   oper raise : (r : Reason) --> Nonsense;
    │                                 ━━━━━━━━ what the description check refuses
    │
    ├ note: `FailNonsense` is refused with IllFormedDescription, as its expectation states

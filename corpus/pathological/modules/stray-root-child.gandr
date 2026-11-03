@@ -1,29 +1,31 @@
 // A root child that is no declaration is refused alone, where it stands:
 // the declarations around it are collected, lowered and checked as if it
-// were not there (#1058).
+// were not there.
+//
+// - see: #1058 — `mu`
+// - see: #2572
 
 /// A declaration before every stray, which checks.
 def before : Integer = 1;
 
 /// A statement keyword outside any block: a block's statement, not a
-/// declaration (#1058).
+/// declaration.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 release x ;
 
 /// An expression standing where a declaration belongs, refused at the top
-/// level (#1058, #2572).
+/// level.
 @[ refuses("OutOfFragment.TopLevel") ]
 1 + 2
 
-/// A declaration whose name is a keyword names nothing to file it under
-/// (#1058).
+/// A declaration whose name is a keyword names nothing to file it under.
 @[ refuses("MalformedForm") ]
 def mu = 1 ;
 
 /// A declaration between the strays, which checks.
 def between : Integer = before;
 
-/// A byte no label molds (#1058).
+/// A byte no label molds.
 @[ refuses("MalformedForm") ]
 §
 

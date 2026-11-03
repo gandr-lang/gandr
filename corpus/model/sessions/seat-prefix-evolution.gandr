@@ -3,6 +3,8 @@
 // protocol, as a complete run does (`./seat-evolution.gandr`), and stay open
 // there, the seat's next move still owed (Gay and Hole, _Subtyping for
 // Session Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z).
+//
+// - see: #1318 — `carried`
 
 // The native session formers.
 import std.session (Prefix);
@@ -14,7 +16,7 @@ import "./seat-evolution.gandr";
 // move the offer to go on or retire.
 import "./seat-prefix.gandr";
 
-/// An open play ridden forward along the simulation (#1318).
+/// An open play ridden forward along the simulation.
 def carried(play : Prefix(Seat.SeatEnd)) -> Prefix(Evolution.SeatEnd′) {
   Flow.ride(fun (X) { Prefix(X) }, Evolution.sub, play)
 }

@@ -1,14 +1,17 @@
 // A foreign function called with fewer arguments than its signature takes,
-// to be refused at the call (#327). The lowering does not reach the extern
-// block yet (#327).
+// to be refused at the call. The lowering does not reach the extern
+// block yet.
+//
+// - see: #327 — `pow`, `squared`
+// - see: #1106 — `squared`
 
-/// The maths library's power function (#327).
+/// The maths library's power function.
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "m" {
   def pow(base : f64, exp : f64) -> f64;
 }
 
-/// A call with its base alone; the lowering reads no projection yet (#1106),
-/// and `m` is the extern block's (#327).
+/// A call with its base alone; the lowering reads no projection yet,
+/// and `m` is the extern block's.
 @[ refuses("OutOfFragment.projection_expression") ]
 def squared = m.pow(2.0f64);

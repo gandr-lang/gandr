@@ -11,7 +11,7 @@
 // atoms it may name, so the check decides an overlap under the condition it
 // composes. Each theory below normalizes one process its rules meet.
 //
-// - see: #1934 — not implemented: a rule matching a variable both under an
+// - owes: #1934 — a rule matching a variable both under an
 //   abstraction and beside it
 // - see: `pathological/desc/atom-occurrence.gandr` — that rule, refused
 // - see: Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 2

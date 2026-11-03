@@ -1,5 +1,7 @@
 /// A view captured by a thunk: the thunk may be forced after the access that
 /// lent the view has ended, so the view would outlive its access.
+///
+/// - see: #1132 — `stash`
 @[ refuses("ViewEscaped") ]
 def leak() -> Integer {
   var c = 0;
@@ -10,7 +12,7 @@ def leak() -> Integer {
 /// A held value captured by a thunk would outlive its hold the same way. The
 /// thunk here is forced inside the hold, so the refused body still runs to the
 /// value it read: the refusal is the checker's caution, not a fault the run
-/// meets (#1132).
+/// meets.
 @[ runs("0"), refuses("HeldCaptured") ]
 def stash() -> Integer {
   var c = 0;

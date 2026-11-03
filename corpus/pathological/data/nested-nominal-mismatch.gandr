@@ -1,5 +1,7 @@
 // Two data types with one shape stay distinct under a type former: a list of
 // `Celsius` is no list of `Fahrenheit`, in any definition that ascribes it.
+//
+// - see: #2075 — `listed`
 
 // The native finite lists.
 import std.list (List);
@@ -15,7 +17,7 @@ data Fahrenheit : Type where {
 }
 
 /// A list of one Celsius value ascribed a list of Fahrenheit: its element
-/// keeps its own family (#2075).
+/// keeps its own family.
 @[ refuses("TypeMismatch") ]
 def listed = (#[Cel(20)] : List(Fahrenheit));
 

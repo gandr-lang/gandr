@@ -1,4 +1,4 @@
-// What `univalence`'s owed laws need and the checker does not have (#520).
+// What `univalence`'s owed laws need and the checker does not have.
 // `ua` after `idtoequiv` is the path once `J` reaches reflexivity, where `ua`
 // of the identity record is not reflexivity: two paths between types that
 // transport alike are not one path. `idtoequiv` after `ua` is the record once
@@ -6,6 +6,8 @@
 // from a homotopy at any two functions; `Path.funext` decides closed first-order
 // functions only, and `ua` gives the rest
 // (`../../model/identity/funext-from-ua.gandr`).
+//
+// - see: #520 — `uaEtaRefl`, `uaEtaStratum`, `funextFromHomotopy`
 
 // Univalence over the user universe: `idtoequiv`.
 import "../../model/identity/univalence.gandr";
@@ -13,14 +15,14 @@ import "../../model/identity/univalence.gandr";
 import "../../model/higher-cells/ua-type.gandr";
 
 /// `ua` of the identity record at reflexivity, read as reflexivity: the case
-/// `J` leaves of `uaEta`, refused (#520).
+/// `J` leaves of `uaEta`, refused.
 @[ refuses("EndpointMismatch") ]
 def uaEtaRefl(a : Type) -> Path(Path(Type, a, a), ua(idtoequiv(a, a, Path.here(a))), Path.here(a)) {
   Path.here(Path.here(a))
 }
 
 /// `ua` of the packaged stratum path, read as the path itself: refused at the
-/// stratum code as at reflexivity (#520).
+/// stratum code as at reflexivity.
 @[ refuses("EndpointMismatch") ]
 def uaEtaStratum() -> Path(
   Path(Type, AtStratum.Tel, AtStratum.Tel),
@@ -31,7 +33,7 @@ def uaEtaStratum() -> Path(
 }
 
 /// Two functions that agree at every point are one function, from the
-/// homotopy: past the functions `Path.funext` decides, refused (#520).
+/// homotopy: past the functions `Path.funext` decides, refused.
 @[ refuses("FunextUnsupported") ]
 def funextFromHomotopy(
   a : Type,

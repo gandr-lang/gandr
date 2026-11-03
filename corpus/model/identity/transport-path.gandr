@@ -3,6 +3,8 @@
 // element of another type is none, and transport along the path it returns
 // runs it first. Along reflexivity, at a path-type motive and in the
 // universe, transport keeps the value, by conversion and by a run.
+//
+// - see: #649 — `along_returned`
 
 /// A reflexive transport at a path-type motive returns a path.
 def moved_end : Path(
@@ -27,7 +29,7 @@ def unit_end : Path(
 ) = Path.here(Path.here(2));
 
 /// Transport along the path a reflexive transport returns, in the universe,
-/// is the identity: the inner transport runs to `Path.here(a)` first (#649).
+/// is the identity: the inner transport runs to `Path.here(a)` first.
 def along_returned(
   a : Type,
   x : a

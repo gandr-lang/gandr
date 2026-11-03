@@ -1,8 +1,10 @@
 // A source's own constructor named like one of `Theory`'s keeps its name
-// beside a `theory` block (#2348). The block's code is minted all the same,
+// beside a `theory` block. The block's code is minted all the same,
 // and each constructor of `Theory` the source does not name reads as it does
 // anywhere: `App` is declared before the block, `Sort` after it, and a generic
 // program still reads the block by `Oper` and `Presents`.
+//
+// - see: #2348
 
 /// λ-terms with de Bruijn indices, whose application is named as `Theory`'s
 /// is.

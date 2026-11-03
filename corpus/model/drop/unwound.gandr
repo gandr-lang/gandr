@@ -4,6 +4,8 @@
 // Munch-Maccagnoni and Douence, _Linear Effects, Exceptions, and Resource
 // Safety_, 2025, arXiv:2510.23517). An unwind that calls a declaration owed
 // its body blames the run, which shows the abandonment ran it.
+//
+// - see: #1334 — `unwound`
 
 // The native finite lists.
 import std.list (List);
@@ -15,7 +17,7 @@ import std.process;
 def later : Integer => Unit;
 
 /// The rest of the scope abandoned while an access's view is open: the
-/// access's unwind runs, and its call of `later` blames the run (#1334).
+/// access's unwind runs, and its call of `later` blames the run.
 @[ runs("blame: `later` is owed its body") ]
 def unwound() -> Integer {
   var x = 1;

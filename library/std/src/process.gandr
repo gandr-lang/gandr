@@ -1,6 +1,9 @@
 // `std.process`: the home of the process's host interfaces,
 // `std.process.Exec.Eff`, which runs a command, and `std.process.Exit.Eff`,
 // which exits early. A source names them where it imports this module,
-// `import std.process;`, and nowhere else (#4523). The interfaces are native,
-// so no declaration here states them. The process's arguments wait for
-// demand.
+// `import std.process;`, and nowhere else.
+//
+// The interfaces are native, so no declaration here states them. The
+// process's arguments wait for demand.
+//
+// - see: #4523

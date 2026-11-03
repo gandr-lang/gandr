@@ -1,8 +1,10 @@
 // The wheel of `model/circuit/circuit-feed-wheel.gandr`, run: a model of
 // `Wheel` gives `Nat` and `emit`, and driving `spin` over a stream reads the
 // outputs it feeds back. A model does not yet state a circuit rule, so the
-// model is refused and nothing runs; the refusal names #1323, the unit that
-// builds it.
+// model is refused and nothing runs. The refusal names the unit that builds
+// it.
+//
+// - see: #1323 — `summing`
 
 // The wheel's theory.
 import "../../model/circuit/circuit-feed-wheel.gandr";
@@ -20,6 +22,6 @@ def unrolled() -> Integer {
 
 /// The wheel as a running sum, `Nat` the integers and `emit` the step, so
 /// `spin` over `1, 2, 3` answers what `unrolled` does. `Model(Wheel)` cannot
-/// state `spin`, a circuit rule (#1323).
+/// state `spin`, a circuit rule.
 @[ refuses("UnstatedComponent.Circuit") ]
 def summing : Model(Wheel);

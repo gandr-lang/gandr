@@ -2,7 +2,9 @@
 // declaring both: the value is checked against the type, as it is when the
 // two are written apart. The sugared form joins a signature with the
 // definition directly after it; a comment or another item between them keeps
-// the two (#2228).
+// the two.
+//
+// - see: #2228
 
 /// Three, its type and value in one item.
 def joinedThree : Integer = 3;

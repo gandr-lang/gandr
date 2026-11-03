@@ -1,28 +1,28 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/desc/bind-port.gandr:23:3
+   ╭▸ corpus/pathological/desc/bind-port.gandr:25:3
    │
-23 │   oper new : (body : pi+ (x : Val). bind (c : Name). Proc) --> Proc;
+25 │   oper new : (body : pi+ (x : Val). bind (c : Name). Proc) --> Proc;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `InnerAbstraction` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
 error[IllFormedDescription]: the port `t` abstracts an atom of the sort `Tm`, which is not an atom sort
-   ╭▸ corpus/pathological/desc/bind-port.gandr:11:1
+   ╭▸ corpus/pathological/desc/bind-port.gandr:13:1
    │
-11 │ ┏ theory OrdinaryAbstraction where {
-12 │ ┃   sort Tm : Type;
-13 │ ┃   oper nu : (t : bind (a : Tm). Tm) --> Tm;
-14 │ ┃ }
+13 │ ┏ theory OrdinaryAbstraction where {
+14 │ ┃   sort Tm : Type;
+15 │ ┃   oper nu : (t : bind (a : Tm). Tm) --> Tm;
+16 │ ┃ }
    │ ┗━┛ what the description check refuses
    │
    ├ note: `OrdinaryAbstraction` is refused with IllFormedDescription, as its expectation states
    ╰ help: abstract over an atom sort, or bind the variable with `(x : S) ->` instead
 
 error[UnstatedComponent.Abstraction]: the model signature cannot state `nu`, which abstracts an atom over a port, whose models are nominal sets'
-   ╭▸ corpus/pathological/desc/bind-port.gandr:30:30
+   ╭▸ corpus/pathological/desc/bind-port.gandr:32:30
    │
-30 │ def restrictionModel : Model(Restriction);
+32 │ def restrictionModel : Model(Restriction);
    │                              ━━━━━━━━━━━ the signature this model derives
    │
    ├ note: `restrictionModel` is refused with UnstatedComponent.Abstraction, as its expectation states

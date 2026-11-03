@@ -1,9 +1,11 @@
-// Order through the prelude's `Ord` (#2333): `<`, `<=`, `>` and `>=` call the
+// Order through the prelude's `Ord`: `<`, `<=`, `>` and `>=` call the
 // prelude's `lt`, `le`, `gt` and `ge`, whose model of `Ord` the operands'
 // type resolves. `OrdInteger` answers the integers with the integer
 // primitives, so their verdicts are the primitives'; `OrdString` answers the
 // strings byte by byte, the order a Rust `BTreeMap<String, _>` keeps. Each
 // includes its `Eq` model, so `==` still resolves at both.
+//
+// - see: #2333
 
 /// One name below another: the first differing byte decides.
 @[ runs("+{.0 = unit}") ]

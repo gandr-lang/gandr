@@ -2,6 +2,8 @@
 // names the value an operation answers where its sort does not stand. The
 // name `bind x . …` binds is a value of the sort the operation answers, and
 // it stands only at a port of that sort.
+//
+// - see: #2410 — `FailNonsense`
 
 /// A put answers a digest, not a value: putting the digest a put answered
 /// names a `Digest` at the port of a `Value`.
@@ -17,7 +19,7 @@ theory StoreDigestPut where {
 /// A failure's result names a type nothing declares: `Fail` answers `Void`,
 /// the builtin empty type, and `Nonsense` is neither a sort of the theory nor
 /// a builtin, so the description check refuses the port by name
-/// (`UnknownPortSort`, #2410).
+/// (`UnknownPortSort`).
 @[ refuses("IllFormedDescription") ]
 theory FailNonsense where {
   sort Reason : Type;

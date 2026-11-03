@@ -1,8 +1,10 @@
 // An effect a source declares is named by its path, as each host interface
-// is named at its home, `std.io.Console.Eff` (#4495). The theory
+// is named at its home, `std.io.Console.Eff`. The theory
 // `Counter.Eff` lives under `Counter`, a row names it by that path, and a
 // scope handles it under the same path. What refuses is in
 // `../../pathological/control/bare-effect.gandr`.
+//
+// - see: #4495
 
 /// A count bumped, the effect `Counter` holds.
 theory Counter.Eff where {

@@ -1,9 +1,9 @@
 // Rose trees: a node holds its children, in two forms. Written directly, a
 // node holds a `List` of nodes: the list's parameter is strictly positive, so
-// each child stands below the node and the family declares (#517); a measure
+// each child stands below the node and the family declares; a measure
 // recurses through the list's `map`, which a call instantiates at the
-// children's stage (#393), and a run passes `map` the children's type as a
-// code (#452). Written as a block, a node holds a forest and a forest
+// children's stage, and a run passes `map` the children's type as a
+// code. Written as a block, a node holds a forest and a forest
 // is empty or a tree before a forest: the two families name each other, so
 // they are one block, admitted as one and sharing one stage; and the two
 // measures name each other, so they are one fixpoint over the sum of their
@@ -15,6 +15,9 @@
 //
 // - see: #3722 — a measure passes a parameter after the tree to its sibling,
 //   by which `treeWeight` and `forestWeight` check
+// - see: #517 — `Bush`
+// - see: #393 — `nodes`
+// - see: #452 — `shrub_nodes`, `grown_nodes`
 
 // The naturals the measures count in, their addition, and the lists the
 // direct form nests through.
@@ -24,7 +27,7 @@ import "./data-base.gandr";
 import "./recursive-lists.gandr";
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
-/// strictly positive parameter (#517).
+/// strictly positive parameter.
 data Bush : Type where {
   | Sprout : (kids : List(Bush)) --> Bush
 }
@@ -48,7 +51,7 @@ def rec sum(xs : List(Nat)) -> Nat {
 
 /// The nodes of a bush, its children's measured through `map`: the call
 /// instantiates `map`'s element at the children's stage, below the node's,
-/// so `nodes[<]` takes each child (#393).
+/// so `nodes[<]` takes each child.
 def rec nodes(t : Bush) -> Nat {
   match t {
     Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
@@ -64,12 +67,12 @@ def rec grow(t : Bush) -> Bush {
 }
 
 /// The shrub's three nodes, its children counted through `map` at the
-/// children's type (#452).
+/// children's type.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def shrub_nodes : () => Nat = nodes(shrub);
 
 /// The shrub grown, then counted: the root gains a childless node and each
-/// of its two children gains one, six nodes in all (#452).
+/// of its two children gains one, six nodes in all.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
 def grown_nodes : () => Nat = nodes(grow(shrub));
 

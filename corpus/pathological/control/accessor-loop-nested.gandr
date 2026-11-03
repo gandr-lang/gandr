@@ -1,7 +1,10 @@
 /// A loop inside another loop's body carries no slot through its passes: the
 /// outer body's ends continue what follows the outer loop, so the inner loop
-/// reads the slot it names inside a fixpoint (#1143). The loops may run
-/// forever, so the row states `Partial` (#1481).
+/// reads the slot it names inside a fixpoint. The loops may run
+/// forever, so the row states `Partial`.
+///
+/// - see: #1143
+/// - see: #1481
 @[ refuses("HeldCaptured") ]
 def nested() -> [Partial] Integer {
   var n = 0;

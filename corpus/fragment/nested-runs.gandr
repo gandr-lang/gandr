@@ -1,3 +1,16 @@
+// A call nested inside an expression runs first, and its result stands where
+// the call stood.
+//
+// A computation is a value only once it runs, so each nested call runs before
+// the expression that reads it. A run a value definition cannot hold is
+// refused `UnenclosedRun`.
+//
+// The checker sequences each nested call before its reader. A call returning
+// a function runs before the call it is passed to, and before an application
+// in place.
+//
+// - see: #2327 — `passed_alone`, `passed_beside`
+
 @[ checks, form(explicit) ]
 data Nat : Type where {
   | Zero : Nat
@@ -68,12 +81,12 @@ def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat { g(Zero) }
 @[ checks ]
 def at_point(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g(x) }
 
-/// #2327: a call returning a function, passed where a function is read,
+/// A call returning a function, passed where a function is read,
 /// runs before the call it is passed to, which applies what it returned.
 @[ runs("Succ(Zero)") ]
 def passed_alone() -> -F Nat { at_zero(constantly(Succ(Zero))) }
 
-/// #2327: the same call passed beside another argument.
+/// The same call passed beside another argument.
 @[ runs("Succ(Succ(Zero))") ]
 def passed_beside() -> -F Nat { at_point(constantly(Succ(Succ(Zero))), Zero) }
 

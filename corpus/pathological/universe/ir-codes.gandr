@@ -10,7 +10,7 @@
 // The decode of the arguments checks. Its marked call stages the code, and the
 // code's case refines the arguments' type.
 //
-// - see: #3575 — not implemented: the family a code defines, with its decoder
+// - owes: #3575 — the family a code defines, with its decoder
 // - see: `model/universe/ir-codes.gandr` — the codes and their arguments,
 //   admitted
 

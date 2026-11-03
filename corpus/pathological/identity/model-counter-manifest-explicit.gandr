@@ -1,10 +1,12 @@
-// What a written forgetting map refuses (#2130): a map at another carrier
+// What a written forgetting map refuses: a map at another carrier
 // than the model's is a map the model does not stand at, a sort the theory
 // does not have is no member of it, and a sort written twice, a bracket entry
 // that is no binding or a map onto a type that is no theory's models is
 // malformed.
 // `../../model/identity/model-counter-manifest-explicit.gandr` writes the map
 // at the carrier the model's type fixes, onto its theory's models.
+//
+// - see: #2130
 
 // The counter, counting up modulo three, and `observe`, which reads any
 // counter.

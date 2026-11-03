@@ -1,7 +1,9 @@
 // A computation written as a case's scrutinee: no thunk stands there, so it
 // runs and the case reads its answer, as `run` binding it first does
 // (`indexed-arms.gandr`). A comparison, a call and a pair split each read
-// the value their computation returns (#1141).
+// the value their computation returns.
+//
+// - see: #1141
 
 /// The naturals, their addition and the numeral two.
 import "./data-base.gandr";

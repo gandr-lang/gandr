@@ -1,10 +1,12 @@
 // The twin of `model/desc/second-order-signatures.gandr`: a binder over an
 // ordinary sort, a binder where a sort's index is written, and the universe of
 // representable sorts outside the `theory` block that reads it.
+//
+// - see: #1553 — `Unbindable`
 
 /// A port binds a variable of `Tm`, which is not representable: the
 /// description check refuses the binder, and its refusal names the sort `Tm`
-/// and the port `t` (#1553).
+/// and the port `t`.
 @[ refuses("IllFormedDescription") ]
 theory Unbindable where {
   sort Tm : Type;

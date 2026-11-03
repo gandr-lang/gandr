@@ -5,6 +5,8 @@
 // over its call converts (`nested-call-sugar.gandr`). Structural recursion
 // unfolds only at a constructor (Abel, _Termination checking with types_,
 // doi:10.1051/ita:2004015).
+//
+// - see: #761 — `doubleStep`
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr";
@@ -26,8 +28,7 @@ pub def rec double(n : Nat) -> Nat {
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def doubledTwo : () => Nat = double(two);
 
-/// One step of `double` is `plusTwo` of the call, as the arm writes it
-/// (#761).
+/// One step of `double` is `plusTwo` of the call, as the arm writes it.
 def doubleStep(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(double(n))) {
   Path.here(plusTwo(double(n)))
 }

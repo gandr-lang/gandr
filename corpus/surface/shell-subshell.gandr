@@ -1,7 +1,9 @@
 // A bracketed group inside a shell block runs its commands in a subshell, as
 // a command of its own, piped or nested. Every block but the last stands
 // before another root form, a stray refused where it stands; the last is a
-// definition's body, which the lowering admits no shell block for yet (#1057).
+// definition's body, which the lowering admits no shell block for yet.
+//
+// - see: #1057 — `nested`
 
 /// A subshell of two commands, a stray.
 @[ refuses("OutOfFragment.TopLevel") ]
@@ -15,6 +17,6 @@
 @[ refuses("OutOfFragment.TopLevel") ]
 #!{ [ cd src; grep foo ] | sort; }
 
-/// A subshell nested in another, in a definition (#1057).
+/// A subshell nested in another, in a definition.
 @[ refuses("OutOfFragment.shell_block") ]
 def nested() -> -F Unit { #!{ [ echo outer; [ echo inner ] ]; } }

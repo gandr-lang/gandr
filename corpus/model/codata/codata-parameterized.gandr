@@ -2,6 +2,8 @@
 // it. This source is written in an earlier surface: its kind is `Type` and its
 // copattern stands without `&{ … }`. `streams.gandr` writes both as the
 // language now spells them.
+//
+// - see: #1106 — `observed`
 
 /// A number observed doubled. A codata declaration's kind is a computation
 /// universe, and `Type` is none.
@@ -19,6 +21,6 @@ def rec scaled(n : Integer) -> Scaled {
 
 /// The doubled value observed off the call; `scaled` is refused above, so its
 /// result names no codata to observe, and the selection stays an unadmitted
-/// projection (#1106).
+/// projection.
 @[ refuses("OutOfFragment.projection_expression") ]
 def observed = scaled(21).doubled;

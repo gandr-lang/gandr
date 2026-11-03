@@ -2,6 +2,9 @@
 // of its sort stands, a conditioned overlap whose rewrites part under the
 // freshness it composes, and a variable split across an abstraction that no
 // step decides yet.
+//
+// - see: #2448 — `Vacant`
+// - see: #1934 — `Split`
 
 // The law over the channel its restriction abstracts.
 import "../../model/desc/atom-occurrence.gandr";
@@ -23,7 +26,7 @@ theory Misplaced where {
 /// inert, where `out` takes a channel: the law rewrites the restriction
 /// extrusion matches, and under `a # q` the peak `par(nu(bind a . nil), q)`
 /// reaches `nu(bind a . par(nil, q))` one way and `par(nil, q)` the other, two
-/// normal forms, so the rules are refused (#2448).
+/// normal forms, so the rules are refused.
 @[ refuses("RulesOverlapCondition") ]
 theory Vacant where {
   sort Name : Atom;
@@ -39,7 +42,7 @@ theory Vacant where {
 /// A variable matched under a restriction and beside it where `out` takes a
 /// channel: its two instances agree only up to the channels they name, which
 /// no matching step decides yet, so the description check refuses the rule
-/// undecided (#1934).
+/// undecided.
 @[ refuses("IllFormedDescription") ]
 theory Split where {
   sort Name : Atom;

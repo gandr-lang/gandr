@@ -1,7 +1,9 @@
 // The twin of `model/effects/hello.gandr`: a row naming an effect no host
 // provides is refused by its name, and nothing runs.
+//
+// - see: #2279 — `main`
 
-/// An entry whose row names `Clock`, which no host declares (#2279).
+/// An entry whose row names `Clock`, which no host declares.
 @[ refuses("UnresolvedTypeHead") ]
 def main() -> -F [Clock] Unit {
   Clock.print("hello, world!")

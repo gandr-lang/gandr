@@ -2,7 +2,9 @@
 // `plus(Zero, n)` and at `plus(n, Zero)`, one call with its arguments
 // swapped. Neither normal form is a value, so completion would join them by a
 // rule, and the path order orients a rule between a call and its permutation
-// neither way: the block is refused by name (#338).
+// neither way: the block is refused by name.
+//
+// - see: #338
 
 /// An operation whose two overlapping rules swap the arguments of the call
 /// they leave.

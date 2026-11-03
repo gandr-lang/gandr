@@ -1,7 +1,10 @@
 // A constructor is named by its family, `Family.Constructor`, in a pattern
-// and in a value (#354). Where a source's own constructor takes the bare name
+// and in a value. Where a source's own constructor takes the bare name
 // of one of `Theory`'s, the qualified form is how the source names `Theory`'s,
-// and how the printer writes it back (#2428).
+// and how the printer writes it back.
+//
+// - see: #354
+// - see: #2428
 
 /// Trees whose application is named as `Theory`'s is.
 data Tree : Type where {

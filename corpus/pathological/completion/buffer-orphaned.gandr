@@ -3,6 +3,8 @@
 // that reaps it later (boats, _Notes on io-uring_, 2020). That is sound only
 // for a buffer the reactor's region outlives, never one living in the
 // abandoned frame.
+//
+// - see: #1183 — `bufferOrphaned`
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";
@@ -11,7 +13,7 @@ import "../../model/completion/ring-base.gandr";
 /// Delegation admits the handover, and nothing ties the buffer to a region. A
 /// kernel handed a buffer kept in a hold's region is refused where it is
 /// forked, since no region bounds a forked peer (`region-ended.gandr`), so
-/// this checks until a kernel can be bounded by the buffer's hold (#1183),
+/// this checks until a kernel can be bounded by the buffer's hold,
 /// when a reaper that outlives the hold becomes the refusal.
 def bufferOrphaned() -> Unit {
   let reaper = fork (reactor : Ring.Reaping) {

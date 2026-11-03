@@ -2,11 +2,12 @@
 ///
 /// Implemented: THIR's literal, parameter, conditional, return and call as data and as a theory's operations, the weakest-precondition axioms as its rules, fired by an inspected call, and `example` meeting its specification given `identity`'s.
 /// Implemented: THIR's place reads, writes and option match as data, and the allocator's `pop` meeting its free-list specification.
-/// Not implemented: a `rustc` driver that stages THIR, which #327 owes, and the allocator's other functions.
+/// Not implemented: a `rustc` driver that stages THIR, and the allocator's other functions.
 ///
 /// The calculus is the specification monad of THIR's control effect, one postcondition for a value and one for a `return`.
 /// A function's guard is the effect's handler, so a `return` inside a call's argument skips the call.
 ///
+/// - owes: #327 — a `rustc` driver that stages THIR
 /// - see: corpus/model/interop/thir/example.gandr
 /// - see: corpus/model/interop/thir/buddy-pop.gandr
 

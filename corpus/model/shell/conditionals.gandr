@@ -1,7 +1,9 @@
 // A shell block's exit code steers a conditional. The lowering admits no
-// shell block yet (#1057).
+// shell block yet.
+//
+// - see: #1057 — `probed`
 
-/// `test -d` on the host, its exit code read by an `if` (#1057).
+/// `test -d` on the host, its exit code read by an `if`.
 @[ refuses("OutOfFragment.shell_block") ]
 def probed() -> -F String {
   let probe = #!{ test -d /tmp; };

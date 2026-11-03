@@ -5,9 +5,12 @@
 // _Directed univalence in simplicial homotopy type theory_,
 // arXiv:2407.09146, Definition 1.2), stated at its level as `Path` is at
 // every level; the kernel replays each declaration here at its flow over the
-// level-one universe (#1628). A transport or a ride along a path or a flow at
+// level-one universe. A transport or a ride along a path or a flow at
 // that universe reads its motive's binder there too, so the motive's body
-// decodes a large code at level one (#1837).
+// decodes a large code at level one.
+//
+// - see: #1628
+// - see: #1837
 
 // The native finite lists.
 import std.list (List);

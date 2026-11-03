@@ -1,6 +1,8 @@
 /// `buffer-tokens`: Buffer tokens.
 /// Implemented: a linear buffer token, placed live by a receive or by `std.io.Ring.alloc` and returned exactly once, by every arm of a case or by none.
-/// Not implemented: reading the area at a buffer, the registered area's next rung; #1184 owes it.
+/// Not implemented: reading the area at a buffer, the registered area's next rung.
+///
+/// - owes: #1184
 // A buffer the ring allocates is live from its allocation until it is freed:
 // the kernel owns it while an operation is in flight and hands it back with
 // the completion (boats, _Notes on io-uring_, 2020), so the program holds it

@@ -1,7 +1,9 @@
 // A pattern hole leaves the arm that runs undecided: the match's tree has a
 // leaf no arm owns, so the match is not shown to cover its scrutinee, and the
-// checker refuses it by name (#391). The twin in `model/holes/` writes every
+// checker refuses it by name. The twin in `model/holes/` writes every
 // arm.
+//
+// - see: #391 — `classify`, `unwrap`
 
 /// Three colours, one arm each.
 data Color : Type where {
@@ -17,7 +19,7 @@ data Chosen : Type where {
 }
 
 /// `Green` reaches the hole between `Red` and `Blue`: possibly covered, and
-/// refused (#391).
+/// refused.
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer {
   match c {
@@ -27,8 +29,7 @@ def classify(c : Color) -> Integer {
   }
 }
 
-/// A hole in a constructor's field leaves the arm for `Chose` undecided too
-/// (#391).
+/// A hole in a constructor's field leaves the arm for `Chose` undecided too.
 @[ refuses("UndecidedCoverage") ]
 def unwrap(m : Chosen) -> Integer {
   match m {

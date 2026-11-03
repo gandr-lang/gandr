@@ -1,10 +1,12 @@
 // A definition whose selected arm is another definition's call, stuck at a
 // variable: `viaZero(Zero, h)` selects `emp(h)`, which cases on `h` and so
 // runs no further. The call converts with the call its arm reached, at any
-// depth of such arms, and the kernel replays each step (#2832). A family
+// depth of such arms, and the kernel replays each step. A family
 // computed by recursion on its index is unfolded only as far as the index's
 // constructors take it (Dybjer, _Inductive families_, Formal Aspects of
 // Computing 6, 1994, doi:10.1007/BF01211308).
+//
+// - see: #2832
 
 // The naturals that select the arm.
 import "./data-base.gandr";

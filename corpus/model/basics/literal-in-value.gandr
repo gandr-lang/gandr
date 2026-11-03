@@ -8,7 +8,7 @@
 // nothing to run before. The refusal names the literal and asks for a body.
 //
 // - see: #4806 — the refusal at the literal
-// - see: #4812 — not implemented: a definition's own value that runs a call
+// - owes: #4812 — a definition's own value that runs a call
 // - see: `ledger/features/literal-reading.gandr` — the literals readers carry
 
 /// Expressions over the integers.

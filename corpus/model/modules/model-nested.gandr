@@ -4,7 +4,9 @@
 // A model answers it with a nested module ascribed `Model(Answering)`, and a
 // reader reaches the nested model's members through the outer one. A model
 // sealed at the outer theory seals the nested one too, and its sort is written
-// as a path through the nested model's name, `Sealed.inner.T` (#1311).
+// as a path through the nested model's name, `Sealed.inner.T`.
+//
+// - see: #1311
 
 /// The theory of `module-members.gandr`'s nested `#{ answer: Integer }`.
 theory Answering where {

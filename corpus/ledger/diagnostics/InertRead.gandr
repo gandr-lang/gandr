@@ -1,4 +1,6 @@
-/// `InertRead`: a declaration reads a field its theory marks inert (#3029).
+/// `InertRead`: a declaration reads a field its theory marks inert.
+///
+/// - see: #3029
 theory Labelled where {
   @[ inert ]
   oper label : String;

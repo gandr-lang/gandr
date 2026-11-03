@@ -1,12 +1,14 @@
 /// `footprint-separation` checks two forks whose halves share no host interface that either may change.
 ///
 /// Implemented: the checker refuses `FootprintsOverlap` at a fork whose halves share a host interface that one of them may change.
-/// Not implemented: a face naming each half's footprint, which #2879 owes, and a row read per operation, which #2878 owes.
+/// Not implemented: a face naming each half's footprint, and a row read per operation.
 ///
 /// A half's footprint holds the host operations that the names it mentions let it perform.
 /// The checker reads it off their types: a held capability at its authority, a returner's row and an operation called by name.
 /// Two halves share an interface only when every operation either half holds on it only reads.
 ///
+/// - owes: #2879 — a face naming each half's footprint
+/// - owes: #2878 — a row read per operation
 /// - see: corpus/ledger/diagnostics/FootprintsOverlap.gandr
 /// - see: Xu, Bračevac, Pham, Zhao and Odersky, System Capybara, arXiv:2607.09383, § 4.5
 

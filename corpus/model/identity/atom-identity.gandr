@@ -3,6 +3,11 @@
 // onto its reflexivity. The relation is then the atom's identity type, so its
 // evidence between two points is a path between them (Univalent Foundations
 // Program, _Homotopy Type Theory_, 2013, §5.8, Theorem 5.8.2).
+//
+// - see: #1854 — `carriedAlong`
+// - see: #1937 — `backAlong`
+// - see: #1960 — `overAlong`, `pathContraction`, `pathBack`
+// - see: #1959 — `pathRelated`
 
 /// Any two points of the unit type are related, by the unit type.
 pub def related(a : Unit, b : Unit) -> Type { return Unit }
@@ -39,7 +44,7 @@ def originOther : Path(Point.T, Point.origin, Point.other) = unit;
 
 /// Based path induction along that evidence, in a family that reads neither
 /// the point nor the path: the evidence is no reflexivity, and the transport
-/// returns the element given (#1854).
+/// returns the element given.
 def carriedAlong : Path(
   Unit,
   Path.walk(
@@ -70,7 +75,7 @@ def backToOrigin(
 
 /// Based path induction in the family of paths back to `origin`, along the
 /// relation's evidence: each fibre of the family is the relation's, the unit
-/// type, so the transport is that type's one inhabitant (#1937).
+/// type, so the transport is that type's one inhabitant.
 def backAlong : Path(
   Path(Point.T, Point.other, Point.origin),
   Path.walk(
@@ -85,7 +90,7 @@ def backAlong : Path(
 
 /// Based path induction along the evidence in the family of the identities
 /// of the singleton's own paths: each fibre is an identity of the relation's,
-/// the unit type, and so the unit type too (#1960).
+/// the unit type, and so the unit type too.
 def overAlong : Path(
   Path(Path(Point.T, Point.origin, Point.other), originOther, originOther),
   Path.walk(
@@ -104,14 +109,14 @@ def overAlong : Path(
 
 /// Two points of the unit type, related by the paths between them: each
 /// fibre of this relation is an identity of the unit type, not the unit type
-/// itself (#1959).
+/// itself.
 pub def pathRelated(a : Unit, b : Unit) -> Type { return Path(Unit, a, b) }
 
 /// Every point related to itself by its reflexivity.
 pub def pathReflexivity(a : Unit) -> pathRelated(a, a) { Path.here(a) }
 
 /// The transport law at the paths of the unit type: an identity of the
-/// unit type, and one over it, is the unit (#1960).
+/// unit type, and one over it, is the unit.
 def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
   #{y : Unit, s : pathRelated(a, y)},
   (b, r),
@@ -140,7 +145,7 @@ def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) = uni
 
 /// Based path induction along that evidence in the family of paths back to
 /// `origin`: each fibre is the relation's, an identity of the unit type, so
-/// the transport is the unit (#1960).
+/// the transport is the unit.
 def pathBack : Path(
   Path(PathPoint.T, PathPoint.other, PathPoint.origin),
   Path.walk(

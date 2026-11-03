@@ -2,6 +2,8 @@
 // `rlook` takes its index apart, so at an index that does not compute — a
 // sum, another lookup — a shift's lookup is stuck; these paths say what it
 // is, by cases on the index.
+//
+// - see: #762 — `ixShiftAddsAtSum`
 
 // The naturals; the syntax; the congruences.
 import "../model-in-source.gandr";
@@ -23,7 +25,7 @@ pub def ixShiftAdds(x : N, k : N) -> Path(Term, Ix(rlook(x, RShift(k))), Ix(plus
 
 /// `ixShiftAdds(plus(Z, k), S(Z))` with its endpoints written out as
 /// `ixCong`'s arguments, two calls deep: each argument answers its path type
-/// as written (#762).
+/// as written.
 def ixShiftAddsAtSum(k : N) -> Path(
   Term,
   Ix(rlook(plus(Z, k), RShift(S(Z)))),

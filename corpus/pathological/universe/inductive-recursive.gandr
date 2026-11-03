@@ -1,7 +1,7 @@
 // What an inductive-recursive block refuses. The block is one admission, so
 // one refused member refuses every member with it: accessibility is checked
 // across the block, so a family named to the left of an arrow where no stage
-// reaches, in another family's field, refuses the block whole (#517); and a
+// reaches, in another family's field, refuses the block whole; and a
 // decode a code's field holds must stand below the code, so a field decoding
 // a code it was not built from, or a decoder arm decoding its own code again,
 // refuses the decoder by the stage order and its codes with it. A decode reads
@@ -10,14 +10,15 @@
 // to the family itself, one level down.
 // Shared with `../../model/universe/inductive-recursive.gandr`.
 //
-// - see: #3574 — not implemented: a hierarchy of universes by level
+// - owes: #3574 — a hierarchy of universes by level
+// - see: #517 — `Left`
 
 // The naturals and the two branches.
 import "../../model/data/data-base.gandr";
 
 /// Two families, one consuming the other through a definition of their
 /// block: the definition stands for its body, where no stage reaches, so the
-/// block is refused whole (#517).
+/// block is refused whole.
 rec {
   /// A family consuming the next one: `right` stands left of the arrow.
   @[ refuses("NegativeOccurrence"), form(explicit) ]

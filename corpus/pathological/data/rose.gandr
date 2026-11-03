@@ -1,11 +1,14 @@
 // What a rose tree refuses. A family nested in another family's arguments
 // stands below its node only through a parameter the other family holds
-// strictly positively, as `List` holds its elements (#517); a parameter its
+// strictly positively, as `List` holds its elements; a parameter its
 // family consumes, standing to the left of an arrow in its own field, places
 // nothing below the node, and a node over it is a nested occurrence. A measure
-// through a list's map takes its children at their stage (#393), and the node
+// through a list's map takes its children at their stage, and the node
 // itself at none: handed to `map` in a list of its own, it is not below the
 // node's stage. Shared with `../../model/data/rose.gandr`.
+//
+// - see: #517 — `Rose`, `Bush`
+// - see: #393 — `forged`
 
 /// The two answers a test gives.
 data Two : Type where {
@@ -20,7 +23,7 @@ data Test(a : Type) : Type where {
 }
 
 /// A node over a test of nodes: `Rose` nested under `Test`, whose parameter
-/// places nothing below the node (#517).
+/// places nothing below the node.
 @[ refuses("NestedOccurrence") ]
 data Rose : Type where {
   | Node : (kids : Test(Rose)) --> Rose
@@ -47,7 +50,7 @@ data List(a : Type) : Type where {
   | Cons : (head : a, tail : List(a)) --> List(a)
 }
 
-/// The direct form: a node over a list of nodes (#517).
+/// The direct form: a node over a list of nodes.
 data Bush : Type where {
   | Sprout : (kids : List(Bush)) --> Bush
 }
@@ -71,7 +74,7 @@ def rec sum(xs : List(Nat)) -> Nat {
 /// The nodes of a tree, forged: the node itself handed to `map` in a list of
 /// its own. The list holds the node at no stage below its own, so `map`'s
 /// element is the node's plain type, and `forged[<]` takes only nodes below
-/// the node's stage (#393).
+/// the node's stage.
 @[ refuses("StageNotBelow") ]
 def rec forged(t : Bush) -> Nat {
   match t {

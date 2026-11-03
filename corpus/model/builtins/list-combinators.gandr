@@ -1,6 +1,8 @@
 // The list combinators of the `list` namespace: map, filter, fold, the two
 // quantifiers, flatten, sort and deduplicate. Each is reached by projection
-// from its namespace, which the lowering admits for no builtin yet (#1106).
+// from its namespace, which the lowering admits for no builtin yet.
+//
+// - see: #1106 — `sorted`
 
 /// Each element doubled.
 @[ refuses("OutOfFragment.projection_expression") ]
@@ -26,7 +28,6 @@ def all_even = list.all(thunk { fun (x) { return x > 1 } }, doubled);
 @[ refuses("OutOfFragment.projection_expression") ]
 def flattened = list.flatten(#[#[3, 1], #[2, 2]]);
 
-/// The distinct elements, sorted; the lowering reads no `list` primitive yet
-/// (#1106).
+/// The distinct elements, sorted; the lowering reads no `list` primitive yet.
 @[ refuses("OutOfFragment.projection_expression") ]
 def sorted = list.sort(list.uniq(flattened));

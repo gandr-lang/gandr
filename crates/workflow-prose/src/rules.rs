@@ -37,14 +37,29 @@ const PASSIVES: [&str; 6] = [
 /// The longest run of nouns a sentence may stack.
 const STACK: usize = 3;
 
-/// The most words a sentence of a body may hold, a code span counted as one.
+/// The most words a sentence of a body or a comment may hold, a code span
+/// counted as one.
 const WORDS: usize = 25;
+
+/// The most sentences a comment paragraph may hold.
+const WALL: usize = 5;
 
 /// The coarse tags of a token that is not a word.
 const UNWORDED: [&str; 3] = ["PUNCT", "SPACE", "SYM"];
 
 /// The dashes that may join two clauses.
 const DASHES: [&str; 2] = ["—", "–"];
+
+/// The directories a path in the tree starts with.
+const ROOTS: [&str; 8] = [
+    "crates/", "corpus/", "library/", "ledger/", ".config/", ".github/", "docs/", "contrib/",
+];
+
+/// The extensions that mark a word with a `/` as a file's path.
+const EXTENSIONS: [&str; 12] = [
+    ".rs", ".gandr", ".md", ".toml", ".json", ".txt", ".py", ".jq", ".bash", ".yml", ".sql",
+    ".ledger",
+];
 
 /// A rule a sentence or a diagnostic is held to.
 ///
@@ -63,18 +78,22 @@ pub enum Rule
     IngMain,
     /// A glossary word in a part of speech the glossary refuses.
     Glossary,
-    /// A sentence of a body longer than the word limit.
+    /// A sentence of a body or a comment longer than the word limit.
     Length,
-    /// A semicolon joining two sentences of a body.
+    /// A semicolon joining two sentences of a body or a comment.
     Semicolon,
-    /// A dash joining two clauses of a body.
+    /// A dash joining two clauses of a body or a comment.
     Dash,
+    /// A path, an issue number or a URL in a comment's prose.
+    InlineReference,
+    /// A comment paragraph of more than five sentences.
+    Wall,
     /// A diagnostic without its what, its where or its what-to-do.
     Procedure,
 }
 
 /// Every rule, in the order they are stated.
-const RULES: [Rule; 9] = [
+const RULES: [Rule; 11] = [
     Rule::Passive,
     Rule::Tense,
     Rule::NounStack,
@@ -83,6 +102,8 @@ const RULES: [Rule; 9] = [
     Rule::Length,
     Rule::Semicolon,
     Rule::Dash,
+    Rule::InlineReference,
+    Rule::Wall,
     Rule::Procedure,
 ];
 
@@ -112,6 +133,8 @@ impl fmt::Display for Rule
             Self::Length => "Length",
             Self::Semicolon => "Semicolon",
             Self::Dash => "Dash",
+            Self::InlineReference => "InlineReference",
+            Self::Wall => "Wall",
             Self::Procedure => "Procedure",
         })
     }
@@ -188,6 +211,12 @@ impl fmt::Display for Fix
             Rule::Dash => {
                 "end the first clause with a full stop, or make the text after the dash a phrase \
                  with no verb"
+            },
+            Rule::InlineReference => {
+                "move the path, the issue or the URL to a `- see:` line after the paragraph"
+            },
+            Rule::Wall => {
+                "split the paragraph into paragraphs of at most five sentences, one idea each"
             },
             Rule::Procedure => {
                 "state what is wrong in the headline, label the span, and end with an \
@@ -308,7 +337,8 @@ fn spoken(
         .collect()
 }
 
-/// The body rules `sentence` breaks, each at most once.
+/// The body rules `sentence` breaks, each at most once: a body's and a
+/// comment's.
 ///
 /// # Specification
 /// - requires: `sentence` is a sentence of the passage `readings` was taken
@@ -319,7 +349,7 @@ fn spoken(
 ///   one; [`Rule::Semicolon`] when a `;` in prose has a word after it;
 ///   [`Rule::Dash`] when an em or en dash in prose has a verb or an auxiliary
 ///   in prose after it.
-/// - provides: the verdict a body adds to a sentence.
+/// - provides: the verdict a body or a comment adds to a sentence.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the walk is the clause.
@@ -330,6 +360,7 @@ fn spoken(
 ///   before a clause and one before a phrase; an off-by-one limit, a code span
 ///   counted per token, or a dropped look-ahead changes the verdicts.
 /// - witness: `rules::tests::a_body_holds_its_length_semicolons_and_dashes`
+/// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
 fn clauses(
     readings: &[Reading],
     sentence: &Sentence,
@@ -382,7 +413,8 @@ fn clauses(
 ///   more than three consecutive tokens in prose are `NOUN` or `PROPN`;
 ///   [`Rule::IngMain`] when the root, in prose, is tagged `VBG`;
 ///   [`Rule::Glossary`] when a token in prose has a lemma the glossary holds
-///   and a coarse tag its part of speech does not admit.
+///   and a coarse tag its part of speech does not admit. A `source` of
+///   [`Source::Comment`] adds the rules [`clauses`] states after these.
 /// - provides: the verdict of one sentence.
 /// - fails: never.
 /// - panics: none.
@@ -394,6 +426,7 @@ fn clauses(
 /// - witness: `rules::tests::each_rule_fires_on_its_sentence_and_not_on_its_twin`
 /// - witness: `rules::tests::code_and_quotations_are_not_read`
 /// - witness: `rules::tests::a_body_holds_its_length_semicolons_and_dashes`
+/// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
 fn broken(
     readings: &[Reading],
     sentence: &Sentence,
@@ -456,7 +489,81 @@ fn broken(
     if misused {
         rules.push(Rule::Glossary);
     }
+    if source == Source::Comment {
+        rules.extend(clauses(readings, sentence));
+    }
     rules
+}
+
+/// [`Rule::InlineReference`] when `text` names a path in the tree, an issue or
+/// a URL: a word, its opening quotes and brackets and its closing quotes,
+/// brackets and punctuation left out in any order, holding `://`, being `#`
+/// and digits, or holding a `/` and starting with a tree directory or ending
+/// with a file extension.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path in backticks, an issue in brackets or closing a
+///   parenthesis before a full stop, and a URL fire, and a quotient `A/B`, an
+///   attribute `#[cfg]` and `#` alone do not; a dropped pattern, a wider one or
+///   a closing bracket kept changes a verdict.
+/// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
+fn referenced(text: Text<'_>) -> Option<Rule>
+{
+    text.0
+        .split_whitespace()
+        .any(|word| {
+            let word = word
+                .trim_start_matches(|c: char| "`'\"([{".contains(c))
+                .trim_end_matches(|c: char| "`'\")]},;:!?.".contains(c));
+            word.contains("://")
+                || word.strip_prefix('#').is_some_and(|digits| {
+                    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+                })
+                || (word.contains('/')
+                    && (ROOTS.iter().any(|root| word.starts_with(root))
+                        || EXTENSIONS.iter().any(|extension| word.ends_with(extension))))
+        })
+        .then_some(Rule::InlineReference)
+}
+
+/// [`Rule::Wall`] when more than five of the parse `sentences` end in prose:
+/// the passage's last, and each whose last token closes on a full stop, a
+/// question mark or an exclamation mark that `readings` reads as prose. A split
+/// the parser makes inside a code span ends no sentence.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — five sentences, one split by the parser inside a code
+///   span, count five; counting every parse, or reading the token's first
+///   character, counts six.
+/// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
+fn walled(
+    readings: &[Reading],
+    sentences: &[Sentence],
+) -> Option<Rule>
+{
+    let last = sentences.len().saturating_sub(1);
+    let ended = sentences
+        .iter()
+        .enumerate()
+        .filter(|&(at, sentence)| {
+            at == last
+                || sentence.tokens.last().is_some_and(|token| {
+                    let close = token
+                        .offset
+                        .saturating_add(token.text.chars().count())
+                        .saturating_sub(1);
+                    token.text.ends_with(['.', '?', '!'])
+                        && readings.get(close).copied().unwrap_or(Reading::Prose) == Reading::Prose
+                })
+        })
+        .count();
+    (ended > WALL).then_some(Rule::Wall)
 }
 
 /// The findings of `passage`'s `sentences`.
@@ -465,15 +572,22 @@ fn broken(
 /// - requires: `sentences` are the passage's parse.
 /// - ensures: one finding per rule each sentence breaks, under the rules of the
 ///   passage's source, in sentence order, each naming the passage's path and
-///   line and the sentence's text.
+///   line and the sentence's text. A comment's sentence that names a path, an
+///   issue or a URL ([`referenced`]) adds [`Rule::InlineReference`] after its
+///   other rules; a comment paragraph of more than five sentences that end in
+///   prose ([`walled`]) adds one [`Rule::Wall`] last, naming the whole
+///   paragraph.
 /// - provides: the sentence rules over one passage.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the walk is the clause.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as the private rules.
+/// - hypothesis: L3 — as the private rules; a comment of six sentences, one
+///   naming an issue, and a body naming one; a wall at five, or a reference
+///   read in a body, changes the findings.
 /// - witness: `rules::tests::each_rule_fires_on_its_sentence_and_not_on_its_twin`
+/// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
 #[inline]
 #[must_use]
 pub fn sentences(
@@ -483,21 +597,28 @@ pub fn sentences(
 ) -> Vec<Finding>
 {
     let readings = readings(Text(&passage.text));
+    let comment = passage.source == Source::Comment;
     let mut findings = Vec::new();
+    let mut found = |rule: Rule, sentence: &str| {
+        findings.push(Finding {
+            path: passage.path.clone(),
+            line: passage.line,
+            rule,
+            sentence: sentence.to_owned(),
+        });
+    };
     for sentence in sentences {
-        let rules = broken(&readings, sentence, glossary, passage.source);
-        if rules.is_empty() {
-            continue;
-        }
+        let mut rules = broken(&readings, sentence, glossary, passage.source);
         let text = spoken(passage, sentence);
-        for rule in rules {
-            findings.push(Finding {
-                path: passage.path.clone(),
-                line: passage.line,
-                rule,
-                sentence: text.clone(),
-            });
+        if comment {
+            rules.extend(referenced(Text(&text)));
         }
+        for rule in rules {
+            found(rule, &text);
+        }
+    }
+    if comment && let Some(wall) = walled(&readings, sentences) {
+        found(wall, &passage.text);
     }
     findings
 }
@@ -824,8 +945,8 @@ mod tests
         assert_eq!(bodied!(joined.clone()), [Rule::Semicolon]);
         assert_eq!(
             rules!(joined, &Glossary::default()),
-            [],
-            "a corpus comment keeps its own rules"
+            [Rule::Semicolon],
+            "a corpus comment holds the body's rules"
         );
         let closing = parsed!("It reads a term;", [
             ("It", "it", "PRON", "PRP", "nsubj", 1),
@@ -870,6 +991,132 @@ mod tests
             (".", ".", "PUNCT", ".", "punct", 1),
         ]);
         assert_eq!(bodied!(stack), [], "a body keeps no noun-stack rule");
+    }
+
+    /// A comment passage of the one line `text` and its sentences, a sentence
+    /// ending at each word that ends in `.`, its first word a verb and the rest
+    /// adverbs under it, so no noun stacks.
+    ///
+    /// # Specification
+    /// trivial.
+    fn said(text: Text<'_>) -> (passage::Passage, Vec<Sentence>)
+    {
+        let text = text.0;
+        let passage = passage::comments(Text("corpus/a.gandr"), Text(&format!("/// {text}")))
+            .into_iter()
+            .next()
+            .unwrap();
+        let mut sentences: Vec<Sentence> = Vec::new();
+        let mut open = true;
+        let mut offset = 0_usize;
+        for word in text.split(' ') {
+            if open {
+                sentences.push(Sentence { tokens: Vec::new() });
+            }
+            let tokens = &mut sentences.last_mut().unwrap().tokens;
+            let root = tokens.is_empty();
+            tokens.push(Token {
+                text: word.to_owned(),
+                lemma: word.to_owned(),
+                pos: if root { "VERB" } else { "ADV" }.to_owned(),
+                tag: if root { "VBZ" } else { "RB" }.to_owned(),
+                dep: if root { "ROOT" } else { "advmod" }.to_owned(),
+                head: 0,
+                offset,
+            });
+            offset = offset
+                .saturating_add(word.chars().count())
+                .saturating_add(1);
+            open = word.ends_with('.');
+        }
+        (passage, sentences)
+    }
+
+    /// The rules `text`, said in a comment or, with `source`, elsewhere,
+    /// breaks.
+    ///
+    /// # Specification
+    /// trivial.
+    fn commented(
+        text: Text<'_>,
+        source: Source,
+    ) -> Vec<Rule>
+    {
+        let (passage, said) = said(text);
+        let passage = passage::Passage { source, ..passage };
+        sentences(&passage, &said, &Glossary::default())
+            .into_iter()
+            .map(|finding| finding.rule)
+            .collect()
+    }
+
+    #[test]
+    fn a_comment_holds_the_body_rules_its_references_and_walls()
+    {
+        let terms = |count: usize| vec!["term"; count].join(" ");
+        assert_eq!(
+            commented(Text(&format!("Reads {}.", terms(25))), Source::Comment),
+            [Rule::Length],
+            "a comment's sentence holds the body's length"
+        );
+        for reference in [
+            "Reads the term (#12).",
+            "Reads `crates/workflow-prose/src/rules.rs` today.",
+            "Reads [#4900] today.",
+            "Reads https://example.org now.",
+            "Reads the twin pathological/a.gandr now.",
+        ] {
+            assert_eq!(
+                commented(Text(reference), Source::Comment),
+                [Rule::InlineReference],
+                "{reference:?} names a reference in a comment"
+            );
+            assert_eq!(
+                commented(Text(reference), Source::Body),
+                [],
+                "{reference:?} stands in a body"
+            );
+        }
+        for plain in [
+            "Reads A/B here.",
+            "Reads #[cfg] here.",
+            "Reads # here.",
+            "Reads #x here.",
+        ] {
+            assert_eq!(
+                commented(Text(plain), Source::Comment),
+                [],
+                "{plain:?} names no reference"
+            );
+        }
+        let five = "Reads one. Reads two. Reads three. Reads four. Reads five.";
+        assert_eq!(
+            commented(Text(five), Source::Comment),
+            [],
+            "five sentences are no wall"
+        );
+        let split = "Reads `a. b` one. Reads two. Reads three. Reads four. Reads five.";
+        assert_eq!(
+            commented(Text(split), Source::Comment),
+            [],
+            "a parse split inside a code span ends no sentence"
+        );
+        let six = format!("{five} Reads six.");
+        assert_eq!(commented(Text(&six), Source::Comment), [Rule::Wall]);
+        assert_eq!(
+            commented(Text(&six), Source::Body),
+            [],
+            "a body keeps no wall rule"
+        );
+        let (passage, said) = said(Text(&six));
+        let wall = sentences(&passage, &said, &Glossary::default());
+        assert_eq!(
+            wall.iter()
+                .map(|finding| finding.sentence.as_str())
+                .collect::<Vec<_>>(),
+            [six.as_str()],
+            "the wall names the whole paragraph"
+        );
     }
 
     #[test]

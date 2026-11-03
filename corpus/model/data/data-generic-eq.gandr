@@ -1,4 +1,4 @@
-// Equality derived from a data type's constructors (#2302): a definition
+// Equality derived from a data type's constructors: a definition
 // written `Eq.generic(T)` is structural equality over `T`, the checker
 // judging it as any declaration. Integers and strings compare by their
 // primitives, a sum by its side, a field of `T` itself recursively and a field
@@ -10,6 +10,8 @@
 // puts `T` under `==`. A field of a sum, as `Mark`'s flag, or of `T` itself,
 // as `Peano`'s, takes a proof the derivation does not write; the refusals are
 // beside `../../pathological/data/generic-eq-refused.gandr`.
+//
+// - see: #2302
 
 /// A point in the plane.
 data Point : Type where {

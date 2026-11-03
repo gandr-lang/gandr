@@ -1,6 +1,9 @@
 /// `atom-sorts`: Atom sorts.
 /// Implemented: `sort Name : Atom;` in a theory block, a port abstracting its atoms with `bind (a : Name) .`, rule terms abstracting an atom at such a port, matching and critical pairs up to the atom, and freshness conditions read over the abstractions.
-/// Not implemented: the model of an abstracting operation, `⟨a⟩T` over the value universe, which is refused by name; deciding a critical pair under a freshness condition is #1934; #1561 owes it.
+/// Not implemented: the model of an abstracting operation, `⟨a⟩T` over the value universe, which is refused by name, and deciding a critical pair under a freshness condition.
+///
+/// - owes: #1561 — the model of an abstracting operation
+/// - owes: #1934 — deciding a critical pair under a freshness condition
 // Atom sorts (Pitts, _Nominal Sets_, CUP 2013; Gabbay and Mathijssen,
 // _Nominal (universal) algebra_, JLC 2009). A sort classified `Atom` is
 // orbit-infinite, with equality and swapping its only structure: an operation

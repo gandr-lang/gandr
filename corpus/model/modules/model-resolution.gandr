@@ -1,9 +1,11 @@
-// An omitted model implicit resolved (#739): a call that leaves out the model
+// An omitted model implicit resolved: a call that leaves out the model
 // a function quantifies over passes the one module in scope that is a model of
 // its theory at the types its explicit arguments force. No module is marked
 // as an instance: every module whose ascription is `Model(Count)`, or a model
 // of a theory including `Count`, is a candidate. `model-resolution-swapped`
 // imports the same two modules the other way round, and resolves alike.
+//
+// - see: #739
 import "./model-resolution-tally.gandr";
 import "./model-resolution-up.gandr";
 import "./model-resolution-flips.gandr";

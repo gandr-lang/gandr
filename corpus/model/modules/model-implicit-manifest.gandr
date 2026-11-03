@@ -1,9 +1,11 @@
-// An omitted model implicit at a manifest model type resolved (#2317):
+// An omitted model implicit at a manifest model type resolved:
 // `[s : Model(Dial) with sort C = Integer]` binds no parameter for `C`, so
 // no argument forces it, and the sort the type fixes is what tells the
 // modules in scope apart. `Up` counts integers and `Flips` flags; only `Up`'s
 // carrier is the one the slot fixes, so a call leaving the slot out passes
 // `Up`.
+//
+// - see: #2317
 
 /// A dial: a carrier, a zero, a turn and a reading.
 theory Dial where {

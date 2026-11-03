@@ -2,7 +2,9 @@
 // condition: the loop runs its body while the comparison holds, and the body
 // returns at once (the relational and equality operators of Kernighan and
 // Ritchie, _The C Programming Language_, 2nd ed., § 2.6). A `while` may run
-// forever, so each function states `Partial` in its row (#1481).
+// forever, so each function states `Partial` in its row.
+//
+// - see: #1481
 
 /// Its argument when that is not zero, else zero.
 def unlessZero(n : Integer) -> [Partial] Integer {

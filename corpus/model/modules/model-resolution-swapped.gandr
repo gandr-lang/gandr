@@ -1,5 +1,7 @@
-// `model-resolution` with its modules imported the other way round (#739):
+// `model-resolution` with its modules imported the other way round:
 // the order a source imports its candidates in chooses nothing.
+//
+// - see: #739
 import "./model-resolution-flips.gandr";
 import "./model-resolution-up.gandr";
 import "./model-resolution-tally.gandr";

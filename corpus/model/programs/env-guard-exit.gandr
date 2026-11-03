@@ -1,9 +1,11 @@
 // A program guards on its environment: it reads a variable and chooses its
 // exit code by whether the variable is set. The lowering admits no member
-// selection on a host module yet (#1106).
+// selection on a host module yet.
+//
+// - see: #1106 — `exit_by_environment`
 
 /// The guard: a variable no environment sets reads as the empty string, so
-/// it answers the exit code `3` (#1106).
+/// it answers the exit code `3`.
 @[ refuses("OutOfFragment.projection_expression") ]
 def exit_by_environment() -> -F Integer {
   let missing = env.get("GANDR_CORPUS_UNSET_VARIABLE_ZZQ");

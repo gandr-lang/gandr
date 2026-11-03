@@ -1,10 +1,12 @@
-// Theory inclusion (#738): `include` extends a presentation by another's
+// Theory inclusion: `include` extends a presentation by another's
 // members, the included ones first, and keeps the inclusion beside the
 // value. A monoid is a semigroup with a unit; two extensions of the
 // semigroup included together meet along it, so the result has one carrier
 // and one multiplication (the pushout over what they share). The union's
 // rules are completed as the block's own: the included associativity and
 // the unit laws join.
+//
+// - see: #738
 
 /// A semigroup: one carrier and an associative multiplication.
 pub theory Semigroup where {

@@ -1,6 +1,8 @@
 /// `floating-point`: Binary64 floating-point numbers.
 /// Implemented: binary64 literals (`f64` suffix or annotation) and `float64.add`, `sub`, `mul`, `div`, `neg`, `exp`, the comparisons, `from_integer` and `round` on the machine.
-/// Not implemented: the `f32` atom and its literal; exact reals are later still; #2563 owes it.
+/// Not implemented: the `f32` atom and its literal; exact reals are later still.
+///
+/// - owes: #2563
 // Numbers with a fraction, typed as IEEE 754 binary64 floats by the `f64`
 // suffix or an annotation, and the `float64` operations over them: the
 // exponential, arithmetic, comparison and rounding to an integer.

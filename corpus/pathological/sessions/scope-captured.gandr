@@ -2,12 +2,14 @@
 // receives the rest of the body as its continuation, and may drop it or
 // resume it twice, so an end the body acts on after an operation could be
 // left open or acted on twice.
+//
+// - see: #1336 — `closedInScope`
 
 // Early exit's host interface.
 import std.process;
 
 /// A seat's end closed inside a scope after an operation whose clause drops
-/// its continuation: the close never runs and the end is left open (#1336).
+/// its continuation: the close never runs and the end is left open.
 @[ refuses("CapturedEndpoint") ]
 def closedInScope() -> Unit {
   let desk = fork (seat : end) { close(seat) };

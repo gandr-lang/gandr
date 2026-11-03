@@ -4,6 +4,8 @@
 // is not observable: a string reads as the same bytes either way (the
 // small-string optimisation of libc++'s `std::string`, and of Rust's
 // `compact_str`, which keeps 24 bytes inline).
+//
+// - see: #1481 — `repeatOnto`
 
 // The lists; the byte lists; the owned bytes.
 import "../data/data-base.gandr";
@@ -42,7 +44,7 @@ pub def place(s : Repr) -> Place {
 
 /// `n` copies of the code point `c` before `onto`, built by a loop that
 /// carries the list and the count left. The loop may run forever, so the row
-/// states `Partial` (#1481).
+/// states `Partial`.
 pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Partial] List(Integer) {
   var acc = onto;
   var left = n;

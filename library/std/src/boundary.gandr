@@ -1,13 +1,18 @@
 // `std.boundary`: a function row of the foreign boundary and its admission. A
-// row lists its arguments' codes and its result's. `summary` reads a code's
-// witness record (size, stride, alignment, handling) off Rust's default layout,
-// `std.layout`, and `admit(declared, row)` compares a declared signature's
-// printed layouts with the records clause by clause: the arity, then each
-// argument's size, alignment, niche and handling, then the result's. It
-// answers `Admitted`, or `Unrealised` with the first clause that fails. The
-// checker holds the layout program's integer comparisons as neutrals, so
-// admission is a run. `corpus/model/interop/boundary/function-row.gandr`
-// admits Rust externs against a row.
+// row lists its arguments' codes and its result's.
+//
+// `summary` reads a code's witness record off Rust's default layout,
+// `std.layout`: its size, stride, alignment and handling.
+// `admit(declared, row)` compares a declared signature's printed layouts with
+// the records clause by clause. It reads the arity, then each argument's size,
+// alignment, niche and handling, then the result's. It answers `Admitted`, or
+// `Unrealised` with the first clause that fails.
+//
+// The checker holds the layout program's integer comparisons as neutrals, so
+// admission is a run. A corpus source admits Rust externs against a row.
+//
+// - see: `corpus/model/interop/boundary/function-row.gandr` — Rust externs
+//   against a row
 
 // `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout`.
 import "./layout.gandr";
@@ -20,27 +25,27 @@ pub data Code : Type where {
   | Sum : (vs : Variants) --> Code
 }
 
-/// How a value is copied, moved, destroyed and relocated.
+/// How a program copies, moves, destroys and relocates a value.
 pub data Handling : Type where {
   /// As its bytes: copied, moved and relocated by copying them, destroyed by
   /// nothing.
   | Bitwise : Handling
 }
 
-/// The witness record: size, stride, alignment, and how the value is handled.
+/// The witness record: size, stride, alignment, and the value's handling.
 pub data Witness : Type where {
   /// The record.
   | Witness : (size : Integer, stride : Integer, align : Integer, handling : Handling) --> Witness
 }
 
-/// A size rounded up to an alignment.
+/// The first multiple of an alignment at or past a size.
 def strideOf(size : Integer, align : Integer) -> Integer {
   let q = int.div(size + align - 1, align);
   q * align
 }
 
-/// The record read off a code's layout. Every code here is a scalar, a
-/// reference or an enum of them, so every value is handled bitwise.
+/// The record a code's layout gives. Every code here is a scalar, a reference
+/// or an enum of them, so every value travels bitwise.
 pub def summary(c : Code) -> Witness {
   match c {
     Plain(s) => match structLayout(Field("0", s, Done)) {
@@ -79,14 +84,14 @@ pub data Row : Type where {
   | Row : (args : Codes, result : Code) --> Row
 }
 
-/// A type's layout as rustc printed it: size, alignment, a niche, and whether
+/// A type's layout as rustc prints it: size, alignment, a niche, and whether
 /// it needs drop.
 pub data Printed : Type where {
   /// The printed layout.
   | Printed : (size : Integer, align : Integer, niched : Bool, drops : Bool) --> Printed
 }
 
-/// An extern's parameters in order, each named, as rustc built them.
+/// An extern's parameters in order, each named, as rustc builds them.
 pub data Params : Type where {
   /// No more parameters.
   | NoParam : Params
@@ -121,7 +126,7 @@ pub data Clause : Type where {
   | Align : (place : Position) --> Clause
   /// One keeps its discriminant in a niche and the other does not.
   | Niche : (place : Position) --> Clause
-  /// The declared type needs drop, and the row's value is handled bitwise.
+  /// The declared type needs drop, and the row's value travels bitwise.
   | Destroy : (place : Position) --> Clause
 }
 
@@ -213,15 +218,15 @@ pub data Signature : Type where {
   | Signature : (params : Coded, result : Code) --> Signature
 }
 
-/// A code's layout as rustc prints it, read off Rust's default layout. Every
-/// code here is handled bitwise, so none needs drop.
+/// A code's layout as rustc prints it, from Rust's default layout. Every code
+/// here travels bitwise, so none needs drop.
 pub def printed(c : Code) -> Printed {
   match summary(c) {
     Witness(size, _stride, align, _h) => Printed(size, align, niched(c), false)
   }
 }
 
-/// Each parameter's code printed, in order.
+/// The printed layout of each parameter's code, in order.
 def rec printedParams(cs : Coded) -> Params {
   match cs {
     NoCoded => NoParam,
@@ -229,8 +234,8 @@ def rec printedParams(cs : Coded) -> Params {
   }
 }
 
-/// A signature against a row: each declared type printed by Rust's default
-/// layout, then admitted.
+/// A signature against a row: Rust's default layout prints the type of each
+/// declaration, and admission compares it with the row.
 pub def admitSignature(s : Signature, r : Row) -> Admission {
   match s {
     Signature(ps, res) => admit(Declared(printedParams(ps), printed(res)), r)
@@ -253,9 +258,10 @@ pub data Rows : Type where {
   | Named : (r : Row, rest : Rows) --> Rows
 }
 
-/// Each member against its row, in order, answered by the first member left
-/// unrealised. A block of more members than rows, or fewer, is unrealised by
-/// `Members`. The check of a block carrying `@[ boundary(…) ]` runs it.
+/// Each member against its row, in order, until one fails: the answer names
+/// the first unrealised member. A block of more members than rows, or fewer,
+/// answers `Unrealised` at `Members`. The check of a block carrying
+/// `@[ boundary(…) ]` runs it.
 pub def rec admitBlock(ss : Signatures, rs : Rows) -> Admission {
   match ss {
     NoSignature => match rs {

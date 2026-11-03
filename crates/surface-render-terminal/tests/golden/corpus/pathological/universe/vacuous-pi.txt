@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/vacuous-pi.gandr:26:82
+   ╭▸ corpus/pathological/universe/vacuous-pi.gandr:28:82
    │
-26 │ def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) { return f }
+28 │ def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) { return f }
    │ ┬────────────┬───┬───────────────────────────────────┬────────────────────┬──────┯──
    │ │            │   │                                   │                    │      │
    │ │            │   │                                   │                    │      its type does not convert: expected `Nat => Nat`, found `(x : Nat) => pick(x)`

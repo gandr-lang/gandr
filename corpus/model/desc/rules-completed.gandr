@@ -5,7 +5,9 @@
 // rewriting to `n`, which follows from the written rules (both sides are
 // reducts of one peak), and decides the pairs again (Knuth and Bendix,
 // _Simple Word Problems in Universal Algebras_, 1970, § 7). The kernel reads
-// the derived rule beside the written ones as one of `add`'s (#338).
+// the derived rule beside the written ones as one of `add`'s.
+//
+// - see: #338
 
 /// The naturals with addition and an operation whose two rules part at a
 /// call.

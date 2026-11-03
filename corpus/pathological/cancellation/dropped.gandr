@@ -1,14 +1,15 @@
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A clause that neither resumes nor abandons it would leave the
 // end open with no one left to close it, so the clause is refused.
+//
+// - see: #1334 — `dropped`
 
 // The task's protocol.
 import "../../model/cancellation/cancel-base.gandr";
 // Early exit's host interface.
 import std.process;
 
-/// A scope whose exit clause drops the rest while its task's end is open
-/// (#1334).
+/// A scope whose exit clause drops the rest while its task's end is open.
 @[ refuses("ContinuationUnspent") ]
 def dropped() -> Unit {
   handle c : std.process.Exit.Eff {

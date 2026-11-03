@@ -1,16 +1,16 @@
 error[UnresolvedTypeHead]: no type named `Console` is written bare
-  ╭▸ corpus/pathological/control/bare-effect.gandr:7:22
+  ╭▸ corpus/pathological/control/bare-effect.gandr:9:22
   │
-7 │ def bareRow() -> -F [Console] Unit { pure unit }
+9 │ def bareRow() -> -F [Console] Unit { pure unit }
   │                      ━━━━━━━ no type head of this name and arity
   │
   ├ note: `bareRow` is refused with UnresolvedTypeHead, as its expectation states
   ╰ help: declare a type named `Console`, or import the module that exports it
 
 error[UnresolvedTypeHead]: no type named `Proc` is written bare
-   ╭▸ corpus/pathological/control/bare-effect.gandr:12:14
+   ╭▸ corpus/pathological/control/bare-effect.gandr:14:14
    │
-12 │   handle c : Proc {
+14 │   handle c : Proc {
    │              ━━━━ no type head of this name and arity
    │
    ├ note: `bareScope` is refused with UnresolvedTypeHead, as its expectation states

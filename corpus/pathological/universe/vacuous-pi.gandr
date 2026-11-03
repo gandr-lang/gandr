@@ -1,7 +1,9 @@
 // What a dependent arrow whose codomain names its binder refuses: it is no
-// plain arrow (#577). A family that reads to a type over its argument stays
+// plain arrow. A family that reads to a type over its argument stays
 // a dependent codomain once it is read, so a function over it does not stand
 // at the arrow to any one type.
+//
+// - see: #577
 
 /// Natural numbers, free: every constructor term is its own value.
 @[ checks, form(explicit) ]

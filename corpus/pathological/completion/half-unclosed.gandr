@@ -1,6 +1,8 @@
 // A fork's half that ends in a statement without closing its endpoint: the
 // statement runs and the half returns the unit with the endpoint still open,
-// which the checker refuses as the residue it is (#1205).
+// which the checker refuses as the residue it is.
+//
+// - see: #1205
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";

@@ -11,9 +11,9 @@
 // them. A fold into a model module respects that model's laws.
 //
 // - see: `pathological/desc/theory-terms.gandr` — a monoid's terms, refused
-// - see: #4148 — not implemented: the terms as a model, and a derived fold
-// - see: #4149 — not implemented: a fold over a model value
-// - see: #4150 — not implemented: terms over several sorts
+// - owes: #4148 — the terms as a model, and a derived fold
+// - owes: #4149 — a fold over a model value
+// - owes: #4150 — terms over several sorts
 // - see: `model/identity/loop-winding.gandr` — a fold out of a presented type
 //   into a model module
 

@@ -1,7 +1,11 @@
-// #2687, #4916: a package is its `package.gandr` and its `sources`.
-// That file declares the package's model, and `gandr check` writes
-// `gandr.toml` beside it. Its modules sit under `src`, and its version is the
-// one the workspace above it states.
+// A package is its `package.gandr` and its `sources`. That file declares the
+// package's model, and `gandr check` writes `gandr.toml` beside it. Its
+// modules sit under `src`, and its version is the one the workspace above it
+// states.
+//
+// - see: #2687
+// - see: #4916
+// - see: #2874 — `tone`
 import text.greet (greeting);
 // The workspace above the package, whose model states its version.
 import "../workspace.gandr";
@@ -46,6 +50,6 @@ pub def welcome : String = text.greet.greeting;
 @[ runs("\"hello, world\"") ]
 pub def hello : String = greeting;
 
-/// The tone, its type read through the module's whole path (#2874).
+/// The tone, its type read through the module's whole path.
 @[ runs("Warm") ]
 pub def tone : text.tone.kind.Tone = text.tone.kind.warm;

@@ -1,5 +1,5 @@
 // A fold whose case sits beneath a parameter after the one it recurses on is
-// read as the fixpoint, as one with the case at its root is (#2510). Programs
+// read as the fixpoint, as one with the case at its root is. Programs
 // that only store, quotiented by state's put-put law, are folded by passing
 // the state: at `Store(s, Store(u, k))` the fold runs to `final(k, u)` through
 // two of its own calls, and at `Store(u, k)` through one, so the two sides of
@@ -7,6 +7,8 @@
 // of state's `put(s, put(u, k)) = put(u, k)` (Plotkin and Power, _Notions of
 // computation determine monads_, 2002, doi:10.1007/3-540-45931-6_24), and the
 // fold is the handler that passes the state.
+//
+// - see: #2510
 
 /// Programs that only store, quotiented by put-put: a store the next store
 /// overwrites is no store.

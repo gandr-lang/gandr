@@ -1,9 +1,11 @@
-// The reduct the checker applies, written out (#2030). In the explicit form,
+// The reduct the checker applies, written out. In the explicit form,
 // a monoid standing where a semigroup is asked is written as the reduct's
 // call, `Monoid.Semigroup(endoMonoid)`; the sugared form leaves that call to
 // the checker. The formatter writes the call where the checker applies the
 // reduct and keeps it here, and the run reads the same application in both
 // forms.
+//
+// - see: #2030
 
 // The semigroup, the monoid, and the endomorphism monoid.
 import "./monoid.gandr";

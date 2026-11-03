@@ -1,6 +1,8 @@
 // What a universe equivalence between data types refuses: a map that loses a
 // field has a round trip that does not return, refused at that pattern, and a
 // type holding itself, whose coverage would recur, is outside the vocabulary.
+//
+// - see: #1316 — `renumbering`
 
 // The shapes, the figures and `Shapes.toFigure`.
 import "../../model/identity/flow-data.gandr";
@@ -20,7 +22,7 @@ def rounded(figure : Figure) -> Shape {
 @[ refuses("RoundTripDistinct") ]
 def flattened = equiv(Shapes.toFigure, rounded);
 
-/// #1316: a type holding itself would be covered as a list is, its own field
+/// A type holding itself would be covered as a list is, its own field
 /// read as a tail; the coverage does not read one yet, so no equivalence
 /// decides it.
 @[ refuses("EquivUnsupported") ]

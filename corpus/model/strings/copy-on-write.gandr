@@ -5,6 +5,8 @@
 // write to one string is never seen through another (Racordon et al.,
 // "Implementation strategies for mutable value semantics", _Journal of Object
 // Technology_ 21(2), 2022, doi:10.5381/jot.2022.21.2.a2, § 3).
+//
+// - see: #1481 — `long`
 
 // The lists; the byte lists; the owned bytes; where they live.
 import "../data/data-base.gandr";
@@ -79,7 +81,7 @@ pub def written(w : Written) -> Repr {
 }
 
 /// A long string, twenty-four bytes and the zero, held once. It is built by
-/// a loop, so it states `Partial` (#1481), and so does each run that forces it.
+/// a loop, so it states `Partial`, and so does each run that forces it.
 pub def long() -> [Partial] Repr { own(repeatOnto(97, 24, (Nil : List(Integer)))) }
 
 /// `!` appended to a long string held once: written in place, nothing copied.

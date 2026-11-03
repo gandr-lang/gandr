@@ -1,5 +1,7 @@
 /// `instantiation.tail`: a recursive call in tail position.
-/// The checker does not reach this form yet; #1497 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1497
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec tailing(n : Integer) -> -F Integer {
   return tailing[tail](n)

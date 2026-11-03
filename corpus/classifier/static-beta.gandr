@@ -4,6 +4,8 @@
 // Integer)`, two static applications deep; `doubled` returns one. Implicit
 // parameters `@[…]`, which a use supplies by name, are
 // `implicit-telescope.gandr`'s.
+//
+// - see: #1080 — `sum`
 
 /// Apply a type operator to a type.
 def apply : (Type -> Type) -> Type -> Type = fun (F) { fun (X) { F(X) } };
@@ -13,7 +15,7 @@ def twice : Type -> Type = fun (Y) { type(Y * Y) };
 
 /// The sum of a pair whose type is an operator applied twice over. Both
 /// binders are used: an unused one has no type entry under a static
-/// application (#1080).
+/// application.
 def sum(p : apply(twice, Integer)) -> Integer {
   match p {
     #{a, b} => a + b

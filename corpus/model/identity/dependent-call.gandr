@@ -1,10 +1,13 @@
 // A call written where a value is read runs, and a pure one whose value a type
 // after it reads stands there as what it returns: a dependent record's first
 // component under the second's type, and a dependent function's argument
-// under the parameters after it (#426). A parameter function under `Path.ap`
-// answers at its own span (#443). The records are the HoTT book's dependent
+// under the parameters after it. A parameter function under `Path.ap`
+// answers at its own span. The records are the HoTT book's dependent
 // pairs (§ 1.6), and the maps out of the circle follow cubical Agda's
 // `IsoFunSpaceS¹` (`Cubical/HITs/S1/Properties.agda`).
+//
+// - see: #426 — `toLoopThroughImage`, `fromRecord`
+// - see: #443
 
 // The circle and the integers.
 import "./circle-base.gandr";
@@ -19,7 +22,7 @@ def loopImage(f : Circle => Int) -> Path(Int, f(Base), f(Base)) {
 
 /// A map out of the circle as a point and a loop there, the loop through
 /// `loopImage`: the second component's type reads the first, the call
-/// `f(Base)` (#426). `circle-rotation.gandr`'s `toLoop` writes the loop as
+/// `f(Base)`. `circle-rotation.gandr`'s `toLoop` writes the loop as
 /// `Path.ap(f, loop)` itself.
 def toLoopThroughImage(f : Circle => Int) -> #{
   point : Int,
@@ -38,8 +41,7 @@ def toOtherLoop(f : Circle => Int, g : Circle => Int) -> #{
 }
 
 /// A record's projections as the arguments of that map: the second
-/// parameter's type reads the first argument, the projection `r.point`
-/// (#426).
+/// parameter's type reads the first argument, the projection `r.point`.
 def fromRecord(r : #{point : Int, around : Path(Int, point, point)}, c : Circle) -> Int {
   fromLoopAt(r.point, r.around, c)
 }

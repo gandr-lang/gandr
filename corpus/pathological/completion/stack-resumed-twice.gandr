@@ -3,6 +3,8 @@
 // the operation, so its one completion would be reaped twice. Handlers after
 // Plotkin and Pretnar, _Handling Algebraic Effects_
 // (doi:10.2168/LMCS-9(4:23)2013).
+//
+// - see: #1334 — `resumedTwice`
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";
@@ -11,7 +13,7 @@ import std.process;
 
 /// The pending completion opened before the operation and reaped after it,
 /// in a body the operation's clause resumes twice: the clause owes that body
-/// one end, and the second resumption is refused (#1334).
+/// one end, and the second resumption is refused.
 @[ refuses("ContinuationUsedTwice") ]
 def resumedTwice() -> Unit {
   handle c : std.process.Exit.Eff {

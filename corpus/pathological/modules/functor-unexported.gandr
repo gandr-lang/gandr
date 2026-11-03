@@ -1,7 +1,9 @@
 // The refusal beside `../../model/modules/functor-pair.gandr`: an argument
 // that does not export a component its parameter states is refused at the
 // application's binding. The attribute before the application states the
-// expectation of the name it binds (#1274).
+// expectation of the name it binds.
+//
+// - see: #1274
 
 // The counter functor and its seed.
 import "../../model/modules/functor-pair.gandr";

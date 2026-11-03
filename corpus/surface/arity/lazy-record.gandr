@@ -1,3 +1,15 @@
+// Lazy records: a block of entries `&{.l => e}` answering each label's entry,
+// and its lazy product type.
+//
+// A lazy record is a lazy product whose entries carry labels, so an entry is
+// observed by its label or by its position. A position past the last entry
+// names nothing.
+//
+// Each `runs` row observes one entry. A lazy product standing unthunked is
+// refused `OutOfFragment.WrongSort`, as is a session type at an entry.
+//
+// - see: #1104 — `spread`, `beyond`
+
 def lazy() -> &{get : -F Integer, put : -F String} {
   &{.put => "s", .get => 1}
 }
@@ -81,13 +93,13 @@ def last(m : +U (-F Integer & -F String & -F Integer)) -> Integer {
 def lasted() -> Integer { last(chained) }
 
 /// A positional lazy record names no entry either, so each is observed by its
-/// position (#1104).
+/// position.
 def spread(m : +U (-F Integer & -F String)) -> String {
   m.1
 }
 
 /// A position past a lazy product's last entry names nothing, and is refused
-/// as the unresolved name it is (#1104).
+/// as the unresolved name it is.
 @[ refuses("UnresolvedName") ]
 def beyond(m : +U (-F Integer & -F String)) -> -F String {
   m.2

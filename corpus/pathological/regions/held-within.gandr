@@ -3,12 +3,14 @@
 // { let x = 42; r = &x; } *r` (E0597, `x` does not live long enough). A shared
 // view kept in a region keeps its held value frozen until the region ends, and
 // a hold opened inside the scope ends before the scope does.
+//
+// - see: #1494 — `keptPastHold`, `keptPastNestedHold`
 
 // Early exit's host interface.
 import std.process;
 
 /// Keeps a view of a value held inside the handler at the handler's region,
-/// which the hold does not outlive (#1494).
+/// which the hold does not outlive.
 @[ refuses("ViewEscaped") ]
 def keptPastHold() -> Integer {
   handle inner : std.process.Exit.Eff {
@@ -21,8 +23,8 @@ def keptPastHold() -> Integer {
   }
 }
 
-/// The same inside a handler a `run` binds within another, as #1494 reported
-/// it: where a handler is bound opens no region of its own.
+/// The same inside a handler a `run` binds within another: where a handler
+/// is bound opens no region of its own.
 @[ refuses("ViewEscaped") ]
 def keptPastNestedHold() -> Integer {
   handle outer : std.process.Exit.Eff {

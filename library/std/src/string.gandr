@@ -1,9 +1,13 @@
 // `std.string`: the native string's everyday functions, each over the native
 // `string` namespace, and the laws of joining beside them. Equality and order
 // are the prelude's `==` and `<`, through its `Eq` and `Ord` models of
-// strings. A rule names only its own block's operations, so the laws are
-// stated over joining presented as an operation (#525 admits a law over the
-// definition itself). Scanning a string waits on its primitives (#318).
+// strings. A rule names only its own block's operations, so the laws range
+// over joining as an operation of the theory. A law over the definition
+// itself waits on the checker. A string's scanning functions wait on their
+// primitives.
+//
+// - owes: #525 — a law over the definition itself
+// - see: #318
 
 /// The empty string, the unit of joining.
 pub def empty : String = "";
@@ -19,7 +23,7 @@ pub def isEmpty(s : String) -> Bool {
 }
 
 /// The laws of `concat` and `empty`: joining is associative and the empty
-/// string is its unit on both sides, so strings under joining are a monoid.
+/// string is its unit on both sides. Strings under joining are a monoid.
 /// The coincidence check certifies the three rules, and the row fires them.
 @[ normalizes("concat(concat(empty, empty), concat(empty, empty)) ~> empty") ]
 pub theory Strings where {
@@ -28,7 +32,7 @@ pub theory Strings where {
 
   /// The empty string, `std.string`'s `empty`.
   oper empty : S;
-  /// Joining, `std.string`'s `concat`.
+  /// The join of two strings, `std.string`'s `concat`.
   oper concat : (a : S, b : S) --> S;
 
   /// The empty string on the left of a join leaves the other string.

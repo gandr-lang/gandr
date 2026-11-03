@@ -1,23 +1,23 @@
 error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
-  ╭▸ corpus/pathological/basics/fractions.gandr:8:11
-  │
-8 │ def low = 0.2;
-  │           ━━━ needs a type to be checked against
-  │
-  ╰ note: `low` is refused with NotSynthesisable, as its expectation states
+   ╭▸ corpus/pathological/basics/fractions.gandr:11:11
+   │
+11 │ def low = 0.2;
+   │           ━━━ needs a type to be checked against
+   │
+   ╰ note: `low` is refused with NotSynthesisable, as its expectation states
 
 error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
-   ╭▸ corpus/pathological/basics/fractions.gandr:12:13
+   ╭▸ corpus/pathological/basics/fractions.gandr:15:13
    │
-12 │ def small = 1e-3;
+15 │ def small = 1e-3;
    │             ━━━━ needs a type to be checked against
    │
    ╰ note: `small` is refused with NotSynthesisable, as its expectation states
 
 error[OutOfFragment.typed_number]: the typed number is not supported yet
-   ╭▸ corpus/pathological/basics/fractions.gandr:16:14
+   ╭▸ corpus/pathological/basics/fractions.gandr:19:14
    │
-16 │ def single = 0.5f32;
+19 │ def single = 0.5f32;
    │              ━━━━━━ a form the fragment does not admit
    │
    ├ note: `single` is refused with OutOfFragment.typed_number, as its expectation states

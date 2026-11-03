@@ -1,7 +1,9 @@
-// The include graph's joins (#1225): every two theories a block reaches have
+// The include graph's joins: every two theories a block reaches have
 // one join among the theories it sees, the poorest one reaching both. A
 // second theory joining a pair another already joins leaves the pair two
 // incomparable joins, so it is refused naming the pair and both.
+//
+// - see: #1225
 
 /// A carrier with a unit.
 theory Pointed where {

@@ -1,7 +1,10 @@
 // A number with a fraction states no type of its own: it reads at the type
-// it is checked at, the float it rounds to at `f64` (#4807). Where nothing
+// it is checked at, the float it rounds to at `f64`. Where nothing
 // states a type it is refused, and no default type is chosen for it. A width
-// other than `f64` is not admitted yet (#1109).
+// other than `f64` is not admitted yet.
+//
+// - see: #4807
+// - see: #1109
 
 /// A bare fraction.
 @[ refuses("NotSynthesisable") ]

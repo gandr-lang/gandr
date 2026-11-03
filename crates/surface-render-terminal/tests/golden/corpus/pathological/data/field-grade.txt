@@ -1,7 +1,7 @@
 error[OutOfFragment.grade.declaration]: the grade is not supported yet
-  ╭▸ corpus/pathological/data/field-grade.gandr:7:19
+  ╭▸ corpus/pathological/data/field-grade.gandr:9:19
   │
-7 │   | Both : (first[2] : a, second : a) --> Twice(a)
+9 │   | Both : (first[2] : a, second : a) --> Twice(a)
   │                   ━ a form the fragment does not admit
   │
   ├ note: `Twice` is refused with OutOfFragment.grade.declaration, as its expectation states

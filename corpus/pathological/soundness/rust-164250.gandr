@@ -4,7 +4,7 @@
 // and the destructor stores a view of `l` where only a `'static` value may go.
 // Here the region a slot keeps is part of the slot's type, a built value's type
 // never changes under it, and a destructor is a region's end action that reaches
-// only what the region keeps: the write is refused before anything runs (#1492).
+// only what the region keeps: the write is refused before anything runs.
 //
 // What the hole is made of: evidence in two currencies. A bound written on a
 // type's definition is a side condition outside the value, re-proved at every
@@ -17,6 +17,8 @@
 // implementation and constrains every use. Here a constraint is a field of the
 // value's record, carried and projected, never implied from a definition and
 // never assumed by an implementation; the region is that field for a slot.
+//
+// - see: #1492
 
 // Early exit's host interface.
 import std.process;

@@ -1,24 +1,30 @@
 // `std.grade`: grade algebras. A grade says how much of something a program
-// uses: how often it reads a value, how many bytes a site offers. An algebra
-// of grades is a model of `Grade`, its order a function over closed data, so
-// `gandr check` decides by conversion whether one grade covers another: a
-// path `Path(Bool, Count.le(x, y), true)` checks exactly when the order holds,
-// and the kernel replays it. An algebra over the native `Integer` is no such
-// model, since the kernel reads a closed native as an opaque constant (#2378);
-// `Count` counts in the prelude's binary naturals instead, written as
-// numerals annotated `(n : Nat)`. A map between two algebras is a `Hom`, named
-// where a reader asks for it, and `covers` tests a grade of one algebra against
-// a need of another through it (#3287). `Grade` states no law: no reader of
-// this module needs one.
+// uses: how often it reads a value, how many bytes a site offers.
+//
+// An algebra of grades is a model of `Grade`, its order a function over closed
+// data. So `gandr check` decides by conversion whether one grade covers
+// another. A path `Path(Bool, Count.le(x, y), true)` checks exactly when the
+// order holds, and the kernel replays it.
+//
+// An algebra over the native `Integer` is no such model, since the kernel
+// reads a closed native as an opaque constant. `Count` counts in the prelude's
+// binary naturals instead, as numerals annotated `(n : Nat)`.
+//
+// A map between two algebras is a `Hom`, named where a reader asks for it.
+// `covers` tests a grade of one algebra against a need of another through it.
+// `Grade` states no law: no reader of this module needs one.
+//
+// - see: #2378
+// - see: #3287
 
 /// An ordered semiring's operations: grades, their zero and one, their sum and
 /// product, and their order.
 pub theory Grade where {
   /// The grades.
   sort G : Type;
-  /// The grade of what is not used.
+  /// The grade of no use.
   oper zero : G;
-  /// The grade of what is used once.
+  /// The grade of one use.
   oper one : G;
   /// The grade of two uses, one beside the other.
   oper plus : (a : G, b : G) --> G;
@@ -28,13 +34,13 @@ pub theory Grade where {
   oper le : (a : G, b : G) --> Bool;
 }
 
-/// How often a value is used: not at all, once, or any number of times.
+/// How often a program uses a value: not at all, once, or any number of times.
 pub data Use : Type where {
-  /// Not used.
+  /// No use.
   | Unused : Use
-  /// Used exactly once.
+  /// Exactly one use.
   | Once : Use
-  /// Used any number of times.
+  /// Any number of uses.
   | Many : Use
 }
 
@@ -47,7 +53,7 @@ pub module Usage : Model(Grade) where {
   def zero = Unused;
   /// Once.
   def one = Once;
-  /// Unused beside anything is that thing; any two uses are many.
+  /// Unused beside anything is that thing. Any two uses are many.
   def plus(a : Use, b : Use) -> Use {
     match a {
       Unused => b,
@@ -59,8 +65,8 @@ pub module Usage : Model(Grade) where {
       Many => Many,
     }
   }
-  /// Repeating unused, or no times, is unused; once repeats the other;
-  /// many repeats anything used to many.
+  /// Repeating unused, or no times, is unused. Once repeats the other. Many
+  /// repeats any use but unused to many.
   def times(a : Use, b : Use) -> Use {
     match a {
       Unused => Unused,
@@ -72,7 +78,7 @@ pub module Usage : Model(Grade) where {
       },
     }
   }
-  /// Each use is under itself and under many; unused and once are apart.
+  /// Each use is under itself and under many. Unused and once are apart.
   def le(a : Use, b : Use) -> Bool {
     match a {
       Unused => match b {
@@ -240,7 +246,7 @@ def collapsed(n : Nat) -> Use {
   }
 }
 
-/// Counting collapsed to usage.
+/// The map from counting to usage.
 pub def collapse : Hom(count, usage) = Map(collapsed);
 
 /// Whether `have` covers `need` in the algebra `a`.

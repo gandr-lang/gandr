@@ -1,10 +1,12 @@
 /// `deployment-offers` places a world only at a site whose offer answers the row the world requires.
 ///
 /// Implemented: `world w requires [ … ] ;` states as a row what a role placed at `w` needs: a host interface by its name, and an effect theory at fixed sorts under a label, each entry refused as a row refuses it and a theory under no label refused `UnlabelledRequirement`; a site's file answers with one `offers [ … ] ;`, granting host interfaces by name and binding each label to a model module it declares; `gandr check` of a manifold refuses a placement of a world the program does not declare, by its name, and judges each requiring world's row entry by entry: a label by its module taken as a functor's argument at `Model(T)` and the row's sorts, refused naming both types at other sorts, and a host interface by the site's `Authority` attenuated to its operations.
-/// Not implemented: code at a world typed against its row, and the offer as the world's authority at run; #3545 owes the first and #3546 the second.
+/// Not implemented: code at a world typed against its row, and the offer as the world's authority at run.
 ///
 /// The requirement travels with the program and the offer stays with the site, so the check is the deployment's: nothing of it enters the program's identity or a run.
 ///
+/// - owes: #3545 — code at a world typed against its row
+/// - owes: #3546 — the offer as the world's authority at run
 /// - see: corpus/model/deployments/offers.site.gandr
 /// - see: corpus/model/deployments/offers.manifold.gandr
 /// - see: corpus/pathological/worlds/offers.gandr

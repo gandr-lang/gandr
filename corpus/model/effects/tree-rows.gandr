@@ -4,6 +4,8 @@
 // result. The kernel replays every declaration here, so a program's row is
 // a claim it re-derives: an operation outside the row is a kernel type
 // error.
+//
+// - see: #2512 — `handled`
 
 // `Either`, `StateOp` and `Prog`.
 import "./tree.gandr";
@@ -87,7 +89,7 @@ def failing : Prog(Either(ExnOp, Void), Integer) = Op(
 
 /// Exceptions peeled, then state from four, then nothing left: the second
 /// read sees the stored five. Each handler is called at the row it leaves,
-/// an applied type passed for its type parameter (#2512).
+/// an applied type passed for its type parameter.
 @[ runs("Returned(50)") ]
 def handled() -> Outcome(Integer) {
   let p = runExn(Either(StateOp, Void), Integer, guarded);

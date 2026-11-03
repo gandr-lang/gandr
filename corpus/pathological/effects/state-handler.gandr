@@ -1,6 +1,8 @@
 // The twin of `model/effects/state-handler.gandr`: where a scope cannot take
 // a theory as its interface, where a model cannot answer it, and where the
 // models in scope do not answer it as one.
+//
+// - see: #2755 — `inScopeAtInteger`
 
 // The theory `State.Eff`.
 import "../../model/effects/state.gandr";
@@ -85,7 +87,7 @@ def unansweredAtTwo() -> Integer => Integer {
 /// No model named, and the subject computing an integer where the scope
 /// answers the carrier of `Passing`, the one model of `State.Eff` at an integer
 /// state in scope, a function of the state: the scope answers that model's
-/// carrier as naming it does (#2755).
+/// carrier as naming it does.
 @[ refuses("TypeMismatch") ]
 def inScopeAtInteger() -> Integer {
   handle st : State.Eff with sort S = Integer {

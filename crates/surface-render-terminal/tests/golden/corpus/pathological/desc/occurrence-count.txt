@@ -1,7 +1,7 @@
 error[RulesNonLinear]: this rule's left side names one variable twice: a rule matches each variable once, since copying a matched value needs a comonoid its sort may not have, so the rule is refused
-   ╭▸ corpus/pathological/desc/occurrence-count.gandr:12:3
+   ╭▸ corpus/pathological/desc/occurrence-count.gandr:14:3
    │
-12 │   rule : same(t, t) ==> Node(t, t);
+14 │   rule : same(t, t) ==> Node(t, t);
    │   ┯━━━━━━━━━━━━━━┬━━━━━━━━━━━━━━━━
    │   │              │
    │   │              the variable matched again

@@ -1,9 +1,12 @@
-// Streams as codata (#644): a family known by its observations, built by a
+// Streams as codata: a family known by its observations, built by a
 // copattern block that answers each one, and taken apart by observing a
 // thunk of it. A recursive call claiming `>` is productive when it is the
 // whole arm of a copattern block: each observation yields before the
 // function runs again, so the fixpoint needs no termination claim. What
 // refuses is in `../../pathological/codata/streams.gandr`.
+//
+// - see: #644
+// - see: #1499 — `ones`
 
 /// A stream of values of `a`: its head, and the stream after it.
 codata Stream(a : Type) : Type[-] where {
@@ -23,7 +26,7 @@ def rec always(n : Integer) -> Stream(Integer) {
 }
 
 /// One forever: a corecursive constant, which binds its own name over its
-/// copattern block though it takes no parameter (#1499).
+/// copattern block though it takes no parameter.
 def rec ones() -> Stream(Integer) {
   &{.head => 1, .tail => ones[>]()}
 }

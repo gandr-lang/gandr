@@ -1,8 +1,10 @@
-// The prelude's instance machinery in one component (#2395): `==` and `<`
+// The prelude's instance machinery in one component: `==` and `<`
 // resolved at the integers and the strings through the prelude's `Eq` and
 // `Ord` models, and `==` at a point through a model whose members are derived
 // (`Eq.generic` and its laws). The hotpath series checks this source as its
 // `prelude resolve` workload, so every site here is a resolution it measures.
+//
+// - see: #2395
 
 /// A point in the plane.
 data Point : Type where {

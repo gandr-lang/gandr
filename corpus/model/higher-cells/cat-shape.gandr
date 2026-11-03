@@ -3,10 +3,13 @@
 // composition with the unit and associativity laws as rules. Its model in
 // types and functions meets every law by conversion, and a law may be
 // proved by another law of the same type.
+//
+// - see: #1510 — `CatShape`
+// - see: #452 — `identity_observed`, `composite_observed`
 
 /// The category shape: a sort of morphisms dependent on the objects. Its
 /// laws over the dependent sort are read with the objects each composite
-/// stands at, so the unit laws agree at `comp(id(a), id(a))` (#1510).
+/// stands at, so the unit laws agree at `comp(id(a), id(a))`.
 theory CatShape where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
@@ -114,13 +117,12 @@ module SetoidCat : Model(CatShape) where {
 }
 
 /// The identity observed through the interface at `Integer`: the run applies
-/// the operation at its type argument and calls the function it returns
-/// (#452).
+/// the operation at its type argument and calls the function it returns.
 @[ runs("3") ]
 def identity_observed() -> Integer { let f = SetoidCat.id(Integer); f(3) }
 
 /// Composition observed through the interface: `n + 1` then `n + 2`, applied
-/// to `1` (#452).
+/// to `1`.
 @[ runs("4") ]
 def composite_observed() -> Integer { let h = SetoidCat.comp(
   Integer,

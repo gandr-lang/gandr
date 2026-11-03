@@ -1,6 +1,8 @@
 // An import whose path names no source in the root refuses the source that
-// writes it (#434): `circle-elim.gandr` imports `circle-base.gandr`, which
+// writes it: `circle-elim.gandr` imports `circle-base.gandr`, which
 // sits beside it; here the sibling is absent.
+//
+// - see: #434
 
 // The sibling this source would read, which the directory does not hold.
 import "./circle-absent.gandr";

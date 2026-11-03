@@ -1,5 +1,11 @@
-// #2687: a workspace's second member, its `package.gandr` alone at its root,
+// A workspace's second member, its `package.gandr` alone at its root,
 // its version read from the workspace it sits in.
+//
+// - see: #2687
+// - see: #3072
+// - see: #4527
+// - see: #3098
+// - see: #4715
 import "../workspace.gandr";
 
 /// What this package reads of `hello`: its greeting, a string.
@@ -9,11 +15,11 @@ pub theory Greeting where {
 }
 
 // The sibling package this one depends on, found at its coordinate and read
-// through `gandr.lock` (#3072, #4527), at the signature above: its `welcome`
-// and no other member (#3098).
+// through `gandr.lock`, at the signature above: its `welcome`
+// and no other member.
 import "path:../hello" as hello : Greeting;
 // A module of `hello` beyond its root, named by a module path through the
-// alias (#4715).
+// alias.
 import hello.text.greet (greeting);
 // The manifest theories.
 import std.build (Gandr);

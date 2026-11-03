@@ -1,6 +1,8 @@
 // Folds over the programs that only store that tell put-put's two sides apart
-// (#2510): read as their fixpoints, their arms send `Store(s, Store(u, k))`
+// : read as their fixpoints, their arms send `Store(s, Store(u, k))`
 // and `Store(u, k)` to different numbers, so each case is refused at the law.
+//
+// - see: #2510
 
 // Programs that only store, quotiented by put-put, and the state-passing fold.
 import "../../model/identity/state-passing.gandr";

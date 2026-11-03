@@ -1,9 +1,12 @@
 // A tuple of optional values: each member takes the component of the product
 // the tuple is written at, as a list's elements take its element type
 // (`data-answered-list.gandr`). `Maybe` is the one `data-maybe.gandr`
-// declares. Before #1877 each constructor among the members was refused for
+// declares. Before the fix each constructor among the members was refused for
 // want of a stated type. A result written without its returner, `-> A * B`,
-// answers its components as `-> -F (A * B)` does (#2255).
+// answers its components as `-> -F (A * B)` does.
+//
+// - see: #2255
+// - see: #1877 — a constructor among a tuple's members, typed by the product
 
 /// Optional values, `None` and `Some(x)`.
 import "./data-maybe.gandr";

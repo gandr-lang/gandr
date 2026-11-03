@@ -1,6 +1,8 @@
 /// `grades`: Grades on a hold.
 /// Implemented: `var[1] s = e`, a value held at grade one: made in place, never copied while held, a copying read refused by name, and a string held at grade one written in place.
-/// Not implemented: the emitter reading the grade to drop the holder count on a write-back; #1175 owes it.
+/// Not implemented: the emitter reading the grade to drop the holder count on a write-back.
+///
+/// - owes: #1175
 // A hold at grade one. `var[1] c = e;` holds a value no one else holds: the
 // value is made where the hold stands, and it is never copied while held. An
 // exclusive access moves the value out to its view, the view is read once,

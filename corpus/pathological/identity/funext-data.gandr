@@ -1,6 +1,8 @@
 // What function extensionality at data types refuses: two functions that
 // differ at a constructor are refused at that pattern, and a type holding
 // itself, whose coverage would recur, is outside the vocabulary.
+//
+// - see: #1315 — `restepped`
 
 // The shapes, the figures and `Shapes.toFigure`.
 import "../../model/identity/flow-data.gandr";
@@ -22,7 +24,7 @@ def height(shape : Shape) -> Integer {
 @[ refuses("PointwiseDistinct") ]
 def sides : Path(Shape => Integer, width, height) = Path.funext(width, height);
 
-/// #1315: a type holding itself would be covered as a list is, its own field
+/// A type holding itself would be covered as a list is, its own field
 /// read as a tail; the coverage does not read one yet, so no function
 /// extensionality decides it.
 @[ refuses("FunextUnsupported") ]

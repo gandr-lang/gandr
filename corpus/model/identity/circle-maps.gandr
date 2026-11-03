@@ -1,11 +1,13 @@
 // A dependent case over the circle owes the transport of its answer at the
-// point along the loop, through each endpoint's maps (#425): a map of any
+// point along the loop, through each endpoint's maps: a map of any
 // arity whose one argument the point runs through, a loop arm answering the
 // loop by its name, and the definitions those maps call, unfolded within the
 // obligation's budget, as the HoTT book's Lemma 6.2.5 states the circle's
 // dependent elimination: an answer at the point and a path over the loop. A
 // row the tree refuses states the refusal it meets and the issue that holds
 // it.
+//
+// - see: #425 — `unitRight`
 
 // The circle, every point's loop and the multiplication.
 import "./circle-base.gandr";
@@ -74,7 +76,7 @@ def twisted(b : Circle) -> Path(Circle, first(b, Base), Base) {
 
 /// The point is a right unit of the multiplication, whose loop arm calls
 /// `selfloop`. The obligation unfolds `mul`'s loop arm through its call of
-/// `selfloop`, and the transport computes (#425).
+/// `selfloop`, and the transport computes.
 def unitRight(b : Circle) -> Path(Circle, mul(b, Base), b) {
   match b {
     Base => Path.here(Base)
