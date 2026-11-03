@@ -3,17 +3,23 @@
 //! # A component is judged once
 //!
 //! The sources a walk is given, with every source they reach through path
-//! imports, form a graph whose edges are the imports that resolve. Each
-//! connected part of it holding a given source is a component, and a component
-//! is one unit: the prelude (`gandr_surface_lowering::prelude`) first, then its
-//! sources laid end to end, one newline apart, each after every source it
-//! imports, parsed as one tree, lowered into one arena, checked against one
-//! environment and admitted once. Every source of the component is therefore
-//! lowered and checked exactly once, however many of its siblings import it,
-//! and what the walk reports at a source is the component's verdict projected
-//! onto that source's own bytes ([`Component::members`]), the prelude's among
-//! none. A source that imports nothing and that no given source imports is a
-//! component of one, laid after the prelude as every component is.
+//! imports, form a graph whose edges are the imports that resolve. A given
+//! source's closure is every source it reaches; two given sources share a
+//! component when one's closure holds the other, or through a chain of such
+//! given sources, and the component lays the closures of its given sources. A
+//! source reached and not given, as a `std` module many sources import, joins
+//! no two components: each component that reaches it lays it, so a walk's
+//! largest component is the largest closure its given sources join, not every
+//! importer of a shared module. A component is one unit: the prelude
+//! (`gandr_surface_lowering::prelude`) first, then its sources laid end to end,
+//! one newline apart, each after every source it imports, parsed as one tree,
+//! lowered into one arena, checked against one environment and admitted once.
+//! Every source of the component is therefore lowered and checked exactly once,
+//! however many of its siblings import it, and what the walk reports at a
+//! source is the component's verdict projected onto that source's own bytes
+//! ([`Component::members`]), the prelude's among none. A source that imports
+//! nothing and that no given source imports is a component of one, laid after
+//! the prelude as every component is.
 //!
 //! - Recorded design: one arena and one kernel environment per import-connected
 //!   component, its members in topological order of the import graph, level by
@@ -26,6 +32,11 @@
 //!   parallel on the walk's pool, as single sources did.
 //! - Reversal: when the lowering reads a forest — one tree per source into one
 //!   arena — each level's members lower on the pool.
+//! - Change: a source reached and not given joins no two components, and each
+//!   component reaching it lowers it again. The `std` modules the corpus's host
+//!   interfaces import had joined their importers into one component; laid
+//!   apart, the corpus walk peaks at 1.1 GB rather than 5.4 GB, in 3.7 s rather
+//!   than 6.2 s.
 //!
 //! A source given alone — a document an editor holds, `gandr check` of one
 //! path — makes the component its import closure makes: [`lay_out`] lays that
@@ -837,6 +848,9 @@ struct Graph
     /// The source whose path imports were given rather than read, and those
     /// imports, until the graph reads it.
     given: Option<(Position, Vec<ImportPath>)>,
+    /// How many components still to lay out hold each source, by position: a
+    /// source's text is taken by the last and copied by the others.
+    pending: Vec<usize>,
 }
 
 /// The path `target` will have once a file is written there: its directory's
@@ -1203,14 +1217,16 @@ fn homed(
 /// - requires: each source's path is canonical and its root is that path's.
 /// - ensures: every source a given source reaches through path imports is read
 ///   once, each import resolved as [`lay_out`] resolves it; two given sources
-///   at one canonical path stand for one source. Two sources share a component
-///   exactly when a chain of resolved imports joins them, whichever way each
-///   import points; a source reached only through an import that does not
-///   resolve stands in no component. Each component is laid out as [`lay_out`]
-///   lays a closure out — the prelude first, then its sources in dependency
-///   order, one newline apart, each import's target recorded — the depth-first
-///   walk starting at its sources in the order they were given; a component of
-///   one source is that source laid after the prelude alone. Under
+///   at one canonical path stand for one source. Two given sources share a
+///   component exactly when one reaches the other through resolved imports, or
+///   through a chain of given sources so joined; a component holds every source
+///   its given sources reach, so a source reached and not given stands in each
+///   component that reaches it, and a source reached only through an import
+///   that does not resolve stands in no component. Each component is laid out
+///   as [`lay_out`] lays a closure out — the prelude first, then its sources in
+///   dependency order, one newline apart, each import's target recorded — the
+///   depth-first walk starting at its sources in the order they were given; a
+///   component of one source is that source laid after the prelude alone. Under
 ///   [`Reading::Whole`] each importer's imports are those [`lay_out`] reads;
 ///   under [`Reading::ImportForms`] they are those its import forms alone
 ///   write, an importer whose forms write a path import taken to parse, which
@@ -1268,6 +1284,14 @@ pub fn group(
         }
     }
     let layings = graph.layings(&positions);
+    graph.pending = vec![0_usize; graph.read.len()];
+    for laying in &layings {
+        for position in &laying.0 {
+            if let Some(count) = graph.pending.get_mut(position.0) {
+                *count = count.saturating_add(1);
+            }
+        }
+    }
     let mut where_laid: BTreeMap<Position, Placed> = BTreeMap::new();
     let mut components = Vec::with_capacity(layings.len());
     for laying in layings {
@@ -1600,24 +1624,28 @@ impl Graph
     /// # Specification
     /// - requires: every edge of the graph names a position it holds.
     /// - ensures: an edge is usable when it resolved, is no edge of a cycle and
-    ///   names a source that parses. The sources laid out are those a chain of
-    ///   usable edges reaches from a source of `given`, `given` among them; two
-    ///   share a component when a chain of usable edges between them joins
-    ///   them, whichever way each points. The components stand in the order of
-    ///   their first source in `given`; each holds its sources in the
-    ///   post-order of a depth-first walk over usable edges, in the order each
-    ///   source writes them, started at each of its sources by position: every
-    ///   source after each source it imports.
+    ///   names a source that parses. A given source's closure is every source a
+    ///   chain of usable edges reaches from it, itself among them. Two given
+    ///   sources share a component when one's closure holds the other, or
+    ///   through a chain of such given sources; a component lays the closures
+    ///   of its given sources, each source once, so a source reached and not
+    ///   given stands in each component whose closures reach it. The components
+    ///   stand in the order of their first source in `given`; each holds its
+    ///   sources in the post-order of a depth-first walk over usable edges, in
+    ///   the order each source writes them, started at each of its sources by
+    ///   position: every source after each source it imports.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: linear in the sources and edges, beside one reachability
-    ///   set per source to tell a cycle; recursion-free.
+    /// - intension: one breadth-first walk per given source, linear in the
+    ///   sources and edges it reaches, beside one reachability set per source
+    ///   to tell a cycle; recursion-free.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a diamond and a source beside it, a cycle and a
-    ///   chain.
+    ///   chain, and two given sources importing one source not given.
     /// - witness: `component::tests::a_component_lays_each_source_once`
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
+    /// - witness: `component::tests::importers_of_a_module_not_given_lay_it_apart_4854`
     #[spec(ensures: |ref ret| ret.iter().all(|laying| !laying.0.is_empty()))]
     fn layings(
         &self,
@@ -1625,85 +1653,129 @@ impl Graph
     ) -> Vec<Laying>
     {
         let usable = self.usable();
-        // Every source a chain of usable edges reaches from a given one.
-        let mut needed = vec![false; self.read.len()];
-        let mut queue: VecDeque<Position> = given.iter().copied().collect();
-        while let Some(at) = queue.pop_front() {
-            match needed.get_mut(at.0) {
-                Some(seen) if !*seen => *seen = true,
-                Some(_) | None => continue,
-            }
-            if let Some(targets) = usable.get(at.0) {
-                queue.extend(targets.iter().copied());
-            }
-        }
-        // The edges joining needed sources, either way.
-        let mut joined: Vec<Vec<Position>> = vec![Vec::new(); self.read.len()];
-        for (from, targets) in usable.iter().enumerate() {
-            if !needed.get(from).copied().unwrap_or(false) {
-                continue;
-            }
-            for &to in targets {
-                if let Some(out) = joined.get_mut(from) {
-                    out.push(to);
-                }
-                if let Some(back) = joined.get_mut(to.0) {
-                    back.push(Position(from));
-                }
-            }
-        }
-        // Each component's sources, numbered in the order given.
-        let mut owner: Vec<Option<usize>> = vec![None; self.read.len()];
-        let mut owned: Vec<Vec<Position>> = Vec::new();
+        let mut is_given = vec![false; self.read.len()];
+        let mut starts = Vec::with_capacity(given.len());
         for &start in given {
-            if owner.get(start.0).copied().flatten().is_some() {
-                continue;
+            if let Some(seen) = is_given.get_mut(start.0)
+                && !*seen
+            {
+                *seen = true;
+                starts.push(start);
             }
-            let component = owned.len();
-            let mut members = Vec::new();
-            let mut queue = VecDeque::from([start]);
+        }
+        // Each given source's closure, itself first; a source's stamp is the
+        // last walk that reached it.
+        let mut stamp: Vec<Option<usize>> = vec![None; self.read.len()];
+        let mut closures: Vec<Vec<Position>> = Vec::with_capacity(starts.len());
+        let mut queue = VecDeque::new();
+        for (walk, &start) in starts.iter().enumerate() {
+            let mut closure = Vec::new();
+            queue.push_back(start);
             while let Some(at) = queue.pop_front() {
-                match owner.get_mut(at.0) {
-                    Some(slot) if slot.is_none() => *slot = Some(component),
+                match stamp.get_mut(at.0) {
+                    Some(seen) if *seen != Some(walk) => *seen = Some(walk),
                     Some(_) | None => continue,
                 }
-                members.push(at);
-                if let Some(next) = joined.get(at.0) {
-                    queue.extend(next.iter().copied());
+                closure.push(at);
+                if let Some(targets) = usable.get(at.0) {
+                    queue.extend(targets.iter().copied());
                 }
             }
-            members.sort_unstable();
-            owned.push(members);
+            closures.push(closure);
         }
-        // Each component's sources in dependency order.
-        let mut visits = vec![Visit::New; self.read.len()];
+        // The given sources one closure holds share its component: each given
+        // source's walk names its component's first walk.
+        let walk_of: BTreeMap<Position, usize> = starts
+            .iter()
+            .enumerate()
+            .map(|(walk, &start)| (start, walk))
+            .collect();
+        let mut leader: Vec<usize> = (0 .. starts.len()).collect();
+        let find = |leader: &mut Vec<usize>, mut walk: usize| {
+            while let Some(&up) = leader.get(walk)
+                && up != walk
+            {
+                let above = leader.get(up).copied().unwrap_or(up);
+                if let Some(slot) = leader.get_mut(walk) {
+                    *slot = above;
+                }
+                walk = above;
+            }
+            walk
+        };
+        for (walk, closure) in closures.iter().enumerate() {
+            for at in closure {
+                if let Some(&other) = walk_of.get(at) {
+                    let (first, second) = (find(&mut leader, walk), find(&mut leader, other));
+                    let (low, high) = (first.min(second), first.max(second));
+                    if let Some(slot) = leader.get_mut(high) {
+                        *slot = low;
+                    }
+                }
+            }
+        }
+        // Each component's sources: its given sources' closures, each source
+        // once, numbered in the order given.
+        let mut owned: Vec<(usize, Vec<Position>)> = Vec::new();
+        let mut component_of: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut held: Vec<Option<usize>> = vec![None; self.read.len()];
+        for (walk, closure) in closures.iter().enumerate() {
+            let first = find(&mut leader, walk);
+            let component = *component_of.entry(first).or_insert_with(|| {
+                owned.push((first, Vec::new()));
+                owned.len().saturating_sub(1)
+            });
+            let Some(&mut (_, ref mut members)) = owned.get_mut(component)
+            else {
+                continue;
+            };
+            for &at in closure {
+                if let Some(slot) = held.get_mut(at.0)
+                    && *slot != Some(component)
+                {
+                    *slot = Some(component);
+                    members.push(at);
+                }
+            }
+        }
+        // Each component's sources in dependency order; a source's visit is
+        // the component's own, so a source two components hold is ordered in
+        // each.
+        let mut visits: Vec<(usize, Visit)> = vec![(usize::MAX, Visit::New); self.read.len()];
         owned
             .into_iter()
-            .map(|members| {
+            .enumerate()
+            .map(|(component, (_, mut members))| {
+                members.sort_unstable();
+                let fresh = |visits: &[(usize, Visit)], at: Position| {
+                    visits
+                        .get(at.0)
+                        .is_some_and(|&(owner, visit)| owner != component || visit == Visit::New)
+                };
                 let mut order = Vec::with_capacity(members.len());
                 for start in members {
-                    if visits.get(start.0) != Some(&Visit::New) {
+                    if !fresh(&visits, start) {
                         continue;
                     }
                     let mut stack: Vec<(Position, usize)> = Vec::from([(start, 0_usize)]);
                     if let Some(visit) = visits.get_mut(start.0) {
-                        *visit = Visit::Open;
+                        *visit = (component, Visit::Open);
                     }
                     while let Some(&mut (source, ref mut at)) = stack.last_mut() {
                         let Some(&to) = usable.get(source.0).and_then(|targets| targets.get(*at))
                         else {
                             if let Some(visit) = visits.get_mut(source.0) {
-                                *visit = Visit::Done;
+                                *visit = (component, Visit::Done);
                             }
                             order.push(source);
                             let _done = stack.pop();
                             continue;
                         };
                         *at = at.saturating_add(1);
-                        if let Some(visit) = visits.get_mut(to.0)
-                            && *visit == Visit::New
-                        {
-                            *visit = Visit::Open;
+                        if fresh(&visits, to) {
+                            if let Some(visit) = visits.get_mut(to.0) {
+                                *visit = (component, Visit::Open);
+                            }
                             stack.push((to, 0_usize));
                         }
                     }
@@ -1809,11 +1881,12 @@ impl Graph
     }
 
     /// Lay the sources of `laying` out as one unit after the prelude, taking
-    /// their texts.
+    /// the text of each source no later laying holds and copying the rest.
     ///
     /// # Specification
     /// - requires: `laying` is one of [`Graph::layings`], whose texts have not
-    ///   been taken.
+    ///   been taken; the graph counts, for each source, the layings still to
+    ///   lay that hold it.
     /// - ensures: the prelude's text, then the sources' texts in order, one
     ///   newline apart, each source's own bytes recorded as its member and each
     ///   of its imports' targets by position in the unit, the prelude the
@@ -1865,6 +1938,10 @@ impl Graph
                     })
                     .collect()
             });
+            let last = self.pending.get_mut(position.0).is_none_or(|left| {
+                *left = left.saturating_sub(1);
+                *left == 0
+            });
             let Some(read) = self.read.get_mut(position.0)
             else {
                 continue;
@@ -1872,7 +1949,13 @@ impl Graph
             text.push('\n');
             let start = ByteOffset::from(text.len());
             text.push_str(&read.text);
-            read.text = String::new();
+            let written = if last {
+                read.text = String::new();
+                core::mem::take(&mut read.written)
+            }
+            else {
+                read.written.clone()
+            };
             members.push(Member {
                 start,
                 end: ByteOffset::from(text.len()),
@@ -1881,7 +1964,7 @@ impl Graph
             origins.push(MemberSource {
                 path: read.path.clone(),
                 root: read.root,
-                written: core::mem::take(&mut read.written),
+                written,
             });
             sources.push(homed(
                 UnitSource::new(start, targets),
@@ -3502,6 +3585,53 @@ mod tests
                 ImportTarget::Source(SourceIndex::from(3_usize)),
                 "{reading:?}: the top's second import names the right side's place"
             );
+        }
+    }
+
+    /// Two given sources importing one source not given stand in two
+    /// components, each laying that source before its importer, and the
+    /// given base of a chain still joins its importer.
+    #[test]
+    fn importers_of_a_module_not_given_lay_it_apart_4854()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let shared = "def one : Integer ;\ndef one = 1 ;";
+        let left = "import \"./shared.gandr\" ;\ndef two : Integer ;\ndef two = one ;";
+        let right = "import \"./shared.gandr\" ;\ndef three : Integer ;\ndef three = one ;";
+        let top = "import \"./right.gandr\" ;\ndef four : Integer ;\ndef four = three ;";
+        let tree = Scratch::new(Path::new("shared"), &[
+            (Path::new("shared.gandr"), SourceText::from(shared)),
+            (Path::new("left.gandr"), SourceText::from(left)),
+            (Path::new("right.gandr"), SourceText::from(right)),
+            (Path::new("top.gandr"), SourceText::from(top)),
+        ]);
+        for reading in [Reading::Whole, Reading::ImportForms] {
+            let grouped = group(
+                &grammar,
+                Vec::from([
+                    tree.given(Path::new("left.gandr")),
+                    tree.given(Path::new("top.gandr")),
+                    tree.given(Path::new("right.gandr")),
+                ]),
+                reading,
+                &BTreeSet::new(),
+            );
+            let texts: Vec<&str> = grouped
+                .components
+                .iter()
+                .map(|component| component.text.as_str())
+                .collect();
+            assert_eq!(
+                texts,
+                [
+                    format!("{}\n{shared}\n{left}", prelude::TEXT).as_str(),
+                    format!("{}\n{shared}\n{right}\n{top}", prelude::TEXT).as_str(),
+                ],
+                "{reading:?}: the source not given is laid in each component reaching it, and \
+                 the given chain stays one component"
+            );
+            let place = |component: usize, member: usize| Placed { component, member };
+            assert_eq!(grouped.placed, [place(0, 1), place(1, 2), place(1, 1)]);
         }
     }
 
