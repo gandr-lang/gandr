@@ -506,6 +506,7 @@ mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -515,8 +516,8 @@ mod sweeps
 
     /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
     /// this name, at least one of each corpus class — `strict` and each
-    /// directory below `fixture` — and every source the change adds or
-    /// modifies (`gandr-workflow-sweep`).
+    /// directory below `fixture` — and, in the companion, every source the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`).
     const SAMPLE: Sample = Sample {
         name: SampleName("every_printed_type_reads_back_to_its_certificate"),
         size: SampleSize(64),
@@ -569,14 +570,30 @@ mod sweeps
     #[test]
     fn every_printed_type_reads_back_to_its_certificate()
     {
+        reads_back(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_printed_type_reads_back_to_its_certificate_changed()
+    {
+        reads_back(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every printed type of every source `sweep` visits reads back to its
+    /// certificate.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reads_back(sweep: &Sweep)
+    {
         let grammar = built_in().expect("the built-in grammar builds");
         let page = PageWidth::from(PAGE);
         let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         eprintln!("{}", sweep.rotation());
         let visited = sweep.visit_rotating(SAMPLE, NIGHTS, &sources);
         assert!(
-            visited.len() >= SAMPLE.size.0,
+            visited.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             visited.len()
         );
@@ -667,7 +684,8 @@ mod sweeps
                             "Unspelled"
                         },
                     };
-                    *trips.entry(class).or_default() += 1;
+                    let count = trips.entry(class).or_default();
+                    *count = count.saturating_add(1);
                     // The fixed point: the spelling's reading, printed again,
                     // is the spelling.
                     match read.reprinted {
@@ -696,7 +714,8 @@ mod sweeps
         }
         eprintln!("{over} sources past the read-back ceiling, read whole by the `sweeps` profile");
         assert!(
-            trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
+            sweep.portion() == Portion::Changed
+                || trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
             "the corpus's printed types read back"
         );
         assert_eq!(

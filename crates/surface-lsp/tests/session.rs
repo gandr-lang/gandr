@@ -1432,6 +1432,7 @@ mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -1442,10 +1443,11 @@ mod sweeps
 
     /// The diagnostics sample: thirty-two sources, ranked by their BLAKE3
     /// digest under this name, at least one of each corpus class — `strict`
-    /// and each directory below `fixture` — and every source the change adds
-    /// or modifies (`gandr-workflow-sweep`), each walked as its own path. The
-    /// nightly profile walks the night's slice the same way, and the `sweeps`
-    /// profile walks the two roots whole.
+    /// and each directory below `fixture` — and, in the companion, every
+    /// source the change adds or modifies beside them (`gandr-workflow-sweep`),
+    /// each walked as its own path. The nightly profile walks the night's
+    /// slice the same way, and the `sweeps` profile walks the two roots
+    /// whole.
     const DIAGNOSTICS: Sample = Sample {
         name: SampleName("every_corpus_diagnostic_is_published_as_the_model_builds_it"),
         size: SampleSize(32),
@@ -1460,36 +1462,56 @@ mod sweeps
     #[test]
     fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
     {
+        publishes_as_built(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_corpus_diagnostic_is_published_as_the_model_builds_it_changed()
+    {
+        publishes_as_built(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits publishes the diagnostics the model
+    /// builds for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn publishes_as_built(sweep: &Sweep)
+    {
         let root = corpus();
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let paths: Vec<PathBuf> = match (sweep.coverage(), sweep.rotation()) {
-            (Coverage::Full, Rotation::Whole) => {
-                let top = Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../..")
-                    .join("corpus");
-                vec![
-                    root.join("strict"),
-                    top.join("classifier"),
-                    top.join("fragment"),
-                    top.join("model"),
-                    top.join("pathological"),
-                    top.join("pending"),
-                    top.join("surface"),
-                ]
-            },
-            (Coverage::Full, Rotation::Night(_)) | (Coverage::Sampled, _) => {
-                eprintln!("{}", sweep.rotation());
-                sweep
-                    .visit_rotating(
-                        DIAGNOSTICS,
-                        DIAGNOSTICS_NIGHTS,
-                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
-                    )
-                    .into_iter()
-                    .map(|source| source.path)
-                    .collect()
-            },
+        let whole = sweep.portion() == Portion::Fixed
+            && sweep.coverage() == Coverage::Full
+            && sweep.rotation() == Rotation::Whole;
+        let paths: Vec<PathBuf> = if whole {
+            let top = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("corpus");
+            vec![
+                root.join("strict"),
+                top.join("classifier"),
+                top.join("fragment"),
+                top.join("model"),
+                top.join("pathological"),
+                top.join("pending"),
+                top.join("surface"),
+            ]
+        }
+        else {
+            eprintln!("{}", sweep.rotation());
+            sweep
+                .visit_rotating(
+                    DIAGNOSTICS,
+                    DIAGNOSTICS_NIGHTS,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                )
+                .into_iter()
+                .map(|source| source.path)
+                .collect()
         };
+        if paths.is_empty() {
+            return;
+        }
         let walk = Walk::new(paths);
         let mut expected = BTreeMap::new();
         let mut sources = Vec::new();
@@ -1540,9 +1562,11 @@ mod sweeps
                 ControlFlow::Continue(())
             },
         );
-        let drawn = match (sweep.coverage(), sweep.rotation()) {
-            (Coverage::Full, Rotation::Whole) => 100_usize,
-            (Coverage::Full, Rotation::Night(_)) | (Coverage::Sampled, _) => DIAGNOSTICS.size.0,
+        let drawn = if whole {
+            100_usize
+        }
+        else {
+            sweep.drawn(DIAGNOSTICS).0
         };
         assert!(
             sources.len() >= drawn,
@@ -1576,10 +1600,11 @@ mod sweeps
 
     /// The tokens sample: sixty-four sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class — `strict` and each
-    /// directory below `fixture` — and every source the change adds or
-    /// modifies (`gandr-workflow-sweep`). The nightly profile reads the
-    /// night's slice, and the `sweeps` profile every source. Every run holds
-    /// the whole corpus's membership to the dispatcher's walk.
+    /// directory below `fixture` — and, in the companion, every source the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`). The
+    /// nightly profile reads the night's slice, and the `sweeps` profile
+    /// every source. Every run holds the whole corpus's membership to the
+    /// dispatcher's walk.
     const SAMPLE: Sample = Sample {
         name: SampleName("corpus_tokens_cover_the_highlighted_bytes"),
         size: SampleSize(64),
@@ -1593,62 +1618,84 @@ mod sweeps
     #[test]
     fn corpus_tokens_cover_the_highlighted_bytes()
     {
+        tokens_cover(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn corpus_tokens_cover_the_highlighted_bytes_changed()
+    {
+        tokens_cover(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits has semantic tokens covering its
+    /// highlighted bytes; the fixed portion also holds the corpus's
+    /// membership to the dispatcher's walk.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tokens_cover(sweep: &Sweep)
+    {
         let grammar = built_in().expect("the built-in grammar builds");
         let roles = RoleTable::build(&grammar).expect("the role table builds");
         let all = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
-        let root = corpus();
-        let top = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("corpus");
-        let walk = Walk::new(vec![
-            root.join("strict")
-                .canonicalize()
-                .expect("the strict root resolves"),
-            top.join("classifier")
-                .canonicalize()
-                .expect("the family resolves"),
-            top.join("fragment")
-                .canonicalize()
-                .expect("the family resolves"),
-            top.join("model")
-                .canonicalize()
-                .expect("the family resolves"),
-            top.join("pathological")
-                .canonicalize()
-                .expect("the family resolves"),
-            top.join("pending")
-                .canonicalize()
-                .expect("the family resolves"),
-            top.join("surface")
-                .canonicalize()
-                .expect("the family resolves"),
-        ]);
-        let mut expected_uris = alloc::collections::BTreeSet::new();
-        let ControlFlow::Continue(_report) = walk.visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                let Step::Source { path, .. } = step
-                else {
-                    panic!("a readable corpus source");
-                };
-                let _inserted = expected_uris.insert(uri(path));
-                ControlFlow::Continue(())
-            },
-        );
-        assert_eq!(
-            all.iter()
-                .map(|source| uri(&source.path))
-                .collect::<alloc::collections::BTreeSet<_>>(),
-            expected_uris
-        );
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        if sweep.portion() == Portion::Fixed {
+            let root = corpus();
+            let top = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("corpus");
+            let walk = Walk::new(vec![
+                root.join("strict")
+                    .canonicalize()
+                    .expect("the strict root resolves"),
+                top.join("classifier")
+                    .canonicalize()
+                    .expect("the family resolves"),
+                top.join("fragment")
+                    .canonicalize()
+                    .expect("the family resolves"),
+                top.join("model")
+                    .canonicalize()
+                    .expect("the family resolves"),
+                top.join("pathological")
+                    .canonicalize()
+                    .expect("the family resolves"),
+                top.join("pending")
+                    .canonicalize()
+                    .expect("the family resolves"),
+                top.join("surface")
+                    .canonicalize()
+                    .expect("the family resolves"),
+            ]);
+            let mut expected_uris = alloc::collections::BTreeSet::new();
+            let ControlFlow::Continue(_report) = walk.visit(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    let Step::Source { path, .. } = step
+                    else {
+                        panic!("a readable corpus source");
+                    };
+                    let _inserted = expected_uris.insert(uri(path));
+                    ControlFlow::Continue(())
+                },
+            );
+            assert_eq!(
+                all.iter()
+                    .map(|source| uri(&source.path))
+                    .collect::<alloc::collections::BTreeSet<_>>(),
+                expected_uris
+            );
+        }
         eprintln!("{}", sweep.rotation());
         let sources = opened(&sweep.visit_rotating(SAMPLE, NIGHTS, &all));
         assert!(
-            sources.len() >= SAMPLE.size.0,
+            sources.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             sources.len()
         );
+        if sources.is_empty() {
+            return;
+        }
         let mut messages = opening();
         for (id, source) in sources.iter().enumerate() {
             messages.push(open(source));
@@ -1692,10 +1739,11 @@ mod sweeps
                     .expect("a span lies on character boundaries");
                 for (offset, character) in covered.char_indices() {
                     if character == '\n' || character == '\r' {
-                        if piece < start + offset {
-                            expected.push((piece, start + offset));
+                        let at = start.saturating_add(offset);
+                        if piece < at {
+                            expected.push((piece, at));
                         }
-                        piece = start + offset + 1;
+                        piece = at.saturating_add(1);
                     }
                 }
                 if piece < end {
@@ -1715,13 +1763,13 @@ mod sweeps
             decoded.clear();
             for &[line_delta, start_delta, length, _, _] in stream.as_chunks::<5>().0 {
                 if line_delta == 0 {
-                    col += start_delta;
+                    col = col.saturating_add(start_delta);
                 }
                 else {
-                    row += line_delta;
+                    row = row.saturating_add(line_delta);
                     col = start_delta;
                 }
-                decoded.push((byte(row, col), byte(row, col + length)));
+                decoded.push((byte(row, col), byte(row, col.saturating_add(length))));
             }
             assert_eq!(
                 decoded, expected,

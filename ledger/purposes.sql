@@ -4427,7 +4427,8 @@ INSERT INTO purpose VALUES('workflow-spec-cost','stack::Frame','struct','Holds o
 INSERT INTO purpose VALUES('workflow-spec-cost','stack::Location','struct','Holds where a frame was executing, so the location''s file and line are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','stack::Stacks','struct','Holds a reader of `perf script` output, so the reader''s samples are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-spec-cost','stack::Symbol','struct','Names a frame''s symbol, so the symbol''s name is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-sweep','Sweep','struct','What a run asks a sweep to visit: its coverage, and, when sampled, the sources the change touches, and, when whole, the slice a rotating sweep visits.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','Portion','enum','Which portion of a sampled run a sweep test visits: the sample''s fixed set, or the change''s sources beside it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','Sweep','struct','What a run asks a sweep to visit: its coverage, the portion a test visits, and, when sampled, the sources the change touches, and, when whole, the slice a rotating sweep visits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','changed::BASE','constant','The variable naming the revision a change is measured against.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','changed::Changed','struct','The corpus sources a change adds or modifies, by name, and the commit the change was read at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','changed::Revision','struct','A revision Git resolves: a commit, a branch, or an expression such as `HEAD^`.',NULL,'fits','sound',NULL);
@@ -4453,7 +4454,7 @@ INSERT INTO purpose VALUES('workflow-sweep','rotation::Slice','struct','Which of
 INSERT INTO purpose VALUES('workflow-sweep','rotation::Text','struct','A text a sweep covers part by part.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','sample::Sample','struct','A sweep''s stated sample.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','sample::SampleName','struct','What salts a sample''s ranking: the sweep test''s own name, so two sweeps draw different slices of one corpus.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-sweep','sample::SampleSize','struct','How many sources a sample visits: its class floor, then the changed sources, then its ranked slice, until this many are taken.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','sample::SampleSize','struct','How many sources a sample visits: its class floor, then its ranked slice, until this many are taken; and at most this many of the change''s sources beside them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-test-timing','error::ConfigDefect','enum','Names what a nextest configuration holds that the report cannot read, so the defect''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-test-timing','error::TestCaseDefect','enum','Names what a `<testcase>` element lacks, so the defect''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-test-timing','error::TimingError','enum','Names why a timing report could not be produced, so the refusal''s cause is read.',NULL,'fits','sound',NULL);

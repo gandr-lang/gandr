@@ -904,6 +904,7 @@ def short(x : Nat) -> -F Nat { return x }
 mod sweeps
 {
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -914,10 +915,10 @@ mod sweeps
 
     /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
     /// this name, at least one of each corpus class — `strict` and each
-    /// directory below `fixture` — and every source the change adds or
-    /// modifies (`gandr-workflow-sweep`), each walked as its own path. The
-    /// nightly profile walks the night's slice the same way, and the `sweeps`
-    /// profile walks the two roots whole.
+    /// directory below `fixture` — and, in the companion, every source the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`), each
+    /// walked as its own path. The nightly profile walks the night's slice
+    /// the same way, and the `sweeps` profile walks the two roots whole.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_width_composes_the_corpus_alike"),
         size: SampleSize(64),
@@ -932,13 +933,30 @@ mod sweeps
     #[test]
     fn every_width_composes_the_corpus_alike()
     {
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let paths: Vec<PathBuf> = match (sweep.coverage(), sweep.rotation()) {
-            (gandr_workflow_sweep::Coverage::Full, Rotation::Whole) => {
+        composes_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_width_composes_the_corpus_alike_changed()
+    {
+        composes_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every width composes the sources `sweep` visits as the serial visit
+    /// does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn composes_alike(sweep: &Sweep)
+    {
+        let paths: Vec<PathBuf> = match (sweep.portion(), sweep.coverage(), sweep.rotation()) {
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Full, Rotation::Whole) => {
                 vec![strict_root(), fixture_root()]
             },
-            (gandr_workflow_sweep::Coverage::Full, Rotation::Night(_))
-            | (gandr_workflow_sweep::Coverage::Sampled, _) => {
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Full, Rotation::Night(_))
+            | (Portion::Fixed, gandr_workflow_sweep::Coverage::Sampled, _)
+            | (Portion::Changed, ..) => {
                 eprintln!("{}", sweep.rotation());
                 let visited = sweep.visit_rotating(
                     SAMPLE,
@@ -946,13 +964,16 @@ mod sweeps
                     &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
                 );
                 assert!(
-                    visited.len() >= SAMPLE.size.0,
+                    visited.len() >= sweep.drawn(SAMPLE).0,
                     "the sample is drawn: {}",
                     visited.len()
                 );
                 visited.into_iter().map(|source| source.path).collect()
             },
         };
+        if paths.is_empty() {
+            return;
+        }
         let serial = digests(&paths, Width::SERIAL);
         for width in [
             Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(1))),
@@ -969,10 +990,10 @@ mod sweeps
 
     /// The table parity's sample: two hundred and fifty-six sources, ranked
     /// by their BLAKE3 digest under this name, at least one of each corpus
-    /// class, and every source the change adds or modifies
-    /// (`gandr-workflow-sweep`); more than half of them lower to a module and
-    /// are compared. The `sweeps` and nightly profiles visit the two roots
-    /// whole.
+    /// class, and, in the companion, every source the change adds or modifies
+    /// beside them (`gandr-workflow-sweep`); more than half of them lower
+    /// to a module and are compared. The `sweeps` and nightly profiles
+    /// visit the two roots whole.
     const TABLED: Sample = Sample {
         name: SampleName("a_judgement_s_table_answers_as_the_table_typed_alone_1521"),
         size: SampleSize(256),
@@ -986,6 +1007,23 @@ mod sweeps
     #[test]
     fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
     {
+        tables_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn a_judgement_s_table_answers_as_the_table_typed_alone_1521_changed()
+    {
+        tables_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits, judged keeping its type table, answers as
+    /// its table typed alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tables_alike(sweep: &Sweep)
+    {
         use gandr_surface_dispatcher::Checking;
         use gandr_surface_dispatcher::HostGrant;
         use gandr_surface_dispatcher::TypeTable;
@@ -995,24 +1033,24 @@ mod sweeps
         use gandr_surface_pretty::PageWidth;
         use gandr_surface_syntax::ByteOffset;
 
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let (paths, least) = match sweep.coverage() {
-            gandr_workflow_sweep::Coverage::Full => {
-                (sources_under(&[strict_root(), fixture_root()]), 100_usize)
-            },
-            gandr_workflow_sweep::Coverage::Sampled => {
+        let (paths, least) = match (sweep.portion(), sweep.coverage()) {
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Full) => (
+                sources_under(&[strict_root(), fixture_root()]),
+                Some(100_usize),
+            ),
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Sampled) | (Portion::Changed, _) => {
                 let visited = sweep.visit(
                     TABLED,
                     &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
                 );
                 assert!(
-                    visited.len() >= TABLED.size.0,
+                    visited.len() >= sweep.drawn(TABLED).0,
                     "the sample is drawn: {}",
                     visited.len()
                 );
                 (
                     visited.into_iter().map(|source| source.path).collect(),
-                    128_usize,
+                    (sweep.portion() == Portion::Fixed).then_some(128_usize),
                 )
             },
         };
@@ -1066,16 +1104,17 @@ mod sweeps
             }
         }
         assert!(
-            tabled > least && differing.is_empty(),
+            least.is_none_or(|least| tabled > least) && differing.is_empty(),
             "over {tabled} sources, a judgement's table answers as the table typed alone; \
              differing: {differing:?}"
         );
     }
 
     /// The concurrent schedule's sample: sixty-four sources, ranked by their
-    /// BLAKE3 digest under this name, at least one of each corpus class, and
-    /// every source the change adds or modifies (`gandr-workflow-sweep`). The
-    /// `sweeps` and nightly profiles visit the two roots whole.
+    /// BLAKE3 digest under this name, at least one of each corpus class, and,
+    /// in the companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The `sweeps` and nightly profiles visit
+    /// the two roots whole.
     const SCHEDULED: Sample = Sample {
         name: SampleName("the_concurrent_schedule_settles_the_corpus_alike_2954"),
         size: SampleSize(64),
@@ -1089,27 +1128,44 @@ mod sweeps
     #[test]
     fn the_concurrent_schedule_settles_the_corpus_alike_2954()
     {
+        schedules_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn the_concurrent_schedule_settles_the_corpus_alike_2954_changed()
+    {
+        schedules_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits settles on the concurrent schedule as on
+    /// the sequential one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedules_alike(sweep: &Sweep)
+    {
         use gandr_surface_dispatcher::Scheduling;
         use gandr_surface_dispatcher::compose_on;
 
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let (paths, least) = match sweep.coverage() {
-            gandr_workflow_sweep::Coverage::Full => {
-                (sources_under(&[strict_root(), fixture_root()]), 100_usize)
-            },
-            gandr_workflow_sweep::Coverage::Sampled => {
+        let (paths, least) = match (sweep.portion(), sweep.coverage()) {
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Full) => (
+                sources_under(&[strict_root(), fixture_root()]),
+                Some(100_usize),
+            ),
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Sampled) | (Portion::Changed, _) => {
                 let visited = sweep.visit(
                     SCHEDULED,
                     &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
                 );
                 assert!(
-                    visited.len() >= SCHEDULED.size.0,
+                    visited.len() >= sweep.drawn(SCHEDULED).0,
                     "the sample is drawn: {}",
                     visited.len()
                 );
                 (
                     visited.into_iter().map(|source| source.path).collect(),
-                    32_usize,
+                    (sweep.portion() == Portion::Fixed).then_some(32_usize),
                 )
             },
         };
@@ -1153,7 +1209,7 @@ mod sweeps
             }
         }
         assert!(
-            compared > least && differing.is_empty(),
+            least.is_none_or(|least| compared > least) && differing.is_empty(),
             "over {compared} sources, the concurrent schedule settles as the sequential one; \
              differing: {differing:?}"
         );

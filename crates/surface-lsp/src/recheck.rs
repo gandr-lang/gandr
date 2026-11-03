@@ -1856,16 +1856,17 @@ mod tests
 
     /// The sweep of a recheck's kept table against a hover's. A run visits the
     /// sources [`Sweep::visit_rotating`] names: under a pull-request profile,
-    /// plain or enforcing, a sample of the sources importing a sibling, a
-    /// sample of the sources standing alone and every source the change adds
-    /// or modifies; under `sweeps`, every source; under `nightly`, the night's
-    /// slice of them over [`NIGHTS`].
+    /// plain or enforcing, a sample of the sources importing a sibling and a
+    /// sample of the sources standing alone, and in the companion every
+    /// source the change adds or modifies beside them; under `sweeps`, every
+    /// source; under `nightly`, the night's slice of them over [`NIGHTS`].
     mod sweeps
     {
         use gandr_surface_dispatcher::TypeTable;
         use gandr_surface_pretty::Form;
         use gandr_surface_pretty::PageWidth;
         use gandr_workflow_sweep::Nights;
+        use gandr_workflow_sweep::Portion;
         use gandr_workflow_sweep::Sample;
         use gandr_workflow_sweep::SampleName;
         use gandr_workflow_sweep::SampleSize;
@@ -1902,6 +1903,23 @@ mod tests
         #[test]
         fn a_recheck_keeps_the_table_its_hover_types_1521()
         {
+            keeps_the_table(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set (#4654).
+        #[test]
+        fn a_recheck_keeps_the_table_its_hover_types_1521_changed()
+        {
+            keeps_the_table(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+
+        /// Every source `sweep` visits, rechecked, keeps the table its hovers
+        /// would otherwise type.
+        ///
+        /// # Specification
+        /// trivial.
+        fn keeps_the_table(sweep: &Sweep)
+        {
             let page = PageWidth::from(80_u32);
             let style = Form::Explicit.into();
             let answers = |table: &TypeTable| {
@@ -1912,7 +1930,6 @@ mod tests
                 )
             };
             let (mut written, mut spelled) = (String::new(), String::new());
-            let sweep = Sweep::asked().expect("the run's sweep resolves");
             eprintln!("{}", sweep.rotation());
             let (importing, alone): (Vec<_>, Vec<_>) = corpus::sources()
                 .expect("the corpus reads")
@@ -1977,7 +1994,8 @@ mod tests
                 }
             }
             assert!(
-                laid > 0 && kept > laid && differing.is_empty(),
+                (sweep.portion() == Portion::Changed || (laid > 0 && kept > laid))
+                    && differing.is_empty(),
                 "over {kept} sources, {laid} laid after a closure, a recheck's table and heads answer as a hover's; differing: {differing:?}"
             );
         }

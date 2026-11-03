@@ -3386,9 +3386,10 @@ mod tests
         use crate::reading::Reading;
 
         /// The sample: thirty-six sources, ranked by their BLAKE3 digest under
-        /// this name, at least one of each corpus class, and every source the
-        /// change adds or modifies (`gandr-workflow-sweep`). Forty-eight ran
-        /// 26 s to 31 s in the enforcing checker shard, past its 30 s budget
+        /// this name, at least one of each corpus class, and, in the companion,
+        /// every source the change adds or modifies beside them
+        /// (`gandr-workflow-sweep`). Forty-eight ran 26 s to 31 s in
+        /// the enforcing checker shard, past its 30 s budget
         /// as often as not (#4257); thirty-six keeps the slowest of those
         /// runs near 24 s.
         const SAMPLE: Sample = Sample {
@@ -3407,7 +3408,23 @@ mod tests
         #[test]
         fn every_corpus_tile_hovers_or_names_its_issue_1206()
         {
-            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            hovers_every_tile(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set (#4654).
+        #[test]
+        fn every_corpus_tile_hovers_or_names_its_issue_1206_changed()
+        {
+            hovers_every_tile(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+
+        /// Every tile of every source `sweep` visits hovers, or names its
+        /// issue.
+        ///
+        /// # Specification
+        /// trivial.
+        fn hovers_every_tile(sweep: &Sweep)
+        {
             eprintln!("{}", sweep.rotation());
             let sources = sweep.visit_rotating(
                 SAMPLE,
@@ -3415,7 +3432,7 @@ mod tests
                 &corpus::sources().expect("the corpus reads"),
             );
             assert!(
-                sources.len() >= SAMPLE.size.0,
+                sources.len() >= sweep.drawn(SAMPLE).0,
                 "the sample is drawn: {}",
                 sources.len()
             );

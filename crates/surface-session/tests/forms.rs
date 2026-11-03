@@ -367,6 +367,7 @@ mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -375,10 +376,10 @@ mod sweeps
     use super::*;
 
     /// The sample: twenty-four corpus sources ranked by their BLAKE3 digest
-    /// under this name, the first of every class, and every one the change
-    /// adds or modifies (`gandr-workflow-sweep`). The `sweeps` profile
-    /// scripts every source; the nightly profile scripts the night's slice of
-    /// [`NIGHTS`].
+    /// under this name, the first of every class, and, in the companion, every
+    /// one the change adds or modifies beside them (`gandr-workflow-sweep`).
+    /// The `sweeps` profile scripts every source; the nightly profile
+    /// scripts the night's slice of [`NIGHTS`].
     const SAMPLE: Sample = Sample {
         name: SampleName("every_corpus_edit_script_submits_as_the_walk_composes_it"),
         size: SampleSize(24),
@@ -400,7 +401,23 @@ mod sweeps
     #[test]
     fn every_corpus_edit_script_submits_as_the_walk_composes_it()
     {
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        scripts_each(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_corpus_edit_script_submits_as_the_walk_composes_it_changed()
+    {
+        scripts_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits submits each revision of its edit script
+    /// as the walk composes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scripts_each(sweep: &Sweep)
+    {
         eprintln!("{}", sweep.rotation());
         let visited: Vec<_> = sweep
             .visit_rotating(
@@ -412,10 +429,13 @@ mod sweeps
             .map(|source| source.path)
             .collect();
         assert!(
-            visited.len() >= SAMPLE.size.0,
+            visited.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             visited.len()
         );
+        if visited.is_empty() {
+            return;
+        }
         let drawn = visited.len();
         let mut scripted = 0_usize;
         let mut over = 0_usize;
@@ -445,7 +465,10 @@ mod sweeps
             drawn,
             "the walk reaches every visited source"
         );
-        assert!(scripted > 0, "the sample scripts a source");
+        assert!(
+            sweep.portion() == Portion::Changed || scripted > 0,
+            "the sample scripts a source"
+        );
     }
 
     /// `text`, the corpus source at `path` under `root`, then a declaration
