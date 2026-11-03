@@ -2597,9 +2597,9 @@ mod sweeps
     use super::spelled;
 
     /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class, and every source the
-    /// change adds or modifies (`gandr-workflow-sweep`). The `sweeps`
-    /// profile formats every source.
+    /// this name, at least one of each corpus class, and, in the companion,
+    /// the sources the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The `sweeps` profile formats every source.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_source_formats_into_either_form_and_keeps_its_meaning"),
         size: SampleSize(64),
@@ -2608,11 +2608,26 @@ mod sweeps
     #[test]
     fn every_source_formats_into_either_form_and_keeps_its_meaning()
     {
+        formats_either(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_source_formats_into_either_form_and_keeps_its_meaning_changed()
+    {
+        formats_either(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits formats into either form and once in it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn formats_either(sweep: &Sweep)
+    {
         let grammar = grammar();
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
         assert!(
-            sources.len() >= SAMPLE.size.0,
+            sources.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             sources.len()
         );

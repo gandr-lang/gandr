@@ -2941,6 +2941,7 @@ mod sweeps
     use alloc::collections::BTreeSet;
 
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -2949,10 +2950,10 @@ mod sweeps
     use super::*;
 
     /// The sample: twenty sources under `fixture/pathological`, ranked by
-    /// their BLAKE3 digest under this name, and every one the change adds
-    /// or modifies (`gandr-workflow-sweep`). The `sweeps` profile
-    /// cuts every pathological source, and the nightly profile the night's
-    /// slice of [`NIGHTS`].
+    /// their BLAKE3 digest under this name, and, in the companion, every one
+    /// the change adds or modifies beside them (`gandr-workflow-sweep`). The
+    /// `sweeps` profile cuts every pathological source, and the nightly
+    /// profile the night's slice of [`NIGHTS`].
     const SAMPLE: Sample = Sample {
         name: SampleName("a_malformed_form_reports_its_parse_error_alone"),
         size: SampleSize(20),
@@ -2967,13 +2968,29 @@ mod sweeps
     #[test]
     fn a_malformed_form_reports_its_parse_error_alone()
     {
+        reports_alone(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn a_malformed_form_reports_its_parse_error_alone_changed()
+    {
+        reports_alone(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every cut of every pathological source `sweep` visits reports a
+    /// malformed form's parse error alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reports_alone(sweep: &Sweep)
+    {
         let grammar = built_in().expect("the built-in grammar builds");
         let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
             .expect("the corpus reads")
             .into_iter()
             .filter(|source| source.name.as_ref().starts_with("fixture/pathological/"))
             .collect();
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         eprintln!("{}", sweep.rotation());
         let visited: BTreeSet<_> = sweep
             .visit_rotating(SAMPLE, NIGHTS, &candidates)
@@ -2981,7 +2998,7 @@ mod sweeps
             .map(|source| source.path)
             .collect();
         assert!(
-            visited.len() >= SAMPLE.size.0,
+            visited.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             visited.len()
         );
@@ -3103,7 +3120,7 @@ mod sweeps
             },
         );
         assert!(
-            repaired > 0_usize,
+            sweep.portion() == Portion::Changed || repaired > 0_usize,
             "typing the corpus meets malformed forms"
         );
     }

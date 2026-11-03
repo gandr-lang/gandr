@@ -39,8 +39,9 @@ pub const BASE: &str = "GANDR_SWEEP_BASE";
 /// change was read at.
 ///
 /// # Specification
-/// - provides: the names a sample takes before its ranked slice, and the key
-///   that rotates which of them it takes when they outnumber its size.
+/// - provides: the names a sweep's companion visits beside a sample's fixed
+///   set, and the key that rotates which of them it takes when they outnumber
+///   its size.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Changed
 {
@@ -358,9 +359,10 @@ impl FromIterator<CorpusName> for Changed
     /// trivial.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a change collected from one source outside a sample
-    ///   puts it in, so a change collected empty leaves it out.
-    /// - witness: `sample::tests::a_sample_keeps_every_class_and_every_change`
+    /// - hypothesis: L3 — a change collected from one source outside a sample's
+    ///   fixed set visits it beside that set, so a change that drops it does
+    ///   not.
+    /// - witness: `sample::tests::a_change_is_visited_beside_the_fixed_set`
     #[inline]
     fn from_iter<Names>(iter: Names) -> Self
     where

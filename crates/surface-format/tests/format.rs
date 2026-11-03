@@ -476,9 +476,9 @@ mod sweeps
 
     /// The sample: sixty-four sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class — `strict` and
-    /// each directory below `fixture` — and every source the change adds
-    /// or modifies (`gandr-workflow-sweep`). The `sweeps` profile formats
-    /// every source.
+    /// each directory below `fixture` — and, in the companion, the sources
+    /// the change adds or modifies beside them (`gandr-workflow-sweep`). The
+    /// `sweeps` profile formats every source.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_source_keeps_its_meaning_and_formats_once"),
         size: SampleSize(64),
@@ -487,11 +487,27 @@ mod sweeps
     #[test]
     fn every_source_keeps_its_meaning_and_formats_once()
     {
+        formats_once(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_source_keeps_its_meaning_and_formats_once_changed()
+    {
+        formats_once(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits formats once at each width, keeping its
+    /// meaning.
+    ///
+    /// # Specification
+    /// trivial.
+    fn formats_once(sweep: &Sweep)
+    {
         let grammar = grammar();
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
         assert!(
-            sources.len() >= SAMPLE.size.0,
+            sources.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             sources.len()
         );

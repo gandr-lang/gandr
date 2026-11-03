@@ -2752,9 +2752,10 @@ mod tests
 
         /// The sample: twenty-four sources, ranked by their BLAKE3 digest under
         /// this name, at least one of each corpus class — `strict` and each
-        /// directory below `fixture` — and every source the change adds or
-        /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
-        /// source, and the nightly profile the night's slice of [`NIGHTS`].
+        /// directory below `fixture` — and, in the companion, every source the
+        /// change adds or modifies beside them (`gandr-workflow-sweep`). The
+        /// `sweeps` profile reads every source, and the nightly profile
+        /// the night's slice of [`NIGHTS`].
         const SAMPLE: Sample = Sample {
             name: SampleName("every_corpus_cursor_has_a_ghost_text"),
             size: SampleSize(24),
@@ -2850,8 +2851,23 @@ mod tests
         #[test]
         fn every_corpus_cursor_has_a_ghost_text()
         {
+            ghosts_every_cursor(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set (#4654).
+        #[test]
+        fn every_corpus_cursor_has_a_ghost_text_changed()
+        {
+            ghosts_every_cursor(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+
+        /// Every cursor of every source `sweep` visits has a ghost text.
+        ///
+        /// # Specification
+        /// trivial.
+        fn ghosts_every_cursor(sweep: &Sweep)
+        {
             let tools = tools();
-            let sweep = Sweep::asked().expect("the run's sweep resolves");
             eprintln!("{}", sweep.rotation());
             let sources = sweep.visit_rotating(
                 SAMPLE,
@@ -2859,7 +2875,7 @@ mod tests
                 &corpus::sources().expect("the corpus reads"),
             );
             assert!(
-                sources.len() >= SAMPLE.size.0,
+                sources.len() >= sweep.drawn(SAMPLE).0,
                 "the sample is drawn: {}",
                 sources.len()
             );

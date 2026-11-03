@@ -1793,7 +1793,7 @@ mod sweeps
         let mut sources = opened(&chosen);
         assert!(
             sweep.coverage() == gandr_workflow_sweep::Coverage::Full
-                || sources.len() >= sample.size.0,
+                || sources.len() >= sweep.drawn(sample).0,
             "the sample is drawn: {}",
             sources.len()
         );
@@ -1824,8 +1824,23 @@ mod sweeps
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let (rotation, sources) = visited(&sweep, TYPED, Some(TYPED_CEILING), Nightly::Part);
+        types_each(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn typing_each_corpus_source_keeps_every_answer_faithful_changed()
+    {
+        types_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits typed, each keystroke held to the oracle.
+    ///
+    /// # Specification
+    /// trivial.
+    fn types_each(sweep: &Sweep)
+    {
+        let (rotation, sources) = visited(sweep, TYPED, Some(TYPED_CEILING), Nightly::Part);
         each_in_parallel(&sources, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text), TYPED_NIGHTS);
             let opening = source
@@ -1854,8 +1869,24 @@ mod sweeps
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let (rotation, sources) = visited(&sweep, ERASED, Some(ERASED_CEILING), Nightly::Part);
+        erases_each(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful_changed()
+    {
+        erases_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits erased line by line, each keystroke held
+    /// to the oracle.
+    ///
+    /// # Specification
+    /// trivial.
+    fn erases_each(sweep: &Sweep)
+    {
+        let (rotation, sources) = visited(sweep, ERASED, Some(ERASED_CEILING), Nightly::Part);
         let grammar = built_in().expect("the built-in grammar builds");
         each_in_parallel(&sources, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text), ERASED_NIGHTS);
@@ -1882,10 +1913,11 @@ mod sweeps
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Drawn
     {
-        /// Every source: the `sweeps` profile, so every counted kind must
-        /// keep a row.
+        /// Every source: the `sweeps` profile's fixed portion, so every
+        /// counted kind must keep a row.
         Whole,
-        /// A night's slice or a sampled run's sample.
+        /// A night's slice, a sampled run's sample, or the change's sources
+        /// beside it.
         Slice,
     }
 
@@ -1896,8 +1928,8 @@ mod sweeps
     /// - requires: nothing.
     /// - ensures: what [`visited`] draws for [`HOVERED`] over
     ///   [`HOVERED_NIGHTS`] nights; [`Drawn::Whole`] exactly under
-    ///   [`Rotation::Whole`] with [`gandr_workflow_sweep::Coverage::Full`], the
-    ///   `sweeps` profile.
+    ///   [`Rotation::Whole`] with [`gandr_workflow_sweep::Coverage::Full`] for
+    ///   the fixed portion, the `sweeps` profile.
     /// - provides: the hover sweep's sources, the nightly's slice of them
     ///   included.
     /// - panics: the corpus cannot be read.
@@ -1907,7 +1939,8 @@ mod sweeps
     ///   corpus nightly, as the sweep once did, changes the drawn count.
     /// - witness: `tests::editor::scenarios::sweeps::the_nightly_hovers_its_slice_of_the_corpus_3974`
     #[spec(ensures: |ret| (ret.0 == Drawn::Whole) == (sweep.rotation() == Rotation::Whole
-        && sweep.coverage() == gandr_workflow_sweep::Coverage::Full))]
+        && sweep.coverage() == gandr_workflow_sweep::Coverage::Full
+        && sweep.portion() == gandr_workflow_sweep::Portion::Fixed))]
     fn hovered_sources(sweep: &Sweep) -> (Drawn, Vec<Source>)
     {
         let (rotation, sources) = visited(
@@ -1918,6 +1951,7 @@ mod sweeps
         );
         let drawn = if rotation == Rotation::Whole
             && sweep.coverage() == gandr_workflow_sweep::Coverage::Full
+            && sweep.portion() == gandr_workflow_sweep::Portion::Fixed
         {
             Drawn::Whole
         }
@@ -1968,7 +2002,23 @@ mod sweeps
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     {
-        let (drawn, sources) = hovered_sources(&Sweep::asked().expect("the run's sweep resolves"));
+        hovers_each(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn hovering_every_position_of_each_corpus_source_answers_without_fault_changed()
+    {
+        hovers_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every position of every source `sweep` visits hovers without fault.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hovers_each(sweep: &Sweep)
+    {
+        let (drawn, sources) = hovered_sources(sweep);
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
         let unanswered = AtomicUsize::new(0_usize);
@@ -2021,7 +2071,7 @@ mod sweeps
                                 depth == 0
                             });
                             closed.is_some_and(|(at, _)| {
-                                rest.get(at + 1 ..)
+                                rest.get(at.saturating_add(1) ..)
                                     .is_some_and(|after| after.starts_with('.'))
                             })
                         },
@@ -2031,9 +2081,9 @@ mod sweeps
                     if hover.shown["contents"]["value"]
                         .as_str()
                         .is_some_and(|value| {
-                            value
-                                .match_indices('?')
-                                .any(|(at, _)| !value.get(at + 1 ..).is_some_and(receives))
+                            value.match_indices('?').any(|(at, _)| {
+                                !value.get(at.saturating_add(1) ..).is_some_and(receives)
+                            })
                         })
                     {
                         row.unknown = 1_usize;

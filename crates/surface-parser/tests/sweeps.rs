@@ -7,8 +7,9 @@
 //! squared, and the whole corpus is visited every few nights. A sample is a
 //! hashed slice of the corpus at a fixed size, salted by the sweep's name, at
 //! least one source of each class — `strict` and each directory below
-//! `fixture`, the pending set among them — and every source the change adds
-//! or modifies. A sampled source longer than [`SAMPLED_SPAN`] steps through
+//! `fixture`, the pending set among them — and each sweep's `_changed`
+//! companion visits the sources the change adds or modifies beside it
+//! (#4654). A sampled source longer than [`SAMPLED_SPAN`] steps through
 //! its rows by its multiple of the span, so it costs about its length times
 //! the span rather than its length squared.
 
@@ -38,6 +39,7 @@ use gandr_surface_syntax::SyntaxTree;
 use gandr_workflow_sweep::Changed;
 use gandr_workflow_sweep::Coverage;
 use gandr_workflow_sweep::Nights;
+use gandr_workflow_sweep::Portion;
 use gandr_workflow_sweep::Rotation;
 use gandr_workflow_sweep::Sample;
 use gandr_workflow_sweep::SampleName;
@@ -155,14 +157,36 @@ struct TokenCount(usize);
 /// are independent, so they are parsed on every available core, the longest
 /// first ([`observed_in_parallel`]): run one after another, the whole matrix
 /// took 127 s of the plain lane's critical path (#2148). The sample,
-/// [`RECOVERY`], parses forty-eight sources, those the change touches first:
-/// each one's whole row and the rows of every sixteenth significant token, a
-/// source past [`SAMPLED_SPAN`] tokens at that step times its multiple of the
-/// span ([`sampled_step`]).
+/// [`RECOVERY`], parses forty-eight sources: each one's whole row and the
+/// rows of every sixteenth significant token, a source past [`SAMPLED_SPAN`]
+/// tokens at that step times its multiple of the span ([`sampled_step`]).
+/// Its companion parses the sources the change touches beside them (#4654).
 /// Every source's record is still required to exist, and every record to have
 /// a source, under every profile.
 #[test]
 fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
+{
+    recovers(Portion::Fixed)
+}
+
+/// The change's sources beside the fixed set (#4654).
+#[test]
+fn dropped_tokens_recover_no_worse_than_the_record_changed() -> Result<(), Box<dyn Error>>
+{
+    recovers(Portion::Changed)
+}
+
+/// The recovery sweep over `portion` of the run: the fixed portion also
+/// holds every source to its record and every record to its source, and
+/// rewrites them under `UPDATE_EXPECT`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A source or record that cannot be read or written, or a row that does not
+/// parse.
+fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
 {
     use core::fmt::Write as _;
 
@@ -242,11 +266,18 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     let records = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recovery");
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let only = std::env::var("GANDR_RECOVERY_SOURCE").ok();
+    if portion == Portion::Changed && (update || only.is_some()) {
+        return Ok(());
+    }
     let sweep = if update {
         Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
     }
     else {
         Sweep::asked()?
+    };
+    let sweep = match portion {
+        Portion::Fixed => sweep,
+        Portion::Changed => sweep.changed(),
     };
     eprintln!("{}", sweep.rotation());
     let coverage = sweep.coverage();
@@ -275,6 +306,9 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         let record = records.join(rel).with_extension("recovery");
         let _sourced = sourced.insert(record.clone());
         if only.as_deref().is_some_and(|only| only != rel) {
+            continue;
+        }
+        if portion == Portion::Changed && !visited.contains(&source.path) {
             continue;
         }
         if !update && !record.is_file() {
@@ -410,7 +444,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         }
     }
     let mut orphans = Vec::new();
-    if only.is_none() {
+    if only.is_none() && portion == Portion::Fixed {
         let mut pending = vec![records.clone()];
         while let Some(dir) = pending.pop() {
             let Ok(entries) = std::fs::read_dir(&dir)
@@ -592,17 +626,36 @@ fn sampled_step(
 /// editing session does. The stray cases the molder's cost was measured on
 /// come first: their windows are the ones the window classes share most.
 ///
-/// The sample, [`TABLES`], molds twelve sources and every source the change
-/// touches, each whole and at every sixteenth significant token's rows, every
-/// sixty-fourth under `anodized_panic`. When the change brings it past twelve
-/// sources, the step widens by the multiple of twelve it visits, so a change
-/// over a hundred fixtures molds each whole and the same budget of rows spread
-/// over them, inside the test limit; a source past [`SAMPLED_SPAN`] tokens
-/// widens the step again by its multiple of the span ([`sampled_step`]). The
-/// whole sweep molds every source at every row, every sixteenth under
+/// The sample, [`TABLES`], molds twelve sources, each whole and at every
+/// sixteenth significant token's rows, every sixty-fourth under
+/// `anodized_panic`; its companion molds up to twelve the change touches
+/// beside them (#4654). A run visiting past twelve sources widens the step
+/// by the multiple of twelve it visits, so it molds the same budget of rows
+/// spread over them, inside the test limit; a source past [`SAMPLED_SPAN`]
+/// tokens widens the step again by its multiple of the span ([`sampled_step`]).
+/// The whole sweep molds every source at every row, every sixteenth under
 /// `anodized_panic`.
 #[test]
 fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
+{
+    tables_agree(&Sweep::asked()?)
+}
+
+/// The change's sources beside the fixed set (#4654).
+#[test]
+fn table_verdicts_equal_dry_run_verdicts_changed() -> Result<(), Box<dyn Error>>
+{
+    tables_agree(&Sweep::asked()?.changed())
+}
+
+/// The table sweep over the sources `sweep` visits, the strays first.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// A source that cannot be read, or a token offset past `usize`.
+fn tables_agree(sweep: &Sweep) -> Result<(), Box<dyn Error>>
 {
     /// The strays the molder's cost was measured on, each a one-token edit of
     /// a corpus-shaped definition.
@@ -616,7 +669,6 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
     ];
 
     let pbg = built();
-    let sweep = Sweep::asked()?;
     eprintln!("{}", sweep.rotation());
     let visited = sweep.visit_rotating(TABLES, TABLES_NIGHTS, &corpus::sources()?);
     let stride = match sweep.coverage() {
@@ -678,7 +730,10 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
             differential(&|| format!("{rel} drop {index}"), &dropped);
         }
     }
-    assert!(molded > STRAYS.len(), "the corpus sources are present");
+    assert!(
+        sweep.portion() == Portion::Changed || molded > STRAYS.len(),
+        "the corpus sources are present"
+    );
     assert_eq!(
         DisagreementCount(0),
         molder.disagreements(),

@@ -1158,6 +1158,7 @@ mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -1168,13 +1169,14 @@ mod sweeps
 
     /// The sample: thirty-two sources, ranked by their BLAKE3 digest under
     /// this name, at least one of each corpus class — `strict` and each
-    /// family under the top-level `corpus` — and every source the change adds
-    /// or modifies (`gandr-workflow-sweep`), each walked as its own path. A
-    /// sampled run holds each node and each byte to the gate, and each owed
-    /// kind to at most its pin, and so does the nightly profile over the
-    /// night's slice. The `sweeps` profile walks the roots whole and holds
-    /// the census exactly: every pin met, every by-design kind seen without
-    /// its entry, every listed kind written.
+    /// family under the top-level `corpus` — and, in the companion, every
+    /// source the change adds or modifies beside them (`gandr-workflow-sweep`),
+    /// each walked as its own path. A sampled run holds each node and each
+    /// byte to the gate, and each owed kind to at most its pin, and so does
+    /// the nightly profile over the night's slice. The `sweeps` profile
+    /// walks the roots whole and holds the census exactly: every pin met,
+    /// every by-design kind seen without its entry, every listed kind
+    /// written.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_judged_node_answers_at_its_own_span"),
         size: SampleSize(32),
@@ -1188,6 +1190,23 @@ mod sweeps
     #[test]
     fn every_judged_node_answers_at_its_own_span()
     {
+        answers_at_own_span(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_judged_node_answers_at_its_own_span_changed()
+    {
+        answers_at_own_span(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every judged node of every source `sweep` visits answers at its own
+    /// span.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answers_at_own_span(sweep: &Sweep)
+    {
         let grammar = built_in().expect("the built-in grammar builds");
         let page = PageWidth::from(80_u32);
         let standings: BTreeMap<&str, Standing> = KINDS.iter().copied().collect();
@@ -1195,8 +1214,9 @@ mod sweeps
         let mut met = BTreeSet::new();
         let mut astray = Vec::new();
         let mut nodes = 0_usize;
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let whole = sweep.coverage() == Coverage::Full && sweep.rotation() == Rotation::Whole;
+        let whole = sweep.portion() == Portion::Fixed
+            && sweep.coverage() == Coverage::Full
+            && sweep.rotation() == Rotation::Whole;
         let paths: Vec<PathBuf> = if whole {
             let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
@@ -1219,12 +1239,15 @@ mod sweeps
                 &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
             );
             assert!(
-                visited.len() >= SAMPLE.size.0,
+                visited.len() >= sweep.drawn(SAMPLE).0,
                 "the sample is drawn: {}",
                 visited.len()
             );
             visited.into_iter().map(|source| source.path).collect()
         };
+        if paths.is_empty() {
+            return;
+        }
         let walk = Walk::new(paths);
         let ControlFlow::Continue(_report) = walk.visit(
             &Pool::new(Width::SERIAL),

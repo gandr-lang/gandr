@@ -60,6 +60,7 @@ mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -70,10 +71,10 @@ mod sweeps
 
     /// The sample: thirty-two corpus sources ranked by their BLAKE3 digest
     /// under this name, the first of every class — `strict` and each directory
-    /// below `fixture` — and every one the change adds or modifies
-    /// (`gandr-workflow-sweep`), each walked as its own path. The nightly
-    /// profile walks the night's slice the same way, and the `sweeps` profile
-    /// walks the two roots whole.
+    /// below `fixture` — and, in the companion, every one the change adds or
+    /// modifies beside them (`gandr-workflow-sweep`), each walked as its own
+    /// path. The nightly profile walks the night's slice the same way, and
+    /// the `sweeps` profile walks the two roots whole.
     const SAMPLE: Sample = Sample {
         name: SampleName("every_source_submits_as_the_walk_composes_it"),
         size: SampleSize(32),
@@ -88,32 +89,53 @@ mod sweeps
     #[test]
     fn every_source_submits_as_the_walk_composes_it()
     {
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        submits_each(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_source_submits_as_the_walk_composes_it_changed()
+    {
+        submits_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits submits as the walk composes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn submits_each(sweep: &Sweep)
+    {
         // A night's slice is drawn by digest alone, so it may hold no source
         // of a small class; a sample and the whole hold one of each.
-        let (paths, classed): (Vec<PathBuf>, bool) = match (sweep.coverage(), sweep.rotation()) {
-            (Coverage::Full, Rotation::Whole) => (
-                vec![corpus(CorpusRoot::Strict), corpus(CorpusRoot::Fixture)],
-                true,
-            ),
-            (Coverage::Full, Rotation::Night(_)) | (Coverage::Sampled, _) => {
-                eprintln!("{}", sweep.rotation());
-                let visited = sweep.visit_rotating(
-                    SAMPLE,
-                    NIGHTS,
-                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
-                );
-                assert!(
-                    visited.len() >= SAMPLE.size.0,
-                    "the sample is drawn: {}",
-                    visited.len()
-                );
-                (
-                    visited.into_iter().map(|source| source.path).collect(),
-                    sweep.coverage() == Coverage::Sampled,
-                )
-            },
-        };
+        let (paths, classed): (Vec<PathBuf>, bool) =
+            match (sweep.portion(), sweep.coverage(), sweep.rotation()) {
+                (Portion::Fixed, Coverage::Full, Rotation::Whole) => (
+                    vec![corpus(CorpusRoot::Strict), corpus(CorpusRoot::Fixture)],
+                    true,
+                ),
+                (Portion::Fixed, Coverage::Full, Rotation::Night(_))
+                | (Portion::Fixed, Coverage::Sampled, _)
+                | (Portion::Changed, ..) => {
+                    eprintln!("{}", sweep.rotation());
+                    let visited = sweep.visit_rotating(
+                        SAMPLE,
+                        NIGHTS,
+                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                    );
+                    assert!(
+                        visited.len() >= sweep.drawn(SAMPLE).0,
+                        "the sample is drawn: {}",
+                        visited.len()
+                    );
+                    (
+                        visited.into_iter().map(|source| source.path).collect(),
+                        sweep.portion() == Portion::Fixed && sweep.coverage() == Coverage::Sampled,
+                    )
+                },
+            };
+        if paths.is_empty() {
+            return;
+        }
         let mut sources = Sources::default();
         let ControlFlow::Continue(_report) = Walk::new(paths).visit(
             &Pool::new(Width::SERIAL),

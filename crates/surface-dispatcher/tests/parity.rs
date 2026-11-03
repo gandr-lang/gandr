@@ -1710,6 +1710,7 @@ mod sweeps
     use gandr_surface_syntax::SourceText;
     use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -1726,8 +1727,9 @@ mod sweeps
     use super::misses;
 
     /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class, and every source the
-    /// change adds or modifies (`gandr-workflow-sweep`).
+    /// this name, at least one of each corpus class, and, in the companion,
+    /// every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`).
     const SAMPLE: Sample = Sample {
         name: SampleName("the_formatter_spells_each_form_as_the_printer_does_755"),
         size: SampleSize(64),
@@ -1741,8 +1743,24 @@ mod sweeps
     #[test]
     fn the_formatter_spells_each_form_as_the_printer_does_755()
     {
+        spells_each_form(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn the_formatter_spells_each_form_as_the_printer_does_755_changed()
+    {
+        spells_each_form(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// The formatter spells each form of every source `sweep` visits as the
+    /// printer does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spells_each_form(sweep: &Sweep)
+    {
         let grammar = built_in().expect("the built-in grammar builds");
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         eprintln!("{}", sweep.rotation());
         let sources = sweep.visit_rotating(
             SAMPLE,
@@ -1790,8 +1808,27 @@ mod sweeps
     #[test]
     fn the_formatter_spells_each_declaration_as_the_printer_does_755()
     {
+        spells_each_declaration(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn the_formatter_spells_each_declaration_as_the_printer_does_755_changed()
+    {
+        spells_each_declaration(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// The formatter spells each declaration of every source `sweep` visits
+    /// as the printer does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spells_each_declaration(sweep: &Sweep)
+    {
+        if sweep.coverage() == Coverage::Full && sweep.portion() == Portion::Changed {
+            return;
+        }
         let grammar = built_in().expect("the built-in grammar builds");
-        let sweep = Sweep::asked().expect("the run's sweep resolves");
         let whole = sweep.coverage() == Coverage::Full;
         let read = |source: &corpus::Source| {
             std::fs::read_to_string(&source.path).expect("a corpus source is readable")
@@ -1816,7 +1853,7 @@ mod sweeps
             .collect();
         let sources = sweep.visit_rotating(BODIES, BODIES_NIGHTS, &candidates);
         assert!(
-            whole || sources.len() >= BODIES.size.0,
+            whole || sources.len() >= sweep.drawn(BODIES).0,
             "the sample is drawn: {}",
             sources.len()
         );
