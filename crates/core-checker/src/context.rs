@@ -492,10 +492,10 @@ pub struct CheckingContext<'arena>
     /// to the models of one it includes: the value bridge crosses by one where
     /// a model of the first stands at a model of the second.
     reducts: Vec<gandr_kernel_term::ConstantIndex>,
-    /// The literal readers the module lends, each a model's `fromNat`: the
-    /// value bridge crosses a natural literal by the one whose carrier is the
-    /// type the literal is checked at.
-    readers: Vec<gandr_kernel_term::ConstantIndex>,
+    /// The literal readers the module lends, each a model's `fromNat` or
+    /// `fromNeg`: the value bridge crosses an integer literal by the one of
+    /// its kind whose carrier is the type the literal is checked at.
+    readers: Vec<gandr_core_term::LiteralReader>,
     /// The tier an endpoint pair is offered before the machine, when the run
     /// handed one. A checkpoint does not keep it: a resumed context takes its
     /// own.
@@ -709,7 +709,7 @@ pub struct Checkpoint
     /// [`CheckingContext::reducts`].
     reducts: Vec<gandr_kernel_term::ConstantIndex>,
     /// [`CheckingContext::readers`].
-    readers: Vec<gandr_kernel_term::ConstantIndex>,
+    readers: Vec<gandr_core_term::LiteralReader>,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -1763,14 +1763,15 @@ impl<'arena> CheckingContext<'arena>
     }
 
     /// Read `readers` as the literal readers the module lends, so the value
-    /// bridge crosses a natural literal checked at a type apart from `Integer`
-    /// by the one whose carrier converts with that type.
+    /// bridge crosses an integer literal checked at a type apart from
+    /// `Integer` by the one of its kind whose carrier converts with that type.
     ///
     /// # Specification
-    /// - ensures: every later value bridge from `Integer` at a natural literal
-    ///   to a type apart from it crosses by the one kept reader whose result
-    ///   converts with that type, and records it at the literal; each reader is
-    ///   kept once, in position order, however often it is read.
+    /// - ensures: every later value bridge from `Integer` at an integer literal
+    ///   to a type apart from it crosses by the one kept reader of the
+    ///   literal's kind whose result converts with that type, and records it at
+    ///   the literal; each reader is kept once, in position order, however
+    ///   often it is read.
     /// - panics: none.
     /// - executable: none — the kept readers are the receiver's own, which a
     ///   predicate would search again.
@@ -1779,10 +1780,11 @@ impl<'arena> CheckingContext<'arena>
     /// - hypothesis: L3 — a literal checked at a parity crosses by the parity's
     ///   reader once it is kept, and is refused while it is not.
     /// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+    /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
     #[inline]
     pub fn keep_readers(
         &mut self,
-        readers: &[gandr_kernel_term::ConstantIndex],
+        readers: &[gandr_core_term::LiteralReader],
     )
     {
         self.readers.extend(readers.iter().copied());
@@ -1797,7 +1799,7 @@ impl<'arena> CheckingContext<'arena>
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn readers(&self) -> &[gandr_kernel_term::ConstantIndex]
+    pub(crate) fn readers(&self) -> &[gandr_core_term::LiteralReader]
     {
         &self.readers
     }

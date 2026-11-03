@@ -929,13 +929,14 @@ mod tests
             named!([
                 ("Eq", Kind::ENUM),
                 ("FromNat", Kind::ENUM),
+                ("FromNeg", Kind::ENUM),
                 ("Nat", Kind::ENUM),
                 ("Ord", Kind::ENUM),
                 ("PartialEq", Kind::ENUM),
                 ("Pos", Kind::ENUM),
             ]),
-            "a type: the families alone, the prelude's `Eq`, `FromNat`, `Ord`, `PartialEq` and \
-             `Pos` among them"
+            "a type: the families alone, the prelude's `Eq`, `FromNat`, `FromNeg`, `Ord`, \
+             `PartialEq` and `Pos` among them"
         );
         assert!(has(&ty, "Type") && !has(&ty, "return"), "{ty:?}");
 

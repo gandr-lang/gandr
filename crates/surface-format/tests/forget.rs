@@ -108,7 +108,13 @@ fn a_forgetting_map_is_written_only_at_quoted_carriers_onto_its_own_theory_2130(
         (unmapped, counter.theory, vec![quoted_unit]),
     ]
     .into_iter()
-    .map(|(value, by, carriers)| (value, Crossing { by, carriers }))
+    .map(|(value, by, carriers)| {
+        (value, Crossing {
+            by,
+            carriers,
+            operand: gandr_core_term::CrossedOperand::Itself,
+        })
+    })
     .collect();
     let expected: BTreeMap<_, _> = [
         (written, Forgetting {

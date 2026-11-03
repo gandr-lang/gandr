@@ -11957,9 +11957,9 @@ pub struct LoweredModule<'source>
     reducts: Vec<ConstantIndex>,
     /// The forgetting maps the module mints, ascending by position.
     forgets: Vec<ConstantIndex>,
-    /// The `fromNat` members of the models of the prelude's `FromNat`, in
-    /// declaration order.
-    readers: Vec<ConstantIndex>,
+    /// The reading members of the models of the prelude's `FromNat` and
+    /// `FromNeg`, each with the literal it reads.
+    readers: Vec<gandr_core_term::LiteralReader>,
     /// Each forgetting map the module mints as a source writes it, ascending
     /// by the map's position.
     forgettings: Vec<Forgetting>,
@@ -12167,8 +12167,8 @@ impl<'source> LoweredModule<'source>
         self
     }
 
-    /// This module, carrying `readers`, the `fromNat` members of the models of
-    /// the prelude's `FromNat`, in declaration order.
+    /// This module, carrying `readers`, the reading members of the models of
+    /// the prelude's `FromNat` and `FromNeg`, each with the literal it reads.
     ///
     /// # Specification
     /// trivial.
@@ -12176,7 +12176,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub fn with_readers(
         mut self,
-        readers: Vec<ConstantIndex>,
+        readers: Vec<gandr_core_term::LiteralReader>,
     ) -> Self
     {
         self.readers = readers;
@@ -13152,15 +13152,17 @@ impl<'source> LoweredModule<'source>
         &self.forgets
     }
 
-    /// The literal readers this module lends, in declaration order: the
-    /// `fromNat` member of each model of the prelude's `FromNat`, which the
-    /// checker applies to a natural literal checked at the model's carrier.
+    /// The literal readers this module lends: the `fromNat` member of each
+    /// model of the prelude's `FromNat`, which the checker applies to a
+    /// natural literal checked at the model's carrier, and the `fromNeg` of
+    /// each model of `FromNeg`, which it applies to a negative literal's
+    /// magnitude.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn readers(&self) -> &[ConstantIndex]
+    pub fn readers(&self) -> &[gandr_core_term::LiteralReader]
     {
         &self.readers
     }

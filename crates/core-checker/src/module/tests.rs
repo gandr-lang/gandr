@@ -1520,14 +1520,15 @@ fn an_owed_decode_crosses_by_no_reduct()
 /// every natural as the same string, `flag` and `bit : U(Integer → F
 /// Character)` are owed, `taker : U(String → F Integer)` and `chooser :
 /// U(Character → F Integer)` are owed, and the declaration at 5 is
-/// `thunk(callee(4))` at `U(F Integer)`. The checker keeps `kept` as its
-/// readers.
+/// `thunk(callee(n))` at `U(F Integer)`, `n` the literal `written`. The checker
+/// keeps `kept` as its readers.
 ///
 /// # Specification
 /// trivial.
 fn read_literal(
-    kept: &[ConstantIndex],
+    kept: &[gandr_core_term::LiteralReader],
     callee: ConstantIndex,
+    written: gandr_kernel_term::Literal,
 ) -> (CoreArena, super::ModuleReport, ValueId)
 {
     let mut arena = CoreArena::new();
@@ -1553,7 +1554,7 @@ fn read_literal(
         let returns = arena.comp_type_returner(integer);
         arena.value_type_thunk(returns)
     };
-    let literal = arena.value_literal(integer_literal());
+    let literal = arena.value_literal(written);
     let user = {
         let called = call(&mut arena, callee, literal);
         arena.value_thunk(called)
@@ -1579,8 +1580,9 @@ fn read_literal(
 #[test]
 fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
 {
-    let readers = [ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)];
-    let (mut arena, report, literal) = read_literal(&readers, ConstantIndex::from(3_usize));
+    let readers = naturals(&[ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)]);
+    let (mut arena, report, literal) =
+        read_literal(&readers, ConstantIndex::from(3_usize), integer_literal());
     assert!(
         matches!(report.judged()[5].verdict(), Verdict::Checked { .. }),
         "the literal checks where text is asked: {:?}",
@@ -1603,7 +1605,7 @@ fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
         )),
         "the kernel re-derives the application of the reader: {readmission:?}"
     );
-    let (_, unkept, _) = read_literal(&[], ConstantIndex::from(3_usize));
+    let (_, unkept, _) = read_literal(&[], ConstantIndex::from(3_usize), integer_literal());
     assert!(
         matches!(
             unkept.judged()[5].verdict(),
@@ -1619,12 +1621,13 @@ fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
 #[test]
 fn a_literal_two_readers_answer_is_ambiguous_4528()
 {
-    let both = [
+    let both = naturals(&[
         ConstantIndex::from(0_usize),
         ConstantIndex::from(1_usize),
         ConstantIndex::from(2_usize),
-    ];
-    let (arena, report, literal) = read_literal(&both, ConstantIndex::from(4_usize));
+    ]);
+    let (arena, report, literal) =
+        read_literal(&both, ConstantIndex::from(4_usize), integer_literal());
     let Verdict::Refused(CheckRefusal::LiteralAmbiguous { at, expected }) =
         report.judged()[5].verdict()
     else {
@@ -1641,12 +1644,101 @@ fn a_literal_two_readers_answer_is_ambiguous_4528()
         ),
         "the refusal names the character type the literal stands at"
     );
-    let one = [ConstantIndex::from(0_usize), ConstantIndex::from(2_usize)];
-    let (_, read, _) = read_literal(&one, ConstantIndex::from(4_usize));
+    let one = naturals(&[ConstantIndex::from(0_usize), ConstantIndex::from(2_usize)]);
+    let (_, read, _) = read_literal(&one, ConstantIndex::from(4_usize), integer_literal());
     assert!(
         matches!(read.judged()[5].verdict(), Verdict::Checked { .. }),
         "one boolean reader carries the literal: {:?}",
         read.judged()[5].verdict()
+    );
+}
+
+/// The natural-literal readers at the positions `at`.
+///
+/// # Specification
+/// trivial.
+fn naturals(at: &[ConstantIndex]) -> Vec<gandr_core_term::LiteralReader>
+{
+    at.iter()
+        .map(|&by| gandr_core_term::LiteralReader {
+            by,
+            reads: gandr_core_term::LiteralKind::Natural,
+        })
+        .collect()
+}
+
+/// #4732: a negative literal checked at a type apart from `Integer` crosses by
+/// the one kept negative reader whose result is that type, applied to the
+/// literal's magnitude; a natural reader of the type does not carry it.
+#[test]
+fn a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732()
+{
+    let negative = gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+        gandr_kernel_term::Sign::Negative,
+        gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("4"))
+            .expect("decimal digits"),
+    ));
+    let readers = [
+        gandr_core_term::LiteralReader {
+            by: ConstantIndex::from(0_usize),
+            reads: gandr_core_term::LiteralKind::Negative,
+        },
+        gandr_core_term::LiteralReader {
+            by: ConstantIndex::from(1_usize),
+            reads: gandr_core_term::LiteralKind::Natural,
+        },
+    ];
+    let (mut arena, report, literal) =
+        read_literal(&readers, ConstantIndex::from(3_usize), negative.clone());
+    assert!(
+        matches!(report.judged()[5].verdict(), Verdict::Checked { .. }),
+        "the negative literal checks where text is asked: {:?}",
+        report.judged()[5].verdict()
+    );
+    let crossings = report.nested_elaborations()[&ConstantIndex::from(5_usize)].crossings();
+    let [(&at, crossing)] = crossings.iter().collect::<Vec<_>>()[..]
+    else {
+        panic!("one crossing is recorded: {crossings:?}");
+    };
+    assert_eq!(
+        (at, crossing.by),
+        (literal, ConstantIndex::from(0_usize)),
+        "the crossing is recorded at the literal, by the negative reader"
+    );
+    let gandr_core_term::CrossedOperand::Standing(standing) = crossing.operand
+    else {
+        panic!("the reader takes a value standing for the literal: {crossing:?}");
+    };
+    assert!(
+        matches!(
+            arena.value(standing),
+            Some(&gandr_core_term::Value::Literal(gandr_kernel_term::Literal::Integer(ref magnitude)))
+                if magnitude.sign() == gandr_kernel_term::Sign::NonNegative
+                    && magnitude.magnitude().as_ref() == "4"
+        ),
+        "the reader is applied to the magnitude: {:?}",
+        arena.value(standing)
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. } | crate::bridge::Outcome::Assumed { .. }
+        )),
+        "the kernel re-derives the reader's application: {readmission:?}"
+    );
+    let (_, natural, _) = read_literal(
+        &naturals(&[ConstantIndex::from(0_usize)]),
+        ConstantIndex::from(3_usize),
+        negative,
+    );
+    assert!(
+        matches!(
+            natural.judged()[5].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "a natural reader does not carry a negative literal: {:?}",
+        natural.judged()[5].verdict()
     );
 }
 
@@ -1677,7 +1769,7 @@ fn an_integer_variable_crosses_by_no_reader_4528()
     };
     let report = {
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        context.keep_readers(&[ConstantIndex::from(0_usize)]);
+        context.keep_readers(&naturals(&[ConstantIndex::from(0_usize)]));
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(word_type), HOLE),
             declaration(At(1), Maybe::Present(taker_type), HOLE),

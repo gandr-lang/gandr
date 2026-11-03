@@ -61,7 +61,7 @@ fn native_names_operators_and_partial_application_execute()
             "+{.1 = unit}",
         ),
         (
-            "def answer : +U (-F Integer) ; def answer = thunk { become -7 } ;",
+            "def answer : +U (-F Integer) ; def answer = thunk { become -(7) } ;",
             "-7",
         ),
         (

@@ -2799,6 +2799,7 @@ fn a_crossing_runs_its_reduct_at_exactly_the_named_values()
     let crossings = BTreeMap::from([(crossed, Crossing {
         by: reduct,
         carriers: Vec::new(),
+        operand: crate::CrossedOperand::Itself,
     })]);
     let (mut carried, mut runs) = (Vec::new(), Vec::new());
     let rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
@@ -3019,6 +3020,7 @@ fn a_crossing_applies_its_carriers_before_the_value()
     let crossings = BTreeMap::from([(crossed, Crossing {
         by: forget,
         carriers: Vec::from([carrier]),
+        operand: crate::CrossedOperand::Itself,
     })]);
     let (mut carried, mut runs) = (Vec::new(), Vec::new());
     let _rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
@@ -3049,6 +3051,44 @@ fn a_crossing_applies_its_carriers_before_the_value()
         Some(&Value::Constant(forget)),
         "the run forces the map the crossing names"
     );
+}
+
+/// A negative literal's crossing applies `fromNeg` to the magnitude standing
+/// for the literal, never to the literal itself (#4732).
+#[test]
+fn a_standing_operand_takes_the_crossed_value_s_place_4732()
+{
+    let mut arena = CoreArena::new();
+    let crossed = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let standing = variable(&mut arena, DeBruijnIndex::from(1_u32));
+    let returned = arena.computation_return(crossed);
+    let subject = arena.value_thunk(returned);
+    let reader = ConstantIndex::from(4_usize);
+    let crossings = BTreeMap::from([(crossed, Crossing {
+        by: reader,
+        carriers: Vec::new(),
+        operand: crate::CrossedOperand::Standing(standing),
+    })]);
+    let (mut carried, mut runs) = (Vec::new(), Vec::new());
+    let _rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
+    let &[run] = runs.as_slice()
+    else {
+        panic!("one run is minted for the one crossed value: {runs:?}");
+    };
+    let Some(&Value::Run(applied)) = arena.value(run)
+    else {
+        panic!("a crossed value stands as a run");
+    };
+    let Some(&Computation::Application(forced, argument)) = arena.computation(applied)
+    else {
+        panic!("the run applies the reader to one operand");
+    };
+    assert_eq!(argument, standing, "the standing operand is the argument");
+    let Some(&Computation::Force(map)) = arena.computation(forced)
+    else {
+        panic!("the head of the application forces the reader");
+    };
+    assert_eq!(arena.value(map), Some(&Value::Constant(reader)));
 }
 
 /// Apply the constant `callee`, forced, to `argument`.

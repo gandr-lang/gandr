@@ -1846,8 +1846,8 @@ impl fmt::Display for Checked
                  is none",
             ),
             | CheckRefusal::LiteralAmbiguous { .. } => f.write_str(
-                "two models of `FromNat` read a literal into this type, and the literal names \
-                 neither",
+                "two models of `FromNat` or `FromNeg` read a literal into this type, and the \
+                 literal names neither",
             ),
             | CheckRefusal::CapabilityAmplified(_) => f.write_str(
                 "this capability grants less than the capability it is checked against",

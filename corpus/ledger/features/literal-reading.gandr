@@ -1,6 +1,6 @@
-/// `literal-reading`: a natural literal at a type a model of the prelude's `FromNat` carries is read through that model's `fromNat`, and a literal at `Integer` stays the literal.
-/// Implemented: the checker reads a natural literal at a type a top-level model of `FromNat` carries, and refuses it `LiteralAmbiguous` where two such models answer.
-/// Not implemented: #4732 owes a negative or a decimal literal, and #4733 owes a reader carrying a constraint, so `Fin(3)` refuses `5`.
+/// `literal-reading`: at a type a model of the prelude's `FromNat` or `FromNeg` carries, the checker reads a natural literal through its `fromNat` and a negative literal through its `fromNeg` at the magnitude, and a literal at `Integer` stays the literal.
+/// Implemented: the checker reads a natural or a negative literal at a type a top-level model of `FromNat` or `FromNeg` carries, and refuses it `LiteralAmbiguous` where two such models answer.
+/// Not implemented: #4807 owes a decimal literal, and #4733 owes a reader carrying a constraint, so `Fin(3)` refuses `5`.
 
 /// Expressions over the integers.
 data Expr : Type where {
@@ -28,3 +28,17 @@ def doubled() -> Expr { twice(3) }
 /// A literal at `Integer` is the literal itself, with no reader applied.
 @[ runs("4") ]
 def plain() -> Integer { 4 }
+
+/// An expression reads a negative literal as the negation of its magnitude's leaf.
+module ExprFromNeg : Model(FromNeg) with sort Carrier = Expr where {
+  /// The leaf, below zero.
+  def fromNeg(n : Integer) -> Expr { Lit(0 - n) }
+}
+
+/// `-2` is one negative literal, read through `fromNeg` at its magnitude.
+@[ runs("Add(Lit(1), Lit(-2))") ]
+def difference() -> Expr { Add(1, -2) }
+
+/// A negative literal at `Integer` stays the literal, even in a value definition.
+@[ runs("-5") ]
+def below : Integer = -5;

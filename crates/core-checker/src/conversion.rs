@@ -704,6 +704,7 @@ fn kept_crossing(
             return Ok(Maybe::Present(gandr_core_term::Crossing {
                 by: map,
                 carriers,
+                operand: gandr_core_term::CrossedOperand::Itself,
             }));
         }
     }
@@ -711,18 +712,21 @@ fn kept_crossing(
     Ok(Maybe::Absent(()))
 }
 
-/// The one kept literal reader that carries the natural literal `at`, of the
+/// The one kept literal reader that carries the integer literal `at`, of the
 /// type `found`, to the type `wanted`, decided rigidly as [`crossing`] decides
 /// a reduct.
 ///
 /// # Specification
 /// - requires: both types are formed, in the context's arena; `wanted` is the
 ///   head `expected` reduces to.
-/// - ensures: nothing when `at` is no natural integer literal or no kept
-///   reader's signature is a thunk of `A → F B` or `Π(n : A). F B` at which
-///   `found` converts to `A` and `B`, `n` read as `at`, to `wanted`; the one
-///   reader that is, with no carriers, otherwise; the collector is in the state
-///   it was before, whatever the answer.
+/// - ensures: nothing when `at` is no integer literal or no kept reader of its
+///   kind — natural for a non-negative literal, negative for a negative one —
+///   has a signature that is a thunk of `A → F B` or `Π(n : A). F B` at which
+///   `found` converts to `A` and `B`, `n` read as the reader's operand, to
+///   `wanted`. Otherwise the one reader that is, with no carriers, applied to
+///   the literal itself when it is natural and to its magnitude, minted in the
+///   arena, when it is negative. The collector is in the state it was before,
+///   whatever the answer.
 /// - fails: [`CheckRefusal::LiteralAmbiguous`] naming `at` and `expected` when
 ///   two readers are; the refusals [`convert`] yields, and a view's of a
 ///   signature.
@@ -734,10 +738,12 @@ fn kept_crossing(
 /// # Adequacy
 /// - hypothesis: L3 — a literal at a parity crosses by the parity's reader and
 ///   not the flag's, a literal at a type two readers answer is refused naming
-///   it, and a variable at the parity crosses by none.
+///   it, and a variable at the parity crosses by none; a negative literal
+///   crosses by the negative reader at its magnitude, never by the natural one.
 /// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 /// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
 /// - witness: `module::tests::an_integer_variable_crosses_by_no_reader_4528`
+/// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
 #[spec(
     captures: before = context.deferrals().collecting,
     ensures: context.deferrals().collecting == before,
@@ -749,12 +755,17 @@ fn literal_reader(
     (wanted, expected): (ValueTypeId, ValueTypeId),
 ) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
 {
-    let natural = matches!(
-        context.arena().value(at),
-        Some(&Value::Literal(gandr_kernel_term::Literal::Integer(ref integer)))
-            if integer.sign() != gandr_kernel_term::Sign::Negative
-    );
-    if !natural || context.readers().is_empty() {
+    let Some(&Value::Literal(gandr_kernel_term::Literal::Integer(ref integer))) =
+        context.arena().value(at)
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let mut operand = match integer.sign() {
+        gandr_kernel_term::Sign::NonNegative => ReaderOperand::Literal(at),
+        gandr_kernel_term::Sign::Negative => ReaderOperand::Magnitude(integer.magnitude().clone()),
+    };
+    let reads = operand.reads();
+    if !context.readers().iter().any(|reader| reader.reads == reads) {
         return Ok(Maybe::Absent(()));
     }
     // A reader applies a map the elaboration runs, so the owed decode is
@@ -763,15 +774,92 @@ fn literal_reader(
         &mut context.deferrals_mut().collecting,
         crate::elaboration::Collecting::Off,
     );
-    let read = kept_reader(context, at, found, wanted);
+    let read = kept_reader(context, &mut operand, found, wanted);
     context.deferrals_mut().collecting = collecting;
     match read? {
         Readers::None => Ok(Maybe::Absent(())),
-        Readers::One(by) => Ok(Maybe::Present(gandr_core_term::Crossing {
-            by,
-            carriers: Vec::new(),
-        })),
+        Readers::One(by) => {
+            let operand = match operand {
+                ReaderOperand::Literal(_) => gandr_core_term::CrossedOperand::Itself,
+                ReaderOperand::Magnitude(_) | ReaderOperand::Minted(_) => {
+                    gandr_core_term::CrossedOperand::Standing(operand.value(context))
+                },
+            };
+            Ok(Maybe::Present(gandr_core_term::Crossing {
+                by,
+                carriers: Vec::new(),
+                operand,
+            }))
+        },
         Readers::Several => Err(CheckRefusal::LiteralAmbiguous { at, expected }),
+    }
+}
+
+/// What a literal reader is applied to: a natural literal itself, or a
+/// negative literal's magnitude, minted the first time a reader reads it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ReaderOperand
+{
+    /// The natural literal, read as written.
+    Literal(ValueId),
+    /// A negative literal's magnitude, not yet in the arena.
+    Magnitude(gandr_kernel_term::Magnitude),
+    /// A negative literal's magnitude, in the arena.
+    Minted(ValueId),
+}
+
+impl ReaderOperand
+{
+    /// The kind of literal a reader of this operand reads.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reads(&self) -> gandr_core_term::LiteralKind
+    {
+        match *self {
+            Self::Literal(_) => gandr_core_term::LiteralKind::Natural,
+            Self::Magnitude(_) | Self::Minted(_) => gandr_core_term::LiteralKind::Negative,
+        }
+    }
+
+    /// The operand's value, a magnitude minted into the context's arena once.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the literal for [`Self::Literal`]; for a magnitude, the
+    ///   non-negative literal of it, minted on the first call and the same
+    ///   value after.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the minted value is the arena's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`literal_reader`].
+    /// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
+    fn value(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+    ) -> ValueId
+    {
+        match *self {
+            Self::Literal(value) | Self::Minted(value) => value,
+            Self::Magnitude(ref magnitude) => {
+                let minted =
+                    context
+                        .arena_mut()
+                        .value_literal(gandr_kernel_term::Literal::Integer(
+                            gandr_kernel_term::IntegerLiteral::new(
+                                gandr_kernel_term::Sign::NonNegative,
+                                magnitude.clone(),
+                            ),
+                        ));
+                *self = Self::Minted(minted);
+                minted
+            },
+        }
     }
 }
 
@@ -790,14 +878,15 @@ enum Readers
     Several,
 }
 
-/// The kept literal readers that carry the literal `at`, of the type `found`,
-/// to the type `wanted`, counted to two.
+/// The kept literal readers of `operand`'s kind that carry it, of the type
+/// `found`, to the type `wanted`, counted to two.
 ///
 /// # Specification
 /// - requires: as [`literal_reader`].
-/// - ensures: [`Readers::One`] for the only reader whose signature carries
-///   `found` to `wanted` as [`literal_reader`] states it, [`Readers::None`] for
-///   none and [`Readers::Several`] for two or more.
+/// - ensures: [`Readers::One`] for the only reader of the operand's kind whose
+///   signature carries `found` to `wanted` as [`literal_reader`] states it,
+///   [`Readers::None`] for none and [`Readers::Several`] for two or more; a
+///   magnitude is minted only where a dependent signature reads it.
 /// - fails: the refusals [`convert`] yields, and a view's of a signature.
 /// - panics: none.
 /// - executable: none — as [`literal_reader`].
@@ -809,17 +898,23 @@ enum Readers
 /// - hypothesis: L3 — as [`literal_reader`].
 /// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 /// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
+/// - witness: `module::tests::a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732`
 fn kept_reader(
     context: &mut CheckingContext<'_>,
-    at: ValueId,
+    operand: &mut ReaderOperand,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
 ) -> Result<Readers, CheckRefusal>
 {
+    let reads = operand.reads();
     let mut read = Readers::None;
     let mut next = 0_usize;
     while let Some(&reader) = context.readers().get(next) {
         next = next.saturating_add(1);
+        if reader.reads != reads {
+            continue;
+        }
+        let reader = reader.by;
         let Maybe::Present(signature) = context.signature(reader)
         else {
             continue;
@@ -830,10 +925,13 @@ fn kept_reader(
         };
         let (domain, codomain) = match comp_type_view(context.arena(), chain)? {
             CompTypeView::Arrow { domain, codomain } => (domain, codomain),
-            CompTypeView::Pi { domain, codomain } => (
-                domain,
-                gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, at),
-            ),
+            CompTypeView::Pi { domain, codomain } => {
+                let at = operand.value(context);
+                (
+                    domain,
+                    gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, at),
+                )
+            },
             CompTypeView::Returner { .. }
             | CompTypeView::Element { .. }
             | CompTypeView::With(..)

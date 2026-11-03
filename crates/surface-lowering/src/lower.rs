@@ -12255,12 +12255,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   operands in source order; an infix `==`, `<`, `<=`, `>` or `>=` in a
     ///   unit that lays the prelude is instead the call of the prelude's
     ///   declaration of the row's name, its model of `Eq` or `Ord` resolved
-    ///   from the operands ([`Self::through_prelude`]); a prefix `-` before a
-    ///   number written with the `f64` suffix is `float64.neg`, so the
-    ///   printers' spelling of a negative float, `-0.5f64`, lowers back to that
-    ///   float; the infix `then` is the composite of two paths, or of two flows
-    ///   where a flow is answered, as [`Self::derive`] plans it; the cons `g ∷
-    ///   p` is a word, as [`Self::cons`] plans it.
+    ///   from the operands ([`Self::through_prelude`]); a prefix `-` written
+    ///   directly on a natural literal is one negative integer literal, a
+    ///   value, so `-4` stands at `Integer` with no call and reads through
+    ///   `FromNeg` elsewhere (#4732); a prefix `-` before a number written with
+    ///   the `f64` suffix is `float64.neg`, so the printers' spelling of a
+    ///   negative float, `-0.5f64`, lowers back to that float; the infix `then`
+    ///   is the composite of two paths, or of two flows where a flow is
+    ///   answered, as [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
+    ///   [`Self::cons`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
     ///   [`Self::cons`] does.
@@ -12279,9 +12282,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
     /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
+    /// - witness: `lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Literal(Literal::Integer(_)))))]
     fn operator(
         &mut self,
         site: Site,
@@ -12299,6 +12303,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && label == TileName::CONS
         {
             return self.cons(site, letter, rest);
+        }
+        // `-n` written on a natural literal is one negative literal: a value,
+        // primitive at `Integer` and read through `FromNeg` at another type.
+        if let [Piece::Tile { label, .. }, Piece::Operand(operand)] = *pieces.pieces.as_slice()
+            && label.as_ref() == "-"
+            && let Maybe::Present(Literal::Integer(natural)) =
+                parse_literal(Former::Number, self.text_at(operand))
+        {
+            let _frame = self.require(site, Produced::Value)?;
+            let negative = IntegerLiteral::new(Sign::Negative, natural.magnitude().clone());
+            self.plan(site, Plan::Literal(Literal::Integer(negative)));
+            return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
         let (label, tile, arguments) = match *pieces.pieces.as_slice() {
@@ -29928,9 +29944,41 @@ def ended() -> -F [Partial] Unit {
             "a negated suffixed float is the float's negation"
         );
         assert_eq!(
-            negation("def a = thunk { become -5 } ;").0,
+            negation("def a = thunk { become -(5) } ;").0,
             "neg",
-            "a negated integer stays the integer's"
+            "a negation of a grouped integer stays the integer's negation"
+        );
+    }
+
+    /// #4732: `-n` written on a natural literal is one negative literal, a
+    /// value with no call, so it stands where a value definition holds it.
+    #[test]
+    fn a_negated_natural_literal_is_one_negative_literal_4732()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from("def a : Integer = -5 ;"), &mut arena);
+        let held = body_of(module.declarations().iter().next().unwrap().outcome());
+        assert_eq!(
+            arena.value(held),
+            Some(&Value::Literal(Literal::Integer(IntegerLiteral::new(
+                Sign::Negative,
+                gandr_kernel_term::Magnitude::from_decimal_text(String::from("5"))
+                    .expect("decimal digits"),
+            )))),
+            "the negation of a natural literal is the negative literal"
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def b(x : Integer) -> Integer { -(x) }"),
+            &mut arena,
+        );
+        assert!(
+            !matches!(
+                module.declarations().iter().next().unwrap().outcome(),
+                DeclarationOutcome::Refused(_)
+            ),
+            "a negated variable still lowers: {:?}",
+            module.declarations().iter().next().unwrap().outcome()
         );
     }
 
