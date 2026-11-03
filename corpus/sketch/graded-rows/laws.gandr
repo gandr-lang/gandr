@@ -1,0 +1,29 @@
+/// A law holds only under a grade condition, which a `where` block states.
+///
+/// Some equations hold for a computation only when its effect is small
+/// enough. Choosing between `x` and `y` gives `x` when `x` gives at most one
+/// result.
+///
+/// The `where` block's clauses are row judgements on the law's
+/// metavariables, barred as every block's clauses are, and they conjoin.
+/// Fusion fires such a law wherever the inferred rows meet its condition.
+///
+/// - see: #4722 — the graded-rows sketch, its rulings in the issue body
+/// - see: #2792 — the first graded law
+
+/// Choice with its graded laws.
+@[graded(Count)]
+theory Choice where {
+  /// The run fails with no result.
+  oper fail : () --> Unit;
+  /// The run splits into two.
+  oper or : (x : Unit, y : Unit) --> Unit;
+  /// A branch that gives at most one result absorbs the other.
+  rule cuts : or(x, y) <=> x where { x : [Choice <= 1] };
+  /// Choice reassociates when its left branch is deterministic and its middle
+  /// allocates nothing.
+  rule assoc : or(or(x, y), z) <=> or(x, or(y, z)) where {
+    | x : [Choice = 1]
+    | y : [Alloc <= 0]
+  };
+}

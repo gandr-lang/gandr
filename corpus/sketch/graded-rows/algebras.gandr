@@ -1,0 +1,38 @@
+/// An effect names the algebra that grades it, and an effect that names none
+/// stays ungraded.
+///
+/// A grade says how much of an effect a run has: its cost, its results, its
+/// allocations. Each effect counts in its own algebra, so the effect's
+/// theory says which.
+///
+/// `@[graded(A)]` on an effect's theory names `A`, any `Model(Grade)`. The
+/// algebra's order gives the relations a row may state.
+///
+/// - see: #4722 — the graded-rows sketch, its rulings in the issue body
+/// - see: #2792 — flexibly graded presentations
+
+// The grade algebras.
+import std.grade (Grade, Count, Usage);
+
+/// Nondeterministic choice, graded by how many results a run gives.
+@[graded(Count)]
+theory Choice where {
+  /// The run fails with no result.
+  oper fail : () --> Unit;
+  /// The run splits into two.
+  oper or : (x : Unit, y : Unit) --> Unit;
+}
+
+/// Allocation, graded by how many cells a run takes.
+@[graded(Count)]
+theory Alloc where {
+  /// One fresh cell.
+  oper alloc : () --> Cell;
+}
+
+/// Partiality names no algebra, so a row states only that it may run
+/// forever.
+theory Partial where {
+  /// A run that does not return.
+  oper diverge : () --> Unit;
+}

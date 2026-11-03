@@ -1,0 +1,45 @@
+/// The checker infers grades inside a body, and a recursion takes its bound
+/// from its measure.
+///
+/// A sequence composes grades by the algebra's monoid, and branches join. A
+/// writer states a grade only where a caller reads it.
+///
+/// The private helpers below state no grade. The exported function states
+/// the composite, and a recursive function's row grade is its `measure`.
+///
+/// - see: #4722 — the graded-rows sketch, its rulings in the issue body
+/// - see: #4569 — sketch 11, the `measure` bound
+
+// The cost theory.
+import std.cost (Cost, charge);
+
+/// One parse step, whose cost the checker infers as one charge.
+def step(token : Token) -> [Cost] Node {
+  charge(1);
+  Node.of(token)
+}
+
+/// Two steps in sequence, whose cost the checker infers as `1 + 1`.
+def twoSteps(a : Token, b : Token) -> [Cost] (Node, Node) {
+  (step(a), step(b))
+}
+
+/// The exported pair parser. Its signature states the inferred composite, and
+/// the checker holds the body to it.
+pub def parsePair(a : Token, b : Token) -> [Cost <= 2] (Node, Node) {
+  twoSteps(a, b)
+}
+
+/// The measure gives a recursive sum its row grade. The checker cannot infer
+/// a recursion's grade, so it asks for the measure.
+pub def sum(xs : List(Integer)) -> [Cost <= xs.length] Integer #spec{
+  measure { cost xs.length }
+} {
+  match xs {
+    | Nil => 0
+    | Cons(x, rest) => {
+      charge(1);
+      x + sum(rest)
+    }
+  }
+}
