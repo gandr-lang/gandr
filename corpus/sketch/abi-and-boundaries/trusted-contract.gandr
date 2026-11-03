@@ -1,0 +1,72 @@
+// Foreign functions specified by hand, each contract in its head and its
+// standing in an attribute.
+//
+// A foreign body is never read, so its contract is an assumption. The
+// attribute says on whose word it stands: `assumed`, `tested(suite)` or
+// `verified(tool, artifact)`.
+//
+// The head's `#spec{ … }` resolves its clauses in the head's scope, and a
+// `ghost` clause binds a logical variable. `gandr check --trust` lists each
+// contract, and `@![safe]` refuses it. No parser accepts the attribute or
+// the extern block's `fun` yet.
+//
+// - see: #4562 — the ABI sketch, its rulings in the issue body
+// - see: `../../model/specification/niche-realizability.gandr` — `deref_or`'s
+//   triple over a heap as data, met by the null niche
+// - see: `specification-value.gandr` — a contract written once and realised
+//   by name
+// - see: `../specifications/queue.gandr` — the same reader in a gandr head
+
+// The C calling convention.
+import std.abi.C;
+// The Rust calling convention.
+import std.abi.Rust;
+// Points-to and the separating conjunction over `std.abi`'s heap.
+import std.abi (|->, **);
+
+/// `deref_or` from the demo library: the word behind `p`, or `d` when `p` is
+/// null. Nobody has checked its body, so the vendor's documentation states it.
+@[trusted(by: assumed, note: "the vendor's documented contract, demo 2.4")]
+extern C from "lib:demo" {
+  fun deref_or(p : Ptr(i32), d : i32) -> i32 #spec{
+    ghost v : i32
+    requires { p |-> v }
+    ensures r {
+      | r == v
+      | p |-> v
+    }
+  };
+}
+
+/// `memcpy`, which the C library's own conformance suite exercises. A suite
+/// is evidence, not proof.
+@[trusted(by: tested("glibc string/test-memcpy"), note: "non-overlapping buffers only")]
+extern C from "lib:c" {
+  fun memcpy(dst : Ptr(u8), src : Ptr(u8), n : usize) -> Ptr(u8) #spec{
+    ghost bytes : Bytes(n)
+    ghost before : Bytes(n)
+    requires { src |-> bytes ** dst |-> before }
+    ensures r {
+      | r == dst
+      | src |-> bytes ** dst |-> bytes
+    }
+  };
+}
+
+/// The midpoint of two bounds, which never overflows. A fold over the Rust
+/// function's THIR proves it, and the certificate sits beside the crate.
+@[trusted(by: verified("corten", "certs/demo-midpoint.thir.cert"), note: "rustc 1.98, THIR fold")]
+extern Rust from "crate:demo" {
+  fun midpoint(lo : i32, hi : i32) -> i32 #spec{
+    requires { lo <= hi }
+    ensures m {
+      | lo <= m
+      | m <= hi
+    }
+  };
+}
+
+/// The word behind a pointer that may be null, zero otherwise.
+pub def readOrZero(p : Ptr(i32)) -> i32 {
+  deref_or(p, 0)
+}
