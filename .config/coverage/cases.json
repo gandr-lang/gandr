@@ -93,5 +93,86 @@
       }
     },
     "output": "[\"`coverage-part` has a matrix entry `extra` naming no `slice`: name its part, `hash:<k>/<n>` or `plain` (#4020)\",\"`coverage-part` runs the plain-only witness 0 times: run it once, as the part `plain` (#4020)\",\"`coverage-part` runs the enforcing suite in slices of 2 and 3: name one count n and every slice `hash:1/n` to `hash:n/n` once (#4020)\"]"
+  },
+  {
+    "name": "#4902: a part in the CI image on an x86-64 runner with the tree's clang linker and flags is refused twice",
+    "input": {
+      "coverage-part": {
+        "runs-on": "ubuntu-latest",
+        "container": "${{ needs.ci-image-ref.outputs.ref }}",
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/1" },
+              { "part": "plain", "slice": "plain" }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}" },
+        "steps": [{ "run": "mise run ci:coverage \"$COVERAGE_PART\"" }]
+      }
+    },
+    "output": "[\"`coverage-part` runs `ci:coverage` in a container on an x86-64 runner, where the tree's `/usr/bin/clang` linker is absent: set `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: cc` in its `env` (#4902)\",\"`coverage-part` runs `ci:coverage` in a container on an x86-64 runner and keeps the tree's clang link flags, which `cc` refuses: set `RUSTFLAGS: \\\"\\\"` in its `env` (#4902)\"]"
+  },
+  {
+    "name": "#4902: a part linking with cc that keeps the tree's clang flags is refused, since its plain part sets no RUSTFLAGS",
+    "input": {
+      "coverage-part": {
+        "runs-on": "ubuntu-latest",
+        "container": "${{ needs.ci-image-ref.outputs.ref }}",
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/1" },
+              { "part": "plain", "slice": "plain" }
+            ]
+          }
+        },
+        "env": {
+          "COVERAGE_PART": "${{ matrix.slice }}",
+          "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "cc"
+        },
+        "steps": [{ "run": "mise run ci:coverage \"$COVERAGE_PART\"" }]
+      }
+    },
+    "output": "[\"`coverage-part` runs `ci:coverage` in a container on an x86-64 runner and keeps the tree's clang link flags, which `cc` refuses: set `RUSTFLAGS: \\\"\\\"` in its `env` (#4902)\"]"
+  },
+  {
+    "name": "#4902: a part in the CI image on an x86-64 runner linking with cc and no clang flags holds, and one on arm64 needs neither",
+    "input": {
+      "coverage-part": {
+        "runs-on": "ubuntu-latest",
+        "container": "${{ needs.ci-image-ref.outputs.ref }}",
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/1" },
+              { "part": "plain", "slice": "plain" }
+            ]
+          }
+        },
+        "env": {
+          "COVERAGE_PART": "${{ matrix.slice }}",
+          "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "cc",
+          "RUSTFLAGS": ""
+        },
+        "steps": [{ "run": "mise run ci:coverage \"$COVERAGE_PART\"" }]
+      },
+      "coverage-arm": {
+        "runs-on": "ubuntu-24.04-arm",
+        "container": "${{ needs.ci-image-ref.outputs.ref }}",
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/1" },
+              { "part": "plain", "slice": "plain" }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}" },
+        "steps": [{ "run": "mise run ci:coverage \"$COVERAGE_PART\"" }]
+      }
+    },
+    "output": "[]"
   }
 ]
